@@ -1,37 +1,63 @@
-use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent};
-use std::sync::mpsc;
-use std::thread;
+use anyhow::Result;
+use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
 use std::time::Duration;
 
-pub enum Event<I> {
-    Input(I),
-    Tick,
-}
-
 pub struct EventHandler {
-    rx: mpsc::Receiver<Event<CrosstermEvent>>,
+    tick_rate: Duration,
 }
 
 impl EventHandler {
     pub fn new(tick_rate: Duration) -> Self {
-        let (tx, rx) = mpsc::channel();
-        
-        thread::spawn(move || {
-            loop {
-                if crossterm::event::poll(tick_rate).unwrap() {
-                    if let Ok(event) = crossterm::event::read() {
-                        tx.send(Event::Input(event)).unwrap();
-                    }
-                } else {
-                    tx.send(Event::Tick).unwrap();
-                }
-            }
-        });
-
-        EventHandler { rx }
+        Self { tick_rate }
     }
 
-    pub fn next(&self) -> Result<Event<CrosstermEvent>, mpsc::RecvError> {
-        self.rx.recv()
+    pub fn read_event(&self) -> Result<Option<CrosstermEvent>> {
+        if event::poll(self.tick_rate)? {
+            Ok(Some(event::read()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn should_quit(key_event: &KeyEvent) -> bool {
+        matches!(
+            key_event,
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+        )
+    }
+
+    pub fn is_enter(key_event: &KeyEvent) -> bool {
+        matches!(key_event, KeyEvent { code: KeyCode::Enter, .. })
+    }
+
+    pub fn is_backspace(key_event: &KeyEvent) -> bool {
+        matches!(key_event, KeyEvent { code: KeyCode::Backspace, .. })
+    }
+
+    pub fn is_char(key_event: &KeyEvent) -> Option<char> {
+        match key_event {
+            KeyEvent { code: KeyCode::Char(c), .. } => Some(*c),
+            _ => None,
+        }
+    }
+
+    pub fn is_scroll_up(key_event: &KeyEvent) -> bool {
+        matches!(key_event, KeyEvent { code: KeyCode::Up, .. })
+    }
+
+    pub fn is_scroll_down(key_event: &KeyEvent) -> bool {
+        matches!(key_event, KeyEvent { code: KeyCode::Down, .. })
+    }
+
+    pub fn is_page_up(key_event: &KeyEvent) -> bool {
+        matches!(key_event, KeyEvent { code: KeyCode::PageUp, .. })
+    }
+
+    pub fn is_page_down(key_event: &KeyEvent) -> bool {
+        matches!(key_event, KeyEvent { code: KeyCode::PageDown, .. })
     }
 }

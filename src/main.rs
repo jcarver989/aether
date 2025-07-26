@@ -54,6 +54,20 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Run the terminal UI with proper cleanup
+    run_terminal_ui(llm_provider, mcp_client).await
+}
+
+async fn run_terminal_ui(
+    llm_provider: Box<dyn llm::LlmProvider>,
+    mcp_client: mcp::McpClient,
+) -> Result<()> {
+    // Setup panic hook to restore terminal
+    std::panic::set_hook(Box::new(|panic| {
+        let _ = restore_terminal();
+        eprintln!("Application panicked: {}", panic);
+    }));
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -66,17 +80,18 @@ async fn main() -> Result<()> {
     let res = app.run(&mut terminal).await;
 
     // Restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    restore_terminal()?;
 
     if let Err(err) = res {
         eprintln!("Error: {:?}", err);
     }
 
+    Ok(())
+}
+
+fn restore_terminal() -> Result<()> {
+    disable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, LeaveAlternateScreen, DisableMouseCapture)?;
     Ok(())
 }
