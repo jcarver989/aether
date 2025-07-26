@@ -42,6 +42,12 @@ impl ToolRegistry {
         self.tool_to_server.insert(tool_name, server_name);
     }
 
+    pub fn register_tools(&mut self, server_name: String, rmcp_tools: Vec<RmcpTool>) {
+        for rmcp_tool in rmcp_tools {
+            self.register_tool(server_name.clone(), rmcp_tool);
+        }
+    }
+
     pub fn get_tool(&self, name: &str) -> Option<&Tool> {
         self.tools.get(name)
     }
