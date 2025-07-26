@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use tokio_stream::{Stream, StreamExt};
 use std::pin::Pin;
 
-use super::provider::{LlmProvider, ChatRequest, ChatMessage, ChatResponse, ToolCall, ToolDefinition, ChatStream};
+use super::provider::{LlmProvider, ChatRequest, ChatMessage, ChatResponse, ToolCall, ToolDefinition, ChatStream, StreamChunk, StreamChunkStream};
 
 pub struct OllamaProvider {
     client: Client<OpenAIConfig>,
@@ -156,6 +156,79 @@ impl LlmProvider for OllamaProvider {
                         }
                     } else {
                         Ok(String::new())
+                    }
+                },
+                Err(e) => Err(anyhow::anyhow!("Stream error: {}", e)),
+            }
+        });
+        
+        Ok(Box::pin(mapped_stream))
+    }
+
+    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream> {
+        let messages = self.convert_messages(request.messages);
+        let tools = if request.tools.is_empty() {
+            None
+        } else {
+            Some(self.convert_tools(request.tools))
+        };
+        
+        let req = CreateChatCompletionRequest {
+            model: self.model.clone(),
+            messages,
+            tools,
+            temperature: request.temperature,
+            stream: Some(true),
+            ..Default::default()
+        };
+        
+        let stream = self.client.chat().create_stream(req).await?;
+        
+        let mapped_stream = stream.map(|result| {
+            match result {
+                Ok(response) => {
+                    if let Some(choice) = response.choices.first() {
+                        let delta = &choice.delta;
+                        
+                        // Handle content
+                        if let Some(content) = &delta.content {
+                            return Ok(StreamChunk::Content(content.clone()));
+                        }
+                        
+                        // Handle tool calls
+                        if let Some(tool_calls) = &delta.tool_calls {
+                            for tool_call in tool_calls {
+                                if let Some(function) = &tool_call.function {
+                                    // Tool call start
+                                    if let Some(name) = &function.name {
+                                        return Ok(StreamChunk::ToolCallStart {
+                                            id: tool_call.id.clone().unwrap_or_default(),
+                                            name: name.clone(),
+                                        });
+                                    }
+                                    
+                                    // Tool call arguments
+                                    if let Some(arguments) = &function.arguments {
+                                        return Ok(StreamChunk::ToolCallArgument {
+                                            id: tool_call.id.clone().unwrap_or_default(),
+                                            argument: arguments.clone(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Handle finish reason for tool call completion
+                        if let Some(finish_reason) = &choice.finish_reason {
+                            if format!("{:?}", finish_reason).contains("tool_calls") {
+                                return Ok(StreamChunk::Done);
+                            }
+                        }
+                        
+                        // Empty chunk for incomplete data
+                        Ok(StreamChunk::Content(String::new()))
+                    } else {
+                        Ok(StreamChunk::Done)
                     }
                 },
                 Err(e) => Err(anyhow::anyhow!("Stream error: {}", e)),

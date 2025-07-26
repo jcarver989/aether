@@ -126,6 +126,10 @@ impl McpClient {
     pub fn get_tool_description(&self, tool_name: &str) -> Option<String> {
         self.registry.get_tool_description(tool_name)
     }
+
+    pub fn get_tool_parameters(&self, tool_name: &str) -> Option<&Value> {
+        self.registry.get_tool_parameters(tool_name)
+    }
 }
 
 trait Pipe<T> {

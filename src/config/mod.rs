@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_get_model_from_env_defaults() {
-        // Save and restore env
+        // Save and restore env - ensure we clear any existing value first
         let original = std::env::var("DEFAULT_MODEL").ok();
         std::env::remove_var("DEFAULT_MODEL");
         

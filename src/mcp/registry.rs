@@ -80,4 +80,8 @@ impl ToolRegistry {
             })
         }).collect()
     }
+
+    pub fn get_tool_parameters(&self, tool_name: &str) -> Option<&Value> {
+        self.tools.get(tool_name).map(|tool| &tool.parameters)
+    }
 }

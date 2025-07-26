@@ -42,12 +42,23 @@ pub struct ToolCall {
     pub arguments: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum StreamChunk {
+    Content(String),
+    ToolCallStart { id: String, name: String },
+    ToolCallArgument { id: String, argument: String },
+    ToolCallComplete { id: String },
+    Done,
+}
+
 pub type ChatStream = Pin<Box<dyn Stream<Item = Result<String>> + Send>>;
+pub type StreamChunkStream = Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>>;
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     async fn complete(&self, request: ChatRequest) -> Result<ChatResponse>;
     async fn complete_stream(&self, request: ChatRequest) -> Result<ChatStream>;
+    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream>;
     fn get_model(&self) -> &str;
 }
 
