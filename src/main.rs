@@ -19,7 +19,7 @@ struct Args {
     #[arg(long, env = "DEFAULT_PROVIDER", default_value = "openrouter")]
     provider: String,
 
-    #[arg(long, env = "DEFAULT_MODEL")]
+    #[arg(long, env = "DEFAULT_MODEL", default_value = "qwen/qwen3-coder")]
     model: Option<String>,
 }
 

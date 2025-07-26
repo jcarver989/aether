@@ -34,6 +34,8 @@ pub struct App {
     llm_provider: Box<dyn LlmProvider>,
     mcp_client: McpClient,
     agent_context: Option<String>,
+    streaming_receiver: Option<mpsc::UnboundedReceiver<StreamChunk>>,
+    streaming_message_index: Option<usize>,
 }
 
 impl App {
@@ -46,6 +48,8 @@ impl App {
             llm_provider,
             mcp_client,
             agent_context: None,
+            streaming_receiver: None,
+            streaming_message_index: None,
         }
     }
 
@@ -58,8 +62,19 @@ impl App {
         while self.is_running {
             terminal.draw(|f| self.render(f))?;
 
-            if let Event::Key(key) = event::read()? {
-                self.handle_key_event(key).await?;
+            // Handle streaming chunks first
+            if let Some(receiver) = &mut self.streaming_receiver {
+                if let Ok(chunk) = receiver.try_recv() {
+                    self.handle_stream_chunk(chunk).await?;
+                    continue; // Skip to next iteration to redraw immediately
+                }
+            }
+
+            // Check for keyboard input with timeout to allow streaming updates
+            if event::poll(Duration::from_millis(50))? {
+                if let Event::Key(key) = event::read()? {
+                    self.handle_key_event(key).await?;
+                }
             }
         }
         Ok(())
@@ -205,20 +220,13 @@ impl App {
             self.messages.push(UiMessage::User { content: user_input.clone() });
             self.input.clear();
             
-            // Send to LLM and handle response
-            match self.send_to_llm(user_input).await {
-                Ok(_) => {},
-                Err(e) => {
-                    self.messages.push(UiMessage::Error { 
-                        message: format!("LLM error: {}", e) 
-                    });
-                }
-            }
+            // Send to LLM and start streaming
+            self.start_llm_stream(user_input).await?;
         }
         Ok(())
     }
 
-    async fn send_to_llm(&mut self, user_input: String) -> Result<()> {
+    async fn start_llm_stream(&mut self, user_input: String) -> Result<()> {
         // Build chat context
         let mut chat_messages = Vec::new();
         
@@ -268,104 +276,92 @@ impl App {
             temperature: Some(0.7),
         };
         
-        let mut stream = self.llm_provider.complete_stream_chunks(request).await?;
-        let mut current_content = String::new();
-        let mut current_tool_calls = std::collections::HashMap::<String, (String, String)>::new();
-        let streaming_message_index = self.messages.len();
+        let stream = self.llm_provider.complete_stream_chunks(request).await?;
+        
+        // Create channel for streaming
+        let (sender, receiver) = mpsc::unbounded_channel();
+        self.streaming_receiver = Some(receiver);
         
         // Add initial streaming message
+        self.streaming_message_index = Some(self.messages.len());
         self.messages.push(UiMessage::AssistantStreaming { content: String::new() });
         
-        loop {
-            let chunk_result = match timeout(Duration::from_secs(30), stream.next()).await {
-                Ok(Some(result)) => result,
-                Ok(None) => {
-                    // Stream ended normally
-                    if let Some(msg) = self.messages.get_mut(streaming_message_index) {
-                        *msg = UiMessage::Assistant { content: current_content };
-                    }
-                    break;
-                }
-                Err(_) => {
-                    // Timeout
-                    self.messages.push(UiMessage::Error { 
-                        message: "Stream timeout after 30 seconds".to_string() 
-                    });
-                    if let Some(msg) = self.messages.get_mut(streaming_message_index) {
-                        *msg = UiMessage::Assistant { content: current_content };
-                    }
-                    return Err(anyhow::anyhow!("Stream timeout"));
-                }
-            };
-            let chunk = match chunk_result {
-                Ok(chunk) => chunk,
-                Err(e) => {
-                    // Handle stream interruption
-                    self.messages.push(UiMessage::Error { 
-                        message: format!("Stream interrupted: {}", e) 
-                    });
-                    // Convert partial streaming message to final message
-                    if let Some(msg) = self.messages.get_mut(streaming_message_index) {
-                        *msg = UiMessage::Assistant { content: current_content };
-                    }
-                    return Err(e);
-                }
-            };
-            
-            match chunk {
-                StreamChunk::Content(content) => {
-                    current_content.push_str(&content);
-                    // Update the streaming message
-                    if let Some(msg) = self.messages.get_mut(streaming_message_index) {
-                        *msg = UiMessage::AssistantStreaming { content: current_content.clone() };
-                    }
-                }
-                StreamChunk::ToolCallStart { id, name } => {
-                    current_tool_calls.insert(id.clone(), (name.clone(), String::new()));
-                    self.messages.push(UiMessage::ToolCall { 
-                        name: name,
-                        params: String::new(),
-                    });
-                }
-                StreamChunk::ToolCallArgument { id, argument } => {
-                    if let Some((name, args)) = current_tool_calls.get_mut(&id) {
-                        args.push_str(&argument);
-                        // Update the tool call message
-                        if let Some(UiMessage::ToolCall { params, .. }) = self.messages.last_mut() {
-                            *params = args.clone();
+        // Spawn background task to handle stream
+        tokio::spawn(async move {
+            let mut stream = stream;
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(chunk) => {
+                        if sender.send(chunk).is_err() {
+                            break; // Receiver dropped
                         }
                     }
-                }
-                StreamChunk::ToolCallComplete { id } => {
-                    if let Some((name, args)) = current_tool_calls.remove(&id) {
-                        // Parse and execute the tool call
-                        let args_json: serde_json::Value = serde_json::from_str(&args)
-                            .unwrap_or_else(|_| serde_json::json!({}));
-                        
-                        match self.mcp_client.execute_tool(&name, args_json).await {
-                            Ok(result) => {
-                                self.messages.push(UiMessage::ToolResult { 
-                                    content: result.to_string() 
-                                });
-                            }
-                            Err(e) => {
-                                self.messages.push(UiMessage::Error { 
-                                    message: format!("Tool execution failed: {}", e) 
-                                });
-                            }
-                        }
+                    Err(_) => {
+                        break; // Stream error
                     }
-                }
-                StreamChunk::Done => {
-                    // Convert streaming message to final message
-                    if let Some(msg) = self.messages.get_mut(streaming_message_index) {
-                        *msg = UiMessage::Assistant { content: current_content };
-                    }
-                    break;
                 }
             }
-        }
+        });
         
+        Ok(())
+    }
+
+    async fn handle_stream_chunk(&mut self, chunk: StreamChunk) -> Result<()> {
+        match chunk {
+            StreamChunk::Content(content) => {
+                if let Some(streaming_index) = self.streaming_message_index {
+                    if let Some(UiMessage::AssistantStreaming { content: current_content }) = 
+                        self.messages.get_mut(streaming_index) {
+                        current_content.push_str(&content);
+                    }
+                }
+            }
+            StreamChunk::ToolCallStart { name, .. } => {
+                self.messages.push(UiMessage::ToolCall { 
+                    name,
+                    params: String::new(),
+                });
+            }
+            StreamChunk::ToolCallArgument { argument, .. } => {
+                if let Some(UiMessage::ToolCall { params, .. }) = self.messages.last_mut() {
+                    params.push_str(&argument);
+                }
+            }
+            StreamChunk::ToolCallComplete { id } => {
+                // For now, just add a placeholder - tool execution will be added later
+                if let Some(UiMessage::ToolCall { name, params }) = self.messages.last().cloned() {
+                    // Parse and execute the tool call
+                    let args_json: serde_json::Value = serde_json::from_str(&params)
+                        .unwrap_or_else(|_| serde_json::json!({}));
+                    
+                    match self.mcp_client.execute_tool(&name, args_json).await {
+                        Ok(result) => {
+                            self.messages.push(UiMessage::ToolResult { 
+                                content: result.to_string() 
+                            });
+                        }
+                        Err(e) => {
+                            self.messages.push(UiMessage::Error { 
+                                message: format!("Tool execution failed: {}", e) 
+                            });
+                        }
+                    }
+                }
+            }
+            StreamChunk::Done => {
+                // Convert streaming message to final message
+                if let Some(streaming_index) = self.streaming_message_index {
+                    if let Some(UiMessage::AssistantStreaming { content }) = 
+                        self.messages.get_mut(streaming_index) {
+                        let final_content = content.clone();
+                        self.messages[streaming_index] = UiMessage::Assistant { content: final_content };
+                    }
+                }
+                // Clear streaming state
+                self.streaming_receiver = None;
+                self.streaming_message_index = None;
+            }
+        }
         Ok(())
     }
 

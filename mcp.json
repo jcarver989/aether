@@ -1,21 +1,8 @@
 {
   "servers": {
-    "filesystem": {
-      "command": "mcp-server-filesystem",
-      "args": ["--root", "."],
-      "env": {}
-    },
-    "git": {
-      "command": "mcp-server-git",
-      "args": [],
-      "env": {}
-    },
-    "web": {
-      "command": "mcp-server-web",
-      "args": ["--base-url", "https://api.example.com"],
-      "env": {
-        "API_KEY": "${WEB_API_KEY}"
-      }
+    "mcp-mesh": {
+      "url": "http://localhost:3000/mcp",
+      "headers": {}
     }
   }
 }
