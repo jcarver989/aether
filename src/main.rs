@@ -38,6 +38,16 @@ async fn main() -> Result<()> {
         println!("Found AGENT.md");
     }
 
+    // Create debug log
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/aether_debug.log") {
+        use std::io::Write;
+        let _ = writeln!(file, "\n[{}] ===== AETHER STARTING =====", 
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
+    }
+    
     // Initialize MCP client
     println!("Connecting to MCP servers...");
     let mut mcp_client = mcp::McpClient::new();
@@ -47,7 +57,18 @@ async fn main() -> Result<()> {
     }
     println!("Discovering tools...");
     mcp_client.discover_tools().await?;
-    println!("Found {} tools", mcp_client.get_available_tools().len());
+    let available_tools = mcp_client.get_available_tools();
+    println!("Found {} tools", available_tools.len());
+    
+    // Log available tools to debug file
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/aether_debug.log") {
+        use std::io::Write;
+        let _ = writeln!(file, "[{}] Available tools: {:?}", 
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), available_tools);
+    }
 
     // Initialize LLM provider
     println!("Initializing LLM provider: {:?}", config.provider);

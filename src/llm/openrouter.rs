@@ -180,56 +180,90 @@ impl LlmProvider for OpenRouterProvider {
         
         let stream = self.client.chat().create_stream(req).await?;
         
-        let mapped_stream = stream.map(|result| {
-            match result {
-                Ok(response) => {
-                    if let Some(choice) = response.choices.first() {
-                        let delta = &choice.delta;
-                        
-                        // Handle content
-                        if let Some(content) = &delta.content {
-                            return Ok(StreamChunk::Content(content.clone()));
-                        }
-                        
-                        // Handle tool calls
-                        if let Some(tool_calls) = &delta.tool_calls {
-                            for tool_call in tool_calls {
-                                if let Some(function) = &tool_call.function {
-                                    // Tool call start
-                                    if let Some(name) = &function.name {
-                                        return Ok(StreamChunk::ToolCallStart {
-                                            id: tool_call.id.clone().unwrap_or_default(),
-                                            name: name.clone(),
-                                        });
-                                    }
-                                    
-                                    // Tool call arguments
-                                    if let Some(arguments) = &function.arguments {
-                                        return Ok(StreamChunk::ToolCallArgument {
-                                            id: tool_call.id.clone().unwrap_or_default(),
-                                            argument: arguments.clone(),
-                                        });
+        // Create a custom stream that properly handles tool calls
+        let mapped_stream = async_stream::stream! {
+            let mut current_tool_id: Option<String> = None;
+            let mut tool_args_buffer = String::new();
+            
+            let mut stream = Box::pin(stream);
+            
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(response) => {
+                        if let Some(choice) = response.choices.first() {
+                            let delta = &choice.delta;
+                            
+                            // Handle content
+                            if let Some(content) = &delta.content {
+                                // If we have a pending tool call and now we're getting content,
+                                // complete the tool call first
+                                if let Some(id) = current_tool_id.take() {
+                                    yield Ok(StreamChunk::ToolCallComplete { id });
+                                }
+                                yield Ok(StreamChunk::Content(content.clone()));
+                            }
+                            
+                            // Handle tool calls
+                            if let Some(tool_calls) = &delta.tool_calls {
+                                for tool_call in tool_calls {
+                                    if let Some(function) = &tool_call.function {
+                                        // Tool call start
+                                        if let Some(name) = &function.name {
+                                            let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
+                                            current_tool_id = Some(id.clone());
+                                            tool_args_buffer.clear();
+                                            yield Ok(StreamChunk::ToolCallStart {
+                                                id,
+                                                name: name.clone(),
+                                            });
+                                        }
+                                        
+                                        // Tool call arguments
+                                        if let Some(arguments) = &function.arguments {
+                                            if let Some(id) = &current_tool_id {
+                                                tool_args_buffer.push_str(arguments);
+                                                yield Ok(StreamChunk::ToolCallArgument {
+                                                    id: id.clone(),
+                                                    argument: arguments.to_string(),
+                                                });
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                        
-                        // Handle finish reason for tool call completion
-                        if let Some(finish_reason) = &choice.finish_reason {
-                            if format!("{:?}", finish_reason).contains("tool_calls") {
-                                return Ok(StreamChunk::Done);
+                            
+                            // Handle finish reason
+                            if let Some(finish_reason) = &choice.finish_reason {
+                                // Log to debug file
+                                if let Ok(mut debug_file) = std::fs::OpenOptions::new()
+                                    .create(true)
+                                    .append(true)
+                                    .open("/tmp/aether_debug.log") {
+                                    use std::io::Write;
+                                    let _ = writeln!(debug_file, "[{}] Stream: Got finish_reason: {:?}, current_tool_id: {:?}", 
+                                        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), finish_reason, current_tool_id);
+                                }
+                                
+                                // Complete any pending tool call
+                                if format!("{:?}", finish_reason).contains("tool_calls") {
+                                    if let Some(id) = current_tool_id.take() {
+                                        yield Ok(StreamChunk::ToolCallComplete { id });
+                                    }
+                                }
+                                
+                                // Send Done when stream is complete
+                                yield Ok(StreamChunk::Done);
                             }
+                        } else {
+                            yield Ok(StreamChunk::Done);
                         }
-                        
-                        // Empty chunk for incomplete data
-                        Ok(StreamChunk::Content(String::new()))
-                    } else {
-                        Ok(StreamChunk::Done)
+                    },
+                    Err(e) => {
+                        yield Err(anyhow::anyhow!("Stream error: {}", e));
                     }
-                },
-                Err(e) => Err(anyhow::anyhow!("Stream error: {}", e)),
+                }
             }
-        });
+        };
         
         Ok(Box::pin(mapped_stream))
     }

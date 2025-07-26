@@ -88,8 +88,24 @@ impl McpClient {
     pub async fn execute_tool(&self, tool_name: &str, args: Value) -> Result<Value> {
         debug!("Executing tool: {} with args: {}", tool_name, args);
         
+        // Log to file helper
+        fn log_debug(msg: &str) {
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/tmp/aether_debug.log") {
+                use std::io::Write;
+                let _ = writeln!(file, "[{}] MCP: {}", 
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), msg);
+            }
+        }
+        
+        log_debug(&format!("Executing tool: {} with args: {}", tool_name, args));
+        
         let server_name = self.registry.get_server_for_tool(tool_name)
             .ok_or_else(|| anyhow!("Tool not found: {}", tool_name))?;
+        
+        log_debug(&format!("Found tool on server: {}", server_name));
         
         let server = self.servers.get(server_name)
             .ok_or_else(|| anyhow!("Server not found: {}", server_name))?;
@@ -100,8 +116,17 @@ impl McpClient {
             arguments,
         };
         
-        let result = server.client.call_tool(request).await
-            .with_context(|| format!("Failed to execute tool {} on server {}", tool_name, server_name))?;
+        log_debug("Sending tool request to server...");
+        
+        let result = match server.client.call_tool(request).await {
+            Ok(result) => result,
+            Err(e) => {
+                log_debug(&format!("Tool call failed with error: {:?}", e));
+                return Err(anyhow!("Failed to execute tool {} on server {}: {}", tool_name, server_name, e));
+            }
+        };
+        
+        log_debug(&format!("Got response: {:?}", result));
         
         if result.is_error.unwrap_or(false) {
             let error_msg = result.content
@@ -115,6 +140,8 @@ impl McpClient {
             .first()
             .map(|content| serde_json::to_value(content).unwrap_or(Value::String("Serialization error".to_string())))
             .unwrap_or_else(|| Value::String("No result".to_string()));
+        
+        log_debug(&format!("Returning result value: {:?}", result_value));
             
         Ok(result_value)
     }

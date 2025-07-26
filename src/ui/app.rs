@@ -307,6 +307,20 @@ impl App {
     }
 
     async fn handle_stream_chunk(&mut self, chunk: StreamChunk) -> Result<()> {
+        // Log all chunks for debugging
+        fn log_debug(msg: &str) {
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/tmp/aether_debug.log") {
+                use std::io::Write;
+                let _ = writeln!(file, "[{}] {}", 
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), msg);
+            }
+        }
+        
+        log_debug(&format!("Received stream chunk: {:?}", chunk));
+        
         match chunk {
             StreamChunk::Content(content) => {
                 if let Some(streaming_index) = self.streaming_message_index {
@@ -327,25 +341,86 @@ impl App {
                     params.push_str(&argument);
                 }
             }
-            StreamChunk::ToolCallComplete { id } => {
-                // For now, just add a placeholder - tool execution will be added later
+            StreamChunk::ToolCallComplete { id: _ } => {
+                // Log to file for debugging
+                fn log_debug(msg: &str) {
+                    if let Ok(mut file) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open("/tmp/aether_debug.log") {
+                        use std::io::Write;
+                        let _ = writeln!(file, "[{}] {}", 
+                            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), msg);
+                    }
+                }
+                
+                // Execute the tool call
                 if let Some(UiMessage::ToolCall { name, params }) = self.messages.last().cloned() {
+                    log_debug(&format!("Executing tool '{}' with params: {}", name, params));
+                    
                     // Parse and execute the tool call
-                    let args_json: serde_json::Value = serde_json::from_str(&params)
-                        .unwrap_or_else(|_| serde_json::json!({}));
+                    let mut args_json: serde_json::Value = match serde_json::from_str(&params) {
+                        Ok(json) => json,
+                        Err(e) => {
+                            log_debug(&format!("Failed to parse tool params: {}", e));
+                            self.messages.push(UiMessage::Error { 
+                                message: format!("Failed to parse tool parameters: {}", e) 
+                            });
+                            return Ok(());
+                        }
+                    };
+                    
+                    // Fix common LLM mistakes with tool arguments
+                    if let Some(obj) = args_json.as_object_mut() {
+                        // If query is a JSON string that should be an array, parse it
+                        if let Some(query_value) = obj.get_mut("query") {
+                            if let Some(query_str) = query_value.as_str() {
+                                // Try to parse the string as JSON
+                                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(query_str) {
+                                    *query_value = parsed;
+                                    log_debug(&format!("Fixed query parameter from string to: {:?}", query_value));
+                                }
+                            }
+                        }
+                    }
+                    
+                    log_debug(&format!("Parsed args: {:?}", args_json));
                     
                     match self.mcp_client.execute_tool(&name, args_json).await {
                         Ok(result) => {
-                            self.messages.push(UiMessage::ToolResult { 
-                                content: result.to_string() 
-                            });
+                            log_debug(&format!("Tool execution successful, result: {:?}", result));
+                            
+                            // Extract the actual content from MCP response structure
+                            let content = if let Some(text) = result.get("text").and_then(|v| v.as_str()) {
+                                // If it's a text response from MCP
+                                text.to_string()
+                            } else if let Some(content_array) = result.get("content").and_then(|v| v.as_array()) {
+                                // If it's a content array
+                                content_array.iter()
+                                    .filter_map(|item| item.get("text").and_then(|v| v.as_str()))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            } else {
+                                // Fallback to showing the whole result
+                                match result {
+                                    serde_json::Value::String(s) => s,
+                                    serde_json::Value::Null => "null".to_string(),
+                                    other => serde_json::to_string_pretty(&other)
+                                        .unwrap_or_else(|_| format!("{:?}", other))
+                                }
+                            };
+                            
+                            self.messages.push(UiMessage::ToolResult { content });
                         }
                         Err(e) => {
+                            log_debug(&format!("Tool execution failed: {}", e));
                             self.messages.push(UiMessage::Error { 
                                 message: format!("Tool execution failed: {}", e) 
                             });
                         }
                     }
+                } else {
+                    log_debug("No ToolCall message found to execute");
                 }
             }
             StreamChunk::Done => {
