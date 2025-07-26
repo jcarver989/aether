@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.47", features = ["full"] }
+tokio-stream = "0.1"
 async-openai = "0.29"
 async-trait = "0.1"
 ratatui = "0.29"

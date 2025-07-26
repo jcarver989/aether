@@ -46,11 +46,11 @@ async fn main() -> Result<()> {
             let api_key = config.openrouter_api_key
                 .expect("OPENROUTER_API_KEY environment variable not set");
             let model = args.model.unwrap_or(config.model);
-            Box::new(llm::openrouter::OpenRouterClient::new(api_key, model)?)
+            Box::new(llm::openrouter::OpenRouterProvider::new(api_key, model)?)
         }
         config::ProviderType::Ollama => {
             let model = args.model.unwrap_or(config.model);
-            Box::new(llm::ollama::OllamaClient::new(config.ollama_base_url, model)?)
+            Box::new(llm::ollama::OllamaProvider::new(Some(config.ollama_base_url), model)?)
         }
     };
 
