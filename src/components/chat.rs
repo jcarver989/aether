@@ -497,12 +497,37 @@ impl Component for Chat {
                 name,
                 arguments,
             } => {
-                self.add_message(ChatMessage::ToolCall {
-                    id,
-                    name,
-                    params: arguments,
-                    timestamp: chrono::Utc::now(),
-                });
+                // Check if we already have a streaming tool call with this ID
+                let mut found_existing = false;
+                for message in self.messages.iter_mut().rev() {
+                    if let ChatMessage::ToolCall {
+                        id: existing_id,
+                        name: _existing_name,
+                        params,
+                        ..
+                    } = message
+                    {
+                        if existing_id == &id {
+                            // Update the existing tool call with new arguments
+                            *params = arguments.clone();
+                            found_existing = true;
+                            break;
+                        }
+                    } else {
+                        // Stop looking once we hit a non-tool-call message
+                        break;
+                    }
+                }
+                
+                // If no existing tool call found, create a new one
+                if !found_existing {
+                    self.add_message(ChatMessage::ToolCall {
+                        id,
+                        name,
+                        params: arguments,
+                        timestamp: chrono::Utc::now(),
+                    });
+                }
             }
             _ => {}
         }

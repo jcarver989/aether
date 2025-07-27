@@ -1,5 +1,40 @@
 use ratatui::style::Color;
 
+// Catppuccin Mocha color palette
+pub struct CatppuccinMocha;
+
+impl CatppuccinMocha {
+    // Neutral colors
+    pub const CRUST: Color = Color::Rgb(17, 17, 27);
+    pub const MANTLE: Color = Color::Rgb(24, 24, 37);
+    pub const BASE: Color = Color::Rgb(30, 30, 46);
+    pub const SURFACE_0: Color = Color::Rgb(49, 50, 68);
+    pub const SURFACE_1: Color = Color::Rgb(69, 71, 90);
+    pub const SURFACE_2: Color = Color::Rgb(88, 91, 112);
+    pub const OVERLAY_0: Color = Color::Rgb(108, 112, 134);
+    pub const OVERLAY_1: Color = Color::Rgb(127, 132, 156);
+    pub const OVERLAY_2: Color = Color::Rgb(147, 153, 178);
+    pub const SUBTEXT_0: Color = Color::Rgb(166, 173, 200);
+    pub const SUBTEXT_1: Color = Color::Rgb(186, 194, 222);
+    pub const TEXT: Color = Color::Rgb(205, 214, 244);
+    
+    // Accent colors
+    pub const ROSEWATER: Color = Color::Rgb(245, 224, 220);
+    pub const FLAMINGO: Color = Color::Rgb(242, 205, 205);
+    pub const PINK: Color = Color::Rgb(245, 194, 231);
+    pub const MAUVE: Color = Color::Rgb(203, 166, 247);
+    pub const RED: Color = Color::Rgb(243, 139, 168);
+    pub const MAROON: Color = Color::Rgb(235, 160, 172);
+    pub const PEACH: Color = Color::Rgb(250, 179, 135);
+    pub const YELLOW: Color = Color::Rgb(249, 226, 175);
+    pub const GREEN: Color = Color::Rgb(166, 227, 161);
+    pub const TEAL: Color = Color::Rgb(148, 226, 213);
+    pub const SKY: Color = Color::Rgb(137, 220, 235);
+    pub const SAPPHIRE: Color = Color::Rgb(116, 199, 236);
+    pub const BLUE: Color = Color::Rgb(137, 180, 250);
+    pub const LAVENDER: Color = Color::Rgb(180, 190, 254);
+}
+
 #[derive(Clone, Debug)]
 pub struct Theme {
     // Base colors
@@ -34,36 +69,36 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        // 256-color theme optimized for xterm-256 terminals
+        // Catppuccin Mocha theme using friendly names
         Self {
-            // Base colors - sophisticated grays
-            background: Color::Indexed(0),     // Black
-            foreground: Color::Indexed(15),    // Bright white
-            muted: Color::Indexed(240),        // Dark gray
-            subtle: Color::Indexed(244),       // Medium gray
+            // Base colors
+            background: CatppuccinMocha::BASE,
+            foreground: CatppuccinMocha::TEXT,
+            muted: CatppuccinMocha::OVERLAY_0,
+            subtle: CatppuccinMocha::SUBTEXT_0,
             
-            // Semantic colors - vibrant but not harsh
-            primary: Color::Indexed(39),       // Bright blue
-            secondary: Color::Indexed(51),     // Bright cyan  
-            accent: Color::Indexed(201),       // Bright magenta
-            success: Color::Indexed(46),       // Bright green
-            warning: Color::Indexed(220),      // Golden yellow
-            error: Color::Indexed(196),        // Bright red
+            // Semantic colors
+            primary: CatppuccinMocha::BLUE,
+            secondary: CatppuccinMocha::SAPPHIRE,
+            accent: CatppuccinMocha::MAUVE,
+            success: CatppuccinMocha::GREEN,
+            warning: CatppuccinMocha::YELLOW,
+            error: CatppuccinMocha::RED,
             
-            // Role-specific colors - distinct and harmonious
-            user_color: Color::Indexed(82),     // Light green
-            assistant_color: Color::Indexed(75), // Light blue
-            system_color: Color::Indexed(141),  // Light purple
-            tool_color: Color::Indexed(214),    // Orange
-            tool_call_color: Color::Indexed(87), // Teal
-            tool_result_color: Color::Indexed(177), // Lavender
+            // Role-specific colors
+            user_color: CatppuccinMocha::GREEN,
+            assistant_color: CatppuccinMocha::BLUE,
+            system_color: CatppuccinMocha::LAVENDER,
+            tool_color: CatppuccinMocha::PEACH,
+            tool_call_color: CatppuccinMocha::TEAL,
+            tool_result_color: CatppuccinMocha::MAUVE,
             
-            // UI element colors - subtle but clear
-            selection_bg: Color::Indexed(236),  // Very dark gray
-            selection_fg: Color::Indexed(255), // Pure white
-            code_bg: Color::Indexed(234),      // Darker gray
-            code_fg: Color::Indexed(120),      // Light green
-            cursor_color: Color::Indexed(242), // Medium gray
+            // UI element colors
+            selection_bg: CatppuccinMocha::GREEN,
+            selection_fg: CatppuccinMocha::CRUST,
+            code_bg: CatppuccinMocha::SURFACE_0,
+            code_fg: CatppuccinMocha::GREEN,
+            cursor_color: CatppuccinMocha::OVERLAY_1,
         }
     }
 }
@@ -103,36 +138,7 @@ impl Theme {
     }
     
     pub fn rgb() -> Self {
-        // RGB version for terminals that support true color
-        Self {
-            // Base colors - modern gray scale
-            background: Color::Rgb(17, 24, 39),     // gray-900
-            foreground: Color::Rgb(248, 249, 250),  // gray-50
-            muted: Color::Rgb(108, 117, 125),       // gray-600
-            subtle: Color::Rgb(156, 163, 175),      // gray-400
-            
-            // Semantic colors - Tailwind-inspired
-            primary: Color::Rgb(59, 130, 246),      // blue-500
-            secondary: Color::Rgb(6, 182, 212),     // cyan-500
-            accent: Color::Rgb(168, 85, 247),       // purple-500
-            success: Color::Rgb(34, 197, 94),       // green-500
-            warning: Color::Rgb(251, 191, 36),      // amber-400
-            error: Color::Rgb(239, 68, 68),         // red-500
-            
-            // Role-specific colors
-            user_color: Color::Rgb(72, 187, 120),   // emerald-400
-            assistant_color: Color::Rgb(59, 130, 246), // blue-500
-            system_color: Color::Rgb(147, 112, 219), // mediumpurple
-            tool_color: Color::Rgb(251, 191, 36),   // amber-400
-            tool_call_color: Color::Rgb(6, 182, 212), // cyan-500
-            tool_result_color: Color::Rgb(168, 85, 247), // purple-500
-            
-            // UI element colors
-            selection_bg: Color::Rgb(55, 65, 81),   // gray-700
-            selection_fg: Color::Rgb(248, 249, 250), // gray-50
-            code_bg: Color::Rgb(31, 41, 55),        // gray-800
-            code_fg: Color::Rgb(34, 197, 94),       // green-500
-            cursor_color: Color::Rgb(156, 163, 175), // gray-400
-        }
+        // Catppuccin Mocha theme (same as default)
+        Self::default()
     }
 }
