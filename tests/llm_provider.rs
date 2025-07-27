@@ -1,43 +1,24 @@
 use aether::llm::{
-    LlmProvider, ChatRequest, ChatMessage, ChatResponse, ToolDefinition, ToolCall,
-    ProviderConfig, create_provider, StreamChunk, StreamChunkStream, ChatStream
+    LlmProvider, ChatRequest, ChatMessage, ToolDefinition, StreamChunk
 };
+use aether::llm::provider::{ToolCall, StreamChunkStream};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::json;
 use tokio_stream::iter;
 
 struct FakeOpenRouterProvider {
-    model: String,
+    _model: String,
 }
 
 impl FakeOpenRouterProvider {
     fn new(model: String) -> Self {
-        Self { model }
+        Self { _model: model }
     }
 }
 
 #[async_trait]
 impl LlmProvider for FakeOpenRouterProvider {
-    async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse> {
-        Ok(ChatResponse {
-            content: "Hello from fake OpenRouter!".to_string(),
-            tool_calls: vec![],
-        })
-    }
-
-    async fn complete_stream(&self, _request: ChatRequest) -> Result<ChatStream> {
-        let items = vec![
-            Ok("Hello".to_string()),
-            Ok(" from".to_string()),
-            Ok(" fake".to_string()),
-            Ok(" OpenRouter!".to_string()),
-        ];
-        
-        let stream = iter(items);
-        Ok(Box::pin(stream))
-    }
-
     async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamChunkStream> {
         let chunks = vec![
             Ok(StreamChunk::Content("Hello".to_string())),
@@ -50,43 +31,20 @@ impl LlmProvider for FakeOpenRouterProvider {
         let stream = iter(chunks);
         Ok(Box::pin(stream))
     }
-
-    fn get_model(&self) -> &str {
-        &self.model
-    }
 }
 
 struct FakeOllamaProvider {
-    model: String,
+    _model: String,
 }
 
 impl FakeOllamaProvider {
     fn new(model: String) -> Self {
-        Self { model }
+        Self { _model: model }
     }
 }
 
 #[async_trait]
 impl LlmProvider for FakeOllamaProvider {
-    async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse> {
-        Ok(ChatResponse {
-            content: "Hello from fake Ollama!".to_string(),
-            tool_calls: vec![],
-        })
-    }
-
-    async fn complete_stream(&self, _request: ChatRequest) -> Result<ChatStream> {
-        let items = vec![
-            Ok("Hello".to_string()),
-            Ok(" from".to_string()),
-            Ok(" fake".to_string()),
-            Ok(" Ollama!".to_string()),
-        ];
-        
-        let stream = iter(items);
-        Ok(Box::pin(stream))
-    }
-
     async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamChunkStream> {
         let chunks = vec![
             Ok(StreamChunk::Content("Hello".to_string())),
@@ -99,60 +57,10 @@ impl LlmProvider for FakeOllamaProvider {
         let stream = iter(chunks);
         Ok(Box::pin(stream))
     }
-
-    fn get_model(&self) -> &str {
-        &self.model
-    }
 }
 
 #[tokio::test]
-async fn test_provider_trait_complete() -> Result<()> {
-    let fake_provider = FakeOpenRouterProvider::new("test-model".to_string());
-    
-    let request = ChatRequest {
-        messages: vec![ChatMessage::User { 
-            content: "Hello, world!".to_string() 
-        }],
-        tools: vec![],
-        temperature: Some(0.7),
-    };
-    
-    let response = fake_provider.complete(request).await?;
-    assert_eq!(response.content, "Hello from fake OpenRouter!");
-    assert!(response.tool_calls.is_empty());
-    assert_eq!(fake_provider.get_model(), "test-model");
-    
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_provider_trait_complete_stream() -> Result<()> {
-    use tokio_stream::StreamExt;
-    
-    let fake_provider = FakeOllamaProvider::new("test-model".to_string());
-    
-    let request = ChatRequest {
-        messages: vec![ChatMessage::User { 
-            content: "Hello, world!".to_string() 
-        }],
-        tools: vec![],
-        temperature: Some(0.7),
-    };
-    
-    let mut stream = fake_provider.complete_stream(request).await?;
-    let mut collected = String::new();
-    
-    while let Some(chunk) = stream.next().await {
-        collected.push_str(&chunk?);
-    }
-    
-    assert_eq!(collected, "Hello from fake Ollama!");
-    
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_provider_trait_complete_stream_chunks() -> Result<()> {
+async fn test_openrouter_provider_stream_chunks() -> Result<()> {
     use tokio_stream::StreamExt;
     
     let fake_provider = FakeOpenRouterProvider::new("test-model".to_string());
@@ -188,7 +96,45 @@ async fn test_provider_trait_complete_stream_chunks() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_chat_request_with_tools() -> Result<()> {
+async fn test_ollama_provider_stream_chunks() -> Result<()> {
+    use tokio_stream::StreamExt;
+    
+    let fake_provider = FakeOllamaProvider::new("test-model".to_string());
+    
+    let request = ChatRequest {
+        messages: vec![ChatMessage::User { 
+            content: "Hello, world!".to_string() 
+        }],
+        tools: vec![],
+        temperature: Some(0.7),
+    };
+    
+    let mut stream = fake_provider.complete_stream_chunks(request).await?;
+    let mut content = String::new();
+    let mut done = false;
+    
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result?;
+        match chunk {
+            StreamChunk::Content(text) => content.push_str(&text),
+            StreamChunk::Done => {
+                done = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    
+    assert_eq!(content, "Hello from fake Ollama!");
+    assert!(done);
+    
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_stream_chunks_with_tools() -> Result<()> {
+    use tokio_stream::StreamExt;
+    
     let fake_provider = FakeOpenRouterProvider::new("test-model".to_string());
     
     let tool = ToolDefinition {
@@ -219,14 +165,32 @@ async fn test_chat_request_with_tools() -> Result<()> {
         temperature: Some(0.5),
     };
     
-    let response = fake_provider.complete(request).await?;
-    assert_eq!(response.content, "Hello from fake OpenRouter!");
+    let mut stream = fake_provider.complete_stream_chunks(request).await?;
+    let mut content = String::new();
+    let mut done = false;
+    
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result?;
+        match chunk {
+            StreamChunk::Content(text) => content.push_str(&text),
+            StreamChunk::Done => {
+                done = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    
+    assert_eq!(content, "Hello from fake OpenRouter!");
+    assert!(done);
     
     Ok(())
 }
 
 #[tokio::test]
 async fn test_chat_messages_variants() -> Result<()> {
+    use tokio_stream::StreamExt;
+    
     let fake_provider = FakeOllamaProvider::new("test-model".to_string());
     
     let request = ChatRequest {
@@ -249,43 +213,30 @@ async fn test_chat_messages_variants() -> Result<()> {
         temperature: None,
     };
     
-    let response = fake_provider.complete(request).await?;
-    assert_eq!(response.content, "Hello from fake Ollama!");
+    let mut stream = fake_provider.complete_stream_chunks(request).await?;
+    let mut content = String::new();
+    let mut done = false;
+    
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result?;
+        match chunk {
+            StreamChunk::Content(text) => content.push_str(&text),
+            StreamChunk::Done => {
+                done = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    
+    assert_eq!(content, "Hello from fake Ollama!");
+    assert!(done);
     
     Ok(())
 }
 
 #[test]
-fn test_provider_config_variants() {
-    let openrouter_config = ProviderConfig::OpenRouter {
-        api_key: "test-key".to_string(),
-        model: "test-model".to_string(),
-    };
-    
-    let ollama_config = ProviderConfig::Ollama {
-        base_url: Some("http://localhost:11434".to_string()),
-        model: "llama2".to_string(),
-    };
-    
-    match openrouter_config {
-        ProviderConfig::OpenRouter { api_key, model } => {
-            assert_eq!(api_key, "test-key");
-            assert_eq!(model, "test-model");
-        },
-        _ => panic!("Expected OpenRouter config"),
-    }
-    
-    match ollama_config {
-        ProviderConfig::Ollama { base_url, model } => {
-            assert_eq!(base_url, Some("http://localhost:11434".to_string()));
-            assert_eq!(model, "llama2");
-        },
-        _ => panic!("Expected Ollama config"),
-    }
-}
-
-#[test]
-fn test_provider_serialization() -> Result<()> {
+fn test_chat_request_serialization() -> Result<()> {
     let tool = ToolDefinition {
         name: "test_tool".to_string(),
         description: "A test tool".to_string(),
@@ -314,36 +265,30 @@ fn test_provider_serialization() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_tool_call_response() -> Result<()> {
+async fn test_tool_call_stream_chunks() -> Result<()> {
+    use tokio_stream::StreamExt;
+    
     struct ToolCallProvider;
     
     #[async_trait]
     impl LlmProvider for ToolCallProvider {
-        async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse> {
-            Ok(ChatResponse {
-                content: "I'll call a tool for you.".to_string(),
-                tool_calls: vec![
-                    ToolCall {
-                        id: "call_123".to_string(),
-                        name: "get_weather".to_string(),
-                        arguments: json!({"location": "San Francisco"}),
-                    }
-                ],
-            })
-        }
-
-        async fn complete_stream(&self, _request: ChatRequest) -> Result<ChatStream> {
-            let stream = iter(vec![Ok("Test".to_string())]);
-            Ok(Box::pin(stream))
-        }
-
         async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamChunkStream> {
-            let stream = iter(vec![Ok(StreamChunk::Done)]);
+            let chunks = vec![
+                Ok(StreamChunk::Content("I'll call a tool: ".to_string())),
+                Ok(StreamChunk::ToolCallStart { 
+                    id: "call_123".to_string(), 
+                    name: "get_weather".to_string() 
+                }),
+                Ok(StreamChunk::ToolCallArgument { 
+                    id: "call_123".to_string(), 
+                    argument: r#"{"location": "San Francisco"}"#.to_string() 
+                }),
+                Ok(StreamChunk::ToolCallComplete { id: "call_123".to_string() }),
+                Ok(StreamChunk::Done),
+            ];
+            
+            let stream = iter(chunks);
             Ok(Box::pin(stream))
-        }
-
-        fn get_model(&self) -> &str {
-            "test-model"
         }
     }
     
@@ -356,14 +301,37 @@ async fn test_tool_call_response() -> Result<()> {
         temperature: None,
     };
     
-    let response = provider.complete(request).await?;
-    assert_eq!(response.content, "I'll call a tool for you.");
-    assert_eq!(response.tool_calls.len(), 1);
+    let mut stream = provider.complete_stream_chunks(request).await?;
+    let mut content = String::new();
+    let mut tool_calls = Vec::new();
+    let mut done = false;
     
-    let tool_call = &response.tool_calls[0];
-    assert_eq!(tool_call.id, "call_123");
-    assert_eq!(tool_call.name, "get_weather");
-    assert_eq!(tool_call.arguments, json!({"location": "San Francisco"}));
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result?;
+        match chunk {
+            StreamChunk::Content(text) => content.push_str(&text),
+            StreamChunk::ToolCallStart { id, name } => {
+                tool_calls.push((id, name, String::new()));
+            }
+            StreamChunk::ToolCallArgument { id, argument } => {
+                if let Some(call) = tool_calls.iter_mut().find(|(call_id, _, _)| call_id == &id) {
+                    call.2.push_str(&argument);
+                }
+            }
+            StreamChunk::ToolCallComplete { .. } => {}
+            StreamChunk::Done => {
+                done = true;
+                break;
+            }
+        }
+    }
+    
+    assert_eq!(content, "I'll call a tool: ");
+    assert_eq!(tool_calls.len(), 1);
+    assert_eq!(tool_calls[0].0, "call_123");
+    assert_eq!(tool_calls[0].1, "get_weather");
+    assert_eq!(tool_calls[0].2, r#"{"location": "San Francisco"}"#);
+    assert!(done);
     
     Ok(())
 }

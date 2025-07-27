@@ -821,7 +821,12 @@ mod tests {
         let result = Config::load_mcp_config(&file_path).unwrap();
         assert_eq!(result.len(), 1);
         assert!(result.contains_key("test"));
-        assert_eq!(result["test"].url, "http://localhost:3000");
+        match &result["test"] {
+            McpServerConfig::Http { url, .. } => {
+                assert_eq!(url, "http://localhost:3000");
+            }
+            _ => panic!("Expected Http config"),
+        }
     }
 
     #[test]
