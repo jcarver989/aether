@@ -1,41 +1,8 @@
-// Re-export rmcp types for convenience
-pub use rmcp::model::{
-    Tool, CallToolRequestParam, CallToolRequest,
-    ListToolsRequest,
-};
-
-use serde_json::Value;
-use thiserror::Error;
-
-/// Application-specific error types for MCP operations
-#[derive(Debug, Error)]
-pub enum McpError {
-    #[error("Connection failed: {0}")]
-    ConnectionFailed(String),
-    
-    #[error("Tool not found: {0}")]
-    ToolNotFound(String),
-    
-    #[error("Tool execution failed: {0}")]
-    ToolExecutionFailed(String),
-    
-    #[error("Server initialization failed: {0}")]
-    InitializationFailed(String),
-    
-    #[error("Protocol error: {0}")]
-    ProtocolError(String),
-    
-    #[error("Transport error: {0}")]
-    TransportError(#[from] rmcp::ErrorData),
-}
-
-/// Application result type for MCP operations
-pub type McpResult<T> = Result<T, McpError>;
 
 /// Helper functions for common MCP operations
+#[cfg(test)]
 pub mod helpers {
-    use super::*;
-    use serde_json::json;
+    use serde_json::Value;
     
     /// Create tool call arguments from key-value pairs
     pub fn create_tool_args(args: &[(&str, Value)]) -> Value {

@@ -28,16 +28,6 @@ impl InputState {
         }
     }
 
-    pub fn from_text(text: &str) -> Self {
-        let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-        let lines = if lines.is_empty() { vec![String::new()] } else { lines };
-        
-        Self {
-            cursor_line: lines.len().saturating_sub(1),
-            cursor_col: lines.last().map(|l| l.len()).unwrap_or(0),
-            lines,
-        }
-    }
 
     fn insert_char(&mut self, ch: char) {
         if self.cursor_line < self.lines.len() {
@@ -160,17 +150,8 @@ impl Input {
         }
     }
 
-    pub fn set_placeholder(&mut self, placeholder: String) {
-        self.placeholder = placeholder;
-    }
 
-    pub fn get_text(&self) -> String {
-        self.state.to_string()
-    }
 
-    fn clear(&mut self) {
-        self.state.clear();
-    }
 
     fn format_lines(&self) -> Vec<Line<'static>> {
         if self.state.is_empty() && !self.placeholder.is_empty() {

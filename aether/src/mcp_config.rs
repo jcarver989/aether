@@ -30,32 +30,4 @@ impl Default for McpServerConfig {
 }
 
 impl McpServerConfig {
-    pub fn is_http(&self) -> bool {
-        matches!(self, McpServerConfig::Http { .. })
-    }
-    
-    pub fn is_process(&self) -> bool {
-        matches!(self, McpServerConfig::Process { .. })
-    }
-    
-    pub fn url(&self) -> Option<&str> {
-        match self {
-            McpServerConfig::Http { url, .. } => Some(url),
-            _ => None,
-        }
-    }
-    
-    pub fn command(&self) -> Option<&str> {
-        match self {
-            McpServerConfig::Process { command, .. } => Some(command),
-            _ => None,
-        }
-    }
-    
-    pub fn args(&self) -> Option<&[String]> {
-        match self {
-            McpServerConfig::Process { args, .. } => Some(args),
-            _ => None,
-        }
-    }
 }

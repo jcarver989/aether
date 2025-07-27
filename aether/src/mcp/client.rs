@@ -1,13 +1,12 @@
 use color_eyre::Result;
-use anyhow::{anyhow, Context};
 use rmcp::{
     service::RunningService, RoleClient,
-    model::{CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation, ListToolsRequest, InitializeRequestParam},
+    model::{CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation, InitializeRequestParam},
     transport::StreamableHttpClientTransport,
 };
 use serde_json::Value;
 use std::collections::HashMap;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::mcp_config::McpServerConfig;
 use super::registry::ToolRegistry;
@@ -18,7 +17,6 @@ pub struct McpClient {
 }
 
 struct McpServer {
-    name: String,
     client: RunningService<RoleClient, InitializeRequestParam>,
 }
 
@@ -64,7 +62,6 @@ impl McpClient {
             .map_err(|e| color_eyre::Report::msg(format!("Failed to connect to HTTP MCP server {}: {}", name, e)))?;
         
         let server = McpServer {
-            name: name.clone(),
             client,
         };
         
@@ -173,17 +170,3 @@ impl McpClient {
     }
 }
 
-trait Pipe<T> {
-    fn pipe<F, U>(self, f: F) -> U
-    where
-        F: FnOnce(T) -> U;
-}
-
-impl<T> Pipe<T> for T {
-    fn pipe<F, U>(self, f: F) -> U
-    where
-        F: FnOnce(T) -> U,
-    {
-        f(self)
-    }
-}

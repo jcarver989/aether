@@ -349,7 +349,7 @@ impl Config {
     fn get_model_from_env(provider: &ProviderType) -> String {
         env::var("DEFAULT_MODEL").unwrap_or_else(|_| {
             match provider {
-                ProviderType::OpenRouter => "anthropic/claude-3.5-sonnet".to_string(),
+                ProviderType::OpenRouter => "qwen/qwen3-coder".to_string(),
                 ProviderType::Ollama => "llama2".to_string(),
             }
         })

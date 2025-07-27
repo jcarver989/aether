@@ -162,6 +162,7 @@ impl Chat {
             if line.starts_with("```") {
                 if in_code_block {
                     in_code_block = false;
+                    code_language.clear();
                     lines.push(Line::from(Span::styled("```", Style::default().fg(Color::DarkGray))));
                 } else {
                     in_code_block = true;

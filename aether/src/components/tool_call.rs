@@ -22,16 +22,6 @@ pub struct ToolCallComponent {
 }
 
 impl ToolCallComponent {
-    pub fn new(tool_call: ToolCall) -> Self {
-        Self {
-            tool_call,
-            state: ToolCallState::Pending,
-            result: None,
-            expanded: false,
-            command_tx: None,
-            config: Config::default(),
-        }
-    }
 
     fn set_state(&mut self, state: ToolCallState) {
         self.state = state;
@@ -45,9 +35,6 @@ impl ToolCallComponent {
         self.expanded = !self.expanded;
     }
 
-    pub fn is_expanded(&self) -> bool {
-        self.expanded
-    }
 
     fn get_state_symbol_and_color(&self) -> (char, Color) {
         match self.state {

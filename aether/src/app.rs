@@ -296,7 +296,7 @@ impl App {
                     self.handle_stream_chunk(chunk.clone()).await?;
                 }
                 Action::ExecuteToolCall(ref tool_call) => {
-                    self.handle_tool_call(tool_call.clone()).await?;
+                    self.handle_execute_tool_call(tool_call.clone()).await?;
                 }
                 Action::ReceiveAssistantMessage(ref message) => {
                     self.action_tx.send(Action::AddChatMessage(ChatMessage::Assistant { 
@@ -486,7 +486,10 @@ impl App {
                 if let Some(partial_call) = self.active_tool_calls.remove(&id) {
                     // Parse the accumulated arguments as JSON
                     match serde_json::from_str(&partial_call.arguments) {
-                        Ok(arguments) => {
+                        Ok(mut arguments) => {
+                            // Fix malformed JSON string arguments from models
+                            arguments = self.fix_json_string_arguments(arguments);
+                            
                             let tool_call = crate::types::ToolCall {
                                 id: partial_call.id,
                                 name: partial_call.name,
@@ -512,37 +515,44 @@ impl App {
         Ok(())
     }
     
-    async fn handle_tool_call(&mut self, tool_call: crate::types::ToolCall) -> Result<()> {
+    /// Fix malformed JSON string arguments from LLM models.
+    /// Some models incorrectly return argument values as JSON strings instead of their actual types.
+    /// For example: {"query": "[\"value\"]"} instead of {"query": ["value"]}
+    fn fix_json_string_arguments(&self, mut arguments: serde_json::Value) -> serde_json::Value {
+        if let Some(obj) = arguments.as_object_mut() {
+            for (_key, value) in obj.iter_mut() {
+                if let Some(string_val) = value.as_str() {
+                    // Try to parse the string as JSON
+                    if let Ok(parsed_val) = serde_json::from_str::<serde_json::Value>(string_val) {
+                        // Only replace if the parsed value is not a string (to avoid infinite recursion)
+                        match parsed_val {
+                            serde_json::Value::Array(_) | 
+                            serde_json::Value::Object(_) | 
+                            serde_json::Value::Number(_) | 
+                            serde_json::Value::Bool(_) |
+                            serde_json::Value::Null => {
+                                *value = parsed_val;
+                            }
+                            _ => {
+                                // If it's still a string, don't replace
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        arguments
+    }
+    
+    async fn handle_execute_tool_call(&mut self, tool_call: crate::types::ToolCall) -> Result<()> {
+        debug!("Executing tool call: {} with args: {}", tool_call.name, tool_call.arguments);
+        
         // Add tool call to chat
         self.action_tx.send(Action::AddChatMessage(ChatMessage::ToolCall { 
             name: tool_call.name.clone(),
             params: tool_call.arguments.to_string(),
             timestamp: chrono::Utc::now(),
         }))?;
-        
-        // Execute the tool call
-        self.action_tx.send(Action::ExecuteToolCall(tool_call))?;
-        
-        Ok(())
-    }
-    
-    async fn handle_execute_tool_call(&mut self, tool_call: crate::types::ToolCall) -> Result<()> {
-        debug!("Executing tool call: {} with args: {}", tool_call.name, tool_call.arguments);
-        
-        // Update tool call state to running
-        self.action_tx.send(Action::UpdateToolCallState { 
-            id: tool_call.id.clone(),
-            state: crate::types::ToolCallState::Running 
-        })?;
-        
-        // Execute the tool directly via MCP
-        self.handle_execute_mcp_tool(tool_call.name.clone(), tool_call.arguments.clone()).await?;
-        
-        Ok(())
-    }
-    
-    async fn handle_execute_mcp_tool(&mut self, tool_name: String, params: serde_json::Value) -> Result<()> {
-        debug!("Executing MCP tool: {} with params: {}", tool_name, params);
         
         let mcp_client = match &self.mcp_client {
             Some(client) => client,
@@ -555,18 +565,8 @@ impl App {
             }
         };
         
-        // Validate tool exists
-        let available_tools = mcp_client.get_available_tools();
-        if !available_tools.contains(&tool_name) {
-            self.action_tx.send(Action::AddChatMessage(ChatMessage::Error { 
-                message: format!("Tool not found: {}", tool_name),
-                timestamp: chrono::Utc::now(),
-            }))?;
-            return Ok(());
-        }
-        
         // Execute the tool via MCP with timeout
-        let execution_future = mcp_client.execute_tool(&tool_name, params);
+        let execution_future = mcp_client.execute_tool(&tool_call.name, tool_call.arguments);
         let timeout_duration = std::time::Duration::from_secs(30); // 30 second timeout
         
         match tokio::time::timeout(timeout_duration, execution_future).await {
@@ -584,7 +584,7 @@ impl App {
                 }))?;
             }
             Err(_) => {
-                error!("MCP tool execution timed out: {}", tool_name);
+                error!("MCP tool execution timed out: {}", tool_call.name);
                 self.action_tx.send(Action::AddChatMessage(ChatMessage::Error { 
                     message: format!("Tool execution timed out after {} seconds", timeout_duration.as_secs()),
                     timestamp: chrono::Utc::now(),
@@ -594,7 +594,7 @@ impl App {
         
         Ok(())
     }
-    
+
     async fn handle_refresh_tools(&mut self) -> Result<()> {
         debug!("Refreshing tools from MCP servers");
         

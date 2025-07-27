@@ -19,7 +19,7 @@ use async_openai::{
 use async_trait::async_trait;
 use tokio_stream::StreamExt;
 
-use super::provider::{LlmProvider, ChatRequest, ChatMessage, ChatResponse, ToolCall, ToolDefinition, ChatStream, StreamChunk, StreamChunkStream};
+use super::provider::{LlmProvider, ChatRequest, ChatMessage, ToolDefinition, StreamChunk, StreamChunkStream};
 
 pub struct OllamaProvider {
     client: Client<OpenAIConfig>,
@@ -60,6 +60,7 @@ impl OllamaProvider {
                     tool_calls: None,
                     audio: None,
                     refusal: None,
+                    function_call: None,
                 })
             },
             ChatMessage::Tool { tool_call_id, content } => {
@@ -88,79 +89,6 @@ impl OllamaProvider {
 
 #[async_trait]
 impl LlmProvider for OllamaProvider {
-    async fn complete(&self, request: ChatRequest) -> Result<ChatResponse> {
-        let messages = self.convert_messages(request.messages);
-        let tools = if request.tools.is_empty() {
-            None
-        } else {
-            Some(self.convert_tools(request.tools))
-        };
-        
-        let req = CreateChatCompletionRequest {
-            model: self.model.clone(),
-            messages,
-            tools,
-            temperature: request.temperature,
-            stream: Some(false),
-            ..Default::default()
-        };
-        
-        let response = self.client.chat().create(req).await?;
-        
-        let choice = response.choices.into_iter().next()
-            .ok_or_else(|| anyhow::anyhow!("No response choices returned"))?;
-        
-        let content = choice.message.content.unwrap_or_default();
-        let tool_calls = choice.message.tool_calls.unwrap_or_default()
-            .into_iter()
-            .map(|tc| ToolCall {
-                id: tc.id,
-                name: tc.function.name,
-                arguments: serde_json::from_str(&tc.function.arguments).unwrap_or_default(),
-            })
-            .collect();
-        
-        Ok(ChatResponse { content, tool_calls })
-    }
-    
-    async fn complete_stream(&self, request: ChatRequest) -> Result<ChatStream> {
-        let messages = self.convert_messages(request.messages);
-        let tools = if request.tools.is_empty() {
-            None
-        } else {
-            Some(self.convert_tools(request.tools))
-        };
-        
-        let req = CreateChatCompletionRequest {
-            model: self.model.clone(),
-            messages,
-            tools,
-            temperature: request.temperature,
-            stream: Some(true),
-            ..Default::default()
-        };
-        
-        let stream = self.client.chat().create_stream(req).await?;
-        
-        let mapped_stream = stream.map(|result| {
-            match result {
-                Ok(response) => {
-                    if let Some(choice) = response.choices.first() {
-                        if let Some(content) = &choice.delta.content {
-                            Ok(content.clone())
-                        } else {
-                            Ok(String::new())
-                        }
-                    } else {
-                        Ok(String::new())
-                    }
-                },
-                Err(e) => Err(anyhow::anyhow!("Stream error: {}", e)),
-            }
-        });
-        
-        Ok(Box::pin(mapped_stream))
-    }
 
     async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream> {
         let messages = self.convert_messages(request.messages);
@@ -235,7 +163,4 @@ impl LlmProvider for OllamaProvider {
         Ok(Box::pin(mapped_stream))
     }
     
-    fn get_model(&self) -> &str {
-        &self.model
-    }
 }
