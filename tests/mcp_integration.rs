@@ -5,8 +5,9 @@ use std::collections::HashMap;
 
 #[tokio::test]
 async fn test_mcp_client_creation() {
-    let client = McpClient::new();
-    assert!(client.get_available_tools().is_empty());
+    let _client = McpClient::new();
+    // Client no longer has built-in tool registry methods
+    // Tools are discovered via discover_tools() and managed in separate ToolRegistry
 }
 
 #[tokio::test]
@@ -79,12 +80,12 @@ async fn test_mcp_server_config_serialization() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_mcp_client_tool_registry() {
+async fn test_mcp_client_tool_discovery() {
     let client = McpClient::new();
 
-    // Test that tool registry starts empty
-    assert_eq!(client.get_available_tools().len(), 0);
-    assert!(client.get_tool_description("nonexistent").is_none());
+    // Test that tool discovery returns empty list when no servers connected
+    let discovered_tools = client.discover_tools().await.unwrap();
+    assert!(discovered_tools.is_empty());
 }
 
 #[test]

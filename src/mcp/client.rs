@@ -3,7 +3,7 @@ use rmcp::{
     RoleClient,
     model::{
         CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation,
-        InitializeRequestParam,
+        InitializeRequestParam, Tool as RmcpTool,
     },
     service::RunningService,
     transport::StreamableHttpClientTransport,
@@ -12,12 +12,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use tracing::{debug, error, info};
 
-use super::registry::ToolRegistry;
 use crate::mcp_config::McpServerConfig;
 
 pub struct McpClient {
     servers: HashMap<String, McpServer>,
-    registry: ToolRegistry,
 }
 
 struct McpServer {
@@ -28,7 +26,6 @@ impl McpClient {
     pub fn new() -> Self {
         Self {
             servers: HashMap::new(),
-            registry: ToolRegistry::new(),
         }
     }
 
@@ -89,8 +86,9 @@ impl McpClient {
         Ok(())
     }
 
-    pub async fn discover_tools(&mut self) -> Result<()> {
+    pub async fn discover_tools(&self) -> Result<Vec<(String, RmcpTool)>> {
         info!("Discovering tools from all connected servers");
+        let mut discovered_tools = Vec::new();
 
         for (server_name, server) in &self.servers {
             debug!("Discovering tools from server: {}", server_name);
@@ -99,7 +97,7 @@ impl McpClient {
                 Ok(tools_response) => {
                     for tool in tools_response.tools {
                         debug!("Found tool: {} from server: {}", tool.name, server_name);
-                        self.registry.register_tool(server_name.clone(), tool);
+                        discovered_tools.push((server_name.clone(), tool));
                     }
                 }
                 Err(e) => {
@@ -115,13 +113,13 @@ impl McpClient {
 
         info!(
             "Tool discovery completed. Found {} tools total",
-            self.registry.tool_count()
+            discovered_tools.len()
         );
-        Ok(())
+        Ok(discovered_tools)
     }
 
-    pub async fn execute_tool(&self, tool_name: &str, args: Value) -> Result<Value> {
-        debug!("Executing tool: {} with args: {}", tool_name, args);
+    pub async fn execute_tool(&self, server_name: &str, tool_name: &str, args: Value) -> Result<Value> {
+        debug!("Executing tool: {} on server: {} with args: {}", tool_name, server_name, args);
 
         // Log to file helper
         fn log_debug(msg: &str) {
@@ -141,16 +139,9 @@ impl McpClient {
         }
 
         log_debug(&format!(
-            "Executing tool: {} with args: {}",
-            tool_name, args
+            "Executing tool: {} on server: {} with args: {}",
+            tool_name, server_name, args
         ));
-
-        let server_name = self
-            .registry
-            .get_server_for_tool(tool_name)
-            .ok_or_else(|| color_eyre::Report::msg(format!("Tool not found: {}", tool_name)))?;
-
-        log_debug(&format!("Found tool on server: {}", server_name));
 
         let server = self
             .servers
@@ -204,20 +195,4 @@ impl McpClient {
         Ok(result_value)
     }
 
-    pub fn get_available_tools(&self) -> Vec<String> {
-        self.registry.list_tools()
-    }
-
-    pub fn get_tool_description(&self, tool_name: &str) -> Option<String> {
-        self.registry.get_tool_description(tool_name)
-    }
-
-    pub fn get_tool_parameters(&self, tool_name: &str) -> Option<&Value> {
-        self.registry.get_tool_parameters(tool_name)
-    }
-
-    /// Get a clone of the tool registry
-    pub fn get_tool_registry(&self) -> ToolRegistry {
-        self.registry.clone()
-    }
 }

@@ -416,11 +416,25 @@ impl<T: LlmProvider> App<T> {
         
         self.agent.add_message(tool_call_message);
 
-        // For now, return a placeholder result
-        // TODO: Implement proper tool execution via Agent or dedicated tool executor
+        // Execute the tool using the agent
+        let result = self.agent.execute_tool(&tool_call.name, tool_call.arguments.clone()).await;
+        
+        let result_content = match result {
+            Ok(result_value) => {
+                // Convert the result to a readable string
+                match result_value {
+                    serde_json::Value::String(s) => s,
+                    other => serde_json::to_string_pretty(&other).unwrap_or_else(|_| format!("{:?}", other)),
+                }
+            }
+            Err(e) => {
+                format!("Tool execution failed: {}", e)
+            }
+        };
+        
         self.action_tx.send(Action::ToolExecutionResult {
             tool_call_id: tool_call.id.clone(),
-            result: format!("Tool execution not yet implemented: {}", tool_call.name),
+            result: result_content,
         })?;
 
         Ok(())

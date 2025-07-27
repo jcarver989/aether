@@ -2,6 +2,7 @@ use clap::Parser;
 use cli::Cli;
 use color_eyre::Result;
 use config::Config;
+use std::sync::Arc;
 
 use crate::{app::App, agent::Agent, mcp::{McpClient, registry::ToolRegistry}};
 
@@ -41,11 +42,21 @@ async fn main() -> Result<()> {
         }
     }
     
-    // Discover tools
-    let tool_registry = if mcp_client.discover_tools().await.is_ok() {
-        mcp_client.get_tool_registry()
-    } else {
-        ToolRegistry::new()
+    // Discover tools and create registry
+    let tool_registry = match mcp_client.discover_tools().await {
+        Ok(discovered_tools) => {
+            let mut registry = ToolRegistry::new();
+            // Register all discovered tools
+            for (server_name, tool) in discovered_tools {
+                registry.register_tool(server_name, tool);
+            }
+            // Wrap MCP client in Arc after discovery
+            let mcp_client_arc = Arc::new(mcp_client);
+            // Set the MCP client in the registry for tool execution
+            registry.set_mcp_client(mcp_client_arc);
+            registry
+        }
+        Err(_) => ToolRegistry::new(),
     };
     
     // Create the appropriate provider and agent based on configuration
@@ -63,7 +74,7 @@ async fn main() -> Result<()> {
                 color_eyre::Report::msg(format!("Failed to create OpenRouter provider: {}", e))
             })?;
             
-            let agent = Agent::new(provider, tool_registry, config.config.agent_context.clone());
+            let agent = Agent::new(provider, tool_registry.clone(), config.config.agent_context.clone());
             let mut app = App::new(&args, agent)?;
             app.run().await?;
         }

@@ -11,7 +11,7 @@ pub struct Agent<T: LlmProvider> {
     /// The LLM provider (e.g., OpenRouter, Ollama) for this agent
     llm_provider: T,
     
-    /// Tool registry containing available tools
+    /// Tool registry containing available tools and MCP clients
     tool_registry: ToolRegistry,
     
     /// Conversation history for this agent
@@ -276,10 +276,8 @@ impl<T: LlmProvider> Agent<T> {
         self.tool_registry = new_registry;
     }
     
-    /// Execute a tool call (placeholder - would need MCP client integration)
-    pub async fn execute_tool(&self, tool_name: &str, _arguments: serde_json::Value) -> Result<serde_json::Value> {
-        // For now, return an error indicating tool execution isn't implemented in Agent
-        // This would need integration with MCP client or a tool execution service
-        Err(color_eyre::Report::msg(format!("Tool execution not implemented in Agent: {}", tool_name)))
+    /// Execute a tool call using the tool registry
+    pub async fn execute_tool(&self, tool_name: &str, arguments: serde_json::Value) -> Result<serde_json::Value> {
+        self.tool_registry.invoke_tool(tool_name, arguments).await
     }
 }
