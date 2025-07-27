@@ -48,6 +48,8 @@ pub enum Action {
         result: String,
     },
     RefreshTools,
+    // Continue conversation after tool execution
+    ContinueConversation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
