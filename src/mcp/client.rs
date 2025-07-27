@@ -215,4 +215,9 @@ impl McpClient {
     pub fn get_tool_parameters(&self, tool_name: &str) -> Option<&Value> {
         self.registry.get_tool_parameters(tool_name)
     }
+
+    /// Get a clone of the tool registry
+    pub fn get_tool_registry(&self) -> ToolRegistry {
+        self.registry.clone()
+    }
 }

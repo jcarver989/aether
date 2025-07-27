@@ -2,23 +2,22 @@ use color_eyre::Result;
 use crossterm::event::KeyEvent;
 use ratatui::prelude::Rect;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
 use crate::{
     action::Action,
+    agent::Agent,
     cli::Cli,
     components::{Component, fps::FpsCounter, home::Home},
     config::{AppConfig, Config},
-    llm::{ChatMessage as LlmChatMessage, ChatRequest, LlmProvider, ToolDefinition},
-    mcp::McpClient,
+    llm::LlmProvider,
     tui::{Event, Tui},
     types::ChatMessage,
 };
 
-pub struct App {
+pub struct App<T: LlmProvider> {
     config: Config,
     app_config: AppConfig,
     components: Vec<Box<dyn Component>>,
@@ -28,18 +27,7 @@ pub struct App {
     last_tick_key_events: Vec<KeyEvent>,
     action_tx: mpsc::UnboundedSender<Action>,
     action_rx: mpsc::UnboundedReceiver<Action>,
-    llm_provider: Option<Box<dyn LlmProvider>>,
-    mcp_client: Option<McpClient>,
-    active_tool_calls: HashMap<String, PartialToolCall>,
-    conversation_history: Vec<ChatMessage>,
-    recent_tool_calls: VecDeque<(String, serde_json::Value, chrono::DateTime<chrono::Utc>)>, // (name, args, timestamp)
-}
-
-#[derive(Debug, Clone)]
-struct PartialToolCall {
-    id: String,
-    name: String,
-    arguments: String,
+    agent: Agent<T>,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -48,25 +36,13 @@ pub enum Mode {
     Home,
 }
 
-impl App {
-    pub fn new(cli_args: &Cli) -> Result<Self> {
+impl<T: LlmProvider> App<T> {
+    pub fn new(cli_args: &Cli, agent: Agent<T>) -> Result<Self> {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
 
         // Load configuration with CLI args
         let config = Config::with_cli_args(Some(cli_args))?;
         let app_config = config.config.clone();
-
-        // Initialize LLM provider from configuration
-        let llm_provider = match Self::create_provider(&app_config.llm) {
-            Ok(provider) => Some(provider),
-            Err(e) => {
-                error!("Failed to initialize LLM provider: {}", e);
-                None
-            }
-        };
-
-        // Initialize MCP client
-        let mcp_client = McpClient::new();
 
         Ok(Self {
             components: vec![Box::new(Home::new()), Box::new(FpsCounter::default())],
@@ -78,144 +54,12 @@ impl App {
             last_tick_key_events: Vec::new(),
             action_tx,
             action_rx,
-            llm_provider,
-            mcp_client: Some(mcp_client),
-            active_tool_calls: HashMap::new(),
-            conversation_history: Vec::new(),
-            recent_tool_calls: VecDeque::new(),
+            agent,
         })
     }
 
-    fn create_provider(llm_config: &crate::config::LlmConfig) -> Result<Box<dyn LlmProvider>> {
-        use crate::config::ProviderType;
-        use crate::llm::{ollama::OllamaProvider, openrouter::OpenRouterProvider};
-
-        match llm_config.provider {
-            ProviderType::OpenRouter => {
-                let api_key = llm_config
-                    .openrouter_api_key
-                    .as_ref()
-                    .ok_or_else(|| color_eyre::Report::msg("OpenRouter API key not found"))?;
-                let provider = OpenRouterProvider::new(api_key.clone(), llm_config.model.clone())
-                    .map_err(|e| {
-                    color_eyre::Report::msg(format!("Failed to create OpenRouter provider: {}", e))
-                })?;
-                Ok(Box::new(provider))
-            }
-            ProviderType::Ollama => {
-                let provider = OllamaProvider::new(
-                    Some(llm_config.ollama_base_url.clone()),
-                    llm_config.model.clone(),
-                )
-                .map_err(|e| {
-                    color_eyre::Report::msg(format!("Failed to create Ollama provider: {}", e))
-                })?;
-                Ok(Box::new(provider))
-            }
-        }
-    }
-
-    async fn initialize_mcp_client(&mut self) -> Result<()> {
-        let mcp_client = match &mut self.mcp_client {
-            Some(client) => client,
-            None => {
-                warn!("MCP client not available");
-                return Ok(());
-            }
-        };
-
-        // Use MCP configuration from app config
-        let config = &self.app_config.mcp.servers;
-
-        if config.is_empty() {
-            warn!("No MCP servers configured");
-            self.action_tx
-                .send(Action::AddChatMessage(ChatMessage::Error {
-                    message: "No MCP servers configured".to_string(),
-                    timestamp: chrono::Utc::now(),
-                }))?;
-            return Ok(());
-        }
-
-        let mut connected_servers = 0;
-
-        // Connect to configured servers with timeout
-        for (name, server_config) in config {
-            let connect_timeout = std::time::Duration::from_secs(10);
-            let connect_future = mcp_client.connect_server(name.clone(), server_config.clone());
-
-            match tokio::time::timeout(connect_timeout, connect_future).await {
-                Ok(Ok(())) => {
-                    info!("Successfully connected to MCP server: {}", name);
-                    connected_servers += 1;
-                }
-                Ok(Err(e)) => {
-                    error!("Failed to connect to MCP server {}: {}", name, e);
-                    // Send notification but continue with other servers
-                    self.action_tx
-                        .send(Action::AddChatMessage(ChatMessage::Error {
-                            message: format!("Failed to connect to MCP server '{}': {}", name, e),
-                            timestamp: chrono::Utc::now(),
-                        }))?;
-                }
-                Err(_) => {
-                    error!("Connection to MCP server {} timed out", name);
-                    self.action_tx
-                        .send(Action::AddChatMessage(ChatMessage::Error {
-                            message: format!("Connection to MCP server '{}' timed out", name),
-                            timestamp: chrono::Utc::now(),
-                        }))?;
-                }
-            }
-        }
-
-        if connected_servers == 0 {
-            warn!("No MCP servers successfully connected");
-            self.action_tx
-                .send(Action::AddChatMessage(ChatMessage::Error {
-                    message:
-                        "No MCP servers could be connected. Tool functionality will be limited."
-                            .to_string(),
-                    timestamp: chrono::Utc::now(),
-                }))?;
-            return Ok(());
-        }
-
-        // Discover tools from all connected servers
-        match mcp_client.discover_tools().await {
-            Ok(()) => {
-                let tool_count = mcp_client.get_available_tools().len();
-                info!(
-                    "Successfully discovered {} tools from {} servers",
-                    tool_count, connected_servers
-                );
-                self.action_tx
-                    .send(Action::AddChatMessage(ChatMessage::Assistant {
-                        content: format!(
-                            "Connected to {} MCP servers and discovered {} tools",
-                            connected_servers, tool_count
-                        ),
-                        timestamp: chrono::Utc::now(),
-                    }))?;
-            }
-            Err(e) => {
-                error!("Failed to discover tools: {}", e);
-                self.action_tx
-                    .send(Action::AddChatMessage(ChatMessage::Error {
-                        message: format!("Failed to discover tools: {}", e),
-                        timestamp: chrono::Utc::now(),
-                    }))?;
-            }
-        }
-
-        Ok(())
-    }
 
     pub async fn run(&mut self) -> Result<()> {
-        // Initialize MCP client and connect to servers
-        if let Err(e) = self.initialize_mcp_client().await {
-            error!("Failed to initialize MCP client: {}", e);
-        }
 
         let mut tui = Tui::new()?
             .mouse(true) // Enable mouse support for scrolling
@@ -320,25 +164,12 @@ impl App {
                     self.handle_stream_chunk(chunk.clone()).await?;
                 }
                 Action::StreamContent(ref content) => {
-                    // Update or create AssistantStreaming message in conversation history
-                    if let Some(ChatMessage::AssistantStreaming {
-                        content: current_content,
-                        timestamp: _,
-                    }) = self.conversation_history.last_mut()
-                    {
-                        // Append to existing streaming message
-                        current_content.push_str(content);
-                    } else {
-                        // Create new streaming message
-                        self.conversation_history.push(ChatMessage::AssistantStreaming {
-                            content: content.clone(),
-                            timestamp: chrono::Utc::now(),
-                        });
-                    }
+                    // Update or create AssistantStreaming message in agent
+                    self.agent.append_streaming_content(content);
                 }
                 Action::StartStreaming => {
-                    // Create initial empty streaming message
-                    self.conversation_history.push(ChatMessage::AssistantStreaming {
+                    // Create initial empty streaming message in agent
+                    self.agent.add_message(ChatMessage::AssistantStreaming {
                         content: String::new(),
                         timestamp: chrono::Utc::now(),
                     });
@@ -347,47 +178,43 @@ impl App {
                     self.handle_execute_tool_call(tool_call.clone()).await?;
                 }
                 Action::ReceiveAssistantMessage(ref message) => {
-                    self.action_tx
-                        .send(Action::AddChatMessage(ChatMessage::Assistant {
-                            content: message.clone(),
-                            timestamp: chrono::Utc::now(),
-                        }))?;
+                    let assistant_message = ChatMessage::Assistant {
+                        content: message.clone(),
+                        timestamp: chrono::Utc::now(),
+                    };
+                    self.action_tx.send(Action::AddChatMessage(assistant_message.clone()))?;
+                    self.agent.add_message(assistant_message);
                 }
                 Action::ToolExecutionResult {
                     ref tool_call_id,
                     ref result,
                 } => {
-                    self.action_tx
-                        .send(Action::AddChatMessage(ChatMessage::ToolResult {
-                            tool_call_id: tool_call_id.clone(),
-                            content: result.clone(),
-                            timestamp: chrono::Utc::now(),
-                        }))?;
+                    let tool_result_message = ChatMessage::ToolResult {
+                        tool_call_id: tool_call_id.clone(),
+                        content: result.clone(),
+                        timestamp: chrono::Utc::now(),
+                    };
+                    self.action_tx.send(Action::AddChatMessage(tool_result_message.clone()))?;
+                    self.agent.add_message(tool_result_message);
                     // Automatically continue the conversation after tool execution
                     self.action_tx.send(Action::ContinueConversation)?;
                 }
                 Action::RefreshTools => {
-                    self.handle_refresh_tools().await?;
+                    // Tool refresh not implemented - tools are loaded at startup
                 }
-                Action::AddChatMessage(ref message) => {
-                    self.conversation_history.push(message.clone());
+                Action::AddChatMessage(ref _message) => {
+                    // Messages are already added to agent in their respective handlers
+                    // This is now just for UI components to receive the message
                 }
                 Action::ClearChat => {
-                    self.conversation_history.clear();
+                    self.agent.clear_history();
                 }
                 Action::ContinueConversation => {
                     self.handle_continue_conversation().await?;
                 }
                 Action::StreamComplete => {
                     // Convert the last AssistantStreaming message to Assistant message
-                    if let Some(last_message) = self.conversation_history.last().cloned() {
-                        if let ChatMessage::AssistantStreaming { content, timestamp } = last_message {
-                            // Replace the streaming message with final assistant message
-                            if let Some(last_msg) = self.conversation_history.last_mut() {
-                                *last_msg = ChatMessage::Assistant { content, timestamp };
-                            }
-                        }
-                    }
+                    self.agent.finalize_streaming_message();
                 }
                 _ => {}
             }
@@ -422,12 +249,15 @@ impl App {
     async fn handle_submit_message(&mut self, user_input: String) -> Result<()> {
         debug!("Handling user message: {}", user_input);
 
-        // Add user message to chat
-        self.action_tx
-            .send(Action::AddChatMessage(ChatMessage::User {
-                content: user_input.clone(),
-                timestamp: chrono::Utc::now(),
-            }))?;
+        // Add user message to both UI and agent
+        let user_message = ChatMessage::User {
+            content: user_input.clone(),
+            timestamp: chrono::Utc::now(),
+        };
+        
+        self.action_tx.send(Action::AddChatMessage(user_message.clone()))?;
+        
+        self.agent.add_message(user_message);
 
         // Send to LLM with the user input
         self.send_to_llm(Some(user_input)).await
@@ -438,14 +268,15 @@ impl App {
         chunk: crate::llm::provider::StreamChunk,
     ) -> Result<()> {
         use crate::llm::provider::StreamChunk;
+        use crate::agent::PartialToolCall;
 
         match chunk {
             StreamChunk::Content(content) => {
                 self.action_tx.send(Action::StreamContent(content))?;
             }
             StreamChunk::ToolCallStart { id, name } => {
-                // Start tracking this tool call
-                self.active_tool_calls.insert(
+                // Start tracking this tool call in the agent
+                self.agent.active_tool_calls_mut().insert(
                     id.clone(),
                     PartialToolCall {
                         id: id.clone(),
@@ -462,20 +293,26 @@ impl App {
             }
             StreamChunk::ToolCallArgument { id, argument } => {
                 // Accumulate arguments for this tool call
-                if let Some(partial_call) = self.active_tool_calls.get_mut(&id) {
+                let mut tool_call_info = None;
+                if let Some(partial_call) = self.agent.active_tool_calls_mut().get_mut(&id) {
                     partial_call.arguments.push_str(&argument);
-
+                    tool_call_info = Some((partial_call.name.clone(), partial_call.arguments.clone()));
+                }
+                
+                if let Some((name, arguments)) = tool_call_info {
                     // Update the UI with the accumulated arguments
                     self.action_tx.send(Action::StreamToolCall {
                         id: id.clone(),
-                        name: partial_call.name.clone(),
-                        arguments: partial_call.arguments.clone(),
+                        name,
+                        arguments,
                     })?;
                 }
             }
             StreamChunk::ToolCallComplete { id } => {
                 // Tool call is complete, execute it
-                if let Some(partial_call) = self.active_tool_calls.remove(&id) {
+                let partial_call = self.agent.active_tool_calls_mut().remove(&id);
+                
+                if let Some(partial_call) = partial_call {
                     // Parse the accumulated arguments as JSON
                     match serde_json::from_str(&partial_call.arguments) {
                         Ok(mut arguments) => {
@@ -508,73 +345,6 @@ impl App {
         Ok(())
     }
 
-    /// Convert conversation history to LLM messages, properly grouping assistant messages with tool calls
-    fn convert_conversation_to_llm_messages(&self) -> Vec<LlmChatMessage> {
-        let mut llm_messages = Vec::new();
-        let mut i = 0;
-        
-        while i < self.conversation_history.len() {
-            let message = &self.conversation_history[i];
-            
-            match message {
-                ChatMessage::System { content, .. } => {
-                    llm_messages.push(LlmChatMessage::System {
-                        content: content.clone(),
-                    });
-                }
-                ChatMessage::User { content, .. } => {
-                    llm_messages.push(LlmChatMessage::User {
-                        content: content.clone(),
-                    });
-                }
-                ChatMessage::Assistant { content, .. } | ChatMessage::AssistantStreaming { content, .. } => {
-                    // Look ahead to see if there are tool calls following this assistant message
-                    let mut tool_calls = Vec::new();
-                    let mut j = i + 1;
-                    
-                    // Collect consecutive tool calls after this assistant message
-                    while j < self.conversation_history.len() {
-                        if let ChatMessage::ToolCall { id, name, params, .. } = &self.conversation_history[j] {
-                            // Parse params back to JSON
-                            if let Ok(arguments) = serde_json::from_str::<serde_json::Value>(params) {
-                                tool_calls.push(crate::llm::provider::ToolCall {
-                                    id: id.clone(),
-                                    name: name.clone(),
-                                    arguments,
-                                });
-                            }
-                            j += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    
-                    llm_messages.push(LlmChatMessage::Assistant {
-                        content: content.clone(),
-                        tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
-                    });
-                    
-                    // Skip the tool calls we already processed
-                    i = j - 1;
-                }
-                ChatMessage::ToolResult { tool_call_id, content, .. } => {
-                    llm_messages.push(LlmChatMessage::Tool {
-                        tool_call_id: tool_call_id.clone(),
-                        content: content.clone(),
-                    });
-                }
-                // Skip these message types in LLM context
-                ChatMessage::Tool { .. }
-                | ChatMessage::ToolCall { .. } // These are handled above with Assistant messages
-                | ChatMessage::Error { .. } => {
-                    // Do nothing, these are already handled or should be skipped
-                }
-            }
-            i += 1;
-        }
-        
-        llm_messages
-    }
 
     /// Fix malformed JSON string arguments from LLM models.
     /// Some models incorrectly return argument values as JSON strings instead of their actual types.
@@ -611,22 +381,9 @@ impl App {
             tool_call.name, tool_call.arguments
         );
 
-        // Check for potential loop - same tool with same args called recently
+        // Check for potential loop using agent's loop detection
         let now = chrono::Utc::now();
-        let loop_detection_window = chrono::Duration::minutes(2); // 2-minute window
-        
-        // Clean old entries first
-        self.recent_tool_calls.retain(|(_, _, timestamp)| {
-            now.signed_duration_since(*timestamp) < loop_detection_window
-        });
-        
-        // Check if this exact tool call was made recently
-        let duplicate_count = self.recent_tool_calls
-            .iter()
-            .filter(|(name, args, _)| {
-                name == &tool_call.name && args == &tool_call.arguments
-            })
-            .count();
+        let duplicate_count = self.agent.check_tool_loop(&tool_call.name, &tool_call.arguments, 2);
         
         if duplicate_count >= 3 {
             warn!(
@@ -644,101 +401,31 @@ impl App {
             return Ok(());
         }
         
-        // Record this tool call
-        self.recent_tool_calls.push_back((
-            tool_call.name.clone(),
-            tool_call.arguments.clone(),
-            now,
-        ));
+        // Record this tool call in the agent
+        self.agent.record_tool_call(tool_call.name.clone(), tool_call.arguments.clone(), now);
+
+        // Add tool call to both UI and agent
+        let tool_call_message = ChatMessage::ToolCall {
+            id: tool_call.id.clone(),
+            name: tool_call.name.clone(),
+            params: tool_call.arguments.to_string(),
+            timestamp: chrono::Utc::now(),
+        };
         
-        // Keep only recent entries (limit to 20 to prevent memory growth)
-        while self.recent_tool_calls.len() > 20 {
-            self.recent_tool_calls.pop_front();
-        }
+        self.action_tx.send(Action::AddChatMessage(tool_call_message.clone()))?;
+        
+        self.agent.add_message(tool_call_message);
 
-        // Add tool call to chat
-        self.action_tx
-            .send(Action::AddChatMessage(ChatMessage::ToolCall {
-                id: tool_call.id.clone(),
-                name: tool_call.name.clone(),
-                params: tool_call.arguments.to_string(),
-                timestamp: chrono::Utc::now(),
-            }))?;
-
-        let mcp_client = match &self.mcp_client {
-            Some(client) => client,
-            None => {
-                self.action_tx
-                    .send(Action::AddChatMessage(ChatMessage::Error {
-                        message: "MCP client not initialized".to_string(),
-                        timestamp: chrono::Utc::now(),
-                    }))?;
-                return Ok(());
-            }
-        };
-
-        // Execute the tool via MCP with timeout
-        let execution_future = mcp_client.execute_tool(&tool_call.name, tool_call.arguments);
-        let timeout_duration = std::time::Duration::from_secs(30); // 30 second timeout
-
-        match tokio::time::timeout(timeout_duration, execution_future).await {
-            Ok(Ok(result)) => {
-                let result_string = result.to_string();
-                self.action_tx.send(Action::ToolExecutionResult {
-                    tool_call_id: tool_call.id.clone(),
-                    result: result_string,
-                })?;
-            }
-            Ok(Err(e)) => {
-                error!("MCP tool execution failed: {}", e);
-                // Send error as tool result so LLM can see it and respond appropriately
-                self.action_tx.send(Action::ToolExecutionResult {
-                    tool_call_id: tool_call.id.clone(),
-                    result: format!("Error: Tool execution failed: {}", e),
-                })?;
-            }
-            Err(_) => {
-                error!("MCP tool execution timed out: {}", tool_call.name);
-                // Send timeout as tool result so LLM can see it and respond appropriately
-                self.action_tx.send(Action::ToolExecutionResult {
-                    tool_call_id: tool_call.id.clone(),
-                    result: format!(
-                        "Error: Tool execution timed out after {} seconds",
-                        timeout_duration.as_secs()
-                    ),
-                })?;
-            }
-        }
+        // For now, return a placeholder result
+        // TODO: Implement proper tool execution via Agent or dedicated tool executor
+        self.action_tx.send(Action::ToolExecutionResult {
+            tool_call_id: tool_call.id.clone(),
+            result: format!("Tool execution not yet implemented: {}", tool_call.name),
+        })?;
 
         Ok(())
     }
 
-    async fn handle_refresh_tools(&mut self) -> Result<()> {
-        debug!("Refreshing tools from MCP servers");
-
-        let mcp_client = match &mut self.mcp_client {
-            Some(client) => client,
-            None => {
-                self.action_tx
-                    .send(Action::Error("MCP client not initialized".to_string()))?;
-                return Ok(());
-            }
-        };
-
-        // Rediscover tools from all connected servers
-        match mcp_client.discover_tools().await {
-            Ok(()) => {
-                info!("Successfully refreshed tools from MCP servers");
-            }
-            Err(e) => {
-                error!("Failed to refresh tools: {}", e);
-                self.action_tx
-                    .send(Action::Error(format!("Failed to refresh tools: {}", e)))?;
-            }
-        }
-
-        Ok(())
-    }
 
     async fn handle_continue_conversation(&mut self) -> Result<()> {
         debug!("Continuing conversation after tool execution");
@@ -748,134 +435,41 @@ impl App {
 
     /// Send conversation to LLM with optional additional user message
     async fn send_to_llm(&mut self, additional_user_message: Option<String>) -> Result<()> {
-        debug!("Sending to LLM with conversation history length: {}", self.conversation_history.len());
-        debug!("Recent conversation messages:");
-        for (i, msg) in self.conversation_history.iter().rev().take(5).enumerate() {
-            match msg {
-                ChatMessage::User { content, .. } => debug!("  -{}: User: {}", i, content.chars().take(50).collect::<String>()),
-                ChatMessage::Assistant { content, .. } => debug!("  -{}: Assistant: {}", i, content.chars().take(50).collect::<String>()),
-                ChatMessage::AssistantStreaming { content, .. } => debug!("  -{}: AssistantStreaming: {}", i, content.chars().take(50).collect::<String>()),
-                ChatMessage::ToolCall { name, .. } => debug!("  -{}: ToolCall: {}", i, name),
-                ChatMessage::ToolResult { tool_call_id, content, .. } => debug!("  -{}: ToolResult({}): {}", i, tool_call_id, content.chars().take(50).collect::<String>()),
-                ChatMessage::Error { message, .. } => debug!("  -{}: Error: {}", i, message),
-                _ => debug!("  -{}: Other message type", i),
-            }
-        }
-        let llm_provider = match &self.llm_provider {
-            Some(provider) => provider,
-            None => {
-                self.action_tx
-                    .send(Action::AddChatMessage(ChatMessage::Error {
-                        message: "LLM provider not initialized".to_string(),
-                        timestamp: chrono::Utc::now(),
-                    }))?;
-                return Ok(());
-            }
-        };
-
-        let mcp_client = match &self.mcp_client {
-            Some(client) => client,
-            None => {
-                self.action_tx
-                    .send(Action::AddChatMessage(ChatMessage::Error {
-                        message: "MCP client not initialized".to_string(),
-                        timestamp: chrono::Utc::now(),
-                    }))?;
-                return Ok(());
-            }
-        };
-
         // Start streaming
         self.action_tx.send(Action::StartStreaming)?;
 
-        // Build chat context from conversation history
-        let mut chat_messages = Vec::new();
-
-        // Add system prompt with agent context if available (only if no system message exists)
-        let has_system_message = self
-            .conversation_history
-            .iter()
-            .any(|msg| matches!(msg, ChatMessage::System { .. }));
-
-        if !has_system_message {
-            let system_prompt = if let Some(agent_context) = &self.app_config.agent_context {
-                format!(
-                    "You are an AI assistant. Here are your instructions:\n\n{}",
-                    agent_context
-                )
-            } else {
-                "You are an AI assistant.".to_string()
-            };
-            chat_messages.push(LlmChatMessage::System {
-                content: system_prompt,
-            });
-        }
-
-        // Convert conversation history to LLM messages
-        let history_messages = self.convert_conversation_to_llm_messages();
-        chat_messages.extend(history_messages);
-
         // Add additional user message if provided
         if let Some(user_input) = additional_user_message {
-            chat_messages.push(LlmChatMessage::User {
+            let user_message = ChatMessage::User {
                 content: user_input,
-            });
+                timestamp: chrono::Utc::now(),
+            };
+            self.agent.add_message(user_message);
         }
 
-        // Get available tools from MCP
-        let available_tools = mcp_client.get_available_tools();
-        let tool_definitions: Vec<ToolDefinition> = available_tools
-            .iter()
-            .filter_map(|tool_name| {
-                let description = mcp_client.get_tool_description(tool_name)?;
-                let parameters = mcp_client
-                    .get_tool_parameters(tool_name)
-                    .map(|p| p.clone())
-                    .unwrap_or_else(|| serde_json::json!({}));
+        // Get the stream from the agent
+        let stream = self.agent.stream_completion(Some(0.7)).await?;
 
-                Some(ToolDefinition {
-                    name: tool_name.clone(),
-                    description,
-                    parameters,
-                })
-            })
-            .collect();
+        let tx_clone = self.action_tx.clone();
 
-        // Send to LLM with streaming
-        let request = ChatRequest {
-            messages: chat_messages,
-            tools: tool_definitions,
-            temperature: Some(0.7),
-        };
-
-        match llm_provider.complete_stream_chunks(request).await {
-            Ok(stream) => {
-                let tx_clone = self.action_tx.clone();
-
-                // Spawn background task to handle stream
-                tokio::spawn(async move {
-                    let mut stream = stream;
-                    while let Some(chunk_result) = stream.next().await {
-                        match chunk_result {
-                            Ok(chunk) => {
-                                if tx_clone.send(Action::ReceiveStreamChunk(chunk)).is_err() {
-                                    break; // Receiver dropped
-                                }
-                            }
-                            Err(e) => {
-                                error!("Stream error: {}", e);
-                                let _ = tx_clone.send(Action::Error(e.to_string()));
-                                break;
-                            }
+        // Spawn background task to handle stream
+        tokio::spawn(async move {
+            let mut stream = stream;
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(chunk) => {
+                        if tx_clone.send(Action::ReceiveStreamChunk(chunk)).is_err() {
+                            break; // Receiver dropped
                         }
                     }
-                });
+                    Err(e) => {
+                        error!("Stream error: {}", e);
+                        let _ = tx_clone.send(Action::Error(e.to_string()));
+                        break;
+                    }
+                }
             }
-            Err(e) => {
-                error!("Failed to start LLM stream: {}", e);
-                self.action_tx.send(Action::Error(e.to_string()))?;
-            }
-        }
+        });
 
         Ok(())
     }

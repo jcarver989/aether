@@ -17,6 +17,7 @@ impl Tool {
     }
 }
 
+#[derive(Clone)]
 pub struct ToolRegistry {
     tools: HashMap<String, Tool>,
     tool_to_server: HashMap<String, String>,
