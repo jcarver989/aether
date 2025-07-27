@@ -1,6 +1,10 @@
 #![allow(dead_code)] // Remove this once you start using the code
 
-use std::{collections::HashMap, env, path::{Path, PathBuf}};
+use std::{
+    collections::HashMap,
+    env,
+    path::{Path, PathBuf},
+};
 
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -115,13 +119,15 @@ impl AppConfig {
         let config = Config::new()?;
         Ok(config.config)
     }
-    
+
     pub fn validate(&self) -> Result<(), String> {
         // Validate provider type
         match self.llm.provider {
             ProviderType::OpenRouter => {
                 if self.llm.openrouter_api_key.is_none() {
-                    return Err("OpenRouter API key is required when using OpenRouter provider".to_string());
+                    return Err(
+                        "OpenRouter API key is required when using OpenRouter provider".to_string(),
+                    );
                 }
             }
             ProviderType::Ollama => {
@@ -129,17 +135,19 @@ impl AppConfig {
                     return Err("Ollama base URL cannot be empty".to_string());
                 }
                 // Basic URL validation
-                if !self.llm.ollama_base_url.starts_with("http://") && !self.llm.ollama_base_url.starts_with("https://") {
+                if !self.llm.ollama_base_url.starts_with("http://")
+                    && !self.llm.ollama_base_url.starts_with("https://")
+                {
                     return Err("Ollama base URL must be a valid HTTP/HTTPS URL".to_string());
                 }
             }
         }
-        
+
         // Validate model is not empty
         if self.llm.model.is_empty() {
             return Err("Model name cannot be empty".to_string());
         }
-        
+
         // Validate UI configuration
         if self.ui.tick_rate <= 0.0 {
             return Err("Tick rate must be positive".to_string());
@@ -147,7 +155,7 @@ impl AppConfig {
         if self.ui.frame_rate <= 0.0 {
             return Err("Frame rate must be positive".to_string());
         }
-        
+
         // Validate MCP server configurations
         for (name, server_config) in &self.mcp.servers {
             match server_config {
@@ -156,7 +164,10 @@ impl AppConfig {
                         return Err(format!("MCP server '{}' has empty URL", name));
                     }
                     if !url.starts_with("http://") && !url.starts_with("https://") {
-                        return Err(format!("MCP server '{}' URL must be a valid HTTP/HTTPS URL", name));
+                        return Err(format!(
+                            "MCP server '{}' URL must be a valid HTTP/HTTPS URL",
+                            name
+                        ));
                     }
                 }
                 McpServerConfig::Process { command, .. } => {
@@ -166,7 +177,7 @@ impl AppConfig {
                 }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -175,12 +186,12 @@ impl Config {
     pub fn new() -> Result<Self, config::ConfigError> {
         Self::with_cli_args(None)
     }
-    
+
     pub fn with_cli_args(cli_args: Option<&Cli>) -> Result<Self, config::ConfigError> {
         let default_config: Config = json5::from_str(CONFIG).unwrap();
         let data_dir = get_data_dir();
         let config_dir = get_config_dir();
-        
+
         // Load MCP config if it exists
         let mcp_servers = if let Ok(mcp_config) = Self::load_mcp_config("mcp.json") {
             mcp_config
@@ -189,22 +200,26 @@ impl Config {
         } else {
             HashMap::new()
         };
-        
+
         // Load agent context from AGENT.md if it exists
         let agent_context = Self::load_agent_context("AGENT.md")
             .or_else(|| Self::load_agent_context(config_dir.join("AGENT.md")));
-        
+
         // Get provider and model from environment variables and CLI args
         let provider = Self::get_provider_from_env_and_cli(cli_args);
         let model = Self::get_model_from_env_and_cli(&provider, cli_args);
         let openrouter_api_key = env::var("OPENROUTER_API_KEY").ok();
-        let ollama_base_url = env::var("OLLAMA_BASE_URL")
-            .unwrap_or_else(|_| default_ollama_base_url());
-        
+        let ollama_base_url =
+            env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| default_ollama_base_url());
+
         // Get UI config from CLI args with defaults
-        let tick_rate = cli_args.map(|args| args.tick_rate).unwrap_or_else(default_tick_rate);
-        let frame_rate = cli_args.map(|args| args.frame_rate).unwrap_or_else(default_frame_rate);
-        
+        let tick_rate = cli_args
+            .map(|args| args.tick_rate)
+            .unwrap_or_else(default_tick_rate);
+        let frame_rate = cli_args
+            .map(|args| args.frame_rate)
+            .unwrap_or_else(default_frame_rate);
+
         let mut builder = config::Config::builder()
             .set_default("data_dir", data_dir.to_str().unwrap())?
             .set_default("config_dir", config_dir.to_str().unwrap())?
@@ -212,16 +227,16 @@ impl Config {
             .set_default("ollama_base_url", ollama_base_url.as_str())?
             .set_default("tick_rate", tick_rate)?
             .set_default("frame_rate", frame_rate)?;
-            
+
         // Don't set mcp_servers as default - it will come from the deserialization
         // or remain empty if not configured
-        
+
         let provider_str = match provider {
             ProviderType::OpenRouter => "openrouter",
             ProviderType::Ollama => "ollama",
         };
         builder = builder.set_default("provider", provider_str)?;
-            
+
         if let Some(ref api_key) = openrouter_api_key {
             builder = builder.set_default("openrouter_api_key", api_key.as_str())?;
         }
@@ -248,17 +263,17 @@ impl Config {
         }
 
         let mut cfg: Self = builder.build()?.try_deserialize()?;
-        
+
         // Set MCP servers if they weren't loaded from config
         if cfg.config.mcp.servers.is_empty() {
             cfg.config.mcp.servers = mcp_servers;
         }
-        
+
         // Set agent context if loaded
         if cfg.config.agent_context.is_none() {
             cfg.config.agent_context = agent_context;
         }
-        
+
         // Override provider and model with env vars if they weren't set in config
         if cfg.config.llm.provider == ProviderType::default() {
             cfg.config.llm.provider = provider;
@@ -291,29 +306,37 @@ impl Config {
             error!("Configuration validation failed: {}", validation_error);
             // Don't fail hard on validation errors, just log them
         }
-        
+
         Ok(cfg)
     }
-    
-    fn load_mcp_config<P: AsRef<Path>>(path: P) -> Result<HashMap<String, McpServerConfig>, std::io::Error> {
+
+    fn load_mcp_config<P: AsRef<Path>>(
+        path: P,
+    ) -> Result<HashMap<String, McpServerConfig>, std::io::Error> {
         let path = path.as_ref();
         if !path.exists() {
-            return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "MCP config file not found"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "MCP config file not found",
+            ));
         }
-        
+
         let content = std::fs::read_to_string(path)?;
         let mcp_data: serde_json::Value = serde_json::from_str(&content)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        
+
         // Try both "servers" and "mcpServers" keys for compatibility
-        if let Some(servers) = mcp_data.get("mcpServers").or_else(|| mcp_data.get("servers")) {
+        if let Some(servers) = mcp_data
+            .get("mcpServers")
+            .or_else(|| mcp_data.get("servers"))
+        {
             serde_json::from_value(servers.clone())
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
         } else {
             Ok(HashMap::new())
         }
     }
-    
+
     fn load_agent_context<P: AsRef<Path>>(path: P) -> Option<String> {
         let path = path.as_ref();
         if path.exists() {
@@ -322,16 +345,17 @@ impl Config {
             None
         }
     }
-    
+
     fn get_provider_from_env() -> ProviderType {
-        let provider_str = env::var("DEFAULT_PROVIDER").unwrap_or_else(|_| "openrouter".to_string());
+        let provider_str =
+            env::var("DEFAULT_PROVIDER").unwrap_or_else(|_| "openrouter".to_string());
         match provider_str.to_lowercase().as_str() {
             "openrouter" => ProviderType::OpenRouter,
             "ollama" => ProviderType::Ollama,
             _ => ProviderType::OpenRouter, // Default to OpenRouter for invalid values
         }
     }
-    
+
     fn get_provider_from_env_and_cli(cli_args: Option<&Cli>) -> ProviderType {
         // CLI args take precedence over environment variables
         if let Some(args) = cli_args {
@@ -345,16 +369,14 @@ impl Config {
         }
         Self::get_provider_from_env()
     }
-    
+
     fn get_model_from_env(provider: &ProviderType) -> String {
-        env::var("DEFAULT_MODEL").unwrap_or_else(|_| {
-            match provider {
-                ProviderType::OpenRouter => "qwen/qwen3-coder".to_string(),
-                ProviderType::Ollama => "llama2".to_string(),
-            }
+        env::var("DEFAULT_MODEL").unwrap_or_else(|_| match provider {
+            ProviderType::OpenRouter => "qwen/qwen3-coder".to_string(),
+            ProviderType::Ollama => "llama2".to_string(),
         })
     }
-    
+
     fn get_model_from_env_and_cli(provider: &ProviderType, cli_args: Option<&Cli>) -> String {
         // CLI args take precedence over environment variables
         if let Some(args) = cli_args {
@@ -783,29 +805,32 @@ mod tests {
         );
         Ok(())
     }
-    
+
     #[test]
     fn test_provider_type_default() {
         let provider = Config::get_provider_from_env();
         // Will be OpenRouter unless DEFAULT_PROVIDER env var is set
-        assert!(matches!(provider, ProviderType::OpenRouter | ProviderType::Ollama));
+        assert!(matches!(
+            provider,
+            ProviderType::OpenRouter | ProviderType::Ollama
+        ));
     }
-    
+
     #[test]
     fn test_model_defaults() {
         let openrouter_model = Config::get_model_from_env(&ProviderType::OpenRouter);
         let ollama_model = Config::get_model_from_env(&ProviderType::Ollama);
-        
+
         // Check that we get some model name
         assert!(!openrouter_model.is_empty());
         assert!(!ollama_model.is_empty());
     }
-    
+
     #[test]
     fn test_load_mcp_config() {
         use std::fs;
         use tempfile::tempdir;
-        
+
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("test_mcp.json");
         let test_config = r#"{
@@ -817,7 +842,7 @@ mod tests {
             }
         }"#;
         fs::write(&file_path, test_config).unwrap();
-        
+
         let result = Config::load_mcp_config(&file_path).unwrap();
         assert_eq!(result.len(), 1);
         assert!(result.contains_key("test"));

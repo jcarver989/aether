@@ -1,7 +1,5 @@
-pub mod provider;
-pub mod openrouter;
 pub mod ollama;
+pub mod openrouter;
+pub mod provider;
 
-pub use provider::{
-    LlmProvider, ChatRequest, ChatMessage, ToolDefinition, StreamChunk
-};
+pub use provider::{ChatMessage, ChatRequest, LlmProvider, StreamChunk, ToolDefinition};

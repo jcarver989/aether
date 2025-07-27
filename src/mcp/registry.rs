@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use serde_json::Value;
 use rmcp::model::Tool as RmcpTool;
+use serde_json::Value;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct Tool {
@@ -33,13 +33,10 @@ impl ToolRegistry {
     pub fn register_tool(&mut self, server_name: String, rmcp_tool: RmcpTool) {
         let tool_name = rmcp_tool.name.to_string();
         let tool = Tool::from_rmcp_tool(server_name.clone(), rmcp_tool);
-        
+
         self.tools.insert(tool_name.clone(), tool);
         self.tool_to_server.insert(tool_name, server_name);
     }
-
-
-
 
     pub fn get_server_for_tool(&self, tool_name: &str) -> Option<&String> {
         self.tool_to_server.get(tool_name)
@@ -50,13 +47,14 @@ impl ToolRegistry {
     }
 
     pub fn get_tool_description(&self, tool_name: &str) -> Option<String> {
-        self.tools.get(tool_name).map(|tool| tool.description.clone())
+        self.tools
+            .get(tool_name)
+            .map(|tool| tool.description.clone())
     }
 
     pub fn tool_count(&self) -> usize {
         self.tools.len()
     }
-
 
     pub fn get_tool_parameters(&self, tool_name: &str) -> Option<&Value> {
         self.tools.get(tool_name).map(|tool| &tool.parameters)

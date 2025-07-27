@@ -1,22 +1,28 @@
 use color_eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, ListState},
 };
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::Component;
-use crate::{action::{Action, ScrollDirection}, config::Config, types::ChatMessage};
+use crate::{
+    action::{Action, ScrollDirection},
+    config::Config,
+    theme::Theme,
+    types::ChatMessage,
+};
 
 pub struct Chat {
     messages: Vec<ChatMessage>,
-    scroll_offset: u16,
+    list_state: ListState,
     command_tx: Option<UnboundedSender<Action>>,
     config: Config,
+    theme: Theme,
 }
 
 impl Default for Chat {
@@ -29,126 +35,202 @@ impl Chat {
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
-            scroll_offset: 0,
+            list_state: ListState::default(),
             command_tx: None,
             config: Config::default(),
+            theme: Theme::default(),
         }
     }
 
     fn add_message(&mut self, message: ChatMessage) {
         self.messages.push(message);
+        self.auto_scroll_to_bottom();
+    }
+
+    fn auto_scroll_to_bottom(&mut self) {
+        if !self.messages.is_empty() {
+            self.list_state.select(Some(self.messages.len() - 1));
+        }
     }
 
     fn clear_messages(&mut self) {
         self.messages.clear();
-        self.scroll_offset = 0;
+        self.list_state.select(None);
     }
 
     fn format_message(&self, message: &ChatMessage) -> Vec<Line<'static>> {
         match message {
             ChatMessage::System { content, timestamp } => {
-                vec![
-                    Line::from(vec![
-                        Span::styled("System", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                        Span::raw(" ("),
-                        Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(Color::DarkGray)),
-                        Span::raw("): "),
-                        Span::styled(content.clone(), Style::default().fg(Color::Gray)),
-                    ])
-                ]
+                vec![Line::from(vec![
+                    Span::styled(
+                        "System",
+                        Style::default()
+                            .fg(self.theme.system_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" ("),
+                    Span::styled(
+                        timestamp.format("%H:%M:%S").to_string(),
+                        Style::default().fg(self.theme.muted),
+                    ),
+                    Span::raw("): "),
+                    Span::styled(content.clone(), Style::default().fg(self.theme.subtle)),
+                ])]
             }
             ChatMessage::User { content, timestamp } => {
-                vec![
-                    Line::from(vec![
-                        Span::styled("You", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                        Span::raw(" ("),
-                        Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(Color::DarkGray)),
-                        Span::raw("): "),
-                        Span::raw(content.clone()),
-                    ])
-                ]
+                vec![Line::from(vec![
+                    Span::styled(
+                        "You",
+                        Style::default()
+                            .fg(self.theme.user_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" ("),
+                    Span::styled(
+                        timestamp.format("%H:%M:%S").to_string(),
+                        Style::default().fg(self.theme.muted),
+                    ),
+                    Span::raw("): "),
+                    Span::styled(content.clone(), Style::default().fg(self.theme.foreground)),
+                ])]
             }
             ChatMessage::Assistant { content, timestamp } => {
-                let mut lines = vec![
-                    Line::from(vec![
-                        Span::styled("Assistant", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
-                        Span::raw(" ("),
-                        Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(Color::DarkGray)),
-                        Span::raw("): "),
-                    ])
-                ];
-                
+                let mut lines = vec![Line::from(vec![
+                    Span::styled(
+                        "Assistant",
+                        Style::default()
+                            .fg(self.theme.assistant_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" ("),
+                    Span::styled(
+                        timestamp.format("%H:%M:%S").to_string(),
+                        Style::default().fg(self.theme.muted),
+                    ),
+                    Span::raw("): "),
+                ])];
+
                 let formatted_lines = self.format_assistant_content(content);
                 lines.extend(formatted_lines);
                 lines
             }
             ChatMessage::AssistantStreaming { content, timestamp } => {
-                let mut lines = vec![
-                    Line::from(vec![
-                        Span::styled("Assistant", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
-                        Span::raw(" ("),
-                        Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(Color::DarkGray)),
-                        Span::raw("): "),
-                    ])
-                ];
-                
+                let mut lines = vec![Line::from(vec![
+                    Span::styled(
+                        "Assistant",
+                        Style::default()
+                            .fg(self.theme.assistant_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" ("),
+                    Span::styled(
+                        timestamp.format("%H:%M:%S").to_string(),
+                        Style::default().fg(self.theme.muted),
+                    ),
+                    Span::raw("): "),
+                ])];
+
                 let mut formatted_lines = self.format_assistant_content(content);
                 // Add cursor indicator for streaming
                 if let Some(last_line) = formatted_lines.last_mut() {
                     let mut spans = last_line.spans.clone();
-                    spans.push(Span::styled(" ▋", Style::default().fg(Color::Gray)));
+                    spans.push(Span::styled(" ▋", Style::default().fg(self.theme.cursor_color)));
                     *last_line = Line::from(spans);
                 } else {
-                    formatted_lines.push(Line::from(Span::styled(" ▋", Style::default().fg(Color::Gray))));
+                    formatted_lines.push(Line::from(Span::styled(
+                        " ▋",
+                        Style::default().fg(self.theme.cursor_color),
+                    )));
                 }
                 lines.extend(formatted_lines);
                 lines
             }
-            ChatMessage::Tool { tool_call_id, content, timestamp } => {
-                vec![
-                    Line::from(vec![
-                        Span::styled("Tool", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                        Span::raw(" ("),
-                        Span::styled(tool_call_id.clone(), Style::default().fg(Color::Gray)),
-                        Span::raw(") "),
-                        Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(Color::DarkGray)),
-                        Span::raw(": "),
-                        Span::styled(content.clone(), Style::default().fg(Color::Cyan)),
-                    ])
-                ]
+            ChatMessage::Tool {
+                tool_call_id,
+                content,
+                timestamp,
+            } => {
+                vec![Line::from(vec![
+                    Span::styled(
+                        "Tool",
+                        Style::default()
+                            .fg(self.theme.tool_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" ("),
+                    Span::styled(tool_call_id.clone(), Style::default().fg(self.theme.subtle)),
+                    Span::raw(") "),
+                    Span::styled(
+                        timestamp.format("%H:%M:%S").to_string(),
+                        Style::default().fg(self.theme.muted),
+                    ),
+                    Span::raw(": "),
+                    Span::styled(content.clone(), Style::default().fg(self.theme.success)),
+                ])]
             }
-            ChatMessage::ToolCall { name, params, timestamp } => {
-                vec![
-                    Line::from(vec![
-                        Span::styled("Tool Call", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                        Span::raw(" ("),
-                        Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(Color::DarkGray)),
-                        Span::raw("): "),
-                        Span::raw(format!("{}({})", name, params)),
-                    ])
-                ]
+            ChatMessage::ToolCall {
+                id,
+                name,
+                params,
+                timestamp,
+            } => {
+                vec![Line::from(vec![
+                    Span::styled(
+                        "Tool Call",
+                        Style::default()
+                            .fg(self.theme.tool_call_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" ("),
+                    Span::styled(id.clone(), Style::default().fg(self.theme.subtle)),
+                    Span::raw(") "),
+                    Span::styled(
+                        timestamp.format("%H:%M:%S").to_string(),
+                        Style::default().fg(self.theme.muted),
+                    ),
+                    Span::raw(": "),
+                    Span::styled(format!("{}({})", name, params), Style::default().fg(self.theme.foreground)),
+                ])]
             }
-            ChatMessage::ToolResult { content, timestamp } => {
-                vec![
-                    Line::from(vec![
-                        Span::styled("Result", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                        Span::raw(" ("),
-                        Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(Color::DarkGray)),
-                        Span::raw("): "),
-                        Span::raw(content.clone()),
-                    ])
-                ]
+            ChatMessage::ToolResult {
+                tool_call_id,
+                content,
+                timestamp,
+            } => {
+                vec![Line::from(vec![
+                    Span::styled(
+                        "Result",
+                        Style::default()
+                            .fg(self.theme.tool_result_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" ("),
+                    Span::styled(tool_call_id.clone(), Style::default().fg(self.theme.subtle)),
+                    Span::raw(") "),
+                    Span::styled(
+                        timestamp.format("%H:%M:%S").to_string(),
+                        Style::default().fg(self.theme.muted),
+                    ),
+                    Span::raw(": "),
+                    Span::styled(content.clone(), Style::default().fg(self.theme.foreground)),
+                ])]
             }
             ChatMessage::Error { message, timestamp } => {
-                vec![
-                    Line::from(vec![
-                        Span::styled("Error", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                        Span::raw(" ("),
-                        Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(Color::DarkGray)),
-                        Span::raw("): "),
-                        Span::raw(message.clone()),
-                    ])
-                ]
+                vec![Line::from(vec![
+                    Span::styled(
+                        "Error",
+                        Style::default()
+                            .fg(self.theme.error)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" ("),
+                    Span::styled(
+                        timestamp.format("%H:%M:%S").to_string(),
+                        Style::default().fg(self.theme.muted),
+                    ),
+                    Span::raw("): "),
+                    Span::styled(message.clone(), Style::default().fg(self.theme.error)),
+                ])]
             }
         }
     }
@@ -163,19 +245,22 @@ impl Chat {
                 if in_code_block {
                     in_code_block = false;
                     code_language.clear();
-                    lines.push(Line::from(Span::styled("```", Style::default().fg(Color::DarkGray))));
+                    lines.push(Line::from(Span::styled(
+                        "```",
+                        Style::default().fg(self.theme.muted),
+                    )));
                 } else {
                     in_code_block = true;
                     code_language = line.trim_start_matches("```").to_string();
                     lines.push(Line::from(vec![
-                        Span::styled("```", Style::default().fg(Color::DarkGray)),
-                        Span::styled(code_language.clone(), Style::default().fg(Color::Yellow)),
+                        Span::styled("```", Style::default().fg(self.theme.muted)),
+                        Span::styled(code_language.clone(), Style::default().fg(self.theme.warning)),
                     ]));
                 }
             } else if in_code_block {
                 lines.push(Line::from(Span::styled(
                     format!("  {}", line),
-                    Style::default().fg(Color::Cyan).bg(Color::DarkGray),
+                    Style::default().fg(self.theme.code_fg).bg(self.theme.code_bg),
                 )));
             } else {
                 let formatted_line = self.format_markdown_line(line);
@@ -198,7 +283,11 @@ impl Chat {
             match ch {
                 '*' if chars.peek() == Some(&'*') && !in_code => {
                     if !current_text.is_empty() {
-                        let style = if in_italic { Style::default().add_modifier(Modifier::ITALIC) } else { Style::default() };
+                        let style = if in_italic {
+                            Style::default().add_modifier(Modifier::ITALIC)
+                        } else {
+                            Style::default()
+                        };
                         spans.push(Span::styled(current_text.clone(), style));
                         current_text.clear();
                     }
@@ -207,7 +296,11 @@ impl Chat {
                 }
                 '*' if !in_code => {
                     if !current_text.is_empty() {
-                        let style = if in_bold { Style::default().add_modifier(Modifier::BOLD) } else { Style::default() };
+                        let style = if in_bold {
+                            Style::default().add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                        };
                         spans.push(Span::styled(current_text.clone(), style));
                         current_text.clear();
                     }
@@ -228,10 +321,16 @@ impl Chat {
 
         if !current_text.is_empty() {
             let mut style = Style::default();
-            if in_bold { style = style.add_modifier(Modifier::BOLD); }
-            if in_italic { style = style.add_modifier(Modifier::ITALIC); }
-            if in_code { style = style.fg(Color::Cyan).bg(Color::DarkGray); }
-            
+            if in_bold {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            if in_italic {
+                style = style.add_modifier(Modifier::ITALIC);
+            }
+            if in_code {
+                style = style.fg(self.theme.code_fg).bg(self.theme.code_bg);
+            }
+
             spans.push(Span::styled(current_text, style));
         }
 
@@ -240,6 +339,54 @@ impl Chat {
         } else {
             Line::from(spans)
         }
+    }
+
+    fn wrap_lines(&self, lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
+        let mut wrapped_lines = Vec::new();
+        
+        for line in lines {
+            let content: String = line.spans.iter()
+                .map(|span| span.content.as_ref())
+                .collect();
+            
+            if content.chars().count() <= width {
+                wrapped_lines.push(line);
+            } else {
+                // Word wrap the line
+                let words: Vec<&str> = content.split_whitespace().collect();
+                let mut current_line = String::new();
+                
+                for word in words {
+                    let test_line = if current_line.is_empty() {
+                        word.to_string()
+                    } else {
+                        format!("{} {}", current_line, word)
+                    };
+                    
+                    if test_line.chars().count() <= width {
+                        current_line = test_line;
+                    } else {
+                        if !current_line.is_empty() {
+                            wrapped_lines.push(Line::from(current_line));
+                            current_line = word.to_string();
+                        } else {
+                            // Word is longer than width, add it anyway
+                            wrapped_lines.push(Line::from(word.to_string()));
+                        }
+                    }
+                }
+                
+                if !current_line.is_empty() {
+                    wrapped_lines.push(Line::from(current_line));
+                }
+            }
+        }
+        
+        wrapped_lines
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
     }
 }
 
@@ -264,70 +411,98 @@ impl Component for Chat {
         }
     }
 
+    fn handle_mouse_event(&mut self, mouse: MouseEvent) -> Result<Option<Action>> {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => Ok(Some(Action::ScrollChat(ScrollDirection::Up))),
+            MouseEventKind::ScrollDown => Ok(Some(Action::ScrollChat(ScrollDirection::Down))),
+            _ => Ok(None),
+        }
+    }
+
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         match action {
             Action::Tick => {}
             Action::Render => {}
             Action::AddChatMessage(message) => {
                 self.add_message(message);
-                // Auto-scroll to bottom when new message is added
-                self.scroll_offset = 0;
             }
             Action::ClearChat => {
                 self.clear_messages();
             }
             Action::ScrollChat(direction) => {
-                match direction {
+                let current_index = self.list_state.selected().unwrap_or(0);
+                let new_index = match direction {
                     ScrollDirection::Up => {
-                        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                        current_index.saturating_sub(1)
                     }
                     ScrollDirection::Down => {
-                        self.scroll_offset = self.scroll_offset.saturating_add(1);
+                        if current_index + 1 < self.messages.len() {
+                            current_index + 1
+                        } else {
+                            current_index
+                        }
                     }
                     ScrollDirection::PageUp => {
-                        self.scroll_offset = self.scroll_offset.saturating_sub(10);
+                        current_index.saturating_sub(5)
                     }
                     ScrollDirection::PageDown => {
-                        self.scroll_offset = self.scroll_offset.saturating_add(10);
+                        let new_idx = current_index + 5;
+                        if new_idx < self.messages.len() {
+                            new_idx
+                        } else {
+                            self.messages.len().saturating_sub(1)
+                        }
                     }
+                };
+                
+                if !self.messages.is_empty() {
+                    self.list_state.select(Some(new_index));
                 }
             }
             Action::StartStreaming => {
                 // Add initial streaming message
-                self.add_message(ChatMessage::AssistantStreaming { 
+                self.add_message(ChatMessage::AssistantStreaming {
                     content: String::new(),
                     timestamp: chrono::Utc::now(),
                 });
-                self.scroll_offset = 0; // Auto-scroll to bottom
             }
             Action::StreamContent(content) => {
                 // Update the last streaming message
-                if let Some(ChatMessage::AssistantStreaming { content: current_content, timestamp: _ }) = self.messages.last_mut() {
+                if let Some(ChatMessage::AssistantStreaming {
+                    content: current_content,
+                    timestamp: _,
+                }) = self.messages.last_mut()
+                {
                     current_content.push_str(&content);
                 }
             }
             Action::StreamComplete => {
                 // Convert streaming message to final message
-                if let Some(ChatMessage::AssistantStreaming { content, timestamp }) = self.messages.last().cloned() {
+                if let Some(ChatMessage::AssistantStreaming { content, timestamp }) =
+                    self.messages.last().cloned()
+                {
                     if let Some(last_msg) = self.messages.last_mut() {
                         *last_msg = ChatMessage::Assistant { content, timestamp };
                     }
                 }
             }
             Action::Error(error) => {
-                self.add_message(ChatMessage::Error { 
+                self.add_message(ChatMessage::Error {
                     message: error,
                     timestamp: chrono::Utc::now(),
                 });
-                self.scroll_offset = 0;
             }
-            Action::StreamToolCall { id: _, name, arguments } => {
-                self.add_message(ChatMessage::ToolCall { 
-                    name, 
+            Action::StreamToolCall {
+                id,
+                name,
+                arguments,
+            } => {
+                self.add_message(ChatMessage::ToolCall {
+                    id,
+                    name,
                     params: arguments,
                     timestamp: chrono::Utc::now(),
                 });
-                self.scroll_offset = 0;
             }
             _ => {}
         }
@@ -335,22 +510,36 @@ impl Component for Chat {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let mut all_lines = Vec::new();
+        // Calculate available width for text (account for borders)
+        let text_width = area.width.saturating_sub(2) as usize;
+        
+        let items: Vec<ListItem> = self
+            .messages
+            .iter()
+            .enumerate()
+            .map(|(i, message)| {
+                let lines = self.format_message(message);
+                let mut wrapped_lines = self.wrap_lines(lines, text_width);
+                
+                // Add empty line for vertical spacing (except for last item)
+                if i < self.messages.len() - 1 {
+                    wrapped_lines.push(Line::from(""));
+                }
+                
+                ListItem::new(Text::from(wrapped_lines))
+            })
+            .collect();
 
-        for (i, message) in self.messages.iter().enumerate() {
-            if i > 0 {
-                all_lines.push(Line::from(""));
-            }
-            all_lines.extend(self.format_message(message));
-        }
-
-        let text = Text::from(all_lines);
-        let paragraph = Paragraph::new(text)
+        let list = List::new(items)
             .block(Block::default().borders(Borders::ALL).title("Chat"))
-            .wrap(Wrap { trim: true })
-            .scroll((self.scroll_offset, 0));
+            .highlight_style(
+                Style::default()
+                    .bg(self.theme.selection_bg)
+                    .fg(self.theme.selection_fg)
+                    .add_modifier(Modifier::BOLD)
+            );
 
-        frame.render_widget(paragraph, area);
+        frame.render_stateful_widget(list, area, &mut self.list_state);
         Ok(())
     }
 }

@@ -28,7 +28,6 @@ impl InputState {
         }
     }
 
-
     fn insert_char(&mut self, ch: char) {
         if self.cursor_line < self.lines.len() {
             let line = &mut self.lines[self.cursor_line];
@@ -43,10 +42,10 @@ impl InputState {
         if self.cursor_line < self.lines.len() {
             let current_line = self.lines[self.cursor_line].clone();
             let (left, right) = current_line.split_at(self.cursor_col);
-            
+
             self.lines[self.cursor_line] = left.to_string();
             self.lines.insert(self.cursor_line + 1, right.to_string());
-            
+
             self.cursor_line += 1;
             self.cursor_col = 0;
         }
@@ -72,7 +71,11 @@ impl InputState {
             self.cursor_col -= 1;
         } else if self.cursor_line > 0 {
             self.cursor_line -= 1;
-            self.cursor_col = self.lines.get(self.cursor_line).map(|l| l.len()).unwrap_or(0);
+            self.cursor_col = self
+                .lines
+                .get(self.cursor_line)
+                .map(|l| l.len())
+                .unwrap_or(0);
         }
     }
 
@@ -91,7 +94,11 @@ impl InputState {
     fn move_cursor_up(&mut self) {
         if self.cursor_line > 0 {
             self.cursor_line -= 1;
-            let line_len = self.lines.get(self.cursor_line).map(|l| l.len()).unwrap_or(0);
+            let line_len = self
+                .lines
+                .get(self.cursor_line)
+                .map(|l| l.len())
+                .unwrap_or(0);
             self.cursor_col = self.cursor_col.min(line_len);
         }
     }
@@ -99,7 +106,11 @@ impl InputState {
     fn move_cursor_down(&mut self) {
         if self.cursor_line + 1 < self.lines.len() {
             self.cursor_line += 1;
-            let line_len = self.lines.get(self.cursor_line).map(|l| l.len()).unwrap_or(0);
+            let line_len = self
+                .lines
+                .get(self.cursor_line)
+                .map(|l| l.len())
+                .unwrap_or(0);
             self.cursor_col = self.cursor_col.min(line_len);
         }
     }
@@ -150,34 +161,31 @@ impl Input {
         }
     }
 
-
-
-
     fn format_lines(&self) -> Vec<Line<'static>> {
         if self.state.is_empty() && !self.placeholder.is_empty() {
             return vec![Line::from(vec![
                 Span::styled("> ", Style::default().fg(Color::Green)),
                 Span::styled(
                     self.placeholder.clone(),
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
                 ),
             ])];
         }
 
         let mut lines = Vec::new();
-        
+
         for (line_idx, line_content) in self.state.lines.iter().enumerate() {
-            let mut spans = vec![
-                if line_idx == 0 {
-                    Span::styled("> ", Style::default().fg(Color::Green))
-                } else {
-                    Span::raw("  ")
-                }
-            ];
+            let mut spans = vec![if line_idx == 0 {
+                Span::styled("> ", Style::default().fg(Color::Green))
+            } else {
+                Span::raw("  ")
+            }];
 
             if line_idx == self.state.cursor_line && self.show_cursor {
                 let (before_cursor, after_cursor) = line_content.split_at(self.state.cursor_col);
-                
+
                 if !before_cursor.is_empty() {
                     spans.push(Span::raw(before_cursor.to_string()));
                 }
@@ -199,19 +207,19 @@ impl Input {
         }
 
         if self.state.lines.len() == 1 && self.state.lines[0].is_empty() {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    "Enter to submit, Shift+Enter for new line, Ctrl+C to cancel",
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
-                ),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "Enter to submit, Shift+Enter for new line, Ctrl+C to cancel",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )]));
         } else if !self.state.is_empty() {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("{} lines | Enter to submit", self.state.lines.len()),
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
-                ),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                format!("{} lines | Enter to submit", self.state.lines.len()),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )]));
         }
 
         lines
@@ -272,7 +280,7 @@ impl Component for Input {
                 self.state.clear();
                 Ok(Some(Action::ClearInput))
             }
-            _ => Ok(None)
+            _ => Ok(None),
         }
     }
 
@@ -291,7 +299,7 @@ impl Component for Input {
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let content = self.format_lines();
         let text = Text::from(content);
-        
+
         let paragraph = Paragraph::new(text)
             .block(Block::default().borders(Borders::ALL).title("Input"))
             .wrap(Wrap { trim: false });

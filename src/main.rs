@@ -14,6 +14,7 @@ mod llm;
 mod logging;
 mod mcp;
 mod mcp_config;
+mod theme;
 mod tui;
 mod types;
 

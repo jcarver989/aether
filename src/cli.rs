@@ -8,11 +8,11 @@ pub struct Cli {
     /// LLM provider to use (openrouter or ollama)
     #[arg(long)]
     pub provider: Option<String>,
-    
+
     /// Model name for the provider
     #[arg(long)]
     pub model: Option<String>,
-    
+
     /// Tick rate, i.e. number of ticks per second
     #[arg(short, long, value_name = "FLOAT", default_value_t = 4.0)]
     pub tick_rate: f64,

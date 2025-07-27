@@ -22,18 +22,31 @@ pub enum Action {
     // Tool call actions
     ToggleToolCall(String), // Tool call ID
     ExecuteToolCall(crate::types::ToolCall),
-    UpdateToolCallState { id: String, state: crate::types::ToolCallState },
-    UpdateToolCallResult { id: String, result: String },
+    UpdateToolCallState {
+        id: String,
+        state: crate::types::ToolCallState,
+    },
+    UpdateToolCallResult {
+        id: String,
+        result: String,
+    },
     // Streaming actions
     StartStreaming,
     StreamContent(String),
-    StreamToolCall { id: String, name: String, arguments: String },
+    StreamToolCall {
+        id: String,
+        name: String,
+        arguments: String,
+    },
     StreamComplete,
     // LLM Response actions (as per task requirements)
     ReceiveStreamChunk(crate::llm::StreamChunk),
     ReceiveAssistantMessage(String),
     // Tool execution results
-    ToolExecutionResult { result: String },
+    ToolExecutionResult {
+        tool_call_id: String,
+        result: String,
+    },
     RefreshTools,
 }
 

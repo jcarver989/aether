@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use ratatui::{prelude::*};
+use ratatui::prelude::*;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{Component, chat::Chat, input::Input};
@@ -58,7 +58,7 @@ impl Component for Home {
         if let Some(child_action) = self.input.update(action.clone())? {
             return Ok(Some(child_action));
         }
-        
+
         match action {
             Action::Tick => {
                 // add any logic here that should run on every tick
@@ -76,15 +76,15 @@ impl Component for Home {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(3),      // Chat area
-                Constraint::Length(5),   // Input area (increased height for multi-line)
+                Constraint::Min(3),    // Chat area
+                Constraint::Length(5), // Input area (increased height for multi-line)
             ])
             .split(area);
 
         // Render chat and input components
         self.chat.draw(frame, chunks[0])?;
         self.input.draw(frame, chunks[1])?;
-        
+
         Ok(())
     }
 }

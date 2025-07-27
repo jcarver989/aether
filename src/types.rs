@@ -1,39 +1,41 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChatMessage {
-    System { 
+    System {
         content: String,
         timestamp: DateTime<Utc>,
     },
-    User { 
+    User {
         content: String,
         timestamp: DateTime<Utc>,
     },
-    Assistant { 
+    Assistant {
         content: String,
         timestamp: DateTime<Utc>,
     },
-    AssistantStreaming { 
+    AssistantStreaming {
         content: String,
         timestamp: DateTime<Utc>,
     },
-    Tool { 
-        tool_call_id: String, 
+    Tool {
+        tool_call_id: String,
         content: String,
         timestamp: DateTime<Utc>,
     },
-    ToolCall { 
-        name: String, 
+    ToolCall {
+        id: String,
+        name: String,
         params: String,
         timestamp: DateTime<Utc>,
     },
-    ToolResult { 
+    ToolResult {
+        tool_call_id: String,
         content: String,
         timestamp: DateTime<Utc>,
     },
-    Error { 
+    Error {
         message: String,
         timestamp: DateTime<Utc>,
     },

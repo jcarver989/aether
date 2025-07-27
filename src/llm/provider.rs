@@ -1,9 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tokio_stream::Stream;
 use std::pin::Pin;
-
+use tokio_stream::Stream;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
@@ -14,10 +13,20 @@ pub struct ChatRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatMessage {
-    System { content: String },
-    User { content: String },
-    Assistant { content: String },
-    Tool { tool_call_id: String, content: String },
+    System {
+        content: String,
+    },
+    User {
+        content: String,
+    },
+    Assistant {
+        content: String,
+        tool_calls: Option<Vec<ToolCall>>,
+    },
+    Tool {
+        tool_call_id: String,
+        content: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,7 +35,6 @@ pub struct ToolDefinition {
     pub description: String,
     pub parameters: serde_json::Value,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
@@ -50,6 +58,3 @@ pub type StreamChunkStream = Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Se
 pub trait LlmProvider: Send + Sync {
     async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream>;
 }
-
-
-

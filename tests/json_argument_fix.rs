@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Fix malformed JSON string arguments from LLM models.
 /// Some models incorrectly return argument values as JSON strings instead of their actual types.
@@ -11,11 +11,11 @@ fn fix_json_string_arguments(mut arguments: Value) -> Value {
                 if let Ok(parsed_val) = serde_json::from_str::<Value>(string_val) {
                     // Only replace if the parsed value is not a string (to avoid infinite recursion)
                     match parsed_val {
-                        Value::Array(_) | 
-                        Value::Object(_) | 
-                        Value::Number(_) | 
-                        Value::Bool(_) |
-                        Value::Null => {
+                        Value::Array(_)
+                        | Value::Object(_)
+                        | Value::Number(_)
+                        | Value::Bool(_)
+                        | Value::Null => {
                             *value = parsed_val;
                         }
                         _ => {
@@ -39,7 +39,7 @@ mod tests {
             "query": "[\"browser screenshots\"]"
         });
         let fixed = fix_json_string_arguments(malformed);
-        
+
         assert_eq!(fixed["query"], json!(["browser screenshots"]));
     }
 
@@ -49,7 +49,7 @@ mod tests {
             "config": "{\"option\": true, \"count\": 5}"
         });
         let fixed = fix_json_string_arguments(malformed);
-        
+
         assert_eq!(fixed["config"], json!({"option": true, "count": 5}));
     }
 
@@ -59,7 +59,7 @@ mod tests {
             "limit": "42"
         });
         let fixed = fix_json_string_arguments(malformed);
-        
+
         assert_eq!(fixed["limit"], json!(42));
     }
 
@@ -69,7 +69,7 @@ mod tests {
             "enabled": "true"
         });
         let fixed = fix_json_string_arguments(malformed);
-        
+
         assert_eq!(fixed["enabled"], json!(true));
     }
 
@@ -79,7 +79,7 @@ mod tests {
             "optional": "null"
         });
         let fixed = fix_json_string_arguments(malformed);
-        
+
         assert_eq!(fixed["optional"], json!(null));
     }
 
@@ -92,7 +92,7 @@ mod tests {
             "optional": null
         });
         let unchanged = fix_json_string_arguments(normal.clone());
-        
+
         assert_eq!(unchanged, normal);
     }
 
@@ -102,7 +102,7 @@ mod tests {
             "message": "Hello world"
         });
         let unchanged = fix_json_string_arguments(string_arg.clone());
-        
+
         assert_eq!(unchanged, string_arg);
     }
 
@@ -115,9 +115,9 @@ mod tests {
             "existing_array": ["already", "array"], // Should remain unchanged
             "config": "{\"nested\": true}"         // Should be fixed to object
         });
-        
+
         let fixed = fix_json_string_arguments(mixed);
-        
+
         assert_eq!(fixed["query"], json!(["browser screenshots"]));
         assert_eq!(fixed["message"], json!("Hello world"));
         assert_eq!(fixed["limit"], json!(42));
@@ -129,7 +129,7 @@ mod tests {
     fn test_empty_object() {
         let empty = json!({});
         let unchanged = fix_json_string_arguments(empty.clone());
-        
+
         assert_eq!(unchanged, empty);
     }
 
@@ -137,7 +137,7 @@ mod tests {
     fn test_non_object_input() {
         let array_input = json!(["not", "an", "object"]);
         let unchanged = fix_json_string_arguments(array_input.clone());
-        
+
         assert_eq!(unchanged, array_input);
     }
 
@@ -147,7 +147,7 @@ mod tests {
             "malformed": "{invalid json"
         });
         let unchanged = fix_json_string_arguments(invalid_json.clone());
-        
+
         assert_eq!(unchanged, invalid_json);
     }
 }

@@ -29,5 +29,4 @@ impl Default for McpServerConfig {
     }
 }
 
-impl McpServerConfig {
-}
+impl McpServerConfig {}

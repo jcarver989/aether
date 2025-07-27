@@ -10,7 +10,11 @@ use ratatui::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::Component;
-use crate::{action::Action, config::Config, types::{ToolCall, ToolCallState}};
+use crate::{
+    action::Action,
+    config::Config,
+    types::{ToolCall, ToolCallState},
+};
 
 pub struct ToolCallComponent {
     tool_call: ToolCall,
@@ -22,7 +26,6 @@ pub struct ToolCallComponent {
 }
 
 impl ToolCallComponent {
-
     fn set_state(&mut self, state: ToolCallState) {
         self.state = state;
     }
@@ -34,7 +37,6 @@ impl ToolCallComponent {
     fn toggle_expanded(&mut self) {
         self.expanded = !self.expanded;
     }
-
 
     fn get_state_symbol_and_color(&self) -> (char, Color) {
         match self.state {
@@ -50,12 +52,12 @@ impl ToolCallComponent {
             return vec![];
         }
 
-        let mut lines = vec![
-            Line::from(Span::styled(
-                "  Parameters:",
-                Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD),
-            ))
-        ];
+        let mut lines = vec![Line::from(Span::styled(
+            "  Parameters:",
+            Style::default()
+                .fg(Color::Gray)
+                .add_modifier(Modifier::BOLD),
+        ))];
 
         if let Some(obj) = self.tool_call.arguments.as_object() {
             for (key, value) in obj {
@@ -96,12 +98,12 @@ impl ToolCallComponent {
 
     fn format_result(&self) -> Vec<Line<'static>> {
         if let Some(result) = &self.result {
-            let mut lines = vec![
-                Line::from(Span::styled(
-                    "  Result:",
-                    Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD),
-                ))
-            ];
+            let mut lines = vec![Line::from(Span::styled(
+                "  Result:",
+                Style::default()
+                    .fg(Color::Gray)
+                    .add_modifier(Modifier::BOLD),
+            ))];
 
             let result_lines: Vec<&str> = result.lines().take(5).collect();
             for line in result_lines {
@@ -167,23 +169,34 @@ impl Component for ToolCallComponent {
         let (symbol, color) = self.get_state_symbol_and_color();
         let expand_symbol = if self.expanded { "▼" } else { "▶" };
 
-        let mut content = vec![
-            Line::from(vec![
-                Span::styled(symbol.to_string(), Style::default().fg(color)),
-                Span::raw(" "),
-                Span::styled(expand_symbol, Style::default().fg(Color::Gray)),
-                Span::raw(" "),
-                Span::styled("Tool Call:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::raw(" "),
-                Span::styled(self.tool_call.name.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            ])
-        ];
+        let mut content = vec![Line::from(vec![
+            Span::styled(symbol.to_string(), Style::default().fg(color)),
+            Span::raw(" "),
+            Span::styled(expand_symbol, Style::default().fg(Color::Gray)),
+            Span::raw(" "),
+            Span::styled(
+                "Tool Call:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                self.tool_call.name.clone(),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])];
 
         if !self.tool_call.id.is_empty() {
             content.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled("ID: ", Style::default().fg(Color::Gray)),
-                Span::styled(self.tool_call.id.clone(), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    self.tool_call.id.clone(),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
         }
 
