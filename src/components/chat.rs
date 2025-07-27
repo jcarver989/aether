@@ -23,6 +23,8 @@ pub struct Chat {
     command_tx: Option<UnboundedSender<Action>>,
     config: Config,
     theme: Theme,
+    total_lines: usize,
+    message_line_counts: Vec<usize>,
 }
 
 impl Default for Chat {
@@ -39,6 +41,8 @@ impl Chat {
             command_tx: None,
             config: Config::default(),
             theme: Theme::default(),
+            total_lines: 0,
+            message_line_counts: Vec::new(),
         }
     }
 
@@ -48,13 +52,15 @@ impl Chat {
     }
 
     fn auto_scroll_to_bottom(&mut self) {
-        if !self.messages.is_empty() {
-            self.list_state.select(Some(self.messages.len() - 1));
+        if self.total_lines > 0 {
+            self.list_state.select(Some(self.total_lines - 1));
         }
     }
 
     fn clear_messages(&mut self) {
         self.messages.clear();
+        self.message_line_counts.clear();
+        self.total_lines = 0;
         self.list_state.select(None);
     }
 
@@ -388,6 +394,25 @@ impl Chat {
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
+
+    fn update_line_counts(&mut self, text_width: usize) {
+        self.message_line_counts.clear();
+        self.total_lines = 0;
+        
+        for (i, message) in self.messages.iter().enumerate() {
+            let lines = self.format_message(message);
+            let mut wrapped_lines = self.wrap_lines(lines, text_width);
+            
+            // Add empty line for vertical spacing (except for last item)
+            if i < self.messages.len() - 1 {
+                wrapped_lines.push(Line::from(""));
+            }
+            
+            let line_count = wrapped_lines.len();
+            self.message_line_counts.push(line_count);
+            self.total_lines += line_count;
+        }
+    }
 }
 
 impl Component for Chat {
@@ -436,7 +461,7 @@ impl Component for Chat {
                         current_index.saturating_sub(1)
                     }
                     ScrollDirection::Down => {
-                        if current_index + 1 < self.messages.len() {
+                        if current_index + 1 < self.total_lines {
                             current_index + 1
                         } else {
                             current_index
@@ -447,15 +472,15 @@ impl Component for Chat {
                     }
                     ScrollDirection::PageDown => {
                         let new_idx = current_index + 5;
-                        if new_idx < self.messages.len() {
+                        if new_idx < self.total_lines {
                             new_idx
                         } else {
-                            self.messages.len().saturating_sub(1)
+                            self.total_lines.saturating_sub(1)
                         }
                     }
                 };
                 
-                if !self.messages.is_empty() {
+                if self.total_lines > 0 {
                     self.list_state.select(Some(new_index));
                 }
             }
@@ -537,6 +562,9 @@ impl Component for Chat {
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         // Calculate available width for text (account for borders)
         let text_width = area.width.saturating_sub(2) as usize;
+        
+        // Rebuild line counts if messages have changed
+        self.update_line_counts(text_width);
         
         let items: Vec<ListItem> = self
             .messages
