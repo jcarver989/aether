@@ -1,0 +1,1 @@
+cargo:rustc-env=MIME_TYPES_GENERATED_PATH=/Users/jj/code/aether/v0/target/debug/build/mime_guess-4e4301533348cef1/out/mime_types_generated.rs
