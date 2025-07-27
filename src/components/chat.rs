@@ -2,12 +2,13 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Rect, Size},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::{Block, Borders, Paragraph, StatefulWidget},
 };
 use tokio::sync::mpsc::UnboundedSender;
+use tui_scrollview::{ScrollView, ScrollViewState};
 
 use super::Component;
 use crate::{
@@ -19,12 +20,10 @@ use crate::{
 
 pub struct Chat {
     messages: Vec<ChatMessage>,
-    list_state: ListState,
+    scroll_state: ScrollViewState,
     command_tx: Option<UnboundedSender<Action>>,
     config: Config,
     theme: Theme,
-    total_lines: usize,
-    message_line_counts: Vec<usize>,
 }
 
 impl Default for Chat {
@@ -37,12 +36,10 @@ impl Chat {
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
-            list_state: ListState::default(),
+            scroll_state: ScrollViewState::default(),
             command_tx: None,
             config: Config::default(),
             theme: Theme::default(),
-            total_lines: 0,
-            message_line_counts: Vec::new(),
         }
     }
 
@@ -52,16 +49,12 @@ impl Chat {
     }
 
     fn auto_scroll_to_bottom(&mut self) {
-        if self.total_lines > 0 {
-            self.list_state.select(Some(self.total_lines - 1));
-        }
+        // ScrollView will handle auto-scrolling to bottom in the draw method
     }
 
     fn clear_messages(&mut self) {
         self.messages.clear();
-        self.message_line_counts.clear();
-        self.total_lines = 0;
-        self.list_state.select(None);
+        self.scroll_state = ScrollViewState::default();
     }
 
     fn format_message(&self, message: &ChatMessage) -> Vec<Line<'static>> {
@@ -347,72 +340,26 @@ impl Chat {
         }
     }
 
-    fn wrap_lines(&self, lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
-        let mut wrapped_lines = Vec::new();
+    fn create_message_content(&self) -> Text<'static> {
+        let mut all_lines = Vec::new();
         
-        for line in lines {
-            let content: String = line.spans.iter()
-                .map(|span| span.content.as_ref())
-                .collect();
+        for (i, message) in self.messages.iter().enumerate() {
+            let message_lines = self.format_message(message);
+            all_lines.extend(message_lines);
             
-            if content.chars().count() <= width {
-                wrapped_lines.push(line);
-            } else {
-                // Word wrap the line
-                let words: Vec<&str> = content.split_whitespace().collect();
-                let mut current_line = String::new();
-                
-                for word in words {
-                    let test_line = if current_line.is_empty() {
-                        word.to_string()
-                    } else {
-                        format!("{} {}", current_line, word)
-                    };
-                    
-                    if test_line.chars().count() <= width {
-                        current_line = test_line;
-                    } else {
-                        if !current_line.is_empty() {
-                            wrapped_lines.push(Line::from(current_line));
-                            current_line = word.to_string();
-                        } else {
-                            // Word is longer than width, add it anyway
-                            wrapped_lines.push(Line::from(word.to_string()));
-                        }
-                    }
-                }
-                
-                if !current_line.is_empty() {
-                    wrapped_lines.push(Line::from(current_line));
-                }
+            // Add spacing between messages (except for last message)
+            if i < self.messages.len() - 1 {
+                all_lines.push(Line::from(""));
             }
         }
         
-        wrapped_lines
+        Text::from(all_lines)
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
 
-    fn update_line_counts(&mut self, text_width: usize) {
-        self.message_line_counts.clear();
-        self.total_lines = 0;
-        
-        for (i, message) in self.messages.iter().enumerate() {
-            let lines = self.format_message(message);
-            let mut wrapped_lines = self.wrap_lines(lines, text_width);
-            
-            // Add empty line for vertical spacing (except for last item)
-            if i < self.messages.len() - 1 {
-                wrapped_lines.push(Line::from(""));
-            }
-            
-            let line_count = wrapped_lines.len();
-            self.message_line_counts.push(line_count);
-            self.total_lines += line_count;
-        }
-    }
 }
 
 impl Component for Chat {
@@ -427,11 +374,15 @@ impl Component for Chat {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        match key.code {
-            KeyCode::Up => Ok(Some(Action::ScrollChat(ScrollDirection::Up))),
-            KeyCode::Down => Ok(Some(Action::ScrollChat(ScrollDirection::Down))),
-            KeyCode::PageUp => Ok(Some(Action::ScrollChat(ScrollDirection::PageUp))),
-            KeyCode::PageDown => Ok(Some(Action::ScrollChat(ScrollDirection::PageDown))),
+        use crossterm::event::KeyModifiers;
+        
+        match (key.code, key.modifiers) {
+            // Ctrl+Up/Down for chat scrolling
+            (KeyCode::Up, KeyModifiers::CONTROL) => Ok(Some(Action::ScrollChat(ScrollDirection::Up))),
+            (KeyCode::Down, KeyModifiers::CONTROL) => Ok(Some(Action::ScrollChat(ScrollDirection::Down))),
+            // Page keys always work for chat scrolling
+            (KeyCode::PageUp, _) => Ok(Some(Action::ScrollChat(ScrollDirection::PageUp))),
+            (KeyCode::PageDown, _) => Ok(Some(Action::ScrollChat(ScrollDirection::PageDown))),
             _ => Ok(None),
         }
     }
@@ -455,33 +406,23 @@ impl Component for Chat {
                 self.clear_messages();
             }
             Action::ScrollChat(direction) => {
-                let current_index = self.list_state.selected().unwrap_or(0);
-                let new_index = match direction {
+                match direction {
                     ScrollDirection::Up => {
-                        current_index.saturating_sub(1)
+                        self.scroll_state.scroll_up();
                     }
                     ScrollDirection::Down => {
-                        if current_index + 1 < self.total_lines {
-                            current_index + 1
-                        } else {
-                            current_index
-                        }
+                        self.scroll_state.scroll_down();
                     }
                     ScrollDirection::PageUp => {
-                        current_index.saturating_sub(5)
-                    }
-                    ScrollDirection::PageDown => {
-                        let new_idx = current_index + 5;
-                        if new_idx < self.total_lines {
-                            new_idx
-                        } else {
-                            self.total_lines.saturating_sub(1)
+                        for _ in 0..5 {
+                            self.scroll_state.scroll_up();
                         }
                     }
-                };
-                
-                if self.total_lines > 0 {
-                    self.list_state.select(Some(new_index));
+                    ScrollDirection::PageDown => {
+                        for _ in 0..5 {
+                            self.scroll_state.scroll_down();
+                        }
+                    }
                 }
             }
             Action::StartStreaming => {
@@ -560,39 +501,28 @@ impl Component for Chat {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        // Calculate available width for text (account for borders)
-        let text_width = area.width.saturating_sub(2) as usize;
+        let content = self.create_message_content();
+        let content_height = content.lines.len() as u16;
+        let content_width = area.width.saturating_sub(2); // Account for borders
         
-        // Rebuild line counts if messages have changed
-        self.update_line_counts(text_width);
+        let content_size = Size::new(content_width, content_height);
+        let mut scroll_view = ScrollView::new(content_size);
         
-        let items: Vec<ListItem> = self
-            .messages
-            .iter()
-            .enumerate()
-            .map(|(i, message)| {
-                let lines = self.format_message(message);
-                let mut wrapped_lines = self.wrap_lines(lines, text_width);
-                
-                // Add empty line for vertical spacing (except for last item)
-                if i < self.messages.len() - 1 {
-                    wrapped_lines.push(Line::from(""));
-                }
-                
-                ListItem::new(Text::from(wrapped_lines))
-            })
-            .collect();
-
-        let list = List::new(items)
+        // Create the paragraph with all messages
+        let paragraph = Paragraph::new(content)
             .block(Block::default().borders(Borders::ALL).title("Chat"))
-            .highlight_style(
-                Style::default()
-                    .bg(self.theme.selection_bg)
-                    .fg(self.theme.selection_fg)
-                    .add_modifier(Modifier::BOLD)
-            );
-
-        frame.render_stateful_widget(list, area, &mut self.list_state);
+            .wrap(ratatui::widgets::Wrap { trim: false });
+        
+        // Render the paragraph in the scroll view
+        let content_area = Rect::new(0, 0, content_width, content_height);
+        scroll_view.render_widget(paragraph, content_area);
+        
+        // Auto-scroll to bottom when new messages are added
+        if !self.messages.is_empty() {
+            self.scroll_state.scroll_to_bottom();
+        }
+        
+        scroll_view.render(area, frame.buffer_mut(), &mut self.scroll_state);
         Ok(())
     }
 }
