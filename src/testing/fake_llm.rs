@@ -127,7 +127,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fake_llm_with_tool_calls() {
-        let responses = vec![vec![
+        let responses = [vec![
             StreamChunk::Content("Let me help you with that.".to_string()),
             StreamChunk::ToolCallStart {
                 id: "call_123".to_string(),

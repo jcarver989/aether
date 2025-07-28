@@ -417,7 +417,7 @@ mod tests {
 
         // Add many messages to enable scrolling
         for i in 0..10 {
-            let msg = create_test_chat_message(&format!("Message {}", i), i % 2 == 0);
+            let msg = create_test_chat_message(&format!("Message {i}"), i % 2 == 0);
             home.update(Action::AddChatMessage(msg)).unwrap();
         }
 

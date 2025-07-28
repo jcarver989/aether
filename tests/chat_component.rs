@@ -58,8 +58,7 @@ async fn test_streaming_tool_call_no_duplicates() {
     // Should only have ONE tool call message, not multiple
     assert_eq!(
         tool_call_count, 1,
-        "Expected exactly 1 tool call message, found {}: streaming chunks should update the same message, not create duplicates",
-        tool_call_count
+        "Expected exactly 1 tool call message, found {tool_call_count}: streaming chunks should update the same message, not create duplicates"
     );
 
     // Verify the final tool call has the correct complete data
@@ -90,8 +89,7 @@ async fn test_streaming_tool_call_no_duplicates() {
 
     assert_eq!(
         tool_call_blocks, 1,
-        "Expected exactly 1 tool call content block, found {}",
-        tool_call_blocks
+        "Expected exactly 1 tool call content block, found {tool_call_blocks}"
     );
 }
 
@@ -228,7 +226,7 @@ async fn test_streaming_message_content_updates_in_real_time() {
         assert_eq!(display_text, "", "Initial streaming content should be empty");
         assert!(streaming, "Block should be marked as streaming");
     } else {
-        panic!("Expected AssistantMessage content block, got {:?}", initial_block);
+        panic!("Expected AssistantMessage content block, got {initial_block:?}");
     }
 
     // Stream first chunk of content

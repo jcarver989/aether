@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use aether::llm::provider::{StreamChunkStream, ToolCall};
 use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk, ToolDefinition};
 use aether::mcp::McpClient;

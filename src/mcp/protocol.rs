@@ -31,6 +31,7 @@ pub mod helpers {
     }
 
     /// Get error message from tool result
+    #[allow(dead_code)]
     pub fn get_error_message(result: &Value) -> Option<String> {
         if has_error(result) {
             extract_text_result(result)

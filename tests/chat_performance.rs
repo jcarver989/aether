@@ -16,7 +16,7 @@ mod performance_tests {
         // Add some messages
         for i in 0..10 {
             let message = ChatMessage::User {
-                content: format!("Test message {}", i),
+                content: format!("Test message {i}"),
                 timestamp: Utc::now(),
             };
             chat.update(Action::AddChatMessage(message)).unwrap();
@@ -41,7 +41,7 @@ mod performance_tests {
         let message_count = 1000;
         for i in 0..message_count {
             let message = ChatMessage::Assistant {
-                content: format!("This is a longer assistant message {} with more content to simulate real usage patterns. It contains multiple lines and more text to test performance under realistic conditions.", i),
+                content: format!("This is a longer assistant message {i} with more content to simulate real usage patterns. It contains multiple lines and more text to test performance under realistic conditions."),
                 timestamp: Utc::now(),
             };
             chat.update(Action::AddChatMessage(message)).unwrap();
@@ -59,7 +59,7 @@ mod performance_tests {
         let duration = start.elapsed();
         
         // Should complete in reasonable time (adjust threshold as needed)
-        assert!(duration.as_millis() < 100, "Operations took too long: {:?}", duration);
+        assert!(duration.as_millis() < 100, "Operations took too long: {duration:?}");
     }
 
     #[test]
@@ -73,13 +73,13 @@ mod performance_tests {
         
         // Stream a lot of content rapidly
         for i in 0..1000 {
-            chat.update(Action::StreamContent(format!("Content chunk {} ", i))).unwrap();
+            chat.update(Action::StreamContent(format!("Content chunk {i} "))).unwrap();
         }
         
         let duration = start.elapsed();
         
         // Streaming should be fast
-        assert!(duration.as_millis() < 500, "Streaming took too long: {:?}", duration);
+        assert!(duration.as_millis() < 500, "Streaming took too long: {duration:?}");
         
         // Complete streaming
         chat.update(Action::StreamComplete).unwrap();

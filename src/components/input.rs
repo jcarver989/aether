@@ -954,13 +954,11 @@ mod tests {
             let line = extract_buffer_line(&buffer, line_num as usize, TEST_BUFFER_WIDTH as usize);
             assert!(
                 line.starts_with('│'),
-                "Line {} should start with left border",
-                line_num
+                "Line {line_num} should start with left border"
             );
             assert!(
                 line.ends_with('│'),
-                "Line {} should end with right border",
-                line_num
+                "Line {line_num} should end with right border"
             );
         }
     }
