@@ -17,7 +17,7 @@ impl CatppuccinMocha {
     pub const SUBTEXT_0: Color = Color::Rgb(166, 173, 200);
     pub const SUBTEXT_1: Color = Color::Rgb(186, 194, 222);
     pub const TEXT: Color = Color::Rgb(205, 214, 244);
-    
+
     // Accent colors
     pub const ROSEWATER: Color = Color::Rgb(245, 224, 220);
     pub const FLAMINGO: Color = Color::Rgb(242, 205, 205);
@@ -42,7 +42,7 @@ pub struct Theme {
     pub foreground: Color,
     pub muted: Color,
     pub subtle: Color,
-    
+
     // Semantic colors
     pub primary: Color,
     pub secondary: Color,
@@ -50,7 +50,7 @@ pub struct Theme {
     pub success: Color,
     pub warning: Color,
     pub error: Color,
-    
+
     // Role-specific colors
     pub user_color: Color,
     pub assistant_color: Color,
@@ -58,7 +58,7 @@ pub struct Theme {
     pub tool_color: Color,
     pub tool_call_color: Color,
     pub tool_result_color: Color,
-    
+
     // UI element colors
     pub selection_bg: Color,
     pub selection_fg: Color,
@@ -76,7 +76,7 @@ impl Default for Theme {
             foreground: CatppuccinMocha::TEXT,
             muted: CatppuccinMocha::OVERLAY_0,
             subtle: CatppuccinMocha::SUBTEXT_0,
-            
+
             // Semantic colors
             primary: CatppuccinMocha::BLUE,
             secondary: CatppuccinMocha::SAPPHIRE,
@@ -84,7 +84,7 @@ impl Default for Theme {
             success: CatppuccinMocha::GREEN,
             warning: CatppuccinMocha::YELLOW,
             error: CatppuccinMocha::RED,
-            
+
             // Role-specific colors
             user_color: CatppuccinMocha::GREEN,
             assistant_color: CatppuccinMocha::BLUE,
@@ -92,7 +92,7 @@ impl Default for Theme {
             tool_color: CatppuccinMocha::PEACH,
             tool_call_color: CatppuccinMocha::TEAL,
             tool_result_color: CatppuccinMocha::MAUVE,
-            
+
             // UI element colors
             selection_bg: CatppuccinMocha::GREEN,
             selection_fg: CatppuccinMocha::CRUST,
@@ -107,28 +107,28 @@ impl Theme {
     pub fn dark() -> Self {
         Self::default()
     }
-    
+
     pub fn light() -> Self {
         Self {
             background: Color::White,
             foreground: Color::Black,
             muted: Color::Gray,
             subtle: Color::DarkGray,
-            
+
             primary: Color::Blue,
             secondary: Color::Cyan,
             accent: Color::Magenta,
             success: Color::Green,
             warning: Color::Yellow,
             error: Color::Red,
-            
+
             user_color: Color::Green,
             assistant_color: Color::Blue,
             system_color: Color::Magenta,
             tool_color: Color::Yellow,
             tool_call_color: Color::Cyan,
             tool_result_color: Color::Magenta,
-            
+
             selection_bg: Color::Gray,
             selection_fg: Color::Black,
             code_bg: Color::Gray,
@@ -136,7 +136,7 @@ impl Theme {
             cursor_color: Color::DarkGray,
         }
     }
-    
+
     pub fn rgb() -> Self {
         // Catppuccin Mocha theme (same as default)
         Self::default()

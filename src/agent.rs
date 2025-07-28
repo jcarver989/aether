@@ -1,29 +1,29 @@
-use color_eyre::Result;
-use std::collections::{HashMap, VecDeque};
 use crate::{
     llm::{ChatMessage as LlmChatMessage, ChatRequest, LlmProvider, ToolDefinition},
     mcp::registry::ToolRegistry,
     types::ChatMessage,
 };
+use color_eyre::Result;
+use std::collections::{HashMap, VecDeque};
 
 /// Represents an AI agent with its associated LLM provider, conversation context, and tools
 pub struct Agent<T: LlmProvider> {
     /// The LLM provider (e.g., OpenRouter, Ollama) for this agent
     llm_provider: T,
-    
+
     /// Tool registry containing available tools and MCP clients
     tool_registry: ToolRegistry,
-    
+
     /// Conversation history for this agent
     conversation_history: Vec<ChatMessage>,
-    
+
     /// Active tool calls being streamed (for tracking partial tool calls)
     active_tool_calls: HashMap<String, PartialToolCall>,
-    
+
     /// Recent tool calls for loop detection
     /// Contains (tool_name, arguments, timestamp)
     recent_tool_calls: VecDeque<(String, serde_json::Value, chrono::DateTime<chrono::Utc>)>,
-    
+
     /// Optional system prompt
     system_prompt: Option<String>,
 }
@@ -80,8 +80,9 @@ impl<T: LlmProvider> Agent<T> {
         arguments: serde_json::Value,
         timestamp: chrono::DateTime<chrono::Utc>,
     ) {
-        self.recent_tool_calls.push_back((name, arguments, timestamp));
-        
+        self.recent_tool_calls
+            .push_back((name, arguments, timestamp));
+
         // Keep only recent entries (limit to 20)
         while self.recent_tool_calls.len() > 20 {
             self.recent_tool_calls.pop_front();
@@ -97,12 +98,11 @@ impl<T: LlmProvider> Agent<T> {
     ) -> usize {
         let now = chrono::Utc::now();
         let window = chrono::Duration::minutes(window_minutes);
-        
+
         // Clean old entries
-        self.recent_tool_calls.retain(|(_, _, timestamp)| {
-            now.signed_duration_since(*timestamp) < window
-        });
-        
+        self.recent_tool_calls
+            .retain(|(_, _, timestamp)| now.signed_duration_since(*timestamp) < window);
+
         // Count duplicates
         self.recent_tool_calls
             .iter()
@@ -123,28 +123,30 @@ impl<T: LlmProvider> Agent<T> {
     /// Convert conversation history to LLM messages
     pub fn build_llm_messages(&self) -> Vec<LlmChatMessage> {
         let mut llm_messages = Vec::new();
-        
+
         // Add system prompt if no system message exists
-        let has_system_message = self.conversation_history
+        let has_system_message = self
+            .conversation_history
             .iter()
             .any(|msg| matches!(msg, ChatMessage::System { .. }));
-            
+
         if !has_system_message {
             let prompt = if let Some(system_prompt) = &self.system_prompt {
-                format!("You are an AI assistant. Here are your instructions:\n\n{}", system_prompt)
+                format!(
+                    "You are an AI assistant. Here are your instructions:\n\n{}",
+                    system_prompt
+                )
             } else {
                 "You are an AI assistant.".to_string()
             };
-            llm_messages.push(LlmChatMessage::System {
-                content: prompt,
-            });
+            llm_messages.push(LlmChatMessage::System { content: prompt });
         }
-        
+
         // Convert conversation history
         let mut i = 0;
         while i < self.conversation_history.len() {
             let message = &self.conversation_history[i];
-            
+
             match message {
                 ChatMessage::System { content, .. } => {
                     llm_messages.push(LlmChatMessage::System {
@@ -156,14 +158,19 @@ impl<T: LlmProvider> Agent<T> {
                         content: content.clone(),
                     });
                 }
-                ChatMessage::Assistant { content, .. } | ChatMessage::AssistantStreaming { content, .. } => {
+                ChatMessage::Assistant { content, .. }
+                | ChatMessage::AssistantStreaming { content, .. } => {
                     // Look ahead for tool calls
                     let mut tool_calls = Vec::new();
                     let mut j = i + 1;
-                    
+
                     while j < self.conversation_history.len() {
-                        if let ChatMessage::ToolCall { id, name, params, .. } = &self.conversation_history[j] {
-                            if let Ok(arguments) = serde_json::from_str::<serde_json::Value>(params) {
+                        if let ChatMessage::ToolCall {
+                            id, name, params, ..
+                        } = &self.conversation_history[j]
+                        {
+                            if let Ok(arguments) = serde_json::from_str::<serde_json::Value>(params)
+                            {
                                 tool_calls.push(crate::llm::provider::ToolCall {
                                     id: id.clone(),
                                     name: name.clone(),
@@ -175,39 +182,48 @@ impl<T: LlmProvider> Agent<T> {
                             break;
                         }
                     }
-                    
+
                     llm_messages.push(LlmChatMessage::Assistant {
                         content: content.clone(),
-                        tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
+                        tool_calls: if tool_calls.is_empty() {
+                            None
+                        } else {
+                            Some(tool_calls)
+                        },
                     });
-                    
+
                     i = j - 1;
                 }
-                ChatMessage::ToolResult { tool_call_id, content, .. } => {
+                ChatMessage::ToolResult {
+                    tool_call_id,
+                    content,
+                    ..
+                } => {
                     llm_messages.push(LlmChatMessage::Tool {
                         tool_call_id: tool_call_id.clone(),
                         content: content.clone(),
                     });
                 }
-                ChatMessage::Tool { .. } | ChatMessage::ToolCall { .. } | ChatMessage::Error { .. } => {
+                ChatMessage::Tool { .. }
+                | ChatMessage::ToolCall { .. }
+                | ChatMessage::Error { .. } => {
                     // Skip these in LLM context
                 }
             }
             i += 1;
         }
-        
+
         llm_messages
     }
 
     /// Build tool definitions from the tool registry
     pub fn build_tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.tool_registry.list_tools()
+        self.tool_registry
+            .list_tools()
             .into_iter()
             .filter_map(|tool_name| {
                 let description = self.tool_registry.get_tool_description(&tool_name)?;
-                let parameters = self.tool_registry
-                    .get_tool_parameters(&tool_name)?
-                    .clone();
+                let parameters = self.tool_registry.get_tool_parameters(&tool_name)?.clone();
 
                 Some(ToolDefinition {
                     name: tool_name,
@@ -233,7 +249,9 @@ impl<T: LlmProvider> Agent<T> {
         temperature: Option<f32>,
     ) -> Result<crate::llm::provider::StreamChunkStream> {
         let request = self.create_chat_request(temperature);
-        self.llm_provider.complete_stream_chunks(request).await
+        self.llm_provider
+            .complete_stream_chunks(request)
+            .await
             .map_err(|e| color_eyre::Report::msg(e.to_string()))
     }
 
@@ -247,7 +265,7 @@ impl<T: LlmProvider> Agent<T> {
             }
         }
     }
-    
+
     /// Append content to the current streaming message or create a new one
     pub fn append_streaming_content(&mut self, content: &str) {
         if let Some(ChatMessage::AssistantStreaming {
@@ -259,10 +277,11 @@ impl<T: LlmProvider> Agent<T> {
             current_content.push_str(content);
         } else {
             // Create new streaming message
-            self.conversation_history.push(ChatMessage::AssistantStreaming {
-                content: content.to_string(),
-                timestamp: chrono::Utc::now(),
-            });
+            self.conversation_history
+                .push(ChatMessage::AssistantStreaming {
+                    content: content.to_string(),
+                    timestamp: chrono::Utc::now(),
+                });
         }
     }
 
@@ -270,14 +289,18 @@ impl<T: LlmProvider> Agent<T> {
     pub fn get_server_for_tool(&self, tool_name: &str) -> Option<&String> {
         self.tool_registry.get_server_for_tool(tool_name)
     }
-    
+
     /// Update the tool registry
     pub fn update_tool_registry(&mut self, new_registry: ToolRegistry) {
         self.tool_registry = new_registry;
     }
-    
+
     /// Execute a tool call using the tool registry
-    pub async fn execute_tool(&self, tool_name: &str, arguments: serde_json::Value) -> Result<serde_json::Value> {
+    pub async fn execute_tool(
+        &self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         self.tool_registry.invoke_tool(tool_name, arguments).await
     }
 }

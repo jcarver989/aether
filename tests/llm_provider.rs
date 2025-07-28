@@ -1,15 +1,16 @@
 mod utils;
 
 use crate::utils::*;
-use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
 use aether::llm::provider::ToolCall;
+use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
 use anyhow::Result;
 use serde_json::json;
 use tokio_stream::StreamExt;
 
 #[tokio::test]
 async fn test_openrouter_provider_stream_chunks() -> Result<()> {
-    let fake_provider = FakeLlmProvider::with_content_chunks(vec!["Hello", " from", " fake", " OpenRouter!"]);
+    let fake_provider =
+        FakeLlmProvider::with_content_chunks(vec!["Hello", " from", " fake", " OpenRouter!"]);
 
     let request = create_test_chat_request(vec![ChatMessage::User {
         content: "Hello, world!".to_string(),
@@ -24,7 +25,8 @@ async fn test_openrouter_provider_stream_chunks() -> Result<()> {
 
 #[tokio::test]
 async fn test_ollama_provider_stream_chunks() -> Result<()> {
-    let fake_provider = FakeLlmProvider::with_content_chunks(vec!["Hello", " from", " fake", " Ollama!"]);
+    let fake_provider =
+        FakeLlmProvider::with_content_chunks(vec!["Hello", " from", " fake", " Ollama!"]);
 
     let request = create_test_chat_request(vec![ChatMessage::User {
         content: "Hello, world!".to_string(),
@@ -39,7 +41,8 @@ async fn test_ollama_provider_stream_chunks() -> Result<()> {
 
 #[tokio::test]
 async fn test_stream_chunks_with_tools() -> Result<()> {
-    let fake_provider = FakeLlmProvider::with_content_chunks(vec!["Hello", " from", " fake", " OpenRouter!"]);
+    let fake_provider =
+        FakeLlmProvider::with_content_chunks(vec!["Hello", " from", " fake", " OpenRouter!"]);
 
     let tool = create_test_tool_definition("get_weather", "Get the current weather");
 
@@ -64,7 +67,8 @@ async fn test_stream_chunks_with_tools() -> Result<()> {
 
 #[tokio::test]
 async fn test_chat_messages_variants() -> Result<()> {
-    let fake_provider = FakeLlmProvider::with_content_chunks(vec!["Hello", " from", " fake", " Ollama!"]);
+    let fake_provider =
+        FakeLlmProvider::with_content_chunks(vec!["Hello", " from", " fake", " Ollama!"]);
 
     let request = create_test_chat_request(vec![
         ChatMessage::System {
@@ -121,7 +125,7 @@ async fn test_tool_call_stream_chunks() -> Result<()> {
         "get_weather",
         r#"{"location": "San Francisco"}"#,
     );
-    
+
     let request = create_test_chat_request(vec![ChatMessage::User {
         content: "What's the weather?".to_string(),
     }]);
@@ -139,7 +143,9 @@ async fn test_tool_call_stream_chunks() -> Result<()> {
                 tool_calls.push((id, name, String::new()));
             }
             StreamChunk::ToolCallArgument { id, argument } => {
-                if let Some((_, _, args)) = tool_calls.iter_mut().find(|(call_id, _, _)| call_id == &id) {
+                if let Some((_, _, args)) =
+                    tool_calls.iter_mut().find(|(call_id, _, _)| call_id == &id)
+                {
                     args.push_str(&argument);
                 }
             }
@@ -163,11 +169,7 @@ async fn test_tool_call_stream_chunks() -> Result<()> {
 
 #[test]
 fn test_tool_call_serialization() -> Result<()> {
-    let tool_call = create_test_tool_call(
-        "call_456",
-        "read_file",
-        json!({"path": "/etc/hosts"}),
-    );
+    let tool_call = create_test_tool_call("call_456", "read_file", json!({"path": "/etc/hosts"}));
 
     let serialized = serde_json::to_string(&tool_call)?;
     let deserialized: ToolCall = serde_json::from_str(&serialized)?;

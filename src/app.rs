@@ -58,9 +58,7 @@ impl<T: LlmProvider> App<T> {
         })
     }
 
-
     pub async fn run(&mut self) -> Result<()> {
-
         let mut tui = Tui::new()?
             .mouse(true) // Enable mouse support for scrolling
             .tick_rate(self.app_config.ui.tick_rate)
@@ -182,7 +180,8 @@ impl<T: LlmProvider> App<T> {
                         content: message.clone(),
                         timestamp: chrono::Utc::now(),
                     };
-                    self.action_tx.send(Action::AddChatMessage(assistant_message.clone()))?;
+                    self.action_tx
+                        .send(Action::AddChatMessage(assistant_message.clone()))?;
                     self.agent.add_message(assistant_message);
                 }
                 Action::ToolExecutionResult {
@@ -194,7 +193,8 @@ impl<T: LlmProvider> App<T> {
                         content: result.clone(),
                         timestamp: chrono::Utc::now(),
                     };
-                    self.action_tx.send(Action::AddChatMessage(tool_result_message.clone()))?;
+                    self.action_tx
+                        .send(Action::AddChatMessage(tool_result_message.clone()))?;
                     self.agent.add_message(tool_result_message);
                     // Force a render to ensure tool results are displayed immediately
                     self.action_tx.send(Action::Render)?;
@@ -256,9 +256,10 @@ impl<T: LlmProvider> App<T> {
             content: user_input.clone(),
             timestamp: chrono::Utc::now(),
         };
-        
-        self.action_tx.send(Action::AddChatMessage(user_message.clone()))?;
-        
+
+        self.action_tx
+            .send(Action::AddChatMessage(user_message.clone()))?;
+
         self.agent.add_message(user_message);
 
         // Send to LLM with the user input
@@ -269,8 +270,8 @@ impl<T: LlmProvider> App<T> {
         &mut self,
         chunk: crate::llm::provider::StreamChunk,
     ) -> Result<()> {
-        use crate::llm::provider::StreamChunk;
         use crate::agent::PartialToolCall;
+        use crate::llm::provider::StreamChunk;
 
         match chunk {
             StreamChunk::Content(content) => {
@@ -298,9 +299,10 @@ impl<T: LlmProvider> App<T> {
                 let mut tool_call_info = None;
                 if let Some(partial_call) = self.agent.active_tool_calls_mut().get_mut(&id) {
                     partial_call.arguments.push_str(&argument);
-                    tool_call_info = Some((partial_call.name.clone(), partial_call.arguments.clone()));
+                    tool_call_info =
+                        Some((partial_call.name.clone(), partial_call.arguments.clone()));
                 }
-                
+
                 if let Some((name, arguments)) = tool_call_info {
                     // Update the UI with the accumulated arguments
                     self.action_tx.send(Action::StreamToolCall {
@@ -313,7 +315,7 @@ impl<T: LlmProvider> App<T> {
             StreamChunk::ToolCallComplete { id } => {
                 // Tool call is complete, execute it
                 let partial_call = self.agent.active_tool_calls_mut().remove(&id);
-                
+
                 if let Some(partial_call) = partial_call {
                     // Parse the accumulated arguments as JSON
                     match serde_json::from_str(&partial_call.arguments) {
@@ -347,7 +349,6 @@ impl<T: LlmProvider> App<T> {
 
         Ok(())
     }
-
 
     /// Fix malformed JSON string arguments from LLM models.
     /// Some models incorrectly return argument values as JSON strings instead of their actual types.
@@ -386,8 +387,10 @@ impl<T: LlmProvider> App<T> {
 
         // Check for potential loop using agent's loop detection
         let now = chrono::Utc::now();
-        let duplicate_count = self.agent.check_tool_loop(&tool_call.name, &tool_call.arguments, 2);
-        
+        let duplicate_count = self
+            .agent
+            .check_tool_loop(&tool_call.name, &tool_call.arguments, 2);
+
         if duplicate_count >= 3 {
             warn!(
                 "Potential loop detected: tool '{}' called {} times with same arguments recently",
@@ -403,9 +406,10 @@ impl<T: LlmProvider> App<T> {
             })?;
             return Ok(());
         }
-        
+
         // Record this tool call in the agent
-        self.agent.record_tool_call(tool_call.name.clone(), tool_call.arguments.clone(), now);
+        self.agent
+            .record_tool_call(tool_call.name.clone(), tool_call.arguments.clone(), now);
 
         // Add tool call to both UI and agent
         let tool_call_message = ChatMessage::ToolCall {
@@ -414,28 +418,33 @@ impl<T: LlmProvider> App<T> {
             params: tool_call.arguments.to_string(),
             timestamp: chrono::Utc::now(),
         };
-        
-        self.action_tx.send(Action::AddChatMessage(tool_call_message.clone()))?;
+
+        self.action_tx
+            .send(Action::AddChatMessage(tool_call_message.clone()))?;
         self.action_tx.send(Action::Render)?;
-        
+
         self.agent.add_message(tool_call_message);
 
         // Execute the tool using the agent
-        let result = self.agent.execute_tool(&tool_call.name, tool_call.arguments.clone()).await;
-        
+        let result = self
+            .agent
+            .execute_tool(&tool_call.name, tool_call.arguments.clone())
+            .await;
+
         let result_content = match result {
             Ok(result_value) => {
                 // Convert the result to a readable string
                 match result_value {
                     serde_json::Value::String(s) => s,
-                    other => serde_json::to_string_pretty(&other).unwrap_or_else(|_| format!("{:?}", other)),
+                    other => serde_json::to_string_pretty(&other)
+                        .unwrap_or_else(|_| format!("{:?}", other)),
                 }
             }
             Err(e) => {
                 format!("Tool execution failed: {}", e)
             }
         };
-        
+
         self.action_tx.send(Action::ToolExecutionResult {
             tool_call_id: tool_call.id.clone(),
             result: result_content,
@@ -443,7 +452,6 @@ impl<T: LlmProvider> App<T> {
 
         Ok(())
     }
-
 
     async fn handle_continue_conversation(&mut self) -> Result<()> {
         debug!("Continuing conversation after tool execution");

@@ -118,8 +118,16 @@ impl McpClient {
         Ok(discovered_tools)
     }
 
-    pub async fn execute_tool(&self, server_name: &str, tool_name: &str, args: Value) -> Result<Value> {
-        debug!("Executing tool: {} on server: {} with args: {}", tool_name, server_name, args);
+    pub async fn execute_tool(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        args: Value,
+    ) -> Result<Value> {
+        debug!(
+            "Executing tool: {} on server: {} with args: {}",
+            tool_name, server_name, args
+        );
 
         // Log to file helper
         fn log_debug(msg: &str) {
@@ -194,5 +202,4 @@ impl McpClient {
 
         Ok(result_value)
     }
-
 }

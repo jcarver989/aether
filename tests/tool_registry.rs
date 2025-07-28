@@ -2,7 +2,7 @@ mod utils;
 
 use crate::utils::*;
 use aether::mcp::registry::Tool;
-use serde_json::{json, Map};
+use serde_json::{Map, json};
 
 #[test]
 fn test_tool_registry_creation() {
@@ -36,7 +36,7 @@ fn test_register_multiple_tools() {
     }
 
     assert_eq!(registry.tool_count(), 3);
-    
+
     // All tools should map to the same server
     assert_tool_in_registry(&registry, "read_file", "filesystem");
     assert_tool_in_registry(&registry, "write_file", "filesystem");

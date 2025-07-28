@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio_stream::{Stream, StreamExt};
 use std::pin::Pin;
+use tokio_stream::{Stream, StreamExt};
 
 use crate::llm::provider::{ChatRequest, LlmProvider, StreamChunk, StreamChunkStream};
 
@@ -30,8 +30,10 @@ impl FakeLlmProvider {
 #[async_trait]
 impl LlmProvider for FakeLlmProvider {
     async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamChunkStream> {
-        let current_call = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
+        let current_call = self
+            .call_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let response = if current_call < self.responses.len() {
             self.responses[current_call].clone()
         } else if !self.responses.is_empty() {
@@ -66,47 +68,61 @@ mod tests {
         ];
 
         let fake_llm = FakeLlmProvider::new(responses);
-        
+
         // First call
         let request = ChatRequest {
-            messages: vec![ChatMessage::User { content: "Test".to_string() }],
+            messages: vec![ChatMessage::User {
+                content: "Test".to_string(),
+            }],
             tools: vec![],
             temperature: None,
         };
-        
-        let mut stream = fake_llm.complete_stream_chunks(request.clone()).await.unwrap();
+
+        let mut stream = fake_llm
+            .complete_stream_chunks(request.clone())
+            .await
+            .unwrap();
         let mut chunks = vec![];
         while let Some(chunk) = stream.next().await {
             chunks.push(chunk.unwrap());
         }
-        
+
         assert_eq!(chunks.len(), 3);
         assert_eq!(chunks[0], StreamChunk::Content("Hello".to_string()));
         assert_eq!(chunks[1], StreamChunk::Content(" world!".to_string()));
         assert_eq!(chunks[2], StreamChunk::Done);
-        
+
         // Second call
-        let mut stream = fake_llm.complete_stream_chunks(request.clone()).await.unwrap();
+        let mut stream = fake_llm
+            .complete_stream_chunks(request.clone())
+            .await
+            .unwrap();
         let mut chunks = vec![];
         while let Some(chunk) = stream.next().await {
             chunks.push(chunk.unwrap());
         }
-        
+
         assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0], StreamChunk::Content("Second response".to_string()));
+        assert_eq!(
+            chunks[0],
+            StreamChunk::Content("Second response".to_string())
+        );
         assert_eq!(chunks[1], StreamChunk::Done);
-        
+
         // Third call (should repeat last response)
         let mut stream = fake_llm.complete_stream_chunks(request).await.unwrap();
         let mut chunks = vec![];
         while let Some(chunk) = stream.next().await {
             chunks.push(chunk.unwrap());
         }
-        
+
         assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0], StreamChunk::Content("Second response".to_string()));
+        assert_eq!(
+            chunks[0],
+            StreamChunk::Content("Second response".to_string())
+        );
         assert_eq!(chunks[1], StreamChunk::Done);
-        
+
         assert_eq!(fake_llm.call_count(), 3);
     }
 
@@ -114,32 +130,36 @@ mod tests {
     async fn test_fake_llm_with_tool_calls() {
         let responses = vec![vec![
             StreamChunk::Content("Let me help you with that.".to_string()),
-            StreamChunk::ToolCallStart { 
-                id: "call_123".to_string(), 
-                name: "get_weather".to_string() 
+            StreamChunk::ToolCallStart {
+                id: "call_123".to_string(),
+                name: "get_weather".to_string(),
             },
-            StreamChunk::ToolCallArgument { 
-                id: "call_123".to_string(), 
-                argument: r#"{"location": "San Francisco"}"#.to_string() 
+            StreamChunk::ToolCallArgument {
+                id: "call_123".to_string(),
+                argument: r#"{"location": "San Francisco"}"#.to_string(),
             },
-            StreamChunk::ToolCallComplete { id: "call_123".to_string() },
+            StreamChunk::ToolCallComplete {
+                id: "call_123".to_string(),
+            },
             StreamChunk::Done,
         ]];
 
         let fake_llm = FakeLlmProvider::with_single_response(responses[0].clone());
-        
+
         let request = ChatRequest {
-            messages: vec![ChatMessage::User { content: "What's the weather?".to_string() }],
+            messages: vec![ChatMessage::User {
+                content: "What's the weather?".to_string(),
+            }],
             tools: vec![],
             temperature: None,
         };
-        
+
         let mut stream = fake_llm.complete_stream_chunks(request).await.unwrap();
         let mut chunks = vec![];
         while let Some(chunk) = stream.next().await {
             chunks.push(chunk.unwrap());
         }
-        
+
         assert_eq!(chunks.len(), 5);
         assert!(matches!(chunks[1], StreamChunk::ToolCallStart { .. }));
         assert!(matches!(chunks[2], StreamChunk::ToolCallArgument { .. }));

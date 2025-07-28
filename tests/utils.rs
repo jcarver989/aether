@@ -6,7 +6,7 @@ use aether::mcp_config::McpServerConfig;
 use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::model::Tool as RmcpTool;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio_stream::iter;
@@ -98,10 +98,7 @@ impl FakeLlmProvider {
     }
 
     pub fn with_content(content: &str) -> Self {
-        let chunks = vec![
-            StreamChunk::Content(content.to_string()),
-            StreamChunk::Done,
-        ];
+        let chunks = vec![StreamChunk::Content(content.to_string()), StreamChunk::Done];
         Self { chunks }
     }
 
@@ -114,12 +111,7 @@ impl FakeLlmProvider {
         Self { chunks }
     }
 
-    pub fn with_tool_call(
-        content: &str,
-        tool_id: &str,
-        tool_name: &str,
-        arguments: &str,
-    ) -> Self {
+    pub fn with_tool_call(content: &str, tool_id: &str, tool_name: &str, arguments: &str) -> Self {
         let chunks = vec![
             StreamChunk::Content(content.to_string()),
             StreamChunk::ToolCallStart {
@@ -139,9 +131,7 @@ impl FakeLlmProvider {
     }
 
     pub fn with_error_after(content: &str, chunk_count: usize) -> Self {
-        let chunks = vec![
-            StreamChunk::Content(content.to_string()),
-        ];
+        let chunks = vec![StreamChunk::Content(content.to_string())];
         // Note: Error handling would be implemented in a specialized provider
         Self { chunks }
     }
@@ -206,7 +196,7 @@ pub fn create_test_tool_call(id: &str, name: &str, arguments: Value) -> ToolCall
 
 pub async fn collect_stream_content(mut stream: StreamChunkStream) -> Result<String> {
     use tokio_stream::StreamExt;
-    
+
     let mut content = String::new();
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
@@ -221,7 +211,7 @@ pub async fn collect_stream_content(mut stream: StreamChunkStream) -> Result<Str
 
 pub async fn collect_stream_chunks(mut stream: StreamChunkStream) -> Result<Vec<StreamChunk>> {
     use tokio_stream::StreamExt;
-    
+
     let mut chunks = Vec::new();
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
@@ -321,10 +311,7 @@ pub fn assert_stream_chunk_matches(actual: &StreamChunk, expected: &StreamChunk)
             assert_eq!(id1, id2);
             assert_eq!(arg1, arg2);
         }
-        (
-            StreamChunk::ToolCallComplete { id: id1 },
-            StreamChunk::ToolCallComplete { id: id2 },
-        ) => {
+        (StreamChunk::ToolCallComplete { id: id1 }, StreamChunk::ToolCallComplete { id: id2 }) => {
             assert_eq!(id1, id2);
         }
         (StreamChunk::Done, StreamChunk::Done) => {}

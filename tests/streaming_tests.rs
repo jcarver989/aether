@@ -1,8 +1,8 @@
 mod utils;
 
 use crate::utils::*;
-use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
 use aether::llm::provider::StreamChunkStream;
+use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio_stream::StreamExt;
@@ -138,7 +138,6 @@ async fn test_empty_stream() -> Result<()> {
 
 #[tokio::test]
 async fn test_multiple_tool_calls_streaming() -> Result<()> {
-    
     let chunks = vec![
         StreamChunk::Content("I'll call multiple tools.".to_string()),
         StreamChunk::ToolCallStart {

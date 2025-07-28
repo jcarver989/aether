@@ -1,9 +1,9 @@
+use super::client::McpClient;
+use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use color_eyre::Result;
-use super::client::McpClient;
 
 #[derive(Debug, Clone)]
 pub struct Tool {
@@ -80,15 +80,21 @@ impl ToolRegistry {
     pub async fn invoke_tool(&self, tool_name: &str, args: Value) -> Result<Value> {
         // Check if the tool exists in our registry
         if !self.tools.contains_key(tool_name) {
-            return Err(color_eyre::Report::msg(format!("Tool not found in registry: {}", tool_name)));
+            return Err(color_eyre::Report::msg(format!(
+                "Tool not found in registry: {}",
+                tool_name
+            )));
         }
 
         // Get the server name for this tool
-        let server_name = self.get_server_for_tool(tool_name)
-            .ok_or_else(|| color_eyre::Report::msg(format!("Server not found for tool: {}", tool_name)))?;
+        let server_name = self.get_server_for_tool(tool_name).ok_or_else(|| {
+            color_eyre::Report::msg(format!("Server not found for tool: {}", tool_name))
+        })?;
 
         // Get the MCP client
-        let mcp_client = self.mcp_client.as_ref()
+        let mcp_client = self
+            .mcp_client
+            .as_ref()
             .ok_or_else(|| color_eyre::Report::msg("No MCP client available"))?;
 
         // Delegate to the MCP client for execution with server name

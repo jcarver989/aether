@@ -110,7 +110,7 @@ fn test_raw_tool_call_messages_not_duplicated() {
         .filter_map(convert_to_llm_message)
         .collect();
 
-    // Verify raw tool call messages are NOT included as separate Tool messages  
+    // Verify raw tool call messages are NOT included as separate Tool messages
     // (they should be grouped with Assistant messages instead)
     let has_raw_tool_call_message = llm_messages.iter().any(|msg| {
         matches!(msg, LlmChatMessage::Tool { content, .. } if content.contains("browser_take_screenshot"))
@@ -179,15 +179,15 @@ fn test_message_conversion_preserves_content() {
 #[test]
 fn test_assistant_messages_include_tool_calls() {
     let conversation_history = create_test_conversation_history();
-    
+
     // Convert to LLM messages using the new conversion function
     // This simulates what the App does
     let mut llm_messages = Vec::new();
     let mut i = 0;
-    
+
     while i < conversation_history.len() {
         let message = &conversation_history[i];
-        
+
         match message {
             ChatMessage::User { content, .. } => {
                 llm_messages.push(LlmChatMessage::User {
@@ -198,10 +198,13 @@ fn test_assistant_messages_include_tool_calls() {
                 // Look ahead to see if there are tool calls following this assistant message
                 let mut tool_calls = Vec::new();
                 let mut j = i + 1;
-                
+
                 // Collect consecutive tool calls after this assistant message
                 while j < conversation_history.len() {
-                    if let ChatMessage::ToolCall { id, name, params, .. } = &conversation_history[j] {
+                    if let ChatMessage::ToolCall {
+                        id, name, params, ..
+                    } = &conversation_history[j]
+                    {
                         // Parse params back to JSON
                         if let Ok(arguments) = serde_json::from_str::<serde_json::Value>(params) {
                             tool_calls.push(create_test_tool_call(id, name, arguments));
@@ -211,16 +214,24 @@ fn test_assistant_messages_include_tool_calls() {
                         break;
                     }
                 }
-                
+
                 llm_messages.push(LlmChatMessage::Assistant {
                     content: content.clone(),
-                    tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
+                    tool_calls: if tool_calls.is_empty() {
+                        None
+                    } else {
+                        Some(tool_calls)
+                    },
                 });
-                
+
                 // Skip the tool calls we already processed
                 i = j - 1;
             }
-            ChatMessage::ToolResult { tool_call_id, content, .. } => {
+            ChatMessage::ToolResult {
+                tool_call_id,
+                content,
+                ..
+            } => {
                 llm_messages.push(LlmChatMessage::Tool {
                     tool_call_id: tool_call_id.clone(),
                     content: content.clone(),
@@ -230,22 +241,41 @@ fn test_assistant_messages_include_tool_calls() {
         }
         i += 1;
     }
-    
+
     // Verify we have the expected messages
     assert_eq!(llm_messages.len(), 3); // User, Assistant (with tool calls), ToolResult
-    
+
     // Check that assistant message includes tool calls
     let assistant_with_tools = llm_messages.iter().find(|msg| {
-        matches!(msg, LlmChatMessage::Assistant { tool_calls: Some(_), .. })
+        matches!(
+            msg,
+            LlmChatMessage::Assistant {
+                tool_calls: Some(_),
+                ..
+            }
+        )
     });
-    assert!(assistant_with_tools.is_some(), "Assistant message should include tool calls");
-    
+    assert!(
+        assistant_with_tools.is_some(),
+        "Assistant message should include tool calls"
+    );
+
     // Verify the tool call details
-    if let Some(LlmChatMessage::Assistant { tool_calls: Some(tool_calls), .. }) = assistant_with_tools {
+    if let Some(LlmChatMessage::Assistant {
+        tool_calls: Some(tool_calls),
+        ..
+    }) = assistant_with_tools
+    {
         assert_eq!(tool_calls.len(), 1, "Should have one tool call");
         let tool_call = &tool_calls[0];
-        assert_eq!(tool_call.id, TEST_TOOL_ID, "Tool call ID should be preserved");
-        assert_eq!(tool_call.name, "browser_take_screenshot", "Tool call name should be preserved");
+        assert_eq!(
+            tool_call.id, TEST_TOOL_ID,
+            "Tool call ID should be preserved"
+        );
+        assert_eq!(
+            tool_call.name, "browser_take_screenshot",
+            "Tool call name should be preserved"
+        );
     }
 }
 

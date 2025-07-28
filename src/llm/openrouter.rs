@@ -3,12 +3,12 @@ use async_openai::{
     Client,
     config::OpenAIConfig,
     types::{
-        ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
-        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-        ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
-        ChatCompletionRequestUserMessage, ChatCompletionTool, ChatCompletionToolType,
-        ChatCompletionMessageToolCall, FunctionCall,
-        CreateChatCompletionRequest, FunctionObject,
+        ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
+        ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
+        ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
+        ChatCompletionRequestToolMessageContent, ChatCompletionRequestUserMessage,
+        ChatCompletionTool, ChatCompletionToolType, CreateChatCompletionRequest, FunctionCall,
+        FunctionObject,
     },
 };
 use async_trait::async_trait;
@@ -51,7 +51,10 @@ impl OpenRouterProvider {
                         name: None,
                     })
                 }
-                ChatMessage::Assistant { content, tool_calls } => {
+                ChatMessage::Assistant {
+                    content,
+                    tool_calls,
+                } => {
                     let openai_tool_calls = tool_calls.as_ref().map(|calls| {
                         calls
                             .iter()

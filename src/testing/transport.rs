@@ -1,12 +1,12 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::future::Future;
-use tokio::sync::{mpsc, Mutex};
-use rmcp::transport::Transport;
-use rmcp::service::{ServiceRole, TxJsonRpcMessage, RxJsonRpcMessage};
 use rmcp::RoleClient;
 use rmcp::RoleServer;
+use rmcp::service::{RxJsonRpcMessage, ServiceRole, TxJsonRpcMessage};
+use rmcp::transport::Transport;
+use std::collections::HashMap;
+use std::future::Future;
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::{Mutex, mpsc};
 
 #[derive(Error, Debug)]
 pub enum InMemoryTransportError {
@@ -55,7 +55,8 @@ impl<R: ServiceRole> Transport<R> for InMemoryTransport<R> {
         let tx = self.tx.clone();
         async move {
             let tx = tx.lock().await;
-            tx.send(item).map_err(|_| InMemoryTransportError::ChannelClosed)?;
+            tx.send(item)
+                .map_err(|_| InMemoryTransportError::ChannelClosed)?;
             Ok(())
         }
     }
@@ -95,7 +96,8 @@ impl InMemoryFileSystem {
 
     pub async fn read_file(&self, path: &str) -> Result<String, String> {
         let files = self.files.lock().await;
-        files.get(path)
+        files
+            .get(path)
             .cloned()
             .ok_or_else(|| format!("File not found: {}", path))
     }
@@ -118,18 +120,20 @@ mod tests {
     #[tokio::test]
     async fn test_in_memory_filesystem() {
         let fs = InMemoryFileSystem::new();
-        
+
         // Test writing a file
-        fs.write_file("/tmp/test.txt", "Hello, World!").await.unwrap();
-        
+        fs.write_file("/tmp/test.txt", "Hello, World!")
+            .await
+            .unwrap();
+
         // Test reading the file
         let content = fs.read_file("/tmp/test.txt").await.unwrap();
         assert_eq!(content, "Hello, World!");
-        
+
         // Test file exists
         assert!(fs.file_exists("/tmp/test.txt").await);
         assert!(!fs.file_exists("/tmp/nonexistent.txt").await);
-        
+
         // Test listing files
         let files = fs.list_files().await.unwrap();
         assert_eq!(files, vec!["/tmp/test.txt"]);

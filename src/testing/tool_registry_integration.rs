@@ -1,16 +1,15 @@
-use std::sync::Arc;
+use crate::mcp::registry::ToolRegistry;
+use crate::testing::InMemoryFileSystem;
 use rmcp::{
-    ServerHandler,
+    RoleClient, RoleServer, ServerHandler, Service,
     handler::server::{router::tool::ToolRouter, tool::Parameters},
-    model::{ServerInfo, ServerCapabilities, CallToolRequestParam, ClientInfo, Implementation},
-    tool, tool_handler, tool_router,
+    model::{CallToolRequestParam, ClientInfo, Implementation, ServerCapabilities, ServerInfo},
     schemars::JsonSchema,
     service::RunningService,
-    RoleClient, RoleServer, Service,
+    tool, tool_handler, tool_router,
 };
 use serde::{Deserialize, Serialize};
-use crate::testing::InMemoryFileSystem;
-use crate::mcp::registry::ToolRegistry;
+use std::sync::Arc;
 
 /// Test-specific MCP client that uses in-memory transport
 pub struct TestMcpClient {
@@ -39,7 +38,7 @@ impl TestMcpClient {
             },
             ..Default::default()
         };
-        
+
         let (server_handle, client) = super::connect(server, client_info).await?;
         self.servers.insert(name, client);
         self._server_handles.push(Box::new(server_handle));
@@ -57,7 +56,10 @@ impl TestMcpClient {
                     }
                 }
                 Err(e) => {
-                    return Err(format!("Failed to discover tools from server {}: {}", server_name, e));
+                    return Err(format!(
+                        "Failed to discover tools from server {}: {}",
+                        server_name, e
+                    ));
                 }
             }
         }
@@ -147,7 +149,7 @@ impl MultiToolServer {
     #[tool(description = "Write content to a file")]
     pub async fn write_file(&self, request: Parameters<super::WriteFileRequest>) -> String {
         let Parameters(super::WriteFileRequest { path, content }) = request;
-        
+
         match self.filesystem.write_file(&path, &content).await {
             Ok(_) => format!("Successfully wrote {} bytes to {}", content.len(), path),
             Err(e) => format!("Error writing file: {}", e),
@@ -157,7 +159,7 @@ impl MultiToolServer {
     #[tool(description = "Read content from a file")]
     pub async fn read_file(&self, request: Parameters<ReadFileRequest>) -> String {
         let Parameters(ReadFileRequest { path }) = request;
-        
+
         match self.filesystem.read_file(&path).await {
             Ok(content) => content,
             Err(e) => format!("Error reading file: {}", e),
@@ -167,7 +169,7 @@ impl MultiToolServer {
     #[tool(description = "List files in the filesystem")]
     pub async fn list_files(&self, request: Parameters<ListFilesRequest>) -> String {
         let Parameters(ListFilesRequest { prefix }) = request;
-        
+
         match self.filesystem.list_files().await {
             Ok(files) => {
                 let filtered: Vec<_> = match prefix {
@@ -190,47 +192,74 @@ mod tests {
     async fn test_tool_registry_with_real_mcp_server() {
         // Create a tool registry
         let mut registry = ToolRegistry::new();
-        
+
         // Create filesystem and server
         let filesystem = InMemoryFileSystem::new();
         let server = MultiToolServer::new(filesystem.clone());
-        
+
         // Create test MCP client
         let mut test_client = TestMcpClient::new();
-        test_client.connect_test_server("test-server".to_string(), server)
+        test_client
+            .connect_test_server("test-server".to_string(), server)
             .await
             .expect("Failed to connect test server");
-        
+
         // Discover tools and register them
-        let tools = test_client.discover_tools().await
+        let tools = test_client
+            .discover_tools()
+            .await
             .expect("Failed to discover tools");
-        
+
         // Verify we discovered 3 tools
         assert_eq!(tools.len(), 3);
-        
+
         // Register all discovered tools
         for (server_name, tool) in tools {
             registry.register_tool(server_name, tool);
         }
-        
+
         // Verify registry state
         assert_eq!(registry.tool_count(), 3);
-        
+
         let tool_list = registry.list_tools();
         assert!(tool_list.contains(&"write_file".to_string()));
         assert!(tool_list.contains(&"read_file".to_string()));
         assert!(tool_list.contains(&"list_files".to_string()));
-        
+
         // Verify tool descriptions
-        assert!(registry.get_tool_description("write_file").unwrap().contains("Write content to a file"));
-        assert!(registry.get_tool_description("read_file").unwrap().contains("Read content from a file"));
-        assert!(registry.get_tool_description("list_files").unwrap().contains("List files in the filesystem"));
-        
+        assert!(
+            registry
+                .get_tool_description("write_file")
+                .unwrap()
+                .contains("Write content to a file")
+        );
+        assert!(
+            registry
+                .get_tool_description("read_file")
+                .unwrap()
+                .contains("Read content from a file")
+        );
+        assert!(
+            registry
+                .get_tool_description("list_files")
+                .unwrap()
+                .contains("List files in the filesystem")
+        );
+
         // Verify server mapping
-        assert_eq!(registry.get_server_for_tool("write_file"), Some(&"test-server".to_string()));
-        assert_eq!(registry.get_server_for_tool("read_file"), Some(&"test-server".to_string()));
-        assert_eq!(registry.get_server_for_tool("list_files"), Some(&"test-server".to_string()));
-        
+        assert_eq!(
+            registry.get_server_for_tool("write_file"),
+            Some(&"test-server".to_string())
+        );
+        assert_eq!(
+            registry.get_server_for_tool("read_file"),
+            Some(&"test-server".to_string())
+        );
+        assert_eq!(
+            registry.get_server_for_tool("list_files"),
+            Some(&"test-server".to_string())
+        );
+
         // For now, we'll test registry functionality without invoke_tool
         // since it requires a real McpClient instance
     }
@@ -238,41 +267,54 @@ mod tests {
     #[tokio::test]
     async fn test_tool_registry_multiple_servers() {
         let mut registry = ToolRegistry::new();
-        
+
         // Create two different servers
         let fs1 = InMemoryFileSystem::new();
         let fs2 = InMemoryFileSystem::new();
-        
+
         let server1 = super::super::FileServerMcp::new(fs1.clone());
         let server2 = MultiToolServer::new(fs2.clone());
-        
+
         // Connect both servers
         let mut test_client = TestMcpClient::new();
-        test_client.connect_test_server("file-server".to_string(), server1)
+        test_client
+            .connect_test_server("file-server".to_string(), server1)
             .await
             .expect("Failed to connect file server");
-        test_client.connect_test_server("multi-server".to_string(), server2)
+        test_client
+            .connect_test_server("multi-server".to_string(), server2)
             .await
             .expect("Failed to connect multi server");
-        
+
         // Discover and register tools from both servers
-        let tools = test_client.discover_tools().await
+        let tools = test_client
+            .discover_tools()
+            .await
             .expect("Failed to discover tools");
-        
+
         for (server_name, tool) in tools {
             registry.register_tool(server_name, tool);
         }
-        
+
         // Verify we have 3 tools total (write_file from file-server is overwritten by multi-server)
         assert_eq!(registry.tool_count(), 3);
-        
+
         // Verify server mapping - file-server has 1 write_file, multi-server has 3 tools
         // Note: write_file from multi-server will overwrite write_file from file-server
         // since tool names are unique in the registry
-        assert_eq!(registry.get_server_for_tool("write_file"), Some(&"multi-server".to_string()));
-        assert_eq!(registry.get_server_for_tool("read_file"), Some(&"multi-server".to_string()));
-        assert_eq!(registry.get_server_for_tool("list_files"), Some(&"multi-server".to_string()));
-        
+        assert_eq!(
+            registry.get_server_for_tool("write_file"),
+            Some(&"multi-server".to_string())
+        );
+        assert_eq!(
+            registry.get_server_for_tool("read_file"),
+            Some(&"multi-server".to_string())
+        );
+        assert_eq!(
+            registry.get_server_for_tool("list_files"),
+            Some(&"multi-server".to_string())
+        );
+
         // For now, we'll test registry functionality without invoke_tool
         // since it requires a real McpClient instance
     }
@@ -280,40 +322,39 @@ mod tests {
     #[tokio::test]
     async fn test_tool_registry_parameter_validation() {
         let mut registry = ToolRegistry::new();
-        
+
         // Create and connect a server
         let fs = InMemoryFileSystem::new();
         let server = MultiToolServer::new(fs);
-        
+
         let mut test_client = TestMcpClient::new();
-        test_client.connect_test_server("test-server".to_string(), server)
+        test_client
+            .connect_test_server("test-server".to_string(), server)
             .await
             .expect("Failed to connect server");
-        
+
         // Discover and register tools
         let tools = test_client.discover_tools().await.unwrap();
         for (server_name, tool) in tools {
             registry.register_tool(server_name, tool);
         }
-        
+
         // Get tool parameters
         let write_params = registry.get_tool_parameters("write_file").unwrap();
         assert!(write_params.is_object());
-        
+
         let read_params = registry.get_tool_parameters("read_file").unwrap();
         assert!(read_params.is_object());
-        
+
         let list_params = registry.get_tool_parameters("list_files").unwrap();
         assert!(list_params.is_object());
-        
+
         // Verify parameter schemas contain expected fields
         let write_schema = write_params.as_object().unwrap();
         assert!(write_schema.contains_key("properties"));
-        
+
         let props = write_schema.get("properties").unwrap().as_object().unwrap();
         assert!(props.contains_key("path"));
         assert!(props.contains_key("content"));
     }
 }
-
-
