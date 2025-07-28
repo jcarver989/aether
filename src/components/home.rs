@@ -43,11 +43,9 @@ impl Component for Home {
     fn handle_key_event(&mut self, key: crossterm::event::KeyEvent) -> Result<Option<Action>> {
         use crossterm::event::{KeyCode, KeyModifiers};
         
-        // Let chat handle scrolling keys first (Up/Down/PageUp/PageDown)
+        // Let chat handle scrolling keys first (Up/Down/PageUp/PageDown with modifiers)
         match (key.code, key.modifiers) {
-            (KeyCode::Up, KeyModifiers::NONE) 
-            | (KeyCode::Down, KeyModifiers::NONE)
-            | (KeyCode::Up, KeyModifiers::CONTROL)
+            (KeyCode::Up, KeyModifiers::CONTROL)
             | (KeyCode::Down, KeyModifiers::CONTROL)
             | (KeyCode::PageUp, _)
             | (KeyCode::PageDown, _) => {
@@ -58,7 +56,22 @@ impl Component for Home {
             _ => {
                 // For all other keys, let input handle them first
                 if let Some(action) = self.input.handle_key_event(key)? {
-                    return Ok(Some(action));
+                    // Handle input actions - some need to be processed internally, others passed through
+                    match &action {
+                        Action::InsertChar(_) | Action::InsertNewline | Action::DeleteChar | Action::MoveCursor(_) => {
+                            // Process these actions internally and update the input component
+                            self.input.update(action)?;
+                            return Ok(None); // Don't propagate these up
+                        }
+                        Action::SubmitMessage(_) | Action::ClearInput => {
+                            // These actions should be handled by the app, so pass them through
+                            return Ok(Some(action));
+                        }
+                        _ => {
+                            // Pass through any other actions
+                            return Ok(Some(action));
+                        }
+                    }
                 }
                 // Then let chat handle any remaining keys
                 if let Some(action) = self.chat.handle_key_event(key)? {
