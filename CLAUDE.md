@@ -32,6 +32,12 @@ cargo fmt
 cargo clippy
 ```
 
+## CRITICAL - ALWAYS FOLLOW THIS WORKFLOW
+
+1. Always write tests to prove your code works
+2. If fixing a bug, write a failing test  FIRST, BEFORE making changes. Then make the test(s) pass.
+3. ALWAYS run tests before declaring your work done -- you may have broken something 
+
 ## Architecture
 
 The codebase follows a modular architecture with clear separation of concerns:
