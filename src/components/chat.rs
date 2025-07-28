@@ -19,8 +19,10 @@ use super::{
 struct ChatContentWidget<'a> {
     content_blocks: &'a [ContentBlock],
     layout_manager: &'a BlockLayoutManager,
+    #[allow(dead_code)]
     block_renderer: &'a BlockRenderer,
     selected_block: Option<usize>,
+    #[allow(dead_code)]
     content_height: u16,
 }
 
@@ -175,6 +177,7 @@ pub struct Chat {
     block_renderer: BlockRenderer,
     command_tx: Option<UnboundedSender<Action>>,
     config: Arc<Config>,
+    #[allow(dead_code)]
     theme: Theme,
     auto_scroll: bool,
     scroll_offset: u16,
@@ -222,10 +225,12 @@ impl Chat {
         }
     }
 
+    #[cfg(test)]
     pub fn get_messages(&self) -> &Vec<ChatMessage> {
         &self.messages
     }
 
+    #[cfg(test)]
     pub fn get_content_blocks(&mut self) -> &Vec<ContentBlock> {
         // Ensure content blocks are up to date
         if self.content_dirty {
@@ -247,6 +252,7 @@ impl Chat {
         // Don't rebuild immediately - let draw() handle it when needed
     }
 
+    #[allow(dead_code)]
     fn add_message_optimized(&mut self, message: ChatMessage) {
         // For streaming content, avoid marking everything dirty if we're just appending
         let is_streaming_update = matches!(message, ChatMessage::AssistantStreaming { .. });
@@ -564,7 +570,7 @@ impl Component for Chat {
         };
 
         // Only recalculate layout if content changed or area changed
-        let area_changed = self.cached_area.map_or(true, |cached| cached != virtual_area);
+        let area_changed = self.cached_area != Some(virtual_area);
         if self.layout_dirty || area_changed {
             self.layout_manager.calculate_layouts(
                 &self.content_blocks,

@@ -5,6 +5,7 @@ use super::content_block::ContentBlock;
 use crate::theme::Theme;
 
 pub struct BlockRenderer {
+    #[allow(dead_code)]
     theme: Theme,
 }
 
@@ -13,6 +14,7 @@ impl BlockRenderer {
         Self { theme }
     }
 
+    #[allow(dead_code)]
     pub fn render_block(
         &self,
         frame: &mut Frame,

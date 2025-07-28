@@ -48,18 +48,21 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_items(items: Vec<T>) -> Self {
         let mut scroll = Self::new();
         scroll.set_items(items);
         scroll
     }
 
+    #[allow(dead_code)]
     pub fn set_items(&mut self, items: Vec<T>) {
         self.items = items;
         self.cache_valid = false;
         self.item_heights_cache.clear();
     }
 
+    #[allow(dead_code)]
     pub fn add_item(&mut self, item: T) {
         self.items.push(item);
         self.cache_valid = false;
@@ -73,6 +76,7 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
         self.total_content_height = 0;
     }
 
+    #[allow(dead_code)]
     pub fn items(&self) -> &[T] {
         &self.items
     }
@@ -203,16 +207,13 @@ impl<T: VirtualScrollItem> Component for VirtualScroll<T> {
     }
 
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
-        match action {
-            Action::ScrollChat(direction) => {
-                match direction {
-                    ScrollDirection::Up => self.scroll_up(),
-                    ScrollDirection::Down => self.scroll_down(),
-                    ScrollDirection::PageUp => self.page_up(),
-                    ScrollDirection::PageDown => self.page_down(),
-                }
+        if let Action::ScrollChat(direction) = action {
+            match direction {
+                ScrollDirection::Up => self.scroll_up(),
+                ScrollDirection::Down => self.scroll_down(),
+                ScrollDirection::PageUp => self.page_up(),
+                ScrollDirection::PageDown => self.page_down(),
             }
-            _ => {}
         }
         Ok(None)
     }

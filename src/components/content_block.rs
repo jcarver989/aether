@@ -68,6 +68,7 @@ pub enum ContentElement {
 }
 
 impl ContentBlock {
+    #[allow(dead_code)]
     pub fn timestamp(&self) -> DateTime<Utc> {
         match self {
             ContentBlock::UserMessage { timestamp, .. } => *timestamp,
@@ -122,6 +123,7 @@ impl ContentBlock {
         }
     }
 
+    #[allow(dead_code)]
     pub fn render(
         &self,
         frame: &mut Frame,
@@ -172,6 +174,7 @@ impl ContentBlock {
         }
     }
 
+    #[allow(dead_code)]
     fn render_user_message(
         &self,
         frame: &mut Frame,
@@ -215,6 +218,7 @@ impl ContentBlock {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn render_assistant_message(
         &self,
         frame: &mut Frame,
@@ -271,6 +275,7 @@ impl ContentBlock {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn render_system_message(
         &self,
         frame: &mut Frame,
@@ -314,6 +319,7 @@ impl ContentBlock {
         Ok(())
     }
 
+    #[allow(dead_code, clippy::too_many_arguments)]
     fn render_tool_call_block(
         &self,
         frame: &mut Frame,
@@ -374,6 +380,7 @@ impl ContentBlock {
         Ok(())
     }
 
+    #[allow(dead_code, clippy::too_many_arguments)]
     fn render_tool_result_block(
         &self,
         frame: &mut Frame,
@@ -439,6 +446,7 @@ impl ContentBlock {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn render_error_block(
         &self,
         frame: &mut Frame,
@@ -482,6 +490,7 @@ impl ContentBlock {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn render_content_element(
         &self,
         element: &ContentElement,
@@ -748,7 +757,7 @@ fn parse_assistant_content(content: &str) -> Vec<ContentElement> {
     // Flush any remaining text
     if !current_text.is_empty() {
         elements.extend(parse_inline_formatting(
-            &current_text.trim_end_matches('\n'),
+            current_text.trim_end_matches('\n'),
         ));
     }
 

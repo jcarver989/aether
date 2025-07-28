@@ -6,6 +6,7 @@ use ratatui::layout::Rect;
 pub struct BlockLayout {
     pub block_id: usize,
     pub area: Rect,
+    #[allow(dead_code)]
     pub visible: bool,
 }
 
@@ -78,6 +79,7 @@ impl BlockLayoutManager {
         })
     }
 
+    #[allow(dead_code)]
     pub fn get_visible_layouts_cached(&self) -> impl Iterator<Item = &BlockLayout> {
         self.layouts.iter().filter(|layout| layout.visible)
     }
@@ -89,6 +91,7 @@ impl BlockLayoutManager {
             .unwrap_or(0)
     }
 
+    #[allow(dead_code)]
     pub fn scroll_to_offset(&mut self, offset: u16) {
         self.scroll_offset = offset;
 
@@ -112,16 +115,19 @@ impl BlockLayoutManager {
         None
     }
 
+    #[allow(dead_code)]
     pub fn get_layout_for_block(&self, block_id: usize) -> Option<&BlockLayout> {
         self.layouts
             .iter()
             .find(|layout| layout.block_id == block_id)
     }
 
+    #[allow(dead_code)]
     pub fn get_all_layouts(&self) -> &[BlockLayout] {
         &self.layouts
     }
 
+    #[allow(dead_code)]
     pub fn append_block_layout(
         &mut self,
         block: &ContentBlock,

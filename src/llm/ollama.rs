@@ -76,6 +76,7 @@ impl OllamaProvider {
                         tool_calls: openai_tool_calls,
                         audio: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     })
                 }

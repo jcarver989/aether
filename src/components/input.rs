@@ -116,9 +116,6 @@ impl InputState {
         }
     }
 
-    fn to_string(&self) -> String {
-        self.lines.join("\n")
-    }
 
     fn is_empty(&self) -> bool {
         self.lines.len() == 1 && self.lines[0].is_empty()
@@ -128,6 +125,12 @@ impl InputState {
         self.lines = vec![String::new()];
         self.cursor_line = 0;
         self.cursor_col = 0;
+    }
+}
+
+impl std::fmt::Display for InputState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.lines.join("\n"))
     }
 }
 

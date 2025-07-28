@@ -245,11 +245,9 @@ impl<T: LlmProvider> Agent<T> {
 
     /// Update the last streaming message to a regular assistant message
     pub fn finalize_streaming_message(&mut self) {
-        if let Some(last_message) = self.conversation_history.last().cloned() {
-            if let ChatMessage::AssistantStreaming { content, timestamp } = last_message {
-                if let Some(last_msg) = self.conversation_history.last_mut() {
-                    *last_msg = ChatMessage::Assistant { content, timestamp };
-                }
+        if let Some(ChatMessage::AssistantStreaming { content, timestamp }) = self.conversation_history.last().cloned() {
+            if let Some(last_msg) = self.conversation_history.last_mut() {
+                *last_msg = ChatMessage::Assistant { content, timestamp };
             }
         }
     }
