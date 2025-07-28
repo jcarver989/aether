@@ -163,7 +163,7 @@ impl LlmProvider for OllamaProvider {
 
                         // Handle finish reason for tool call completion
                         if let Some(finish_reason) = &choice.finish_reason {
-                            if format!("{:?}", finish_reason).contains("tool_calls") {
+                            if format!("{finish_reason:?}").contains("tool_calls") {
                                 return Ok(StreamChunk::Done);
                             }
                         }

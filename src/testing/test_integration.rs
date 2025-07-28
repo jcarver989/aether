@@ -1,10 +1,11 @@
-use crate::testing::{InMemoryFileSystem, create_transport_pair};
-use rmcp::transport::Transport;
+use crate::testing::InMemoryFileSystem;
 
 /// Simple integration test that verifies the transport works
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::transport::create_transport_pair;
+    use rmcp::transport::Transport;
 
     #[tokio::test]
     async fn test_transport_pair_creation() {

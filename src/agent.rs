@@ -133,8 +133,7 @@ impl<T: LlmProvider> Agent<T> {
         if !has_system_message {
             let prompt = if let Some(system_prompt) = &self.system_prompt {
                 format!(
-                    "You are an AI assistant. Here are your instructions:\n\n{}",
-                    system_prompt
+                    "You are an AI assistant. Here are your instructions:\n\n{system_prompt}"
                 )
             } else {
                 "You are an AI assistant.".to_string()

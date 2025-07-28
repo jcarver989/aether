@@ -22,6 +22,12 @@ struct McpServer {
     client: RunningService<RoleClient, InitializeRequestParam>,
 }
 
+impl Default for McpClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl McpClient {
     pub fn new() -> Self {
         Self {
@@ -73,8 +79,7 @@ impl McpClient {
             .await
             .map_err(|e| {
                 color_eyre::Report::msg(format!(
-                    "Failed to connect to HTTP MCP server {}: {}",
-                    name, e
+                    "Failed to connect to HTTP MCP server {name}: {e}"
                 ))
             })?;
 
@@ -147,14 +152,13 @@ impl McpClient {
         }
 
         log_debug(&format!(
-            "Executing tool: {} on server: {} with args: {}",
-            tool_name, server_name, args
+            "Executing tool: {tool_name} on server: {server_name} with args: {args}"
         ));
 
         let server = self
             .servers
             .get(server_name)
-            .ok_or_else(|| color_eyre::Report::msg(format!("Server not found: {}", server_name)))?;
+            .ok_or_else(|| color_eyre::Report::msg(format!("Server not found: {server_name}")))?;
 
         let arguments = args.as_object().cloned();
         let request = CallToolRequestParam {
@@ -167,25 +171,23 @@ impl McpClient {
         let result = match server.client.call_tool(request).await {
             Ok(result) => result,
             Err(e) => {
-                log_debug(&format!("Tool call failed with error: {:?}", e));
+                log_debug(&format!("Tool call failed with error: {e:?}"));
                 return Err(color_eyre::Report::msg(format!(
-                    "Failed to execute tool {} on server {}: {}",
-                    tool_name, server_name, e
+                    "Failed to execute tool {tool_name} on server {server_name}: {e}"
                 )));
             }
         };
 
-        log_debug(&format!("Got response: {:?}", result));
+        log_debug(&format!("Got response: {result:?}"));
 
         if result.is_error.unwrap_or(false) {
             let error_msg = result
                 .content
                 .first()
-                .map(|content| format!("{:?}", content))
+                .map(|content| format!("{content:?}"))
                 .unwrap_or_else(|| "Unknown error".to_string());
             return Err(color_eyre::Report::msg(format!(
-                "Tool execution failed: {}",
-                error_msg
+                "Tool execution failed: {error_msg}"
             )));
         }
 
@@ -198,7 +200,7 @@ impl McpClient {
             })
             .unwrap_or_else(|| Value::String("No result".to_string()));
 
-        log_debug(&format!("Returning result value: {:?}", result_value));
+        log_debug(&format!("Returning result value: {result_value:?}"));
 
         Ok(result_value)
     }

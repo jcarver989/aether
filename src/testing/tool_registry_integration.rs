@@ -1,4 +1,3 @@
-use crate::mcp::registry::ToolRegistry;
 use crate::testing::InMemoryFileSystem;
 use rmcp::{
     RoleClient, RoleServer, ServerHandler, Service,
@@ -16,6 +15,12 @@ pub struct TestMcpClient {
     servers: indexmap::IndexMap<String, RunningService<RoleClient, ClientInfo>>,
     // Keep server handles alive to prevent transport from closing
     _server_handles: Vec<Box<dyn std::any::Any + Send>>,
+}
+
+impl Default for TestMcpClient {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TestMcpClient {
@@ -57,8 +62,7 @@ impl TestMcpClient {
                 }
                 Err(e) => {
                     return Err(format!(
-                        "Failed to discover tools from server {}: {}",
-                        server_name, e
+                        "Failed to discover tools from server {server_name}: {e}"
                     ));
                 }
             }
@@ -76,7 +80,7 @@ impl TestMcpClient {
         let client = self
             .servers
             .get(server_name)
-            .ok_or_else(|| format!("Server not found: {}", server_name))?;
+            .ok_or_else(|| format!("Server not found: {server_name}"))?;
 
         let arguments = args.as_object().cloned();
         let request = CallToolRequestParam {
@@ -87,7 +91,7 @@ impl TestMcpClient {
         let result = client
             .call_tool(request)
             .await
-            .map_err(|e| format!("Failed to execute tool: {}", e))?;
+            .map_err(|e| format!("Failed to execute tool: {e}"))?;
 
         if result.is_error.unwrap_or(false) {
             return Err("Tool execution failed".to_string());
@@ -152,7 +156,7 @@ impl MultiToolServer {
 
         match self.filesystem.write_file(&path, &content).await {
             Ok(_) => format!("Successfully wrote {} bytes to {}", content.len(), path),
-            Err(e) => format!("Error writing file: {}", e),
+            Err(e) => format!("Error writing file: {e}"),
         }
     }
 
@@ -162,7 +166,7 @@ impl MultiToolServer {
 
         match self.filesystem.read_file(&path).await {
             Ok(content) => content,
-            Err(e) => format!("Error reading file: {}", e),
+            Err(e) => format!("Error reading file: {e}"),
         }
     }
 
@@ -178,7 +182,7 @@ impl MultiToolServer {
                 };
                 filtered.join("\n")
             }
-            Err(e) => format!("Error listing files: {}", e),
+            Err(e) => format!("Error listing files: {e}"),
         }
     }
 }

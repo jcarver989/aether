@@ -270,15 +270,12 @@ pub fn fix_json_string_arguments(mut arguments: Value) -> Value {
 pub fn assert_tool_in_registry(registry: &ToolRegistry, tool_name: &str, expected_server: &str) {
     assert!(
         registry.list_tools().contains(&tool_name.to_string()),
-        "Tool '{}' should be in registry",
-        tool_name
+        "Tool '{tool_name}' should be in registry"
     );
     assert_eq!(
         registry.get_server_for_tool(tool_name),
         Some(&expected_server.to_string()),
-        "Tool '{}' should map to server '{}'",
-        tool_name,
-        expected_server
+        "Tool '{tool_name}' should map to server '{expected_server}'"
     );
 }
 
@@ -316,8 +313,7 @@ pub fn assert_stream_chunk_matches(actual: &StreamChunk, expected: &StreamChunk)
         }
         (StreamChunk::Done, StreamChunk::Done) => {}
         _ => panic!(
-            "Stream chunk mismatch:\nActual: {:?}\nExpected: {:?}",
-            actual, expected
+            "Stream chunk mismatch:\nActual: {actual:?}\nExpected: {expected:?}"
         ),
     }
 }

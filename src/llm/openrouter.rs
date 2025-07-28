@@ -183,7 +183,7 @@ impl LlmProvider for OpenRouterProvider {
                                 debug!("Stream: Got finish_reason: {:?}, current_tool_id: {:?}", finish_reason, current_tool_id);
 
                                 // Complete any pending tool call
-                                if format!("{:?}", finish_reason).contains("tool_calls") {
+                                if format!("{finish_reason:?}").contains("tool_calls") {
                                     if let Some(id) = current_tool_id.take() {
                                         yield Ok(StreamChunk::ToolCallComplete { id });
                                     }

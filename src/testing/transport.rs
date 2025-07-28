@@ -99,7 +99,7 @@ impl InMemoryFileSystem {
         files
             .get(path)
             .cloned()
-            .ok_or_else(|| format!("File not found: {}", path))
+            .ok_or_else(|| format!("File not found: {path}"))
     }
 
     pub async fn list_files(&self) -> Result<Vec<String>, String> {

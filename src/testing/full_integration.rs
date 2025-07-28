@@ -1,9 +1,8 @@
 use crate::testing::{InMemoryFileSystem, create_transport_pair};
 use rmcp::{
-    RoleClient, RoleServer, ServerHandler, Service, ServiceExt,
+    RoleClient, RoleServer, ServerHandler, Service,
     handler::server::{router::tool::ToolRouter, tool::Parameters},
-    model::{CallToolRequestParam, ClientInfo, Implementation, ServerCapabilities, ServerInfo},
-    schemars::JsonSchema,
+    model::{ClientInfo, Implementation, ServerCapabilities, ServerInfo},
     serve_client, serve_server,
     service::{ClientInitializeError, RunningService, ServerInitializeError},
     tool, tool_handler, tool_router,
@@ -54,7 +53,7 @@ impl FileServerMcp {
 
         match self.filesystem.write_file(&path, &content).await {
             Ok(_) => format!("Successfully wrote {} bytes to {}", content.len(), path),
-            Err(e) => format!("Error writing file: {}", e),
+            Err(e) => format!("Error writing file: {e}"),
         }
     }
 }
@@ -98,6 +97,7 @@ pub enum ConnectError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmcp::model::CallToolRequestParam;
 
     #[tokio::test]
     async fn test_real_mcp_server_client_integration() {

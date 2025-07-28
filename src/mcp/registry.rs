@@ -27,6 +27,12 @@ pub struct ToolRegistry {
     mcp_client: Option<Arc<McpClient>>,
 }
 
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
@@ -81,14 +87,13 @@ impl ToolRegistry {
         // Check if the tool exists in our registry
         if !self.tools.contains_key(tool_name) {
             return Err(color_eyre::Report::msg(format!(
-                "Tool not found in registry: {}",
-                tool_name
+                "Tool not found in registry: {tool_name}"
             )));
         }
 
         // Get the server name for this tool
         let server_name = self.get_server_for_tool(tool_name).ok_or_else(|| {
-            color_eyre::Report::msg(format!("Server not found for tool: {}", tool_name))
+            color_eyre::Report::msg(format!("Server not found for tool: {tool_name}"))
         })?;
 
         // Get the MCP client
