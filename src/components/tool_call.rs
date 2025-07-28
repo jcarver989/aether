@@ -67,7 +67,7 @@ impl ToolCallComponent {
                         if s.len() > 50 {
                             format!("\"{}...\"", &s[..47])
                         } else {
-                            format!("\"{}\"", s)
+                            format!("\"{s}\"")
                         }
                     }
                     serde_json::Value::Number(n) => n.to_string(),

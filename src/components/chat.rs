@@ -84,7 +84,7 @@ impl<'a> ChatContentWidget<'a> {
 
         // Add title line
         lines.push(Line::from(Span::styled(
-            format!("▶ {}", title),
+            format!("▶ {title}"),
             if is_selected {
                 title_style
                     .add_modifier(Modifier::BOLD)
@@ -98,12 +98,12 @@ impl<'a> ChatContentWidget<'a> {
         match block {
             crate::components::content_block::ContentBlock::SystemMessage { content, .. } => {
                 for line in content.lines() {
-                    lines.push(Line::from(Span::raw(format!("  {}", line))));
+                    lines.push(Line::from(Span::raw(format!("  {line}"))));
                 }
             }
             crate::components::content_block::ContentBlock::UserMessage { content, .. } => {
                 for line in content.lines() {
-                    lines.push(Line::from(Span::raw(format!("  {}", line))));
+                    lines.push(Line::from(Span::raw(format!("  {line}"))));
                 }
             }
             crate::components::content_block::ContentBlock::AssistantMessage {
@@ -113,28 +113,28 @@ impl<'a> ChatContentWidget<'a> {
             } => {
                 if *streaming {
                     for line in display_text.lines() {
-                        lines.push(Line::from(Span::raw(format!("  {}", line))));
+                        lines.push(Line::from(Span::raw(format!("  {line}"))));
                     }
                     lines.push(Line::from(Span::raw("  ⟨streaming⟩")));
                 } else {
                     for line in display_text.lines() {
-                        lines.push(Line::from(Span::raw(format!("  {}", line))));
+                        lines.push(Line::from(Span::raw(format!("  {line}"))));
                     }
                 }
             }
             crate::components::content_block::ContentBlock::ToolCallBlock {
                 name, params, ..
             } => {
-                lines.push(Line::from(Span::raw(format!("  {}: {}", name, params))));
+                lines.push(Line::from(Span::raw(format!("  {name}: {params}"))));
             }
             crate::components::content_block::ContentBlock::ToolResultBlock { content, .. } => {
                 for line in content.lines() {
-                    lines.push(Line::from(Span::raw(format!("  {}", line))));
+                    lines.push(Line::from(Span::raw(format!("  {line}"))));
                 }
             }
             crate::components::content_block::ContentBlock::ErrorBlock { message, .. } => {
                 for line in message.lines() {
-                    lines.push(Line::from(Span::raw(format!("  {}", line))));
+                    lines.push(Line::from(Span::raw(format!("  {line}"))));
                 }
             }
         }

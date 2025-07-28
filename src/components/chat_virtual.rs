@@ -77,7 +77,7 @@ impl VirtualScrollItem for ContentBlockItem {
 
         // Add title line
         lines.push(Line::from(Span::styled(
-            format!("▶ {}", title),
+            format!("▶ {title}"),
             if is_selected {
                 title_style
                     .add_modifier(Modifier::BOLD)
@@ -91,12 +91,12 @@ impl VirtualScrollItem for ContentBlockItem {
         match &self.block {
             ContentBlock::SystemMessage { content, .. } => {
                 for line in content.lines() {
-                    lines.push(Line::from(Span::raw(format!("  {}", line))));
+                    lines.push(Line::from(Span::raw(format!("  {line}"))));
                 }
             }
             ContentBlock::UserMessage { content, .. } => {
                 for line in content.lines() {
-                    lines.push(Line::from(Span::raw(format!("  {}", line))));
+                    lines.push(Line::from(Span::raw(format!("  {line}"))));
                 }
             }
             ContentBlock::AssistantMessage {
@@ -105,23 +105,23 @@ impl VirtualScrollItem for ContentBlockItem {
                 ..
             } => {
                 for line in display_text.lines() {
-                    lines.push(Line::from(Span::raw(format!("  {}", line))));
+                    lines.push(Line::from(Span::raw(format!("  {line}"))));
                 }
                 if *streaming {
                     lines.push(Line::from(Span::raw("  ⟨streaming⟩")));
                 }
             }
             ContentBlock::ToolCallBlock { name, params, .. } => {
-                lines.push(Line::from(Span::raw(format!("  {}: {}", name, params))));
+                lines.push(Line::from(Span::raw(format!("  {name}: {params}"))));
             }
             ContentBlock::ToolResultBlock { content, .. } => {
                 for line in content.lines() {
-                    lines.push(Line::from(Span::raw(format!("  {}", line))));
+                    lines.push(Line::from(Span::raw(format!("  {line}"))));
                 }
             }
             ContentBlock::ErrorBlock { message, .. } => {
                 for line in message.lines() {
-                    lines.push(Line::from(Span::raw(format!("  {}", line))));
+                    lines.push(Line::from(Span::raw(format!("  {line}"))));
                 }
             }
         }

@@ -95,8 +95,8 @@ pub enum ConnectError {
 impl std::fmt::Display for ConnectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConnectError::ServerInit(e) => write!(f, "Server initialization failed: {}", e),
-            ConnectError::ClientInit(e) => write!(f, "Client initialization failed: {}", e),
+            ConnectError::ServerInit(e) => write!(f, "Server initialization failed: {e}"),
+            ConnectError::ClientInit(e) => write!(f, "Client initialization failed: {e}"),
         }
     }
 }

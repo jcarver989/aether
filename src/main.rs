@@ -42,7 +42,7 @@ async fn run_with_openrouter_provider(
         config.config.llm.model.clone(),
     )
     .map_err(|e| {
-        color_eyre::Report::msg(format!("Failed to create OpenRouter provider: {}", e))
+        color_eyre::Report::msg(format!("Failed to create OpenRouter provider: {e}"))
     })?;
 
     let agent = Agent::new(provider, tool_registry, config.config.agent_context.clone());
@@ -60,7 +60,7 @@ async fn run_with_ollama_provider(
         config.config.llm.model.clone(),
     )
     .map_err(|e| {
-        color_eyre::Report::msg(format!("Failed to create Ollama provider: {}", e))
+        color_eyre::Report::msg(format!("Failed to create Ollama provider: {e}"))
     })?;
 
     let agent = Agent::new(provider, tool_registry, config.config.agent_context.clone());
@@ -87,8 +87,8 @@ async fn main() -> Result<()> {
             .connect_server(name.clone(), server_config.clone())
             .await
         {
-            Ok(()) => println!("Connected to MCP server: {}", name),
-            Err(e) => eprintln!("Failed to connect to MCP server {}: {}", name, e),
+            Ok(()) => println!("Connected to MCP server: {name}"),
+            Err(e) => eprintln!("Failed to connect to MCP server {name}: {e}"),
         }
     }
 

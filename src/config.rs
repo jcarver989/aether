@@ -162,18 +162,17 @@ impl AppConfig {
             match server_config {
                 McpServerConfig::Http { url, .. } => {
                     if url.is_empty() {
-                        return Err(format!("MCP server '{}' has empty URL", name));
+                        return Err(format!("MCP server '{name}' has empty URL"));
                     }
                     if !url.starts_with("http://") && !url.starts_with("https://") {
                         return Err(format!(
-                            "MCP server '{}' URL must be a valid HTTP/HTTPS URL",
-                            name
+                            "MCP server '{name}' URL must be a valid HTTP/HTTPS URL"
                         ));
                     }
                 }
                 McpServerConfig::Process { command, .. } => {
                     if command.is_empty() {
-                        return Err(format!("MCP server '{}' has empty command", name));
+                        return Err(format!("MCP server '{name}' has empty command"));
                     }
                 }
             }
@@ -191,7 +190,7 @@ impl Config {
 
     pub fn with_cli_args(cli_args: Option<&Cli>) -> Result<Self, config::ConfigError> {
         let default_config: Config = json5::from_str(CONFIG)
-            .map_err(|e| config::ConfigError::Message(format!("Failed to parse default config: {}", e)))?;
+            .map_err(|e| config::ConfigError::Message(format!("Failed to parse default config: {e}")))?;
         let data_dir = get_data_dir();
         let config_dir = get_config_dir();
 
@@ -600,7 +599,7 @@ pub fn key_event_to_string(key_event: &KeyEvent) -> String {
 
 pub fn parse_key_sequence(raw: &str) -> Result<Vec<KeyEvent>, String> {
     if raw.chars().filter(|c| *c == '>').count() != raw.chars().filter(|c| *c == '<').count() {
-        return Err(format!("Unable to parse `{}`", raw));
+        return Err(format!("Unable to parse `{raw}`"));
     }
     let raw = if !raw.contains("><") {
         let raw = raw.strip_prefix('<').unwrap_or(raw);

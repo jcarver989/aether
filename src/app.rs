@@ -243,7 +243,7 @@ impl<T: LlmProvider> App<T> {
                 if let Err(err) = component.draw(frame, frame.area()) {
                     let _ = self
                         .action_tx
-                        .send(Action::Error(format!("Failed to draw: {:?}", err)));
+                        .send(Action::Error(format!("Failed to draw: {err:?}")));
                 }
             }
         })?;
@@ -336,7 +336,7 @@ impl<T: LlmProvider> App<T> {
                             error!("Failed to parse tool call arguments: {}", e);
                             self.action_tx
                                 .send(Action::AddChatMessage(ChatMessage::Error {
-                                    message: format!("Invalid tool call arguments: {}", e),
+                                    message: format!("Invalid tool call arguments: {e}"),
                                     timestamp: chrono::Utc::now(),
                                 }))?;
                             self.action_tx.send(Action::Render)?;
@@ -439,11 +439,11 @@ impl<T: LlmProvider> App<T> {
                 match result_value {
                     serde_json::Value::String(s) => s,
                     other => serde_json::to_string_pretty(&other)
-                        .unwrap_or_else(|_| format!("{:?}", other)),
+                        .unwrap_or_else(|_| format!("{other:?}")),
                 }
             }
             Err(e) => {
-                format!("Tool execution failed: {}", e)
+                format!("Tool execution failed: {e}")
             }
         };
 

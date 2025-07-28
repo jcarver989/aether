@@ -86,12 +86,12 @@ impl ContentBlock {
             .map(|elem| match elem {
                 ContentElement::Text(t) => t.clone(),
                 ContentElement::CodeBlock { code, language, .. } => {
-                    format!("```{}\n{}\n```", language, code)
+                    format!("```{language}\n{code}\n```")
                 }
-                ContentElement::InlineCode(c) => format!("`{}`", c),
-                ContentElement::Bold(b) => format!("**{}**", b),
-                ContentElement::Italic(i) => format!("*{}*", i),
-                ContentElement::Link { text, url } => format!("[{}]({})", text, url),
+                ContentElement::InlineCode(c) => format!("`{c}`"),
+                ContentElement::Bold(b) => format!("**{b}**"),
+                ContentElement::Italic(i) => format!("*{i}*"),
+                ContentElement::Link { text, url } => format!("[{text}]({url})"),
             })
             .collect::<Vec<_>>()
             .join("")
@@ -520,7 +520,7 @@ impl ContentBlock {
                     // Show full code
                     for code_line in code.lines() {
                         lines.push(Line::from(Span::styled(
-                            format!("  {}", code_line),
+                            format!("  {code_line}"),
                             Style::default().fg(theme.code_fg).bg(theme.code_bg),
                         )));
                     }
@@ -528,7 +528,7 @@ impl ContentBlock {
                     // Show truncated code
                     let first_line = code.lines().next().unwrap_or("");
                     lines.push(Line::from(Span::styled(
-                        format!("  {}...", first_line),
+                        format!("  {first_line}..."),
                         Style::default().fg(theme.code_fg).bg(theme.code_bg),
                     )));
                 }
