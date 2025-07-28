@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -117,7 +117,7 @@ impl InputState {
     }
 
 
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.lines.len() == 1 && self.lines[0].is_empty()
     }
 
@@ -164,6 +164,7 @@ impl Input {
             config: Arc::new(Config::default()),
         }
     }
+
 
     fn format_lines(&self) -> Vec<Line<'static>> {
         if self.state.is_empty() && !self.placeholder.is_empty() {
@@ -242,6 +243,11 @@ impl Component for Input {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+        // Only process key press events, ignore release and repeat events
+        if key.kind != KeyEventKind::Press {
+            return Ok(None);
+        }
+
         match key.code {
             KeyCode::Char(c) => Ok(Some(Action::InsertChar(c))),
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {

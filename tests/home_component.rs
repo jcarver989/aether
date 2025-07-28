@@ -3,7 +3,7 @@ use aether::components::{Component, home::Home};
 use aether::config::Config;
 use aether::types::ChatMessage;
 use chrono::Utc;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -123,20 +123,21 @@ mod tests {
         let key_event = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE);
         let action = home.handle_key_event(key_event).unwrap();
 
-        // Should not return an action directly (input handles internally)
-        assert!(
-            action.is_none(),
-            "Home should not return action for char input"
+        // Should return InsertChar action (new correct behavior)
+        assert_eq!(
+            action,
+            Some(Action::InsertChar('h')),
+            "Home should return InsertChar action for char input"
         );
 
-        // Input should be updated in component state (test by rendering)
+        // Input should NOT be updated until action is processed (test by rendering)
         let buffer = draw_home_component(&mut home, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
         let all_content = extract_buffer_text(&buffer, 0, buffer.content().len());
 
-        // Should contain the typed character
+        // Should still show placeholder since action hasn't been processed yet
         assert!(
-            all_content.contains("h"),
-            "Should display typed character in input area"
+            all_content.contains("Type your message..."),
+            "Should still display placeholder before action processing"
         );
     }
 
@@ -144,11 +145,14 @@ mod tests {
     fn test_home_forwards_enter_key_to_submit_message() {
         let (mut home, _rx) = setup_home_with_handler();
 
-        // First type some text
+        // First type some text and process the actions
         let chars = "hello world";
         for ch in chars.chars() {
-            home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
                 .unwrap();
+            assert_eq!(action, Some(Action::InsertChar(ch)));
+            // Process the action to actually update the input
+            home.update(action.unwrap()).unwrap();
         }
 
         // Then press Enter to submit
@@ -196,11 +200,13 @@ mod tests {
         let chat_msg = create_test_chat_message("This is a chat message", false);
         home.update(Action::AddChatMessage(chat_msg)).unwrap();
 
-        // Type in input
+        // Type in input and process actions
         let input_text = "user input text";
         for ch in input_text.chars() {
-            home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
                 .unwrap();
+            assert_eq!(action, Some(Action::InsertChar(ch)));
+            home.update(action.unwrap()).unwrap();
         }
 
         // Render and check both are present independently
@@ -247,23 +253,28 @@ mod tests {
     fn test_home_handles_shift_enter_in_input() {
         let (mut home, _rx) = setup_home_with_handler();
 
-        // Type some text
+        // Type some text and process actions
         for ch in "line 1".chars() {
-            home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
                 .unwrap();
+            assert_eq!(action, Some(Action::InsertChar(ch)));
+            home.update(action.unwrap()).unwrap();
         }
 
         // Press Shift+Enter for new line
         let shift_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
         let action = home.handle_key_event(shift_enter).unwrap();
 
-        // Should not submit message (returns None)
-        assert!(action.is_none(), "Shift+Enter should not submit message");
+        // Should return InsertNewline action, not submit
+        assert_eq!(action, Some(Action::InsertNewline), "Shift+Enter should return InsertNewline action");
+        home.update(action.unwrap()).unwrap();
 
-        // Add more text on new line
+        // Add more text on new line and process actions
         for ch in "line 2".chars() {
-            home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
                 .unwrap();
+            assert_eq!(action, Some(Action::InsertChar(ch)));
+            home.update(action.unwrap()).unwrap();
         }
 
         // Check buffer shows both lines
@@ -346,10 +357,12 @@ mod tests {
     fn test_home_input_clears_after_submit() {
         let (mut home, _rx) = setup_home_with_handler();
 
-        // Type message
+        // Type message and process actions
         for ch in "test message".chars() {
-            home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
                 .unwrap();
+            assert_eq!(action, Some(Action::InsertChar(ch)));
+            home.update(action.unwrap()).unwrap();
         }
 
         // Verify message is in input
@@ -382,23 +395,29 @@ mod tests {
     fn test_home_handles_complex_input_editing() {
         let (mut home, _rx) = setup_home_with_handler();
 
-        // Type initial text
+        // Type initial text and process actions
         for ch in "Hello world".chars() {
-            home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
                 .unwrap();
+            assert_eq!(action, Some(Action::InsertChar(ch)));
+            home.update(action.unwrap()).unwrap();
         }
 
-        // Move cursor back with left arrow
+        // Move cursor back with left arrow and process actions
         for _ in 0..6 {
             // Move back to position after "Hello"
-            home.handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))
                 .unwrap();
+            assert!(matches!(action, Some(Action::MoveCursor(_))));
+            home.update(action.unwrap()).unwrap();
         }
 
-        // Insert text in middle
+        // Insert text in middle and process actions
         for ch in " beautiful".chars() {
-            home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
                 .unwrap();
+            assert_eq!(action, Some(Action::InsertChar(ch)));
+            home.update(action.unwrap()).unwrap();
         }
 
         // Check result
@@ -427,10 +446,12 @@ mod tests {
         home.update(Action::ScrollChat(ScrollDirection::Up))
             .unwrap();
 
-        // Type in input (should not affect chat scroll)
+        // Type in input (should not affect chat scroll) and process actions
         for ch in "typing while scrolled".chars() {
-            home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
                 .unwrap();
+            assert_eq!(action, Some(Action::InsertChar(ch)));
+            home.update(action.unwrap()).unwrap();
         }
 
         // Buffer should show both input text and maintain scroll position
@@ -450,10 +471,12 @@ mod tests {
     fn test_home_handles_escape_clear_input() {
         let (mut home, _rx) = setup_home_with_handler();
 
-        // Type some text
+        // Type some text and process actions
         for ch in "text to clear".chars() {
-            home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+            let action = home.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
                 .unwrap();
+            assert_eq!(action, Some(Action::InsertChar(ch)));
+            home.update(action.unwrap()).unwrap();
         }
 
         // Verify text is there
@@ -484,6 +507,60 @@ mod tests {
         assert!(
             after_content.contains("Type your message..."),
             "Should show placeholder after clearing input"
+        );
+    }
+
+    #[test]
+    fn test_double_character_issue_reproduction() {
+        let (mut home, _rx) = setup_home_with_handler();
+
+        // Simulate the double character bug by handling both Press and Release events
+        // This should only process the Press event and ignore the Release event
+        let press_event = KeyEvent {
+            code: KeyCode::Char('h'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+
+        let release_event = KeyEvent {
+            code: KeyCode::Char('h'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        };
+
+        // Handle press event (should produce action)
+        let press_action = home.handle_key_event(press_event).unwrap();
+        assert!(
+            matches!(press_action, Some(Action::InsertChar('h'))),
+            "Press event should produce InsertChar action"
+        );
+
+        // Apply the action
+        if let Some(action) = press_action {
+            home.update(action).unwrap();
+        }
+
+        // Handle release event (should NOT produce action if filtering works correctly)
+        let release_action = home.handle_key_event(release_event).unwrap();
+        
+        // The issue: if we're getting double characters, this means release events
+        // are somehow being processed. This test should pass if the bug is fixed.
+        assert!(
+            release_action.is_none(),
+            "Release event should not produce any action (this tests the double character fix)"
+        );
+
+        // Verify only one character was inserted by checking the input area specifically
+        let buffer = draw_home_component(&mut home, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
+        let content = extract_buffer_text(&buffer, 0, buffer.content().len());
+        
+        // Look for the input line with "> h" (there should only be one input)
+        assert!(
+            content.contains("> h") && content.matches("> h").count() == 1,
+            "Should only have one input line with 'h', but found multiple or none. Content: {}",
+            content
         );
     }
 }
