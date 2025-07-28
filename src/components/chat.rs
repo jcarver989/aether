@@ -160,6 +160,7 @@ impl<'a> ChatContentWidget<'a> {
         paragraph.render(area, buf);
     }
 }
+use std::sync::Arc;
 use crate::{
     action::{Action, ScrollDirection},
     config::Config,
@@ -173,7 +174,7 @@ pub struct Chat {
     layout_manager: BlockLayoutManager,
     block_renderer: BlockRenderer,
     command_tx: Option<UnboundedSender<Action>>,
-    config: Config,
+    config: Arc<Config>,
     theme: Theme,
     auto_scroll: bool,
     scroll_offset: u16,
@@ -204,7 +205,7 @@ impl Chat {
             layout_manager: BlockLayoutManager::new(),
             block_renderer: BlockRenderer::new(theme.clone()),
             command_tx: None,
-            config: Config::default(),
+            config: Arc::new(Config::default()),
             theme,
             auto_scroll: true,
             scroll_offset: 0,
@@ -391,7 +392,7 @@ impl Component for Chat {
         Ok(())
     }
 
-    fn register_config_handler(&mut self, config: Config) -> Result<()> {
+    fn register_config_handler(&mut self, config: Arc<Config>) -> Result<()> {
         self.config = config;
         // Theme is already set in new(), keep using the default theme for now
         Ok(())

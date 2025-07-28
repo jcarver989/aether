@@ -10,6 +10,7 @@ use ratatui::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
+use std::sync::Arc;
 use super::{
     Component,
     content_block::ContentBlock,
@@ -154,7 +155,7 @@ pub struct ChatVirtual {
     content_dirty: bool,
     selected_block: Option<usize>,
     command_tx: Option<UnboundedSender<Action>>,
-    config: Config,
+    config: Arc<Config>,
 }
 
 impl Default for ChatVirtual {
@@ -171,7 +172,7 @@ impl ChatVirtual {
             content_dirty: true,
             selected_block: None,
             command_tx: None,
-            config: Config::default(),
+            config: Arc::new(Config::default()),
         }
     }
 
@@ -232,8 +233,8 @@ impl Component for ChatVirtual {
         self.scroll.register_action_handler(tx)
     }
 
-    fn register_config_handler(&mut self, config: Config) -> Result<()> {
-        self.config = config.clone();
+    fn register_config_handler(&mut self, config: Arc<Config>) -> Result<()> {
+        self.config = Arc::clone(&config);
         self.scroll.register_config_handler(config)
     }
 

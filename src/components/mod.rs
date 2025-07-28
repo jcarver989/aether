@@ -4,6 +4,7 @@ use ratatui::{
     Frame,
     layout::{Rect, Size},
 };
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{action::Action, config::Config, tui::Event};
@@ -35,7 +36,7 @@ pub trait Component {
     /// # Returns
     ///
     /// * `Result<()>` - An Ok result or an error.
-    fn register_config_handler(&mut self, config: Config) -> Result<()> {
+    fn register_config_handler(&mut self, config: Arc<Config>) -> Result<()> {
         let _ = config; // to appease clippy
         Ok(())
     }

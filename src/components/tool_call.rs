@@ -9,6 +9,7 @@ use ratatui::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
+use std::sync::Arc;
 use super::Component;
 use crate::{
     action::Action,
@@ -22,7 +23,7 @@ pub struct ToolCallComponent {
     result: Option<String>,
     expanded: bool,
     command_tx: Option<UnboundedSender<Action>>,
-    config: Config,
+    config: Arc<Config>,
 }
 
 impl ToolCallComponent {
@@ -133,7 +134,7 @@ impl Component for ToolCallComponent {
         Ok(())
     }
 
-    fn register_config_handler(&mut self, config: Config) -> Result<()> {
+    fn register_config_handler(&mut self, config: Arc<Config>) -> Result<()> {
         self.config = config;
         Ok(())
     }

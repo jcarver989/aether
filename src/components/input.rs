@@ -9,6 +9,7 @@ use ratatui::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
+use std::sync::Arc;
 use super::Component;
 use crate::{action::{Action, CursorDirection}, config::Config};
 
@@ -141,7 +142,7 @@ pub struct Input {
     placeholder: String,
     show_cursor: bool,
     command_tx: Option<UnboundedSender<Action>>,
-    config: Config,
+    config: Arc<Config>,
 }
 
 impl Default for Input {
@@ -157,7 +158,7 @@ impl Input {
             placeholder: "Type your message...".to_string(),
             show_cursor: true,
             command_tx: None,
-            config: Config::default(),
+            config: Arc::new(Config::default()),
         }
     }
 
@@ -232,7 +233,7 @@ impl Component for Input {
         Ok(())
     }
 
-    fn register_config_handler(&mut self, config: Config) -> Result<()> {
+    fn register_config_handler(&mut self, config: Arc<Config>) -> Result<()> {
         self.config = config;
         Ok(())
     }
@@ -972,7 +973,7 @@ mod tests {
         assert!(input.command_tx.is_some());
 
         // Test register_config_handler
-        let config = Config::default();
+        let config = Arc::new(Config::default());
         let result = input.register_config_handler(config);
         assert!(result.is_ok());
 

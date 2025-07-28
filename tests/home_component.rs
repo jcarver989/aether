@@ -45,7 +45,7 @@ fn setup_home_with_handler() -> (Home, mpsc::UnboundedReceiver<Action>) {
     let mut home = Home::new();
     let (tx, rx) = mpsc::unbounded_channel();
     home.register_action_handler(tx).unwrap();
-    home.register_config_handler(Config::default()).unwrap();
+    home.register_config_handler(std::sync::Arc::new(Config::default())).unwrap();
     (home, rx)
 }
 

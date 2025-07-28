@@ -5,6 +5,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
 };
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
@@ -179,7 +180,7 @@ impl<T: VirtualScrollItem> Component for VirtualScroll<T> {
         Ok(())
     }
 
-    fn register_config_handler(&mut self, _config: Config) -> Result<()> {
+    fn register_config_handler(&mut self, _config: Arc<Config>) -> Result<()> {
         Ok(())
     }
 

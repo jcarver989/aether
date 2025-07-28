@@ -2,6 +2,7 @@ use color_eyre::Result;
 use crossterm::event::KeyEvent;
 use ratatui::prelude::Rect;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
@@ -18,7 +19,7 @@ use crate::{
 };
 
 pub struct App<T: LlmProvider> {
-    config: Config,
+    config: Arc<Config>,
     app_config: AppConfig,
     components: Vec<Box<dyn Component>>,
     should_quit: bool,
@@ -43,6 +44,7 @@ impl<T: LlmProvider> App<T> {
         // Load configuration with CLI args
         let config = Config::with_cli_args(Some(cli_args))?;
         let app_config = config.config.clone();
+        let config = Arc::new(config);
 
         Ok(Self {
             components: vec![Box::new(Home::new()), Box::new(FpsCounter::default())],
@@ -69,7 +71,7 @@ impl<T: LlmProvider> App<T> {
             component.register_action_handler(self.action_tx.clone())?;
         }
         for component in self.components.iter_mut() {
-            component.register_config_handler(self.config.clone())?;
+            component.register_config_handler(Arc::clone(&self.config))?;
         }
         for component in self.components.iter_mut() {
             component.init(tui.size()?)?;
@@ -156,10 +158,10 @@ impl<T: LlmProvider> App<T> {
                 Action::Resize(w, h) => self.handle_resize(tui, w, h)?,
                 Action::Render => self.render(tui)?,
                 Action::SubmitMessage(ref message) => {
-                    self.handle_submit_message(message.clone()).await?;
+                    self.handle_submit_message(message).await?;
                 }
                 Action::ReceiveStreamChunk(ref chunk) => {
-                    self.handle_stream_chunk(chunk.clone()).await?;
+                    self.handle_stream_chunk(chunk).await?;
                 }
                 Action::StreamContent(ref content) => {
                     // Update or create AssistantStreaming message in agent
@@ -173,11 +175,11 @@ impl<T: LlmProvider> App<T> {
                     });
                 }
                 Action::ExecuteToolCall(ref tool_call) => {
-                    self.handle_execute_tool_call(tool_call.clone()).await?;
+                    self.handle_execute_tool_call(tool_call).await?;
                 }
                 Action::ReceiveAssistantMessage(ref message) => {
                     let assistant_message = ChatMessage::Assistant {
-                        content: message.clone(),
+                        content: message.to_string(),
                         timestamp: chrono::Utc::now(),
                     };
                     self.action_tx
@@ -189,8 +191,8 @@ impl<T: LlmProvider> App<T> {
                     ref result,
                 } => {
                     let tool_result_message = ChatMessage::ToolResult {
-                        tool_call_id: tool_call_id.clone(),
-                        content: result.clone(),
+                        tool_call_id: tool_call_id.to_string(),
+                        content: result.to_string(),
                         timestamp: chrono::Utc::now(),
                     };
                     self.action_tx
@@ -248,12 +250,12 @@ impl<T: LlmProvider> App<T> {
         Ok(())
     }
 
-    async fn handle_submit_message(&mut self, user_input: String) -> Result<()> {
+    async fn handle_submit_message(&mut self, user_input: &str) -> Result<()> {
         debug!("Handling user message: {}", user_input);
 
         // Add user message to both UI and agent
         let user_message = ChatMessage::User {
-            content: user_input.clone(),
+            content: user_input.to_string(),
             timestamp: chrono::Utc::now(),
         };
 
@@ -263,19 +265,19 @@ impl<T: LlmProvider> App<T> {
         self.agent.add_message(user_message);
 
         // Send to LLM with the user input
-        self.send_to_llm(Some(user_input)).await
+        self.send_to_llm(Some(user_input.to_string())).await
     }
 
     async fn handle_stream_chunk(
         &mut self,
-        chunk: crate::llm::provider::StreamChunk,
+        chunk: &crate::llm::provider::StreamChunk,
     ) -> Result<()> {
         use crate::agent::PartialToolCall;
         use crate::llm::provider::StreamChunk;
 
         match chunk {
             StreamChunk::Content(content) => {
-                self.action_tx.send(Action::StreamContent(content))?;
+                self.action_tx.send(Action::StreamContent(content.clone()))?;
             }
             StreamChunk::ToolCallStart { id, name } => {
                 // Start tracking this tool call in the agent
@@ -290,15 +292,15 @@ impl<T: LlmProvider> App<T> {
 
                 self.action_tx.send(Action::StreamToolCall {
                     id: id.clone(),
-                    name,
+                    name: name.clone(),
                     arguments: String::new(),
                 })?;
             }
             StreamChunk::ToolCallArgument { id, argument } => {
                 // Accumulate arguments for this tool call
                 let mut tool_call_info = None;
-                if let Some(partial_call) = self.agent.active_tool_calls_mut().get_mut(&id) {
-                    partial_call.arguments.push_str(&argument);
+                if let Some(partial_call) = self.agent.active_tool_calls_mut().get_mut(id) {
+                    partial_call.arguments.push_str(argument);
                     tool_call_info =
                         Some((partial_call.name.clone(), partial_call.arguments.clone()));
                 }
@@ -314,7 +316,7 @@ impl<T: LlmProvider> App<T> {
             }
             StreamChunk::ToolCallComplete { id } => {
                 // Tool call is complete, execute it
-                let partial_call = self.agent.active_tool_calls_mut().remove(&id);
+                let partial_call = self.agent.active_tool_calls_mut().remove(id);
 
                 if let Some(partial_call) = partial_call {
                     // Parse the accumulated arguments as JSON
@@ -379,7 +381,7 @@ impl<T: LlmProvider> App<T> {
         arguments
     }
 
-    async fn handle_execute_tool_call(&mut self, tool_call: crate::types::ToolCall) -> Result<()> {
+    async fn handle_execute_tool_call(&mut self, tool_call: &crate::types::ToolCall) -> Result<()> {
         debug!(
             "Executing tool call: {} with args: {}",
             tool_call.name, tool_call.arguments

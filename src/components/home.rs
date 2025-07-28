@@ -1,5 +1,6 @@
 use color_eyre::Result;
 use ratatui::prelude::*;
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{Component, chat_virtual::ChatVirtual, input::Input};
@@ -8,7 +9,7 @@ use crate::{action::Action, config::Config};
 #[derive(Default)]
 pub struct Home {
     command_tx: Option<UnboundedSender<Action>>,
-    config: Config,
+    config: Arc<Config>,
     chat: ChatVirtual,
     input: Input,
 }
@@ -17,7 +18,7 @@ impl Home {
     pub fn new() -> Self {
         Self {
             command_tx: None,
-            config: Config::default(),
+            config: Arc::new(Config::default()),
             chat: ChatVirtual::new(),
             input: Input::new(),
         }
@@ -32,9 +33,9 @@ impl Component for Home {
         Ok(())
     }
 
-    fn register_config_handler(&mut self, config: Config) -> Result<()> {
-        self.config = config.clone();
-        self.chat.register_config_handler(config.clone())?;
+    fn register_config_handler(&mut self, config: Arc<Config>) -> Result<()> {
+        self.config = Arc::clone(&config);
+        self.chat.register_config_handler(Arc::clone(&config))?;
         self.input.register_config_handler(config)?;
         Ok(())
     }

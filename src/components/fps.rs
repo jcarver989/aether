@@ -264,7 +264,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Test register_config_handler (default implementation)
-        let config = crate::config::Config::default();
+        let config = std::sync::Arc::new(crate::config::Config::default());
         let result = fps_counter.register_config_handler(config);
         assert!(result.is_ok());
 
