@@ -130,7 +130,7 @@ impl FakeLlmProvider {
         Self { chunks }
     }
 
-    pub fn with_error_after(content: &str, chunk_count: usize) -> Self {
+    pub fn with_error_after(content: &str, _chunk_count: usize) -> Self {
         let chunks = vec![StreamChunk::Content(content.to_string())];
         // Note: Error handling would be implemented in a specialized provider
         Self { chunks }

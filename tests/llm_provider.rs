@@ -5,7 +5,6 @@ use aether::llm::provider::ToolCall;
 use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
 use color_eyre::Result;
 use serde_json::json;
-use tokio_stream::StreamExt;
 
 #[tokio::test]
 async fn test_openrouter_provider_stream_chunks() -> Result<()> {

@@ -225,12 +225,12 @@ impl Chat {
         }
     }
 
-    #[cfg(test)]
+    #[allow(dead_code)]
     pub fn get_messages(&self) -> &Vec<ChatMessage> {
         &self.messages
     }
 
-    #[cfg(test)]
+    #[allow(dead_code)]
     pub fn get_content_blocks(&mut self) -> &Vec<ContentBlock> {
         // Ensure content blocks are up to date
         if self.content_dirty {
