@@ -64,6 +64,7 @@ impl ToolRegistry {
             .map(|tool| tool.description.clone())
     }
 
+
     pub fn tool_count(&self) -> usize {
         self.tools.len()
     }
@@ -77,10 +78,6 @@ impl ToolRegistry {
         self.mcp_client = Some(client);
     }
 
-    /// Remove the MCP client
-    pub fn remove_mcp_client(&mut self) {
-        self.mcp_client = None;
-    }
 
     /// Invoke a tool using the MCP client
     pub async fn invoke_tool(&self, tool_name: &str, args: Value) -> Result<Value> {

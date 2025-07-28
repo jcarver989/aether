@@ -1,6 +1,5 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio_stream::StreamExt;
 
 use crate::llm::provider::{ChatRequest, LlmProvider, StreamChunk, StreamChunkStream};
 
@@ -51,6 +50,7 @@ impl LlmProvider for FakeLlmProvider {
 mod tests {
     use super::*;
     use crate::llm::provider::ChatMessage;
+    use tokio_stream::StreamExt;
 
     #[tokio::test]
     async fn test_fake_llm_returns_canned_responses() {

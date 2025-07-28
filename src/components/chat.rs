@@ -57,9 +57,6 @@ impl Chat {
         self.content_dirty = true;
     }
 
-    fn auto_scroll_to_bottom(&mut self) {
-        self.auto_scroll = true;
-    }
 
     fn clear_messages(&mut self) {
         self.messages.clear();
@@ -401,9 +398,6 @@ impl Chat {
         self.cached_content.as_ref().unwrap()
     }
 
-    pub fn set_theme(&mut self, theme: Theme) {
-        self.theme = theme;
-    }
 }
 
 #[cfg(test)]

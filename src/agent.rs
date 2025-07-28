@@ -52,6 +52,7 @@ impl<T: LlmProvider> Agent<T> {
         }
     }
 
+
     /// Get the conversation history
     pub fn conversation_history(&self) -> &[ChatMessage] {
         &self.conversation_history
@@ -110,15 +111,6 @@ impl<T: LlmProvider> Agent<T> {
             .count()
     }
 
-    /// Get the tool registry
-    pub fn tool_registry(&self) -> &ToolRegistry {
-        &self.tool_registry
-    }
-
-    /// Get the LLM provider
-    pub fn llm_provider(&self) -> &T {
-        &self.llm_provider
-    }
 
     /// Convert conversation history to LLM messages
     pub fn build_llm_messages(&self) -> Vec<LlmChatMessage> {
@@ -282,6 +274,17 @@ impl<T: LlmProvider> Agent<T> {
                     timestamp: chrono::Utc::now(),
                 });
         }
+    }
+
+
+    /// Get the tool registry
+    pub fn tool_registry(&self) -> &ToolRegistry {
+        &self.tool_registry
+    }
+
+    /// Get the LLM provider
+    pub fn llm_provider(&self) -> &T {
+        &self.llm_provider
     }
 
     /// Get the server name for a given tool
