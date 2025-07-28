@@ -196,6 +196,8 @@ impl<T: LlmProvider> App<T> {
                     };
                     self.action_tx.send(Action::AddChatMessage(tool_result_message.clone()))?;
                     self.agent.add_message(tool_result_message);
+                    // Force a render to ensure tool results are displayed immediately
+                    self.action_tx.send(Action::Render)?;
                     // Automatically continue the conversation after tool execution
                     self.action_tx.send(Action::ContinueConversation)?;
                 }
@@ -333,6 +335,7 @@ impl<T: LlmProvider> App<T> {
                                     message: format!("Invalid tool call arguments: {}", e),
                                     timestamp: chrono::Utc::now(),
                                 }))?;
+                            self.action_tx.send(Action::Render)?;
                         }
                     }
                 }
@@ -413,6 +416,7 @@ impl<T: LlmProvider> App<T> {
         };
         
         self.action_tx.send(Action::AddChatMessage(tool_call_message.clone()))?;
+        self.action_tx.send(Action::Render)?;
         
         self.agent.add_message(tool_call_message);
 

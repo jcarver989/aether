@@ -24,6 +24,10 @@ pub struct Chat {
     command_tx: Option<UnboundedSender<Action>>,
     config: Config,
     theme: Theme,
+    auto_scroll: bool,
+    cached_content: Option<Text<'static>>,
+    content_dirty: bool,
+    last_content_height: u16,
 }
 
 impl Default for Chat {
@@ -40,21 +44,29 @@ impl Chat {
             command_tx: None,
             config: Config::default(),
             theme: Theme::default(),
+            auto_scroll: true,
+            cached_content: None,
+            content_dirty: true,
+            last_content_height: 0,
         }
     }
 
     fn add_message(&mut self, message: ChatMessage) {
         self.messages.push(message);
-        self.auto_scroll_to_bottom();
+        self.auto_scroll = true;
+        self.content_dirty = true;
     }
 
     fn auto_scroll_to_bottom(&mut self) {
-        // ScrollView will handle auto-scrolling to bottom in the draw method
+        self.auto_scroll = true;
     }
 
     fn clear_messages(&mut self) {
         self.messages.clear();
         self.scroll_state = ScrollViewState::default();
+        self.auto_scroll = true;
+        self.content_dirty = true;
+        self.cached_content = None;
     }
 
     fn format_message(&self, message: &ChatMessage) -> Vec<Line<'static>> {
@@ -238,8 +250,17 @@ impl Chat {
         let mut lines = Vec::new();
         let mut in_code_block = false;
         let mut code_language = String::new();
+        
+        // Limit content to prevent performance issues
+        const MAX_LINES: usize = 1000;
+        let mut line_count = 0;
+        let mut truncated = false;
 
         for line in content.lines() {
+            if line_count >= MAX_LINES {
+                truncated = true;
+                break;
+            }
             if line.starts_with("```") {
                 if in_code_block {
                     in_code_block = false;
@@ -265,6 +286,14 @@ impl Chat {
                 let formatted_line = self.format_markdown_line(line);
                 lines.push(formatted_line);
             }
+            line_count += 1;
+        }
+        
+        if truncated {
+            lines.push(Line::from(Span::styled(
+                "... [Content truncated for performance]",
+                Style::default().fg(self.theme.muted),
+            )));
         }
 
         lines
@@ -340,20 +369,25 @@ impl Chat {
         }
     }
 
-    fn create_message_content(&self) -> Text<'static> {
-        let mut all_lines = Vec::new();
-        
-        for (i, message) in self.messages.iter().enumerate() {
-            let message_lines = self.format_message(message);
-            all_lines.extend(message_lines);
+    fn create_message_content(&mut self) -> &Text<'static> {
+        if self.content_dirty || self.cached_content.is_none() {
+            let mut all_lines = Vec::new();
             
-            // Add spacing between messages (except for last message)
-            if i < self.messages.len() - 1 {
-                all_lines.push(Line::from(""));
+            for (i, message) in self.messages.iter().enumerate() {
+                let message_lines = self.format_message(message);
+                all_lines.extend(message_lines);
+                
+                // Add spacing between messages (except for last message)
+                if i < self.messages.len() - 1 {
+                    all_lines.push(Line::from(""));
+                }
             }
+            
+            self.cached_content = Some(Text::from(all_lines));
+            self.content_dirty = false;
         }
         
-        Text::from(all_lines)
+        self.cached_content.as_ref().unwrap()
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
@@ -406,6 +440,9 @@ impl Component for Chat {
                 self.clear_messages();
             }
             Action::ScrollChat(direction) => {
+                // Disable auto-scroll when user manually scrolls
+                self.auto_scroll = false;
+                
                 match direction {
                     ScrollDirection::Up => {
                         self.scroll_state.scroll_up();
@@ -440,6 +477,9 @@ impl Component for Chat {
                 }) = self.messages.last_mut()
                 {
                     current_content.push_str(&content);
+                    // Enable auto-scroll for streaming content
+                    self.auto_scroll = true;
+                    self.content_dirty = true;
                 }
             }
             Action::StreamComplete => {
@@ -449,6 +489,7 @@ impl Component for Chat {
                 {
                     if let Some(last_msg) = self.messages.last_mut() {
                         *last_msg = ChatMessage::Assistant { content, timestamp };
+                        self.content_dirty = true;
                     }
                 }
             }
@@ -501,28 +542,46 @@ impl Component for Chat {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let content = self.create_message_content();
+        // Calculate the inner area (accounting for borders)
+        let inner_area = area.inner(ratatui::layout::Margin { horizontal: 1, vertical: 1 });
+        let content_width = inner_area.width;
+        
+        // Store values we need before borrowing mutably
+        let last_height = self.last_content_height;
+        let auto_scroll = self.auto_scroll;
+        
+        // Get content and calculate height
+        let content = self.create_message_content().clone();
         let content_height = content.lines.len() as u16;
-        let content_width = area.width.saturating_sub(2); // Account for borders
         
-        let content_size = Size::new(content_width, content_height);
-        let mut scroll_view = ScrollView::new(content_size);
+        // Only recreate scroll view if content height changed
+        let mut scroll_view = if content_height != last_height {
+            self.last_content_height = content_height;
+            ScrollView::new(Size::new(content_width, content_height))
+        } else {
+            // Reuse existing dimensions
+            ScrollView::new(Size::new(content_width, last_height))
+        };
         
-        // Create the paragraph with all messages
+        // Handle auto-scroll logic
+        if auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.auto_scroll = false;
+        }
+        
+        // Create the paragraph without borders (borders are handled by the outer block)
         let paragraph = Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).title("Chat"))
             .wrap(ratatui::widgets::Wrap { trim: false });
         
-        // Render the paragraph in the scroll view
+        // Create the outer block with borders and title
+        let block = Block::default().borders(Borders::ALL).title("Chat");
+        frame.render_widget(block, area);
+        
+        // Render the scrollable content in the inner area
         let content_area = Rect::new(0, 0, content_width, content_height);
         scroll_view.render_widget(paragraph, content_area);
         
-        // Auto-scroll to bottom when new messages are added
-        if !self.messages.is_empty() {
-            self.scroll_state.scroll_to_bottom();
-        }
-        
-        scroll_view.render(area, frame.buffer_mut(), &mut self.scroll_state);
+        scroll_view.render(inner_area, frame.buffer_mut(), &mut self.scroll_state);
         Ok(())
     }
 }

@@ -1,25 +1,24 @@
-use aether::mcp::McpClient;
+mod utils;
+
+use crate::utils::*;
 use aether::mcp_config::McpServerConfig;
 use anyhow::Result;
 use std::collections::HashMap;
 
 #[tokio::test]
 async fn test_mcp_client_creation() {
-    let _client = McpClient::new();
+    let _client = create_test_mcp_client();
     // Client no longer has built-in tool registry methods
     // Tools are discovered via discover_tools() and managed in separate ToolRegistry
 }
 
 #[tokio::test]
 async fn test_mcp_server_config() {
-    let config = McpServerConfig::Http {
-        url: "http://localhost:3000/mcp".to_string(),
-        headers: HashMap::new(),
-    };
+    let config = create_test_mcp_server_config(TEST_SERVER_URL);
 
     match config {
         McpServerConfig::Http { url, headers } => {
-            assert_eq!(url, "http://localhost:3000/mcp");
+            assert_eq!(url, TEST_SERVER_URL);
             assert!(headers.is_empty());
         }
         _ => panic!("Expected Http config"),
@@ -32,10 +31,7 @@ async fn test_mcp_server_config_with_headers() {
     headers.insert("Authorization".to_string(), "Bearer token123".to_string());
     headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-    let config = McpServerConfig::Http {
-        url: "https://api.example.com/mcp".to_string(),
-        headers,
-    };
+    let config = create_test_mcp_server_config_with_headers("https://api.example.com/mcp", headers);
 
     match config {
         McpServerConfig::Http { url, headers } => {
@@ -59,10 +55,7 @@ async fn test_mcp_server_config_serialization() -> Result<()> {
     let mut headers = HashMap::new();
     headers.insert("X-API-Key".to_string(), "secret123".to_string());
 
-    let config = McpServerConfig::Http {
-        url: "https://mcp.example.com".to_string(),
-        headers,
-    };
+    let config = create_test_mcp_server_config_with_headers("https://mcp.example.com", headers);
 
     let serialized = serde_json::to_string(&config)?;
     let deserialized: McpServerConfig = serde_json::from_str(&serialized)?;
@@ -81,7 +74,7 @@ async fn test_mcp_server_config_serialization() -> Result<()> {
 
 #[tokio::test]
 async fn test_mcp_client_tool_discovery() {
-    let client = McpClient::new();
+    let client = create_test_mcp_client();
 
     // Test that tool discovery returns empty list when no servers connected
     let discovered_tools = client.discover_tools().await.unwrap();
@@ -90,10 +83,7 @@ async fn test_mcp_client_tool_discovery() {
 
 #[test]
 fn test_mcp_server_config_with_empty_headers() {
-    let config = McpServerConfig::Http {
-        url: "http://localhost:8080/mcp".to_string(),
-        headers: HashMap::new(),
-    };
+    let config = create_test_mcp_server_config("http://localhost:8080/mcp");
 
     match config {
         McpServerConfig::Http { url, headers } => {
@@ -115,12 +105,9 @@ fn test_mcp_server_config_url_validation() {
     ];
 
     for url in configs {
-        let config = McpServerConfig::Http {
-            url: url.to_string(),
-            headers: HashMap::new(),
-        };
+        let config = create_test_mcp_server_config(url);
         match config {
-            McpServerConfig::Http {
+            aether::mcp_config::McpServerConfig::Http {
                 url: config_url, ..
             } => {
                 assert_eq!(config_url, url);
@@ -132,14 +119,11 @@ fn test_mcp_server_config_url_validation() {
 
 #[test]
 fn test_mcp_server_config_headers_manipulation() {
-    let mut config = McpServerConfig::Http {
-        url: "http://localhost:3000/mcp".to_string(),
-        headers: HashMap::new(),
-    };
+    let mut config = create_test_mcp_server_config(TEST_SERVER_URL);
 
     // Add headers
     match &mut config {
-        McpServerConfig::Http { headers, .. } => {
+        aether::mcp_config::McpServerConfig::Http { headers, .. } => {
             headers.insert("Authorization".to_string(), "Bearer token".to_string());
             headers.insert("User-Agent".to_string(), "aether/0.1.0".to_string());
 

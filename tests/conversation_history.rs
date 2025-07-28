@@ -1,3 +1,6 @@
+mod utils;
+
+use crate::utils::*;
 use aether::llm::provider::ChatMessage as LlmChatMessage;
 use aether::types::ChatMessage;
 use chrono::Utc;
@@ -14,13 +17,13 @@ fn create_test_conversation_history() -> Vec<ChatMessage> {
             timestamp: Utc::now(),
         },
         ChatMessage::ToolCall {
-            id: "call_123".to_string(),
+            id: TEST_TOOL_ID.to_string(),
             name: "browser_take_screenshot".to_string(),
             params: r#"{"url": "https://google.com"}"#.to_string(),
             timestamp: Utc::now(),
         },
         ChatMessage::ToolResult {
-            tool_call_id: "call_123".to_string(),
+            tool_call_id: TEST_TOOL_ID.to_string(),
             content: r#"{"screenshot_path": "/tmp/google_screenshot.png", "success": true}"#
                 .to_string(),
             timestamp: Utc::now(),
@@ -201,11 +204,7 @@ fn test_assistant_messages_include_tool_calls() {
                     if let ChatMessage::ToolCall { id, name, params, .. } = &conversation_history[j] {
                         // Parse params back to JSON
                         if let Ok(arguments) = serde_json::from_str::<serde_json::Value>(params) {
-                            tool_calls.push(aether::llm::provider::ToolCall {
-                                id: id.clone(),
-                                name: name.clone(),
-                                arguments,
-                            });
+                            tool_calls.push(create_test_tool_call(id, name, arguments));
                         }
                         j += 1;
                     } else {
@@ -245,7 +244,7 @@ fn test_assistant_messages_include_tool_calls() {
     if let Some(LlmChatMessage::Assistant { tool_calls: Some(tool_calls), .. }) = assistant_with_tools {
         assert_eq!(tool_calls.len(), 1, "Should have one tool call");
         let tool_call = &tool_calls[0];
-        assert_eq!(tool_call.id, "call_123", "Tool call ID should be preserved");
+        assert_eq!(tool_call.id, TEST_TOOL_ID, "Tool call ID should be preserved");
         assert_eq!(tool_call.name, "browser_take_screenshot", "Tool call name should be preserved");
     }
 }

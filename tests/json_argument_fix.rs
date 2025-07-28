@@ -1,33 +1,7 @@
-use serde_json::{Value, json};
+mod utils;
 
-/// Fix malformed JSON string arguments from LLM models.
-/// Some models incorrectly return argument values as JSON strings instead of their actual types.
-/// For example: {"query": "[\"value\"]"} instead of {"query": ["value"]}
-fn fix_json_string_arguments(mut arguments: Value) -> Value {
-    if let Some(obj) = arguments.as_object_mut() {
-        for (_key, value) in obj.iter_mut() {
-            if let Some(string_val) = value.as_str() {
-                // Try to parse the string as JSON
-                if let Ok(parsed_val) = serde_json::from_str::<Value>(string_val) {
-                    // Only replace if the parsed value is not a string (to avoid infinite recursion)
-                    match parsed_val {
-                        Value::Array(_)
-                        | Value::Object(_)
-                        | Value::Number(_)
-                        | Value::Bool(_)
-                        | Value::Null => {
-                            *value = parsed_val;
-                        }
-                        _ => {
-                            // If it's still a string, don't replace
-                        }
-                    }
-                }
-            }
-        }
-    }
-    arguments
-}
+use crate::utils::*;
+use serde_json::json;
 
 #[cfg(test)]
 mod tests {

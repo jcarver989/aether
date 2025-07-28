@@ -49,8 +49,10 @@ chrono = "0.4"
 async-openai = "0.29"
 async-stream = "0.3"
 async-trait = "0.1"
-rmcp = { version = "0.3.0", features = ["client", "transport-streamable-http-client", "reqwest"] }
+rmcp = { version = "0.3.0", features = ["client", "server", "macros", "schemars", "transport-streamable-http-client", "reqwest"] }
+schemars = "1.0"
 reqwest = { version = "0.12", features = ["json"] }
+indexmap = "2.0"
 
 [dev-dependencies]
 tempfile = "3.8"
