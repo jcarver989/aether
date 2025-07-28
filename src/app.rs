@@ -107,19 +107,9 @@ impl<T: LlmProvider> App<T> {
             Event::Render => action_tx.send(Action::Render)?,
             Event::Resize(x, y) => action_tx.send(Action::Resize(x, y))?,
             Event::Key(key) => {
-                // First let components handle the key event
-                let mut key_handled = false;
-                for component in self.components.iter_mut() {
-                    if let Some(action) = component.handle_key_event(key)? {
-                        action_tx.send(action)?;
-                        key_handled = true;
-                        break; // Stop after first component handles the key
-                    }
-                }
-                // Only check global keybindings if no component handled the key
-                if !key_handled {
-                    self.handle_key_event(key)?;
-                }
+                // Handle key events centrally in app.rs
+                // Components no longer handle most key events directly
+                self.handle_key_event(key)?;
             }
             _ => {
                 // Only process non-key events through handle_events to avoid double processing
@@ -134,7 +124,86 @@ impl<T: LlmProvider> App<T> {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<()> {
+        use crossterm::event::{KeyCode, KeyModifiers, KeyEventKind};
+        
         let action_tx = self.action_tx.clone();
+        
+        // Only process key press events, ignore release and repeat events
+        if key.kind != KeyEventKind::Press {
+            return Ok(());
+        }
+
+        // Handle global quit keys first (Ctrl+C, Ctrl+D always quit)
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('c'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                action_tx.send(Action::Quit)?;
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        // Handle chat scrolling keys centrally
+        match (key.code, key.modifiers) {
+            (KeyCode::Up, KeyModifiers::CONTROL) => {
+                action_tx.send(Action::ScrollChat(crate::action::ScrollDirection::Up))?;
+                return Ok(());
+            }
+            (KeyCode::Down, KeyModifiers::CONTROL) => {
+                action_tx.send(Action::ScrollChat(crate::action::ScrollDirection::Down))?;
+                return Ok(());
+            }
+            (KeyCode::PageUp, _) => {
+                action_tx.send(Action::ScrollChat(crate::action::ScrollDirection::PageUp))?;
+                return Ok(());
+            }
+            (KeyCode::PageDown, _) => {
+                action_tx.send(Action::ScrollChat(crate::action::ScrollDirection::PageDown))?;
+                return Ok(());
+            }
+            // Handle all input-related keys centrally
+            (KeyCode::Char(c), _) => {
+                action_tx.send(Action::InsertChar(c))?;
+                return Ok(());
+            }
+            (KeyCode::Enter, modifiers) if modifiers.contains(KeyModifiers::SHIFT) => {
+                action_tx.send(Action::InsertNewline)?;
+                return Ok(());
+            }
+            (KeyCode::Enter, _) => {
+                // We need to check if input is empty - this requires state access
+                // For now, we'll emit the action and let the component handle empty check
+                action_tx.send(Action::TrySubmitMessage)?;
+                return Ok(());
+            }
+            (KeyCode::Backspace, _) => {
+                action_tx.send(Action::DeleteChar)?;
+                return Ok(());
+            }
+            (KeyCode::Left, _) => {
+                action_tx.send(Action::MoveCursor(crate::action::CursorDirection::Left))?;
+                return Ok(());
+            }
+            (KeyCode::Right, _) => {
+                action_tx.send(Action::MoveCursor(crate::action::CursorDirection::Right))?;
+                return Ok(());
+            }
+            (KeyCode::Up, modifiers) if !modifiers.contains(KeyModifiers::CONTROL) => {
+                action_tx.send(Action::MoveCursor(crate::action::CursorDirection::Up))?;
+                return Ok(());
+            }
+            (KeyCode::Down, modifiers) if !modifiers.contains(KeyModifiers::CONTROL) => {
+                action_tx.send(Action::MoveCursor(crate::action::CursorDirection::Down))?;
+                return Ok(());
+            }
+            (KeyCode::Esc, _) => {
+                action_tx.send(Action::ClearInput)?;
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        // Check configured keybindings for remaining keys
         let Some(keymap) = self.config.keybindings.get(&self.mode) else {
             return Ok(());
         };
@@ -175,6 +244,10 @@ impl<T: LlmProvider> App<T> {
                 Action::Render => self.render(tui)?,
                 Action::SubmitMessage(ref message) => {
                     self.handle_submit_message(message).await?;
+                }
+                Action::TrySubmitMessage => {
+                    // Check if input is not empty by examining the input component
+                    // For now, let the input component handle this logic
                 }
                 Action::ReceiveStreamChunk(ref chunk) => {
                     self.handle_stream_chunk(chunk).await?;

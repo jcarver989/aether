@@ -1,43 +1,39 @@
 use aether::components::home::Home;
 use aether::components::Component;
 use aether::action::Action;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use tokio::sync::mpsc;
+
+// NOTE: These tests now verify that Home component no longer handles key events directly.
+// All key handling has been centralized in app.rs for better architecture.
 
 #[test]
-fn test_home_ctrl_c_quits() {
+fn test_home_no_longer_handles_key_events() {
     let mut home = Home::new();
+    let (tx, _rx) = mpsc::unbounded_channel();
+    home.register_action_handler(tx).expect("Failed to register action handler");
     
-    // Create Ctrl+C key event
-    let ctrl_c_key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    // Home component should no longer have handle_key_event method or should return None
+    // Since we removed handle_key_event entirely, we test that actions work instead
     
-    // Test that Ctrl+C produces Quit action
-    let result = home.handle_key_event(ctrl_c_key).expect("Failed to handle Ctrl+C");
+    // Test that Home properly processes actions that would have come from centralized key handling
+    let result = home.update(Action::InsertChar('q')).expect("Failed to update with InsertChar");
+    assert_eq!(result, None, "Home should forward actions to children, not return new actions");
     
-    assert_eq!(result, Some(Action::Quit), "Ctrl+C should produce Quit action");
+    // Test that quit-related actions would be handled at the app level, not component level
+    let result = home.update(Action::Quit).expect("Failed to update with Quit");
+    assert_eq!(result, None, "Home should not intercept Quit actions");
 }
 
 #[test]
-fn test_home_ctrl_d_quits() {
+fn test_home_processes_actions_correctly() {
     let mut home = Home::new();
+    let (tx, _rx) = mpsc::unbounded_channel();
+    home.register_action_handler(tx).expect("Failed to register action handler");
     
-    // Create Ctrl+D key event
-    let ctrl_d_key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+    // Test that Home correctly processes various actions by forwarding to child components
+    let result = home.update(Action::InsertChar('c')).expect("Failed to update with InsertChar");
+    assert_eq!(result, None, "Home should forward actions without modification");
     
-    // Test that Ctrl+D produces Quit action
-    let result = home.handle_key_event(ctrl_d_key).expect("Failed to handle Ctrl+D");
-    
-    assert_eq!(result, Some(Action::Quit), "Ctrl+D should produce Quit action");
-}
-
-#[test]
-fn test_home_q_inserts_character_not_quit() {
-    let mut home = Home::new();
-    
-    // Create 'q' key event
-    let q_key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
-    
-    // Test that 'q' produces InsertChar action (should be handled by input component)
-    let result = home.handle_key_event(q_key).expect("Failed to handle 'q'");
-    
-    assert_eq!(result, Some(Action::InsertChar('q')), "'q' should insert character, not quit");
+    let result = home.update(Action::ClearInput).expect("Failed to update with ClearInput");
+    assert_eq!(result, None, "Home should forward actions without modification");
 }

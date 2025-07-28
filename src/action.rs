@@ -14,6 +14,7 @@ pub enum Action {
     Help,
     // Chat-specific actions
     SubmitMessage(String),
+    TrySubmitMessage, // Emitted when Enter is pressed, converted to SubmitMessage if input is not empty
     AddChatMessage(crate::types::ChatMessage),
     ClearChat,
     ScrollChat(ScrollDirection),
