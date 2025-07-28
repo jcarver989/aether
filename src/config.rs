@@ -188,7 +188,8 @@ impl Config {
     }
 
     pub fn with_cli_args(cli_args: Option<&Cli>) -> Result<Self, config::ConfigError> {
-        let default_config: Config = json5::from_str(CONFIG).unwrap();
+        let default_config: Config = json5::from_str(CONFIG)
+            .map_err(|e| config::ConfigError::Message(format!("Failed to parse default config: {}", e)))?;
         let data_dir = get_data_dir();
         let config_dir = get_config_dir();
 
@@ -221,8 +222,10 @@ impl Config {
             .unwrap_or_else(default_frame_rate);
 
         let mut builder = config::Config::builder()
-            .set_default("data_dir", data_dir.to_str().unwrap())?
-            .set_default("config_dir", config_dir.to_str().unwrap())?
+            .set_default("data_dir", data_dir.to_str()
+                .ok_or_else(|| config::ConfigError::Message("Data directory path contains invalid UTF-8".to_string()))?)?
+            .set_default("config_dir", config_dir.to_str()
+                .ok_or_else(|| config::ConfigError::Message("Config directory path contains invalid UTF-8".to_string()))?)?
             .set_default("model", model.as_str())?
             .set_default("ollama_base_url", ollama_base_url.as_str())?
             .set_default("tick_rate", tick_rate)?
@@ -429,7 +432,15 @@ impl<'de> Deserialize<'de> for KeyBindings {
             .map(|(mode, inner_map)| {
                 let converted_inner_map = inner_map
                     .into_iter()
-                    .map(|(key_str, cmd)| (parse_key_sequence(&key_str).unwrap(), cmd))
+                    .filter_map(|(key_str, cmd)| {
+                        match parse_key_sequence(&key_str) {
+                            Ok(key_seq) => Some((key_seq, cmd)),
+                            Err(e) => {
+                                error!("Failed to parse key sequence '{}': {}", key_str, e);
+                                None
+                            }
+                        }
+                    })
                     .collect();
                 (mode, converted_inner_map)
             })
@@ -509,7 +520,8 @@ fn parse_key_code_with_modifiers(
         "minus" => KeyCode::Char('-'),
         "tab" => KeyCode::Tab,
         c if c.len() == 1 => {
-            let mut c = c.chars().next().unwrap();
+            let mut c = c.chars().next()
+                .ok_or_else(|| "Empty character string".to_string())?;
             if modifiers.contains(KeyModifiers::SHIFT) {
                 c = c.to_ascii_uppercase();
             }
@@ -798,9 +810,9 @@ mod tests {
         assert_eq!(
             c.keybindings
                 .get(&Mode::Home)
-                .unwrap()
+                .expect("Home mode should exist in config")
                 .get(&parse_key_sequence("<q>").unwrap_or_default())
-                .unwrap(),
+                .expect("Quit keybinding should exist in default config"),
             &Action::Quit
         );
         Ok(())
@@ -831,7 +843,7 @@ mod tests {
         use std::fs;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("Failed to create temp directory for test");
         let file_path = dir.path().join("test_mcp.json");
         let test_config = r#"{
             "servers": {
@@ -841,9 +853,9 @@ mod tests {
                 }
             }
         }"#;
-        fs::write(&file_path, test_config).unwrap();
+        fs::write(&file_path, test_config).expect("Failed to write test config file");
 
-        let result = Config::load_mcp_config(&file_path).unwrap();
+        let result = Config::load_mcp_config(&file_path).expect("Failed to load test MCP config");
         assert_eq!(result.len(), 1);
         assert!(result.contains_key("test"));
         match &result["test"] {
@@ -857,17 +869,17 @@ mod tests {
     #[test]
     fn test_simple_keys() {
         assert_eq!(
-            parse_key_event("a").unwrap(),
+            parse_key_event("a").expect("Failed to parse key 'a'"),
             KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty())
         );
 
         assert_eq!(
-            parse_key_event("enter").unwrap(),
+            parse_key_event("enter").expect("Failed to parse key 'enter'"),
             KeyEvent::new(KeyCode::Enter, KeyModifiers::empty())
         );
 
         assert_eq!(
-            parse_key_event("esc").unwrap(),
+            parse_key_event("esc").expect("Failed to parse key 'esc'"),
             KeyEvent::new(KeyCode::Esc, KeyModifiers::empty())
         );
     }
@@ -875,17 +887,17 @@ mod tests {
     #[test]
     fn test_with_modifiers() {
         assert_eq!(
-            parse_key_event("ctrl-a").unwrap(),
+            parse_key_event("ctrl-a").expect("Failed to parse key 'ctrl-a'"),
             KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)
         );
 
         assert_eq!(
-            parse_key_event("alt-enter").unwrap(),
+            parse_key_event("alt-enter").expect("Failed to parse key 'alt-enter'"),
             KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)
         );
 
         assert_eq!(
-            parse_key_event("shift-esc").unwrap(),
+            parse_key_event("shift-esc").expect("Failed to parse key 'shift-esc'"),
             KeyEvent::new(KeyCode::Esc, KeyModifiers::SHIFT)
         );
     }
@@ -893,7 +905,7 @@ mod tests {
     #[test]
     fn test_multiple_modifiers() {
         assert_eq!(
-            parse_key_event("ctrl-alt-a").unwrap(),
+            parse_key_event("ctrl-alt-a").expect("Failed to parse key 'ctrl-alt-a'"),
             KeyEvent::new(
                 KeyCode::Char('a'),
                 KeyModifiers::CONTROL | KeyModifiers::ALT
@@ -901,7 +913,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse_key_event("ctrl-shift-enter").unwrap(),
+            parse_key_event("ctrl-shift-enter").expect("Failed to parse key 'ctrl-shift-enter'"),
             KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL | KeyModifiers::SHIFT)
         );
     }
@@ -926,12 +938,12 @@ mod tests {
     #[test]
     fn test_case_insensitivity() {
         assert_eq!(
-            parse_key_event("CTRL-a").unwrap(),
+            parse_key_event("CTRL-a").expect("Failed to parse key 'CTRL-a'"),
             KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)
         );
 
         assert_eq!(
-            parse_key_event("AlT-eNtEr").unwrap(),
+            parse_key_event("AlT-eNtEr").expect("Failed to parse key 'AlT-eNtEr'"),
             KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)
         );
     }

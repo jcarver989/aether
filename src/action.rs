@@ -19,6 +19,10 @@ pub enum Action {
     ScrollChat(ScrollDirection),
     // Input-specific actions
     ClearInput,
+    InsertChar(char),
+    InsertNewline,
+    DeleteChar,
+    MoveCursor(CursorDirection),
     // Tool call actions
     ToggleToolCall(String), // Tool call ID
     ExecuteToolCall(crate::types::ToolCall),
@@ -65,4 +69,12 @@ pub enum ScrollDirection {
     Down,
     PageUp,
     PageDown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
+pub enum CursorDirection {
+    Left,
+    Right,
+    Up,
+    Down,
 }

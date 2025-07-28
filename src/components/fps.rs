@@ -119,14 +119,14 @@ mod tests {
     /// Helper function to create terminal and draw FPS counter
     fn draw_fps_counter(fps_counter: &mut FpsCounter, width: u16, height: u16) -> Buffer {
         let backend = TestBackend::new(width, height);
-        let mut terminal = Terminal::new(backend).unwrap();
+        let mut terminal = Terminal::new(backend).expect("Failed to create test terminal");
 
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                fps_counter.draw(frame, area).unwrap();
+                fps_counter.draw(frame, area).expect("Failed to draw FPS counter");
             })
-            .unwrap();
+            .expect("Failed to draw terminal frame");
 
         terminal.backend().buffer().clone()
     }
@@ -163,15 +163,15 @@ mod tests {
         // Test that all actions return None (no further actions emitted)
         let result = fps_counter.update(Action::Tick);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
+        assert_eq!(result.expect("Should succeed"), None);
 
         let result = fps_counter.update(Action::Render);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
+        assert_eq!(result.expect("Should succeed"), None);
 
         let result = fps_counter.update(Action::Quit);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
+        assert_eq!(result.expect("Should succeed"), None);
     }
 
     #[test]
@@ -220,10 +220,10 @@ mod tests {
         let mut fps_counter = FpsCounter::new();
 
         // Perform several updates but not enough time has passed
-        fps_counter.update(Action::Tick).unwrap();
-        fps_counter.update(Action::Render).unwrap();
-        fps_counter.update(Action::Tick).unwrap();
-        fps_counter.update(Action::Render).unwrap();
+        fps_counter.update(Action::Tick).expect("Failed to update with Tick");
+        fps_counter.update(Action::Render).expect("Failed to update with Render");
+        fps_counter.update(Action::Tick).expect("Failed to update with Tick");
+        fps_counter.update(Action::Render).expect("Failed to update with Render");
 
         // Draw and verify the buffer shows 0.00 rates (since not enough time elapsed)
         let buffer = draw_fps_counter(&mut fps_counter, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
@@ -276,13 +276,13 @@ mod tests {
         // Test handle_events (default implementation)
         let result = fps_counter.handle_events(None);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
+        assert_eq!(result.expect("Should succeed"), None);
 
         // Test handle_key_event (default implementation)
         let key_event = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Enter);
         let result = fps_counter.handle_key_event(key_event);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
+        assert_eq!(result.expect("Should succeed"), None);
 
         // Test handle_mouse_event (default implementation)
         let mouse_event = crossterm::event::MouseEvent {
@@ -293,6 +293,6 @@ mod tests {
         };
         let result = fps_counter.handle_mouse_event(mouse_event);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
+        assert_eq!(result.expect("Should succeed"), None);
     }
 }

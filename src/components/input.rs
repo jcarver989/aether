@@ -10,7 +10,7 @@ use ratatui::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::Component;
-use crate::{action::Action, config::Config};
+use crate::{action::{Action, CursorDirection}, config::Config};
 
 #[derive(Debug, Clone)]
 pub struct InputState {
@@ -239,47 +239,24 @@ impl Component for Input {
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         match key.code {
-            KeyCode::Char(c) => {
-                self.state.insert_char(c);
-                Ok(None)
-            }
+            KeyCode::Char(c) => Ok(Some(Action::InsertChar(c))),
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.state.insert_newline();
-                Ok(None)
+                Ok(Some(Action::InsertNewline))
             }
             KeyCode::Enter => {
                 if !self.state.is_empty() {
                     let message = self.state.to_string();
-                    self.state.clear();
                     Ok(Some(Action::SubmitMessage(message)))
                 } else {
                     Ok(None)
                 }
             }
-            KeyCode::Backspace => {
-                self.state.delete_char();
-                Ok(None)
-            }
-            KeyCode::Left => {
-                self.state.move_cursor_left();
-                Ok(None)
-            }
-            KeyCode::Right => {
-                self.state.move_cursor_right();
-                Ok(None)
-            }
-            KeyCode::Up => {
-                self.state.move_cursor_up();
-                Ok(None)
-            }
-            KeyCode::Down => {
-                self.state.move_cursor_down();
-                Ok(None)
-            }
-            KeyCode::Esc => {
-                self.state.clear();
-                Ok(Some(Action::ClearInput))
-            }
+            KeyCode::Backspace => Ok(Some(Action::DeleteChar)),
+            KeyCode::Left => Ok(Some(Action::MoveCursor(CursorDirection::Left))),
+            KeyCode::Right => Ok(Some(Action::MoveCursor(CursorDirection::Right))),
+            KeyCode::Up => Ok(Some(Action::MoveCursor(CursorDirection::Up))),
+            KeyCode::Down => Ok(Some(Action::MoveCursor(CursorDirection::Down))),
+            KeyCode::Esc => Ok(Some(Action::ClearInput)),
             _ => Ok(None),
         }
     }
@@ -289,6 +266,26 @@ impl Component for Input {
             Action::Tick => {}
             Action::Render => {}
             Action::ClearInput => {
+                self.state.clear();
+            }
+            Action::InsertChar(c) => {
+                self.state.insert_char(c);
+            }
+            Action::InsertNewline => {
+                self.state.insert_newline();
+            }
+            Action::DeleteChar => {
+                self.state.delete_char();
+            }
+            Action::MoveCursor(direction) => {
+                match direction {
+                    CursorDirection::Left => self.state.move_cursor_left(),
+                    CursorDirection::Right => self.state.move_cursor_right(),
+                    CursorDirection::Up => self.state.move_cursor_up(),
+                    CursorDirection::Down => self.state.move_cursor_down(),
+                }
+            }
+            Action::SubmitMessage(_) => {
                 self.state.clear();
             }
             _ => {}
@@ -337,14 +334,14 @@ mod tests {
     /// Helper function to create terminal and draw input component
     fn draw_input_component(input: &mut Input, width: u16, height: u16) -> Buffer {
         let backend = TestBackend::new(width, height);
-        let mut terminal = Terminal::new(backend).unwrap();
+        let mut terminal = Terminal::new(backend).expect("Failed to create test terminal");
 
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                input.draw(frame, area).unwrap();
+                input.draw(frame, area).expect("Failed to draw input component");
             })
-            .unwrap();
+            .expect("Failed to draw terminal frame");
 
         terminal.backend().buffer().clone()
     }
@@ -622,15 +619,17 @@ mod tests {
 
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(result, None);
+            .expect("Failed to handle key event");
+        assert_eq!(result, Some(Action::InsertChar('a')));
+        input.update(Action::InsertChar('a')).expect("Failed to update with InsertChar('a')");
         assert_eq!(input.state.lines[0], "a");
         assert_eq!(input.state.cursor_col, 1);
 
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(result, None);
+            .expect("Failed to handle key event");
+        assert_eq!(result, Some(Action::InsertChar('b')));
+        input.update(Action::InsertChar('b')).expect("Failed to update with InsertChar('b')");
         assert_eq!(input.state.lines[0], "ab");
         assert_eq!(input.state.cursor_col, 2);
     }
@@ -642,31 +641,33 @@ mod tests {
         // Enter on empty input should return None
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
-            .unwrap();
+            .expect("Failed to handle key event");
         assert_eq!(result, None);
 
-        // Add some text
-        input.state.insert_char('h');
-        input.state.insert_char('i');
+        // Add some text via actions
+        input.update(Action::InsertChar('h')).expect("Failed to update with InsertChar('h')");
+        input.update(Action::InsertChar('i')).expect("Failed to update with InsertChar('i')");
 
         // Enter with content should submit and clear
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
-            .unwrap();
+            .expect("Failed to handle key event");
         assert_eq!(result, Some(Action::SubmitMessage("hi".to_string())));
+        input.update(Action::SubmitMessage("hi".to_string())).expect("Failed to update with SubmitMessage");
         assert!(input.state.is_empty());
     }
 
     #[test]
     fn test_handle_key_event_shift_enter() {
         let mut input = Input::new();
-        input.state.insert_char('h');
-        input.state.insert_char('i');
+        input.update(Action::InsertChar('h')).expect("Failed to update with InsertChar('h')");
+        input.update(Action::InsertChar('i')).expect("Failed to update with InsertChar('i')");
 
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT))
-            .unwrap();
-        assert_eq!(result, None);
+            .expect("Failed to handle key event");
+        assert_eq!(result, Some(Action::InsertNewline));
+        input.update(Action::InsertNewline).expect("Failed to update with InsertNewline");
         assert_eq!(input.state.lines.len(), 2);
         assert_eq!(input.state.lines[0], "hi");
         assert_eq!(input.state.lines[1], "");
@@ -677,13 +678,14 @@ mod tests {
     #[test]
     fn test_handle_key_event_backspace() {
         let mut input = Input::new();
-        input.state.insert_char('a');
-        input.state.insert_char('b');
+        input.update(Action::InsertChar('a')).expect("Failed to update with InsertChar('a')");
+        input.update(Action::InsertChar('b')).expect("Failed to update with InsertChar('b')");
 
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(result, None);
+            .expect("Failed to handle key event");
+        assert_eq!(result, Some(Action::DeleteChar));
+        input.update(Action::DeleteChar).expect("Failed to update with DeleteChar");
         assert_eq!(input.state.lines[0], "a");
         assert_eq!(input.state.cursor_col, 1);
     }
@@ -698,44 +700,49 @@ mod tests {
         // Test Left
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(result, None);
+            .expect("Failed to handle key event");
+        assert_eq!(result, Some(Action::MoveCursor(CursorDirection::Left)));
+        input.update(Action::MoveCursor(CursorDirection::Left)).expect("Failed to update with MoveCursor(Left)");
         assert_eq!(input.state.cursor_col, 1);
 
         // Test Right
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(result, None);
+            .expect("Failed to handle key event");
+        assert_eq!(result, Some(Action::MoveCursor(CursorDirection::Right)));
+        input.update(Action::MoveCursor(CursorDirection::Right)).expect("Failed to update with MoveCursor(Right)");
         assert_eq!(input.state.cursor_col, 2);
 
         // Test Down
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(result, None);
+            .expect("Failed to handle key event");
+        assert_eq!(result, Some(Action::MoveCursor(CursorDirection::Down)));
+        input.update(Action::MoveCursor(CursorDirection::Down)).expect("Failed to update with MoveCursor(Down)");
         assert_eq!(input.state.cursor_line, 1);
 
         // Test Up
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(result, None);
+            .expect("Failed to handle key event");
+        assert_eq!(result, Some(Action::MoveCursor(CursorDirection::Up)));
+        input.update(Action::MoveCursor(CursorDirection::Up)).expect("Failed to update with MoveCursor(Up)");
         assert_eq!(input.state.cursor_line, 0);
     }
 
     #[test]
     fn test_handle_key_event_escape() {
         let mut input = Input::new();
-        input.state.insert_char('t');
-        input.state.insert_char('e');
-        input.state.insert_char('s');
-        input.state.insert_char('t');
+        input.update(Action::InsertChar('t')).expect("Failed to update with InsertChar('t')");
+        input.update(Action::InsertChar('e')).expect("Failed to update with InsertChar('e')");
+        input.update(Action::InsertChar('s')).expect("Failed to update with InsertChar('s')");
+        input.update(Action::InsertChar('t')).expect("Failed to update with InsertChar('t')");
 
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
-            .unwrap();
+            .expect("Failed to handle key event");
         assert_eq!(result, Some(Action::ClearInput));
+        input.update(Action::ClearInput).expect("Failed to update with ClearInput");
         assert!(input.state.is_empty());
     }
 
@@ -745,12 +752,12 @@ mod tests {
 
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE))
-            .unwrap();
+            .expect("Failed to handle key event");
         assert_eq!(result, None);
 
         let result = input
             .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
-            .unwrap();
+            .expect("Failed to handle key event");
         assert_eq!(result, None);
     }
 
@@ -763,22 +770,22 @@ mod tests {
         input.state.insert_char('t');
 
         // Test Tick action
-        let result = input.update(Action::Tick).unwrap();
+        let result = input.update(Action::Tick).expect("Failed to update with Tick");
         assert_eq!(result, None);
         assert_eq!(input.state.lines[0], "test"); // Should be unchanged
 
         // Test Render action
-        let result = input.update(Action::Render).unwrap();
+        let result = input.update(Action::Render).expect("Failed to update with Render");
         assert_eq!(result, None);
         assert_eq!(input.state.lines[0], "test"); // Should be unchanged
 
         // Test ClearInput action
-        let result = input.update(Action::ClearInput).unwrap();
+        let result = input.update(Action::ClearInput).expect("Failed to update with ClearInput");
         assert_eq!(result, None);
         assert!(input.state.is_empty());
 
         // Test unhandled action
-        let result = input.update(Action::Quit).unwrap();
+        let result = input.update(Action::Quit).expect("Failed to update with Quit");
         assert_eq!(result, None);
     }
 
@@ -977,7 +984,7 @@ mod tests {
         // Test handle_events (default implementation)
         let result = input.handle_events(None);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
+        assert_eq!(result.expect("Should succeed"), None);
 
         // Test handle_mouse_event (default implementation)
         let mouse_event = crossterm::event::MouseEvent {
@@ -988,7 +995,7 @@ mod tests {
         };
         let result = input.handle_mouse_event(mouse_event);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
+        assert_eq!(result.expect("Should succeed"), None);
     }
 
     #[test]
@@ -1014,26 +1021,29 @@ mod tests {
     fn test_complex_editing_scenario() {
         let mut input = Input::new();
 
-        // Type "Hello World"
+        // Type "Hello World" via actions
         for ch in "Hello World".chars() {
-            input
+            let action = input
                 .handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
-                .unwrap();
+                .expect("Failed to handle key event").expect("Should return an action");
+            input.update(action).expect("Failed to update input");
         }
 
         // Move cursor to position 5 (after "Hello")
         input.state.cursor_col = 5;
 
         // Insert newline
-        input
+        let action = input
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT))
-            .unwrap();
+            .expect("Failed to handle key event").expect("Should return an action");
+        input.update(action).expect("Failed to update input");
 
         // Type "Beautiful "
         for ch in "Beautiful ".chars() {
-            input
+            let action = input
                 .handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
-                .unwrap();
+                .expect("Failed to handle key event").expect("Should return an action");
+            input.update(action).expect("Failed to update input");
         }
 
         let buffer = draw_input_component(&mut input, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
@@ -1065,39 +1075,44 @@ mod tests {
         assert_eq!(input.state.cursor_col, 0);
 
         // Try to move left (should stay at 0,0)
-        input
+        let action = input
             .handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))
-            .unwrap();
+            .expect("Failed to handle key event").expect("Should return an action");
+        input.update(action).expect("Failed to update input");
         assert_eq!(input.state.cursor_line, 0);
         assert_eq!(input.state.cursor_col, 0);
 
         // Try to move up (should stay at 0,0)
-        input
+        let action = input
             .handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))
-            .unwrap();
+            .expect("Failed to handle key event").expect("Should return an action");
+        input.update(action).expect("Failed to update input");
         assert_eq!(input.state.cursor_line, 0);
         assert_eq!(input.state.cursor_col, 0);
 
         // Add some text and test end positioning
         for ch in "test".chars() {
-            input
+            let action = input
                 .handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
-                .unwrap();
+                .expect("Failed to handle key event").expect("Should return an action");
+            input.update(action).expect("Failed to update input");
         }
 
         // Should be at end of line
         assert_eq!(input.state.cursor_col, 4);
 
         // Try to move right beyond end (should stay at end)
-        input
+        let action = input
             .handle_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE))
-            .unwrap();
+            .expect("Failed to handle key event").expect("Should return an action");
+        input.update(action).expect("Failed to update input");
         assert_eq!(input.state.cursor_col, 4);
 
         // Try to move down from single line (should stay on line 0)
-        input
+        let action = input
             .handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
-            .unwrap();
+            .expect("Failed to handle key event").expect("Should return an action");
+        input.update(action).expect("Failed to update input");
         assert_eq!(input.state.cursor_line, 0);
     }
 }
