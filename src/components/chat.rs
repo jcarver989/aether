@@ -3,11 +3,138 @@ use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
     layout::Rect,
-    widgets::{Block, Borders},
+    prelude::Size,
+    widgets::{Block, Borders, Widget},
+    buffer::Buffer,
 };
 use tokio::sync::mpsc::UnboundedSender;
+use tui_scrollview::{ScrollView, ScrollViewState};
 
 use super::{Component, block_layout::BlockLayoutManager, content_blocks::BlockRenderer, content_block::ContentBlock};
+
+// Custom widget that renders chat blocks to a buffer for ScrollView
+struct ChatContentWidget<'a> {
+    content_blocks: &'a [ContentBlock],
+    layout_manager: &'a BlockLayoutManager,
+    block_renderer: &'a BlockRenderer,
+    selected_block: Option<usize>,
+    content_height: u16,
+}
+
+impl<'a> Widget for ChatContentWidget<'a> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        // Create a mock Frame that writes to our buffer
+        // This is a workaround since BlockRenderer expects Frame but we need Buffer
+        
+        // For each layout, render the block content
+        for layout in self.layout_manager.get_all_layouts() {
+            if let Some(block) = self.content_blocks.get(layout.block_id) {
+                let render_area = Rect {
+                    x: area.x,
+                    y: area.y + layout.area.y,
+                    width: layout.area.width.min(area.width),
+                    height: layout.area.height,
+                };
+
+                // Only render if the block is within the area
+                if render_area.y < area.y + area.height && 
+                   render_area.y + render_area.height > area.y {
+                    
+                    // We need to adapt the block rendering to work with Buffer
+                    // For now, render a simplified version
+                    self.render_block_to_buffer(block, render_area, buf);
+                }
+            }
+        }
+    }
+}
+
+impl<'a> ChatContentWidget<'a> {
+    fn render_block_to_buffer(&self, block: &ContentBlock, area: Rect, buf: &mut Buffer) {
+        use ratatui::widgets::{Paragraph, Wrap};
+        use ratatui::text::{Text, Line, Span};
+        use ratatui::style::{Style, Color, Modifier};
+
+        let is_selected = self.selected_block == Some(area.y as usize); // Approximation
+        
+        // Create styled content based on block type
+        let (title, content_text, title_style) = match block {
+            crate::components::content_block::ContentBlock::SystemMessage { content, .. } => {
+                ("System", content.clone(), Style::default().fg(Color::Cyan))
+            }
+            crate::components::content_block::ContentBlock::UserMessage { content, .. } => {
+                ("User", content.clone(), Style::default().fg(Color::Green))
+            }
+            crate::components::content_block::ContentBlock::AssistantMessage { content, streaming, .. } => {
+                let text = content.iter().map(|elem| {
+                    match elem {
+                        crate::components::content_block::ContentElement::Text(t) => t.clone(),
+                        crate::components::content_block::ContentElement::CodeBlock { code, language, .. } => {
+                            format!("```{}\n{}\n```", language, code)
+                        }
+                        crate::components::content_block::ContentElement::InlineCode(c) => format!("`{}`", c),
+                        crate::components::content_block::ContentElement::Bold(b) => format!("**{}**", b),
+                        crate::components::content_block::ContentElement::Italic(i) => format!("*{}*", i),
+                        crate::components::content_block::ContentElement::Link { text, url } => format!("[{}]({})", text, url),
+                    }
+                }).collect::<Vec<_>>().join("");
+                
+                let display_text = if *streaming { 
+                    format!("{} ⟨streaming⟩", text) 
+                } else { 
+                    text 
+                };
+                ("Assistant", display_text, Style::default().fg(Color::Blue))
+            }
+            crate::components::content_block::ContentBlock::ToolCallBlock { name, params, .. } => {
+                ("Tool Call", format!("{}: {}", name, params), Style::default().fg(Color::Yellow))
+            }
+            crate::components::content_block::ContentBlock::ToolResultBlock { content, .. } => {
+                ("Tool Result", content.clone(), Style::default().fg(Color::Magenta))
+            }
+            crate::components::content_block::ContentBlock::ErrorBlock { message, .. } => {
+                ("Error", message.clone(), Style::default().fg(Color::Red))
+            }
+        };
+
+        // Create text with styled title and content
+        let mut lines = vec![
+            Line::from(Span::styled(
+                format!("▶ {}", title),
+                if is_selected { 
+                    title_style.add_modifier(Modifier::BOLD).add_modifier(Modifier::REVERSED)
+                } else {
+                    title_style.add_modifier(Modifier::BOLD)
+                }
+            ))
+        ];
+
+        // Add content lines
+        for line in content_text.lines() {
+            lines.push(Line::from(Span::raw(format!("  {}", line))));
+        }
+
+        // Add a separator line
+        lines.push(Line::from(""));
+
+        let text = Text::from(lines);
+        
+        // Create a bordered paragraph for better visual separation
+        let block_widget = ratatui::widgets::Block::default()
+            .borders(ratatui::widgets::Borders::LEFT)
+            .border_style(if is_selected { 
+                Style::default().fg(Color::White) 
+            } else { 
+                Style::default().fg(Color::DarkGray) 
+            });
+
+        let paragraph = Paragraph::new(text)
+            .block(block_widget)
+            .wrap(Wrap { trim: false });
+        
+        paragraph.render(area, buf);
+    }
+}
 use crate::{
     action::{Action, ScrollDirection},
     config::Config,
@@ -27,6 +154,7 @@ pub struct Chat {
     scroll_offset: u16,
     content_dirty: bool,
     selected_block: Option<usize>,
+    scroll_view_state: ScrollViewState,
 }
 
 impl Default for Chat {
@@ -50,6 +178,7 @@ impl Chat {
             scroll_offset: 0,
             content_dirty: true,
             selected_block: None,
+            scroll_view_state: ScrollViewState::default(),
         }
     }
 
@@ -86,32 +215,23 @@ impl Chat {
     }
 
     fn scroll_up(&mut self) {
-        if self.scroll_offset > 0 {
-            self.scroll_offset = self.scroll_offset.saturating_sub(3);
-            self.auto_scroll = false;
-        }
+        self.scroll_view_state.scroll_up();
+        self.auto_scroll = false;
     }
 
     fn scroll_down(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_add(3);
-        // Check if we've scrolled to bottom
-        let total_height = self.layout_manager.get_total_height();
-        if self.scroll_offset >= total_height {
-            self.auto_scroll = true;
-        }
+        self.scroll_view_state.scroll_down();
+        self.auto_scroll = false;
     }
 
     fn page_up(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(15);
+        self.scroll_view_state.scroll_page_up();
         self.auto_scroll = false;
     }
 
     fn page_down(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_add(15);
-        let total_height = self.layout_manager.get_total_height();
-        if self.scroll_offset >= total_height {
-            self.auto_scroll = true;
-        }
+        self.scroll_view_state.scroll_page_down();
+        self.auto_scroll = false;
     }
 
     fn update_tool_call(&mut self, id: &str, name: &str, arguments: &str) {
@@ -293,43 +413,47 @@ impl Component for Chat {
             self.content_dirty = false;
         }
 
-        // Calculate layouts for all blocks
+        // Calculate layouts for all blocks with a virtual area to get total content size
+        let virtual_area = Rect {
+            x: 0, // Use relative coordinates for ScrollView
+            y: 0,
+            width: inner_area.width.saturating_sub(1), // Account for scrollbar
+            height: u16::MAX, // Allow unlimited height for content
+        };
+        
         self.layout_manager.calculate_layouts(
             &self.content_blocks,
-            inner_area,
+            virtual_area,
             &self.block_renderer,
-            self.scroll_offset,
+            0, // No scroll offset for layout calculation
         );
+
+        let total_height = self.layout_manager.get_total_height();
 
         // Handle auto-scroll
         if self.auto_scroll {
-            let total_height = self.layout_manager.get_total_height();
-            if total_height > inner_area.height {
-                self.scroll_offset = total_height - inner_area.height;
-                self.layout_manager.scroll_to_offset(self.scroll_offset);
-            }
+            self.scroll_view_state.scroll_to_bottom();
             self.auto_scroll = false;
         }
 
-        // Render visible blocks
-        for layout in self.layout_manager.get_visible_layouts() {
-            if let Some(block) = self.content_blocks.get(layout.block_id) {
-                // Adjust the area for scrolling
-                let render_area = Rect {
-                    x: layout.area.x,
-                    y: layout.area.y.saturating_sub(self.scroll_offset) + inner_area.y,
-                    width: layout.area.width,
-                    height: layout.area.height,
-                };
+        // Create ScrollView with the content size
+        let scroll_size = Size::new(virtual_area.width, total_height.max(inner_area.height));
+        let mut scroll_view = ScrollView::new(scroll_size);
 
-                // Only render if the block is visible in the viewport
-                if render_area.y < inner_area.y + inner_area.height 
-                    && render_area.y + render_area.height > inner_area.y {
-                    let is_selected = self.selected_block == Some(layout.block_id);
-                    self.block_renderer.render_block(frame, render_area, block, is_selected)?;
-                }
-            }
-        }
+        // Create the custom chat content widget
+        let chat_content = ChatContentWidget {
+            content_blocks: &self.content_blocks,
+            layout_manager: &self.layout_manager,
+            block_renderer: &self.block_renderer,
+            selected_block: self.selected_block,
+            content_height: total_height,
+        };
+
+        // Render the content into the scroll view
+        scroll_view.render_widget(chat_content, scroll_view.area());
+
+        // Render the scroll view as a stateful widget
+        frame.render_stateful_widget(scroll_view, inner_area, &mut self.scroll_view_state);
 
         Ok(())
     }

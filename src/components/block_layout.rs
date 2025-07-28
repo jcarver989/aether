@@ -106,6 +106,10 @@ impl BlockLayoutManager {
     pub fn get_layout_for_block(&self, block_id: usize) -> Option<&BlockLayout> {
         self.layouts.iter().find(|layout| layout.block_id == block_id)
     }
+
+    pub fn get_all_layouts(&self) -> &[BlockLayout] {
+        &self.layouts
+    }
 }
 
 impl Default for BlockLayoutManager {
