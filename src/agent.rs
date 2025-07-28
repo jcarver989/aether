@@ -52,7 +52,6 @@ impl<T: LlmProvider> Agent<T> {
         }
     }
 
-
     /// Get the conversation history
     pub fn conversation_history(&self) -> &[ChatMessage] {
         &self.conversation_history
@@ -111,7 +110,6 @@ impl<T: LlmProvider> Agent<T> {
             .count()
     }
 
-
     /// Convert conversation history to LLM messages
     pub fn build_llm_messages(&self) -> Vec<LlmChatMessage> {
         let mut llm_messages = Vec::new();
@@ -124,9 +122,7 @@ impl<T: LlmProvider> Agent<T> {
 
         if !has_system_message {
             let prompt = if let Some(system_prompt) = &self.system_prompt {
-                format!(
-                    "You are an AI assistant. Here are your instructions:\n\n{system_prompt}"
-                )
+                format!("You are an AI assistant. Here are your instructions:\n\n{system_prompt}")
             } else {
                 "You are an AI assistant.".to_string()
             };
@@ -275,7 +271,6 @@ impl<T: LlmProvider> Agent<T> {
                 });
         }
     }
-
 
     /// Get the tool registry
     pub fn tool_registry(&self) -> &ToolRegistry {

@@ -1,6 +1,6 @@
-use ratatui::layout::Rect;
 use super::content_block::ContentBlock;
 use crate::components::content_blocks::BlockRenderer;
+use ratatui::layout::Rect;
 
 #[derive(Debug, Clone)]
 pub struct BlockLayout {
@@ -40,7 +40,7 @@ impl BlockLayoutManager {
 
         for (i, block) in blocks.iter().enumerate() {
             let block_height = renderer.calculate_block_height(block, width);
-            
+
             // Add spacing between blocks
             let spacing = if i > 0 { 1 } else { 0 };
             current_y += spacing;
@@ -70,23 +70,32 @@ impl BlockLayoutManager {
         }
     }
 
-    pub fn get_visible_layouts(&self) -> impl Iterator<Item = &BlockLayout> {
+    pub fn get_visible_layouts(&self, visible_start: u16, visible_end: u16) -> impl Iterator<Item = &BlockLayout> + '_ {
+        self.layouts.iter().filter(move |layout| {
+            let block_start = layout.area.y;
+            let block_end = layout.area.y + layout.area.height;
+            !(block_end < visible_start || block_start > visible_end)
+        })
+    }
+
+    pub fn get_visible_layouts_cached(&self) -> impl Iterator<Item = &BlockLayout> {
         self.layouts.iter().filter(|layout| layout.visible)
     }
 
     pub fn get_total_height(&self) -> u16 {
-        self.layouts.last()
+        self.layouts
+            .last()
             .map(|layout| layout.area.y + layout.area.height)
             .unwrap_or(0)
     }
 
     pub fn scroll_to_offset(&mut self, offset: u16) {
         self.scroll_offset = offset;
-        
+
         // Recalculate visibility for existing layouts
         let visible_start = self.scroll_offset;
         let visible_end = visible_start + self.viewport_height;
-        
+
         for layout in &mut self.layouts {
             let block_start = layout.area.y;
             let block_end = layout.area.y + layout.area.height;
@@ -104,11 +113,50 @@ impl BlockLayoutManager {
     }
 
     pub fn get_layout_for_block(&self, block_id: usize) -> Option<&BlockLayout> {
-        self.layouts.iter().find(|layout| layout.block_id == block_id)
+        self.layouts
+            .iter()
+            .find(|layout| layout.block_id == block_id)
     }
 
     pub fn get_all_layouts(&self) -> &[BlockLayout] {
         &self.layouts
+    }
+
+    pub fn append_block_layout(
+        &mut self,
+        block: &ContentBlock,
+        block_id: usize,
+        renderer: &BlockRenderer,
+        viewport_width: u16,
+    ) {
+        // Calculate position based on existing layouts
+        let current_y = if let Some(last) = self.layouts.last() {
+            last.area.y + last.area.height + 1 // Add spacing
+        } else {
+            0
+        };
+
+        let block_height = renderer.calculate_block_height(block, viewport_width);
+        
+        let block_area = Rect {
+            x: 0,
+            y: current_y,
+            width: viewport_width,
+            height: block_height,
+        };
+
+        // Determine visibility based on current scroll state
+        let visible_start = self.scroll_offset;
+        let visible_end = visible_start + self.viewport_height;
+        let block_start = current_y;
+        let block_end = current_y + block_height;
+        let visible = !(block_end < visible_start || block_start > visible_end);
+
+        self.layouts.push(BlockLayout {
+            block_id,
+            area: block_area,
+            visible,
+        });
     }
 }
 

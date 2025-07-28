@@ -1,15 +1,18 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use color_eyre::Result;
 use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Padding, Wrap},
+    widgets::{Block, Borders, Padding, Paragraph, Wrap},
 };
+use serde::{Deserialize, Serialize};
 
-use crate::{types::{ChatMessage, ToolCallState}, theme::Theme};
+use crate::{
+    theme::Theme,
+    types::{ChatMessage, ToolCallState},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentBlock {
@@ -21,6 +24,8 @@ pub enum ContentBlock {
         content: Vec<ContentElement>,
         timestamp: DateTime<Utc>,
         streaming: bool,
+        // Pre-computed display text to avoid rendering on every draw
+        display_text: String,
     },
     SystemMessage {
         content: String,
@@ -73,6 +78,24 @@ impl ContentBlock {
             ContentBlock::ErrorBlock { timestamp, .. } => *timestamp,
         }
     }
+    
+    // Helper function to compute display text from ContentElements
+    fn compute_display_text(content: &[ContentElement]) -> String {
+        content
+            .iter()
+            .map(|elem| match elem {
+                ContentElement::Text(t) => t.clone(),
+                ContentElement::CodeBlock { code, language, .. } => {
+                    format!("```{}\n{}\n```", language, code)
+                }
+                ContentElement::InlineCode(c) => format!("`{}`", c),
+                ContentElement::Bold(b) => format!("**{}**", b),
+                ContentElement::Italic(i) => format!("*{}*", i),
+                ContentElement::Link { text, url } => format!("[{}]({})", text, url),
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
 
     pub fn toggle_expansion(&mut self) {
         match self {
@@ -99,39 +122,81 @@ impl ContentBlock {
         }
     }
 
-    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme, selected: bool) -> Result<()> {
+    pub fn render(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        theme: &Theme,
+        selected: bool,
+    ) -> Result<()> {
         let _ = selected; // Suppress unused warning for now
         match self {
             ContentBlock::UserMessage { content, timestamp } => {
                 self.render_user_message(frame, area, content, timestamp, theme)
             }
-            ContentBlock::AssistantMessage { content, timestamp, streaming } => {
-                self.render_assistant_message(frame, area, content, timestamp, *streaming, theme)
-            }
+            ContentBlock::AssistantMessage {
+                content,
+                timestamp,
+                streaming,
+                ..
+            } => self.render_assistant_message(frame, area, content, timestamp, *streaming, theme),
             ContentBlock::SystemMessage { content, timestamp } => {
                 self.render_system_message(frame, area, content, timestamp, theme)
             }
-            ContentBlock::ToolCallBlock { id, name, params, timestamp, state } => {
+            ContentBlock::ToolCallBlock {
+                id,
+                name,
+                params,
+                timestamp,
+                state,
+            } => {
                 self.render_tool_call_block(frame, area, id, name, params, timestamp, state, theme)
             }
-            ContentBlock::ToolResultBlock { tool_call_id, content, timestamp, expanded } => {
-                self.render_tool_result_block(frame, area, tool_call_id, content, timestamp, *expanded, theme)
-            }
+            ContentBlock::ToolResultBlock {
+                tool_call_id,
+                content,
+                timestamp,
+                expanded,
+            } => self.render_tool_result_block(
+                frame,
+                area,
+                tool_call_id,
+                content,
+                timestamp,
+                *expanded,
+                theme,
+            ),
             ContentBlock::ErrorBlock { message, timestamp } => {
                 self.render_error_block(frame, area, message, timestamp, theme)
             }
         }
     }
 
-    fn render_user_message(&self, frame: &mut Frame, area: Rect, content: &str, timestamp: &DateTime<Utc>, theme: &Theme) -> Result<()> {
+    fn render_user_message(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        content: &str,
+        timestamp: &DateTime<Utc>,
+        theme: &Theme,
+    ) -> Result<()> {
         let header_line = Line::from(vec![
-            Span::styled("You", Style::default().fg(theme.user_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "You",
+                Style::default()
+                    .fg(theme.user_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" ("),
-            Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(theme.muted)),
+            Span::styled(
+                timestamp.format("%H:%M:%S").to_string(),
+                Style::default().fg(theme.muted),
+            ),
             Span::raw(")"),
         ]);
 
-        let content_lines = content.lines()
+        let content_lines = content
+            .lines()
             .map(|line| Line::from(Span::styled(line, Style::default().fg(theme.foreground))))
             .collect::<Vec<_>>();
 
@@ -144,24 +209,38 @@ impl ContentBlock {
             .border_style(Style::default().fg(theme.user_color))
             .padding(Padding::horizontal(1));
 
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .wrap(Wrap { trim: false });
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
 
         frame.render_widget(paragraph, area);
         Ok(())
     }
 
-    fn render_assistant_message(&self, frame: &mut Frame, area: Rect, content: &[ContentElement], timestamp: &DateTime<Utc>, streaming: bool, theme: &Theme) -> Result<()> {
+    fn render_assistant_message(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        content: &[ContentElement],
+        timestamp: &DateTime<Utc>,
+        streaming: bool,
+        theme: &Theme,
+    ) -> Result<()> {
         let header_line = Line::from(vec![
-            Span::styled("Assistant", Style::default().fg(theme.assistant_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Assistant",
+                Style::default()
+                    .fg(theme.assistant_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" ("),
-            Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(theme.muted)),
+            Span::styled(
+                timestamp.format("%H:%M:%S").to_string(),
+                Style::default().fg(theme.muted),
+            ),
             Span::raw(")"),
         ]);
 
         let mut all_lines = vec![header_line];
-        
+
         for element in content {
             all_lines.extend(self.render_content_element(element, theme));
         }
@@ -173,7 +252,10 @@ impl ContentBlock {
                 spans.push(Span::styled(" ▋", Style::default().fg(theme.cursor_color)));
                 *last_line = Line::from(spans);
             } else {
-                all_lines.push(Line::from(Span::styled(" ▋", Style::default().fg(theme.cursor_color))));
+                all_lines.push(Line::from(Span::styled(
+                    " ▋",
+                    Style::default().fg(theme.cursor_color),
+                )));
             }
         }
 
@@ -183,23 +265,37 @@ impl ContentBlock {
             .border_style(Style::default().fg(theme.assistant_color))
             .padding(Padding::horizontal(1));
 
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .wrap(Wrap { trim: false });
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
 
         frame.render_widget(paragraph, area);
         Ok(())
     }
 
-    fn render_system_message(&self, frame: &mut Frame, area: Rect, content: &str, timestamp: &DateTime<Utc>, theme: &Theme) -> Result<()> {
+    fn render_system_message(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        content: &str,
+        timestamp: &DateTime<Utc>,
+        theme: &Theme,
+    ) -> Result<()> {
         let header_line = Line::from(vec![
-            Span::styled("System", Style::default().fg(theme.system_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "System",
+                Style::default()
+                    .fg(theme.system_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" ("),
-            Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(theme.muted)),
+            Span::styled(
+                timestamp.format("%H:%M:%S").to_string(),
+                Style::default().fg(theme.muted),
+            ),
             Span::raw(")"),
         ]);
 
-        let content_lines = content.lines()
+        let content_lines = content
+            .lines()
             .map(|line| Line::from(Span::styled(line, Style::default().fg(theme.subtle))))
             .collect::<Vec<_>>();
 
@@ -212,15 +308,23 @@ impl ContentBlock {
             .border_style(Style::default().fg(theme.system_color))
             .padding(Padding::horizontal(1));
 
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .wrap(Wrap { trim: false });
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
 
         frame.render_widget(paragraph, area);
         Ok(())
     }
 
-    fn render_tool_call_block(&self, frame: &mut Frame, area: Rect, id: &str, name: &str, params: &str, timestamp: &DateTime<Utc>, state: &ToolCallState, theme: &Theme) -> Result<()> {
+    fn render_tool_call_block(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        id: &str,
+        name: &str,
+        params: &str,
+        timestamp: &DateTime<Utc>,
+        state: &ToolCallState,
+        theme: &Theme,
+    ) -> Result<()> {
         let state_symbol = match state {
             ToolCallState::Pending => "⏳",
             ToolCallState::Running => "🔄",
@@ -231,15 +335,28 @@ impl ContentBlock {
         let header_line = Line::from(vec![
             Span::raw(state_symbol),
             Span::raw(" "),
-            Span::styled("Tool Call", Style::default().fg(theme.tool_call_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Tool Call",
+                Style::default()
+                    .fg(theme.tool_call_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" ("),
             Span::styled(id, Style::default().fg(theme.subtle)),
             Span::raw(") "),
-            Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(theme.muted)),
+            Span::styled(
+                timestamp.format("%H:%M:%S").to_string(),
+                Style::default().fg(theme.muted),
+            ),
         ]);
 
         let call_line = Line::from(vec![
-            Span::styled(name, Style::default().fg(theme.foreground).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                name,
+                Style::default()
+                    .fg(theme.foreground)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw("("),
             Span::styled(params, Style::default().fg(theme.foreground)),
             Span::raw(")"),
@@ -251,30 +368,49 @@ impl ContentBlock {
             .border_style(Style::default().fg(theme.tool_call_color))
             .padding(Padding::horizontal(1));
 
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .wrap(Wrap { trim: false });
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
 
         frame.render_widget(paragraph, area);
         Ok(())
     }
 
-    fn render_tool_result_block(&self, frame: &mut Frame, area: Rect, tool_call_id: &str, content: &str, timestamp: &DateTime<Utc>, expanded: bool, theme: &Theme) -> Result<()> {
+    fn render_tool_result_block(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        tool_call_id: &str,
+        content: &str,
+        timestamp: &DateTime<Utc>,
+        expanded: bool,
+        theme: &Theme,
+    ) -> Result<()> {
         let header_line = Line::from(vec![
-            Span::styled("Result", Style::default().fg(theme.tool_result_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Result",
+                Style::default()
+                    .fg(theme.tool_result_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" ("),
             Span::styled(tool_call_id, Style::default().fg(theme.subtle)),
             Span::raw(") "),
-            Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(theme.muted)),
+            Span::styled(
+                timestamp.format("%H:%M:%S").to_string(),
+                Style::default().fg(theme.muted),
+            ),
             Span::raw(" "),
-            Span::styled(if expanded { "▼" } else { "▶" }, Style::default().fg(theme.muted)),
+            Span::styled(
+                if expanded { "▼" } else { "▶" },
+                Style::default().fg(theme.muted),
+            ),
         ]);
 
         let mut all_lines = vec![header_line];
 
         if expanded {
             // Show full content
-            let content_lines = content.lines()
+            let content_lines = content
+                .lines()
                 .map(|line| Line::from(Span::styled(line, Style::default().fg(theme.foreground))))
                 .collect::<Vec<_>>();
             all_lines.extend(content_lines);
@@ -285,7 +421,10 @@ impl ContentBlock {
             } else {
                 content.to_string()
             };
-            all_lines.push(Line::from(Span::styled(preview, Style::default().fg(theme.foreground))));
+            all_lines.push(Line::from(Span::styled(
+                preview,
+                Style::default().fg(theme.foreground),
+            )));
         }
 
         let text = Text::from(all_lines);
@@ -294,23 +433,37 @@ impl ContentBlock {
             .border_style(Style::default().fg(theme.tool_result_color))
             .padding(Padding::horizontal(1));
 
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .wrap(Wrap { trim: false });
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
 
         frame.render_widget(paragraph, area);
         Ok(())
     }
 
-    fn render_error_block(&self, frame: &mut Frame, area: Rect, message: &str, timestamp: &DateTime<Utc>, theme: &Theme) -> Result<()> {
+    fn render_error_block(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        message: &str,
+        timestamp: &DateTime<Utc>,
+        theme: &Theme,
+    ) -> Result<()> {
         let header_line = Line::from(vec![
-            Span::styled("❌ Error", Style::default().fg(theme.error).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "❌ Error",
+                Style::default()
+                    .fg(theme.error)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" ("),
-            Span::styled(timestamp.format("%H:%M:%S").to_string(), Style::default().fg(theme.muted)),
+            Span::styled(
+                timestamp.format("%H:%M:%S").to_string(),
+                Style::default().fg(theme.muted),
+            ),
             Span::raw(")"),
         ]);
 
-        let content_lines = message.lines()
+        let content_lines = message
+            .lines()
             .map(|line| Line::from(Span::styled(line, Style::default().fg(theme.error))))
             .collect::<Vec<_>>();
 
@@ -323,30 +476,43 @@ impl ContentBlock {
             .border_style(Style::default().fg(theme.error))
             .padding(Padding::horizontal(1));
 
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .wrap(Wrap { trim: false });
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
 
         frame.render_widget(paragraph, area);
         Ok(())
     }
 
-    fn render_content_element(&self, element: &ContentElement, theme: &Theme) -> Vec<Line<'static>> {
+    fn render_content_element(
+        &self,
+        element: &ContentElement,
+        theme: &Theme,
+    ) -> Vec<Line<'static>> {
         match element {
-            ContentElement::Text(text) => {
-                text.lines()
-                    .map(|line| Line::from(Span::styled(line.to_string(), Style::default().fg(theme.foreground))))
-                    .collect()
-            }
-            ContentElement::CodeBlock { language, code, expanded } => {
+            ContentElement::Text(text) => text
+                .lines()
+                .map(|line| {
+                    Line::from(Span::styled(
+                        line.to_string(),
+                        Style::default().fg(theme.foreground),
+                    ))
+                })
+                .collect(),
+            ContentElement::CodeBlock {
+                language,
+                code,
+                expanded,
+            } => {
                 let mut lines = vec![];
-                
+
                 // Code block header
                 let header = Line::from(vec![
                     Span::styled("```".to_string(), Style::default().fg(theme.muted)),
                     Span::styled(language.clone(), Style::default().fg(theme.warning)),
                     Span::raw(" "),
-                    Span::styled(if *expanded { "▼" } else { "▶" }.to_string(), Style::default().fg(theme.muted)),
+                    Span::styled(
+                        if *expanded { "▼" } else { "▶" }.to_string(),
+                        Style::default().fg(theme.muted),
+                    ),
                 ]);
                 lines.push(header);
 
@@ -368,7 +534,10 @@ impl ContentBlock {
                 }
 
                 // Code block footer
-                lines.push(Line::from(Span::styled("```".to_string(), Style::default().fg(theme.muted))));
+                lines.push(Line::from(Span::styled(
+                    "```".to_string(),
+                    Style::default().fg(theme.muted),
+                )));
                 lines
             }
             ContentElement::InlineCode(code) => {
@@ -380,20 +549,26 @@ impl ContentBlock {
             ContentElement::Bold(text) => {
                 vec![Line::from(Span::styled(
                     text.clone(),
-                    Style::default().fg(theme.foreground).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme.foreground)
+                        .add_modifier(Modifier::BOLD),
                 ))]
             }
             ContentElement::Italic(text) => {
                 vec![Line::from(Span::styled(
                     text.clone(),
-                    Style::default().fg(theme.foreground).add_modifier(Modifier::ITALIC),
+                    Style::default()
+                        .fg(theme.foreground)
+                        .add_modifier(Modifier::ITALIC),
                 ))]
             }
             ContentElement::Link { text, url: _url } => {
                 // For TUI, we'll just show the text with a different color
                 vec![Line::from(Span::styled(
                     text.clone(),
-                    Style::default().fg(Color::Blue).add_modifier(Modifier::UNDERLINED),
+                    Style::default()
+                        .fg(Color::Blue)
+                        .add_modifier(Modifier::UNDERLINED),
                 ))]
             }
         }
@@ -425,7 +600,9 @@ impl ContentBlock {
             ContentBlock::ToolCallBlock { .. } => {
                 4 // header + call line + borders
             }
-            ContentBlock::ToolResultBlock { content, expanded, .. } => {
+            ContentBlock::ToolResultBlock {
+                content, expanded, ..
+            } => {
                 let header_height = 1;
                 let content_height = if *expanded {
                     content.lines().count() as u16
@@ -460,7 +637,6 @@ impl ContentBlock {
             ContentElement::Link { .. } => 1,
         }
     }
-
 }
 
 impl From<&ChatMessage> for ContentBlock {
@@ -470,34 +646,57 @@ impl From<&ChatMessage> for ContentBlock {
                 content: content.clone(),
                 timestamp: *timestamp,
             },
-            ChatMessage::Assistant { content, timestamp } => ContentBlock::AssistantMessage {
-                content: parse_assistant_content(content),
-                timestamp: *timestamp,
-                streaming: false,
+            ChatMessage::Assistant { content, timestamp } => {
+                let parsed_content = parse_assistant_content(content);
+                let display_text = Self::compute_display_text(&parsed_content);
+                ContentBlock::AssistantMessage {
+                    content: parsed_content,
+                    timestamp: *timestamp,
+                    streaming: false,
+                    display_text,
+                }
             },
-            ChatMessage::AssistantStreaming { content, timestamp } => ContentBlock::AssistantMessage {
-                content: parse_assistant_content(content),
-                timestamp: *timestamp,
-                streaming: true,
-            },
+            ChatMessage::AssistantStreaming { content, timestamp } => {
+                let parsed_content = parse_assistant_content(content);
+                let display_text = Self::compute_display_text(&parsed_content);
+                ContentBlock::AssistantMessage {
+                    content: parsed_content,
+                    timestamp: *timestamp,
+                    streaming: true,
+                    display_text,
+                }
+            }
             ChatMessage::System { content, timestamp } => ContentBlock::SystemMessage {
                 content: content.clone(),
                 timestamp: *timestamp,
             },
-            ChatMessage::ToolCall { id, name, params, timestamp } => ContentBlock::ToolCallBlock {
+            ChatMessage::ToolCall {
+                id,
+                name,
+                params,
+                timestamp,
+            } => ContentBlock::ToolCallBlock {
                 id: id.clone(),
                 name: name.clone(),
                 params: params.clone(),
                 timestamp: *timestamp,
                 state: ToolCallState::Running,
             },
-            ChatMessage::ToolResult { tool_call_id, content, timestamp } => ContentBlock::ToolResultBlock {
+            ChatMessage::ToolResult {
+                tool_call_id,
+                content,
+                timestamp,
+            } => ContentBlock::ToolResultBlock {
                 tool_call_id: tool_call_id.clone(),
                 content: content.clone(),
                 timestamp: *timestamp,
                 expanded: false,
             },
-            ChatMessage::Tool { tool_call_id, content, timestamp } => ContentBlock::ToolResultBlock {
+            ChatMessage::Tool {
+                tool_call_id,
+                content,
+                timestamp,
+            } => ContentBlock::ToolResultBlock {
                 tool_call_id: tool_call_id.clone(),
                 content: content.clone(),
                 timestamp: *timestamp,
@@ -515,7 +714,7 @@ fn parse_assistant_content(content: &str) -> Vec<ContentElement> {
     let mut elements = Vec::new();
     let mut current_text = String::new();
     let mut lines = content.lines().peekable();
-    
+
     while let Some(line) = lines.next() {
         if line.starts_with("```") {
             // Flush any accumulated text
@@ -523,18 +722,18 @@ fn parse_assistant_content(content: &str) -> Vec<ContentElement> {
                 elements.extend(parse_inline_formatting(&current_text));
                 current_text.clear();
             }
-            
+
             // Parse code block
             let language = line.trim_start_matches("```").to_string();
             let mut code_lines = Vec::new();
-            
+
             while let Some(code_line) = lines.next() {
                 if code_line.starts_with("```") {
                     break;
                 }
                 code_lines.push(code_line);
             }
-            
+
             elements.push(ContentElement::CodeBlock {
                 language,
                 code: code_lines.join("\n"),
@@ -545,16 +744,18 @@ fn parse_assistant_content(content: &str) -> Vec<ContentElement> {
             current_text.push('\n');
         }
     }
-    
+
     // Flush any remaining text
     if !current_text.is_empty() {
-        elements.extend(parse_inline_formatting(&current_text.trim_end_matches('\n')));
+        elements.extend(parse_inline_formatting(
+            &current_text.trim_end_matches('\n'),
+        ));
     }
-    
+
     if elements.is_empty() {
         elements.push(ContentElement::Text(content.to_string()));
     }
-    
+
     elements
 }
 
@@ -562,7 +763,7 @@ fn parse_inline_formatting(text: &str) -> Vec<ContentElement> {
     let mut elements = Vec::new();
     let mut current = String::new();
     let mut chars = text.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         match ch {
             '*' if chars.peek() == Some(&'*') => {
@@ -574,7 +775,7 @@ fn parse_inline_formatting(text: &str) -> Vec<ContentElement> {
                 chars.next(); // consume second *
                 let mut bold_text = String::new();
                 let mut found_end = false;
-                
+
                 while let Some(ch) = chars.next() {
                     if ch == '*' && chars.peek() == Some(&'*') {
                         chars.next(); // consume second *
@@ -583,14 +784,14 @@ fn parse_inline_formatting(text: &str) -> Vec<ContentElement> {
                     }
                     bold_text.push(ch);
                 }
-                
+
                 if found_end && !bold_text.is_empty() {
                     elements.push(ContentElement::Bold(bold_text));
                 } else {
                     current.push_str("**");
                     current.push_str(&bold_text);
                 }
-            },
+            }
             '*' => {
                 // Italic text *text*
                 if !current.is_empty() {
@@ -599,7 +800,7 @@ fn parse_inline_formatting(text: &str) -> Vec<ContentElement> {
                 }
                 let mut italic_text = String::new();
                 let mut found_end = false;
-                
+
                 while let Some(ch) = chars.next() {
                     if ch == '*' {
                         found_end = true;
@@ -607,14 +808,14 @@ fn parse_inline_formatting(text: &str) -> Vec<ContentElement> {
                     }
                     italic_text.push(ch);
                 }
-                
+
                 if found_end && !italic_text.is_empty() {
                     elements.push(ContentElement::Italic(italic_text));
                 } else {
                     current.push('*');
                     current.push_str(&italic_text);
                 }
-            },
+            }
             '`' => {
                 // Inline code `code`
                 if !current.is_empty() {
@@ -623,7 +824,7 @@ fn parse_inline_formatting(text: &str) -> Vec<ContentElement> {
                 }
                 let mut code_text = String::new();
                 let mut found_end = false;
-                
+
                 while let Some(ch) = chars.next() {
                     if ch == '`' {
                         found_end = true;
@@ -631,23 +832,23 @@ fn parse_inline_formatting(text: &str) -> Vec<ContentElement> {
                     }
                     code_text.push(ch);
                 }
-                
+
                 if found_end && !code_text.is_empty() {
                     elements.push(ContentElement::InlineCode(code_text));
                 } else {
                     current.push('`');
                     current.push_str(&code_text);
                 }
-            },
+            }
             _ => {
                 current.push(ch);
             }
         }
     }
-    
+
     if !current.is_empty() {
         elements.push(ContentElement::Text(current));
     }
-    
+
     elements
 }

@@ -55,5 +55,3 @@ pub enum ToolCallState {
     Completed,
     Failed,
 }
-
-

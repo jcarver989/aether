@@ -2,14 +2,14 @@ use color_eyre::Result;
 use ratatui::prelude::*;
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::{Component, chat::Chat, input::Input};
+use super::{Component, chat_virtual::ChatVirtual, input::Input};
 use crate::{action::Action, config::Config};
 
 #[derive(Default)]
 pub struct Home {
     command_tx: Option<UnboundedSender<Action>>,
     config: Config,
-    chat: Chat,
+    chat: ChatVirtual,
     input: Input,
 }
 
@@ -18,7 +18,7 @@ impl Home {
         Self {
             command_tx: None,
             config: Config::default(),
-            chat: Chat::new(),
+            chat: ChatVirtual::new(),
             input: Input::new(),
         }
     }
@@ -40,12 +40,30 @@ impl Component for Home {
     }
 
     fn handle_key_event(&mut self, key: crossterm::event::KeyEvent) -> Result<Option<Action>> {
-        // Forward key events to child components
-        if let Some(action) = self.input.handle_key_event(key)? {
-            return Ok(Some(action));
-        }
-        if let Some(action) = self.chat.handle_key_event(key)? {
-            return Ok(Some(action));
+        use crossterm::event::{KeyCode, KeyModifiers};
+        
+        // Let chat handle scrolling keys first (Up/Down/PageUp/PageDown)
+        match (key.code, key.modifiers) {
+            (KeyCode::Up, KeyModifiers::NONE) 
+            | (KeyCode::Down, KeyModifiers::NONE)
+            | (KeyCode::Up, KeyModifiers::CONTROL)
+            | (KeyCode::Down, KeyModifiers::CONTROL)
+            | (KeyCode::PageUp, _)
+            | (KeyCode::PageDown, _) => {
+                if let Some(action) = self.chat.handle_key_event(key)? {
+                    return Ok(Some(action));
+                }
+            }
+            _ => {
+                // For all other keys, let input handle them first
+                if let Some(action) = self.input.handle_key_event(key)? {
+                    return Ok(Some(action));
+                }
+                // Then let chat handle any remaining keys
+                if let Some(action) = self.chat.handle_key_event(key)? {
+                    return Ok(Some(action));
+                }
+            }
         }
         Ok(None)
     }

@@ -312,8 +312,6 @@ pub fn assert_stream_chunk_matches(actual: &StreamChunk, expected: &StreamChunk)
             assert_eq!(id1, id2);
         }
         (StreamChunk::Done, StreamChunk::Done) => {}
-        _ => panic!(
-            "Stream chunk mismatch:\nActual: {actual:?}\nExpected: {expected:?}"
-        ),
+        _ => panic!("Stream chunk mismatch:\nActual: {actual:?}\nExpected: {expected:?}"),
     }
 }

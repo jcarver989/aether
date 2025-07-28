@@ -50,8 +50,11 @@ pub enum Action {
     RefreshTools,
     // Content block interactions
     ToggleBlockExpansion(usize), // Block index
-    SelectBlock(usize), // Block index
-    ToggleCodeBlockExpansion { block_id: usize, element_id: usize },
+    SelectBlock(usize),          // Block index
+    ToggleCodeBlockExpansion {
+        block_id: usize,
+        element_id: usize,
+    },
     // Continue conversation after tool execution
     ContinueConversation,
 }

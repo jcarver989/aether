@@ -78,9 +78,7 @@ impl McpClient {
         let client = rmcp::serve_client(client_info, transport)
             .await
             .map_err(|e| {
-                color_eyre::Report::msg(format!(
-                    "Failed to connect to HTTP MCP server {name}: {e}"
-                ))
+                color_eyre::Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
             })?;
 
         let server = McpServer { client };
