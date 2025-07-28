@@ -108,7 +108,7 @@ fn test_tool_parameters() {
 #[test]
 fn test_tool_from_rmcp_tool() {
     let rmcp_tool = create_test_rmcp_tool("convert", "Convert file format");
-    let tool = Tool::from_rmcp_tool("converter".to_string(), rmcp_tool);
+    let tool = Tool::from(rmcp_tool);
 
     assert_eq!(tool.description, "Convert file format");
     assert!(tool.parameters.is_object());
