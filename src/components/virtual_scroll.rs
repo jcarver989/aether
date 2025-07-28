@@ -4,7 +4,6 @@ use ratatui::{
     Frame,
     buffer::Buffer,
     layout::Rect,
-    widgets::Widget,
 };
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -139,7 +138,7 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
 
         let mut current_y = 0u16;
         let mut start_idx = 0;
-        let mut end_idx = 0;
+        let mut end_idx;
         let mut render_offset = 0u16;
 
         // Find the first visible item

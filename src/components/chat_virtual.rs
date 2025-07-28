@@ -28,7 +28,7 @@ pub struct ContentBlockItem {
 }
 
 impl VirtualScrollItem for ContentBlockItem {
-    fn height(&self, width: u16) -> u16 {
+    fn height(&self, _width: u16) -> u16 {
         // Calculate the height needed for this content block
         let content_lines = match &self.block {
             ContentBlock::SystemMessage { content, .. } => content.lines().count(),
@@ -36,7 +36,7 @@ impl VirtualScrollItem for ContentBlockItem {
             ContentBlock::AssistantMessage { display_text, .. } => {
                 display_text.lines().count() + if matches!(self.block, ContentBlock::AssistantMessage { streaming: true, .. }) { 1 } else { 0 }
             },
-            ContentBlock::ToolCallBlock { name, params, .. } => {
+            ContentBlock::ToolCallBlock { params, .. } => {
                 1 + params.lines().count() // name + params
             },
             ContentBlock::ToolResultBlock { content, .. } => content.lines().count(),

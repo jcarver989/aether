@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Remove this once you start using the code
-
 use std::{
     io::{Stdout, stdout},
     ops::{Deref, DerefMut},
@@ -85,6 +83,7 @@ impl Tui {
         self
     }
 
+    #[allow(dead_code)]
     pub fn paste(mut self, paste: bool) -> Self {
         self.paste = paste;
         self
@@ -204,6 +203,7 @@ impl Tui {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn resume(&mut self) -> Result<()> {
         self.enter()?;
         Ok(())

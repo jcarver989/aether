@@ -10,13 +10,7 @@ In `Cargo.toml`:
 - `anyhow = "1.0"` - Provides flexible error handling for applications
 - `thiserror = "1.0"` - Provides derive macros for custom error types
 
-The codebase appears to primarily use `color_eyre::Result` but has both libraries as dependencies.
-
-## Expected Behavior
-Choose one error handling strategy:
-- **For an application**: Use `anyhow` (or stick with `color_eyre` which is already used)
-- **For a library**: Use `thiserror` for well-defined error types
-- Since Aether is an application, we should remove unused error crates
+The codebase should use `color_eyre::Result` going forward.
 
 ## Analysis Needed
 
@@ -38,40 +32,18 @@ Choose one error handling strategy:
 
 ## Implementation Steps
 
-### If `thiserror` is unused:
-1. Remove from `Cargo.toml`
-2. Run `cargo check` to ensure nothing breaks
-
-### If `anyhow` is unused:
-1. Remove from `Cargo.toml`
-2. Run `cargo check` to ensure nothing breaks
-
-### If both are used minimally:
 1. Standardize on `color_eyre` (already used for application errors)
 2. Replace any `anyhow::Result` with `color_eyre::Result`
 3. Replace any `anyhow!()` with `eyre!()` or `color_eyre::eyre::eyre!()`
 4. Remove both dependencies
 
-### If custom error types are needed:
-1. Keep `thiserror` only for defining specific error types
-2. Remove `anyhow`
-3. Use `color_eyre` for application-level error handling
-
 ## Best Practices for Rust Error Handling
 
 1. **Applications** (like Aether):
-   - Use `anyhow` or `color_eyre` for flexible error handling
+   - Use `color_eyre` for flexible error handling
    - Focus on good error messages rather than types
    - Easy error propagation with `?`
 
-2. **Libraries**:
-   - Use `thiserror` to define specific error types
-   - Allow library users to handle specific errors
-   - Maintain backwards compatibility
-
-3. **Mixed approach**:
-   - Use `thiserror` for domain-specific errors
-   - Use `anyhow`/`color_eyre` at application boundaries
 
 ## Testing Requirements
 - Ensure all error paths still work correctly
@@ -84,32 +56,6 @@ Choose one error handling strategy:
 - Consistent error handling pattern throughout codebase
 - No compilation warnings or errors
 - Error messages remain helpful
-
-## Example Migrations
-
-```rust
-// If migrating from anyhow to color_eyre
-// Before
-use anyhow::{Result, anyhow};
-fn process() -> Result<()> {
-    Err(anyhow!("Processing failed"))
-}
-
-// After
-use color_eyre::Result;
-fn process() -> Result<()> {
-    Err(color_eyre::eyre::eyre!("Processing failed"))
-}
-
-// Or with report
-use color_eyre::Result;
-fn process() -> Result<()> {
-    Err(color_eyre::Report::msg("Processing failed"))
-}
-```
-
-## Estimated Effort
-1-2 hours
 
 ## Dependencies
 - Should be done before any major error handling improvements

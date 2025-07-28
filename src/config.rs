@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Remove this once you start using the code
-
 use std::{
     collections::HashMap,
     env,
@@ -22,8 +20,10 @@ const CONFIG: &str = include_str!("../.config/config.json5");
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct AppConfig {
     #[serde(default)]
+    #[allow(dead_code)]
     pub data_dir: PathBuf,
     #[serde(default)]
+    #[allow(dead_code)]
     pub config_dir: PathBuf,
     #[serde(flatten)]
     pub llm: LlmConfig,
@@ -115,6 +115,7 @@ lazy_static! {
 }
 
 impl AppConfig {
+    #[allow(dead_code)]
     pub fn load() -> Result<Self, config::ConfigError> {
         let config = Config::new()?;
         Ok(config.config)
@@ -183,6 +184,7 @@ impl AppConfig {
 }
 
 impl Config {
+    #[allow(dead_code)]
     pub fn new() -> Result<Self, config::ConfigError> {
         Self::with_cli_args(None)
     }
@@ -532,6 +534,7 @@ fn parse_key_code_with_modifiers(
     Ok(KeyEvent::new(c, modifiers))
 }
 
+#[allow(dead_code)]
 pub fn key_event_to_string(key_event: &KeyEvent) -> String {
     let char;
     let key_code = match key_event.code {

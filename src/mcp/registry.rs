@@ -64,6 +64,7 @@ impl ToolRegistry {
             .map(|tool| tool.description.clone())
     }
 
+    #[allow(dead_code)]
     pub fn tool_count(&self) -> usize {
         self.tools.len()
     }

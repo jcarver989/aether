@@ -1,4 +1,4 @@
-use anyhow::Result;
+use color_eyre::Result;
 use async_openai::{
     Client,
     config::OpenAIConfig,

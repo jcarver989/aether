@@ -3,6 +3,7 @@ use ratatui::style::Color;
 // Catppuccin Mocha color palette
 pub struct CatppuccinMocha;
 
+#[allow(dead_code)]
 impl CatppuccinMocha {
     // Neutral colors
     pub const CRUST: Color = Color::Rgb(17, 17, 27);
@@ -26,6 +27,7 @@ impl CatppuccinMocha {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct Theme {
     // Base colors
     pub foreground: Color,

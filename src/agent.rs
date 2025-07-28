@@ -53,6 +53,7 @@ impl<T: LlmProvider> Agent<T> {
     }
 
     /// Get the conversation history
+    #[allow(dead_code)]
     pub fn conversation_history(&self) -> &[ChatMessage] {
         &self.conversation_history
     }
@@ -273,21 +274,25 @@ impl<T: LlmProvider> Agent<T> {
     }
 
     /// Get the tool registry
+    #[allow(dead_code)]
     pub fn tool_registry(&self) -> &ToolRegistry {
         &self.tool_registry
     }
 
     /// Get the LLM provider
+    #[allow(dead_code)]
     pub fn llm_provider(&self) -> &T {
         &self.llm_provider
     }
 
     /// Get the server name for a given tool
+    #[allow(dead_code)]
     pub fn get_server_for_tool(&self, tool_name: &str) -> Option<&String> {
         self.tool_registry.get_server_for_tool(tool_name)
     }
 
     /// Update the tool registry
+    #[allow(dead_code)]
     pub fn update_tool_registry(&mut self, new_registry: ToolRegistry) {
         self.tool_registry = new_registry;
     }
