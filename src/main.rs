@@ -25,6 +25,49 @@ mod theme;
 mod tui;
 mod types;
 
+async fn run_with_openrouter_provider(
+    args: Cli,
+    config: Config,
+    tool_registry: ToolRegistry,
+) -> Result<()> {
+    let api_key = config
+        .config
+        .llm
+        .openrouter_api_key
+        .as_ref()
+        .ok_or_else(|| color_eyre::Report::msg("OpenRouter API key not found"))?;
+
+    let provider = crate::llm::openrouter::OpenRouterProvider::new(
+        api_key.clone(),
+        config.config.llm.model.clone(),
+    )
+    .map_err(|e| {
+        color_eyre::Report::msg(format!("Failed to create OpenRouter provider: {}", e))
+    })?;
+
+    let agent = Agent::new(provider, tool_registry, config.config.agent_context.clone());
+    let mut app = App::new(&args, agent)?;
+    app.run().await
+}
+
+async fn run_with_ollama_provider(
+    args: Cli,
+    config: Config,
+    tool_registry: ToolRegistry,
+) -> Result<()> {
+    let provider = crate::llm::ollama::OllamaProvider::new(
+        Some(config.config.llm.ollama_base_url.clone()),
+        config.config.llm.model.clone(),
+    )
+    .map_err(|e| {
+        color_eyre::Report::msg(format!("Failed to create Ollama provider: {}", e))
+    })?;
+
+    let agent = Agent::new(provider, tool_registry, config.config.agent_context.clone());
+    let mut app = App::new(&args, agent)?;
+    app.run().await
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     crate::errors::init()?;
@@ -69,41 +112,10 @@ async fn main() -> Result<()> {
     // Create the appropriate provider and agent based on configuration
     match config.config.llm.provider {
         crate::config::ProviderType::OpenRouter => {
-            let api_key = config
-                .config
-                .llm
-                .openrouter_api_key
-                .as_ref()
-                .ok_or_else(|| color_eyre::Report::msg("OpenRouter API key not found"))?;
-
-            let provider = crate::llm::openrouter::OpenRouterProvider::new(
-                api_key.clone(),
-                config.config.llm.model.clone(),
-            )
-            .map_err(|e| {
-                color_eyre::Report::msg(format!("Failed to create OpenRouter provider: {}", e))
-            })?;
-
-            let agent = Agent::new(
-                provider,
-                tool_registry.clone(),
-                config.config.agent_context.clone(),
-            );
-            let mut app = App::new(&args, agent)?;
-            app.run().await?;
+            run_with_openrouter_provider(args, config, tool_registry).await?
         }
         crate::config::ProviderType::Ollama => {
-            let provider = crate::llm::ollama::OllamaProvider::new(
-                Some(config.config.llm.ollama_base_url.clone()),
-                config.config.llm.model.clone(),
-            )
-            .map_err(|e| {
-                color_eyre::Report::msg(format!("Failed to create Ollama provider: {}", e))
-            })?;
-
-            let agent = Agent::new(provider, tool_registry, config.config.agent_context.clone());
-            let mut app = App::new(&args, agent)?;
-            app.run().await?;
+            run_with_ollama_provider(args, config, tool_registry).await?
         }
     }
 
