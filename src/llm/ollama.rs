@@ -174,7 +174,7 @@ impl LlmProvider for OllamaProvider {
                         Ok(StreamChunk::Done)
                     }
                 }
-                Err(e) => Err(anyhow::anyhow!("Stream error: {}", e)),
+                Err(e) => Err(color_eyre::eyre::eyre!("Stream error: {}", e)),
             }
         });
 

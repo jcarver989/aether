@@ -5,14 +5,23 @@ use rmcp::transport::Transport;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
-use thiserror::Error;
+use std::fmt;
 use tokio::sync::{Mutex, mpsc};
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum InMemoryTransportError {
-    #[error("Channel closed")]
     ChannelClosed,
 }
+
+impl fmt::Display for InMemoryTransportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InMemoryTransportError::ChannelClosed => write!(f, "Channel closed"),
+        }
+    }
+}
+
+impl std::error::Error for InMemoryTransportError {}
 
 /// In-memory transport for connecting McpServer and McpClient in tests
 pub struct InMemoryTransport<R: ServiceRole> {

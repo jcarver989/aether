@@ -3,7 +3,7 @@ mod utils;
 use crate::utils::*;
 use aether::llm::provider::ToolCall;
 use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
-use anyhow::Result;
+use color_eyre::Result;
 use serde_json::json;
 use tokio_stream::StreamExt;
 

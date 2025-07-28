@@ -3,7 +3,7 @@ use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk, ToolDefini
 use aether::mcp::McpClient;
 use aether::mcp::registry::ToolRegistry;
 use aether::mcp_config::McpServerConfig;
-use anyhow::Result;
+use color_eyre::Result;
 use async_trait::async_trait;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};

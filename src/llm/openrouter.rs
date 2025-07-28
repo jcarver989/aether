@@ -1,4 +1,4 @@
-use anyhow::Result;
+use color_eyre::Result;
 use async_openai::{
     Client,
     config::OpenAIConfig,
@@ -197,7 +197,7 @@ impl LlmProvider for OpenRouterProvider {
                         }
                     },
                     Err(e) => {
-                        yield Err(anyhow::anyhow!("Stream error: {}", e));
+                        yield Err(color_eyre::eyre::eyre!("Stream error: {}", e));
                     }
                 }
             }

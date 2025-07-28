@@ -3,7 +3,7 @@ mod utils;
 use crate::utils::*;
 use aether::llm::provider::StreamChunkStream;
 use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
-use anyhow::Result;
+use color_eyre::Result;
 use async_trait::async_trait;
 use tokio_stream::StreamExt;
 
@@ -23,7 +23,7 @@ impl LlmProvider for MockErrorProvider {
         let error_after = self.error_after;
         let stream = tokio_stream::iter((0..error_after + 1).map(move |i| {
             if i >= error_after {
-                Err(anyhow::anyhow!("Network error"))
+                Err(color_eyre::eyre::eyre!("Network error"))
             } else if i == 0 {
                 Ok(StreamChunk::Content("Hello".to_string()))
             } else {

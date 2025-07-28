@@ -43,8 +43,6 @@ tokio-util = "0.7.12"
 tracing = "0.1.40"
 tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
-anyhow = "1.0"
-thiserror = "1.0"
 chrono = "0.4"
 async-openai = "0.29"
 async-stream = "0.3"

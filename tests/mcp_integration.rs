@@ -2,7 +2,7 @@ mod utils;
 
 use crate::utils::*;
 use aether::mcp_config::McpServerConfig;
-use anyhow::Result;
+use color_eyre::Result;
 use std::collections::HashMap;
 
 #[tokio::test]
