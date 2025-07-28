@@ -31,6 +31,7 @@ pub struct VirtualScroll<T: VirtualScrollItem> {
     viewport_height: u16,
     total_content_height: u16,
     item_heights_cache: Vec<u16>,
+    cumulative_heights: Vec<u16>,
     cache_valid: bool,
     command_tx: Option<UnboundedSender<Action>>,
 }
@@ -43,6 +44,7 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
             viewport_height: 0,
             total_content_height: 0,
             item_heights_cache: Vec::new(),
+            cumulative_heights: Vec::new(),
             cache_valid: false,
             command_tx: None,
         }
@@ -60,6 +62,7 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
         self.items = items;
         self.cache_valid = false;
         self.item_heights_cache.clear();
+        self.cumulative_heights.clear();
     }
 
     #[allow(dead_code)]
@@ -71,6 +74,7 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
     pub fn clear(&mut self) {
         self.items.clear();
         self.item_heights_cache.clear();
+        self.cumulative_heights.clear();
         self.cache_valid = false;
         self.scroll_offset = 0;
         self.total_content_height = 0;
@@ -92,12 +96,16 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
         }
 
         self.item_heights_cache.clear();
+        self.cumulative_heights.clear();
         self.total_content_height = 0;
+
+        self.cumulative_heights.push(0);
 
         for item in &self.items {
             let height = item.height(viewport_width);
             self.item_heights_cache.push(height);
             self.total_content_height += height;
+            self.cumulative_heights.push(self.total_content_height);
         }
 
         self.cache_valid = true;
@@ -141,32 +149,30 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
         let viewport_start = self.scroll_offset;
         let viewport_end = viewport_start + self.viewport_height;
 
-        let mut current_y = 0u16;
+        // Find first visible item using cumulative heights
         let mut start_idx = 0;
-        let mut end_idx;
-        let mut render_offset = 0u16;
-
-        // Find the first visible item
-        for (idx, &height) in self.item_heights_cache.iter().enumerate() {
-            if current_y + height > viewport_start {
-                start_idx = idx;
-                render_offset = viewport_start.saturating_sub(current_y);
+        for (idx, &cumulative_height) in self.cumulative_heights.iter().enumerate().skip(1) {
+            if cumulative_height > viewport_start {
+                start_idx = idx - 1;
                 break;
             }
-            current_y += height;
+            start_idx = idx;
         }
 
-        // Find the last visible item
-        current_y = self.item_heights_cache[..start_idx].iter().sum::<u16>();
-        end_idx = start_idx;
-        
-        for idx in start_idx..self.items.len() {
-            if current_y >= viewport_end {
+        // Find last visible item using cumulative heights
+        let mut end_idx = start_idx;
+        for (idx, &cumulative_height) in self.cumulative_heights.iter().enumerate().skip(start_idx) {
+            if cumulative_height >= viewport_end {
+                end_idx = idx;
                 break;
             }
-            current_y += self.item_heights_cache[idx];
-            end_idx = idx + 1;
+            end_idx = idx;
         }
+
+        // Ensure end_idx doesn't exceed items length
+        end_idx = end_idx.min(self.items.len());
+
+        let render_offset = viewport_start.saturating_sub(self.cumulative_heights[start_idx]);
 
         (start_idx, end_idx, render_offset)
     }
