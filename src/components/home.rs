@@ -43,6 +43,15 @@ impl Component for Home {
     fn handle_key_event(&mut self, key: crossterm::event::KeyEvent) -> Result<Option<Action>> {
         use crossterm::event::{KeyCode, KeyModifiers};
         
+        // Handle global quit keys first (Ctrl+C, Ctrl+D always quit)
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('c'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                return Ok(Some(Action::Quit));
+            }
+            _ => {}
+        }
+        
         // Let chat handle scrolling keys first (Up/Down/PageUp/PageDown with modifiers)
         match (key.code, key.modifiers) {
             (KeyCode::Up, KeyModifiers::CONTROL)

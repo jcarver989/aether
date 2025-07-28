@@ -121,11 +121,13 @@ impl<T: LlmProvider> App<T> {
                     self.handle_key_event(key)?;
                 }
             }
-            _ => {}
-        }
-        for component in self.components.iter_mut() {
-            if let Some(action) = component.handle_events(Some(event.clone()))? {
-                action_tx.send(action)?;
+            _ => {
+                // Only process non-key events through handle_events to avoid double processing
+                for component in self.components.iter_mut() {
+                    if let Some(action) = component.handle_events(Some(event.clone()))? {
+                        action_tx.send(action)?;
+                    }
+                }
             }
         }
         Ok(())

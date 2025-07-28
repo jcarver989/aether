@@ -166,6 +166,7 @@ impl Input {
     }
 
 
+
     fn format_lines(&self) -> Vec<Line<'static>> {
         if self.state.is_empty() && !self.placeholder.is_empty() {
             return vec![Line::from(vec![
