@@ -106,7 +106,21 @@ impl<T: LlmProvider> App<T> {
             Event::Tick => action_tx.send(Action::Tick)?,
             Event::Render => action_tx.send(Action::Render)?,
             Event::Resize(x, y) => action_tx.send(Action::Resize(x, y))?,
-            Event::Key(key) => self.handle_key_event(key)?,
+            Event::Key(key) => {
+                // First let components handle the key event
+                let mut key_handled = false;
+                for component in self.components.iter_mut() {
+                    if let Some(action) = component.handle_key_event(key)? {
+                        action_tx.send(action)?;
+                        key_handled = true;
+                        break; // Stop after first component handles the key
+                    }
+                }
+                // Only check global keybindings if no component handled the key
+                if !key_handled {
+                    self.handle_key_event(key)?;
+                }
+            }
             _ => {}
         }
         for component in self.components.iter_mut() {
