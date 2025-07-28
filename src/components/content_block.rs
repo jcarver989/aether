@@ -727,7 +727,7 @@ fn parse_assistant_content(content: &str) -> Vec<ContentElement> {
             let language = line.trim_start_matches("```").to_string();
             let mut code_lines = Vec::new();
 
-            while let Some(code_line) = lines.next() {
+            for code_line in lines.by_ref() {
                 if code_line.starts_with("```") {
                     break;
                 }
@@ -801,7 +801,7 @@ fn parse_inline_formatting(text: &str) -> Vec<ContentElement> {
                 let mut italic_text = String::new();
                 let mut found_end = false;
 
-                while let Some(ch) = chars.next() {
+                for ch in chars.by_ref() {
                     if ch == '*' {
                         found_end = true;
                         break;
@@ -825,7 +825,7 @@ fn parse_inline_formatting(text: &str) -> Vec<ContentElement> {
                 let mut code_text = String::new();
                 let mut found_end = false;
 
-                while let Some(ch) = chars.next() {
+                for ch in chars.by_ref() {
                     if ch == '`' {
                         found_end = true;
                         break;
