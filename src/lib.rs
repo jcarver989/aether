@@ -1,7 +1,13 @@
+pub mod action;
 pub mod agent;
+pub mod app;
+pub mod cli;
+pub mod components;
+pub mod config;
 pub mod llm;
 pub mod mcp;
 pub mod mcp_config;
 pub mod testing;
 pub mod theme;
+pub mod tui;
 pub mod types;
