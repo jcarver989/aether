@@ -53,6 +53,14 @@ impl Chat {
         }
     }
 
+    pub fn get_messages(&self) -> &Vec<ChatMessage> {
+        &self.messages
+    }
+
+    pub fn get_content_blocks(&self) -> &Vec<ContentBlock> {
+        &self.content_blocks
+    }
+
     fn add_message(&mut self, message: ChatMessage) {
         self.messages.push(message);
         self.auto_scroll = true;
@@ -107,24 +115,25 @@ impl Chat {
     }
 
     fn update_tool_call(&mut self, id: &str, name: &str, arguments: &str) {
-        // Find existing tool call block and update it
-        for block in &mut self.content_blocks {
-            if let ContentBlock::ToolCallBlock { 
+        // Find existing tool call message and update it
+        for message in &mut self.messages {
+            if let ChatMessage::ToolCall { 
                 id: existing_id, 
                 name: existing_name, 
                 params, 
                 .. 
-            } = block {
+            } = message {
                 if existing_id == id {
                     *existing_name = name.to_string();
                     *params = arguments.to_string();
                     self.content_dirty = true;
+                    self.rebuild_content_blocks();
                     return;
                 }
             }
         }
         
-        // If not found, add a new tool call block
+        // If not found, add a new tool call message
         let tool_call = ChatMessage::ToolCall {
             id: id.to_string(),
             name: name.to_string(),
