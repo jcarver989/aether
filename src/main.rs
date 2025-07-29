@@ -3,11 +3,12 @@ use cli::Cli;
 use color_eyre::Result;
 use config::Config;
 use std::sync::Arc;
+use tools::ToolRegistry;
 
 use crate::{
     agent::Agent,
     app::App,
-    mcp::{McpClient, registry::ToolRegistry},
+    mcp::McpClient,
 };
 
 mod action;
@@ -21,6 +22,7 @@ mod llm;
 mod logging;
 mod mcp;
 mod mcp_config;
+mod tools;
 mod theme;
 mod tui;
 mod types;

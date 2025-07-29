@@ -1,7 +1,7 @@
 use crate::{
     llm::{ChatMessage as LlmChatMessage, ChatRequest, LlmProvider, ToolDefinition},
-    mcp::registry::ToolRegistry,
     types::ChatMessage,
+    tools::ToolRegistry,
 };
 use color_eyre::Result;
 use std::collections::{HashMap, VecDeque};

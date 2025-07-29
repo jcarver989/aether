@@ -1,7 +1,7 @@
 mod utils;
 
 use crate::utils::*;
-use aether::mcp::registry::Tool;
+use aether::tools::Tool;
 use serde_json::{Map, json};
 
 #[test]

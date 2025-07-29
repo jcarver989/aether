@@ -11,3 +11,4 @@ pub mod testing;
 pub mod theme;
 pub mod tui;
 pub mod types;
+pub mod tools;

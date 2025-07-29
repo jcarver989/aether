@@ -1,4 +1,4 @@
-use super::client::McpClient;
+use crate::mcp::McpClient;
 use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::Value;

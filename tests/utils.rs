@@ -3,7 +3,7 @@
 use aether::llm::provider::{StreamChunkStream, ToolCall};
 use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk, ToolDefinition};
 use aether::mcp::McpClient;
-use aether::mcp::registry::ToolRegistry;
+use aether::tools::ToolRegistry;
 use aether::mcp_config::McpServerConfig;
 use color_eyre::Result;
 use async_trait::async_trait;

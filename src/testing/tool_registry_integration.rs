@@ -190,7 +190,7 @@ impl MultiToolServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::registry::ToolRegistry;
+    use crate::tools::ToolRegistry;
 
     #[tokio::test]
     async fn test_tool_registry_with_real_mcp_server() {
