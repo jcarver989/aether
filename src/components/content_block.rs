@@ -360,15 +360,15 @@ impl ContentBlock {
             Span::styled(
                 name,
                 Style::default()
-                    .fg(theme.foreground)
+                    .fg(theme.subtle)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw("("),
-            Span::styled(params, Style::default().fg(theme.foreground)),
+            Span::styled(params, Style::default().fg(theme.subtle)),
             Span::raw(")"),
         ]);
 
-        let text = Text::from(vec![header_line, call_line]);
+        let text = Text::from(vec![header_line, call_line]).style(Style::default().fg(theme.muted));
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.tool_call_color))
@@ -418,7 +418,7 @@ impl ContentBlock {
             // Show full content
             let content_lines = content
                 .lines()
-                .map(|line| Line::from(Span::styled(line, Style::default().fg(theme.foreground))))
+                .map(|line| Line::from(Span::styled(line, Style::default().fg(theme.subtle))))
                 .collect::<Vec<_>>();
             all_lines.extend(content_lines);
         } else {
@@ -430,7 +430,7 @@ impl ContentBlock {
             };
             all_lines.push(Line::from(Span::styled(
                 preview,
-                Style::default().fg(theme.foreground),
+                Style::default().fg(theme.subtle),
             )));
         }
 

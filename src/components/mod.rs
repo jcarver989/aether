@@ -130,5 +130,4 @@ pub mod content_blocks;
 pub mod fps;
 pub mod home;
 pub mod input;
-pub mod tool_call;
 pub mod virtual_scroll;

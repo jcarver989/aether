@@ -1,4 +1,5 @@
 use crate::mcp::McpClient;
+use crate::tools::{Summarizer, TruncateSummarizer};
 use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::Value;
@@ -25,6 +26,7 @@ pub struct ToolRegistry {
     tools: HashMap<String, Tool>,
     tool_to_server: HashMap<String, String>,
     mcp_client: Option<Arc<McpClient>>,
+    summarizer: TruncateSummarizer,
 }
 
 impl Default for ToolRegistry {
@@ -39,6 +41,7 @@ impl ToolRegistry {
             tools: HashMap::new(),
             tool_to_server: HashMap::new(),
             mcp_client: None,
+            summarizer: TruncateSummarizer::default(),
         }
     }
 
@@ -98,7 +101,13 @@ impl ToolRegistry {
             .as_ref()
             .ok_or_else(|| color_eyre::Report::msg("No MCP client available"))?;
 
-        // Delegate to the MCP client for execution with server name
-        mcp_client.execute_tool(server_name, tool_name, args).await
+        // Execute the tool
+        let result = mcp_client.execute_tool(server_name, tool_name, args).await?;
+        
+        // Apply summarization/truncation to the result
+        let result_str = serde_json::to_string(&result)?;
+        let processed_result = self.summarizer.summarize(&result_str).await?;
+        
+        Ok(Value::String(processed_result))
     }
 }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use async_openai::types::{
-    ChatCompletionStreamResponseDelta, FinishReason,
+    FinishReason, Role,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,10 +16,32 @@ pub struct CustomChatCompletionStreamResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomChatCompletionStreamChoice {
-    pub index: u32,
-    pub delta: ChatCompletionStreamResponseDelta,
+    pub index: i32,
+    pub delta: CustomChatCompletionStreamResponseDelta,
     pub finish_reason: Option<FinishReason>,
     pub logprobs: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomChatCompletionStreamResponseDelta {
+    pub role: Option<Role>,
+    pub content: Option<String>,
+    pub tool_calls: Option<Vec<CustomToolCallDelta>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomToolCallDelta {
+    pub index: i32,
+    pub id: Option<String>,
+    #[serde(rename = "type")]
+    pub tool_type: Option<String>,
+    pub function: Option<CustomFunctionCallDelta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomFunctionCallDelta {
+    pub name: Option<String>,
+    pub arguments: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

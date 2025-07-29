@@ -145,14 +145,6 @@ impl<T: LlmProvider> App<T> {
 
         // Handle chat scrolling keys centrally
         match (key.code, key.modifiers) {
-            (KeyCode::Up, KeyModifiers::CONTROL) => {
-                action_tx.send(Action::ScrollChat(crate::action::ScrollDirection::Up))?;
-                return Ok(());
-            }
-            (KeyCode::Down, KeyModifiers::CONTROL) => {
-                action_tx.send(Action::ScrollChat(crate::action::ScrollDirection::Down))?;
-                return Ok(());
-            }
             (KeyCode::PageUp, _) => {
                 action_tx.send(Action::ScrollChat(crate::action::ScrollDirection::PageUp))?;
                 return Ok(());
@@ -188,12 +180,12 @@ impl<T: LlmProvider> App<T> {
                 action_tx.send(Action::MoveCursor(crate::action::CursorDirection::Right))?;
                 return Ok(());
             }
-            (KeyCode::Up, modifiers) if !modifiers.contains(KeyModifiers::CONTROL) => {
-                action_tx.send(Action::MoveCursor(crate::action::CursorDirection::Up))?;
+            (KeyCode::Up, _) => {
+                action_tx.send(Action::ScrollChat(crate::action::ScrollDirection::Up))?;
                 return Ok(());
             }
-            (KeyCode::Down, modifiers) if !modifiers.contains(KeyModifiers::CONTROL) => {
-                action_tx.send(Action::MoveCursor(crate::action::CursorDirection::Down))?;
+            (KeyCode::Down, _) => {
+                action_tx.send(Action::ScrollChat(crate::action::ScrollDirection::Down))?;
                 return Ok(());
             }
             (KeyCode::Esc, _) => {

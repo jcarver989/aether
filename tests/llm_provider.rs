@@ -3,6 +3,7 @@ mod utils;
 use crate::utils::*;
 use aether::llm::provider::ToolCall;
 use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
+use aether::llm::openrouter_types::CustomChatCompletionStreamResponse;
 use color_eyre::Result;
 use serde_json::json;
 
@@ -177,5 +178,46 @@ fn test_tool_call_serialization() -> Result<()> {
     assert_eq!(deserialized.name, "read_file");
     assert_eq!(deserialized.arguments, json!({"path": "/etc/hosts"}));
 
+    Ok(())
+}
+
+#[test]
+fn test_negative_index_deserialization() -> Result<()> {
+    // Test JSON response with negative index value like the one that was failing
+    let json_response = r#"{
+        "id": "gen-1753765148-50rFLkRXr4ZevuYmygAk",
+        "provider": "Novita",
+        "model": "qwen/qwen3-coder",
+        "object": "chat.completion.chunk",
+        "created": 1753765148,
+        "choices": [{
+            "index": -1,
+            "delta": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "index": -1,
+                    "id": "call_057df76479b648488008ffb7",
+                    "type": "function",
+                    "function": {
+                        "name": "invoke-tool",
+                        "arguments": "{\"args\": \"<parameter=path>\\n/projects/aether\"}"
+                    }
+                }]
+            },
+            "finish_reason": null,
+            "native_finish_reason": null,
+            "logprobs": null
+        }],
+        "system_fingerprint": ""
+    }"#;
+
+    // This should not panic or fail - it should successfully deserialize with negative index
+    let response: CustomChatCompletionStreamResponse = serde_json::from_str(json_response)?;
+    
+    assert_eq!(response.id, "gen-1753765148-50rFLkRXr4ZevuYmygAk");
+    assert_eq!(response.choices.len(), 1);
+    assert_eq!(response.choices[0].index, -1); // Verify negative index is preserved
+    
     Ok(())
 }
