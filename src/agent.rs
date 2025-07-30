@@ -1,7 +1,7 @@
 use crate::{
     llm::{ChatMessage as LlmChatMessage, ChatRequest, LlmProvider, ToolDefinition},
-    types::ChatMessage,
     tools::ToolRegistry,
+    types::ChatMessage,
 };
 use color_eyre::Result;
 use std::collections::{HashMap, VecDeque};
@@ -245,7 +245,9 @@ impl<T: LlmProvider> Agent<T> {
 
     /// Update the last streaming message to a regular assistant message
     pub fn finalize_streaming_message(&mut self) {
-        if let Some(ChatMessage::AssistantStreaming { content, timestamp }) = self.conversation_history.last().cloned() {
+        if let Some(ChatMessage::AssistantStreaming { content, timestamp }) =
+            self.conversation_history.last().cloned()
+        {
             if let Some(last_msg) = self.conversation_history.last_mut() {
                 *last_msg = ChatMessage::Assistant { content, timestamp };
             }

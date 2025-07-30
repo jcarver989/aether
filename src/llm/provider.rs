@@ -1,5 +1,5 @@
-use color_eyre::Result;
 use async_trait::async_trait;
+use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use tokio_stream::Stream;

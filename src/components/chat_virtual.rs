@@ -6,21 +6,17 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Wrap, Widget},
+    widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
 use tokio::sync::mpsc::UnboundedSender;
 
-use std::sync::Arc;
 use super::{
     Component,
     content_block::ContentBlock,
     virtual_scroll::{VirtualScroll, VirtualScrollItem},
 };
-use crate::{
-    action::Action,
-    config::Config,
-    types::ChatMessage,
-};
+use crate::{action::Action, config::Config, types::ChatMessage};
+use std::sync::Arc;
 
 /// Adapter to make ContentBlock work with VirtualScrollItem
 pub struct ContentBlockItem {
@@ -35,11 +31,22 @@ impl VirtualScrollItem for ContentBlockItem {
             ContentBlock::SystemMessage { content, .. } => content.lines().count(),
             ContentBlock::UserMessage { content, .. } => content.lines().count(),
             ContentBlock::AssistantMessage { display_text, .. } => {
-                display_text.lines().count() + if matches!(self.block, ContentBlock::AssistantMessage { streaming: true, .. }) { 1 } else { 0 }
-            },
+                display_text.lines().count()
+                    + if matches!(
+                        self.block,
+                        ContentBlock::AssistantMessage {
+                            streaming: true,
+                            ..
+                        }
+                    ) {
+                        1
+                    } else {
+                        0
+                    }
+            }
             ContentBlock::ToolCallBlock { params, .. } => {
                 1 + params.lines().count() // name + params
-            },
+            }
             ContentBlock::ToolResultBlock { content, .. } => content.lines().count(),
             ContentBlock::ErrorBlock { message, .. } => message.lines().count(),
         };
@@ -50,29 +57,21 @@ impl VirtualScrollItem for ContentBlockItem {
 
     fn render(&self, area: Rect, buf: &mut Buffer) {
         let is_selected = self.selected;
-        
+
         // Create text with styled title and content
         let mut lines = Vec::new();
-        
+
         let (title, title_style) = match &self.block {
-            ContentBlock::SystemMessage { .. } => {
-                ("System", Style::default().fg(Color::Cyan))
-            }
-            ContentBlock::UserMessage { .. } => {
-                ("User", Style::default().fg(Color::Green))
-            }
+            ContentBlock::SystemMessage { .. } => ("System", Style::default().fg(Color::Cyan)),
+            ContentBlock::UserMessage { .. } => ("User", Style::default().fg(Color::Green)),
             ContentBlock::AssistantMessage { .. } => {
                 ("Assistant", Style::default().fg(Color::Blue))
             }
-            ContentBlock::ToolCallBlock { .. } => {
-                ("Tool Call", Style::default().fg(Color::Yellow))
-            }
+            ContentBlock::ToolCallBlock { .. } => ("Tool Call", Style::default().fg(Color::Yellow)),
             ContentBlock::ToolResultBlock { .. } => {
                 ("Tool Result", Style::default().fg(Color::Magenta))
             }
-            ContentBlock::ErrorBlock { .. } => {
-                ("Error", Style::default().fg(Color::Red))
-            }
+            ContentBlock::ErrorBlock { .. } => ("Error", Style::default().fg(Color::Red)),
         };
 
         // Add title line
@@ -177,7 +176,8 @@ impl ChatVirtual {
     }
 
     fn rebuild_content_blocks(&mut self) {
-        let blocks: Vec<ContentBlockItem> = self.messages
+        let blocks: Vec<ContentBlockItem> = self
+            .messages
             .iter()
             .enumerate()
             .map(|(idx, message)| ContentBlockItem {
@@ -293,7 +293,11 @@ impl Component for ChatVirtual {
                     timestamp: chrono::Utc::now(),
                 });
             }
-            Action::StreamToolCall { id, name, arguments } => {
+            Action::StreamToolCall {
+                id,
+                name,
+                arguments,
+            } => {
                 // Find existing tool call or create new one
                 let mut found = false;
                 for message in &mut self.messages {
@@ -315,7 +319,7 @@ impl Component for ChatVirtual {
                         }
                     }
                 }
-                
+
                 if !found {
                     self.add_message(ChatMessage::ToolCall {
                         id,
@@ -335,7 +339,9 @@ impl Component for ChatVirtual {
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         // Create the outer block with borders and title
-        let block = Block::default().borders(Borders::ALL).title("Chat (Virtual)");
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Chat (Virtual)");
         frame.render_widget(block, area);
 
         // Calculate the inner area (accounting for borders)

@@ -5,11 +5,7 @@ use config::Config;
 use std::sync::Arc;
 use tools::ToolRegistry;
 
-use crate::{
-    agent::Agent,
-    app::App,
-    mcp::McpClient,
-};
+use crate::{agent::Agent, app::App, mcp::McpClient};
 
 mod action;
 mod agent;
@@ -22,8 +18,8 @@ mod llm;
 mod logging;
 mod mcp;
 mod mcp_config;
-mod tools;
 mod theme;
+mod tools;
 mod tui;
 mod types;
 
@@ -43,9 +39,7 @@ async fn run_with_openrouter_provider(
         api_key.clone(),
         config.config.llm.model.clone(),
     )
-    .map_err(|e| {
-        color_eyre::Report::msg(format!("Failed to create OpenRouter provider: {e}"))
-    })?;
+    .map_err(|e| color_eyre::Report::msg(format!("Failed to create OpenRouter provider: {e}")))?;
 
     let agent = Agent::new(provider, tool_registry, config.config.agent_context.clone());
     let mut app = App::new(&args, agent)?;
@@ -61,9 +55,7 @@ async fn run_with_ollama_provider(
         Some(config.config.llm.ollama_base_url.clone()),
         config.config.llm.model.clone(),
     )
-    .map_err(|e| {
-        color_eyre::Report::msg(format!("Failed to create Ollama provider: {e}"))
-    })?;
+    .map_err(|e| color_eyre::Report::msg(format!("Failed to create Ollama provider: {e}")))?;
 
     let agent = Agent::new(provider, tool_registry, config.config.agent_context.clone());
     let mut app = App::new(&args, agent)?;

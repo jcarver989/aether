@@ -3,8 +3,8 @@ mod utils;
 use crate::utils::*;
 use aether::llm::provider::StreamChunkStream;
 use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
-use color_eyre::Result;
 use async_trait::async_trait;
+use color_eyre::Result;
 use tokio_stream::StreamExt;
 
 struct MockErrorProvider {

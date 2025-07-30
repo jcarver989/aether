@@ -189,8 +189,9 @@ impl Config {
     }
 
     pub fn with_cli_args(cli_args: Option<&Cli>) -> Result<Self, config::ConfigError> {
-        let default_config: Config = json5::from_str(CONFIG)
-            .map_err(|e| config::ConfigError::Message(format!("Failed to parse default config: {e}")))?;
+        let default_config: Config = json5::from_str(CONFIG).map_err(|e| {
+            config::ConfigError::Message(format!("Failed to parse default config: {e}"))
+        })?;
         let data_dir = get_data_dir();
         let config_dir = get_config_dir();
 
@@ -221,10 +222,22 @@ impl Config {
             .unwrap_or_else(default_frame_rate);
 
         let mut builder = config::Config::builder()
-            .set_default("data_dir", data_dir.to_str()
-                .ok_or_else(|| config::ConfigError::Message("Data directory path contains invalid UTF-8".to_string()))?)?
-            .set_default("config_dir", config_dir.to_str()
-                .ok_or_else(|| config::ConfigError::Message("Config directory path contains invalid UTF-8".to_string()))?)?
+            .set_default(
+                "data_dir",
+                data_dir.to_str().ok_or_else(|| {
+                    config::ConfigError::Message(
+                        "Data directory path contains invalid UTF-8".to_string(),
+                    )
+                })?,
+            )?
+            .set_default(
+                "config_dir",
+                config_dir.to_str().ok_or_else(|| {
+                    config::ConfigError::Message(
+                        "Config directory path contains invalid UTF-8".to_string(),
+                    )
+                })?,
+            )?
             .set_default("model", model.as_str())?
             .set_default("ollama_base_url", ollama_base_url.as_str())?
             .set_default("tick_rate", tick_rate)?
@@ -429,13 +442,11 @@ impl<'de> Deserialize<'de> for KeyBindings {
             .map(|(mode, inner_map)| {
                 let converted_inner_map = inner_map
                     .into_iter()
-                    .filter_map(|(key_str, cmd)| {
-                        match parse_key_sequence(&key_str) {
-                            Ok(key_seq) => Some((key_seq, cmd)),
-                            Err(e) => {
-                                error!("Failed to parse key sequence '{}': {}", key_str, e);
-                                None
-                            }
+                    .filter_map(|(key_str, cmd)| match parse_key_sequence(&key_str) {
+                        Ok(key_seq) => Some((key_seq, cmd)),
+                        Err(e) => {
+                            error!("Failed to parse key sequence '{}': {}", key_str, e);
+                            None
                         }
                     })
                     .collect();
@@ -517,7 +528,9 @@ fn parse_key_code_with_modifiers(
         "minus" => KeyCode::Char('-'),
         "tab" => KeyCode::Tab,
         c if c.len() == 1 => {
-            let mut c = c.chars().next()
+            let mut c = c
+                .chars()
+                .next()
                 .ok_or_else(|| "Empty character string".to_string())?;
             if modifiers.contains(KeyModifiers::SHIFT) {
                 c = c.to_ascii_uppercase();

@@ -2,7 +2,7 @@
 // Key events are handled centrally in app.rs, and components only respond
 // to actions via the update() method.
 
-use aether::action::{Action, ScrollDirection, CursorDirection};
+use aether::action::{Action, CursorDirection, ScrollDirection};
 use aether::components::{Component, home::Home};
 use aether::config::Config;
 use aether::types::ChatMessage;
@@ -48,7 +48,8 @@ fn setup_home_with_handler() -> (Home, mpsc::UnboundedReceiver<Action>) {
     let mut home = Home::new();
     let (tx, rx) = mpsc::unbounded_channel();
     home.register_action_handler(tx).unwrap();
-    home.register_config_handler(std::sync::Arc::new(Config::default())).unwrap();
+    home.register_config_handler(std::sync::Arc::new(Config::default()))
+        .unwrap();
     (home, rx)
 }
 
@@ -124,7 +125,10 @@ mod tests {
 
         // Process InsertChar action directly (as app.rs would do)
         let result = home.update(Action::InsertChar('h')).unwrap();
-        assert_eq!(result, None, "Home should not return additional action for InsertChar");
+        assert_eq!(
+            result, None,
+            "Home should not return additional action for InsertChar"
+        );
 
         // After processing action, input should show the character
         let buffer = draw_home_component(&mut home, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
@@ -152,7 +156,7 @@ mod tests {
 
         // Process TrySubmitMessage action (emitted when Enter is pressed)
         let result = home.update(Action::TrySubmitMessage).unwrap();
-        
+
         // Should return SubmitMessage action since input is not empty
         assert!(
             matches!(result, Some(Action::SubmitMessage(_))),
@@ -176,15 +180,20 @@ mod tests {
         home.update(Action::AddChatMessage(assistant_msg)).unwrap();
 
         // Process ScrollChat action directly (as app.rs would do)
-        let result = home.update(Action::ScrollChat(ScrollDirection::Up)).unwrap();
-        
+        let result = home
+            .update(Action::ScrollChat(ScrollDirection::Up))
+            .unwrap();
+
         // Home forwards to child components, should not return additional action
-        assert_eq!(result, None, "ScrollChat action should be handled by child components");
+        assert_eq!(
+            result, None,
+            "ScrollChat action should be handled by child components"
+        );
 
         // Verify chat is still functional after scroll action
         let buffer = draw_home_component(&mut home, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
         let all_content = extract_buffer_text(&buffer, 0, buffer.content().len());
-        
+
         // Should still show messages
         assert!(
             all_content.contains("User message") || all_content.contains("Assistant response"),
@@ -257,7 +266,10 @@ mod tests {
 
         // Process InsertNewline action (emitted when Shift+Enter is pressed)
         let result = home.update(Action::InsertNewline).unwrap();
-        assert_eq!(result, None, "InsertNewline should be handled by child components");
+        assert_eq!(
+            result, None,
+            "InsertNewline should be handled by child components"
+        );
 
         // Add more text on new line by processing InsertChar actions
         for ch in "line 2".chars() {
@@ -358,7 +370,8 @@ mod tests {
         );
 
         // Process SubmitMessage action (as app.rs would do after receiving TrySubmitMessage)
-        home.update(Action::SubmitMessage("test message".to_string())).unwrap();
+        home.update(Action::SubmitMessage("test message".to_string()))
+            .unwrap();
 
         // Verify input is cleared after SubmitMessage
         let after_buffer = draw_home_component(&mut home, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
@@ -383,7 +396,8 @@ mod tests {
         // Move cursor back by processing MoveCursor actions
         for _ in 0..6 {
             // Move back to position after "Hello"
-            home.update(Action::MoveCursor(CursorDirection::Left)).unwrap();
+            home.update(Action::MoveCursor(CursorDirection::Left))
+                .unwrap();
         }
 
         // Insert text in middle by processing InsertChar actions
@@ -454,7 +468,10 @@ mod tests {
 
         // Process ClearInput action (emitted when Escape is pressed)
         let result = home.update(Action::ClearInput).unwrap();
-        assert_eq!(result, None, "ClearInput should be handled by child components");
+        assert_eq!(
+            result, None,
+            "ClearInput should be handled by child components"
+        );
 
         // Verify input is cleared
         let after_buffer = draw_home_component(&mut home, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
@@ -472,18 +489,18 @@ mod tests {
 
         // Process a single InsertChar action
         let result = home.update(Action::InsertChar('h')).unwrap();
-        assert_eq!(result, None, "InsertChar should be handled by child components");
+        assert_eq!(
+            result, None,
+            "InsertChar should be handled by child components"
+        );
 
         // Verify only one character was inserted by checking the input area
         let buffer = draw_home_component(&mut home, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
         let content = extract_buffer_text(&buffer, 0, buffer.content().len());
-        
+
         // Look for the input line with "> h" (there should only be one occurrence)
-        assert!(
-            content.contains("> h"),
-            "Should contain input with 'h'"
-        );
-        
+        assert!(content.contains("> h"), "Should contain input with 'h'");
+
         // Count occurrences of "> h" to ensure no duplication in the input
         let input_h_count = content.matches("> h").count();
         assert_eq!(
@@ -491,7 +508,7 @@ mod tests {
             "Should only have one '> h' input pattern, found {} occurrences. Content: {}",
             input_h_count, content
         );
-        
+
         // Verify placeholder is not shown
         assert!(
             !content.contains("Type your message..."),

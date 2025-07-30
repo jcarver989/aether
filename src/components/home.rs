@@ -40,7 +40,6 @@ impl Component for Home {
         Ok(())
     }
 
-
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         // Forward actions to child components
         if let Some(child_action) = self.chat.update(action.clone())? {
@@ -99,7 +98,8 @@ mod tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                home.draw(frame, area).expect("Failed to draw home component");
+                home.draw(frame, area)
+                    .expect("Failed to draw home component");
             })
             .expect("Failed to draw terminal frame");
 
@@ -108,7 +108,8 @@ mod tests {
 
     /// Helper function to extract text content from buffer
     fn extract_buffer_text(buffer: &Buffer) -> String {
-        buffer.content()
+        buffer
+            .content()
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>()
@@ -118,145 +119,203 @@ mod tests {
     fn test_action_processing_no_double_handling() {
         let mut home = Home::new();
         let (tx, _rx) = mpsc::unbounded_channel();
-        
+
         // Register action handler
-        home.register_action_handler(tx).expect("Failed to register action handler");
-        
+        home.register_action_handler(tx)
+            .expect("Failed to register action handler");
+
         // Draw initial state - should show placeholder
         let initial_buffer = draw_home_component(&mut home);
         let initial_content = extract_buffer_text(&initial_buffer);
-        assert!(initial_content.contains("Type your message..."), "Should show placeholder initially");
-        
+        assert!(
+            initial_content.contains("Type your message..."),
+            "Should show placeholder initially"
+        );
+
         // Process InsertChar action directly (as app.rs would do)
-        let child_action = home.update(Action::InsertChar('h')).expect("Failed to update home with action");
+        let child_action = home
+            .update(Action::InsertChar('h'))
+            .expect("Failed to update home with action");
         assert_eq!(child_action, None); // Home doesn't return additional actions for this
-        
+
         // Draw after processing action - should now show the character
         let after_action_buffer = draw_home_component(&mut home);
         let after_action_content = extract_buffer_text(&after_action_buffer);
-        assert!(after_action_content.contains("> h"), "Should show 'h' after action processing");
-        assert!(!after_action_content.contains("Type your message..."), "Should not show placeholder after typing");
+        assert!(
+            after_action_content.contains("> h"),
+            "Should show 'h' after action processing"
+        );
+        assert!(
+            !after_action_content.contains("Type your message..."),
+            "Should not show placeholder after typing"
+        );
     }
-    
+
     #[test]
     fn test_insert_char_q_action_processing() {
         let mut home = Home::new();
         let (tx, _rx) = mpsc::unbounded_channel();
-        
+
         // Register action handler
-        home.register_action_handler(tx).expect("Failed to register action handler");
-        
+        home.register_action_handler(tx)
+            .expect("Failed to register action handler");
+
         // Process InsertChar('q') action directly (as app.rs would do)
-        let child_action = home.update(Action::InsertChar('q')).expect("Failed to update home with action");
+        let child_action = home
+            .update(Action::InsertChar('q'))
+            .expect("Failed to update home with action");
         assert_eq!(child_action, None);
-        
+
         // Draw and verify 'q' appears in the input, proving it was treated as text input
         let buffer = draw_home_component(&mut home);
         let content = extract_buffer_text(&buffer);
         assert!(content.contains("> q"), "Should show 'q' in input field");
-        assert!(!content.contains("Type your message..."), "Should not show placeholder after typing");
+        assert!(
+            !content.contains("Type your message..."),
+            "Should not show placeholder after typing"
+        );
     }
-    
+
     #[test]
     fn test_scroll_action_processing() {
         let mut home = Home::new();
         let (tx, _rx) = mpsc::unbounded_channel();
-        
+
         // Register action handler
-        home.register_action_handler(tx).expect("Failed to register action handler");
-        
+        home.register_action_handler(tx)
+            .expect("Failed to register action handler");
+
         // Test that ScrollChat action is processed correctly (now sent directly by app.rs)
-        let _result = home.update(Action::ScrollChat(crate::action::ScrollDirection::Up)).expect("Failed to update with ScrollChat");
-        
+        let _result = home
+            .update(Action::ScrollChat(crate::action::ScrollDirection::Up))
+            .expect("Failed to update with ScrollChat");
+
         // Home forwards the action to child components
         // The exact behavior depends on chat implementation, but it should not cause issues
-        
-        // Draw and verify input field is still showing placeholder (unchanged by scroll action)  
+
+        // Draw and verify input field is still showing placeholder (unchanged by scroll action)
         let buffer = draw_home_component(&mut home);
         let content = extract_buffer_text(&buffer);
-        assert!(content.contains("Type your message..."), "Should still show placeholder after scroll action");
+        assert!(
+            content.contains("Type your message..."),
+            "Should still show placeholder after scroll action"
+        );
     }
-    
+
     #[test]
     fn test_submit_message_action_clears_input() {
         let mut home = Home::new();
         let (tx, _rx) = mpsc::unbounded_channel();
-        
+
         // Register action handler
-        home.register_action_handler(tx).expect("Failed to register action handler");
-        
+        home.register_action_handler(tx)
+            .expect("Failed to register action handler");
+
         // Add some text first
-        home.update(Action::InsertChar('h')).expect("Failed to insert 'h'");
-        home.update(Action::InsertChar('i')).expect("Failed to insert 'i'");
-        
+        home.update(Action::InsertChar('h'))
+            .expect("Failed to insert 'h'");
+        home.update(Action::InsertChar('i'))
+            .expect("Failed to insert 'i'");
+
         // Draw and verify text is visible
         let before_submit_buffer = draw_home_component(&mut home);
         let before_submit_content = extract_buffer_text(&before_submit_buffer);
-        assert!(before_submit_content.contains("> hi"), "Should show 'hi' before submit");
-        assert!(before_submit_content.contains("1 lines"), "Should show line count hint for single line");
-        
+        assert!(
+            before_submit_content.contains("> hi"),
+            "Should show 'hi' before submit"
+        );
+        assert!(
+            before_submit_content.contains("1 lines"),
+            "Should show line count hint for single line"
+        );
+
         // Test TrySubmitMessage action (simulating Enter key press in app.rs)
-        let _child_action = home.update(Action::TrySubmitMessage).expect("Failed to update with TrySubmitMessage");
+        let _child_action = home
+            .update(Action::TrySubmitMessage)
+            .expect("Failed to update with TrySubmitMessage");
         // Input component should return SubmitMessage action when not empty
         // This gets processed by the app layer
-        
+
         // Process the SubmitMessage action
-        let child_action = home.update(Action::SubmitMessage("hi".to_string())).expect("Failed to update with SubmitMessage");
+        let child_action = home
+            .update(Action::SubmitMessage("hi".to_string()))
+            .expect("Failed to update with SubmitMessage");
         assert_eq!(child_action, None);
-        
+
         // Draw and verify input is cleared after submit
         let after_submit_buffer = draw_home_component(&mut home);
         let after_submit_content = extract_buffer_text(&after_submit_buffer);
-        assert!(after_submit_content.contains("Type your message..."), "Should show placeholder after submit");
-        assert!(!after_submit_content.contains("> hi"), "Should not show 'hi' after submit");
+        assert!(
+            after_submit_content.contains("Type your message..."),
+            "Should show placeholder after submit"
+        );
+        assert!(
+            !after_submit_content.contains("> hi"),
+            "Should not show 'hi' after submit"
+        );
     }
-    
+
     #[test]
     fn test_cursor_movement_action_processing() {
         let mut home = Home::new();
         let (tx, _rx) = mpsc::unbounded_channel();
-        
+
         // Register action handler
-        home.register_action_handler(tx).expect("Failed to register action handler");
-        
+        home.register_action_handler(tx)
+            .expect("Failed to register action handler");
+
         // Add some text first
-        home.update(Action::InsertChar('h')).expect("Failed to insert 'h'");
-        home.update(Action::InsertChar('i')).expect("Failed to insert 'i'");
-        
+        home.update(Action::InsertChar('h'))
+            .expect("Failed to insert 'h'");
+        home.update(Action::InsertChar('i'))
+            .expect("Failed to insert 'i'");
+
         // Draw initial state with cursor at end
         let initial_buffer = draw_home_component(&mut home);
         let initial_content = extract_buffer_text(&initial_buffer);
-        assert!(initial_content.contains("> hi"), "Should show 'hi' initially");
-        
+        assert!(
+            initial_content.contains("> hi"),
+            "Should show 'hi' initially"
+        );
+
         // Process MoveCursor action directly (as app.rs would do)
-        home.update(Action::MoveCursor(CursorDirection::Left)).expect("Failed to update with MoveCursor");
-        
+        home.update(Action::MoveCursor(CursorDirection::Left))
+            .expect("Failed to update with MoveCursor");
+
         // Draw after cursor movement - text should still be there but cursor moved
         let after_move_buffer = draw_home_component(&mut home);
         let after_move_content = extract_buffer_text(&after_move_buffer);
-        assert!(after_move_content.contains("> hi"), "Should still show 'hi' after cursor move");
+        assert!(
+            after_move_content.contains("> hi"),
+            "Should still show 'hi' after cursor move"
+        );
         // Note: Cursor position is shown visually in the terminal but hard to test precisely in buffer
         // The important thing is the text is still there and no characters were duplicated
     }
-    
+
     #[test]
     fn test_single_character_insertion() {
         let mut home = Home::new();
         let (tx, _rx) = mpsc::unbounded_channel();
-        
+
         // Register action handler
-        home.register_action_handler(tx).expect("Failed to register action handler");
-        
+        home.register_action_handler(tx)
+            .expect("Failed to register action handler");
+
         // Process InsertChar action directly (as app.rs would do)
-        home.update(Action::InsertChar('x')).expect("Failed to update with action");
-        
+        home.update(Action::InsertChar('x'))
+            .expect("Failed to update with action");
+
         // Draw and verify only one 'x' appears
         let buffer = draw_home_component(&mut home);
         let content = extract_buffer_text(&buffer);
         assert!(content.contains("> x"), "Should show single 'x'");
-        
+
         // Count occurrences of 'x' in the visible content
         let x_count = content.matches('x').count();
-        assert_eq!(x_count, 1, "Should only have one 'x' in the output, not double characters");
+        assert_eq!(
+            x_count, 1,
+            "Should only have one 'x' in the output, not double characters"
+        );
     }
 }

@@ -3,9 +3,9 @@ use rmcp::RoleServer;
 use rmcp::service::{RxJsonRpcMessage, ServiceRole, TxJsonRpcMessage};
 use rmcp::transport::Transport;
 use std::collections::HashMap;
+use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
-use std::fmt;
 use tokio::sync::{Mutex, mpsc};
 
 #[derive(Debug)]

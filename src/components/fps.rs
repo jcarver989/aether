@@ -124,7 +124,9 @@ mod tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                fps_counter.draw(frame, area).expect("Failed to draw FPS counter");
+                fps_counter
+                    .draw(frame, area)
+                    .expect("Failed to draw FPS counter");
             })
             .expect("Failed to draw terminal frame");
 
@@ -220,10 +222,18 @@ mod tests {
         let mut fps_counter = FpsCounter::new();
 
         // Perform several updates but not enough time has passed
-        fps_counter.update(Action::Tick).expect("Failed to update with Tick");
-        fps_counter.update(Action::Render).expect("Failed to update with Render");
-        fps_counter.update(Action::Tick).expect("Failed to update with Tick");
-        fps_counter.update(Action::Render).expect("Failed to update with Render");
+        fps_counter
+            .update(Action::Tick)
+            .expect("Failed to update with Tick");
+        fps_counter
+            .update(Action::Render)
+            .expect("Failed to update with Render");
+        fps_counter
+            .update(Action::Tick)
+            .expect("Failed to update with Tick");
+        fps_counter
+            .update(Action::Render)
+            .expect("Failed to update with Render");
 
         // Draw and verify the buffer shows 0.00 rates (since not enough time elapsed)
         let buffer = draw_fps_counter(&mut fps_counter, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);

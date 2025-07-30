@@ -3,10 +3,10 @@
 use aether::llm::provider::{StreamChunkStream, ToolCall};
 use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk, ToolDefinition};
 use aether::mcp::McpClient;
-use aether::tools::ToolRegistry;
 use aether::mcp_config::McpServerConfig;
-use color_eyre::Result;
+use aether::tools::ToolRegistry;
 use async_trait::async_trait;
+use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;

@@ -79,7 +79,7 @@ impl ContentBlock {
             ContentBlock::ErrorBlock { timestamp, .. } => *timestamp,
         }
     }
-    
+
     // Helper function to compute display text from ContentElements
     fn compute_display_text(content: &[ContentElement]) -> String {
         content
@@ -664,7 +664,7 @@ impl From<&ChatMessage> for ContentBlock {
                     streaming: false,
                     display_text,
                 }
-            },
+            }
             ChatMessage::AssistantStreaming { content, timestamp } => {
                 let parsed_content = parse_assistant_content(content);
                 let display_text = Self::compute_display_text(&parsed_content);
@@ -756,9 +756,7 @@ fn parse_assistant_content(content: &str) -> Vec<ContentElement> {
 
     // Flush any remaining text
     if !current_text.is_empty() {
-        elements.extend(parse_inline_formatting(
-            current_text.trim_end_matches('\n'),
-        ));
+        elements.extend(parse_inline_formatting(current_text.trim_end_matches('\n')));
     }
 
     if elements.is_empty() {

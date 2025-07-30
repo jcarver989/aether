@@ -1,7 +1,5 @@
+use async_openai::types::{FinishReason, Role};
 use serde::{Deserialize, Serialize};
-use async_openai::types::{
-    FinishReason, Role,
-};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomChatCompletionStreamResponse {

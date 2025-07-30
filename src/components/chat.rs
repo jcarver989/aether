@@ -34,7 +34,10 @@ impl<'a> Widget for ChatContentWidget<'a> {
         let visible_end = area.y + area.height;
 
         // Only iterate through layouts that could be visible
-        for layout in self.layout_manager.get_visible_layouts(visible_start, visible_end) {
+        for layout in self
+            .layout_manager
+            .get_visible_layouts(visible_start, visible_end)
+        {
             if let Some(block) = self.content_blocks.get(layout.block_id) {
                 let render_area = Rect {
                     x: area.x,
@@ -44,7 +47,8 @@ impl<'a> Widget for ChatContentWidget<'a> {
                 };
 
                 // Double-check intersection (layout manager should handle this)
-                if render_area.y < visible_end && render_area.y + render_area.height > visible_start {
+                if render_area.y < visible_end && render_area.y + render_area.height > visible_start
+                {
                     self.render_block_to_buffer(block, render_area, buf);
                 }
             }
@@ -62,7 +66,7 @@ impl<'a> ChatContentWidget<'a> {
 
         // Create text with styled title and content - build lines directly to avoid cloning
         let mut lines = Vec::new();
-        
+
         let (title, title_style) = match block {
             crate::components::content_block::ContentBlock::SystemMessage { .. } => {
                 ("System", Style::default().fg(Color::Cyan))
@@ -162,13 +166,13 @@ impl<'a> ChatContentWidget<'a> {
         paragraph.render(area, buf);
     }
 }
-use std::sync::Arc;
 use crate::{
     action::{Action, ScrollDirection},
     config::Config,
     theme::Theme,
     types::ChatMessage,
 };
+use std::sync::Arc;
 
 pub struct Chat {
     messages: Vec<ChatMessage>,
@@ -256,10 +260,10 @@ impl Chat {
     fn add_message_optimized(&mut self, message: ChatMessage) {
         // For streaming content, avoid marking everything dirty if we're just appending
         let is_streaming_update = matches!(message, ChatMessage::AssistantStreaming { .. });
-        
+
         self.messages.push(message);
         self.auto_scroll = true;
-        
+
         if is_streaming_update && !self.content_blocks.is_empty() {
             // Just add the new content block without full rebuild
             if let Some(last_message) = self.messages.last() {
@@ -297,7 +301,7 @@ impl Chat {
     fn rebuild_content_blocks_incremental(&mut self) {
         let messages_len = self.messages.len();
         let blocks_len = self.content_blocks.len();
-        
+
         if blocks_len < messages_len {
             // Add missing content blocks
             for message in &self.messages[blocks_len..] {
@@ -314,26 +318,42 @@ impl Chat {
             let mut needs_update = false;
             for (message, block) in self.messages.iter().zip(self.content_blocks.iter_mut()) {
                 let new_block = ContentBlock::from(message);
-                
+
                 // Compare actual content to detect updates (critical for streaming and tool calls)
                 let block_changed = match (&*block, &new_block) {
                     (
-                        crate::components::content_block::ContentBlock::ToolCallBlock { name: old_name, params: old_params, .. },
-                        crate::components::content_block::ContentBlock::ToolCallBlock { name: new_name, params: new_params, .. }
+                        crate::components::content_block::ContentBlock::ToolCallBlock {
+                            name: old_name,
+                            params: old_params,
+                            ..
+                        },
+                        crate::components::content_block::ContentBlock::ToolCallBlock {
+                            name: new_name,
+                            params: new_params,
+                            ..
+                        },
                     ) => old_name != new_name || old_params != new_params,
                     (
-                        crate::components::content_block::ContentBlock::AssistantMessage { display_text: old_text, streaming: old_streaming, .. },
-                        crate::components::content_block::ContentBlock::AssistantMessage { display_text: new_text, streaming: new_streaming, .. }
+                        crate::components::content_block::ContentBlock::AssistantMessage {
+                            display_text: old_text,
+                            streaming: old_streaming,
+                            ..
+                        },
+                        crate::components::content_block::ContentBlock::AssistantMessage {
+                            display_text: new_text,
+                            streaming: new_streaming,
+                            ..
+                        },
                     ) => old_text != new_text || old_streaming != new_streaming,
-                    _ => std::mem::discriminant(&*block) != std::mem::discriminant(&new_block)
+                    _ => std::mem::discriminant(&*block) != std::mem::discriminant(&new_block),
                 };
-                
+
                 if block_changed {
                     *block = new_block;
                     needs_update = true;
                 }
             }
-            
+
             if needs_update {
                 self.layout_dirty = true;
             }
@@ -578,7 +598,7 @@ impl Component for Chat {
                 &self.block_renderer,
                 0, // No scroll offset for layout calculation
             );
-            
+
             self.cached_total_height = self.layout_manager.get_total_height();
             self.cached_area = Some(virtual_area);
             self.layout_dirty = false;
@@ -594,8 +614,8 @@ impl Component for Chat {
 
         // Create or reuse ScrollView with the content size
         let scroll_size = Size::new(virtual_area.width, total_height.max(inner_area.height));
-        let mut scroll_view = if let (Some(cached_view), Some(cached_size)) = 
-            (&self.cached_scroll_view, &self.cached_scroll_size) 
+        let mut scroll_view = if let (Some(cached_view), Some(cached_size)) =
+            (&self.cached_scroll_view, &self.cached_scroll_size)
         {
             if *cached_size == scroll_size {
                 // Reuse existing ScrollView

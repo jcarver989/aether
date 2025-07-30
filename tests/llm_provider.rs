@@ -1,9 +1,9 @@
 mod utils;
 
 use crate::utils::*;
+use aether::llm::openrouter_types::CustomChatCompletionStreamResponse;
 use aether::llm::provider::ToolCall;
 use aether::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
-use aether::llm::openrouter_types::CustomChatCompletionStreamResponse;
 use color_eyre::Result;
 use serde_json::json;
 
@@ -214,10 +214,10 @@ fn test_negative_index_deserialization() -> Result<()> {
 
     // This should not panic or fail - it should successfully deserialize with negative index
     let response: CustomChatCompletionStreamResponse = serde_json::from_str(json_response)?;
-    
+
     assert_eq!(response.id, "gen-1753765148-50rFLkRXr4ZevuYmygAk");
     assert_eq!(response.choices.len(), 1);
     assert_eq!(response.choices[0].index, -1); // Verify negative index is preserved
-    
+
     Ok(())
 }

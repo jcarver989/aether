@@ -71,7 +71,11 @@ impl BlockLayoutManager {
         }
     }
 
-    pub fn get_visible_layouts(&self, visible_start: u16, visible_end: u16) -> impl Iterator<Item = &BlockLayout> + '_ {
+    pub fn get_visible_layouts(
+        &self,
+        visible_start: u16,
+        visible_end: u16,
+    ) -> impl Iterator<Item = &BlockLayout> + '_ {
         self.layouts.iter().filter(move |layout| {
             let block_start = layout.area.y;
             let block_end = layout.area.y + layout.area.height;
@@ -143,7 +147,7 @@ impl BlockLayoutManager {
         };
 
         let block_height = renderer.calculate_block_height(block, viewport_width);
-        
+
         let block_area = Rect {
             x: 0,
             y: current_y,

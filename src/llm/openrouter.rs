@@ -1,4 +1,3 @@
-use color_eyre::Result;
 use async_openai::{
     Client,
     config::OpenAIConfig,
@@ -7,19 +6,19 @@ use async_openai::{
         ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
         ChatCompletionRequestToolMessageContent, ChatCompletionRequestUserMessage,
-        ChatCompletionTool, ChatCompletionToolType, FunctionCall,
-        FunctionObject,
+        ChatCompletionTool, ChatCompletionToolType, FunctionCall, FunctionObject,
     },
 };
 use async_trait::async_trait;
+use color_eyre::Result;
+use serde_json::json;
 use tokio_stream::StreamExt;
 use tracing::debug;
-use serde_json::json;
 
+use super::openrouter_types::CustomChatCompletionStreamResponse;
 use super::provider::{
     ChatMessage, ChatRequest, LlmProvider, StreamChunk, StreamChunkStream, ToolDefinition,
 };
-use super::openrouter_types::CustomChatCompletionStreamResponse;
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -123,16 +122,20 @@ impl LlmProvider for OpenRouterProvider {
             "messages": messages,
             "stream": true,
         });
-        
+
         if let Some(tools) = tools {
             req["tools"] = json!(tools);
         }
-        
+
         if let Some(temp) = request.temperature {
             req["temperature"] = json!(temp);
         }
 
-        let stream = self.client.chat().create_stream_byot::<serde_json::Value, CustomChatCompletionStreamResponse>(req).await?;
+        let stream = self
+            .client
+            .chat()
+            .create_stream_byot::<serde_json::Value, CustomChatCompletionStreamResponse>(req)
+            .await?;
 
         // Create a custom stream that properly handles tool calls
         let mapped_stream = async_stream::stream! {

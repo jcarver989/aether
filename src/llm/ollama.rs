@@ -1,4 +1,3 @@
-use color_eyre::Result;
 use async_openai::{
     Client,
     config::OpenAIConfig,
@@ -12,6 +11,7 @@ use async_openai::{
     },
 };
 use async_trait::async_trait;
+use color_eyre::Result;
 use tokio_stream::StreamExt;
 
 use super::provider::{

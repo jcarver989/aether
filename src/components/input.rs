@@ -8,9 +8,12 @@ use ratatui::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
-use std::sync::Arc;
 use super::Component;
-use crate::{action::{Action, CursorDirection}, config::Config};
+use crate::{
+    action::{Action, CursorDirection},
+    config::Config,
+};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct InputState {
@@ -115,7 +118,6 @@ impl InputState {
         }
     }
 
-
     pub fn is_empty(&self) -> bool {
         self.lines.len() == 1 && self.lines[0].is_empty()
     }
@@ -163,8 +165,6 @@ impl Input {
             config: Arc::new(Config::default()),
         }
     }
-
-
 
     fn format_lines(&self) -> Vec<Line<'static>> {
         if self.state.is_empty() && !self.placeholder.is_empty() {
@@ -242,7 +242,6 @@ impl Component for Input {
         Ok(())
     }
 
-
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         match action {
             Action::Tick => {}
@@ -259,14 +258,12 @@ impl Component for Input {
             Action::DeleteChar => {
                 self.state.delete_char();
             }
-            Action::MoveCursor(direction) => {
-                match direction {
-                    CursorDirection::Left => self.state.move_cursor_left(),
-                    CursorDirection::Right => self.state.move_cursor_right(),
-                    CursorDirection::Up => self.state.move_cursor_up(),
-                    CursorDirection::Down => self.state.move_cursor_down(),
-                }
-            }
+            Action::MoveCursor(direction) => match direction {
+                CursorDirection::Left => self.state.move_cursor_left(),
+                CursorDirection::Right => self.state.move_cursor_right(),
+                CursorDirection::Up => self.state.move_cursor_up(),
+                CursorDirection::Down => self.state.move_cursor_down(),
+            },
             Action::TrySubmitMessage => {
                 if !self.state.is_empty() {
                     let message = self.state.to_string();
@@ -327,7 +324,9 @@ mod tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                input.draw(frame, area).expect("Failed to draw input component");
+                input
+                    .draw(frame, area)
+                    .expect("Failed to draw input component");
             })
             .expect("Failed to draw terminal frame");
 
@@ -606,11 +605,15 @@ mod tests {
         let mut input = Input::new();
 
         // Test that InsertChar action works correctly
-        input.update(Action::InsertChar('a')).expect("Failed to update with InsertChar('a')");
+        input
+            .update(Action::InsertChar('a'))
+            .expect("Failed to update with InsertChar('a')");
         assert_eq!(input.state.lines[0], "a");
         assert_eq!(input.state.cursor_col, 1);
 
-        input.update(Action::InsertChar('b')).expect("Failed to update with InsertChar('b')");
+        input
+            .update(Action::InsertChar('b'))
+            .expect("Failed to update with InsertChar('b')");
         assert_eq!(input.state.lines[0], "ab");
         assert_eq!(input.state.cursor_col, 2);
     }
@@ -620,30 +623,46 @@ mod tests {
         let mut input = Input::new();
 
         // TrySubmitMessage on empty input should return None
-        let result = input.update(Action::TrySubmitMessage).expect("Failed to update with TrySubmitMessage");
+        let result = input
+            .update(Action::TrySubmitMessage)
+            .expect("Failed to update with TrySubmitMessage");
         assert_eq!(result, None);
 
         // Add some text via actions
-        input.update(Action::InsertChar('h')).expect("Failed to update with InsertChar('h')");
-        input.update(Action::InsertChar('i')).expect("Failed to update with InsertChar('i')");
+        input
+            .update(Action::InsertChar('h'))
+            .expect("Failed to update with InsertChar('h')");
+        input
+            .update(Action::InsertChar('i'))
+            .expect("Failed to update with InsertChar('i')");
 
         // TrySubmitMessage with content should return SubmitMessage action
-        let result = input.update(Action::TrySubmitMessage).expect("Failed to update with TrySubmitMessage");
+        let result = input
+            .update(Action::TrySubmitMessage)
+            .expect("Failed to update with TrySubmitMessage");
         assert_eq!(result, Some(Action::SubmitMessage("hi".to_string())));
-        
+
         // Process the SubmitMessage action to clear input
-        input.update(Action::SubmitMessage("hi".to_string())).expect("Failed to update with SubmitMessage");
+        input
+            .update(Action::SubmitMessage("hi".to_string()))
+            .expect("Failed to update with SubmitMessage");
         assert!(input.state.is_empty());
     }
 
     #[test]
     fn test_update_insert_newline() {
         let mut input = Input::new();
-        input.update(Action::InsertChar('h')).expect("Failed to update with InsertChar('h')");
-        input.update(Action::InsertChar('i')).expect("Failed to update with InsertChar('i')");
+        input
+            .update(Action::InsertChar('h'))
+            .expect("Failed to update with InsertChar('h')");
+        input
+            .update(Action::InsertChar('i'))
+            .expect("Failed to update with InsertChar('i')");
 
         // Test InsertNewline action
-        input.update(Action::InsertNewline).expect("Failed to update with InsertNewline");
+        input
+            .update(Action::InsertNewline)
+            .expect("Failed to update with InsertNewline");
         assert_eq!(input.state.lines.len(), 2);
         assert_eq!(input.state.lines[0], "hi");
         assert_eq!(input.state.lines[1], "");
@@ -654,11 +673,17 @@ mod tests {
     #[test]
     fn test_update_delete_char() {
         let mut input = Input::new();
-        input.update(Action::InsertChar('a')).expect("Failed to update with InsertChar('a')");
-        input.update(Action::InsertChar('b')).expect("Failed to update with InsertChar('b')");
+        input
+            .update(Action::InsertChar('a'))
+            .expect("Failed to update with InsertChar('a')");
+        input
+            .update(Action::InsertChar('b'))
+            .expect("Failed to update with InsertChar('b')");
 
         // Test DeleteChar action
-        input.update(Action::DeleteChar).expect("Failed to update with DeleteChar");
+        input
+            .update(Action::DeleteChar)
+            .expect("Failed to update with DeleteChar");
         assert_eq!(input.state.lines[0], "a");
         assert_eq!(input.state.cursor_col, 1);
     }
@@ -671,32 +696,50 @@ mod tests {
         input.state.cursor_col = 2;
 
         // Test Left
-        input.update(Action::MoveCursor(CursorDirection::Left)).expect("Failed to update with MoveCursor(Left)");
+        input
+            .update(Action::MoveCursor(CursorDirection::Left))
+            .expect("Failed to update with MoveCursor(Left)");
         assert_eq!(input.state.cursor_col, 1);
 
         // Test Right
-        input.update(Action::MoveCursor(CursorDirection::Right)).expect("Failed to update with MoveCursor(Right)");
+        input
+            .update(Action::MoveCursor(CursorDirection::Right))
+            .expect("Failed to update with MoveCursor(Right)");
         assert_eq!(input.state.cursor_col, 2);
 
         // Test Down
-        input.update(Action::MoveCursor(CursorDirection::Down)).expect("Failed to update with MoveCursor(Down)");
+        input
+            .update(Action::MoveCursor(CursorDirection::Down))
+            .expect("Failed to update with MoveCursor(Down)");
         assert_eq!(input.state.cursor_line, 1);
 
         // Test Up
-        input.update(Action::MoveCursor(CursorDirection::Up)).expect("Failed to update with MoveCursor(Up)");
+        input
+            .update(Action::MoveCursor(CursorDirection::Up))
+            .expect("Failed to update with MoveCursor(Up)");
         assert_eq!(input.state.cursor_line, 0);
     }
 
     #[test]
     fn test_update_clear_input() {
         let mut input = Input::new();
-        input.update(Action::InsertChar('t')).expect("Failed to update with InsertChar('t')");
-        input.update(Action::InsertChar('e')).expect("Failed to update with InsertChar('e')");
-        input.update(Action::InsertChar('s')).expect("Failed to update with InsertChar('s')");
-        input.update(Action::InsertChar('t')).expect("Failed to update with InsertChar('t')");
+        input
+            .update(Action::InsertChar('t'))
+            .expect("Failed to update with InsertChar('t')");
+        input
+            .update(Action::InsertChar('e'))
+            .expect("Failed to update with InsertChar('e')");
+        input
+            .update(Action::InsertChar('s'))
+            .expect("Failed to update with InsertChar('s')");
+        input
+            .update(Action::InsertChar('t'))
+            .expect("Failed to update with InsertChar('t')");
 
         // Test ClearInput action
-        input.update(Action::ClearInput).expect("Failed to update with ClearInput");
+        input
+            .update(Action::ClearInput)
+            .expect("Failed to update with ClearInput");
         assert!(input.state.is_empty());
     }
 
@@ -705,10 +748,14 @@ mod tests {
         let mut input = Input::new();
 
         // Test that unhandled actions don't crash
-        let result = input.update(Action::Quit).expect("Failed to update with Quit");
+        let result = input
+            .update(Action::Quit)
+            .expect("Failed to update with Quit");
         assert_eq!(result, None);
 
-        let result = input.update(Action::Help).expect("Failed to update with Help");
+        let result = input
+            .update(Action::Help)
+            .expect("Failed to update with Help");
         assert_eq!(result, None);
     }
 
@@ -721,22 +768,30 @@ mod tests {
         input.state.insert_char('t');
 
         // Test Tick action
-        let result = input.update(Action::Tick).expect("Failed to update with Tick");
+        let result = input
+            .update(Action::Tick)
+            .expect("Failed to update with Tick");
         assert_eq!(result, None);
         assert_eq!(input.state.lines[0], "test"); // Should be unchanged
 
         // Test Render action
-        let result = input.update(Action::Render).expect("Failed to update with Render");
+        let result = input
+            .update(Action::Render)
+            .expect("Failed to update with Render");
         assert_eq!(result, None);
         assert_eq!(input.state.lines[0], "test"); // Should be unchanged
 
         // Test ClearInput action
-        let result = input.update(Action::ClearInput).expect("Failed to update with ClearInput");
+        let result = input
+            .update(Action::ClearInput)
+            .expect("Failed to update with ClearInput");
         assert_eq!(result, None);
         assert!(input.state.is_empty());
 
         // Test unhandled action
-        let result = input.update(Action::Quit).expect("Failed to update with Quit");
+        let result = input
+            .update(Action::Quit)
+            .expect("Failed to update with Quit");
         assert_eq!(result, None);
     }
 
@@ -972,18 +1027,24 @@ mod tests {
 
         // Type "Hello World" via actions
         for ch in "Hello World".chars() {
-            input.update(Action::InsertChar(ch)).expect("Failed to update input");
+            input
+                .update(Action::InsertChar(ch))
+                .expect("Failed to update input");
         }
 
         // Move cursor to position 5 (after "Hello")
         input.state.cursor_col = 5;
 
         // Insert newline
-        input.update(Action::InsertNewline).expect("Failed to update input");
+        input
+            .update(Action::InsertNewline)
+            .expect("Failed to update input");
 
         // Type "Beautiful "
         for ch in "Beautiful ".chars() {
-            input.update(Action::InsertChar(ch)).expect("Failed to update input");
+            input
+                .update(Action::InsertChar(ch))
+                .expect("Failed to update input");
         }
 
         let buffer = draw_input_component(&mut input, TEST_BUFFER_WIDTH, TEST_BUFFER_HEIGHT);
@@ -1015,29 +1076,39 @@ mod tests {
         assert_eq!(input.state.cursor_col, 0);
 
         // Try to move left (should stay at 0,0)
-        input.update(Action::MoveCursor(CursorDirection::Left)).expect("Failed to update input");
+        input
+            .update(Action::MoveCursor(CursorDirection::Left))
+            .expect("Failed to update input");
         assert_eq!(input.state.cursor_line, 0);
         assert_eq!(input.state.cursor_col, 0);
 
         // Try to move up (should stay at 0,0)
-        input.update(Action::MoveCursor(CursorDirection::Up)).expect("Failed to update input");
+        input
+            .update(Action::MoveCursor(CursorDirection::Up))
+            .expect("Failed to update input");
         assert_eq!(input.state.cursor_line, 0);
         assert_eq!(input.state.cursor_col, 0);
 
         // Add some text and test end positioning
         for ch in "test".chars() {
-            input.update(Action::InsertChar(ch)).expect("Failed to update input");
+            input
+                .update(Action::InsertChar(ch))
+                .expect("Failed to update input");
         }
 
         // Should be at end of line
         assert_eq!(input.state.cursor_col, 4);
 
         // Try to move right beyond end (should stay at end)
-        input.update(Action::MoveCursor(CursorDirection::Right)).expect("Failed to update input");
+        input
+            .update(Action::MoveCursor(CursorDirection::Right))
+            .expect("Failed to update input");
         assert_eq!(input.state.cursor_col, 4);
 
         // Try to move down from single line (should stay on line 0)
-        input.update(Action::MoveCursor(CursorDirection::Down)).expect("Failed to update input");
+        input
+            .update(Action::MoveCursor(CursorDirection::Down))
+            .expect("Failed to update input");
         assert_eq!(input.state.cursor_line, 0);
     }
 }

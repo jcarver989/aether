@@ -9,6 +9,6 @@ pub mod mcp;
 pub mod mcp_config;
 pub mod testing;
 pub mod theme;
+pub mod tools;
 pub mod tui;
 pub mod types;
-pub mod tools;

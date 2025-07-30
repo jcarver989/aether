@@ -127,10 +127,10 @@ impl<T: LlmProvider> App<T> {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<()> {
-        use crossterm::event::{KeyCode, KeyModifiers, KeyEventKind};
-        
+        use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+
         let action_tx = self.action_tx.clone();
-        
+
         // Only process key press events, ignore release and repeat events
         if key.kind != KeyEventKind::Press {
             return Ok(());
@@ -223,12 +223,13 @@ impl<T: LlmProvider> App<T> {
     }
 
     async fn handle_actions(&mut self, tui: &mut Tui) -> Result<()> {
-        // Use timeout to prevent blocking indefinitely, but also prevent busy loop  
-        while let Ok(action_result) = tokio::time::timeout(
-            std::time::Duration::from_millis(1),
-            self.action_rx.recv()
-        ).await {
-            let Some(action) = action_result else { break; };
+        // Use timeout to prevent blocking indefinitely, but also prevent busy loop
+        while let Ok(action_result) =
+            tokio::time::timeout(std::time::Duration::from_millis(1), self.action_rx.recv()).await
+        {
+            let Some(action) = action_result else {
+                break;
+            };
             if action != Action::Tick && action != Action::Render {
                 debug!("{action:?}");
             }
@@ -329,8 +330,11 @@ impl<T: LlmProvider> App<T> {
                     self.needs_render = true;
                 }
                 // Input-related actions that change UI state
-                Action::InsertChar(_) | Action::DeleteChar | Action::MoveCursor(_) | 
-                Action::ClearInput | Action::InsertNewline => {
+                Action::InsertChar(_)
+                | Action::DeleteChar
+                | Action::MoveCursor(_)
+                | Action::ClearInput
+                | Action::InsertNewline => {
                     self.needs_render = true;
                 }
                 // Scrolling actions
@@ -338,13 +342,16 @@ impl<T: LlmProvider> App<T> {
                     self.needs_render = true;
                 }
                 // Tool call UI actions
-                Action::ToggleToolCall(_) | Action::UpdateToolCallState { .. } | 
-                Action::UpdateToolCallResult { .. } | Action::StreamToolCall { .. } => {
+                Action::ToggleToolCall(_)
+                | Action::UpdateToolCallState { .. }
+                | Action::UpdateToolCallResult { .. }
+                | Action::StreamToolCall { .. } => {
                     self.needs_render = true;
                 }
                 // Block interaction actions
-                Action::ToggleBlockExpansion(_) | Action::SelectBlock(_) | 
-                Action::ToggleCodeBlockExpansion { .. } => {
+                Action::ToggleBlockExpansion(_)
+                | Action::SelectBlock(_)
+                | Action::ToggleCodeBlockExpansion { .. } => {
                     self.needs_render = true;
                 }
                 // Error display
@@ -410,7 +417,8 @@ impl<T: LlmProvider> App<T> {
 
         match chunk {
             StreamChunk::Content(content) => {
-                self.action_tx.send(Action::StreamContent(content.clone()))?;
+                self.action_tx
+                    .send(Action::StreamContent(content.clone()))?;
             }
             StreamChunk::ToolCallStart { id, name } => {
                 // Start tracking this tool call in the agent

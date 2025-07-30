@@ -1,10 +1,6 @@
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
-use ratatui::{
-    Frame,
-    buffer::Buffer,
-    layout::Rect,
-};
+use ratatui::{Frame, buffer::Buffer, layout::Rect};
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -19,7 +15,7 @@ use super::Component;
 pub trait VirtualScrollItem {
     /// Get the height this item needs when rendered at the given width
     fn height(&self, width: u16) -> u16;
-    
+
     /// Render this item to the buffer at the given area
     fn render(&self, area: Rect, buf: &mut Buffer);
 }
@@ -118,7 +114,9 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
     }
 
     fn scroll_down(&mut self) {
-        let max_scroll = self.total_content_height.saturating_sub(self.viewport_height);
+        let max_scroll = self
+            .total_content_height
+            .saturating_sub(self.viewport_height);
         if self.scroll_offset < max_scroll {
             self.scroll_offset += 1;
         }
@@ -131,12 +129,16 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
 
     fn page_down(&mut self) {
         let page_size = self.viewport_height.saturating_sub(1).max(1);
-        let max_scroll = self.total_content_height.saturating_sub(self.viewport_height);
+        let max_scroll = self
+            .total_content_height
+            .saturating_sub(self.viewport_height);
         self.scroll_offset = (self.scroll_offset + page_size).min(max_scroll);
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        let max_scroll = self.total_content_height.saturating_sub(self.viewport_height);
+        let max_scroll = self
+            .total_content_height
+            .saturating_sub(self.viewport_height);
         self.scroll_offset = max_scroll;
     }
 
@@ -161,7 +163,8 @@ impl<T: VirtualScrollItem> VirtualScroll<T> {
 
         // Find last visible item using cumulative heights
         let mut end_idx = start_idx;
-        for (idx, &cumulative_height) in self.cumulative_heights.iter().enumerate().skip(start_idx) {
+        for (idx, &cumulative_height) in self.cumulative_heights.iter().enumerate().skip(start_idx)
+        {
             if cumulative_height >= viewport_end {
                 end_idx = idx;
                 break;
@@ -233,18 +236,19 @@ impl<T: VirtualScrollItem> Component for VirtualScroll<T> {
         // Calculate the virtual Y position where the first visible item should start
         let first_item_virtual_y: u16 = self.item_heights_cache[..start_idx].iter().sum();
         let viewport_start_y = self.scroll_offset;
-        
+
         let mut current_virtual_y = first_item_virtual_y;
 
         // Only render visible items
         for idx in start_idx..end_idx {
             if let Some(item) = self.items.get(idx) {
                 let item_height = self.item_heights_cache[idx];
-                
+
                 // Calculate where this item should appear in the viewport
                 let item_start_in_viewport = current_virtual_y.saturating_sub(viewport_start_y);
-                let item_end_in_viewport = (current_virtual_y + item_height).saturating_sub(viewport_start_y);
-                
+                let item_end_in_viewport =
+                    (current_virtual_y + item_height).saturating_sub(viewport_start_y);
+
                 // Skip items that are completely outside the viewport
                 if item_start_in_viewport < area.height && item_end_in_viewport > 0 {
                     let render_area = Rect {

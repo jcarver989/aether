@@ -102,12 +102,14 @@ impl ToolRegistry {
             .ok_or_else(|| color_eyre::Report::msg("No MCP client available"))?;
 
         // Execute the tool
-        let result = mcp_client.execute_tool(server_name, tool_name, args).await?;
-        
+        let result = mcp_client
+            .execute_tool(server_name, tool_name, args)
+            .await?;
+
         // Apply summarization/truncation to the result
         let result_str = serde_json::to_string(&result)?;
         let processed_result = self.summarizer.summarize(&result_str).await?;
-        
+
         Ok(Value::String(processed_result))
     }
 }

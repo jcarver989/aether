@@ -1,5 +1,5 @@
-use color_eyre::Result;
 use async_trait::async_trait;
+use color_eyre::Result;
 
 use crate::llm::provider::{ChatRequest, LlmProvider, StreamChunk, StreamChunkStream};
 

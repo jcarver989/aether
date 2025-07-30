@@ -217,56 +217,113 @@ async fn test_streaming_message_content_updates_in_real_time() {
     chat.update(Action::StartStreaming).unwrap();
 
     // Verify initial state: should have 1 message and 1 content block
-    assert_eq!(chat.get_messages().len(), 1, "Should have 1 streaming message");
-    assert_eq!(chat.get_content_blocks().len(), 1, "Should have 1 content block");
-    
+    assert_eq!(
+        chat.get_messages().len(),
+        1,
+        "Should have 1 streaming message"
+    );
+    assert_eq!(
+        chat.get_content_blocks().len(),
+        1,
+        "Should have 1 content block"
+    );
+
     // Check initial content block
     let initial_block = &chat.get_content_blocks()[0];
-    if let ContentBlock::AssistantMessage { display_text, streaming, .. } = initial_block {
-        assert_eq!(display_text, "", "Initial streaming content should be empty");
+    if let ContentBlock::AssistantMessage {
+        display_text,
+        streaming,
+        ..
+    } = initial_block
+    {
+        assert_eq!(
+            display_text, "",
+            "Initial streaming content should be empty"
+        );
         assert!(streaming, "Block should be marked as streaming");
     } else {
         panic!("Expected AssistantMessage content block, got {initial_block:?}");
     }
 
     // Stream first chunk of content
-    chat.update(Action::StreamContent("Hello".to_string())).unwrap();
+    chat.update(Action::StreamContent("Hello".to_string()))
+        .unwrap();
 
     // Verify content updated without creating new messages/blocks
-    assert_eq!(chat.get_messages().len(), 1, "Should still have exactly 1 message");
-    assert_eq!(chat.get_content_blocks().len(), 1, "Should still have exactly 1 content block");
-    
+    assert_eq!(
+        chat.get_messages().len(),
+        1,
+        "Should still have exactly 1 message"
+    );
+    assert_eq!(
+        chat.get_content_blocks().len(),
+        1,
+        "Should still have exactly 1 content block"
+    );
+
     let first_chunk_block = &chat.get_content_blocks()[0];
-    if let ContentBlock::AssistantMessage { display_text, streaming, .. } = first_chunk_block {
-        assert_eq!(display_text, "Hello", "Content should be updated to 'Hello'");
+    if let ContentBlock::AssistantMessage {
+        display_text,
+        streaming,
+        ..
+    } = first_chunk_block
+    {
+        assert_eq!(
+            display_text, "Hello",
+            "Content should be updated to 'Hello'"
+        );
         assert!(streaming, "Block should still be marked as streaming");
     } else {
         panic!("Expected AssistantMessage content block after first chunk");
     }
 
     // Stream second chunk - should append to existing content
-    chat.update(Action::StreamContent(" world!".to_string())).unwrap();
+    chat.update(Action::StreamContent(" world!".to_string()))
+        .unwrap();
 
     // Verify content appended correctly
-    assert_eq!(chat.get_messages().len(), 1, "Should still have exactly 1 message");
-    assert_eq!(chat.get_content_blocks().len(), 1, "Should still have exactly 1 content block");
-    
+    assert_eq!(
+        chat.get_messages().len(),
+        1,
+        "Should still have exactly 1 message"
+    );
+    assert_eq!(
+        chat.get_content_blocks().len(),
+        1,
+        "Should still have exactly 1 content block"
+    );
+
     let second_chunk_block = &chat.get_content_blocks()[0];
-    if let ContentBlock::AssistantMessage { display_text, streaming, .. } = second_chunk_block {
-        assert_eq!(display_text, "Hello world!", "Content should be updated to 'Hello world!'");
+    if let ContentBlock::AssistantMessage {
+        display_text,
+        streaming,
+        ..
+    } = second_chunk_block
+    {
+        assert_eq!(
+            display_text, "Hello world!",
+            "Content should be updated to 'Hello world!'"
+        );
         assert!(streaming, "Block should still be marked as streaming");
     } else {
         panic!("Expected AssistantMessage content block after second chunk");
     }
 
     // Stream third chunk with more content
-    chat.update(Action::StreamContent("\n\nThis is a multi-line response.".to_string())).unwrap();
+    chat.update(Action::StreamContent(
+        "\n\nThis is a multi-line response.".to_string(),
+    ))
+    .unwrap();
 
     let third_chunk_block = &chat.get_content_blocks()[0];
-    if let ContentBlock::AssistantMessage { display_text, streaming, .. } = third_chunk_block {
+    if let ContentBlock::AssistantMessage {
+        display_text,
+        streaming,
+        ..
+    } = third_chunk_block
+    {
         assert_eq!(
-            display_text, 
-            "Hello world!\n\nThis is a multi-line response.",
+            display_text, "Hello world!\n\nThis is a multi-line response.",
             "Content should include all streamed chunks"
         );
         assert!(streaming, "Block should still be marked as streaming");
@@ -278,14 +335,26 @@ async fn test_streaming_message_content_updates_in_real_time() {
     chat.update(Action::StreamComplete).unwrap();
 
     // Verify final state
-    assert_eq!(chat.get_messages().len(), 1, "Should still have exactly 1 message");
-    assert_eq!(chat.get_content_blocks().len(), 1, "Should still have exactly 1 content block");
-    
+    assert_eq!(
+        chat.get_messages().len(),
+        1,
+        "Should still have exactly 1 message"
+    );
+    assert_eq!(
+        chat.get_content_blocks().len(),
+        1,
+        "Should still have exactly 1 content block"
+    );
+
     let final_block = &chat.get_content_blocks()[0];
-    if let ContentBlock::AssistantMessage { display_text, streaming, .. } = final_block {
+    if let ContentBlock::AssistantMessage {
+        display_text,
+        streaming,
+        ..
+    } = final_block
+    {
         assert_eq!(
-            display_text, 
-            "Hello world!\n\nThis is a multi-line response.",
+            display_text, "Hello world!\n\nThis is a multi-line response.",
             "Final content should match streamed content"
         );
         assert!(!streaming, "Block should no longer be marked as streaming");
@@ -296,8 +365,7 @@ async fn test_streaming_message_content_updates_in_real_time() {
     // Verify the underlying message was also converted correctly
     if let Some(ChatMessage::Assistant { content, .. }) = chat.get_messages().last() {
         assert_eq!(
-            content, 
-            "Hello world!\n\nThis is a multi-line response.",
+            content, "Hello world!\n\nThis is a multi-line response.",
             "Final message content should match streamed content"
         );
     } else {
@@ -317,14 +385,23 @@ async fn test_streaming_with_multiple_messages_no_interference() {
     chat.update(Action::AddChatMessage(ChatMessage::User {
         content: "What is 2+2?".to_string(),
         timestamp: chrono::Utc::now(),
-    })).unwrap();
+    }))
+    .unwrap();
 
     // Start streaming response
     chat.update(Action::StartStreaming).unwrap();
-    
+
     // Should now have 2 messages and 2 content blocks
-    assert_eq!(chat.get_messages().len(), 2, "Should have user message + streaming message");
-    assert_eq!(chat.get_content_blocks().len(), 2, "Should have 2 content blocks");
+    assert_eq!(
+        chat.get_messages().len(),
+        2,
+        "Should have user message + streaming message"
+    );
+    assert_eq!(
+        chat.get_content_blocks().len(),
+        2,
+        "Should have 2 content blocks"
+    );
 
     // Verify the user message wasn't affected
     let user_block = &chat.get_content_blocks()[0];
@@ -335,23 +412,39 @@ async fn test_streaming_with_multiple_messages_no_interference() {
     }
 
     // Stream content to the assistant message
-    chat.update(Action::StreamContent("The answer is ".to_string())).unwrap();
+    chat.update(Action::StreamContent("The answer is ".to_string()))
+        .unwrap();
     chat.update(Action::StreamContent("4".to_string())).unwrap();
 
     // Verify user message still unchanged, assistant message updated
     assert_eq!(chat.get_messages().len(), 2, "Should still have 2 messages");
-    assert_eq!(chat.get_content_blocks().len(), 2, "Should still have 2 content blocks");
+    assert_eq!(
+        chat.get_content_blocks().len(),
+        2,
+        "Should still have 2 content blocks"
+    );
 
     let user_block_after = &chat.get_content_blocks()[0];
     if let ContentBlock::UserMessage { content, .. } = user_block_after {
-        assert_eq!(content, "What is 2+2?", "User message should still be unchanged");
+        assert_eq!(
+            content, "What is 2+2?",
+            "User message should still be unchanged"
+        );
     } else {
         panic!("First block should still be user message");
     }
 
     let assistant_block = &chat.get_content_blocks()[1];
-    if let ContentBlock::AssistantMessage { display_text, streaming, .. } = assistant_block {
-        assert_eq!(display_text, "The answer is 4", "Assistant message should have streamed content");
+    if let ContentBlock::AssistantMessage {
+        display_text,
+        streaming,
+        ..
+    } = assistant_block
+    {
+        assert_eq!(
+            display_text, "The answer is 4",
+            "Assistant message should have streamed content"
+        );
         assert!(streaming, "Assistant message should be marked as streaming");
     } else {
         panic!("Second block should be streaming assistant message");
@@ -362,12 +455,27 @@ async fn test_streaming_with_multiple_messages_no_interference() {
 
     // Final verification
     assert_eq!(chat.get_messages().len(), 2, "Should still have 2 messages");
-    assert_eq!(chat.get_content_blocks().len(), 2, "Should still have 2 content blocks");
+    assert_eq!(
+        chat.get_content_blocks().len(),
+        2,
+        "Should still have 2 content blocks"
+    );
 
     let final_assistant_block = &chat.get_content_blocks()[1];
-    if let ContentBlock::AssistantMessage { display_text, streaming, .. } = final_assistant_block {
-        assert_eq!(display_text, "The answer is 4", "Final assistant content should match");
-        assert!(!streaming, "Assistant message should no longer be streaming");
+    if let ContentBlock::AssistantMessage {
+        display_text,
+        streaming,
+        ..
+    } = final_assistant_block
+    {
+        assert_eq!(
+            display_text, "The answer is 4",
+            "Final assistant content should match"
+        );
+        assert!(
+            !streaming,
+            "Assistant message should no longer be streaming"
+        );
     } else {
         panic!("Second block should be completed assistant message");
     }
