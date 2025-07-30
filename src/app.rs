@@ -29,6 +29,7 @@ pub struct App<T: LlmProvider> {
     action_tx: mpsc::UnboundedSender<Action>,
     action_rx: mpsc::UnboundedReceiver<Action>,
     agent: Agent<T>,
+    needs_render: bool,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -57,6 +58,7 @@ impl<T: LlmProvider> App<T> {
             action_tx,
             action_rx,
             agent,
+            needs_render: true, // Initial render needed
         })
     }
 
@@ -98,6 +100,7 @@ impl<T: LlmProvider> App<T> {
 
     async fn handle_events(&mut self, tui: &mut Tui) -> Result<()> {
         let Some(event) = tui.next_event().await else {
+            // Event stream ended, but don't return early to avoid busy loop
             return Ok(());
         };
         let action_tx = self.action_tx.clone();
@@ -220,7 +223,12 @@ impl<T: LlmProvider> App<T> {
     }
 
     async fn handle_actions(&mut self, tui: &mut Tui) -> Result<()> {
-        while let Ok(action) = self.action_rx.try_recv() {
+        // Use timeout to prevent blocking indefinitely, but also prevent busy loop  
+        while let Ok(action_result) = tokio::time::timeout(
+            std::time::Duration::from_millis(1),
+            self.action_rx.recv()
+        ).await {
+            let Some(action) = action_result else { break; };
             if action != Action::Tick && action != Action::Render {
                 debug!("{action:?}");
             }
@@ -232,10 +240,19 @@ impl<T: LlmProvider> App<T> {
                 Action::Suspend => self.should_suspend = true,
                 Action::Resume => self.should_suspend = false,
                 Action::ClearScreen => tui.terminal.clear()?,
-                Action::Resize(w, h) => self.handle_resize(tui, w, h)?,
-                Action::Render => self.render(tui)?,
+                Action::Resize(w, h) => {
+                    self.handle_resize(tui, w, h)?;
+                    self.needs_render = true;
+                }
+                Action::Render => {
+                    if self.needs_render {
+                        self.render(tui)?;
+                        self.needs_render = false;
+                    }
+                }
                 Action::SubmitMessage(ref message) => {
                     self.handle_submit_message(message).await?;
+                    self.needs_render = true;
                 }
                 Action::TrySubmitMessage => {
                     // Check if input is not empty by examining the input component
@@ -243,10 +260,12 @@ impl<T: LlmProvider> App<T> {
                 }
                 Action::ReceiveStreamChunk(ref chunk) => {
                     self.handle_stream_chunk(chunk).await?;
+                    self.needs_render = true;
                 }
                 Action::StreamContent(ref content) => {
                     // Update or create AssistantStreaming message in agent
                     self.agent.append_streaming_content(content);
+                    self.needs_render = true;
                 }
                 Action::StartStreaming => {
                     // Create initial empty streaming message in agent
@@ -254,9 +273,11 @@ impl<T: LlmProvider> App<T> {
                         content: String::new(),
                         timestamp: chrono::Utc::now(),
                     });
+                    self.needs_render = true;
                 }
                 Action::ExecuteToolCall(ref tool_call) => {
                     self.handle_execute_tool_call(tool_call).await?;
+                    self.needs_render = true;
                 }
                 Action::ReceiveAssistantMessage(ref message) => {
                     let assistant_message = ChatMessage::Assistant {
@@ -266,6 +287,7 @@ impl<T: LlmProvider> App<T> {
                     self.action_tx
                         .send(Action::AddChatMessage(assistant_message.clone()))?;
                     self.agent.add_message(assistant_message);
+                    self.needs_render = true;
                 }
                 Action::ToolExecutionResult {
                     ref tool_call_id,
@@ -280,6 +302,7 @@ impl<T: LlmProvider> App<T> {
                         .send(Action::AddChatMessage(tool_result_message.clone()))?;
                     self.agent.add_message(tool_result_message);
                     // Force a render to ensure tool results are displayed immediately
+                    self.needs_render = true;
                     self.action_tx.send(Action::Render)?;
                     // Automatically continue the conversation after tool execution
                     self.action_tx.send(Action::ContinueConversation)?;
@@ -290,22 +313,51 @@ impl<T: LlmProvider> App<T> {
                 Action::AddChatMessage(ref _message) => {
                     // Messages are already added to agent in their respective handlers
                     // This is now just for UI components to receive the message
+                    self.needs_render = true;
                 }
                 Action::ClearChat => {
                     self.agent.clear_history();
+                    self.needs_render = true;
                 }
                 Action::ContinueConversation => {
                     self.handle_continue_conversation().await?;
+                    self.needs_render = true;
                 }
                 Action::StreamComplete => {
                     // Convert the last AssistantStreaming message to Assistant message
                     self.agent.finalize_streaming_message();
+                    self.needs_render = true;
+                }
+                // Input-related actions that change UI state
+                Action::InsertChar(_) | Action::DeleteChar | Action::MoveCursor(_) | 
+                Action::ClearInput | Action::InsertNewline => {
+                    self.needs_render = true;
+                }
+                // Scrolling actions
+                Action::ScrollChat(_) => {
+                    self.needs_render = true;
+                }
+                // Tool call UI actions
+                Action::ToggleToolCall(_) | Action::UpdateToolCallState { .. } | 
+                Action::UpdateToolCallResult { .. } | Action::StreamToolCall { .. } => {
+                    self.needs_render = true;
+                }
+                // Block interaction actions
+                Action::ToggleBlockExpansion(_) | Action::SelectBlock(_) | 
+                Action::ToggleCodeBlockExpansion { .. } => {
+                    self.needs_render = true;
+                }
+                // Error display
+                Action::Error(_) => {
+                    self.needs_render = true;
                 }
                 _ => {}
             }
             for component in self.components.iter_mut() {
                 if let Some(action) = component.update(action.clone())? {
-                    self.action_tx.send(action)?
+                    self.action_tx.send(action)?;
+                    // Components that emit actions likely changed their state
+                    self.needs_render = true;
                 };
             }
         }

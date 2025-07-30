@@ -89,7 +89,7 @@ fn default_tick_rate() -> f64 {
 }
 
 fn default_frame_rate() -> f64 {
-    60.0
+    30.0
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -374,7 +374,7 @@ impl Config {
 
     fn get_model_from_env(provider: &ProviderType) -> String {
         env::var("DEFAULT_MODEL").unwrap_or_else(|_| match provider {
-            ProviderType::OpenRouter => "qwen/qwen3-coder".to_string(),
+            ProviderType::OpenRouter => "z-ai/glm-4.5".to_string(),
             ProviderType::Ollama => "llama2".to_string(),
         })
     }

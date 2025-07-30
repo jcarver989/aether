@@ -61,7 +61,7 @@ impl Tui {
             cancellation_token: CancellationToken::new(),
             event_rx,
             event_tx,
-            frame_rate: 60.0,
+            frame_rate: 30.0,
             tick_rate: 4.0,
             mouse: false,
             paste: false,
