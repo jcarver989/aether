@@ -123,7 +123,6 @@ pub trait Component {
 }
 
 pub mod block_layout;
-pub mod chat;
 pub mod chat_virtual;
 pub mod content_block;
 pub mod content_blocks;

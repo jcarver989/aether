@@ -10,6 +10,7 @@ pub struct BlockRenderer {
 }
 
 impl BlockRenderer {
+    #[allow(dead_code)]
     pub fn new(theme: Theme) -> Self {
         Self { theme }
     }

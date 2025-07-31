@@ -25,6 +25,7 @@ impl BlockLayoutManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn calculate_layouts(
         &mut self,
         blocks: &[ContentBlock],
@@ -71,6 +72,7 @@ impl BlockLayoutManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_visible_layouts(
         &self,
         visible_start: u16,
@@ -88,6 +90,7 @@ impl BlockLayoutManager {
         self.layouts.iter().filter(|layout| layout.visible)
     }
 
+    #[allow(dead_code)]
     pub fn get_total_height(&self) -> u16 {
         self.layouts
             .last()
@@ -110,6 +113,7 @@ impl BlockLayoutManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_block_at_position(&self, y: u16) -> Option<usize> {
         for layout in &self.layouts {
             if y >= layout.area.y && y < layout.area.y + layout.area.height {

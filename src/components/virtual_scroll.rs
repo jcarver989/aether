@@ -231,6 +231,16 @@ impl<T: VirtualScrollItem> Component for VirtualScroll<T> {
         self.viewport_height = area.height;
         self.update_cache(area.width);
 
+        // Clear the entire area first to prevent old content from showing through
+        let buf = frame.buffer_mut();
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                if let Some(cell) = buf.cell_mut(ratatui::layout::Position::new(x, y)) {
+                    cell.reset();
+                }
+            }
+        }
+
         let (start_idx, end_idx, _render_offset) = self.get_visible_items();
 
         // Calculate the virtual Y position where the first visible item should start

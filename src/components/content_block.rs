@@ -98,6 +98,7 @@ impl ContentBlock {
             .join("")
     }
 
+    #[allow(dead_code)]
     pub fn toggle_expansion(&mut self) {
         match self {
             ContentBlock::ToolResultBlock { expanded, .. } => {
@@ -115,6 +116,7 @@ impl ContentBlock {
         }
     }
 
+    #[allow(dead_code)]
     pub fn toggle_code_block_expansion(&mut self, element_id: usize) {
         if let ContentBlock::AssistantMessage { content, .. } = self {
             if let Some(ContentElement::CodeBlock { expanded, .. }) = content.get_mut(element_id) {
