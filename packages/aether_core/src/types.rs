@@ -1,7 +1,8 @@
-use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
+use specta::Type;
+use std::time::SystemTime;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum ChatMessage {
     System {
         content: String,
@@ -41,14 +42,14 @@ pub enum ChatMessage {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum ToolCallState {
     Pending,
     Running,

@@ -17,3 +17,6 @@ async-trait = "0.1"
 rmcp = { version = "0.3.0", features = ["client", "server", "macros", "schemars", "transport-streamable-http-client", "reqwest"] }
 reqwest = { version = "0.12", features = ["json"] }
 schemars = { version = "1.0", features = ["derive"] }
+specta = "2.0.0-rc.21"
+specta-typescript = "0.0.9"
+tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }

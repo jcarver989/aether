@@ -1,17 +1,18 @@
 use async_trait::async_trait;
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::pin::Pin;
 use tokio_stream::Stream;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ChatRequest {
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolDefinition>,
     pub temperature: Option<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum ChatMessage {
     System {
         content: String,
@@ -29,21 +30,21 @@ pub enum ChatMessage {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: serde_json::Value,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum StreamChunk {
     Content(String),
     ToolCallStart { id: String, name: String },
