@@ -25,9 +25,9 @@ impl LlmProvider for MockErrorProvider {
             if i >= error_after {
                 Err(color_eyre::eyre::eyre!("Network error"))
             } else if i == 0 {
-                Ok(StreamChunk::Content("Hello".to_string()))
+                Ok(StreamChunk::Content { content: "Hello".to_string() })
             } else {
-                Ok(StreamChunk::Content(" chunk".to_string()))
+                Ok(StreamChunk::Content { content: " chunk".to_string() })
             }
         }));
         Ok(Box::pin(stream))
@@ -67,7 +67,7 @@ async fn test_tool_call_streaming() -> Result<()> {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
         match chunk {
-            StreamChunk::Content(text) => content.push_str(&text),
+            StreamChunk::Content { content: text } => content.push_str(&text),
             StreamChunk::ToolCallStart { id, name } => {
                 tool_calls.push((id, name, String::new()));
             }
@@ -107,7 +107,7 @@ async fn test_stream_error_handling() -> Result<()> {
 
     while let Some(chunk_result) = stream.next().await {
         match chunk_result {
-            Ok(StreamChunk::Content(text)) => content.push_str(&text),
+            Ok(StreamChunk::Content { content: text }) => content.push_str(&text),
             Ok(StreamChunk::Done) => break,
             Err(_) => {
                 error_encountered = true;
@@ -139,7 +139,7 @@ async fn test_empty_stream() -> Result<()> {
 #[tokio::test]
 async fn test_multiple_tool_calls_streaming() -> Result<()> {
     let chunks = vec![
-        StreamChunk::Content("I'll call multiple tools.".to_string()),
+        StreamChunk::Content { content: "I'll call multiple tools.".to_string() },
         StreamChunk::ToolCallStart {
             id: "call_1".to_string(),
             name: "tool_a".to_string(),
@@ -177,7 +177,7 @@ async fn test_multiple_tool_calls_streaming() -> Result<()> {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
         match chunk {
-            StreamChunk::Content(text) => content.push_str(&text),
+            StreamChunk::Content { content: text } => content.push_str(&text),
             StreamChunk::ToolCallStart { id, name } => {
                 tool_calls.push((id, name, String::new()));
             }
@@ -210,7 +210,7 @@ async fn test_multiple_tool_calls_streaming() -> Result<()> {
 #[tokio::test]
 async fn test_streaming_chunk_serialization() -> Result<()> {
     let chunks = vec![
-        StreamChunk::Content("test".to_string()),
+        StreamChunk::Content { content: "test".to_string() },
         StreamChunk::ToolCallStart {
             id: TEST_TOOL_ID.to_string(),
             name: "test_tool".to_string(),

@@ -100,14 +100,14 @@ impl FakeLlmProvider {
     }
 
     pub fn with_content(content: &str) -> Self {
-        let chunks = vec![StreamChunk::Content(content.to_string()), StreamChunk::Done];
+        let chunks = vec![StreamChunk::Content { content: content.to_string() }, StreamChunk::Done];
         Self { chunks }
     }
 
     pub fn with_content_chunks(content_chunks: Vec<&str>) -> Self {
         let mut chunks: Vec<StreamChunk> = content_chunks
             .into_iter()
-            .map(|s| StreamChunk::Content(s.to_string()))
+            .map(|s| StreamChunk::Content { content: s.to_string() })
             .collect();
         chunks.push(StreamChunk::Done);
         Self { chunks }
@@ -115,7 +115,7 @@ impl FakeLlmProvider {
 
     pub fn with_tool_call(content: &str, tool_id: &str, tool_name: &str, arguments: &str) -> Self {
         let chunks = vec![
-            StreamChunk::Content(content.to_string()),
+            StreamChunk::Content { content: content.to_string() },
             StreamChunk::ToolCallStart {
                 id: tool_id.to_string(),
                 name: tool_name.to_string(),
@@ -133,7 +133,7 @@ impl FakeLlmProvider {
     }
 
     pub fn with_error_after(content: &str, _chunk_count: usize) -> Self {
-        let chunks = vec![StreamChunk::Content(content.to_string())];
+        let chunks = vec![StreamChunk::Content { content: content.to_string() }];
         // Note: Error handling would be implemented in a specialized provider
         Self { chunks }
     }
@@ -182,7 +182,7 @@ pub fn create_test_tool_definition(name: &str, description: &str) -> ToolDefinit
                 }
             },
             "required": ["param"]
-        }),
+        }).to_string(),
     }
 }
 
@@ -190,7 +190,7 @@ pub fn create_test_tool_call(id: &str, name: &str, arguments: Value) -> ToolCall
     ToolCall {
         id: id.to_string(),
         name: name.to_string(),
-        arguments,
+        arguments: arguments.to_string(),
     }
 }
 
@@ -202,7 +202,7 @@ pub async fn collect_stream_content(mut stream: StreamChunkStream) -> Result<Str
     let mut content = String::new();
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
-        if let StreamChunk::Content(text) = chunk {
+        if let StreamChunk::Content { content: text } = chunk {
             content.push_str(&text);
         } else if let StreamChunk::Done = chunk {
             break;
@@ -283,7 +283,7 @@ pub fn assert_tool_in_registry(registry: &ToolRegistry, tool_name: &str, expecte
 
 pub fn assert_stream_chunk_matches(actual: &StreamChunk, expected: &StreamChunk) {
     match (actual, expected) {
-        (StreamChunk::Content(a), StreamChunk::Content(b)) => assert_eq!(a, b),
+        (StreamChunk::Content { content: a }, StreamChunk::Content { content: b }) => assert_eq!(a, b),
         (
             StreamChunk::ToolCallStart {
                 id: id1,

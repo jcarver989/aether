@@ -1,14 +1,12 @@
-import { commands } from "@/generated/invoke";
-import { AppState, ZustandStore } from "@/state/store";
-import { Channel } from "@tauri-apps/api/core";
+import type { AppState, ZustandStore } from "../state/store";
+import type { ChannelFactory } from "../types/ui";
 import { createContext, useContext } from "react";
-import { AppActions } from "@/state/actions";
+import { AppActions } from "../state/actions";
 
 export interface AppContext {
-  commands: typeof commands;
-  createChannel: <T>(onMessage?: (message: T) => void) => Channel<T>;
   store: ZustandStore<AppState>;
   actions: AppActions;
+  createChannel: ChannelFactory;
 }
 
 export const AppContext = createContext<AppContext | null>(null);

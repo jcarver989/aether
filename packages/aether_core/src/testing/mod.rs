@@ -1,7 +1,6 @@
 pub mod fake_llm;
 pub mod full_integration;
 pub mod test_integration;
-pub mod tool_registry_integration;
 pub mod transport;
 
 pub use fake_llm::FakeLlmProvider;

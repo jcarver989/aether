@@ -10,9 +10,12 @@ use async_openai::{
         FunctionObject,
     },
 };
+use async_stream;
 use async_trait::async_trait;
 use color_eyre::Result;
 use tokio_stream::StreamExt;
+use tracing::{debug, info, error};
+use std::error::Error;
 
 use super::provider::{
     ChatMessage, ChatRequest, LlmProvider, StreamChunk, StreamChunkStream, ToolDefinition,
@@ -25,11 +28,20 @@ pub struct OllamaProvider {
 
 impl OllamaProvider {
     pub fn new(base_url: Option<String>, model: String) -> Result<Self> {
-        let base_url = base_url.unwrap_or_else(|| "http://localhost:11434/v1".to_string());
+        let base_url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+        
+        // Ensure we have the correct base URL with /v1 for Ollama's OpenAI-compatible API
+        let api_base = if base_url.ends_with("/v1") {
+            base_url
+        } else {
+            format!("{}/v1", base_url)
+        };
+        
+        info!("Creating OllamaProvider with api_base: {}, model: {}", api_base, model);
 
         let config = OpenAIConfig::new()
             .with_api_key("dummy-key") // Ollama doesn't require auth but async-openai needs a key
-            .with_api_base(base_url);
+            .with_api_base(api_base.clone());
 
         let client = Client::with_config(config);
 
@@ -99,7 +111,7 @@ impl OllamaProvider {
                 function: FunctionObject {
                     name: tool.name,
                     description: Some(tool.description),
-                    parameters: Some(tool.parameters),
+                    parameters: Some(serde_json::from_str(&tool.parameters).unwrap_or_default()),
                     strict: Some(false),
                 },
             })
@@ -110,7 +122,10 @@ impl OllamaProvider {
 #[async_trait]
 impl LlmProvider for OllamaProvider {
     async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream> {
+        debug!("Starting chat completion stream for model: {}", self.model);
+        
         let messages = self.convert_messages(request.messages);
+        let message_count = messages.len();
         let tools = if request.tools.is_empty() {
             None
         } else {
@@ -126,58 +141,113 @@ impl LlmProvider for OllamaProvider {
             ..Default::default()
         };
 
-        let stream = self.client.chat().create_stream(req).await?;
+        debug!("Making request to Ollama API with model: {} and {} messages", self.model, message_count);
+        let stream = match self.client.chat().create_stream(req).await {
+            Ok(stream) => {
+                debug!("Successfully created stream from Ollama API");
+                stream
+            }
+            Err(e) => {
+                error!("Failed to create stream from Ollama API: {:?}", e);
+                
+                // Check if it's a reqwest error with more details
+                if let Some(reqwest_err) = e.source().and_then(|s| s.downcast_ref::<reqwest::Error>()) {
+                    if let Some(url) = reqwest_err.url() {
+                        error!("Request URL was: {}", url);
+                    }
+                    if let Some(status) = reqwest_err.status() {
+                        error!("HTTP status: {}", status);
+                    }
+                }
+                
+                return Err(color_eyre::eyre::eyre!("Ollama API request failed: {}", e));
+            }
+        };
 
-        let mapped_stream = stream.map(|result| {
-            match result {
-                Ok(response) => {
-                    if let Some(choice) = response.choices.first() {
-                        let delta = &choice.delta;
+        // Create a stateful stream to track tool calls
+        let mapped_stream = async_stream::stream! {
+            let mut current_tool_id: Option<String> = None;
+            let mut stream = Box::pin(stream);
 
-                        // Handle content
-                        if let Some(content) = &delta.content {
-                            return Ok(StreamChunk::Content(content.clone()));
-                        }
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(response) => {
+                        if let Some(choice) = response.choices.first() {
+                            let delta = &choice.delta;
 
-                        // Handle tool calls
-                        if let Some(tool_calls) = &delta.tool_calls {
-                            for tool_call in tool_calls {
-                                if let Some(function) = &tool_call.function {
-                                    // Tool call start
-                                    if let Some(name) = &function.name {
-                                        return Ok(StreamChunk::ToolCallStart {
-                                            id: tool_call.id.clone().unwrap_or_default(),
-                                            name: name.clone(),
-                                        });
+                            // Handle content
+                            if let Some(content) = &delta.content {
+                                if !content.is_empty() {
+                                    // If we have a pending tool call and now we're getting content,
+                                    // complete the tool call first
+                                    if let Some(id) = current_tool_id.take() {
+                                        yield Ok(StreamChunk::ToolCallComplete { id });
                                     }
+                                    yield Ok(StreamChunk::Content { content: content.clone() });
+                                }
+                            }
 
-                                    // Tool call arguments
-                                    if let Some(arguments) = &function.arguments {
-                                        return Ok(StreamChunk::ToolCallArgument {
-                                            id: tool_call.id.clone().unwrap_or_default(),
-                                            argument: arguments.clone(),
-                                        });
+                            // Handle tool calls
+                            if let Some(tool_calls) = &delta.tool_calls {
+                                for tool_call in tool_calls {
+                                    if let Some(function) = &tool_call.function {
+                                        // Tool call start
+                                        if let Some(name) = &function.name {
+                                            let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
+                                            current_tool_id = Some(id.clone());
+                                            yield Ok(StreamChunk::ToolCallStart {
+                                                id,
+                                                name: name.clone(),
+                                            });
+                                        }
+
+                                        // Tool call arguments
+                                        if let Some(arguments) = &function.arguments {
+                                            if !arguments.is_empty() {
+                                                if let Some(id) = &current_tool_id {
+                                                    yield Ok(StreamChunk::ToolCallArgument {
+                                                        id: id.clone(),
+                                                        argument: arguments.clone(),
+                                                    });
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        // Handle finish reason for tool call completion
-                        if let Some(finish_reason) = &choice.finish_reason {
-                            if format!("{finish_reason:?}").contains("tool_calls") {
-                                return Ok(StreamChunk::Done);
+                            // Handle finish reason - this indicates stream completion
+                            if let Some(finish_reason) = &choice.finish_reason {
+                                let finish_reason_str = format!("{finish_reason:?}");
+                                debug!("Received finish reason: {}", finish_reason_str);
+                                
+                                // Complete any pending tool call before ending
+                                if let Some(id) = current_tool_id.take() {
+                                    yield Ok(StreamChunk::ToolCallComplete { id });
+                                }
+                                
+                                // End the stream for any finish reason
+                                yield Ok(StreamChunk::Done);
+                                break;
                             }
+                        } else {
+                            // No choices means stream is done
+                            debug!("No choices in response, ending stream");
+                            if let Some(id) = current_tool_id.take() {
+                                yield Ok(StreamChunk::ToolCallComplete { id });
+                            }
+                            yield Ok(StreamChunk::Done);
+                            break;
                         }
-
-                        // Empty chunk for incomplete data
-                        Ok(StreamChunk::Content(String::new()))
-                    } else {
-                        Ok(StreamChunk::Done)
+                    }
+                    Err(e) => {
+                        error!("Stream error: {}", e);
+                        yield Err(color_eyre::eyre::eyre!("Stream error: {}", e));
+                        break;
                     }
                 }
-                Err(e) => Err(color_eyre::eyre::eyre!("Stream error: {}", e)),
             }
-        });
+        };
 
         Ok(Box::pin(mapped_stream))
     }

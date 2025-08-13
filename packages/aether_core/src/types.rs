@@ -1,44 +1,68 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::time::SystemTime;
+
+/// A newtype wrapper for ISO 8601 timestamp strings
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct IsoString(pub String);
+
+impl IsoString {
+    /// Create a new IsoString from the current time
+    pub fn now() -> Self {
+        Self(chrono::Utc::now().to_rfc3339())
+    }
+    
+    /// Create an IsoString from a chrono DateTime
+    pub fn from_datetime<Tz: chrono::TimeZone>(datetime: chrono::DateTime<Tz>) -> Self 
+    where
+        Tz::Offset: std::fmt::Display,
+    {
+        Self(datetime.to_rfc3339())
+    }
+    
+    /// Get the inner string value
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum ChatMessage {
     System {
         content: String,
-        timestamp: SystemTime,
+        timestamp: IsoString,
     },
     User {
         content: String,
-        timestamp: SystemTime,
+        timestamp: IsoString,
     },
     Assistant {
         content: String,
-        timestamp: SystemTime,
+        timestamp: IsoString,
     },
     AssistantStreaming {
         content: String,
-        timestamp: SystemTime,
+        timestamp: IsoString,
     },
     Tool {
         tool_call_id: String,
         content: String,
-        timestamp: SystemTime,
+        timestamp: IsoString,
     },
     ToolCall {
         id: String,
         name: String,
         params: String,
-        timestamp: SystemTime,
+        timestamp: IsoString,
     },
     ToolResult {
         tool_call_id: String,
         content: String,
-        timestamp: SystemTime,
+        timestamp: IsoString,
     },
     Error {
         message: String,
-        timestamp: SystemTime,
+        timestamp: IsoString,
     },
 }
 
@@ -46,7 +70,7 @@ pub enum ChatMessage {
 pub struct ToolCall {
     pub id: String,
     pub name: String,
-    pub arguments: serde_json::Value,
+    pub arguments: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -55,4 +79,72 @@ pub enum ToolCallState {
     Running,
     Completed,
     Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum StreamEvent {
+    Start { message_id: String },
+    Content { chunk: String },
+    ToolCallStart { id: String, name: String },
+    ToolCallArgument { id: String, chunk: String },
+    ToolCallComplete { id: String },
+    Done,
+    Error { message: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ToolDiscoveryEvent {
+    Discovered { tool: ToolDefinition },
+    Complete { count: u32 },
+    Error { message: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: String,
+    pub server: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub enum LlmProvider {
+    OpenRouter,
+    Ollama,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct OpenRouterConfig {
+    pub api_key: String,
+    pub model: String,
+    pub base_url: Option<String>,
+    pub temperature: Option<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct OllamaConfig {
+    pub base_url: String,
+    pub model: String,
+    pub temperature: Option<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ConnectionStatus {
+    pub provider: ProviderStatus,
+    pub mcp_servers: std::collections::HashMap<String, McpServerStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ProviderStatus {
+    pub connected: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct McpServerStatus {
+    pub connected: bool,
+    pub error: Option<String>,
+    pub tool_count: u32,
 }

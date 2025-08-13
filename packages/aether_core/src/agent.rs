@@ -1,7 +1,7 @@
 use crate::{
     llm::{ChatMessage as LlmChatMessage, ChatRequest, LlmProvider, ToolDefinition},
     tools::ToolRegistry,
-    types::ChatMessage,
+    types::{ChatMessage, IsoString},
 };
 use color_eyre::Result;
 use std::{collections::{HashMap, VecDeque}, time::SystemTime};
@@ -141,7 +141,7 @@ impl<T: LlmProvider> Agent<T> {
                                 tool_calls.push(crate::llm::provider::ToolCall {
                                     id: id.clone(),
                                     name: name.clone(),
-                                    arguments,
+                                    arguments: arguments.to_string(),
                                 });
                             }
                             j += 1;
@@ -195,7 +195,7 @@ impl<T: LlmProvider> Agent<T> {
                 Some(ToolDefinition {
                     name: tool_name,
                     description,
-                    parameters,
+                    parameters: parameters.to_string(),
                 })
             })
             .collect()
@@ -247,7 +247,7 @@ impl<T: LlmProvider> Agent<T> {
             self.conversation_history
                 .push(ChatMessage::AssistantStreaming {
                     content: content.to_string(),
-                    timestamp: SystemTime::now(),
+                    timestamp: IsoString::now(),
                 });
         }
     }

@@ -139,7 +139,7 @@ async fn test_tool_call_stream_chunks() -> Result<()> {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
         match chunk {
-            StreamChunk::Content(text) => content.push_str(&text),
+            StreamChunk::Content { content: text } => content.push_str(&text),
             StreamChunk::ToolCallStart { id, name } => {
                 tool_calls.push((id, name, String::new()));
             }
@@ -177,7 +177,7 @@ fn test_tool_call_serialization() -> Result<()> {
 
     assert_eq!(deserialized.id, "call_456");
     assert_eq!(deserialized.name, "read_file");
-    assert_eq!(deserialized.arguments, json!({"path": "/etc/hosts"}));
+    assert_eq!(deserialized.arguments, json!({"path": "/etc/hosts"}).to_string());
 
     Ok(())
 }

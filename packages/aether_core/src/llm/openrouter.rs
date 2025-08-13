@@ -98,7 +98,7 @@ impl OpenRouterProvider {
                 function: FunctionObject {
                     name: tool.name,
                     description: Some(tool.description),
-                    parameters: Some(tool.parameters),
+                    parameters: Some(serde_json::from_str(&tool.parameters).unwrap_or_default()),
                     strict: Some(false),
                 },
             })
@@ -156,7 +156,7 @@ impl LlmProvider for OpenRouterProvider {
                                 if let Some(id) = current_tool_id.take() {
                                     yield Ok(StreamChunk::ToolCallComplete { id });
                                 }
-                                yield Ok(StreamChunk::Content(content.clone()));
+                                yield Ok(StreamChunk::Content { content: content.clone() });
                             }
 
                             // Handle tool calls

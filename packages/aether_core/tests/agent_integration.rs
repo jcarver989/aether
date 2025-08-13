@@ -3,7 +3,7 @@ mod utils;
 use aether_core::agent::Agent;
 use aether_core::llm::provider::StreamChunk;
 use aether_core::testing::{FakeLlmProvider, InMemoryFileSystem};
-use aether_core::types::ChatMessage;
+use aether_core::types::{ChatMessage, IsoString};
 use std::time::SystemTime;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, json};
@@ -15,7 +15,7 @@ use utils::*;
 #[tokio::test]
 async fn test_agent_creation() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content("Hello!".to_string()),
+        StreamChunk::Content { content: "Hello!".to_string() },
         StreamChunk::Done,
     ]);
     let tool_registry = create_test_tool_registry();
@@ -31,7 +31,7 @@ async fn test_agent_creation() {
 #[tokio::test]
 async fn test_agent_conversation_history() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content("Hello!".to_string()),
+        StreamChunk::Content { content: "Hello!".to_string() },
         StreamChunk::Done,
     ]);
     let tool_registry = create_test_tool_registry();
@@ -40,14 +40,14 @@ async fn test_agent_conversation_history() {
     // Add user message
     let user_msg = ChatMessage::User {
         content: "Hello, how are you?".to_string(),
-        timestamp: SystemTime::now(),
+        timestamp: IsoString::now(),
     };
     agent.add_message(user_msg.clone());
 
     // Add assistant message
     let assistant_msg = ChatMessage::Assistant {
         content: "I'm doing well, thank you!".to_string(),
-        timestamp: SystemTime::now(),
+        timestamp: IsoString::now(),
     };
     agent.add_message(assistant_msg.clone());
 
@@ -76,8 +76,8 @@ async fn test_agent_conversation_history() {
 #[tokio::test]
 async fn test_agent_streaming() {
     let chunks = vec![
-        StreamChunk::Content("Hello".to_string()),
-        StreamChunk::Content(" there!".to_string()),
+        StreamChunk::Content { content: "Hello".to_string() },
+        StreamChunk::Content { content: " there!".to_string() },
         StreamChunk::Done,
     ];
     let llm_provider = FakeLlmProvider::with_single_response(chunks);
@@ -87,7 +87,7 @@ async fn test_agent_streaming() {
     // Add a user message first
     agent.add_message(ChatMessage::User {
         content: "Say hello".to_string(),
-        timestamp: SystemTime::now(),
+        timestamp: IsoString::now(),
     });
 
     // Start streaming
@@ -97,7 +97,7 @@ async fn test_agent_streaming() {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.unwrap();
         match chunk {
-            StreamChunk::Content(content) => {
+            StreamChunk::Content { content } => {
                 agent.append_streaming_content(&content);
             }
             StreamChunk::Done => {
@@ -123,7 +123,7 @@ async fn test_agent_streaming() {
 #[tokio::test]
 async fn test_agent_with_tool_calls() {
     let chunks = vec![
-        StreamChunk::Content("I'll help you write a file.".to_string()),
+        StreamChunk::Content { content: "I'll help you write a file.".to_string() },
         StreamChunk::ToolCallStart {
             id: "call_123".to_string(),
             name: "write_file".to_string(),
@@ -163,7 +163,7 @@ async fn test_agent_with_tool_calls() {
     // Add user message
     agent.add_message(ChatMessage::User {
         content: "Please write 'Hello World' to /tmp/test.txt".to_string(),
-        timestamp: SystemTime::now(),
+        timestamp: IsoString::now(),
     });
 
     // Process stream and build tool calls
@@ -172,7 +172,7 @@ async fn test_agent_with_tool_calls() {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.unwrap();
         match chunk {
-            StreamChunk::Content(content) => {
+            StreamChunk::Content { content } => {
                 agent.append_streaming_content(&content);
             }
             StreamChunk::ToolCallStart { id, name } => {
@@ -200,7 +200,7 @@ async fn test_agent_with_tool_calls() {
                         id: partial.id.clone(),
                         name: partial.name.clone(),
                         params: partial.arguments,
-                        timestamp: SystemTime::now(),
+                        timestamp: IsoString::now(),
                     });
 
                     // Record the tool call for loop detection
@@ -286,7 +286,7 @@ async fn test_agent_tool_execution_with_real_mcp() {
 
     // Create agent with the populated tool registry
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content("I'll write the file for you.".to_string()),
+        StreamChunk::Content { content: "I'll write the file for you.".to_string() },
         StreamChunk::Done,
     ]);
     let mut agent = Agent::new(llm_provider, tool_registry, None);
@@ -312,7 +312,7 @@ async fn test_agent_tool_execution_with_real_mcp() {
     // Test that the agent can create proper chat requests with tools
     agent.add_message(ChatMessage::User {
         content: "Please write 'Hello Agent' to /tmp/agent.txt".to_string(),
-        timestamp: SystemTime::now(),
+        timestamp: IsoString::now(),
     });
 
     let chat_request = agent.create_chat_request(Some(0.7));
@@ -400,7 +400,7 @@ async fn test_agent_execute_tool_end_to_end() {
 
     // Create agent
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content("I'll execute the tool for you.".to_string()),
+        StreamChunk::Content { content: "I'll execute the tool for you.".to_string() },
         StreamChunk::Done,
     ]);
     let agent = Agent::new(llm_provider, tool_registry, None);
@@ -468,7 +468,7 @@ async fn test_agent_execute_tool_end_to_end() {
 #[tokio::test]
 async fn test_agent_system_prompt() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content("Test response".to_string()),
+        StreamChunk::Content { content: "Test response".to_string() },
         StreamChunk::Done,
     ]);
     let tool_registry = create_test_tool_registry();
@@ -492,7 +492,7 @@ async fn test_agent_system_prompt() {
 #[tokio::test]
 async fn test_agent_existing_system_message() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content("Test response".to_string()),
+        StreamChunk::Content { content: "Test response".to_string() },
         StreamChunk::Done,
     ]);
     let tool_registry = create_test_tool_registry();
@@ -503,7 +503,7 @@ async fn test_agent_existing_system_message() {
     // Add an explicit system message
     agent.add_message(ChatMessage::System {
         content: "Custom system message".to_string(),
-        timestamp: SystemTime::now(),
+        timestamp: IsoString::now(),
     });
 
     // Test LLM message building - should use explicit system message, not the system_prompt
@@ -521,7 +521,7 @@ async fn test_agent_existing_system_message() {
 #[tokio::test]
 async fn test_agent_tool_definitions() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content("Test response".to_string()),
+        StreamChunk::Content { content: "Test response".to_string() },
         StreamChunk::Done,
     ]);
     let mut tool_registry = create_test_tool_registry();
@@ -554,7 +554,7 @@ async fn test_agent_tool_definitions() {
 #[tokio::test]
 async fn test_agent_chat_request_creation() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content("Test response".to_string()),
+        StreamChunk::Content { content: "Test response".to_string() },
         StreamChunk::Done,
     ]);
     let mut tool_registry = create_test_tool_registry();
@@ -568,11 +568,11 @@ async fn test_agent_chat_request_creation() {
     // Add some conversation history
     agent.add_message(ChatMessage::User {
         content: "Hello".to_string(),
-        timestamp: SystemTime::now(),
+        timestamp: IsoString::now(),
     });
     agent.add_message(ChatMessage::Assistant {
         content: "Hi there!".to_string(),
-        timestamp: SystemTime::now(),
+        timestamp: IsoString::now(),
     });
 
     // Create chat request
@@ -592,7 +592,7 @@ async fn test_agent_chat_request_creation() {
 #[tokio::test]
 async fn test_agent_tool_registry_updates() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content("Test response".to_string()),
+        StreamChunk::Content { content: "Test response".to_string() },
         StreamChunk::Done,
     ]);
     let tool_registry = create_test_tool_registry();

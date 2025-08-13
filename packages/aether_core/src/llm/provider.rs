@@ -34,19 +34,20 @@ pub enum ChatMessage {
 pub struct ToolDefinition {
     pub name: String,
     pub description: String,
-    pub parameters: serde_json::Value,
+    pub parameters: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
-    pub arguments: serde_json::Value,
+    pub arguments: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum StreamChunk {
-    Content(String),
+    Content { content: String },
     ToolCallStart { id: String, name: String },
     ToolCallArgument { id: String, argument: String },
     ToolCallComplete { id: String },
@@ -58,4 +59,12 @@ pub type StreamChunkStream = Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Se
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream>;
+}
+
+// Implement LlmProvider for Box<dyn LlmProvider> to enable trait object usage
+#[async_trait]
+impl LlmProvider for Box<dyn LlmProvider> {
+    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream> {
+        self.as_ref().complete_stream_chunks(request).await
+    }
 }
