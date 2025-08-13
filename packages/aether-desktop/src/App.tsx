@@ -22,13 +22,16 @@ function AppContent() {
   }, [actions]);
 
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground relative">
+    <div className="flex flex-col h-screen bg-background text-foreground relative font-mono border-3 border-border shadow-terminal-glow">
+      {/* Retro scan lines overlay */}
+      <div className="absolute inset-0 pointer-events-none opacity-5 bg-gradient-to-b from-transparent via-primary/10 to-transparent animate-scan-lines z-0"></div>
+      
       <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setPerformanceMonitorVisible(!performanceMonitorVisible)}
-          className="h-8 w-8 p-0 hover:bg-accent transition-colors opacity-70 hover:opacity-100"
+          className="retro-button h-8 w-8 p-0 text-xs border-2 border-primary/60 hover:border-primary hover:shadow-retro"
           title="Toggle performance monitor"
         >
           <Activity className="h-3 w-3" />
@@ -37,7 +40,7 @@ function AppContent() {
           variant="ghost"
           size="sm"
           onClick={() => setSettingsOpen(true)}
-          className="h-8 w-8 p-0 hover:bg-accent transition-colors opacity-70 hover:opacity-100"
+          className="retro-button h-8 w-8 p-0 text-xs border-2 border-primary/60 hover:border-primary hover:shadow-retro"
           title="Settings"
         >
           <Settings className="h-3 w-3" />

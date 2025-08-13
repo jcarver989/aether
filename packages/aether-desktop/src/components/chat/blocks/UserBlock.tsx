@@ -20,20 +20,20 @@ export const UserBlock: React.FC<UserBlockProps> = ({
 
   return (
     <div className={cn(
-      "group rounded-xl border border-border/50 bg-card/50 p-6",
-      "transition-all duration-200 hover:border-border hover:bg-card/80 hover:shadow-lg hover:shadow-primary/5",
-      "backdrop-blur-sm",
+      "group border-2 border-primary/60 bg-card/30 p-4 font-mono",
+      "transition-all duration-100 hover:border-primary hover:bg-card/50 hover:shadow-retro",
+      "shadow-retro-inset",
       className
     )}>
       <BlockHeader
-        title="You"
+        title="[USER]"
         timestamp={block.message.timestamp}
         onCopy={onCopy}
-        className="text-primary font-medium"
+        className="text-primary font-bold uppercase tracking-wider"
       />
       
-      <div className="text-sm text-card-foreground/90 whitespace-pre-wrap leading-relaxed mt-3">
-        {block.message.content}
+      <div className="text-sm text-card-foreground whitespace-pre-wrap leading-relaxed mt-3 font-mono">
+        &gt; {block.message.content}
       </div>
     </div>
   );

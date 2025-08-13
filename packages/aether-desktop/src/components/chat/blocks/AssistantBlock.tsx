@@ -21,19 +21,19 @@ export const AssistantBlock: React.FC<AssistantBlockProps> = ({
 
   return (
     <div className={cn(
-      "group rounded-xl border border-border/50 bg-muted/30 p-6",
-      "transition-all duration-200 hover:border-border hover:bg-muted/50 hover:shadow-lg hover:shadow-accent/5",
-      "backdrop-blur-sm",
+      "group border-2 border-foreground/40 bg-muted/20 p-4 font-mono",
+      "transition-all duration-100 hover:border-foreground hover:bg-muted/40 hover:shadow-terminal-glow",
+      "shadow-retro-inset",
       className
     )}>
       <BlockHeader
-        title="Assistant"
+        title="[AETHER]"
         timestamp={block.message.timestamp}
         onCopy={onCopy}
-        className="text-foreground font-medium"
+        className="text-foreground font-bold uppercase tracking-wider"
       />
       
-      <div className="text-sm text-foreground/90 mt-3 prose prose-sm prose-invert max-w-none">
+      <div className="text-sm text-foreground/95 mt-3 prose prose-sm prose-invert max-w-none font-mono">
         <MarkdownRenderer content={block.message.content} />
       </div>
     </div>

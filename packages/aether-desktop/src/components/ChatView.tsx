@@ -67,16 +67,22 @@ export const ChatView: React.FC<ChatViewProps> = memo(({ className }) => {
         
         {messages.length === 0 && !streamingMessage && (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-md">
+            <div className="text-center max-w-md border-2 border-border p-8 bg-card/50 shadow-retro-inset">
               <div className="mb-6">
-                <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center mx-auto mb-4">
-                  <span className="text-primary-foreground font-bold text-2xl">A</span>
+                <div className="h-16 w-16 border-3 border-primary bg-background flex items-center justify-center mx-auto mb-4 shadow-retro font-mono">
+                  <span className="text-primary font-bold text-2xl tracking-wider animate-pulse-subtle">[A]</span>
                 </div>
               </div>
-              <h2 className="text-2xl font-semibold mb-3 text-foreground">Welcome to Aether</h2>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                Your AI coding assistant is ready to help. Start a conversation by typing a message below.
+              <h2 className="text-2xl font-bold mb-3 text-foreground uppercase tracking-wider font-mono">
+                :: AETHER TERMINAL ::
+              </h2>
+              <p className="text-muted-foreground text-sm leading-relaxed font-mono uppercase tracking-wide">
+                &gt; SYSTEM READY<br/>
+                &gt; AWAITING INPUT...
               </p>
+              <div className="mt-4 text-xs text-primary/60 font-mono">
+                [COGNITIVE PROCESSING UNIT ONLINE]
+              </div>
             </div>
           </div>
         )}

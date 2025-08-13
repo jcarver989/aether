@@ -29,6 +29,8 @@ export const BlockHeader: React.FC<BlockHeaderProps> = ({
     return new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
     }).format(dateObj);
   };
 
@@ -62,9 +64,9 @@ export const BlockHeader: React.FC<BlockHeaderProps> = ({
         )}
       </div>
 
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
         {timestamp && (
-          <span>{formatTime(timestamp)}</span>
+          <span className="uppercase tracking-wider">[{formatTime(timestamp)}]</span>
         )}
         
         {onCopy && (
@@ -72,7 +74,7 @@ export const BlockHeader: React.FC<BlockHeaderProps> = ({
             variant="ghost"
             size="sm"
             onClick={onCopy}
-            className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity border border-primary/30 hover:border-primary hover:bg-primary/20"
           >
             <Copy className="h-3 w-3" />
           </Button>
@@ -81,7 +83,7 @@ export const BlockHeader: React.FC<BlockHeaderProps> = ({
         <Button
           variant="ghost"
           size="sm"
-          className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity border border-primary/30 hover:border-primary hover:bg-primary/20"
         >
           <MoreHorizontal className="h-3 w-3" />
         </Button>

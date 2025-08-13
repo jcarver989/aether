@@ -69,7 +69,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ className }) => {
   };
 
   return (
-    <div className={cn("border-t border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-6", className)}>
+    <div className={cn("border-t-3 border-border bg-background/98 p-6 relative z-10", className)}>
       <div className="max-w-4xl mx-auto">
         <div className="flex gap-3 items-end">
           <div className="flex-1 relative">
@@ -78,18 +78,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({ className }) => {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={isStreaming ? "Assistant is responding..." : "Type your message..."}
+              placeholder={isStreaming ? "> ASSISTANT PROCESSING..." : "> ENTER COMMAND..."}
               disabled={isStreaming}
               className={cn(
-                "w-full resize-none rounded-xl border border-input bg-background/50 backdrop-blur-sm px-4 py-3 text-sm",
-                "ring-offset-background placeholder:text-muted-foreground/60",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-1 focus-visible:border-primary/50",
-                "disabled:cursor-not-allowed disabled:opacity-50",
-                "min-h-[48px] max-h-[150px] transition-all duration-200",
-                "hover:border-border/60 hover:bg-background/70"
+                "w-full resize-none border-2 border-border bg-card/90 px-4 py-3 text-sm font-mono",
+                "placeholder:text-muted-foreground placeholder:uppercase placeholder:tracking-wider",
+                "focus:border-primary focus:shadow-retro disabled:cursor-not-allowed disabled:opacity-50",
+                "min-h-[48px] max-h-[150px] transition-all duration-100",
+                "hover:border-primary/60 text-foreground"
               )}
               rows={1}
             />
+            {/* Terminal cursor effect */}
+            {!isStreaming && input === '' && (
+              <div className="absolute right-3 top-3 w-2 h-5 bg-primary animate-terminal-blink"></div>
+            )}
           </div>
           
           <Button
@@ -97,17 +100,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({ className }) => {
             disabled={!input.trim() || isStreaming}
             size="sm"
             className={cn(
-              "h-12 w-12 p-0 rounded-xl bg-primary hover:bg-primary/90",
-              "transition-all duration-200 shadow-lg hover:shadow-xl hover:shadow-primary/20",
-              "disabled:opacity-50 disabled:shadow-none"
+              "retro-button h-12 w-12 p-0 border-2 border-primary bg-transparent text-primary",
+              "hover:bg-primary hover:text-primary-foreground hover:shadow-retro",
+              "disabled:opacity-50 disabled:shadow-none transition-all duration-100",
+              "uppercase tracking-wide font-bold"
             )}
           >
             <Send className="h-4 w-4" />
           </Button>
         </div>
         
-        <div className="mt-3 text-xs text-muted-foreground/70 text-center">
-          Press Enter to send • Shift+Enter for new line
+        <div className="mt-3 text-xs text-muted-foreground uppercase tracking-wider text-center font-mono">
+          [ENTER] TO EXECUTE • [SHIFT+ENTER] FOR NEW LINE
         </div>
       </div>
     </div>

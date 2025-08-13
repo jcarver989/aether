@@ -35,32 +35,32 @@
 }
 
 :root {
-  --radius: 0.75rem;
-  /* Dark mode by default */
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 217.2 91.2% 59.8%;
-  --primary-foreground: 222.2 84% 4.9%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 224.3 76.3% 94.1%;
-  --chart-1: 220 70% 50%;
-  --chart-2: 160 60% 45%;
-  --chart-3: 30 80% 55%;
-  --chart-4: 280 65% 60%;
-  --chart-5: 340 75% 55%;
+  --radius: 0.25rem;
+  /* Modern Retro Terminal - Sophisticated dark theme with beautiful accents */
+  --background: 220 13% 9%;
+  --foreground: 220 20% 95%;
+  --card: 220 13% 12%;
+  --card-foreground: 220 20% 95%;
+  --popover: 220 13% 12%;
+  --popover-foreground: 220 20% 95%;
+  --primary: 240 100% 70%;
+  --primary-foreground: 220 13% 9%;
+  --secondary: 220 13% 18%;
+  --secondary-foreground: 220 20% 95%;
+  --muted: 220 13% 15%;
+  --muted-foreground: 220 15% 65%;
+  --accent: 270 95% 75%;
+  --accent-foreground: 220 13% 9%;
+  --destructive: 0 85% 65%;
+  --destructive-foreground: 220 20% 95%;
+  --border: 220 13% 25%;
+  --input: 220 13% 15%;
+  --ring: 240 100% 70%;
+  --chart-1: 240 100% 70%;
+  --chart-2: 270 95% 75%;
+  --chart-3: 200 100% 70%;
+  --chart-4: 160 85% 65%;
+  --chart-5: 320 90% 75%;
 }
 
 /* Light mode variant (if needed later) */
@@ -97,43 +97,77 @@
   }
   
   body {
-    @apply bg-background text-foreground antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    @apply bg-background text-foreground;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', 'Menlo', 'Consolas', monospace;
+    font-feature-settings: "liga" 0, "calt" 0;
+    font-weight: 400;
+    letter-spacing: 0.025em;
+    line-height: 1.4;
+    /* Disable antialiasing for crisp pixel-perfect text */
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: auto;
   }
   
-  /* Custom scrollbar styling */
+  /* Retro scrollbar styling */
   ::-webkit-scrollbar {
-    @apply w-2;
+    @apply w-3;
   }
   
   ::-webkit-scrollbar-track {
-    @apply bg-transparent;
+    @apply bg-background border border-border;
   }
   
   ::-webkit-scrollbar-thumb {
-    @apply bg-border rounded-full border-2 border-transparent bg-clip-content;
+    @apply bg-primary/60 border-2 border-border;
   }
   
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground/50;
+    @apply bg-primary/80;
   }
   
-  /* Selection styling */
+  /* Retro selection styling */
   ::selection {
-    @apply bg-primary/20 text-foreground;
+    @apply bg-primary/30 text-foreground;
   }
   
-  /* Code block improvements */
+  /* Enhanced code block styling for retro feel */
   pre {
-    @apply bg-muted/50 border border-border rounded-lg p-4 overflow-x-auto;
+    @apply bg-muted border-2 border-border p-4 overflow-x-auto;
+    font-family: inherit;
+    text-shadow: 0 0 3px hsl(var(--primary) / 0.1);
   }
   
   code {
-    @apply bg-muted/50 px-1.5 py-0.5 rounded text-sm font-mono;
+    @apply bg-muted/80 px-2 py-1 border border-border text-sm;
+    font-family: inherit;
   }
   
   pre code {
-    @apply bg-transparent p-0;
+    @apply bg-transparent p-0 border-0;
+  }
+  
+  /* Add subtle glow effects for modern retro feel */
+  h1, h2, h3, h4, h5, h6 {
+    text-shadow: 0 0 8px hsl(var(--primary) / 0.15);
+  }
+  
+  /* Terminal-style input focus */
+  input:focus, textarea:focus {
+    @apply ring-2 ring-primary/50;
+    box-shadow: 0 0 0 2px hsl(var(--primary) / 0.5), 0 0 12px hsl(var(--primary) / 0.2);
+  }
+  
+  /* Retro button styling */
+  .retro-button {
+    @apply border-2 border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground;
+    transition: all 0.1s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+  }
+  
+  .retro-button:active {
+    transform: translateY(1px);
   }
 
 }
