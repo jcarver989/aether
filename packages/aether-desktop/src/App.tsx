@@ -3,15 +3,17 @@ import { AppContextProvider } from './components/AppContextProvider';
 import { ChatView } from './components/ChatView';
 import { ChatInput } from './components/ChatInput';
 import { ProviderSettings } from './components/ProviderSettings';
+import { StreamingPerformanceMonitor } from './components/chat/StreamingPerformanceMonitor';
 import { useAppContext } from './hooks/useAppContext';
 import { Button } from './components/ui/button';
-import { Settings } from 'lucide-react';
+import { Settings, Activity } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import "./App.css";
 
 function AppContent() {
   const { actions } = useAppContext();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [performanceMonitorVisible, setPerformanceMonitorVisible] = useState(false);
 
   useEffect(() => {
     actions.init();
@@ -20,25 +22,27 @@ function AppContent() {
   }, [actions]);
 
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-16 items-center justify-between px-6">
-          <div className="flex items-center space-x-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">A</span>
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight">Aether</h1>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSettingsOpen(true)}
-            className="h-9 w-9 p-0 hover:bg-accent transition-colors"
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
-        </div>
-      </header>
+    <div className="flex flex-col h-screen bg-background text-foreground relative">
+      <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setPerformanceMonitorVisible(!performanceMonitorVisible)}
+          className="h-8 w-8 p-0 hover:bg-accent transition-colors opacity-70 hover:opacity-100"
+          title="Toggle performance monitor"
+        >
+          <Activity className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setSettingsOpen(true)}
+          className="h-8 w-8 p-0 hover:bg-accent transition-colors opacity-70 hover:opacity-100"
+          title="Settings"
+        >
+          <Settings className="h-3 w-3" />
+        </Button>
+      </div>
       
       <div className="flex flex-1 overflow-hidden">
         <main className="flex flex-1 flex-col">
@@ -50,6 +54,10 @@ function AppContent() {
       <ProviderSettings 
         open={settingsOpen} 
         onOpenChange={setSettingsOpen} 
+      />
+
+      <StreamingPerformanceMonitor 
+        isVisible={performanceMonitorVisible}
       />
     </div>
   );

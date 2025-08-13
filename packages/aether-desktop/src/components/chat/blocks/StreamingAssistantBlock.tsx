@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useDeferredValue } from 'react';
 import { BlockHeader } from '../BlockHeader';
 import { StreamingIndicator } from '../StreamingIndicator';
 import { StreamingMessageBlock } from '@/types';
@@ -14,6 +14,9 @@ export const StreamingAssistantBlock: React.FC<StreamingAssistantBlockProps> = m
   block,
   className,
 }) => {
+  // Use deferred value for non-critical content updates to prevent blocking urgent updates
+  const deferredContent = useDeferredValue(block.partialContent);
+  
   const memoizedHeader = useMemo(() => (
     <BlockHeader
       title="Assistant"
@@ -22,6 +25,12 @@ export const StreamingAssistantBlock: React.FC<StreamingAssistantBlockProps> = m
       className="text-foreground font-medium"
     />
   ), [block.message.timestamp]);
+
+  const memoizedContent = useMemo(() => (
+    <div style={{ display: 'inline' }}>
+      <MarkdownRenderer content={deferredContent} />
+    </div>
+  ), [deferredContent]);
 
   return (
     <div className={cn(
@@ -33,11 +42,16 @@ export const StreamingAssistantBlock: React.FC<StreamingAssistantBlockProps> = m
       {memoizedHeader}
       
       <div className="text-sm text-foreground/90 mt-3 prose prose-sm prose-invert max-w-none">
-        <div style={{ display: 'inline' }}>
-          <MarkdownRenderer content={block.partialContent} />
-        </div>
+        {memoizedContent}
         <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1 align-text-top" />
       </div>
     </div>
+  );
+}, (prevProps, nextProps) => {
+  // Only re-render if the content has actually changed
+  return (
+    prevProps.block.partialContent === nextProps.block.partialContent &&
+    prevProps.block.message.timestamp === nextProps.block.message.timestamp &&
+    prevProps.className === nextProps.className
   );
 });

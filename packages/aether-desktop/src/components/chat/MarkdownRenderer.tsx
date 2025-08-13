@@ -139,15 +139,23 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({
     },
   }), []);
 
+  // Memoize the markdown processing to avoid re-parsing identical content
+  const memoizedMarkdown = useMemo(() => (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]}
+      components={components}
+    >
+      {content}
+    </ReactMarkdown>
+  ), [content, components]);
+
   return (
     <div className={cn("prose prose-sm dark:prose-invert max-w-none", className)}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        components={components}
-      >
-        {content}
-      </ReactMarkdown>
+      {memoizedMarkdown}
     </div>
   );
+}, (prevProps, nextProps) => {
+  // Custom comparison function to optimize re-renders
+  return prevProps.content === nextProps.content && prevProps.className === nextProps.className;
 });

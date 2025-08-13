@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, memo, useCallback } from 'react';
 import { MessageBlock } from './chat/MessageBlock';
 import { useAppContext } from '@/hooks/useAppContext';
-import { useOptimizedSelectors } from '@/hooks/useStreamingOptimization';
+import { useRAFOptimizedSelectors } from '@/hooks/useRAFStreamingOptimization';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
@@ -13,7 +13,7 @@ export const ChatView: React.FC<ChatViewProps> = memo(({ className }) => {
   const { actions } = useAppContext();
   const scrollRef = useRef<HTMLDivElement>(null);
   
-  const { messages, streamingMessage, autoScroll } = useOptimizedSelectors();
+  const { messages, streamingMessage, autoScroll } = useRAFOptimizedSelectors();
   
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {

@@ -24,8 +24,8 @@ import type {
 export class AppActions {
   private streamingBuffer = '';
   private streamingMessageId: string | null = null;
-  private streamingUpdateTimer: NodeJS.Timeout | null = null;
-  private readonly STREAMING_UPDATE_DEBOUNCE_MS = 50; // Update UI every 50ms max
+  private streamingUpdateRAF: number | null = null;
+  private pendingUpdate = false;
 
   constructor(
     private store: ZustandStore<AppState>,
@@ -122,16 +122,24 @@ export class AppActions {
   private appendStreamContent(chunk: string): void {
     this.streamingBuffer += chunk;
     this.scheduleStreamingUpdate();
+    
+    // Dispatch custom event for performance monitoring
+    window.dispatchEvent(new CustomEvent('streaming-chunk-received', { 
+      detail: { size: chunk.length, timestamp: Date.now() } 
+    }));
   }
 
   private scheduleStreamingUpdate(): void {
-    if (this.streamingUpdateTimer) {
-      clearTimeout(this.streamingUpdateTimer);
+    if (this.pendingUpdate) {
+      return; // Already have a pending update
     }
 
-    this.streamingUpdateTimer = setTimeout(() => {
+    this.pendingUpdate = true;
+    this.streamingUpdateRAF = requestAnimationFrame(() => {
       this.flushStreamingBuffer();
-    }, this.STREAMING_UPDATE_DEBOUNCE_MS);
+      this.pendingUpdate = false;
+      this.streamingUpdateRAF = null;
+    });
   }
 
   private flushStreamingBuffer(): void {
@@ -190,9 +198,10 @@ export class AppActions {
 
   private finalizeStreamingMessage(messageId: string): void {
     // Clear any pending updates and flush final content
-    if (this.streamingUpdateTimer) {
-      clearTimeout(this.streamingUpdateTimer);
-      this.streamingUpdateTimer = null;
+    if (this.streamingUpdateRAF !== null) {
+      cancelAnimationFrame(this.streamingUpdateRAF);
+      this.streamingUpdateRAF = null;
+      this.pendingUpdate = false;
     }
     
     const state = this.store.getState();
