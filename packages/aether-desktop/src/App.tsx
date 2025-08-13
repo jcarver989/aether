@@ -22,28 +22,35 @@ function AppContent() {
   }, [actions]);
 
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground relative font-mono border-3 border-border shadow-terminal-glow">
-      {/* Retro scan lines overlay */}
-      <div className="absolute inset-0 pointer-events-none opacity-5 bg-gradient-to-b from-transparent via-primary/10 to-transparent animate-scan-lines z-0"></div>
+    <div className="flex flex-col h-screen bg-background text-foreground relative font-mono shadow-interface">
+      {/* Holographic scan overlay */}
+      <div className="absolute inset-0 pointer-events-none opacity-[0.02] z-0">
+        <div className="h-1 w-full bg-gradient-to-r from-transparent via-primary to-transparent animate-hologram-scan"></div>
+      </div>
       
-      <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+      {/* Subtle data stream effect */}
+      <div className="absolute top-0 left-0 w-full h-px pointer-events-none opacity-20 z-0">
+        <div className="h-full w-20 bg-gradient-to-r from-transparent via-accent to-transparent animate-data-stream"></div>
+      </div>
+      
+      <div className="absolute top-4 right-4 z-50 flex items-center gap-3">
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setPerformanceMonitorVisible(!performanceMonitorVisible)}
-          className="retro-button h-8 w-8 p-0 text-xs border-2 border-primary/60 hover:border-primary hover:shadow-retro"
+          className="sci-fi-button h-9 w-9 p-0 text-xs"
           title="Toggle performance monitor"
         >
-          <Activity className="h-3 w-3" />
+          <Activity className="h-4 w-4" />
         </Button>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setSettingsOpen(true)}
-          className="retro-button h-8 w-8 p-0 text-xs border-2 border-primary/60 hover:border-primary hover:shadow-retro"
+          className="sci-fi-button h-9 w-9 p-0 text-xs"
           title="Settings"
         >
-          <Settings className="h-3 w-3" />
+          <Settings className="h-4 w-4" />
         </Button>
       </div>
       

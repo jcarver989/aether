@@ -67,21 +67,32 @@ export const ChatView: React.FC<ChatViewProps> = memo(({ className }) => {
         
         {messages.length === 0 && !streamingMessage && (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-md border-2 border-border p-8 bg-card/50 shadow-retro-inset">
-              <div className="mb-6">
-                <div className="h-16 w-16 border-3 border-primary bg-background flex items-center justify-center mx-auto mb-4 shadow-retro font-mono">
-                  <span className="text-primary font-bold text-2xl tracking-wider animate-pulse-subtle">[A]</span>
+            <div className="text-center max-w-lg border border-border/40 p-10 bg-gradient-to-br from-card/30 to-background/50 shadow-hologram backdrop-blur-sm">
+              <div className="mb-8">
+                <div className="h-20 w-20 border border-primary/40 bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center mx-auto mb-6 shadow-neon font-mono relative overflow-hidden">
+                  <span className="text-primary font-light text-3xl tracking-widest animate-pulse-glow relative z-10">A</span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/20 to-transparent animate-shimmer"></div>
                 </div>
               </div>
-              <h2 className="text-2xl font-bold mb-3 text-foreground uppercase tracking-wider font-mono">
-                :: AETHER TERMINAL ::
+              <h2 className="text-3xl font-light mb-4 text-foreground tracking-[0.2em] font-mono">
+                AETHER
               </h2>
-              <p className="text-muted-foreground text-sm leading-relaxed font-mono uppercase tracking-wide">
-                &gt; SYSTEM READY<br/>
-                &gt; AWAITING INPUT...
-              </p>
-              <div className="mt-4 text-xs text-primary/60 font-mono">
-                [COGNITIVE PROCESSING UNIT ONLINE]
+              <div className="text-sm font-mono text-muted-foreground/70 space-y-2 leading-relaxed">
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse-glow"></div>
+                  <span>Neural interface initialized</span>
+                </div>
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-accent animate-pulse-glow"></div>
+                  <span>Cognitive systems online</span>
+                </div>
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse-glow"></div>
+                  <span>Ready for interaction</span>
+                </div>
+              </div>
+              <div className="mt-6 text-xs text-primary/40 font-mono font-light tracking-wider">
+                Advanced Intelligence • Quantum Processing
               </div>
             </div>
           </div>

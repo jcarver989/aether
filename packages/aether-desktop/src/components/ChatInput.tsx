@@ -69,30 +69,33 @@ export const ChatInput: React.FC<ChatInputProps> = ({ className }) => {
   };
 
   return (
-    <div className={cn("border-t-3 border-border bg-background/98 p-6 relative z-10", className)}>
+    <div className={cn("border-t border-border bg-gradient-to-r from-background via-background to-card/20 p-6 relative z-10", className)}>
       <div className="max-w-4xl mx-auto">
-        <div className="flex gap-3 items-end">
+        <div className="flex gap-4 items-end">
           <div className="flex-1 relative">
             <textarea
               ref={textareaRef}
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={isStreaming ? "> ASSISTANT PROCESSING..." : "> ENTER COMMAND..."}
+              placeholder={isStreaming ? "◦ AI PROCESSING..." : "◦ INPUT QUERY..."}
               disabled={isStreaming}
               className={cn(
-                "w-full resize-none border-2 border-border bg-card/90 px-4 py-3 text-sm font-mono",
-                "placeholder:text-muted-foreground placeholder:uppercase placeholder:tracking-wider",
-                "focus:border-primary focus:shadow-retro disabled:cursor-not-allowed disabled:opacity-50",
-                "min-h-[48px] max-h-[150px] transition-all duration-100",
-                "hover:border-primary/60 text-foreground"
+                "w-full resize-none border border-border/60 bg-gradient-to-br from-card/50 to-card/30 px-4 py-3 text-sm font-mono",
+                "placeholder:text-muted-foreground/80 placeholder:font-light",
+                "focus:border-primary/80 disabled:cursor-not-allowed disabled:opacity-50",
+                "min-h-[48px] max-h-[150px] transition-all duration-200",
+                "hover:border-primary/40 text-foreground backdrop-blur-sm",
+                "shadow-hologram"
               )}
               rows={1}
             />
-            {/* Terminal cursor effect */}
+            {/* Futuristic cursor effect */}
             {!isStreaming && input === '' && (
-              <div className="absolute right-3 top-3 w-2 h-5 bg-primary animate-terminal-blink"></div>
+              <div className="absolute right-4 top-3.5 w-1.5 h-4 bg-primary animate-cursor-blink opacity-80"></div>
             )}
+            {/* Status indicator */}
+            <div className="absolute left-2 top-3.5 w-2 h-2 rounded-full bg-primary/60 animate-pulse-glow"></div>
           </div>
           
           <Button
@@ -100,18 +103,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({ className }) => {
             disabled={!input.trim() || isStreaming}
             size="sm"
             className={cn(
-              "retro-button h-12 w-12 p-0 border-2 border-primary bg-transparent text-primary",
-              "hover:bg-primary hover:text-primary-foreground hover:shadow-retro",
-              "disabled:opacity-50 disabled:shadow-none transition-all duration-100",
-              "uppercase tracking-wide font-bold"
+              "sci-fi-button h-12 w-12 p-0",
+              "disabled:opacity-40 disabled:pointer-events-none",
+              "shadow-neon-subtle"
             )}
           >
             <Send className="h-4 w-4" />
           </Button>
         </div>
         
-        <div className="mt-3 text-xs text-muted-foreground uppercase tracking-wider text-center font-mono">
-          [ENTER] TO EXECUTE • [SHIFT+ENTER] FOR NEW LINE
+        <div className="mt-4 text-xs text-muted-foreground/60 text-center font-mono font-light tracking-wide">
+          ENTER ⟩ EXECUTE ⟨ SHIFT+ENTER ⟩ NEW LINE
         </div>
       </div>
     </div>
