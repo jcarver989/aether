@@ -29,14 +29,6 @@ async clearChatHistory() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async executeToolCall(request: ExecuteToolCallRequest) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("execute_tool_call", { request }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async getConfig() : Promise<Result<AppConfig, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_config") };
@@ -157,7 +149,6 @@ export type AppStatus = { connection_status: ConnectionStatus; available_tools: 
 export type ChatMessage = { type: "system"; content: string; timestamp: IsoString } | { type: "user"; content: string; timestamp: IsoString } | { type: "assistant"; content: string; timestamp: IsoString } | { type: "assistantStreaming"; content: string; timestamp: IsoString } | { type: "tool"; tool_call_id: string; content: string; timestamp: IsoString } | { type: "toolCall"; id: string; name: string; params: string; timestamp: IsoString } | { type: "toolResult"; tool_call_id: string; content: string; timestamp: IsoString } | { type: "error"; message: string; timestamp: IsoString }
 export type ChatStreamEvent = { chunk: StreamChunk; message_id: string }
 export type ConnectionStatus = { provider: ProviderStatus; mcp_servers: Partial<{ [key in string]: McpServerStatus }> }
-export type ExecuteToolCallRequest = { tool_name: string; tool_params: string }
 export type InitializeAgentRequest = { provider: LlmProvider; openrouter_config: OpenRouterConfig | null; ollama_config: OllamaConfig | null; system_prompt: string | null }
 /**
  * A newtype wrapper for ISO 8601 timestamp strings

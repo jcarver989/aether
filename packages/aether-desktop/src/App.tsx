@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AppContextProvider } from './components/AppContextProvider';
 import { ChatView } from './components/ChatView';
 import { ChatInput } from './components/ChatInput';

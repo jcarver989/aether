@@ -1,28 +1,40 @@
-mod state;
 mod commands;
+mod state;
 
-use state::AgentState;
 use commands::*;
+use state::AgentState;
+use aether_core::mcp::{McpClient, mcp_config::McpServerConfig};
+use aether_core::tools::ToolRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+#[tokio::main]
+pub async fn run() {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter("async_openai=debug,aether_core=debug,reqwest=trace")
         .init();
-        
+
+
+    // Initialize MCP client (for now just to verify connection works)
+    let mut mcp_client = McpClient::new();
+    mcp_client.connect_server("mcp-mesh".to_string(), McpServerConfig::Http { url: "http://localhost:3000/mcp".to_string(), headers: std::collections::HashMap::new() }).await.unwrap();
+
+    // Note: MCP client and tool discovery will be handled per-agent now
+    // Tools will be registered when agents are created via Agent::set_mcp_client and Agent::register_mcp_tools
+
+    let state = AgentState::default();
+
     // Generate TypeScript types in debug builds
     #[cfg(debug_assertions)]
     generate_types();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(AgentState::default())
+        .manage(state)
         .invoke_handler(tauri::generate_handler![
             send_message,
             get_chat_history,
             clear_chat_history,
-            execute_tool_call,
             get_config,
             update_config,
             get_app_status,
@@ -43,13 +55,12 @@ pub fn run() {
 #[cfg(debug_assertions)]
 fn generate_types() {
     use tauri_specta::{collect_commands, collect_events, Builder};
-    
+
     let builder = Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             send_message,
             get_chat_history,
             clear_chat_history,
-            execute_tool_call,
             get_config,
             update_config,
             get_app_status,

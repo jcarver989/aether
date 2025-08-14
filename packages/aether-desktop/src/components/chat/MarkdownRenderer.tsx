@@ -1,7 +1,7 @@
 import React, { useState, memo, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { Components } from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { dark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { aetherPrismTheme } from '@/styles/syntax-theme';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { Copy, Check } from 'lucide-react';
@@ -48,7 +48,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, value }) => {
         )}
       </Button>
       <SyntaxHighlighter
-        style={dark}
+        style={aetherPrismTheme as any}
         language={language || 'text'}
         PreTag="div"
         className="rounded-md"
@@ -63,12 +63,12 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({
   content,
   className,
 }) => {
-  const components = useMemo(() => ({
+  const components = useMemo((): Components => ({
     code({ node, className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || '');
       const inline = !match;
       const language = match ? match[1] : undefined;
-      
+
       // Extract text content from AST node
       const extractTextFromNode = (node: any): string => {
         if (!node) return '';
@@ -78,7 +78,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({
         }
         return '';
       };
-      
+
       const value = extractTextFromNode(node).replace(/\n$/, '');
 
       return !inline ? (

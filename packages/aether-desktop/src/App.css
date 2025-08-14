@@ -154,6 +154,13 @@
   pre code {
     @apply bg-transparent p-0 border-0;
   }
+
+  /* Fix syntax highlighter borders */
+  pre[class*="language-"] *,
+  code[class*="language-"] * {
+    border: none !important;
+    outline: none !important;
+  }
   
   /* Subtle holographic effects */
   h1, h2, h3, h4, h5, h6 {

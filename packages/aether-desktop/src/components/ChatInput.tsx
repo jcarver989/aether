@@ -17,14 +17,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({ className }) => {
   
   const streamingMessage = useSelector(state => state.streamingMessage);
   const status = useSelector(state => state.status);
-  const config = useSelector(state => state.config);
   
   const isStreaming = streamingMessage?.isStreaming || false;
   const isAgentReady = status?.connection_status?.provider?.connected === true;
-  const hasValidConfig = config && (
-    (config.active_provider === 'OpenRouter' && config.openrouter_config.api_key) ||
-    (config.active_provider === 'Ollama' && config.ollama_config.base_url)
-  );
 
   const handleSubmit = async () => {
     if (!input.trim() || isStreaming) return;

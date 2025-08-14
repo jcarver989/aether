@@ -1,36 +1,31 @@
-import type { 
-  ChatMessage, 
+import type {
+  ChatMessage,
   SendMessageRequest,
-  ToolDiscoveryEvent,
   LlmProvider,
   AppConfig,
   InitializeAgentRequest,
   ChatStreamEvent,
-  ExecuteToolCallRequest,
   OpenRouterConfig,
   OllamaConfig
 } from "../generated/bindings";
 import { commands } from "../generated/bindings";
 import type { AppState, ZustandStore } from "./store";
-import type { 
-  ChatMessageBlock, 
-  StreamingMessageBlock, 
+import type {
+  ChatMessageBlock,
+  StreamingMessageBlock,
   ChannelFactory,
-  UIState,
-  ScrollState,
   Theme
 } from "../types/ui";
 
 export class AppActions {
   private streamingBuffer = '';
-  private streamingMessageId: string | null = null;
   private streamingUpdateRAF: number | null = null;
   private pendingUpdate = false;
 
   constructor(
     private store: ZustandStore<AppState>,
     private createChannel: ChannelFactory,
-  ) {}
+  ) { }
 
   async sendMessage(content: string): Promise<void> {
     const userMessageId = crypto.randomUUID();
@@ -39,15 +34,15 @@ export class AppActions {
     try {
       // Add user message to store immediately
       this.addUserMessage(userMessageId, content);
-      
+
       // Create streaming assistant message
       this.startStreamingMessage(assistantMessageId);
-      
+
       // Set up streaming channel
       const channel = this.createChannel<ChatStreamEvent>((event) => {
         this.handleStreamEvent(event, assistantMessageId);
       });
-      
+
       // Send message request with channel for streaming
       const request: SendMessageRequest = {
         content,
@@ -58,7 +53,7 @@ export class AppActions {
       if (result.status === "error") {
         throw new Error(result.error);
       }
-      
+
     } catch (error) {
       this.handleStreamError(error as Error, assistantMessageId);
     }
@@ -70,19 +65,21 @@ export class AppActions {
       content,
       timestamp: new Date().toISOString(),
     };
-    
+
     const userBlock: ChatMessageBlock = {
       id,
       message: userMessage,
     };
 
-    this.store.getState().addMessage(userBlock);
+    this.store.setState(state => ({
+      ...state,
+      messages: [...state.messages, userBlock]
+    }));
   }
 
   private startStreamingMessage(id: string): void {
-    this.streamingMessageId = id;
     this.streamingBuffer = '';
-    
+
     const streamingMessage: StreamingMessageBlock = {
       id,
       message: {
@@ -94,12 +91,15 @@ export class AppActions {
       partialContent: "",
     };
 
-    this.store.getState().setStreamingMessage(streamingMessage);
+    this.store.setState(state => ({
+      ...state,
+      streamingMessage
+    }));
   }
 
   private handleStreamEvent(event: ChatStreamEvent, messageId: string): void {
     const chunk = event.chunk;
-    
+
     switch (chunk.type) {
       case 'content':
         this.appendStreamContent(chunk.content);
@@ -122,10 +122,10 @@ export class AppActions {
   private appendStreamContent(chunk: string): void {
     this.streamingBuffer += chunk;
     this.scheduleStreamingUpdate();
-    
+
     // Dispatch custom event for performance monitoring
-    window.dispatchEvent(new CustomEvent('streaming-chunk-received', { 
-      detail: { size: chunk.length, timestamp: Date.now() } 
+    window.dispatchEvent(new CustomEvent('streaming-chunk-received', {
+      detail: { size: chunk.length, timestamp: Date.now() }
     }));
   }
 
@@ -143,14 +143,18 @@ export class AppActions {
   }
 
   private flushStreamingBuffer(): void {
-    const state = this.store.getState();
-    if (state.streamingMessage && this.streamingBuffer) {
-      const updatedStreaming: StreamingMessageBlock = {
-        ...state.streamingMessage,
-        partialContent: this.streamingBuffer,
-      };
-      state.setStreamingMessage(updatedStreaming);
-    }
+    this.store.setState(state => {
+      if (state.streamingMessage && this.streamingBuffer) {
+        return {
+          ...state,
+          streamingMessage: {
+            ...state.streamingMessage,
+            partialContent: this.streamingBuffer,
+          }
+        };
+      }
+      return state;
+    });
   }
 
   private handleToolCallStart(toolId: string, toolName: string): void {
@@ -167,33 +171,53 @@ export class AppActions {
       message: toolCallMessage,
     };
 
-    const state = this.store.getState();
-    state.addMessage(toolCallBlock);
-    state.updateToolCallState(toolId, 'Running');
+    this.store.setState(state => {
+      const newToolCalls = new Map(state.toolCalls);
+      newToolCalls.set(toolId, 'Running');
+      return {
+        ...state,
+        messages: [...state.messages, toolCallBlock],
+        toolCalls: newToolCalls
+      };
+    });
   }
 
   private appendToolCallArgument(toolId: string, chunk: string): void {
-    const state = this.store.getState();
-    const messageIndex = state.messages.findIndex(msg => msg.id === toolId && msg.message.type === 'toolCall');
-    
-    if (messageIndex !== -1) {
-      const updatedMessages = [...state.messages];
-      const targetMessage = updatedMessages[messageIndex];
-      
-      updatedMessages[messageIndex] = {
-        ...targetMessage,
-        message: {
-          ...targetMessage.message,
-          params: targetMessage.message.params + chunk,
-        },
-      };
+    this.store.setState(state => {
+      const messageIndex = state.messages.findIndex(msg => msg.id === toolId && msg.message.type === 'toolCall');
 
-      state.setMessages(updatedMessages);
-    }
+      if (messageIndex !== -1) {
+        const updatedMessages = [...state.messages];
+        const targetMessage = updatedMessages[messageIndex];
+
+        if (targetMessage.message.type === 'toolCall') {
+          updatedMessages[messageIndex] = {
+            ...targetMessage,
+            message: {
+              ...targetMessage.message,
+              params: targetMessage.message.params + chunk,
+            },
+          };
+        }
+
+        return {
+          ...state,
+          messages: updatedMessages
+        };
+      }
+      return state;
+    });
   }
 
   private completeToolCall(toolId: string): void {
-    this.store.getState().updateToolCallState(toolId, 'Completed');
+    this.store.setState(state => {
+      const newToolCalls = new Map(state.toolCalls);
+      newToolCalls.set(toolId, 'Completed');
+      return {
+        ...state,
+        toolCalls: newToolCalls
+      };
+    });
   }
 
   private finalizeStreamingMessage(messageId: string): void {
@@ -203,33 +227,36 @@ export class AppActions {
       this.streamingUpdateRAF = null;
       this.pendingUpdate = false;
     }
-    
-    const state = this.store.getState();
-    if (!state.streamingMessage) return;
 
-    // Use the buffer content for final message to ensure all content is captured
-    const finalContent = this.streamingBuffer || state.streamingMessage.partialContent;
+    this.store.setState(state => {
+      if (!state.streamingMessage) return state;
 
-    const finalMessage: ChatMessageBlock = {
-      id: messageId,
-      message: {
-        type: "assistant",
-        content: finalContent,
-        timestamp: state.streamingMessage.message.timestamp,
-      },
-    };
+      // Use the buffer content for final message to ensure all content is captured
+      const finalContent = this.streamingBuffer || state.streamingMessage.partialContent;
 
-    state.addMessage(finalMessage);
-    state.setStreamingMessage(null);
-    
+      const finalMessage: ChatMessageBlock = {
+        id: messageId,
+        message: {
+          type: "assistant",
+          content: finalContent,
+          timestamp: state.streamingMessage.message.timestamp,
+        },
+      };
+
+      return {
+        ...state,
+        messages: [...state.messages, finalMessage],
+        streamingMessage: null
+      };
+    });
+
     // Reset streaming state
     this.streamingBuffer = '';
-    this.streamingMessageId = null;
   }
 
   private handleStreamError(error: Error, _messageId: string): void {
     console.error('Stream error:', error);
-    
+
     const errorMessage: ChatMessage = {
       type: "error",
       message: error.message,
@@ -241,9 +268,11 @@ export class AppActions {
       message: errorMessage,
     };
 
-    const state = this.store.getState();
-    state.addMessage(errorBlock);
-    state.setStreamingMessage(null);
+    this.store.setState(state => ({
+      ...state,
+      messages: [...state.messages, errorBlock],
+      streamingMessage: null
+    }));
   }
 
 
@@ -256,7 +285,10 @@ export class AppActions {
           id: crypto.randomUUID(),
           message: msg,
         }));
-        this.store.getState().setMessages(messageBlocks);
+        this.store.setState(state => ({
+          ...state,
+          messages: messageBlocks
+        }));
       } else {
         throw new Error(result.error);
       }
@@ -269,9 +301,11 @@ export class AppActions {
     try {
       const result = await commands.clearChatHistory();
       if (result.status === "ok") {
-        const state = this.store.getState();
-        state.setMessages([]);
-        state.setStreamingMessage(null);
+        this.store.setState(state => ({
+          ...state,
+          messages: [],
+          streamingMessage: null
+        }));
       } else {
         throw new Error(result.error);
       }
@@ -285,7 +319,10 @@ export class AppActions {
     try {
       const result = await commands.getConfig();
       if (result.status === "ok") {
-        this.store.getState().setConfig(result.data);
+        this.store.setState(state => ({
+          ...state,
+          config: result.data
+        }));
       } else {
         throw new Error(result.error);
       }
@@ -298,7 +335,10 @@ export class AppActions {
     try {
       const result = await commands.updateConfig(config);
       if (result.status === "ok") {
-        this.store.getState().setConfig(config);
+        this.store.setState(state => ({
+          ...state,
+          config
+        }));
       } else {
         throw new Error(result.error);
       }
@@ -311,7 +351,10 @@ export class AppActions {
     try {
       const result = await commands.getAppStatus();
       if (result.status === "ok") {
-        this.store.getState().setStatus(result.data);
+        this.store.setState(state => ({
+          ...state,
+          status: result.data
+        }));
       } else {
         throw new Error(result.error);
       }
@@ -338,7 +381,7 @@ export class AppActions {
       if (result.status === "error") {
         throw new Error(result.error);
       }
-      
+
       // Refresh app status after successful initialization
       await this.loadAppStatus();
     } catch (error) {
@@ -369,25 +412,6 @@ export class AppActions {
     }
   }
 
-  async executeToolCall(toolName: string, toolParams: any): Promise<string> {
-    try {
-      const request: ExecuteToolCallRequest = {
-        tool_name: toolName,
-        tool_params: JSON.stringify(toolParams),
-      };
-
-      const result = await commands.executeToolCall(request);
-      if (result.status === "ok") {
-        return result.data;
-      } else {
-        throw new Error(result.error);
-      }
-    } catch (error) {
-      console.error("Failed to execute tool call:", error);
-      throw error;
-    }
-  }
-
   selectProvider(provider: LlmProvider): void {
     const state = this.store.getState();
     if (state.config) {
@@ -399,133 +423,116 @@ export class AppActions {
     }
   }
 
-  async discoverTools(): Promise<void> {
-    const channel = this.createChannel<ToolDiscoveryEvent>((event) => {
-      this.handleToolDiscoveryEvent(event);
-    });
-
-    try {
-      // This would be implemented based on your tool discovery needs
-      console.log('Tool discovery started with channel:', channel.id);
-    } catch (error) {
-      console.error('Tool discovery failed:', error);
-    }
-  }
-
-  private handleToolDiscoveryEvent(event: ToolDiscoveryEvent): void {
-    switch (event.type) {
-      case 'discovered':
-        console.log('Tool discovered:', event.tool);
-        // Update status with new tool
-        break;
-
-      case 'complete':
-        console.log(`Tool discovery complete: ${event.count} tools found`);
-        break;
-
-      case 'error':
-        console.error('Tool discovery error:', event.message);
-        break;
-    }
-  }
-
   // UI State Methods
   setTheme(theme: Theme): void {
-    const state = this.store.getState();
-    const updatedUI: UIState = {
-      ...state.ui,
-      theme,
-    };
-    state.updateUI(updatedUI);
+    this.store.setState(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        theme,
+      }
+    }));
   }
 
   toggleSidebar(): void {
-    const state = this.store.getState();
-    const updatedUI: UIState = {
-      ...state.ui,
-      sidebarOpen: !state.ui.sidebarOpen,
-    };
-    state.updateUI(updatedUI);
+    this.store.setState(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        sidebarOpen: !state.ui.sidebarOpen,
+      }
+    }));
   }
 
   toggleSettings(): void {
-    const state = this.store.getState();
-    const updatedUI: UIState = {
-      ...state.ui,
-      settingsOpen: !state.ui.settingsOpen,
-    };
-    state.updateUI(updatedUI);
+    this.store.setState(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        settingsOpen: !state.ui.settingsOpen,
+      }
+    }));
   }
 
   openSettings(): void {
-    const state = this.store.getState();
-    const updatedUI: UIState = {
-      ...state.ui,
-      settingsOpen: true,
-    };
-    state.updateUI(updatedUI);
+    this.store.setState(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        settingsOpen: true,
+      }
+    }));
   }
 
   closeSettings(): void {
-    const state = this.store.getState();
-    const updatedUI: UIState = {
-      ...state.ui,
-      settingsOpen: false,
-    };
-    state.updateUI(updatedUI);
+    this.store.setState(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        settingsOpen: false,
+      }
+    }));
   }
 
   toggleCommandPalette(): void {
-    const state = this.store.getState();
-    const updatedUI: UIState = {
-      ...state.ui,
-      commandPaletteOpen: !state.ui.commandPaletteOpen,
-    };
-    state.updateUI(updatedUI);
+    this.store.setState(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        commandPaletteOpen: !state.ui.commandPaletteOpen,
+      }
+    }));
   }
 
   // Message Management
   selectMessage(messageId: string | null): void {
-    this.store.getState().setSelectedMessage(messageId);
+    this.store.setState(state => ({
+      ...state,
+      selectedMessageId: messageId
+    }));
   }
 
   toggleMessageCollapse(messageId: string): void {
-    const state = this.store.getState();
-    const updatedMessages = state.messages.map(msg => 
-      msg.id === messageId 
-        ? { ...msg, collapsed: !msg.collapsed }
-        : msg
-    );
-    state.setMessages(updatedMessages);
+    this.store.setState(state => ({
+      ...state,
+      messages: state.messages.map(msg =>
+        msg.id === messageId
+          ? { ...msg, collapsed: !msg.collapsed }
+          : msg
+      )
+    }));
   }
 
   // Scroll Management
   setScrollOffset(offset: number): void {
-    const state = this.store.getState();
-    const updatedScroll: ScrollState = {
-      ...state.scroll,
-      offset,
-      atBottom: offset === 0,
-    };
-    state.updateScroll(updatedScroll);
+    this.store.setState(state => ({
+      ...state,
+      scroll: {
+        ...state.scroll,
+        offset,
+        atBottom: offset === 0,
+      }
+    }));
   }
 
   enableAutoScroll(): void {
-    const state = this.store.getState();
-    const updatedScroll: ScrollState = {
-      ...state.scroll,
-      autoScroll: true,
-    };
-    state.updateScroll(updatedScroll);
+    this.store.setState(state => ({
+      ...state,
+      scroll: {
+        ...state.scroll,
+        autoScroll: true,
+      }
+    }));
   }
 
   disableAutoScroll(): void {
-    const state = this.store.getState();
-    const updatedScroll: ScrollState = {
-      ...state.scroll,
-      autoScroll: false,
-    };
-    state.updateScroll(updatedScroll);
+    this.store.setState(state => ({
+      ...state,
+      scroll: {
+        ...state.scroll,
+        autoScroll: false,
+      }
+    }));
   }
 
   scrollToBottom(): void {
@@ -538,22 +545,22 @@ export class AppActions {
       // Load configuration and status
       await this.loadConfig();
       await this.loadAppStatus();
-      
+
       // Get the current config from store
-      const config = this.store.getState().config;
-      
+      const { config } = this.store.getState();
+
       if (config) {
         // Try to initialize agent with existing config
         try {
           const openrouterConfig = config.active_provider === 'OpenRouter' ? config.openrouter_config : undefined;
           const ollamaConfig = config.active_provider === 'Ollama' ? config.ollama_config : undefined;
-          
+
           await this.initializeAgent(
             config.active_provider,
             openrouterConfig,
             ollamaConfig
           );
-          
+
           console.log('Agent initialized successfully with saved config');
         } catch (error) {
           console.warn('Failed to initialize agent with saved config:', error);

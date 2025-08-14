@@ -1,18 +1,25 @@
 use crate::{
     llm::{ChatMessage as LlmChatMessage, ChatRequest, LlmProvider, ToolDefinition},
-    tools::ToolRegistry,
+    mcp::McpClient,
+    tools::{ToolRegistry, TruncateSummarizer, Summarizer},
     types::{ChatMessage, IsoString},
 };
 use color_eyre::Result;
-use std::{collections::{HashMap, VecDeque}, time::SystemTime};
+use std::{collections::{HashMap, VecDeque}, time::SystemTime, sync::Arc};
 
 /// Represents an AI agent with its associated LLM provider, conversation context, and tools
 pub struct Agent<T: LlmProvider> {
     /// The LLM provider (e.g., OpenRouter, Ollama) for this agent
     llm_provider: T,
 
-    /// Tool registry containing available tools and MCP clients
+    /// Tool registry containing available tools metadata
     tool_registry: ToolRegistry,
+
+    /// MCP client for tool execution
+    mcp_client: Option<Arc<McpClient>>,
+
+    /// Summarizer for tool results
+    summarizer: TruncateSummarizer,
 
     /// Conversation history for this agent
     conversation_history: Vec<ChatMessage>,
@@ -45,6 +52,8 @@ impl<T: LlmProvider> Agent<T> {
         Self {
             llm_provider,
             tool_registry,
+            mcp_client: None,
+            summarizer: TruncateSummarizer::default(),
             conversation_history: Vec::new(),
             active_tool_calls: HashMap::new(),
             recent_tool_calls: VecDeque::new(),
@@ -276,12 +285,55 @@ impl<T: LlmProvider> Agent<T> {
         self.tool_registry = new_registry;
     }
 
-    /// Execute a tool call using the tool registry
+    /// Set the MCP client
+    pub fn set_mcp_client(&mut self, client: Arc<McpClient>) {
+        self.mcp_client = Some(client);
+    }
+
+    /// Register tools from MCP client
+    pub async fn register_mcp_tools(&mut self) -> Result<()> {
+        if let Some(mcp_client) = &self.mcp_client {
+            let tools = mcp_client.discover_tools().await?;
+            for (server_name, tool) in tools {
+                self.tool_registry.register_tool(server_name, tool);
+            }
+        }
+        Ok(())
+    }
+
+    /// Execute a tool call using the MCP client
     pub async fn execute_tool(
         &self,
         tool_name: &str,
         arguments: serde_json::Value,
     ) -> Result<serde_json::Value> {
-        self.tool_registry.invoke_tool(tool_name, arguments).await
+        // Check if the tool exists in our registry
+        if !self.tool_registry.list_tools().contains(&tool_name.to_string()) {
+            return Err(color_eyre::Report::msg(format!(
+                "Tool not found in registry: {tool_name}"
+            )));
+        }
+
+        // Get the server name for this tool
+        let server_name = self.tool_registry.get_server_for_tool(tool_name).ok_or_else(|| {
+            color_eyre::Report::msg(format!("Server not found for tool: {tool_name}"))
+        })?;
+
+        // Get the MCP client
+        let mcp_client = self
+            .mcp_client
+            .as_ref()
+            .ok_or_else(|| color_eyre::Report::msg("No MCP client available"))?;
+
+        // Execute the tool
+        let result = mcp_client
+            .execute_tool(server_name, tool_name, arguments)
+            .await?;
+
+        // Apply summarization/truncation to the result
+        let result_str = serde_json::to_string(&result)?;
+        let processed_result = self.summarizer.summarize(&result_str).await?;
+
+        Ok(serde_json::Value::String(processed_result))
     }
 }

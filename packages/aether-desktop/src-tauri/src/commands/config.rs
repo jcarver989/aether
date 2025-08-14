@@ -1,14 +1,13 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::State;
-use tracing::{info, debug, error};
+use tracing::info;
 use aether_core::{
     types::{LlmProvider, OpenRouterConfig, OllamaConfig, ConnectionStatus, ToolDefinition, McpServerStatus},
     mcp::mcp_config::McpServerConfig,
     agent::Agent,
     llm::{openrouter::OpenRouterProvider, ollama::OllamaProvider},
 };
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::fs;
 use std::env;
@@ -189,7 +188,7 @@ pub async fn update_config(config: AppConfig) -> Result<(), String> {
 #[specta::specta]
 pub async fn get_app_status(state: State<'_, AgentState>) -> Result<AppStatus, String> {
     let agent_guard = state.agent.lock().await;
-    let tool_registry_guard = state.tool_registry.lock().await;
+    let tool_registry_guard = state.tool_registry.lock().unwrap();
     
     // Check if agent is initialized
     let agent_connected = agent_guard.is_some();
@@ -217,7 +216,7 @@ pub async fn get_app_status(state: State<'_, AgentState>) -> Result<AppStatus, S
                 connected: agent_connected,
                 error: None,
             },
-            mcp_servers: state.get_mcp_server_statuses().await,
+            mcp_servers: state.get_mcp_server_statuses(),
         },
         available_tools,
     })
@@ -267,11 +266,12 @@ pub async fn initialize_agent(
     
     // Get tool registry
     let tool_registry = {
-        let registry_guard = state.tool_registry.lock().await;
+        let registry_guard = state.tool_registry.lock().unwrap();
         registry_guard.clone()
     };
     
     // Create agent
+
     let agent = Agent::new(provider, tool_registry, request.system_prompt);
     
     // Store agent in state
@@ -345,7 +345,7 @@ pub async fn start_mcp_server(
             error: None,
             tool_count: 0,
         }
-    ).await;
+    );
 
     // Try to start the MCP server process
     match &server.config {
@@ -369,7 +369,7 @@ pub async fn start_mcp_server(
                             error: Some(error_msg.clone()),
                             tool_count: 0,
                         }
-                    ).await;
+                    );
                     Err(error_msg)
                 }
                 Ok(None) => {
@@ -381,7 +381,7 @@ pub async fn start_mcp_server(
                             error: None,
                             tool_count: 0, // TODO: Get actual tool count from MCP server
                         }
-                    ).await;
+                    );
                     Ok(())
                 }
                 Err(e) => {
@@ -393,7 +393,7 @@ pub async fn start_mcp_server(
                             error: Some(error_msg.clone()),
                             tool_count: 0,
                         }
-                    ).await;
+                    );
                     Err(error_msg)
                 }
             }
@@ -407,7 +407,7 @@ pub async fn start_mcp_server(
                     error: Some(error_msg.clone()),
                     tool_count: 0,
                 }
-            ).await;
+            );
             Err(error_msg)
         }
             }
@@ -422,7 +422,7 @@ pub async fn start_mcp_server(
                     error: Some(error_msg.to_string()),
                     tool_count: 0,
                 }
-            ).await;
+            );
             Err(error_msg.to_string())
         }
     }
@@ -442,7 +442,7 @@ pub async fn stop_mcp_server(
             error: None,
             tool_count: 0,
         }
-    ).await;
+    );
 
     // TODO: Implement actual process termination
     Ok(())
@@ -473,7 +473,7 @@ pub async fn test_mcp_server_connection(
                         error: None,
                         tool_count: 0,
                     }
-                ).await;
+                );
                 Ok(true)
             } else {
                 let error_msg = String::from_utf8_lossy(&output.stderr).to_string();
@@ -484,7 +484,7 @@ pub async fn test_mcp_server_connection(
                         error: Some(error_msg),
                         tool_count: 0,
                     }
-                ).await;
+                );
                 Ok(false)
             }
         }
@@ -497,7 +497,7 @@ pub async fn test_mcp_server_connection(
                     error: Some(error_msg.clone()),
                     tool_count: 0,
                 }
-            ).await;
+            );
             Err(error_msg)
         }
             }
@@ -512,7 +512,7 @@ pub async fn test_mcp_server_connection(
                     error: Some(error_msg.to_string()),
                     tool_count: 0,
                 }
-            ).await;
+            );
             Err(error_msg.to_string())
         }
     }
@@ -525,7 +525,7 @@ pub async fn refresh_mcp_server_status(
     state: State<'_, AgentState>,
 ) -> Result<McpServerStatus, String> {
     // Get current status
-    let statuses = state.get_mcp_server_statuses().await;
+    let statuses = state.get_mcp_server_statuses();
     
     match statuses.get(&server_id) {
         Some(status) => Ok(status.clone()),
@@ -536,7 +536,7 @@ pub async fn refresh_mcp_server_status(
                 error: Some("Server not found".to_string()),
                 tool_count: 0,
             };
-            state.update_mcp_server_status(server_id, default_status.clone()).await;
+            state.update_mcp_server_status(server_id, default_status.clone());
             Ok(default_status)
         }
     }

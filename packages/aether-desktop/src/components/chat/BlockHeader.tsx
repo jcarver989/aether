@@ -64,9 +64,9 @@ export const BlockHeader: React.FC<BlockHeaderProps> = ({
         )}
       </div>
 
-      <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
         {timestamp && (
-          <span className="uppercase tracking-wider">[{formatTime(timestamp)}]</span>
+          <span className="font-light tracking-wide opacity-70">{formatTime(timestamp)}</span>
         )}
         
         {onCopy && (
@@ -74,7 +74,7 @@ export const BlockHeader: React.FC<BlockHeaderProps> = ({
             variant="ghost"
             size="sm"
             onClick={onCopy}
-            className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity border border-primary/30 hover:border-primary hover:bg-primary/20"
+            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-80 transition-all duration-200 sci-fi-button text-xs"
           >
             <Copy className="h-3 w-3" />
           </Button>
@@ -83,7 +83,7 @@ export const BlockHeader: React.FC<BlockHeaderProps> = ({
         <Button
           variant="ghost"
           size="sm"
-          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity border border-primary/30 hover:border-primary hover:bg-primary/20"
+          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-80 transition-all duration-200 sci-fi-button text-xs"
         >
           <MoreHorizontal className="h-3 w-3" />
         </Button>

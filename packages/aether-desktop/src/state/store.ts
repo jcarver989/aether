@@ -29,49 +29,17 @@ export interface AppState {
   ui: UIState;
   scroll: ScrollState;
   selectedMessageId: string | null;
-  
-  // Domain methods for state mutations
-  setMessages: (messages: ChatMessageBlock[]) => void;
-  addMessage: (message: ChatMessageBlock) => void;
-  setStreamingMessage: (message: StreamingMessageBlock | null) => void;
-  updateToolCallState: (id: string, state: ToolCallState) => void;
-  setConfig: (config: AppConfig) => void;
-  setStatus: (status: AppStatus) => void;
-  updateUI: (ui: Partial<UIState>) => void;
-  updateScroll: (scroll: Partial<ScrollState>) => void;
-  setSelectedMessage: (id: string | null) => void;
 }
 
 export type ZustandStore<T> = UseBoundStore<StoreApi<T>>;
 
 export function createStore(): ZustandStore<AppState> {
-  return create<AppState>((set) => ({
+  return create<AppState>(() => ({
     ...defaultAppState(),
-    
-    // Actions
-    setMessages: (messages) => set({ messages }),
-    addMessage: (message) => set((state) => ({ 
-      messages: [...state.messages, message] 
-    })),
-    setStreamingMessage: (streamingMessage) => set({ streamingMessage }),
-    updateToolCallState: (id, state) => set((prev) => {
-      const newToolCalls = new Map(prev.toolCalls);
-      newToolCalls.set(id, state);
-      return { toolCalls: newToolCalls };
-    }),
-    setConfig: (config) => set({ config }),
-    setStatus: (status) => set({ status }),
-    updateUI: (ui) => set((state) => ({ 
-      ui: { ...state.ui, ...ui } 
-    })),
-    updateScroll: (scroll) => set((state) => ({ 
-      scroll: { ...state.scroll, ...scroll } 
-    })),
-    setSelectedMessage: (selectedMessageId) => set({ selectedMessageId }),
   }));
 }
 
-export function defaultAppState(): Omit<AppState, 'setMessages' | 'addMessage' | 'setStreamingMessage' | 'updateToolCallState' | 'setConfig' | 'setStatus' | 'updateUI' | 'updateScroll' | 'setSelectedMessage'> {
+export function defaultAppState(): AppState {
   return {
     // Chat Domain
     messages: [],
