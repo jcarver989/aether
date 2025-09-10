@@ -11,11 +11,12 @@ use async_openai::{
 };
 use color_eyre::Result;
 use serde_json::json;
-use tokio_stream::StreamExt;
+use tokio_stream::{Stream, StreamExt};
+use async_stream;
 
 use super::openrouter_types::CustomChatCompletionStreamResponse;
-use super::provider::{ChatMessage, ChatRequest, LlmProvider, StreamEventStream};
-use crate::types::{StreamEvent, ToolDefinition};
+use super::provider::{ChatRequest, LlmProvider};
+use crate::types::{ChatMessage, StreamEvent, ToolDefinition};
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -33,62 +34,76 @@ impl OpenRouterProvider {
         Ok(Self { client, model })
     }
 
-    fn convert_messages(&self, messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
+    fn convert_messages(messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
         messages
             .into_iter()
-            .map(|msg| match msg {
-                ChatMessage::System { content } => {
-                    ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
+            .flat_map(|msg| match msg {
+                ChatMessage::System { content, .. } => Some(ChatCompletionRequestMessage::System(
+                    ChatCompletionRequestSystemMessage {
                         content: content.into(),
                         name: None,
-                    })
-                }
-                ChatMessage::User { content } => {
-                    ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
+                    },
+                )),
+                ChatMessage::User { content, .. } => Some(ChatCompletionRequestMessage::User(
+                    ChatCompletionRequestUserMessage {
                         content: content.into(),
                         name: None,
-                    })
-                }
+                    },
+                )),
                 ChatMessage::Assistant {
                     content,
                     tool_calls,
+                    ..
                 } => {
-                    let openai_tool_calls = tool_calls.as_ref().map(|calls| {
-                        calls
-                            .iter()
-                            .map(|call| ChatCompletionMessageToolCall {
-                                id: call.id.clone(),
-                                r#type: ChatCompletionToolType::Function,
-                                function: FunctionCall {
-                                    name: call.name.clone(),
-                                    arguments: call.arguments.to_string(),
-                                },
-                            })
-                            .collect()
-                    });
+                    let openai_tool_calls: Vec<_> = tool_calls
+                        .iter()
+                        .map(|call| ChatCompletionMessageToolCall {
+                            id: call.id.clone(),
+                            r#type: ChatCompletionToolType::Function,
+                            function: FunctionCall {
+                                name: call.name.clone(),
+                                arguments: call.arguments.to_string(),
+                            },
+                        })
+                        .collect();
 
-                    ChatCompletionRequestMessage::Assistant(ChatCompletionRequestAssistantMessage {
-                        content: Some(ChatCompletionRequestAssistantMessageContent::Text(content)),
-                        name: None,
-                        tool_calls: openai_tool_calls,
-                        audio: None,
-                        refusal: None,
-                        #[allow(deprecated)]
-                        function_call: None,
-                    })
+                    let tool_calls = if openai_tool_calls.is_empty() {
+                        None
+                    } else {
+                        Some(openai_tool_calls)
+                    };
+
+                    Some(ChatCompletionRequestMessage::Assistant(
+                        ChatCompletionRequestAssistantMessage {
+                            content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                                content,
+                            )),
+                            name: None,
+                            tool_calls,
+                            audio: None,
+                            refusal: None,
+                            #[allow(deprecated)]
+                            function_call: None,
+                        },
+                    ))
                 }
-                ChatMessage::Tool {
+                ChatMessage::ToolCallResult {
                     tool_call_id,
                     content,
-                } => ChatCompletionRequestMessage::Tool(ChatCompletionRequestToolMessage {
-                    content: ChatCompletionRequestToolMessageContent::Text(content),
-                    tool_call_id,
-                }),
+                    ..
+                } => Some(ChatCompletionRequestMessage::Tool(
+                    ChatCompletionRequestToolMessage {
+                        content: ChatCompletionRequestToolMessageContent::Text(content),
+                        tool_call_id,
+                    },
+                )),
+
+                ChatMessage::AssistantStreaming { .. } | ChatMessage::Error { .. } => None,
             })
             .collect()
     }
 
-    fn convert_tools(&self, tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
+    fn convert_tools(tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
         tools
             .into_iter()
             .map(|tool| ChatCompletionTool {
@@ -105,36 +120,40 @@ impl OpenRouterProvider {
 }
 
 impl LlmProvider for OpenRouterProvider {
-    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamEventStream> {
-        let messages = self.convert_messages(request.messages);
-        let tools = if request.tools.is_empty() {
-            None
-        } else {
-            Some(self.convert_tools(request.tools))
-        };
+    fn complete_stream_chunks(&self, request: ChatRequest) -> impl Stream<Item = Result<StreamEvent>> + Send {
+        let client = self.client.clone();
+        let model = self.model.clone();
+        
+        async_stream::stream! {
+            let messages = Self::convert_messages(request.messages);
+            let tools = if request.tools.is_empty() {
+                None
+            } else {
+                Some(Self::convert_tools(request.tools))
+            };
 
-        let mut req = json!({
-            "model": self.model.clone(),
-            "messages": messages,
-            "stream": true,
-        });
+            let mut req = json!({
+                "model": model.clone(),
+                "messages": messages,
+                "stream": true,
+            });
 
-        if let Some(tools) = tools {
-            req["tools"] = json!(tools);
-        }
+            if let Some(tools) = tools {
+                req["tools"] = json!(tools);
+            }
 
-        if let Some(temp) = request.temperature {
-            req["temperature"] = json!(temp);
-        }
+            let stream = match client
+                .chat()
+                .create_stream_byot::<serde_json::Value, CustomChatCompletionStreamResponse>(req)
+                .await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    yield Err(color_eyre::eyre::eyre!("OpenRouter API request failed: {}", e));
+                    return;
+                }
+            };
 
-        let stream = self
-            .client
-            .chat()
-            .create_stream_byot::<serde_json::Value, CustomChatCompletionStreamResponse>(req)
-            .await?;
-
-        // Create a custom stream that properly handles tool calls
-        let mapped_stream = async_stream::stream! {
+            // Create a custom stream that properly handles tool calls
             let mut current_tool_id: Option<String> = None;
             let mut tool_args_buffer = String::new();
 
@@ -202,8 +221,6 @@ impl LlmProvider for OpenRouterProvider {
                     }
                 }
             }
-        };
-
-        Ok(Box::pin(mapped_stream))
+        }
     }
 }

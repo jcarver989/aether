@@ -39,23 +39,13 @@ pub enum ChatMessage {
     Assistant {
         content: String,
         timestamp: IsoString,
+        tool_calls: Vec<ToolCall>,
     },
     AssistantStreaming {
         content: String,
         timestamp: IsoString,
     },
-    Tool {
-        tool_call_id: String,
-        content: String,
-        timestamp: IsoString,
-    },
-    ToolCall {
-        id: String,
-        name: String,
-        params: String,
-        timestamp: IsoString,
-    },
-    ToolResult {
+    ToolCallResult {
         tool_call_id: String,
         content: String,
         timestamp: IsoString,

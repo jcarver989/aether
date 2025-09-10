@@ -13,11 +13,11 @@ use async_openai::{
 use async_stream;
 use color_eyre::Result;
 use std::error::Error;
-use tokio_stream::StreamExt;
+use tokio_stream::{Stream, StreamExt};
 use tracing::{debug, error, info};
 
-use super::provider::{ChatMessage, ChatRequest, LlmProvider, StreamEventStream};
-use crate::types::{StreamEvent, ToolDefinition};
+use super::provider::{ChatRequest, LlmProvider};
+use crate::types::{ChatMessage, ChatMessage::*, StreamEvent, ToolDefinition};
 
 pub struct OllamaProvider {
     client: Client<OpenAIConfig>,
@@ -52,62 +52,76 @@ impl OllamaProvider {
         })
     }
 
-    fn convert_messages(&self, messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
+    fn convert_messages(messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
         messages
             .into_iter()
-            .map(|msg| match msg {
-                ChatMessage::System { content } => {
-                    ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
+            .flat_map(|msg| match msg {
+                System { content, .. } => Some(ChatCompletionRequestMessage::System(
+                    ChatCompletionRequestSystemMessage {
                         content: content.into(),
                         name: None,
-                    })
-                }
-                ChatMessage::User { content } => {
-                    ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
+                    },
+                )),
+                User { content, .. } => Some(ChatCompletionRequestMessage::User(
+                    ChatCompletionRequestUserMessage {
                         content: content.into(),
                         name: None,
-                    })
-                }
-                ChatMessage::Assistant {
+                    },
+                )),
+                Assistant {
                     content,
                     tool_calls,
+                    ..
                 } => {
-                    let openai_tool_calls = tool_calls.as_ref().map(|calls| {
-                        calls
-                            .iter()
-                            .map(|call| ChatCompletionMessageToolCall {
-                                id: call.id.clone(),
-                                r#type: ChatCompletionToolType::Function,
-                                function: FunctionCall {
-                                    name: call.name.clone(),
-                                    arguments: call.arguments.to_string(),
-                                },
-                            })
-                            .collect()
-                    });
+                    let openai_tool_calls: Vec<_> = tool_calls
+                        .into_iter()
+                        .map(|call| ChatCompletionMessageToolCall {
+                            id: call.id.clone(),
+                            r#type: ChatCompletionToolType::Function,
+                            function: FunctionCall {
+                                name: call.name.clone(),
+                                arguments: call.arguments.to_string(),
+                            },
+                        })
+                        .collect();
 
-                    ChatCompletionRequestMessage::Assistant(ChatCompletionRequestAssistantMessage {
-                        content: Some(ChatCompletionRequestAssistantMessageContent::Text(content)),
-                        name: None,
-                        tool_calls: openai_tool_calls,
-                        audio: None,
-                        refusal: None,
-                        #[allow(deprecated)]
-                        function_call: None,
-                    })
+                    let tool_calls = if openai_tool_calls.is_empty() {
+                        None
+                    } else {
+                        Some(openai_tool_calls)
+                    };
+
+                    Some(ChatCompletionRequestMessage::Assistant(
+                        ChatCompletionRequestAssistantMessage {
+                            content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                                content,
+                            )),
+                            name: None,
+                            tool_calls,
+                            audio: None,
+                            refusal: None,
+                            #[allow(deprecated)]
+                            function_call: None,
+                        },
+                    ))
                 }
-                ChatMessage::Tool {
+                ToolCallResult {
                     tool_call_id,
                     content,
-                } => ChatCompletionRequestMessage::Tool(ChatCompletionRequestToolMessage {
-                    content: ChatCompletionRequestToolMessageContent::Text(content),
-                    tool_call_id,
-                }),
+                    ..
+                } => Some(ChatCompletionRequestMessage::Tool(
+                    ChatCompletionRequestToolMessage {
+                        content: ChatCompletionRequestToolMessageContent::Text(content),
+                        tool_call_id,
+                    },
+                )),
+
+                AssistantStreaming { .. } | ChatMessage::Error { .. } => None,
             })
             .collect()
     }
 
-    fn convert_tools(&self, tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
+    fn convert_tools(tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
         tools
             .into_iter()
             .map(|tool| ChatCompletionTool {
@@ -124,56 +138,67 @@ impl OllamaProvider {
 }
 
 impl LlmProvider for OllamaProvider {
-    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamEventStream> {
-        debug!("Starting chat completion stream for model: {}", self.model);
+    fn complete_stream_chunks(
+        &self,
+        request: ChatRequest,
+    ) -> impl Stream<Item = Result<StreamEvent>> + Send {
+        let client = self.client.clone();
+        let model = self.model.clone();
 
-        let messages = self.convert_messages(request.messages);
-        let message_count = messages.len();
-        let tools = if request.tools.is_empty() {
-            None
-        } else {
-            Some(self.convert_tools(request.tools))
-        };
+        async_stream::stream! {
+            debug!("Starting chat completion stream for model: {}", model);
 
-        let req = CreateChatCompletionRequest {
-            model: self.model.clone(),
-            messages,
-            tools,
-            temperature: request.temperature,
-            stream: Some(true),
-            ..Default::default()
-        };
+            let messages = Self::convert_messages(request.messages);
+            let message_count = messages.len();
+            let tools = if request.tools.is_empty() {
+                None
+            } else {
+                Some(Self::convert_tools(request.tools))
+            };
 
-        debug!(
-            "Making request to Ollama API with model: {} and {} messages",
-            self.model, message_count
-        );
-        let stream = match self.client.chat().create_stream(req).await {
-            Ok(stream) => {
-                debug!("Successfully created stream from Ollama API");
-                stream
-            }
-            Err(e) => {
-                error!("Failed to create stream from Ollama API: {:?}", e);
+            let req = CreateChatCompletionRequest {
+                model: model.clone(),
+                messages,
+                tools,
+                stream: Some(true),
+                ..Default::default()
+            };
 
-                // Check if it's a reqwest error with more details
-                if let Some(reqwest_err) =
-                    e.source().and_then(|s| s.downcast_ref::<reqwest::Error>())
-                {
-                    if let Some(url) = reqwest_err.url() {
-                        error!("Request URL was: {}", url);
-                    }
-                    if let Some(status) = reqwest_err.status() {
-                        error!("HTTP status: {}", status);
-                    }
+            debug!(
+                "Making request to Ollama API with model: {} and {} messages",
+                model, message_count
+            );
+
+            let stream = match client.chat().create_stream(req).await {
+                Ok(stream) => {
+                    debug!("Successfully created stream from Ollama API");
+                    stream
                 }
+                Err(e) => {
+                    error!("Failed to create stream from Ollama API: {:?}", e);
 
-                return Err(color_eyre::eyre::eyre!("Ollama API request failed: {}", e));
-            }
-        };
+                    // Check if it's a reqwest error with more details
+                    if let Some(reqwest_err) =
+                        e.source().and_then(|s| s.downcast_ref::<reqwest::Error>())
+                    {
+                        if let Some(url) = reqwest_err.url() {
+                            error!("Request URL was: {}", url);
+                        }
+                        if let Some(status) = reqwest_err.status() {
+                            error!("HTTP status: {}", status);
+                        }
+                    }
 
-        // Create a stateful stream to track tool calls
-        let mapped_stream = async_stream::stream! {
+                    yield Err(color_eyre::eyre::eyre!("Ollama API request failed: {}", e));
+                    return;
+                }
+            };
+
+            // Emit start event with a message ID
+            let message_id = uuid::Uuid::new_v4().to_string();
+            yield Ok(StreamEvent::Start { message_id: message_id.clone() });
+
+            // Create a stateful stream to track tool calls
             let mut current_tool_id: Option<String> = None;
             let mut stream = Box::pin(stream);
 
@@ -255,8 +280,6 @@ impl LlmProvider for OllamaProvider {
                     }
                 }
             }
-        };
-
-        Ok(Box::pin(mapped_stream))
+        }
     }
 }

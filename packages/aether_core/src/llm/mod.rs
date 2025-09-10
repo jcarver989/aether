@@ -3,4 +3,4 @@ pub mod openrouter;
 pub mod openrouter_types;
 pub mod provider;
 
-pub use provider::{ChatMessage, ChatRequest, LlmProvider, StreamEventStream};
+pub use provider::{ChatRequest, LlmProvider};

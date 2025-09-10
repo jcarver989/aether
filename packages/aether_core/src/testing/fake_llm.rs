@@ -1,6 +1,6 @@
 use color_eyre::Result;
 
-use crate::llm::provider::{ChatRequest, LlmProvider, StreamEventStream};
+use crate::llm::provider::{ChatRequest, LlmProvider};
 use crate::types::StreamEvent;
 
 pub struct FakeLlmProvider {
@@ -26,7 +26,7 @@ impl FakeLlmProvider {
 }
 
 impl LlmProvider for FakeLlmProvider {
-    async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamEventStream> {
+    fn complete_stream_chunks(&self, _request: ChatRequest) -> impl tokio_stream::Stream<Item = Result<StreamEvent>> + Send {
         let current_call = self
             .call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -40,7 +40,6 @@ impl LlmProvider for FakeLlmProvider {
             vec![StreamEvent::Done]
         };
 
-        let stream = tokio_stream::iter(response.into_iter().map(Ok));
-        Ok(Box::pin(stream))
+        tokio_stream::iter(response.into_iter().map(Ok))
     }
 }

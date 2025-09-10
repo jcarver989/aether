@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-use aether_core::llm::provider::StreamEventStream;
-use aether_core::llm::{ChatMessage, ChatRequest, LlmProvider};
+use aether_core::llm::{ChatRequest, LlmProvider};
 use aether_core::mcp::client::McpClient;
 use aether_core::mcp::mcp_config::McpServerConfig;
 use aether_core::tools::ToolRegistry;
@@ -151,33 +150,13 @@ impl FakeLlmProvider {
 }
 
 impl LlmProvider for FakeLlmProvider {
-    async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamEventStream> {
+    fn complete_stream_chunks(&self, _request: ChatRequest) -> impl tokio_stream::Stream<Item = Result<StreamEvent>> + Send {
         let chunks = self.chunks.clone();
-        let stream = iter(chunks.into_iter().map(Ok));
-        Ok(Box::pin(stream))
+        iter(chunks.into_iter().map(Ok))
     }
 }
 
 // Chat Message Test Helpers
-
-pub fn create_test_chat_request(messages: Vec<ChatMessage>) -> ChatRequest {
-    ChatRequest {
-        messages,
-        tools: vec![],
-        temperature: None,
-    }
-}
-
-pub fn create_test_chat_request_with_tools(
-    messages: Vec<ChatMessage>,
-    tools: Vec<ToolDefinition>,
-) -> ChatRequest {
-    ChatRequest {
-        messages,
-        tools,
-        temperature: Some(0.7),
-    }
-}
 
 pub fn create_test_tool_definition(name: &str, description: &str) -> ToolDefinition {
     ToolDefinition {
@@ -208,7 +187,7 @@ pub fn create_test_tool_call(id: &str, name: &str, arguments: Value) -> ToolCall
 
 // Stream Processing Test Helpers
 
-pub async fn collect_stream_content(mut stream: StreamEventStream) -> Result<String> {
+pub async fn collect_stream_content(mut stream: impl tokio_stream::Stream<Item = Result<StreamEvent>> + Unpin) -> Result<String> {
     use tokio_stream::StreamExt;
 
     let mut content = String::new();
@@ -223,7 +202,7 @@ pub async fn collect_stream_content(mut stream: StreamEventStream) -> Result<Str
     Ok(content)
 }
 
-pub async fn collect_stream_chunks(mut stream: StreamEventStream) -> Result<Vec<StreamEvent>> {
+pub async fn collect_stream_chunks(mut stream: impl tokio_stream::Stream<Item = Result<StreamEvent>> + Unpin) -> Result<Vec<StreamEvent>> {
     use tokio_stream::StreamExt;
 
     let mut chunks = Vec::new();
