@@ -3,7 +3,6 @@ mod utils;
 use crate::utils::*;
 use aether_core::llm::provider::StreamChunkStream;
 use aether_core::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
-use async_trait::async_trait;
 use color_eyre::Result;
 use tokio_stream::StreamExt;
 
@@ -17,7 +16,6 @@ impl MockErrorProvider {
     }
 }
 
-#[async_trait]
 impl LlmProvider for MockErrorProvider {
     async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamChunkStream> {
         let error_after = self.error_after;
@@ -25,9 +23,13 @@ impl LlmProvider for MockErrorProvider {
             if i >= error_after {
                 Err(color_eyre::eyre::eyre!("Network error"))
             } else if i == 0 {
-                Ok(StreamChunk::Content { content: "Hello".to_string() })
+                Ok(StreamChunk::Content {
+                    content: "Hello".to_string(),
+                })
             } else {
-                Ok(StreamChunk::Content { content: " chunk".to_string() })
+                Ok(StreamChunk::Content {
+                    content: " chunk".to_string(),
+                })
             }
         }));
         Ok(Box::pin(stream))
@@ -139,7 +141,9 @@ async fn test_empty_stream() -> Result<()> {
 #[tokio::test]
 async fn test_multiple_tool_calls_streaming() -> Result<()> {
     let chunks = vec![
-        StreamChunk::Content { content: "I'll call multiple tools.".to_string() },
+        StreamChunk::Content {
+            content: "I'll call multiple tools.".to_string(),
+        },
         StreamChunk::ToolCallStart {
             id: "call_1".to_string(),
             name: "tool_a".to_string(),
@@ -210,7 +214,9 @@ async fn test_multiple_tool_calls_streaming() -> Result<()> {
 #[tokio::test]
 async fn test_streaming_chunk_serialization() -> Result<()> {
     let chunks = vec![
-        StreamChunk::Content { content: "test".to_string() },
+        StreamChunk::Content {
+            content: "test".to_string(),
+        },
         StreamChunk::ToolCallStart {
             id: TEST_TOOL_ID.to_string(),
             name: "test_tool".to_string(),

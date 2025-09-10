@@ -5,7 +5,6 @@ use aether_core::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk, ToolD
 use aether_core::mcp::client::McpClient;
 use aether_core::mcp::mcp_config::McpServerConfig;
 use aether_core::tools::ToolRegistry;
-use async_trait::async_trait;
 use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};
@@ -100,14 +99,21 @@ impl FakeLlmProvider {
     }
 
     pub fn with_content(content: &str) -> Self {
-        let chunks = vec![StreamChunk::Content { content: content.to_string() }, StreamChunk::Done];
+        let chunks = vec![
+            StreamChunk::Content {
+                content: content.to_string(),
+            },
+            StreamChunk::Done,
+        ];
         Self { chunks }
     }
 
     pub fn with_content_chunks(content_chunks: Vec<&str>) -> Self {
         let mut chunks: Vec<StreamChunk> = content_chunks
             .into_iter()
-            .map(|s| StreamChunk::Content { content: s.to_string() })
+            .map(|s| StreamChunk::Content {
+                content: s.to_string(),
+            })
             .collect();
         chunks.push(StreamChunk::Done);
         Self { chunks }
@@ -115,7 +121,9 @@ impl FakeLlmProvider {
 
     pub fn with_tool_call(content: &str, tool_id: &str, tool_name: &str, arguments: &str) -> Self {
         let chunks = vec![
-            StreamChunk::Content { content: content.to_string() },
+            StreamChunk::Content {
+                content: content.to_string(),
+            },
             StreamChunk::ToolCallStart {
                 id: tool_id.to_string(),
                 name: tool_name.to_string(),
@@ -133,13 +141,14 @@ impl FakeLlmProvider {
     }
 
     pub fn with_error_after(content: &str, _chunk_count: usize) -> Self {
-        let chunks = vec![StreamChunk::Content { content: content.to_string() }];
+        let chunks = vec![StreamChunk::Content {
+            content: content.to_string(),
+        }];
         // Note: Error handling would be implemented in a specialized provider
         Self { chunks }
     }
 }
 
-#[async_trait]
 impl LlmProvider for FakeLlmProvider {
     async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamChunkStream> {
         let chunks = self.chunks.clone();
@@ -182,7 +191,8 @@ pub fn create_test_tool_definition(name: &str, description: &str) -> ToolDefinit
                 }
             },
             "required": ["param"]
-        }).to_string(),
+        })
+        .to_string(),
     }
 }
 
@@ -283,7 +293,9 @@ pub fn assert_tool_in_registry(registry: &ToolRegistry, tool_name: &str, expecte
 
 pub fn assert_stream_chunk_matches(actual: &StreamChunk, expected: &StreamChunk) {
     match (actual, expected) {
-        (StreamChunk::Content { content: a }, StreamChunk::Content { content: b }) => assert_eq!(a, b),
+        (StreamChunk::Content { content: a }, StreamChunk::Content { content: b }) => {
+            assert_eq!(a, b)
+        }
         (
             StreamChunk::ToolCallStart {
                 id: id1,

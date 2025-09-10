@@ -11,11 +11,10 @@ use async_openai::{
     },
 };
 use async_stream;
-use async_trait::async_trait;
 use color_eyre::Result;
-use tokio_stream::StreamExt;
-use tracing::{debug, info, error};
 use std::error::Error;
+use tokio_stream::StreamExt;
+use tracing::{debug, error, info};
 
 use super::provider::{
     ChatMessage, ChatRequest, LlmProvider, StreamChunk, StreamChunkStream, ToolDefinition,
@@ -27,17 +26,20 @@ pub struct OllamaProvider {
 }
 
 impl OllamaProvider {
-    pub fn new(base_url: Option<String>, model: String) -> Result<Self> {
+    pub fn new(base_url: Option<String>, model: &str) -> Result<Self> {
         let base_url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
-        
+
         // Ensure we have the correct base URL with /v1 for Ollama's OpenAI-compatible API
         let api_base = if base_url.ends_with("/v1") {
             base_url
         } else {
             format!("{}/v1", base_url)
         };
-        
-        info!("Creating OllamaProvider with api_base: {}, model: {}", api_base, model);
+
+        info!(
+            "Creating OllamaProvider with api_base: {}, model: {}",
+            api_base, model
+        );
 
         let config = OpenAIConfig::new()
             .with_api_key("dummy-key") // Ollama doesn't require auth but async-openai needs a key
@@ -45,7 +47,10 @@ impl OllamaProvider {
 
         let client = Client::with_config(config);
 
-        Ok(Self { client, model })
+        Ok(Self {
+            client,
+            model: model.to_string(),
+        })
     }
 
     fn convert_messages(&self, messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
@@ -119,11 +124,10 @@ impl OllamaProvider {
     }
 }
 
-#[async_trait]
 impl LlmProvider for OllamaProvider {
     async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream> {
         debug!("Starting chat completion stream for model: {}", self.model);
-        
+
         let messages = self.convert_messages(request.messages);
         let message_count = messages.len();
         let tools = if request.tools.is_empty() {
@@ -141,7 +145,10 @@ impl LlmProvider for OllamaProvider {
             ..Default::default()
         };
 
-        debug!("Making request to Ollama API with model: {} and {} messages", self.model, message_count);
+        debug!(
+            "Making request to Ollama API with model: {} and {} messages",
+            self.model, message_count
+        );
         let stream = match self.client.chat().create_stream(req).await {
             Ok(stream) => {
                 debug!("Successfully created stream from Ollama API");
@@ -149,9 +156,11 @@ impl LlmProvider for OllamaProvider {
             }
             Err(e) => {
                 error!("Failed to create stream from Ollama API: {:?}", e);
-                
+
                 // Check if it's a reqwest error with more details
-                if let Some(reqwest_err) = e.source().and_then(|s| s.downcast_ref::<reqwest::Error>()) {
+                if let Some(reqwest_err) =
+                    e.source().and_then(|s| s.downcast_ref::<reqwest::Error>())
+                {
                     if let Some(url) = reqwest_err.url() {
                         error!("Request URL was: {}", url);
                     }
@@ -159,7 +168,7 @@ impl LlmProvider for OllamaProvider {
                         error!("HTTP status: {}", status);
                     }
                 }
-                
+
                 return Err(color_eyre::eyre::eyre!("Ollama API request failed: {}", e));
             }
         };
@@ -220,12 +229,12 @@ impl LlmProvider for OllamaProvider {
                             if let Some(finish_reason) = &choice.finish_reason {
                                 let finish_reason_str = format!("{finish_reason:?}");
                                 debug!("Received finish reason: {}", finish_reason_str);
-                                
+
                                 // Complete any pending tool call before ending
                                 if let Some(id) = current_tool_id.take() {
                                     yield Ok(StreamChunk::ToolCallComplete { id });
                                 }
-                                
+
                                 // End the stream for any finish reason
                                 yield Ok(StreamChunk::Done);
                                 break;

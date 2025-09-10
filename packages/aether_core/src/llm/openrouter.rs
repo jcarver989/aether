@@ -9,7 +9,6 @@ use async_openai::{
         ChatCompletionTool, ChatCompletionToolType, FunctionCall, FunctionObject,
     },
 };
-use async_trait::async_trait;
 use color_eyre::Result;
 use serde_json::json;
 use tokio_stream::StreamExt;
@@ -106,7 +105,6 @@ impl OpenRouterProvider {
     }
 }
 
-#[async_trait]
 impl LlmProvider for OpenRouterProvider {
     async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream> {
         let messages = self.convert_messages(request.messages);

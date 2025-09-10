@@ -1,11 +1,15 @@
 use crate::{
     llm::{ChatMessage as LlmChatMessage, ChatRequest, LlmProvider, ToolDefinition},
     mcp::McpClient,
-    tools::{ToolRegistry, TruncateSummarizer, Summarizer},
+    tools::{Summarizer, ToolRegistry, TruncateSummarizer},
     types::{ChatMessage, IsoString},
 };
 use color_eyre::Result;
-use std::{collections::{HashMap, VecDeque}, time::SystemTime, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+    time::SystemTime,
+};
 
 /// Represents an AI agent with its associated LLM provider, conversation context, and tools
 pub struct Agent<T: LlmProvider> {
@@ -84,7 +88,7 @@ impl<T: LlmProvider> Agent<T> {
     }
 
     /// Record a tool call for loop detection
-    pub fn record_tool_call(
+    fn record_tool_call(
         &mut self,
         name: String,
         arguments: serde_json::Value,
@@ -97,99 +101,6 @@ impl<T: LlmProvider> Agent<T> {
         while self.recent_tool_calls.len() > 20 {
             self.recent_tool_calls.pop_front();
         }
-    }
-
-    /// Convert conversation history to LLM messages
-    pub fn build_llm_messages(&self) -> Vec<LlmChatMessage> {
-        let mut llm_messages = Vec::new();
-
-        // Add system prompt if no system message exists
-        let has_system_message = self
-            .conversation_history
-            .iter()
-            .any(|msg| matches!(msg, ChatMessage::System { .. }));
-
-        if !has_system_message {
-            let prompt = if let Some(system_prompt) = &self.system_prompt {
-                format!("You are an AI assistant. Here are your instructions:\n\n{system_prompt}")
-            } else {
-                "You are an AI assistant.".to_string()
-            };
-            llm_messages.push(LlmChatMessage::System { content: prompt });
-        }
-
-        // Convert conversation history
-        let mut i = 0;
-        while i < self.conversation_history.len() {
-            let message = &self.conversation_history[i];
-
-            match message {
-                ChatMessage::System { content, .. } => {
-                    llm_messages.push(LlmChatMessage::System {
-                        content: content.clone(),
-                    });
-                }
-                ChatMessage::User { content, .. } => {
-                    llm_messages.push(LlmChatMessage::User {
-                        content: content.clone(),
-                    });
-                }
-                ChatMessage::Assistant { content, .. }
-                | ChatMessage::AssistantStreaming { content, .. } => {
-                    // Look ahead for tool calls
-                    let mut tool_calls = Vec::new();
-                    let mut j = i + 1;
-
-                    while j < self.conversation_history.len() {
-                        if let ChatMessage::ToolCall {
-                            id, name, params, ..
-                        } = &self.conversation_history[j]
-                        {
-                            if let Ok(arguments) = serde_json::from_str::<serde_json::Value>(params)
-                            {
-                                tool_calls.push(crate::llm::provider::ToolCall {
-                                    id: id.clone(),
-                                    name: name.clone(),
-                                    arguments: arguments.to_string(),
-                                });
-                            }
-                            j += 1;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    llm_messages.push(LlmChatMessage::Assistant {
-                        content: content.clone(),
-                        tool_calls: if tool_calls.is_empty() {
-                            None
-                        } else {
-                            Some(tool_calls)
-                        },
-                    });
-
-                    i = j - 1;
-                }
-                ChatMessage::ToolResult {
-                    tool_call_id,
-                    content,
-                    ..
-                } => {
-                    llm_messages.push(LlmChatMessage::Tool {
-                        tool_call_id: tool_call_id.clone(),
-                        content: content.clone(),
-                    });
-                }
-                ChatMessage::Tool { .. }
-                | ChatMessage::ToolCall { .. }
-                | ChatMessage::Error { .. } => {
-                    // Skip these in LLM context
-                }
-            }
-            i += 1;
-        }
-
-        llm_messages
     }
 
     /// Build tool definitions from the tool registry
@@ -210,8 +121,7 @@ impl<T: LlmProvider> Agent<T> {
             .collect()
     }
 
-    /// Create a chat request for the LLM
-    pub fn create_chat_request(&self, temperature: Option<f32>) -> ChatRequest {
+    fn create_chat_request(&self, temperature: Option<f32>) -> ChatRequest {
         ChatRequest {
             messages: self.build_llm_messages(),
             tools: self.build_tool_definitions(),
@@ -308,16 +218,23 @@ impl<T: LlmProvider> Agent<T> {
         arguments: serde_json::Value,
     ) -> Result<serde_json::Value> {
         // Check if the tool exists in our registry
-        if !self.tool_registry.list_tools().contains(&tool_name.to_string()) {
+        if !self
+            .tool_registry
+            .list_tools()
+            .contains(&tool_name.to_string())
+        {
             return Err(color_eyre::Report::msg(format!(
                 "Tool not found in registry: {tool_name}"
             )));
         }
 
         // Get the server name for this tool
-        let server_name = self.tool_registry.get_server_for_tool(tool_name).ok_or_else(|| {
-            color_eyre::Report::msg(format!("Server not found for tool: {tool_name}"))
-        })?;
+        let server_name = self
+            .tool_registry
+            .get_server_for_tool(tool_name)
+            .ok_or_else(|| {
+                color_eyre::Report::msg(format!("Server not found for tool: {tool_name}"))
+            })?;
 
         // Get the MCP client
         let mcp_client = self
@@ -335,5 +252,98 @@ impl<T: LlmProvider> Agent<T> {
         let processed_result = self.summarizer.summarize(&result_str).await?;
 
         Ok(serde_json::Value::String(processed_result))
+    }
+
+    /// Convert conversation history to LLM messages
+    fn build_llm_messages(&self) -> Vec<LlmChatMessage> {
+        let mut llm_messages = Vec::new();
+
+        // Add system prompt if no system message exists
+        let has_system_message = self
+            .conversation_history
+            .iter()
+            .any(|msg| matches!(msg, ChatMessage::System { .. }));
+
+        if !has_system_message {
+            let prompt = if let Some(system_prompt) = &self.system_prompt {
+                format!("You are an AI assistant. Here are your instructions:\n\n{system_prompt}")
+            } else {
+                "You are an AI assistant.".to_string()
+            };
+            llm_messages.push(LlmChatMessage::System { content: prompt });
+        }
+
+        // Convert conversation history
+        let mut i = 0;
+        while i < self.conversation_history.len() {
+            let message = &self.conversation_history[i];
+
+            match message {
+                ChatMessage::System { content, .. } => {
+                    llm_messages.push(LlmChatMessage::System {
+                        content: content.clone(),
+                    });
+                }
+                ChatMessage::User { content, .. } => {
+                    llm_messages.push(LlmChatMessage::User {
+                        content: content.clone(),
+                    });
+                }
+                ChatMessage::Assistant { content, .. }
+                | ChatMessage::AssistantStreaming { content, .. } => {
+                    // Look ahead for tool calls
+                    let mut tool_calls = Vec::new();
+                    let mut j = i + 1;
+
+                    while j < self.conversation_history.len() {
+                        if let ChatMessage::ToolCall {
+                            id, name, params, ..
+                        } = &self.conversation_history[j]
+                        {
+                            if let Ok(arguments) = serde_json::from_str::<serde_json::Value>(params)
+                            {
+                                tool_calls.push(crate::llm::provider::ToolCall {
+                                    id: id.clone(),
+                                    name: name.clone(),
+                                    arguments: arguments.to_string(),
+                                });
+                            }
+                            j += 1;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    llm_messages.push(LlmChatMessage::Assistant {
+                        content: content.clone(),
+                        tool_calls: if tool_calls.is_empty() {
+                            None
+                        } else {
+                            Some(tool_calls)
+                        },
+                    });
+
+                    i = j - 1;
+                }
+                ChatMessage::ToolResult {
+                    tool_call_id,
+                    content,
+                    ..
+                } => {
+                    llm_messages.push(LlmChatMessage::Tool {
+                        tool_call_id: tool_call_id.clone(),
+                        content: content.clone(),
+                    });
+                }
+                ChatMessage::Tool { .. }
+                | ChatMessage::ToolCall { .. }
+                | ChatMessage::Error { .. } => {
+                    // Skip these in LLM context
+                }
+            }
+            i += 1;
+        }
+
+        llm_messages
     }
 }

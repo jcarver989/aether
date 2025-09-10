@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use color_eyre::Result;
 
 use crate::llm::provider::{ChatRequest, LlmProvider, StreamChunk, StreamChunkStream};
@@ -25,7 +24,6 @@ impl FakeLlmProvider {
     }
 }
 
-#[async_trait]
 impl LlmProvider for FakeLlmProvider {
     async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamChunkStream> {
         let current_call = self
@@ -45,4 +43,3 @@ impl LlmProvider for FakeLlmProvider {
         Ok(Box::pin(stream))
     }
 }
-

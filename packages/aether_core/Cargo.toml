@@ -13,7 +13,6 @@ tokio-stream = "0.1"
 tokio-util = "0.7.12"
 async-openai = { version = "0.29", features = ["byot"] }
 async-stream = "0.3"
-async-trait = "0.1"
 rmcp = { version = "0.3.0", features = ["client", "server", "macros", "schemars", "transport-streamable-http-client", "reqwest"] }
 reqwest = { version = "0.12", features = ["json"] }
 schemars = { version = "1.0", features = ["derive"] }

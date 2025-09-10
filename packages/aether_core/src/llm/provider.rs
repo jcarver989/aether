@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -55,16 +54,9 @@ pub enum StreamChunk {
 }
 
 pub type StreamChunkStream = Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>>;
-
-#[async_trait]
 pub trait LlmProvider: Send + Sync {
-    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream>;
-}
-
-// Implement LlmProvider for Box<dyn LlmProvider> to enable trait object usage
-#[async_trait]
-impl LlmProvider for Box<dyn LlmProvider> {
-    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream> {
-        self.as_ref().complete_stream_chunks(request).await
-    }
+    fn complete_stream_chunks(
+        &self,
+        request: ChatRequest,
+    ) -> impl Future<Output = Result<StreamChunkStream>>;
 }

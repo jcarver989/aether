@@ -1,9 +1,7 @@
-use async_trait::async_trait;
 use color_eyre::Result;
 
-#[async_trait]
 pub trait Summarizer {
-    async fn summarize(&self, text: &str) -> Result<String>;
+    fn summarize(&self, text: &str) -> impl Future<Output = Result<String>>;
 }
 
 #[derive(Clone)]
@@ -24,8 +22,6 @@ impl TruncateSummarizer {
         Self::new(2000, 2000) // 2000 chars per line, 2000 lines max
     }
 }
-
-#[async_trait]
 impl Summarizer for TruncateSummarizer {
     async fn summarize(&self, text: &str) -> Result<String> {
         let lines: Vec<&str> = text.lines().collect();
