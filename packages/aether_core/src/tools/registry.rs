@@ -45,7 +45,6 @@ impl ToolRegistry {
         self.tool_to_server.insert(tool_name, server_name);
     }
 
-
     pub fn get_server_for_tool(&self, tool_name: &str) -> Option<&String> {
         self.tool_to_server.get(tool_name)
     }
@@ -68,5 +67,4 @@ impl ToolRegistry {
     pub fn get_tool_parameters(&self, tool_name: &str) -> Option<&Value> {
         self.tools.get(tool_name).map(|tool| &tool.parameters)
     }
-
 }

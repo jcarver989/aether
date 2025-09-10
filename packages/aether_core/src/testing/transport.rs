@@ -121,4 +121,3 @@ impl InMemoryFileSystem {
         files.contains_key(path)
     }
 }
-

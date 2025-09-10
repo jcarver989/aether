@@ -1,8 +1,9 @@
 mod utils;
 
 use crate::utils::*;
-use aether_core::llm::provider::StreamChunkStream;
-use aether_core::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
+use aether_core::llm::provider::StreamEventStream;
+use aether_core::llm::{ChatMessage, ChatRequest, LlmProvider};
+use aether_core::types::StreamEvent;
 use color_eyre::Result;
 use tokio_stream::StreamExt;
 
@@ -17,18 +18,18 @@ impl MockErrorProvider {
 }
 
 impl LlmProvider for MockErrorProvider {
-    async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamChunkStream> {
+    async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamEventStream> {
         let error_after = self.error_after;
         let stream = tokio_stream::iter((0..error_after + 1).map(move |i| {
             if i >= error_after {
                 Err(color_eyre::eyre::eyre!("Network error"))
             } else if i == 0 {
-                Ok(StreamChunk::Content {
-                    content: "Hello".to_string(),
+                Ok(StreamEvent::Content {
+                    chunk: "Hello".to_string(),
                 })
             } else {
-                Ok(StreamChunk::Content {
-                    content: " chunk".to_string(),
+                Ok(StreamEvent::Content {
+                    chunk: " chunk".to_string(),
                 })
             }
         }));
@@ -69,21 +70,25 @@ async fn test_tool_call_streaming() -> Result<()> {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
         match chunk {
-            StreamChunk::Content { content: text } => content.push_str(&text),
-            StreamChunk::ToolCallStart { id, name } => {
+            StreamEvent::Content { chunk: text } => content.push_str(&text),
+            StreamEvent::ToolCallStart { id, name } => {
                 tool_calls.push((id, name, String::new()));
             }
-            StreamChunk::ToolCallArgument { id, argument } => {
+            StreamEvent::ToolCallArgument {
+                id,
+                chunk: argument,
+            } => {
                 if let Some((_, _, args)) =
                     tool_calls.iter_mut().find(|(call_id, _, _)| call_id == &id)
                 {
                     args.push_str(&argument);
                 }
             }
-            StreamChunk::ToolCallComplete { .. } => {
+            StreamEvent::ToolCallComplete { .. } => {
                 // Tool call is complete
             }
-            StreamChunk::Done => break,
+            StreamEvent::Done => break,
+            _ => {}
         }
     }
 
@@ -109,8 +114,8 @@ async fn test_stream_error_handling() -> Result<()> {
 
     while let Some(chunk_result) = stream.next().await {
         match chunk_result {
-            Ok(StreamChunk::Content { content: text }) => content.push_str(&text),
-            Ok(StreamChunk::Done) => break,
+            Ok(StreamEvent::Content { chunk: text }) => content.push_str(&text),
+            Ok(StreamEvent::Done) => break,
             Err(_) => {
                 error_encountered = true;
                 break;
@@ -141,32 +146,32 @@ async fn test_empty_stream() -> Result<()> {
 #[tokio::test]
 async fn test_multiple_tool_calls_streaming() -> Result<()> {
     let chunks = vec![
-        StreamChunk::Content {
-            content: "I'll call multiple tools.".to_string(),
+        StreamEvent::Content {
+            chunk: "I'll call multiple tools.".to_string(),
         },
-        StreamChunk::ToolCallStart {
+        StreamEvent::ToolCallStart {
             id: "call_1".to_string(),
             name: "tool_a".to_string(),
         },
-        StreamChunk::ToolCallArgument {
+        StreamEvent::ToolCallArgument {
             id: "call_1".to_string(),
-            argument: r#"{"arg": "1"}"#.to_string(),
+            chunk: r#"{"arg": "1"}"#.to_string(),
         },
-        StreamChunk::ToolCallComplete {
+        StreamEvent::ToolCallComplete {
             id: "call_1".to_string(),
         },
-        StreamChunk::ToolCallStart {
+        StreamEvent::ToolCallStart {
             id: "call_2".to_string(),
             name: "tool_b".to_string(),
         },
-        StreamChunk::ToolCallArgument {
+        StreamEvent::ToolCallArgument {
             id: "call_2".to_string(),
-            argument: r#"{"arg": "2"}"#.to_string(),
+            chunk: r#"{"arg": "2"}"#.to_string(),
         },
-        StreamChunk::ToolCallComplete {
+        StreamEvent::ToolCallComplete {
             id: "call_2".to_string(),
         },
-        StreamChunk::Done,
+        StreamEvent::Done,
     ];
 
     let provider = FakeLlmProvider::new(chunks);
@@ -181,19 +186,23 @@ async fn test_multiple_tool_calls_streaming() -> Result<()> {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
         match chunk {
-            StreamChunk::Content { content: text } => content.push_str(&text),
-            StreamChunk::ToolCallStart { id, name } => {
+            StreamEvent::Content { chunk: text } => content.push_str(&text),
+            StreamEvent::ToolCallStart { id, name } => {
                 tool_calls.push((id, name, String::new()));
             }
-            StreamChunk::ToolCallArgument { id, argument } => {
+            StreamEvent::ToolCallArgument {
+                id,
+                chunk: argument,
+            } => {
                 if let Some((_, _, args)) =
                     tool_calls.iter_mut().find(|(call_id, _, _)| call_id == &id)
                 {
                     args.push_str(&argument);
                 }
             }
-            StreamChunk::ToolCallComplete { .. } => {}
-            StreamChunk::Done => break,
+            StreamEvent::ToolCallComplete { .. } => {}
+            StreamEvent::Done => break,
+            _ => {}
         }
     }
 
@@ -214,29 +223,29 @@ async fn test_multiple_tool_calls_streaming() -> Result<()> {
 #[tokio::test]
 async fn test_streaming_chunk_serialization() -> Result<()> {
     let chunks = vec![
-        StreamChunk::Content {
-            content: "test".to_string(),
+        StreamEvent::Content {
+            chunk: "test".to_string(),
         },
-        StreamChunk::ToolCallStart {
+        StreamEvent::ToolCallStart {
             id: TEST_TOOL_ID.to_string(),
             name: "test_tool".to_string(),
         },
-        StreamChunk::ToolCallArgument {
+        StreamEvent::ToolCallArgument {
             id: TEST_TOOL_ID.to_string(),
-            argument: "{}".to_string(),
+            chunk: "{}".to_string(),
         },
-        StreamChunk::ToolCallComplete {
+        StreamEvent::ToolCallComplete {
             id: TEST_TOOL_ID.to_string(),
         },
-        StreamChunk::Done,
+        StreamEvent::Done,
     ];
 
     for chunk in chunks {
         let serialized = serde_json::to_string(&chunk)?;
-        let deserialized: StreamChunk = serde_json::from_str(&serialized)?;
+        let deserialized: StreamEvent = serde_json::from_str(&serialized)?;
 
         // Verify the chunk round-trips correctly using helper
-        assert_stream_chunk_matches(&chunk, &deserialized);
+        assert_stream_event_matches(&chunk, &deserialized);
     }
 
     Ok(())

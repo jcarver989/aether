@@ -1,18 +1,25 @@
+use aether_core::llm::provider::{ChatMessage, ChatRequest, LlmProvider};
 use aether_core::testing::FakeLlmProvider;
-use aether_core::llm::provider::{ChatRequest, ChatMessage, StreamChunk, LlmProvider};
+use aether_core::types::StreamEvent;
 use tokio_stream::StreamExt;
 
 #[tokio::test]
 async fn test_fake_llm_returns_canned_responses() {
     let responses = vec![
         vec![
-            StreamChunk::Content { content: "Hello".to_string() },
-            StreamChunk::Content { content: " world!".to_string() },
-            StreamChunk::Done,
+            StreamEvent::Content {
+                chunk: "Hello".to_string(),
+            },
+            StreamEvent::Content {
+                chunk: " world!".to_string(),
+            },
+            StreamEvent::Done,
         ],
         vec![
-            StreamChunk::Content { content: "Second response".to_string() },
-            StreamChunk::Done,
+            StreamEvent::Content {
+                chunk: "Second response".to_string(),
+            },
+            StreamEvent::Done,
         ],
     ];
 
@@ -37,9 +44,19 @@ async fn test_fake_llm_returns_canned_responses() {
     }
 
     assert_eq!(chunks.len(), 3);
-    assert_eq!(chunks[0], StreamChunk::Content { content: "Hello".to_string() });
-    assert_eq!(chunks[1], StreamChunk::Content { content: " world!".to_string() });
-    assert_eq!(chunks[2], StreamChunk::Done);
+    assert_eq!(
+        chunks[0],
+        StreamEvent::Content {
+            chunk: "Hello".to_string()
+        }
+    );
+    assert_eq!(
+        chunks[1],
+        StreamEvent::Content {
+            chunk: " world!".to_string()
+        }
+    );
+    assert_eq!(chunks[2], StreamEvent::Done);
 
     // Second call
     let mut stream = fake_llm
@@ -54,9 +71,11 @@ async fn test_fake_llm_returns_canned_responses() {
     assert_eq!(chunks.len(), 2);
     assert_eq!(
         chunks[0],
-        StreamChunk::Content { content: "Second response".to_string() }
+        StreamEvent::Content {
+            chunk: "Second response".to_string()
+        }
     );
-    assert_eq!(chunks[1], StreamChunk::Done);
+    assert_eq!(chunks[1], StreamEvent::Done);
 
     // Third call (should repeat last response)
     let mut stream = fake_llm.complete_stream_chunks(request).await.unwrap();
@@ -68,9 +87,11 @@ async fn test_fake_llm_returns_canned_responses() {
     assert_eq!(chunks.len(), 2);
     assert_eq!(
         chunks[0],
-        StreamChunk::Content { content: "Second response".to_string() }
+        StreamEvent::Content {
+            chunk: "Second response".to_string()
+        }
     );
-    assert_eq!(chunks[1], StreamChunk::Done);
+    assert_eq!(chunks[1], StreamEvent::Done);
 
     assert_eq!(fake_llm.call_count(), 3);
 }
@@ -78,19 +99,21 @@ async fn test_fake_llm_returns_canned_responses() {
 #[tokio::test]
 async fn test_fake_llm_with_tool_calls() {
     let responses = [vec![
-        StreamChunk::Content { content: "Let me help you with that.".to_string() },
-        StreamChunk::ToolCallStart {
+        StreamEvent::Content {
+            chunk: "Let me help you with that.".to_string(),
+        },
+        StreamEvent::ToolCallStart {
             id: "call_123".to_string(),
             name: "get_weather".to_string(),
         },
-        StreamChunk::ToolCallArgument {
+        StreamEvent::ToolCallArgument {
             id: "call_123".to_string(),
-            argument: r#"{"location": "San Francisco"}"#.to_string(),
+            chunk: r#"{"location": "San Francisco"}"#.to_string(),
         },
-        StreamChunk::ToolCallComplete {
+        StreamEvent::ToolCallComplete {
             id: "call_123".to_string(),
         },
-        StreamChunk::Done,
+        StreamEvent::Done,
     ]];
 
     let fake_llm = FakeLlmProvider::with_single_response(responses[0].clone());
@@ -110,7 +133,7 @@ async fn test_fake_llm_with_tool_calls() {
     }
 
     assert_eq!(chunks.len(), 5);
-    assert!(matches!(chunks[1], StreamChunk::ToolCallStart { .. }));
-    assert!(matches!(chunks[2], StreamChunk::ToolCallArgument { .. }));
-    assert!(matches!(chunks[3], StreamChunk::ToolCallComplete { .. }));
+    assert!(matches!(chunks[1], StreamEvent::ToolCallStart { .. }));
+    assert!(matches!(chunks[2], StreamEvent::ToolCallArgument { .. }));
+    assert!(matches!(chunks[3], StreamEvent::ToolCallComplete { .. }));
 }

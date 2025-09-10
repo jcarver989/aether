@@ -14,9 +14,8 @@ use serde_json::json;
 use tokio_stream::StreamExt;
 
 use super::openrouter_types::CustomChatCompletionStreamResponse;
-use super::provider::{
-    ChatMessage, ChatRequest, LlmProvider, StreamChunk, StreamChunkStream, ToolDefinition,
-};
+use super::provider::{ChatMessage, ChatRequest, LlmProvider, StreamEventStream};
+use crate::types::{StreamEvent, ToolDefinition};
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -106,7 +105,7 @@ impl OpenRouterProvider {
 }
 
 impl LlmProvider for OpenRouterProvider {
-    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream> {
+    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamEventStream> {
         let messages = self.convert_messages(request.messages);
         let tools = if request.tools.is_empty() {
             None
@@ -152,9 +151,9 @@ impl LlmProvider for OpenRouterProvider {
                                 // If we have a pending tool call and now we're getting content,
                                 // complete the tool call first
                                 if let Some(id) = current_tool_id.take() {
-                                    yield Ok(StreamChunk::ToolCallComplete { id });
+                                    yield Ok(StreamEvent::ToolCallComplete { id });
                                 }
-                                yield Ok(StreamChunk::Content { content: content.clone() });
+                                yield Ok(StreamEvent::Content { chunk: content.clone() });
                             }
 
                             // Handle tool calls
@@ -166,7 +165,7 @@ impl LlmProvider for OpenRouterProvider {
                                             let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
                                             current_tool_id = Some(id.clone());
                                             tool_args_buffer.clear();
-                                            yield Ok(StreamChunk::ToolCallStart {
+                                            yield Ok(StreamEvent::ToolCallStart {
                                                 id,
                                                 name: name.clone(),
                                             });
@@ -176,9 +175,9 @@ impl LlmProvider for OpenRouterProvider {
                                         if let Some(arguments) = &function.arguments {
                                             if let Some(id) = &current_tool_id {
                                                 tool_args_buffer.push_str(arguments);
-                                                yield Ok(StreamChunk::ToolCallArgument {
+                                                yield Ok(StreamEvent::ToolCallArgument {
                                                     id: id.clone(),
-                                                    argument: arguments.to_string(),
+                                                    chunk: arguments.to_string(),
                                                 });
                                             }
                                         }
@@ -189,13 +188,13 @@ impl LlmProvider for OpenRouterProvider {
                             if let Some(finish_reason) = &choice.finish_reason {
                                 if format!("{finish_reason:?}").contains("tool_calls") {
                                     if let Some(id) = current_tool_id.take() {
-                                        yield Ok(StreamChunk::ToolCallComplete { id });
+                                        yield Ok(StreamEvent::ToolCallComplete { id });
                                     }
                                 }
-                                yield Ok(StreamChunk::Done);
+                                yield Ok(StreamEvent::Done);
                             }
                         } else {
-                            yield Ok(StreamChunk::Done);
+                            yield Ok(StreamEvent::Done);
                         }
                     },
                     Err(e) => {

@@ -2,8 +2,8 @@ mod utils;
 
 use crate::utils::*;
 use aether_core::llm::openrouter_types::CustomChatCompletionStreamResponse;
-use aether_core::llm::provider::ToolCall;
-use aether_core::llm::{ChatMessage, ChatRequest, LlmProvider, StreamChunk};
+use aether_core::llm::{ChatMessage, ChatRequest, LlmProvider};
+use aether_core::types::{StreamEvent, ToolCall};
 use color_eyre::Result;
 use serde_json::json;
 use tokio;
@@ -139,22 +139,26 @@ async fn test_tool_call_stream_chunks() -> Result<()> {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
         match chunk {
-            StreamChunk::Content { content: text } => content.push_str(&text),
-            StreamChunk::ToolCallStart { id, name } => {
+            StreamEvent::Content { chunk: text } => content.push_str(&text),
+            StreamEvent::ToolCallStart { id, name } => {
                 tool_calls.push((id, name, String::new()));
             }
-            StreamChunk::ToolCallArgument { id, argument } => {
+            StreamEvent::ToolCallArgument {
+                id,
+                chunk: argument,
+            } => {
                 if let Some((_, _, args)) =
                     tool_calls.iter_mut().find(|(call_id, _, _)| call_id == &id)
                 {
                     args.push_str(&argument);
                 }
             }
-            StreamChunk::ToolCallComplete { .. } => {}
-            StreamChunk::Done => {
+            StreamEvent::ToolCallComplete { .. } => {}
+            StreamEvent::Done => {
                 done = true;
                 break;
             }
+            _ => {}
         }
     }
 
@@ -177,7 +181,10 @@ fn test_tool_call_serialization() -> Result<()> {
 
     assert_eq!(deserialized.id, "call_456");
     assert_eq!(deserialized.name, "read_file");
-    assert_eq!(deserialized.arguments, json!({"path": "/etc/hosts"}).to_string());
+    assert_eq!(
+        deserialized.arguments,
+        json!({"path": "/etc/hosts"}).to_string()
+    );
 
     Ok(())
 }

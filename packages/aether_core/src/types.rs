@@ -10,15 +10,15 @@ impl IsoString {
     pub fn now() -> Self {
         Self(chrono::Utc::now().to_rfc3339())
     }
-    
+
     /// Create an IsoString from a chrono DateTime
-    pub fn from_datetime<Tz: chrono::TimeZone>(datetime: chrono::DateTime<Tz>) -> Self 
+    pub fn from_datetime<Tz: chrono::TimeZone>(datetime: chrono::DateTime<Tz>) -> Self
     where
         Tz::Offset: std::fmt::Display,
     {
         Self(datetime.to_rfc3339())
     }
-    
+
     /// Get the inner string value
     pub fn as_str(&self) -> &str {
         &self.0

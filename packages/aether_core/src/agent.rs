@@ -1,8 +1,9 @@
 use crate::{
-    llm::{ChatMessage as LlmChatMessage, ChatRequest, LlmProvider, ToolDefinition},
+    llm::provider::ChatMessage as LlmChatMessage,
+    llm::{ChatRequest, LlmProvider, StreamEventStream},
     mcp::McpClient,
     tools::{Summarizer, ToolRegistry, TruncateSummarizer},
-    types::{ChatMessage, IsoString},
+    types::{ChatMessage, IsoString, ToolDefinition},
 };
 use color_eyre::Result;
 use std::{
@@ -88,7 +89,7 @@ impl<T: LlmProvider> Agent<T> {
     }
 
     /// Record a tool call for loop detection
-    fn record_tool_call(
+    pub fn record_tool_call(
         &mut self,
         name: String,
         arguments: serde_json::Value,
@@ -113,15 +114,16 @@ impl<T: LlmProvider> Agent<T> {
                 let parameters = self.tool_registry.get_tool_parameters(&tool_name)?.clone();
 
                 Some(ToolDefinition {
-                    name: tool_name,
+                    name: tool_name.clone(),
                     description,
                     parameters: parameters.to_string(),
+                    server: self.tool_registry.get_server_for_tool(&tool_name).cloned(),
                 })
             })
             .collect()
     }
 
-    fn create_chat_request(&self, temperature: Option<f32>) -> ChatRequest {
+    pub fn create_chat_request(&self, temperature: Option<f32>) -> ChatRequest {
         ChatRequest {
             messages: self.build_llm_messages(),
             tools: self.build_tool_definitions(),
@@ -130,10 +132,7 @@ impl<T: LlmProvider> Agent<T> {
     }
 
     /// Send a streaming request to the LLM
-    pub async fn stream_completion(
-        &self,
-        temperature: Option<f32>,
-    ) -> Result<crate::llm::provider::StreamChunkStream> {
+    pub async fn stream_completion(&self, temperature: Option<f32>) -> Result<StreamEventStream> {
         let request = self.create_chat_request(temperature);
         self.llm_provider
             .complete_stream_chunks(request)
@@ -255,7 +254,7 @@ impl<T: LlmProvider> Agent<T> {
     }
 
     /// Convert conversation history to LLM messages
-    fn build_llm_messages(&self) -> Vec<LlmChatMessage> {
+    pub fn build_llm_messages(&self) -> Vec<LlmChatMessage> {
         let mut llm_messages = Vec::new();
 
         // Add system prompt if no system message exists
@@ -302,7 +301,7 @@ impl<T: LlmProvider> Agent<T> {
                         {
                             if let Ok(arguments) = serde_json::from_str::<serde_json::Value>(params)
                             {
-                                tool_calls.push(crate::llm::provider::ToolCall {
+                                tool_calls.push(crate::types::ToolCall {
                                     id: id.clone(),
                                     name: name.clone(),
                                     arguments: arguments.to_string(),

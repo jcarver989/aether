@@ -40,13 +40,11 @@ impl McpClient {
                 let transport = StreamableHttpClientTransport::from_uri(url.clone());
                 self.connect_http_server(name, transport).await
             }
-            McpServerConfig::Stdio { command, args, .. } => {
-                Err(color_eyre::Report::msg(format!(
-                    "Process-based MCP servers not yet implemented: {} {}",
-                    command,
-                    args.join(" ")
-                )))
-            }
+            McpServerConfig::Stdio { command, args, .. } => Err(color_eyre::Report::msg(format!(
+                "Process-based MCP servers not yet implemented: {} {}",
+                command,
+                args.join(" ")
+            ))),
         }
     }
 
@@ -101,7 +99,6 @@ impl McpClient {
         tool_name: &str,
         args: Value,
     ) -> Result<Value> {
-
         let server = self
             .servers
             .get(server_name)
@@ -121,7 +118,6 @@ impl McpClient {
                 )));
             }
         };
-
 
         if result.is_error.unwrap_or(false) {
             let error_msg = result

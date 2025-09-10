@@ -1,21 +1,22 @@
 use color_eyre::Result;
 
-use crate::llm::provider::{ChatRequest, LlmProvider, StreamChunk, StreamChunkStream};
+use crate::llm::provider::{ChatRequest, LlmProvider, StreamEventStream};
+use crate::types::StreamEvent;
 
 pub struct FakeLlmProvider {
-    responses: Vec<Vec<StreamChunk>>,
+    responses: Vec<Vec<StreamEvent>>,
     call_count: std::sync::atomic::AtomicUsize,
 }
 
 impl FakeLlmProvider {
-    pub fn new(responses: Vec<Vec<StreamChunk>>) -> Self {
+    pub fn new(responses: Vec<Vec<StreamEvent>>) -> Self {
         Self {
             responses,
             call_count: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
-    pub fn with_single_response(chunks: Vec<StreamChunk>) -> Self {
+    pub fn with_single_response(chunks: Vec<StreamEvent>) -> Self {
         Self::new(vec![chunks])
     }
 
@@ -25,7 +26,7 @@ impl FakeLlmProvider {
 }
 
 impl LlmProvider for FakeLlmProvider {
-    async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamChunkStream> {
+    async fn complete_stream_chunks(&self, _request: ChatRequest) -> Result<StreamEventStream> {
         let current_call = self
             .call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -36,7 +37,7 @@ impl LlmProvider for FakeLlmProvider {
             // Repeat the last response if we run out
             self.responses.last().unwrap().clone()
         } else {
-            vec![StreamChunk::Done]
+            vec![StreamEvent::Done]
         };
 
         let stream = tokio_stream::iter(response.into_iter().map(Ok));

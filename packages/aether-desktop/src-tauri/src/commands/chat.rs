@@ -9,20 +9,19 @@ use tracing::{info, error};
 // Re-export types from aether_core for frontend use
 pub use aether_core::{
     types::{ChatMessage, ToolDiscoveryEvent, IsoString, ToolCall, ToolCallState, StreamEvent},
-    llm::provider::{StreamChunk},
 };
 
 use crate::state::AgentState;
 
 // Helper function to handle agent updates asynchronously
-async fn update_agent_with_chunk(state: &AgentState, chunk: &StreamChunk) {
+async fn update_agent_with_chunk(state: &AgentState, chunk: &StreamEvent) {
     let mut agent_guard = state.agent.lock().await;
     if let Some(agent) = agent_guard.as_mut() {
         match chunk {
-            StreamChunk::Content { content } => {
-                agent.append_streaming_content(content);
+            StreamEvent::Content { chunk } => {
+                agent.append_streaming_content(chunk);
             }
-            StreamChunk::ToolCallStart { id, name } => {
+            StreamEvent::ToolCallStart { id, name } => {
                 agent.active_tool_calls_mut().insert(
                     id.clone(),
                     aether_core::agent::PartialToolCall {
@@ -32,12 +31,12 @@ async fn update_agent_with_chunk(state: &AgentState, chunk: &StreamChunk) {
                     },
                 );
             }
-            StreamChunk::ToolCallArgument { id, argument } => {
+            StreamEvent::ToolCallArgument { id, chunk } => {
                 if let Some(partial_call) = agent.active_tool_calls_mut().get_mut(id) {
-                    partial_call.arguments.push_str(argument);
+                    partial_call.arguments.push_str(chunk);
                 }
             }
-            StreamChunk::ToolCallComplete { id } => {
+            StreamEvent::ToolCallComplete { id } => {
                 if let Some(partial_call) = agent.active_tool_calls_mut().remove(id) {
                     let tool_call_message = ChatMessage::ToolCall {
                         id: partial_call.id.clone(),
@@ -48,8 +47,15 @@ async fn update_agent_with_chunk(state: &AgentState, chunk: &StreamChunk) {
                     agent.add_message(tool_call_message);
                 }
             }
-            StreamChunk::Done => {
+            StreamEvent::Done => {
                 agent.finalize_streaming_message();
+            }
+            StreamEvent::Start { .. } => {
+                // Handle stream start - could initialize streaming state if needed
+            }
+            StreamEvent::Error { message } => {
+                // Handle error - could add error message to conversation
+                tracing::error!("Stream error: {}", message);
             }
         }
     }
@@ -140,7 +146,7 @@ pub async fn send_message(
                 eprintln!("Stream error: {}", e);
                 // Send error chunk to frontend
                 let _ = events.send(ChatStreamEvent {
-                    chunk: StreamChunk::Done, // Signal end of stream
+                    chunk: StreamEvent::Done, // Signal end of stream
                     message_id: message_id.clone(),
                 });
                 return Err(format!("Streaming error: {}", e));

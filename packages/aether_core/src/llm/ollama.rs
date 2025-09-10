@@ -16,9 +16,8 @@ use std::error::Error;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info};
 
-use super::provider::{
-    ChatMessage, ChatRequest, LlmProvider, StreamChunk, StreamChunkStream, ToolDefinition,
-};
+use super::provider::{ChatMessage, ChatRequest, LlmProvider, StreamEventStream};
+use crate::types::{StreamEvent, ToolDefinition};
 
 pub struct OllamaProvider {
     client: Client<OpenAIConfig>,
@@ -125,7 +124,7 @@ impl OllamaProvider {
 }
 
 impl LlmProvider for OllamaProvider {
-    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamChunkStream> {
+    async fn complete_stream_chunks(&self, request: ChatRequest) -> Result<StreamEventStream> {
         debug!("Starting chat completion stream for model: {}", self.model);
 
         let messages = self.convert_messages(request.messages);
@@ -190,9 +189,9 @@ impl LlmProvider for OllamaProvider {
                                     // If we have a pending tool call and now we're getting content,
                                     // complete the tool call first
                                     if let Some(id) = current_tool_id.take() {
-                                        yield Ok(StreamChunk::ToolCallComplete { id });
+                                        yield Ok(StreamEvent::ToolCallComplete { id });
                                     }
-                                    yield Ok(StreamChunk::Content { content: content.clone() });
+                                    yield Ok(StreamEvent::Content { chunk: content.clone() });
                                 }
                             }
 
@@ -204,7 +203,7 @@ impl LlmProvider for OllamaProvider {
                                         if let Some(name) = &function.name {
                                             let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
                                             current_tool_id = Some(id.clone());
-                                            yield Ok(StreamChunk::ToolCallStart {
+                                            yield Ok(StreamEvent::ToolCallStart {
                                                 id,
                                                 name: name.clone(),
                                             });
@@ -214,9 +213,9 @@ impl LlmProvider for OllamaProvider {
                                         if let Some(arguments) = &function.arguments {
                                             if !arguments.is_empty() {
                                                 if let Some(id) = &current_tool_id {
-                                                    yield Ok(StreamChunk::ToolCallArgument {
+                                                    yield Ok(StreamEvent::ToolCallArgument {
                                                         id: id.clone(),
-                                                        argument: arguments.clone(),
+                                                        chunk: arguments.clone(),
                                                     });
                                                 }
                                             }
@@ -232,20 +231,20 @@ impl LlmProvider for OllamaProvider {
 
                                 // Complete any pending tool call before ending
                                 if let Some(id) = current_tool_id.take() {
-                                    yield Ok(StreamChunk::ToolCallComplete { id });
+                                    yield Ok(StreamEvent::ToolCallComplete { id });
                                 }
 
                                 // End the stream for any finish reason
-                                yield Ok(StreamChunk::Done);
+                                yield Ok(StreamEvent::Done);
                                 break;
                             }
                         } else {
                             // No choices means stream is done
                             debug!("No choices in response, ending stream");
                             if let Some(id) = current_tool_id.take() {
-                                yield Ok(StreamChunk::ToolCallComplete { id });
+                                yield Ok(StreamEvent::ToolCallComplete { id });
                             }
-                            yield Ok(StreamChunk::Done);
+                            yield Ok(StreamEvent::Done);
                             break;
                         }
                     }

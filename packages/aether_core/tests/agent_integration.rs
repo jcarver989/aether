@@ -1,13 +1,13 @@
 mod utils;
 
 use aether_core::agent::Agent;
-use aether_core::llm::provider::StreamChunk;
 use aether_core::testing::{FakeLlmProvider, InMemoryFileSystem};
+use aether_core::types::StreamEvent;
 use aether_core::types::{ChatMessage, IsoString};
-use std::time::SystemTime;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, json};
 use std::sync::Arc;
+use std::time::SystemTime;
 use tokio_stream::StreamExt;
 use utils::*;
 
@@ -15,8 +15,10 @@ use utils::*;
 #[tokio::test]
 async fn test_agent_creation() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content { content: "Hello!".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "Hello!".to_string(),
+        },
+        StreamEvent::Done,
     ]);
     let tool_registry = create_test_tool_registry();
     let system_prompt = Some("You are a helpful assistant.".to_string());
@@ -31,8 +33,10 @@ async fn test_agent_creation() {
 #[tokio::test]
 async fn test_agent_conversation_history() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content { content: "Hello!".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "Hello!".to_string(),
+        },
+        StreamEvent::Done,
     ]);
     let tool_registry = create_test_tool_registry();
     let mut agent = Agent::new(llm_provider, tool_registry, None);
@@ -76,9 +80,13 @@ async fn test_agent_conversation_history() {
 #[tokio::test]
 async fn test_agent_streaming() {
     let chunks = vec![
-        StreamChunk::Content { content: "Hello".to_string() },
-        StreamChunk::Content { content: " there!".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "Hello".to_string(),
+        },
+        StreamEvent::Content {
+            chunk: " there!".to_string(),
+        },
+        StreamEvent::Done,
     ];
     let llm_provider = FakeLlmProvider::with_single_response(chunks);
     let tool_registry = create_test_tool_registry();
@@ -97,10 +105,10 @@ async fn test_agent_streaming() {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.unwrap();
         match chunk {
-            StreamChunk::Content { content } => {
+            StreamEvent::Content { chunk: content } => {
                 agent.append_streaming_content(&content);
             }
-            StreamChunk::Done => {
+            StreamEvent::Done => {
                 agent.finalize_streaming_message();
                 break;
             }
@@ -123,19 +131,21 @@ async fn test_agent_streaming() {
 #[tokio::test]
 async fn test_agent_with_tool_calls() {
     let chunks = vec![
-        StreamChunk::Content { content: "I'll help you write a file.".to_string() },
-        StreamChunk::ToolCallStart {
+        StreamEvent::Content {
+            chunk: "I'll help you write a file.".to_string(),
+        },
+        StreamEvent::ToolCallStart {
             id: "call_123".to_string(),
             name: "write_file".to_string(),
         },
-        StreamChunk::ToolCallArgument {
+        StreamEvent::ToolCallArgument {
             id: "call_123".to_string(),
-            argument: r#"{"path": "/tmp/test.txt", "content": "Hello World"}"#.to_string(),
+            chunk: r#"{"path": "/tmp/test.txt", "content": "Hello World"}"#.to_string(),
         },
-        StreamChunk::ToolCallComplete {
+        StreamEvent::ToolCallComplete {
             id: "call_123".to_string(),
         },
-        StreamChunk::Done,
+        StreamEvent::Done,
     ];
 
     let llm_provider = FakeLlmProvider::with_single_response(chunks);
@@ -172,10 +182,10 @@ async fn test_agent_with_tool_calls() {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.unwrap();
         match chunk {
-            StreamChunk::Content { content } => {
+            StreamEvent::Content { chunk: content } => {
                 agent.append_streaming_content(&content);
             }
-            StreamChunk::ToolCallStart { id, name } => {
+            StreamEvent::ToolCallStart { id, name } => {
                 agent.active_tool_calls_mut().insert(
                     id.clone(),
                     aether_core::agent::PartialToolCall {
@@ -185,12 +195,15 @@ async fn test_agent_with_tool_calls() {
                     },
                 );
             }
-            StreamChunk::ToolCallArgument { id, argument } => {
+            StreamEvent::ToolCallArgument {
+                id,
+                chunk: argument,
+            } => {
                 if let Some(partial) = agent.active_tool_calls_mut().get_mut(&id) {
                     partial.arguments.push_str(&argument);
                 }
             }
-            StreamChunk::ToolCallComplete { id } => {
+            StreamEvent::ToolCallComplete { id } => {
                 if let Some(partial) = agent.active_tool_calls_mut().remove(&id) {
                     // Clone arguments before moving the partial
                     let arguments_str = partial.arguments.clone();
@@ -209,10 +222,11 @@ async fn test_agent_with_tool_calls() {
                     }
                 }
             }
-            StreamChunk::Done => {
+            StreamEvent::Done => {
                 agent.finalize_streaming_message();
                 break;
             }
+            _ => {}
         }
     }
 
@@ -286,8 +300,10 @@ async fn test_agent_tool_execution_with_real_mcp() {
 
     // Create agent with the populated tool registry
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content { content: "I'll write the file for you.".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "I'll write the file for you.".to_string(),
+        },
+        StreamEvent::Done,
     ]);
     let mut agent = Agent::new(llm_provider, tool_registry, None);
 
@@ -400,8 +416,10 @@ async fn test_agent_execute_tool_end_to_end() {
 
     // Create agent
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content { content: "I'll execute the tool for you.".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "I'll execute the tool for you.".to_string(),
+        },
+        StreamEvent::Done,
     ]);
     let agent = Agent::new(llm_provider, tool_registry, None);
 
@@ -468,8 +486,10 @@ async fn test_agent_execute_tool_end_to_end() {
 #[tokio::test]
 async fn test_agent_system_prompt() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content { content: "Test response".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "Test response".to_string(),
+        },
+        StreamEvent::Done,
     ]);
     let tool_registry = create_test_tool_registry();
     let system_prompt = Some("You are a specialized coding assistant.".to_string());
@@ -492,8 +512,10 @@ async fn test_agent_system_prompt() {
 #[tokio::test]
 async fn test_agent_existing_system_message() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content { content: "Test response".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "Test response".to_string(),
+        },
+        StreamEvent::Done,
     ]);
     let tool_registry = create_test_tool_registry();
     let system_prompt = Some("You are a specialized coding assistant.".to_string());
@@ -521,8 +543,10 @@ async fn test_agent_existing_system_message() {
 #[tokio::test]
 async fn test_agent_tool_definitions() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content { content: "Test response".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "Test response".to_string(),
+        },
+        StreamEvent::Done,
     ]);
     let mut tool_registry = create_test_tool_registry();
 
@@ -554,8 +578,10 @@ async fn test_agent_tool_definitions() {
 #[tokio::test]
 async fn test_agent_chat_request_creation() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content { content: "Test response".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "Test response".to_string(),
+        },
+        StreamEvent::Done,
     ]);
     let mut tool_registry = create_test_tool_registry();
 
@@ -592,8 +618,10 @@ async fn test_agent_chat_request_creation() {
 #[tokio::test]
 async fn test_agent_tool_registry_updates() {
     let llm_provider = FakeLlmProvider::with_single_response(vec![
-        StreamChunk::Content { content: "Test response".to_string() },
-        StreamChunk::Done,
+        StreamEvent::Content {
+            chunk: "Test response".to_string(),
+        },
+        StreamEvent::Done,
     ]);
     let tool_registry = create_test_tool_registry();
     let mut agent = Agent::new(llm_provider, tool_registry, None);

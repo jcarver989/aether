@@ -1,8 +1,12 @@
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::future::Future;
 use std::pin::Pin;
 use tokio_stream::Stream;
+
+// Import types from crate::types instead of duplicating
+use crate::types::{StreamEvent, ToolCall, ToolDefinition};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ChatRequest {
@@ -11,6 +15,7 @@ pub struct ChatRequest {
     pub temperature: Option<f32>,
 }
 
+// Simplified ChatMessage for LLM provider interface (without timestamps)
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum ChatMessage {
     System {
@@ -29,34 +34,10 @@ pub enum ChatMessage {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
-    pub parameters: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct ToolCall {
-    pub id: String,
-    pub name: String,
-    pub arguments: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum StreamChunk {
-    Content { content: String },
-    ToolCallStart { id: String, name: String },
-    ToolCallArgument { id: String, argument: String },
-    ToolCallComplete { id: String },
-    Done,
-}
-
-pub type StreamChunkStream = Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>>;
+pub type StreamEventStream = Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>;
 pub trait LlmProvider: Send + Sync {
     fn complete_stream_chunks(
         &self,
         request: ChatRequest,
-    ) -> impl Future<Output = Result<StreamChunkStream>>;
+    ) -> impl Future<Output = Result<StreamEventStream>>;
 }

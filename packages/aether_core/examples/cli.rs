@@ -1,8 +1,8 @@
 use aether_core::{
     agent::Agent,
-    llm::{StreamChunk, ollama::OllamaProvider},
+    llm::ollama::OllamaProvider,
     tools::ToolRegistry,
-    types::{ChatMessage, IsoString},
+    types::{ChatMessage, IsoString, StreamEvent},
 };
 use tokio_stream::StreamExt;
 
@@ -24,10 +24,10 @@ pub async fn main() {
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.unwrap();
         match chunk {
-            StreamChunk::Content { content } => {
+            StreamEvent::Content { chunk: content } => {
                 agent.append_streaming_content(&content);
             }
-            StreamChunk::Done => {
+            StreamEvent::Done => {
                 agent.finalize_streaming_message();
                 break;
             }
