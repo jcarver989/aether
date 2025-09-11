@@ -1,12 +1,20 @@
+use async_openai::types::{
+    ChatChoiceStream, ChatCompletionMessageToolCallChunk, ChatCompletionStreamResponseDelta,
+    CreateChatCompletionRequest, CreateChatCompletionStreamResponse, FunctionCallStream,
+};
 use async_openai::{Client, config::OpenAIConfig};
 use async_stream;
 use color_eyre::Result;
-use serde_json::json;
 use tokio_stream::{Stream, StreamExt};
 
 use super::mappers::{map_messages, mapp_tools};
-use super::openrouter_types::CustomChatCompletionStreamResponse;
+use super::openrouter_types::{
+    CustomChatCompletionStreamChoice, CustomChatCompletionStreamResponse,
+    CustomChatCompletionStreamResponseDelta, CustomFunctionCallDelta, CustomToolCallDelta,
+    CustomUsage,
+};
 use super::provider::{ChatRequest, LlmProvider};
+use super::streaming::process_completion_stream;
 use crate::types::StreamEvent;
 
 pub struct OpenRouterProvider {
@@ -26,6 +34,88 @@ impl OpenRouterProvider {
     }
 }
 
+impl From<CustomChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {
+    fn from(custom: CustomChatCompletionStreamResponse) -> Self {
+        CreateChatCompletionStreamResponse {
+            id: custom.id,
+            choices: custom
+                .choices
+                .into_iter()
+                .map(|choice| choice.into())
+                .collect(),
+            created: custom.created as u32, // Convert u64 to u32
+            model: custom.model,
+            service_tier: None, // OpenRouter doesn't provide service tier information
+            system_fingerprint: custom.system_fingerprint,
+            object: custom.object,
+            usage: custom.usage.map(|u| u.into()),
+        }
+    }
+}
+
+impl From<CustomChatCompletionStreamChoice> for ChatChoiceStream {
+    fn from(choice: CustomChatCompletionStreamChoice) -> Self {
+        ChatChoiceStream {
+            index: choice.index as u32, // Convert i32 to u32
+            delta: choice.delta.into(),
+            finish_reason: choice.finish_reason,
+            logprobs: None, // OpenRouter doesn't provide detailed logprobs in our custom type
+        }
+    }
+}
+
+impl From<CustomChatCompletionStreamResponseDelta> for ChatCompletionStreamResponseDelta {
+    fn from(delta: CustomChatCompletionStreamResponseDelta) -> Self {
+        ChatCompletionStreamResponseDelta {
+            role: delta.role,
+            content: delta.content,
+            refusal: None, // OpenRouter doesn't support refusal field
+            tool_calls: delta
+                .tool_calls
+                .map(|calls| calls.into_iter().map(|call| call.into()).collect()),
+            function_call: None, // OpenRouter doesn't use legacy function_call
+        }
+    }
+}
+
+impl From<CustomToolCallDelta> for ChatCompletionMessageToolCallChunk {
+    fn from(call: CustomToolCallDelta) -> Self {
+        ChatCompletionMessageToolCallChunk {
+            index: call.index as u32, // Convert i32 to u32
+            id: call.id,
+            r#type: call.tool_type.and_then(|t| {
+                // Convert string to ChatCompletionToolType
+                match t.as_str() {
+                    "function" => Some(async_openai::types::ChatCompletionToolType::Function),
+                    _ => None,
+                }
+            }),
+            function: call.function.map(|f| f.into()),
+        }
+    }
+}
+
+impl From<CustomFunctionCallDelta> for FunctionCallStream {
+    fn from(f: CustomFunctionCallDelta) -> Self {
+        FunctionCallStream {
+            name: f.name,
+            arguments: f.arguments,
+        }
+    }
+}
+
+impl From<CustomUsage> for async_openai::types::CompletionUsage {
+    fn from(u: CustomUsage) -> Self {
+        async_openai::types::CompletionUsage {
+            prompt_tokens: u.prompt_tokens as u32,
+            completion_tokens: u.completion_tokens as u32,
+            total_tokens: u.total_tokens as u32,
+            completion_tokens_details: None,
+            prompt_tokens_details: None,
+        }
+    }
+}
+
 impl LlmProvider for OpenRouterProvider {
     fn complete_stream_chunks(
         &self,
@@ -42,19 +132,17 @@ impl LlmProvider for OpenRouterProvider {
                 Some(mapp_tools(request.tools))
             };
 
-            let mut req = json!({
-                "model": model.clone(),
-                "messages": messages,
-                "stream": true,
-            });
-
-            if let Some(tools) = tools {
-                req["tools"] = json!(tools);
-            }
+            let req = CreateChatCompletionRequest {
+                model: model.clone(),
+                messages,
+                stream: Some(true),
+                tools,
+                ..Default::default()
+            };
 
             let stream = match client
                 .chat()
-                .create_stream_byot::<serde_json::Value, CustomChatCompletionStreamResponse>(req)
+                .create_stream_byot::<CreateChatCompletionRequest, CustomChatCompletionStreamResponse>(req)
                 .await {
                 Ok(stream) => stream,
                 Err(e) => {
@@ -63,73 +151,16 @@ impl LlmProvider for OpenRouterProvider {
                 }
             };
 
-            // Create a custom stream that properly handles tool calls
-            let mut current_tool_id: Option<String> = None;
-            let mut tool_args_buffer = String::new();
+            // Convert custom responses to standard async_openai types and handle errors
+            let standard_stream = stream.map(|result| {
+                result
+                    .map(|custom| custom.into())
+                    .map_err(|e| color_eyre::eyre::eyre!("OpenRouter API error: {}", e))
+            });
 
-            let mut stream = Box::pin(stream);
-
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(response) => {
-                        if let Some(choice) = response.choices.first() {
-                            let delta = &choice.delta;
-
-                            // Handle content
-                            if let Some(content) = &delta.content {
-                                // If we have a pending tool call and now we're getting content,
-                                // complete the tool call first
-                                if let Some(id) = current_tool_id.take() {
-                                    yield Ok(StreamEvent::ToolCallComplete { id });
-                                }
-                                yield Ok(StreamEvent::Content { chunk: content.clone() });
-                            }
-
-                            // Handle tool calls
-                            if let Some(tool_calls) = &delta.tool_calls {
-                                for tool_call in tool_calls {
-                                    if let Some(function) = &tool_call.function {
-                                        // Tool call start
-                                        if let Some(name) = &function.name {
-                                            let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
-                                            current_tool_id = Some(id.clone());
-                                            tool_args_buffer.clear();
-                                            yield Ok(StreamEvent::ToolCallStart {
-                                                id,
-                                                name: name.clone(),
-                                            });
-                                        }
-
-                                        // Tool call arguments
-                                        if let Some(arguments) = &function.arguments {
-                                            if let Some(id) = &current_tool_id {
-                                                tool_args_buffer.push_str(arguments);
-                                                yield Ok(StreamEvent::ToolCallArgument {
-                                                    id: id.clone(),
-                                                    chunk: arguments.to_string(),
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if let Some(finish_reason) = &choice.finish_reason {
-                                if format!("{finish_reason:?}").contains("tool_calls") {
-                                    if let Some(id) = current_tool_id.take() {
-                                        yield Ok(StreamEvent::ToolCallComplete { id });
-                                    }
-                                }
-                                yield Ok(StreamEvent::Done);
-                            }
-                        } else {
-                            yield Ok(StreamEvent::Done);
-                        }
-                    },
-                    Err(e) => {
-                        yield Err(color_eyre::eyre::eyre!("Stream error: {}", e));
-                    }
-                }
+            let mut shared_stream = Box::pin(process_completion_stream(standard_stream));
+            while let Some(result) = shared_stream.next().await {
+                yield result;
             }
         }
     }
