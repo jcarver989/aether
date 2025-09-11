@@ -1,15 +1,11 @@
-use async_openai::{
-    Client,
-    config::OpenAIConfig,
-    types::CreateChatCompletionRequest,
-};
+use async_openai::{Client, config::OpenAIConfig, types::CreateChatCompletionRequest};
 use async_stream;
 use color_eyre::Result;
 use std::error::Error;
 use tokio_stream::{Stream, StreamExt};
 use tracing::{debug, error, info};
 
-use super::conversion::{convert_messages, convert_tools};
+use super::mappers::{map_messages, mapp_tools};
 use super::provider::{ChatRequest, LlmProvider};
 use crate::types::StreamEvent;
 
@@ -59,7 +55,6 @@ impl LocalLlmProvider {
             model: model.to_string(),
         })
     }
-
 }
 
 impl LlmProvider for LocalLlmProvider {
@@ -73,12 +68,12 @@ impl LlmProvider for LocalLlmProvider {
         async_stream::stream! {
             debug!("Starting chat completion stream for model: {}", model);
 
-            let messages = convert_messages(request.messages);
+            let messages = map_messages(request.messages);
             let message_count = messages.len();
             let tools = if request.tools.is_empty() {
                 None
             } else {
-                Some(convert_tools(request.tools))
+                Some(mapp_tools(request.tools))
             };
 
             let req = CreateChatCompletionRequest {

@@ -1,4 +1,4 @@
-pub mod conversion;
+pub mod mappers;
 pub mod ollama;
 pub mod openrouter;
 pub mod openrouter_types;

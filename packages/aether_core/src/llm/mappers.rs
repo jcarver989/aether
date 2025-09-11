@@ -2,8 +2,8 @@ use async_openai::types::{
     ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
     ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
     ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
-    ChatCompletionRequestToolMessageContent, ChatCompletionRequestUserMessage,
-    ChatCompletionTool, ChatCompletionToolType, FunctionCall, FunctionObject,
+    ChatCompletionRequestToolMessageContent, ChatCompletionRequestUserMessage, ChatCompletionTool,
+    ChatCompletionToolType, FunctionCall, FunctionObject,
 };
 
 use crate::types::{ChatMessage, ToolDefinition};
@@ -48,9 +48,7 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
 
                 Some(ChatCompletionRequestMessage::Assistant(
                     ChatCompletionRequestAssistantMessage {
-                        content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                            content,
-                        )),
+                        content: Some(ChatCompletionRequestAssistantMessageContent::Text(content)),
                         name: None,
                         tool_calls,
                         audio: None,
@@ -76,17 +74,9 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
     }
 }
 
-pub fn convert_messages(messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
-    messages
-        .into_iter()
-        .filter_map(Into::into)
-        .collect()
-}
-
-pub fn convert_tools(tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
-    tools
-        .into_iter()
-        .map(|tool| ChatCompletionTool {
+impl From<ToolDefinition> for ChatCompletionTool {
+    fn from(tool: ToolDefinition) -> Self {
+        ChatCompletionTool {
             r#type: ChatCompletionToolType::Function,
             function: FunctionObject {
                 name: tool.name,
@@ -94,6 +84,14 @@ pub fn convert_tools(tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
                 parameters: Some(serde_json::from_str(&tool.parameters).unwrap_or_default()),
                 strict: Some(false),
             },
-        })
-        .collect()
+        }
+    }
+}
+
+pub fn map_messages(messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
+    messages.into_iter().filter_map(Into::into).collect()
+}
+
+pub fn mapp_tools(tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
+    tools.into_iter().map(Into::into).collect()
 }

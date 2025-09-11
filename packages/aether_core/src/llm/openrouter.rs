@@ -1,13 +1,10 @@
-use async_openai::{
-    Client,
-    config::OpenAIConfig,
-};
+use async_openai::{Client, config::OpenAIConfig};
+use async_stream;
 use color_eyre::Result;
 use serde_json::json;
 use tokio_stream::{Stream, StreamExt};
-use async_stream;
 
-use super::conversion::{convert_messages, convert_tools};
+use super::mappers::{map_messages, mapp_tools};
 use super::openrouter_types::CustomChatCompletionStreamResponse;
 use super::provider::{ChatRequest, LlmProvider};
 use crate::types::StreamEvent;
@@ -27,20 +24,22 @@ impl OpenRouterProvider {
 
         Ok(Self { client, model })
     }
-
 }
 
 impl LlmProvider for OpenRouterProvider {
-    fn complete_stream_chunks(&self, request: ChatRequest) -> impl Stream<Item = Result<StreamEvent>> + Send {
+    fn complete_stream_chunks(
+        &self,
+        request: ChatRequest,
+    ) -> impl Stream<Item = Result<StreamEvent>> + Send {
         let client = self.client.clone();
         let model = self.model.clone();
-        
+
         async_stream::stream! {
-            let messages = convert_messages(request.messages);
+            let messages = map_messages(request.messages);
             let tools = if request.tools.is_empty() {
                 None
             } else {
-                Some(convert_tools(request.tools))
+                Some(mapp_tools(request.tools))
             };
 
             let mut req = json!({
