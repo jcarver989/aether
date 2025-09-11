@@ -1,3 +1,5 @@
+use std::alloc::System;
+
 use aether_core::{
     agent::{Agent, AgentEvent},
     llm::ollama::LocalLlmProvider,
@@ -11,21 +13,21 @@ use tokio_stream::StreamExt;
 #[command(name = "aether-cli")]
 #[command(about = "A CLI for the Aether AI assistant")]
 struct Cli {
-    #[arg(short = 'p', long = "prompt", help = "The prompt to send to the AI")]
+    #[arg(short = 'p', long = "prompt", help = "The LLM's prompt")]
     prompt: Option<String>,
+
+    #[arg(short = 's', long = "system", help = "The LLM's system prompt")]
+    system: Option<String>,
 }
 
 #[tokio::main]
 pub async fn main() {
     let cli = Cli::parse();
-
-    let prompt = cli.prompt.unwrap_or_else(|| "What is 5+5?".to_string());
-
-    println!("Aether CLI - Sending prompt: {}", prompt);
+    let prompt = cli.prompt.unwrap();
 
     let provider = LocalLlmProvider::new_llama_cpp().unwrap();
     let tools = ToolRegistry::new();
-    let mut agent = Agent::new(provider, tools, Some("you are a helpful agent".to_string()));
+    let mut agent = Agent::new(provider, tools, cli.system);
 
     let result_stream = agent.send_message(&prompt).await;
     pin_mut!(result_stream);
