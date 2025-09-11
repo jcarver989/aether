@@ -1,6 +1,6 @@
 use aether_core::{
     agent::{Agent, AgentEvent},
-    llm::ollama::OllamaProvider,
+    llm::ollama::LocalLlmProvider,
     tools::ToolRegistry,
 };
 use futures::pin_mut;
@@ -14,7 +14,7 @@ pub async fn main() {
     let (agent_tx, mut agent_rx) = tokio::sync::mpsc::channel::<&str>(100);
 
     let _ = tokio::spawn(async move {
-        let provider = OllamaProvider::new(None, "gemma3").unwrap();
+        let provider = LocalLlmProvider::new_llama_cpp().unwrap();
         let tools = ToolRegistry::new();
         let mut agent = Agent::new(provider, tools, Some("you are a helpful agent".to_string()));
 

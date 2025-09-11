@@ -1,14 +1,7 @@
 use async_openai::{
     Client,
     config::OpenAIConfig,
-    types::{
-        ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
-        ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
-        ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
-        ChatCompletionRequestToolMessageContent, ChatCompletionRequestUserMessage,
-        ChatCompletionTool, ChatCompletionToolType, CreateChatCompletionRequest, FunctionCall,
-        FunctionObject,
-    },
+    types::CreateChatCompletionRequest,
 };
 use async_stream;
 use color_eyre::Result;
@@ -16,17 +9,32 @@ use std::error::Error;
 use tokio_stream::{Stream, StreamExt};
 use tracing::{debug, error, info};
 
+use super::conversion::{convert_messages, convert_tools};
 use super::provider::{ChatRequest, LlmProvider};
-use crate::types::{ChatMessage, ChatMessage::*, StreamEvent, ToolDefinition};
+use crate::types::StreamEvent;
 
-pub struct OllamaProvider {
+pub enum LocalProvider {
+    Ollama,
+    LlamaCpp,
+}
+
+pub struct LocalLlmProvider {
     client: Client<OpenAIConfig>,
     model: String,
 }
 
-impl OllamaProvider {
-    pub fn new(base_url: Option<String>, model: &str) -> Result<Self> {
-        let base_url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+impl LocalLlmProvider {
+    pub fn new_ollama(model: &str) -> Result<Self> {
+        Self::new("http://localhost:11434", model)
+    }
+
+    pub fn new_llama_cpp() -> Result<Self> {
+        // Currently ignores model as LLama.cpp serves a single model per instance
+        Self::new("http://localhost:8080", "")
+    }
+
+    pub fn new(base_url: &str, model: &str) -> Result<Self> {
+        let base_url = base_url.to_string();
 
         // Ensure we have the correct base URL with /v1 for Ollama's OpenAI-compatible API
         let api_base = if base_url.ends_with("/v1") {
@@ -52,92 +60,9 @@ impl OllamaProvider {
         })
     }
 
-    fn convert_messages(messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
-        messages
-            .into_iter()
-            .flat_map(|msg| match msg {
-                System { content, .. } => Some(ChatCompletionRequestMessage::System(
-                    ChatCompletionRequestSystemMessage {
-                        content: content.into(),
-                        name: None,
-                    },
-                )),
-                User { content, .. } => Some(ChatCompletionRequestMessage::User(
-                    ChatCompletionRequestUserMessage {
-                        content: content.into(),
-                        name: None,
-                    },
-                )),
-                Assistant {
-                    content,
-                    tool_calls,
-                    ..
-                } => {
-                    let openai_tool_calls: Vec<_> = tool_calls
-                        .into_iter()
-                        .map(|call| ChatCompletionMessageToolCall {
-                            id: call.id.clone(),
-                            r#type: ChatCompletionToolType::Function,
-                            function: FunctionCall {
-                                name: call.name.clone(),
-                                arguments: call.arguments.to_string(),
-                            },
-                        })
-                        .collect();
-
-                    let tool_calls = if openai_tool_calls.is_empty() {
-                        None
-                    } else {
-                        Some(openai_tool_calls)
-                    };
-
-                    Some(ChatCompletionRequestMessage::Assistant(
-                        ChatCompletionRequestAssistantMessage {
-                            content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                                content,
-                            )),
-                            name: None,
-                            tool_calls,
-                            audio: None,
-                            refusal: None,
-                            #[allow(deprecated)]
-                            function_call: None,
-                        },
-                    ))
-                }
-                ToolCallResult {
-                    tool_call_id,
-                    content,
-                    ..
-                } => Some(ChatCompletionRequestMessage::Tool(
-                    ChatCompletionRequestToolMessage {
-                        content: ChatCompletionRequestToolMessageContent::Text(content),
-                        tool_call_id,
-                    },
-                )),
-
-                AssistantStreaming { .. } | ChatMessage::Error { .. } => None,
-            })
-            .collect()
-    }
-
-    fn convert_tools(tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
-        tools
-            .into_iter()
-            .map(|tool| ChatCompletionTool {
-                r#type: ChatCompletionToolType::Function,
-                function: FunctionObject {
-                    name: tool.name,
-                    description: Some(tool.description),
-                    parameters: Some(serde_json::from_str(&tool.parameters).unwrap_or_default()),
-                    strict: Some(false),
-                },
-            })
-            .collect()
-    }
 }
 
-impl LlmProvider for OllamaProvider {
+impl LlmProvider for LocalLlmProvider {
     fn complete_stream_chunks(
         &self,
         request: ChatRequest,
@@ -148,12 +73,12 @@ impl LlmProvider for OllamaProvider {
         async_stream::stream! {
             debug!("Starting chat completion stream for model: {}", model);
 
-            let messages = Self::convert_messages(request.messages);
+            let messages = convert_messages(request.messages);
             let message_count = messages.len();
             let tools = if request.tools.is_empty() {
                 None
             } else {
-                Some(Self::convert_tools(request.tools))
+                Some(convert_tools(request.tools))
             };
 
             let req = CreateChatCompletionRequest {
