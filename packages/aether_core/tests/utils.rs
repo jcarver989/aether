@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use aether_core::llm::{Context, ModelProvider};
+use aether_core::llm::{Context, LlmResponseStream, ModelProvider};
 use aether_core::mcp::McpManager;
 use aether_core::types::{LlmResponse, ToolCallRequest, ToolDefinition};
 use color_eyre::Result;
@@ -121,12 +121,9 @@ impl FakeLlmProvider {
 }
 
 impl ModelProvider for FakeLlmProvider {
-    fn generate_response(
-        &self,
-        _request: Context,
-    ) -> impl tokio_stream::Stream<Item = Result<LlmResponse>> + Send {
+    fn generate_response(&self, _request: Context) -> LlmResponseStream {
         let chunks = self.chunks.clone();
-        iter(chunks.into_iter().map(Ok))
+        Box::pin(iter(chunks.into_iter().map(Ok)))
     }
 }
 

@@ -144,7 +144,7 @@ impl McpManager {
                 Ok(tools_response) => {
                     for rmcp_tool in tools_response.tools {
                         let tool_name = rmcp_tool.name.to_string();
-                        let namespaced_tool_name = format!("{server_name}::{tool_name}");
+                        let namespaced_tool_name = format!("{server_name}__{tool_name}");
                         let tool = Tool::from(rmcp_tool);
 
                         self.tools.insert(namespaced_tool_name.clone(), tool);
@@ -175,7 +175,7 @@ impl McpManager {
             .ok_or_else(|| color_eyre::Report::msg(format!("Server not found: {server_name}")))?;
 
         // Extract the original tool name from the namespaced name (server_name::tool_name)
-        let original_tool_name = namespaced_tool_name.split("::").nth(1).ok_or_else(|| {
+        let original_tool_name = namespaced_tool_name.split("__").nth(1).ok_or_else(|| {
             color_eyre::Report::msg(format!("Invalid tool name format: {namespaced_tool_name}"))
         })?;
 
@@ -281,7 +281,7 @@ impl McpManager {
 
             // Remove tools from this server
             self.tools
-                .retain(|tool_name, _| !tool_name.starts_with(&format!("{}::", server_name)));
+                .retain(|tool_name, _| !tool_name.starts_with(&format!("{}__", server_name)));
             self.tool_to_server
                 .retain(|_, server| server != server_name);
         }
@@ -367,7 +367,7 @@ mod tests {
         });
 
         let result = client
-            .execute_tool("test_server::write_file", args)
+            .execute_tool("test_server__write_file", args)
             .await
             .unwrap();
 

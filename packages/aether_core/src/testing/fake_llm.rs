@@ -1,6 +1,4 @@
-use color_eyre::Result;
-
-use crate::llm::provider::{Context, ModelProvider};
+use crate::llm::provider::{Context, LlmResponseStream, ModelProvider};
 use crate::types::LlmResponse;
 
 pub struct FakeLlmProvider {
@@ -26,10 +24,7 @@ impl FakeLlmProvider {
 }
 
 impl ModelProvider for FakeLlmProvider {
-    fn generate_response(
-        &self,
-        _request: Context,
-    ) -> impl tokio_stream::Stream<Item = Result<LlmResponse>> + Send {
+    fn generate_response(&self, _request: Context) -> LlmResponseStream {
         let current_call = self
             .call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -43,6 +38,6 @@ impl ModelProvider for FakeLlmProvider {
             vec![LlmResponse::Done]
         };
 
-        tokio_stream::iter(response.into_iter().map(Ok))
+        Box::pin(tokio_stream::iter(response.into_iter().map(Ok)))
     }
 }

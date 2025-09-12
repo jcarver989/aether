@@ -1,10 +1,34 @@
-use crate::llm::{ModelProvider, local::LocalModelProvider, openrouter::OpenRouterProvider};
+use crate::llm::{
+    ModelProvider,
+    provider::{Context, LlmResponseStream},
+};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-pub enum AlloyedModelProviderEnum {
-    Local(LocalModelProvider),
-    OpenRouter(OpenRouterProvider),
+/// A ModelProvider that alternates models on every turn via a round-robin strategy.
+/// Alternating between models with different strengths and weaknesses can improve the agent's performance.
+pub struct AlloyedModelProvider {
+    providers: Vec<Box<dyn ModelProvider>>,
+    current_provider_index: AtomicUsize,
 }
 
-pub struct AlloyedModelProvider {
-    providers: Vec<AlloyedModelProviderEnum>,
+impl AlloyedModelProvider {
+    pub fn new(providers: Vec<Box<dyn ModelProvider>>) -> Self {
+        Self {
+            providers,
+            current_provider_index: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl ModelProvider for AlloyedModelProvider {
+    fn generate_response(&self, context: Context) -> LlmResponseStream {
+        if self.providers.is_empty() {
+            return Box::pin(tokio_stream::empty());
+        }
+
+        let index =
+            self.current_provider_index.fetch_add(1, Ordering::Relaxed) % self.providers.len();
+        let provider = &self.providers[index];
+        provider.generate_response(context)
+    }
 }

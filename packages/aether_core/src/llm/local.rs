@@ -2,13 +2,12 @@ use async_openai::{Client, config::OpenAIConfig, types::CreateChatCompletionRequ
 use async_stream;
 use color_eyre::Result;
 use std::error::Error;
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::StreamExt;
 use tracing::{debug, error, info};
 
 use super::mappers::{map_messages, mapp_tools};
-use super::provider::{Context, ModelProvider};
+use super::provider::{Context, LlmResponseStream, ModelProvider};
 use super::streaming::process_completion_stream;
-use crate::types::LlmResponse;
 
 pub enum LocalProvider {
     Ollama,
@@ -59,14 +58,11 @@ impl LocalModelProvider {
 }
 
 impl ModelProvider for LocalModelProvider {
-    fn generate_response(
-        &self,
-        request: Context,
-    ) -> impl Stream<Item = Result<LlmResponse>> + Send {
+    fn generate_response(&self, request: Context) -> LlmResponseStream {
         let client = self.client.clone();
         let model = self.model.clone();
 
-        async_stream::stream! {
+        Box::pin(async_stream::stream! {
             debug!("Starting chat completion stream for model: {}", model);
 
             let messages = map_messages(request.messages);
@@ -119,6 +115,6 @@ impl ModelProvider for LocalModelProvider {
             while let Some(result) = shared_stream.next().await {
                 yield result;
             }
-        }
+        })
     }
 }

@@ -11,6 +11,8 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use tokio::fs;
+use tokio::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SearchArgs {
@@ -43,6 +45,24 @@ pub struct FindFilesArgs {
     pub case_insensitive: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ReadFileArgs {
+    pub file_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct WriteFileArgs {
+    pub file_path: String,
+    pub content: String,
+    pub append: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BashArgs {
+    pub command: String,
+    pub working_dir: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct CodingMcp {
     tool_router: ToolRouter<Self>,
@@ -60,7 +80,7 @@ impl ServerHandler for CodingMcp {
                 website_url: None,
             },
             instructions: Some(
-                "A coding MCP with grep-powered search server with advanced text search capabilities".into(),
+                "A coding MCP server with grep-powered search, file operations (read/write), and bash command execution capabilities".into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
@@ -119,6 +139,39 @@ impl CodingMcp {
             Ok(result) => serde_json::to_string_pretty(&result)
                 .unwrap_or_else(|_| "Error serializing result".to_string()),
             Err(e) => format!("Find files error: {}", e),
+        }
+    }
+
+    #[tool(description = "Read contents of a file")]
+    pub async fn read_file(&self, request: Parameters<ReadFileArgs>) -> String {
+        let Parameters(args) = request;
+
+        match self.read_file_contents(args).await {
+            Ok(result) => serde_json::to_string_pretty(&result)
+                .unwrap_or_else(|_| "Error serializing result".to_string()),
+            Err(e) => format!("Read file error: {}", e),
+        }
+    }
+
+    #[tool(description = "Write content to a file")]
+    pub async fn write_file(&self, request: Parameters<WriteFileArgs>) -> String {
+        let Parameters(args) = request;
+
+        match self.write_file_contents(args).await {
+            Ok(result) => serde_json::to_string_pretty(&result)
+                .unwrap_or_else(|_| "Error serializing result".to_string()),
+            Err(e) => format!("Write file error: {}", e),
+        }
+    }
+
+    #[tool(description = "Execute a bash command")]
+    pub async fn bash(&self, request: Parameters<BashArgs>) -> String {
+        let Parameters(args) = request;
+
+        match self.execute_command(args).await {
+            Ok(result) => serde_json::to_string_pretty(&result)
+                .unwrap_or_else(|_| "Error serializing result".to_string()),
+            Err(e) => format!("Bash command error: {}", e),
         }
     }
 
@@ -330,6 +383,119 @@ impl CodingMcp {
 
         // Exact match or substring match
         filename == pattern || filename.contains(pattern)
+    }
+
+    async fn read_file_contents(&self, args: ReadFileArgs) -> Result<serde_json::Value, String> {
+        let file_path = Path::new(&args.file_path);
+
+        if !file_path.exists() {
+            return Err(format!("File does not exist: {}", args.file_path));
+        }
+
+        if !file_path.is_file() {
+            return Err(format!("Path is not a file: {}", args.file_path));
+        }
+
+        match fs::read_to_string(file_path).await {
+            Ok(content) => Ok(serde_json::json!({
+                "status": "success",
+                "file_path": args.file_path,
+                "content": content,
+                "size": content.len()
+            })),
+            Err(e) => Err(format!("Failed to read file {}: {}", args.file_path, e)),
+        }
+    }
+
+    async fn write_file_contents(&self, args: WriteFileArgs) -> Result<serde_json::Value, String> {
+        let file_path = Path::new(&args.file_path);
+        let append_mode = args.append.unwrap_or(false);
+
+        // Create parent directories if they don't exist
+        if let Some(parent) = file_path.parent() {
+            if let Err(e) = fs::create_dir_all(parent).await {
+                return Err(format!(
+                    "Failed to create directories for {}: {}",
+                    args.file_path, e
+                ));
+            }
+        }
+
+        let result = if append_mode {
+            // Append mode
+            match fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(file_path)
+                .await
+            {
+                Ok(mut file) => {
+                    use tokio::io::AsyncWriteExt;
+                    file.write_all(args.content.as_bytes()).await
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            // Write mode (overwrite)
+            fs::write(file_path, &args.content).await
+        };
+
+        match result {
+            Ok(_) => Ok(serde_json::json!({
+                "status": "success",
+                "file_path": args.file_path,
+                "operation": if append_mode { "appended" } else { "written" },
+                "size": args.content.len()
+            })),
+            Err(e) => Err(format!("Failed to write to file {}: {}", args.file_path, e)),
+        }
+    }
+
+    async fn execute_command(&self, args: BashArgs) -> Result<serde_json::Value, String> {
+        let mut cmd = Command::new("bash");
+
+        if args.command.trim() == "rm" {
+            return Err("No you can't fucking delete files".to_string());
+        }
+
+        cmd.arg("-c").arg(&args.command);
+
+        // Set working directory if provided
+        if let Some(working_dir) = &args.working_dir {
+            let wd_path = Path::new(working_dir);
+            if !wd_path.exists() {
+                return Err(format!("Working directory does not exist: {}", working_dir));
+            }
+            if !wd_path.is_dir() {
+                return Err(format!(
+                    "Working directory path is not a directory: {}",
+                    working_dir
+                ));
+            }
+            cmd.current_dir(wd_path);
+        }
+
+        match cmd.output().await {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                let exit_code = output.status.code().unwrap_or(-1);
+
+                Ok(serde_json::json!({
+                    "status": "success",
+                    "command": args.command,
+                    "working_dir": args.working_dir.unwrap_or_else(|| ".".to_string()),
+                    "exit_code": exit_code,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "success": output.status.success()
+                }))
+            }
+            Err(e) => Err(format!(
+                "Failed to execute command '{}': {}",
+                args.command, e
+            )),
+        }
     }
 }
 

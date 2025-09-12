@@ -1,5 +1,5 @@
 use aether_core::{
-    agent::{agent, AgentMessage, UserMessage},
+    agent::{AgentMessage, UserMessage, agent},
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };
@@ -41,7 +41,6 @@ async fn test_simple_tool_execution() {
         .unwrap();
 
     let mut stream = Box::pin(agent.send(UserMessage::text("Write a test file")).await);
-
 
     let mut events = Vec::new();
     while let Some(event) = stream.next().await {

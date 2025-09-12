@@ -6,4 +6,4 @@ pub mod openrouter_types;
 pub mod provider;
 pub mod streaming;
 
-pub use provider::{Context, ModelProvider};
+pub use provider::{Context, LlmResponseStream, ModelProvider};

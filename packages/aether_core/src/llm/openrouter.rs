@@ -5,7 +5,7 @@ use async_openai::types::{
 use async_openai::{Client, config::OpenAIConfig};
 use async_stream;
 use color_eyre::Result;
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::StreamExt;
 
 use super::mappers::{map_messages, mapp_tools};
 use super::openrouter_types::{
@@ -13,9 +13,8 @@ use super::openrouter_types::{
     CustomChatCompletionStreamResponseDelta, CustomFunctionCallDelta, CustomToolCallDelta,
     CustomUsage,
 };
-use super::provider::{ModelProvider, Context};
+use super::provider::{Context, LlmResponseStream, ModelProvider};
 use super::streaming::process_completion_stream;
-use crate::types::LlmResponse;
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -35,14 +34,11 @@ impl OpenRouterProvider {
 }
 
 impl ModelProvider for OpenRouterProvider {
-    fn generate_response(
-        &self,
-        request: Context,
-    ) -> impl Stream<Item = Result<LlmResponse>> + Send {
+    fn generate_response(&self, request: Context) -> LlmResponseStream {
         let client = self.client.clone();
         let model = self.model.clone();
 
-        async_stream::stream! {
+        Box::pin(async_stream::stream! {
             let messages = map_messages(request.messages);
             let tools = if request.tools.is_empty() {
                 None
@@ -80,7 +76,7 @@ impl ModelProvider for OpenRouterProvider {
             while let Some(result) = shared_stream.next().await {
                 yield result;
             }
-        }
+        })
     }
 }
 
