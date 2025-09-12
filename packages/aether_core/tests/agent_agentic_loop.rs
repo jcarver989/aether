@@ -1,9 +1,8 @@
 use aether_core::{
-    agent::{Agent, AgentMessage, UserMessage},
+    agent::{agent, AgentMessage, UserMessage},
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };
-use futures::pin_mut;
 use tokio_stream::StreamExt;
 
 #[tokio::test]
@@ -34,14 +33,15 @@ async fn test_simple_tool_execution() {
         LlmResponse::Done,
     ]);
 
-    let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()))
-        .with_coding_tools()
+    let mut agent = agent(fake_llm)
+        .system("You are a helpful assistant.")
+        .coding_tools()
+        .build()
         .await
         .unwrap();
 
-    let stream = agent.send(UserMessage::text("Write a test file")).await;
+    let mut stream = Box::pin(agent.send(UserMessage::text("Write a test file")).await);
 
-    pin_mut!(stream);
 
     let mut events = Vec::new();
     while let Some(event) = stream.next().await {
@@ -136,13 +136,14 @@ async fn test_recursive_tool_calls() {
         ],
     ]);
 
-    let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()))
-        .with_coding_tools()
+    let mut agent = agent(fake_llm)
+        .system("You are a helpful assistant.")
+        .coding_tools()
+        .build()
         .await
         .unwrap();
 
-    let stream = agent.send(UserMessage::text("Process my data")).await;
-    pin_mut!(stream);
+    let mut stream = Box::pin(agent.send(UserMessage::text("Process my data")).await);
 
     let mut events = Vec::new();
     while let Some(event) = stream.next().await {
@@ -213,13 +214,14 @@ async fn test_max_recursion_depth() {
     }
 
     let fake_llm = FakeLlmProvider::new(responses);
-    let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()))
-        .with_coding_tools()
+    let mut agent = agent(fake_llm)
+        .system("You are a helpful assistant.")
+        .coding_tools()
+        .build()
         .await
         .unwrap();
 
-    let stream = agent.send(UserMessage::text("Start endless loop")).await;
-    pin_mut!(stream);
+    let mut stream = Box::pin(agent.send(UserMessage::text("Start endless loop")).await);
 
     let mut events = Vec::new();
     while let Some(event) = stream.next().await {
@@ -255,13 +257,14 @@ async fn test_tool_execution_error_handling() {
         LlmResponse::Done,
     ]);
 
-    let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()))
-        .with_coding_tools()
+    let mut agent = agent(fake_llm)
+        .system("You are a helpful assistant.")
+        .coding_tools()
+        .build()
         .await
         .unwrap();
 
-    let stream = agent.send(UserMessage::text("Write a file")).await;
-    pin_mut!(stream);
+    let mut stream = Box::pin(agent.send(UserMessage::text("Write a file")).await);
 
     let mut events = Vec::new();
     while let Some(event) = stream.next().await {

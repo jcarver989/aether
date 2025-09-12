@@ -1,21 +1,26 @@
-use aether_core::{agent::Agent, testing::FakeLlmProvider, mcp::builtin_servers::CodingMcp, testing::FileServerMcp, testing::InMemoryFileSystem};
+use aether_core::{agent::{agent, McpServerConfig}, testing::FakeLlmProvider};
 use std::collections::HashMap;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
 #[tokio::test]
 async fn test_agent_with_http_mcp_method() {
     let llm = FakeLlmProvider::new(vec![]);
-    let agent = Agent::new(llm, None);
     
-    // Test that the method exists and returns a Result
+    // Test that we can configure HTTP MCP through McpServerConfig
     let config = StreamableHttpClientTransportConfig {
         uri: "http://localhost:3000".into(),
         ..Default::default()
     };
-    let result = agent.with_http_mcp(
-        "test".to_string(),
-        &config,
-    ).await;
+    
+    let mcp_config = McpServerConfig::Http {
+        name: "test".to_string(),
+        config,
+    };
+    
+    let result = agent(llm)
+        .mcp(mcp_config)
+        .build()
+        .await;
     
     // For this test, we expect an error since no actual server is running
     // but the method should exist and be callable
@@ -25,16 +30,20 @@ async fn test_agent_with_http_mcp_method() {
 #[tokio::test]
 async fn test_agent_with_stdio_mcp_method() {
     let llm = FakeLlmProvider::new(vec![]);
-    let agent = Agent::new(llm, None);
     
-    // Test that the method exists and returns a Result
+    // Test that we can configure stdio MCP through McpServerConfig
     let env = HashMap::new();
-    let result = agent.with_stdio_mcp(
-        "test".to_string(),
-        "echo".to_string(),
-        vec!["hello".to_string()],
+    let mcp_config = McpServerConfig::Stdio {
+        name: "test".to_string(),
+        command: "echo".to_string(),
+        args: vec!["hello".to_string()],
         env,
-    ).await;
+    };
+    
+    let result = agent(llm)
+        .mcp(mcp_config)
+        .build()
+        .await;
     
     // For this test, we expect an error since stdio MCP is not yet implemented
     assert!(result.is_err());
@@ -43,13 +52,12 @@ async fn test_agent_with_stdio_mcp_method() {
 #[tokio::test]
 async fn test_agent_with_in_memory_mcp_method() {
     let llm = FakeLlmProvider::new(vec![]);
-    let agent = Agent::new(llm, None);
     
-    // Test with CodingMcp server
-    let result = agent.with_in_memory_mcp(
-        "coding".to_string(),
-        CodingMcp::new(),
-    ).await;
+    // Test with coding tools - this is now done via coding_tools() method
+    let result = agent(llm)
+        .coding_tools()
+        .build()
+        .await;
     
     assert!(result.is_ok());
 }
@@ -57,16 +65,12 @@ async fn test_agent_with_in_memory_mcp_method() {
 #[tokio::test]
 async fn test_agent_with_file_server_mcp() {
     let llm = FakeLlmProvider::new(vec![]);
-    let agent = Agent::new(llm, None);
     
-    let filesystem = InMemoryFileSystem::new();
-    let file_server = FileServerMcp::new(filesystem);
-    
-    // Test with FileServerMcp
-    let result = agent.with_in_memory_mcp(
-        "file_server".to_string(),
-        file_server,
-    ).await;
+    // Test with coding tools which includes file operations
+    let result = agent(llm)
+        .coding_tools()
+        .build()
+        .await;
     
     assert!(result.is_ok());
 }
@@ -74,17 +78,12 @@ async fn test_agent_with_file_server_mcp() {
 #[tokio::test]
 async fn test_agent_method_chaining() {
     let llm = FakeLlmProvider::new(vec![]);
-    let agent = Agent::new(llm, None);
     
     // Test method chaining works
-    let filesystem = InMemoryFileSystem::new();
-    let file_server = FileServerMcp::new(filesystem);
-    
-    let result = agent
-        .with_coding_tools()
-        .await
-        .unwrap()
-        .with_in_memory_mcp("file_server".to_string(), file_server)
+    let result = agent(llm)
+        .system("test system prompt")
+        .coding_tools()
+        .build()
         .await;
     
     assert!(result.is_ok());

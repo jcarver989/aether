@@ -1,5 +1,5 @@
 use aether_core::{
-    agent::{Agent, AgentMessage, UserMessage},
+    agent::{AgentMessage, UserMessage, agent},
     llm::local::LocalModelProvider,
 };
 use clap::Parser;
@@ -23,7 +23,11 @@ pub async fn main() {
     let prompt = cli.prompt.unwrap();
 
     let provider = LocalModelProvider::llama_cpp().unwrap();
-    let mut agent = Agent::new(provider, cli.system);
+    let mut agent = agent(provider)
+        .system(&cli.system.unwrap_or_default())
+        .build()
+        .await
+        .unwrap();
 
     let result_stream = agent.send(UserMessage::text(&prompt)).await;
     pin_mut!(result_stream);

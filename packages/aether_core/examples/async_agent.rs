@@ -1,40 +1,21 @@
 use aether_core::{
-    agent::{Agent, AgentMessage, UserMessage},
+    agent::{AgentMessage, UserMessage, agent},
     llm::local::LocalModelProvider,
 };
-use futures::pin_mut;
-use tokio_stream::StreamExt;
 
 #[tokio::main]
-pub async fn main() {
+pub async fn main() -> color_eyre::Result<()> {
     println!("Hello world");
 
-    let (client_tx, mut client_rx) = tokio::sync::mpsc::channel::<AgentMessage>(100);
-    let (agent_tx, mut agent_rx) = tokio::sync::mpsc::channel::<&str>(100);
+    let provider = LocalModelProvider::llama_cpp()?;
+    let (tx, mut rx) = agent(provider)
+        .system("you are a helpful agent")
+        .spawn()
+        .await?;
 
-    let _ = tokio::spawn(async move {
-        let provider = LocalModelProvider::llama_cpp().unwrap();
-        let mut agent = Agent::new(provider, Some("you are a helpful agent".to_string()));
+    tx.send(UserMessage::text("What is 5+5?")).await.unwrap();
 
-        while let Some(message) = agent_rx.recv().await {
-            let result_stream = agent.send(UserMessage::text(message)).await;
-            pin_mut!(result_stream);
-
-            while let Some(event) = result_stream.next().await {
-                match client_tx.send(event).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        eprintln!("Error sending agent event: {}", e);
-                        break;
-                    }
-                }
-            }
-        }
-    });
-
-    agent_tx.send("What is 5+5?").await.unwrap();
-
-    while let Some(event) = client_rx.recv().await {
+    while let Some(event) = rx.recv().await {
         match event {
             AgentMessage::Text {
                 chunk, is_complete, ..
@@ -62,4 +43,6 @@ pub async fn main() {
             }
         }
     }
+
+    Ok(())
 }

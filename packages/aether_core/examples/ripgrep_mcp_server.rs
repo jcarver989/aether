@@ -1,4 +1,4 @@
-use aether_core::agent::{Agent, AgentMessage::*, UserMessage};
+use aether_core::agent::{AgentMessage::*, UserMessage, agent};
 use aether_core::llm::local::LocalModelProvider;
 use futures::pin_mut;
 use std::env;
@@ -23,17 +23,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let user_prompt = args[1..].join(" ");
     let llm = LocalModelProvider::llama_cpp()?;
-    let system_prompt = Some(
-        "You are a helpful code search and analysis assistant. 
+
+    let system_prompt = "You are a helpful code search and analysis assistant. 
          You have access to powerful code search tools that 
          can help you find patterns, functions, files, and 
          analyze codebases. When users ask questions about code,
          use the available tools to search and provide detailed, 
-         helpful answers."
-            .to_string(),
-    );
+         helpful answers.";
 
-    let mut agent = Agent::new(llm, system_prompt).with_coding_tools().await?;
+    let mut agent = agent(llm)
+        .system(system_prompt)
+        .coding_tools()
+        .build()
+        .await?;
+
     let result_stream = agent.send(UserMessage::text(&user_prompt)).await;
 
     pin_mut!(result_stream);
