@@ -13,7 +13,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::types::ToolDefinition;
-use crate::{mcp::mcp_config::McpServerConfig, testing::create_transport_pair};
+use crate::{mcp::builtin_servers::CodingMcp, testing::create_transport_pair};
+use rmcp::ServerHandler;
 
 pub struct McpManager {
     servers: HashMap<String, McpServerConnection>,
@@ -30,7 +31,12 @@ impl McpManager {
         }
     }
 
-    pub async fn add_server(&mut self, config: McpServerConfig) -> Result<()> {
+    pub async fn with_http_mcp(
+        &mut self,
+        name: String,
+        url: String,
+        headers: HashMap<String, String>,
+    ) -> Result<()> {
         let client_info = ClientInfo {
             protocol_version: Default::default(),
             capabilities: ClientCapabilities::default(),
@@ -40,83 +46,86 @@ impl McpManager {
             },
         };
 
-        let server = match config {
-            McpServerConfig::Http { name, url, .. } => {
-                let transport = StreamableHttpClientTransport::from_uri(url.clone());
-                let client = serve_client(client_info, transport).await.map_err(|e| {
-                    Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
-                })?;
+        let transport = StreamableHttpClientTransport::from_uri(url.clone());
+        let client = serve_client(client_info, transport).await.map_err(|e| {
+            Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
+        })?;
 
-                McpServerConnection {
-                    name,
-                    client,
-                    server_task: None,
-                }
-            }
-
-            McpServerConfig::Stdio {
-                name,
-                command,
-                args,
-                ..
-            } => {
-                return Err(Report::msg(format!(
-                    "Process-based MCP servers not yet implemented for {}: {} {}",
-                    name,
-                    command,
-                    args.join(" ")
-                )));
-            }
-
-            McpServerConfig::InMemory { name, transport } => {
-                let client = serve_client(client_info, transport).await.map_err(|e| {
-                    Report::msg(format!(
-                        "Failed to connect to in-memory MCP server {name}: {e}"
-                    ))
-                })?;
-
-                McpServerConnection {
-                    name,
-                    client,
-                    server_task: None,
-                }
-            }
-
-            McpServerConfig::InMemoryServer { name, server } => {
-                let (client_transport, server_transport) = create_transport_pair();
-
-                // Spawn the server task in the background
-                let server_handle = tokio::spawn(async move {
-                    match serve_server(server, server_transport).await {
-                        Ok(_service) => {
-                            // Keep the service running (it will run until the transport is dropped)
-                            std::future::pending::<()>().await;
-                        }
-                        Err(e) => {
-                            eprintln!("MCP server error: {}", e);
-                        }
-                    }
-                });
-
-                let client = serve_client(client_info, client_transport)
-                    .await
-                    .map_err(|e| {
-                        Report::msg(format!(
-                            "Failed to connect to in-memory MCP server {name}: {e}"
-                        ))
-                    })?;
-
-                McpServerConnection {
-                    name,
-                    client,
-                    server_task: Some(server_handle),
-                }
-            }
+        let server_connection = McpServerConnection {
+            name: name.clone(),
+            client,
+            server_task: None,
         };
 
-        self.servers.insert(server.name.clone(), server);
+        self.servers.insert(name, server_connection);
+        Ok(())
+    }
+
+    pub async fn with_stdio_mcp(
+        &mut self,
+        name: String,
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+    ) -> Result<()> {
+        return Err(Report::msg(format!(
+            "Process-based MCP servers not yet implemented for {}: {} {}",
+            name,
+            command,
+            args.join(" ")
+        )));
+    }
+
+    pub async fn with_in_memory_mcp<T: ServerHandler>(
+        &mut self,
+        name: String,
+        server: T,
+    ) -> Result<()> {
+        let client_info = ClientInfo {
+            protocol_version: Default::default(),
+            capabilities: ClientCapabilities::default(),
+            client_info: Implementation {
+                name: "aether".to_string(),
+                version: "0.1.0".to_string(),
+            },
+        };
+
+        let (client_transport, server_transport) = create_transport_pair();
+
+        // Spawn the server task in the background
+        let server_handle = tokio::spawn(async move {
+            match serve_server(server, server_transport).await {
+                Ok(_service) => {
+                    // Keep the service running (it will run until the transport is dropped)
+                    std::future::pending::<()>().await;
+                }
+                Err(e) => {
+                    eprintln!("MCP server error: {}", e);
+                }
+            }
+        });
+
+        let client = serve_client(client_info, client_transport)
+            .await
+            .map_err(|e| {
+                Report::msg(format!(
+                    "Failed to connect to in-memory MCP server {name}: {e}"
+                ))
+            })?;
+
+        let server_connection = McpServerConnection {
+            name: name.clone(),
+            client,
+            server_task: Some(server_handle),
+        };
+
+        self.servers.insert(name, server_connection);
 
         Ok(())
+    }
+
+    pub async fn add_coding_server(&mut self, name: String) -> Result<()> {
+        self.with_in_memory_mcp(name, CodingMcp::new()).await
     }
 
     pub async fn discover_tools(&mut self) -> Result<()> {
@@ -316,9 +325,7 @@ impl Default for McpManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::mcp_config::McpServerConfig;
-    use crate::testing::{FileServerMcp, InMemoryFileSystem, create_transport_pair};
-    use rmcp::serve_server;
+    use crate::testing::{FileServerMcp, InMemoryFileSystem};
 
     #[tokio::test]
     async fn test_in_memory_transport_integration() {
@@ -326,25 +333,12 @@ mod tests {
         let filesystem = InMemoryFileSystem::new();
         let server = FileServerMcp::new(filesystem);
 
-        // Create transport pair
-        let (client_transport, server_transport) = create_transport_pair();
-
-        // Start the server with the server transport
-        let _server_handle =
-            tokio::spawn(async move { serve_server(server, server_transport).await });
-
-        // Give the server a moment to start
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-
-        // Create client with in-memory transport config
+        // Create client and connect in-memory server directly
         let mut client = McpManager::new();
-        let config = McpServerConfig::InMemory {
-            name: "test_server".to_string(),
-            transport: client_transport,
-        };
-
-        // Connect to server
-        client.add_server(config).await.unwrap();
+        client
+            .with_in_memory_mcp("test_server".to_string(), server)
+            .await
+            .unwrap();
 
         // Discover tools
         client.discover_tools().await.unwrap();

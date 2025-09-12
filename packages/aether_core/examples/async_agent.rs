@@ -37,7 +37,7 @@ pub async fn main() {
 
     while let Some(event) = client_rx.recv().await {
         match event {
-            AgentMessage::MessageChunk {
+            AgentMessage::Message {
                 chunk, is_complete, ..
             } => {
                 if is_complete {
@@ -48,7 +48,7 @@ pub async fn main() {
                 }
             }
 
-            AgentMessage::ToolCallChunk {
+            AgentMessage::ToolCall {
                 name, is_complete, ..
             } => {
                 if is_complete {

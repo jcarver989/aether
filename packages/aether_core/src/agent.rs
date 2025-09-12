@@ -1,6 +1,7 @@
 use crate::llm::ChatRequest;
 use crate::llm::LlmProvider;
-use crate::mcp::{McpManager, mcp_config::McpServerConfig};
+use crate::mcp::McpManager;
+use crate::mcp::builtin_servers::CodingMcp;
 use crate::types::{ChatMessage, IsoString, LlmMessage};
 use async_stream::stream;
 use color_eyre::Result;
@@ -10,13 +11,13 @@ use tokio_stream::Stream;
 
 #[derive(Debug, Clone)]
 pub enum AgentMessage {
-    MessageChunk {
+    Message {
         message_id: String,
         chunk: String,
         is_complete: bool,
     },
 
-    ToolCallChunk {
+    ToolCall {
         tool_call_id: String,
         name: String,
         arguments: Option<String>,
@@ -53,12 +54,43 @@ impl<T: LlmProvider> Agent<T> {
         }
     }
 
-    pub async fn with_servers(mut self, server_configs: Vec<McpServerConfig>) -> Result<Self> {
-        for config in server_configs {
-            self.mcp_client.add_server(config).await?;
-        }
+    pub async fn with_coding_tools(mut self) -> Result<Self> {
+        self.mcp_client
+            .with_in_memory_mcp("coding".to_string(), CodingMcp::new())
+            .await?;
 
-        self.mcp_client.discover_tools().await?;
+        Ok(self)
+    }
+
+    pub async fn with_http_mcp(
+        mut self,
+        name: String,
+        url: String,
+        headers: std::collections::HashMap<String, String>,
+    ) -> Result<Self> {
+        self.mcp_client.with_http_mcp(name, url, headers).await?;
+        Ok(self)
+    }
+
+    pub async fn with_stdio_mcp(
+        mut self,
+        name: String,
+        command: String,
+        args: Vec<String>,
+        env: std::collections::HashMap<String, String>,
+    ) -> Result<Self> {
+        self.mcp_client
+            .with_stdio_mcp(name, command, args, env)
+            .await?;
+        Ok(self)
+    }
+
+    pub async fn with_in_memory_mcp<S: rmcp::ServerHandler>(
+        mut self,
+        name: String,
+        server: S,
+    ) -> Result<Self> {
+        self.mcp_client.with_in_memory_mcp(name, server).await?;
         Ok(self)
     }
 
@@ -77,6 +109,16 @@ impl<T: LlmProvider> Agent<T> {
         let mut n_iterations = 0;
 
         stream! {
+            match self.mcp_client.discover_tools().await  {
+                Ok(_) => {}
+                Err(e) => {
+                    yield AgentMessage::Error {
+                        message: format!("Failed to discover tools: {}", e),
+                    };
+                    return
+                }
+            };
+
             loop {
                 if n_iterations >= MAX_ITERATIONS {
                     yield AgentMessage::Error {
@@ -109,7 +151,7 @@ impl<T: LlmProvider> Agent<T> {
                             accumulated_content.push_str(&chunk);
 
                             if let Some(message_id) = &current_message_id {
-                                yield AgentMessage::MessageChunk {
+                                yield AgentMessage::Message {
                                     message_id: message_id.clone(),
                                     chunk,
                                     is_complete: false,
@@ -117,7 +159,7 @@ impl<T: LlmProvider> Agent<T> {
                             }
                         }
                         Ok(LlmMessage::ToolRequestStart { id, name }) => {
-                            yield AgentMessage::ToolCallChunk {
+                            yield AgentMessage::ToolCall {
                                 tool_call_id: id,
                                 name,
                                 arguments: None,
@@ -126,7 +168,7 @@ impl<T: LlmProvider> Agent<T> {
                             };
                         }
                         Ok(LlmMessage::ToolRequestArg { id, chunk }) => {
-                            yield AgentMessage::ToolCallChunk {
+                            yield AgentMessage::ToolCall {
                                 tool_call_id: id,
                                 name: String::new(), // Name will be available from the start event
                                 arguments: Some(chunk),
@@ -146,7 +188,7 @@ impl<T: LlmProvider> Agent<T> {
                             };
 
                             // Store tool result but don't add to messages yet - wait for LLM Done
-                            yield AgentMessage::ToolCallChunk {
+                            yield AgentMessage::ToolCall {
                                 tool_call_id: tool_call.id.clone(),
                                 name: tool_call.name.clone(),
                                 arguments: None,
@@ -161,7 +203,7 @@ impl<T: LlmProvider> Agent<T> {
                         Ok(LlmMessage::Done) => {
                             // Send final message chunk to indicate completion
                             if let Some(message_id) = &current_message_id {
-                                yield AgentMessage::MessageChunk {
+                                yield AgentMessage::Message {
                                     message_id: message_id.clone(),
                                     chunk: String::new(),
                                     is_complete: true,
