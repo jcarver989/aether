@@ -1,6 +1,6 @@
 use aether_core::{
     agent::{Agent, AgentEvent},
-    llm::ollama::LocalLlmProvider,
+    llm::local::LocalLlmProvider,
     tools::ToolRegistry,
 };
 use futures::pin_mut;

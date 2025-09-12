@@ -15,7 +15,7 @@ use super::openrouter_types::{
 };
 use super::provider::{ChatRequest, LlmProvider};
 use super::streaming::process_completion_stream;
-use crate::types::StreamEvent;
+use crate::types::LlmMessage;
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -31,6 +31,56 @@ impl OpenRouterProvider {
         let client = Client::with_config(config);
 
         Ok(Self { client, model })
+    }
+}
+
+impl LlmProvider for OpenRouterProvider {
+    fn complete_stream_chunks(
+        &self,
+        request: ChatRequest,
+    ) -> impl Stream<Item = Result<LlmMessage>> + Send {
+        let client = self.client.clone();
+        let model = self.model.clone();
+
+        async_stream::stream! {
+            let messages = map_messages(request.messages);
+            let tools = if request.tools.is_empty() {
+                None
+            } else {
+                Some(mapp_tools(request.tools))
+            };
+
+            let req = CreateChatCompletionRequest {
+                model: model.clone(),
+                messages,
+                stream: Some(true),
+                tools,
+                ..Default::default()
+            };
+
+            let stream = match client
+                .chat()
+                .create_stream_byot::<CreateChatCompletionRequest, CustomChatCompletionStreamResponse>(req)
+                .await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    yield Err(color_eyre::eyre::eyre!("OpenRouter API request failed: {}", e));
+                    return;
+                }
+            };
+
+            // Convert custom responses to standard async_openai types and handle errors
+            let standard_stream = stream.map(|result| {
+                result
+                    .map(|custom| custom.into())
+                    .map_err(|e| color_eyre::eyre::eyre!("OpenRouter API error: {}", e))
+            });
+
+            let mut shared_stream = Box::pin(process_completion_stream(standard_stream));
+            while let Some(result) = shared_stream.next().await {
+                yield result;
+            }
+        }
     }
 }
 
@@ -112,56 +162,6 @@ impl From<CustomUsage> for async_openai::types::CompletionUsage {
             total_tokens: u.total_tokens as u32,
             completion_tokens_details: None,
             prompt_tokens_details: None,
-        }
-    }
-}
-
-impl LlmProvider for OpenRouterProvider {
-    fn complete_stream_chunks(
-        &self,
-        request: ChatRequest,
-    ) -> impl Stream<Item = Result<StreamEvent>> + Send {
-        let client = self.client.clone();
-        let model = self.model.clone();
-
-        async_stream::stream! {
-            let messages = map_messages(request.messages);
-            let tools = if request.tools.is_empty() {
-                None
-            } else {
-                Some(mapp_tools(request.tools))
-            };
-
-            let req = CreateChatCompletionRequest {
-                model: model.clone(),
-                messages,
-                stream: Some(true),
-                tools,
-                ..Default::default()
-            };
-
-            let stream = match client
-                .chat()
-                .create_stream_byot::<CreateChatCompletionRequest, CustomChatCompletionStreamResponse>(req)
-                .await {
-                Ok(stream) => stream,
-                Err(e) => {
-                    yield Err(color_eyre::eyre::eyre!("OpenRouter API request failed: {}", e));
-                    return;
-                }
-            };
-
-            // Convert custom responses to standard async_openai types and handle errors
-            let standard_stream = stream.map(|result| {
-                result
-                    .map(|custom| custom.into())
-                    .map_err(|e| color_eyre::eyre::eyre!("OpenRouter API error: {}", e))
-            });
-
-            let mut shared_stream = Box::pin(process_completion_stream(standard_stream));
-            while let Some(result) = shared_stream.next().await {
-                yield result;
-            }
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::llm::ChatRequest;
 use crate::llm::LlmProvider;
 use crate::tools::ToolRegistry;
-use crate::types::{ChatMessage, IsoString, StreamEvent, ToolCall, ToolDefinition};
+use crate::types::{ChatMessage, IsoString, LlmMessage, ToolCall, ToolDefinition};
 use async_stream::stream;
 use futures::StreamExt;
 use futures::pin_mut;
@@ -86,10 +86,10 @@ impl<T: LlmProvider> Agent<T> {
 
             while let Some(event) = llm_stream.next().await {
                 match event {
-                    Ok(StreamEvent::Start { message_id }) => {
+                    Ok(LlmMessage::Start { message_id }) => {
                         current_message_id = Some(message_id);
                     }
-                    Ok(StreamEvent::Content { chunk }) => {
+                    Ok(LlmMessage::Content { chunk }) => {
                         accumulated_content.push_str(&chunk);
 
                         if let Some(message_id) = &current_message_id {
@@ -100,7 +100,7 @@ impl<T: LlmProvider> Agent<T> {
                             };
                         }
                     }
-                    Ok(StreamEvent::ToolCallStart { id, name }) => {
+                    Ok(LlmMessage::ToolCallStart { id, name }) => {
                         active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
 
                         yield AgentEvent::ToolCallChunk {
@@ -111,7 +111,7 @@ impl<T: LlmProvider> Agent<T> {
                             is_complete: false,
                         };
                     }
-                    Ok(StreamEvent::ToolCallArgument { id, chunk }) => {
+                    Ok(LlmMessage::ToolCallArgument { id, chunk }) => {
                         if let Some((_, arguments)) = active_tool_calls.get_mut(&id) {
                             arguments.push_str(&chunk);
                         }
@@ -129,7 +129,7 @@ impl<T: LlmProvider> Agent<T> {
                             is_complete: false,
                         };
                     }
-                    Ok(StreamEvent::ToolCallComplete { id }) => {
+                    Ok(LlmMessage::ToolCallComplete { id }) => {
                         if let Some((name, arguments)) = active_tool_calls.remove(&id) {
                             completed_tool_calls.push(ToolCall {
                                 id: id.clone(),
@@ -146,7 +146,7 @@ impl<T: LlmProvider> Agent<T> {
                             };
                         }
                     }
-                    Ok(StreamEvent::Done) => {
+                    Ok(LlmMessage::Done) => {
                         // Send final message chunk to indicate completion
                         if let Some(message_id) = &current_message_id {
                             yield AgentEvent::MessageChunk {
@@ -165,7 +165,7 @@ impl<T: LlmProvider> Agent<T> {
 
                         break;
                     }
-                    Ok(StreamEvent::Error { message }) => {
+                    Ok(LlmMessage::Error { message }) => {
                         yield AgentEvent::Error { message };
                     }
                     Err(e) => {

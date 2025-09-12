@@ -4,7 +4,7 @@ use specta::Type;
 use tokio_stream::Stream;
 
 // Import types from crate::types instead of duplicating
-use crate::types::{ChatMessage, StreamEvent, ToolDefinition};
+use crate::types::{ChatMessage, LlmMessage, ToolDefinition};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ChatRequest {
@@ -16,5 +16,5 @@ pub trait LlmProvider: Send + Sync {
     fn complete_stream_chunks(
         &self,
         request: ChatRequest,
-    ) -> impl Stream<Item = Result<StreamEvent>> + Send;
+    ) -> impl Stream<Item = Result<LlmMessage>> + Send;
 }

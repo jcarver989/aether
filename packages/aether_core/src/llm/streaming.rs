@@ -4,16 +4,16 @@ use color_eyre::Result;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
 
-use crate::types::StreamEvent;
+use crate::types::LlmMessage;
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard async_openai CreateChatCompletionStreamResponse types.
 pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
     mut stream: impl Stream<Item = Result<CreateChatCompletionStreamResponse, E>> + Send + Unpin,
-) -> impl Stream<Item = Result<StreamEvent>> + Send {
+) -> impl Stream<Item = Result<LlmMessage>> + Send {
     async_stream::stream! {
         let message_id = uuid::Uuid::new_v4().to_string();
-        yield Ok(StreamEvent::Start { message_id: message_id.clone() });
+        yield Ok(LlmMessage::Start { message_id: message_id.clone() });
 
         let mut current_tool_id: Option<String> = None;
 
@@ -29,9 +29,9 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                 // If we have a pending tool call and now we're getting content,
                                 // complete the tool call first
                                 if let Some(id) = current_tool_id.take() {
-                                    yield Ok(StreamEvent::ToolCallComplete { id });
+                                    yield Ok(LlmMessage::ToolCallComplete { id });
                                 }
-                                yield Ok(StreamEvent::Content { chunk: content.clone() });
+                                yield Ok(LlmMessage::Content { chunk: content.clone() });
                             }
                         }
 
@@ -43,7 +43,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                     if let Some(name) = &function.name {
                                         let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
                                         current_tool_id = Some(id.clone());
-                                        yield Ok(StreamEvent::ToolCallStart {
+                                        yield Ok(LlmMessage::ToolCallStart {
                                             id,
                                             name: name.clone(),
                                         });
@@ -53,7 +53,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                     if let Some(arguments) = &function.arguments {
                                         if !arguments.is_empty() {
                                             if let Some(id) = &current_tool_id {
-                                                yield Ok(StreamEvent::ToolCallArgument {
+                                                yield Ok(LlmMessage::ToolCallArgument {
                                                     id: id.clone(),
                                                     chunk: arguments.clone(),
                                                 });
@@ -71,20 +71,20 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
 
                             // Complete any pending tool call before ending
                             if let Some(id) = current_tool_id.take() {
-                                yield Ok(StreamEvent::ToolCallComplete { id });
+                                yield Ok(LlmMessage::ToolCallComplete { id });
                             }
 
                             // End the stream for any finish reason
-                            yield Ok(StreamEvent::Done);
+                            yield Ok(LlmMessage::Done);
                             break;
                         }
                     } else {
                         // No choices means stream is done
                         debug!("No choices in response, ending stream");
                         if let Some(id) = current_tool_id.take() {
-                            yield Ok(StreamEvent::ToolCallComplete { id });
+                            yield Ok(LlmMessage::ToolCallComplete { id });
                         }
-                        yield Ok(StreamEvent::Done);
+                        yield Ok(LlmMessage::Done);
                         break;
                     }
                 }

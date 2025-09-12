@@ -4,7 +4,7 @@ use aether_core::llm::{ChatRequest, LlmProvider};
 use aether_core::mcp::client::McpClient;
 use aether_core::mcp::mcp_config::McpServerConfig;
 use aether_core::tools::ToolRegistry;
-use aether_core::types::{StreamEvent, ToolCall, ToolDefinition};
+use aether_core::types::{LlmMessage, ToolCall, ToolDefinition};
 use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};
@@ -90,58 +90,58 @@ pub fn create_test_tool_registry_with_tools(tools: Vec<(&str, &str, &str)>) -> T
 // LLM Provider Test Helpers
 
 pub struct FakeLlmProvider {
-    pub chunks: Vec<StreamEvent>,
+    pub chunks: Vec<LlmMessage>,
 }
 
 impl FakeLlmProvider {
-    pub fn new(chunks: Vec<StreamEvent>) -> Self {
+    pub fn new(chunks: Vec<LlmMessage>) -> Self {
         Self { chunks }
     }
 
     pub fn with_content(content: &str) -> Self {
         let chunks = vec![
-            StreamEvent::Content {
+            LlmMessage::Content {
                 chunk: content.to_string(),
             },
-            StreamEvent::Done,
+            LlmMessage::Done,
         ];
         Self { chunks }
     }
 
     pub fn with_content_chunks(content_chunks: Vec<&str>) -> Self {
-        let mut chunks: Vec<StreamEvent> = content_chunks
+        let mut chunks: Vec<LlmMessage> = content_chunks
             .into_iter()
-            .map(|s| StreamEvent::Content {
+            .map(|s| LlmMessage::Content {
                 chunk: s.to_string(),
             })
             .collect();
-        chunks.push(StreamEvent::Done);
+        chunks.push(LlmMessage::Done);
         Self { chunks }
     }
 
     pub fn with_tool_call(content: &str, tool_id: &str, tool_name: &str, arguments: &str) -> Self {
         let chunks = vec![
-            StreamEvent::Content {
+            LlmMessage::Content {
                 chunk: content.to_string(),
             },
-            StreamEvent::ToolCallStart {
+            LlmMessage::ToolCallStart {
                 id: tool_id.to_string(),
                 name: tool_name.to_string(),
             },
-            StreamEvent::ToolCallArgument {
+            LlmMessage::ToolCallArgument {
                 id: tool_id.to_string(),
                 chunk: arguments.to_string(),
             },
-            StreamEvent::ToolCallComplete {
+            LlmMessage::ToolCallComplete {
                 id: tool_id.to_string(),
             },
-            StreamEvent::Done,
+            LlmMessage::Done,
         ];
         Self { chunks }
     }
 
     pub fn with_error_after(content: &str, _chunk_count: usize) -> Self {
-        let chunks = vec![StreamEvent::Content {
+        let chunks = vec![LlmMessage::Content {
             chunk: content.to_string(),
         }];
         // Note: Error handling would be implemented in a specialized provider
@@ -150,7 +150,7 @@ impl FakeLlmProvider {
 }
 
 impl LlmProvider for FakeLlmProvider {
-    fn complete_stream_chunks(&self, _request: ChatRequest) -> impl tokio_stream::Stream<Item = Result<StreamEvent>> + Send {
+    fn complete_stream_chunks(&self, _request: ChatRequest) -> impl tokio_stream::Stream<Item = Result<LlmMessage>> + Send {
         let chunks = self.chunks.clone();
         iter(chunks.into_iter().map(Ok))
     }
@@ -187,28 +187,28 @@ pub fn create_test_tool_call(id: &str, name: &str, arguments: Value) -> ToolCall
 
 // Stream Processing Test Helpers
 
-pub async fn collect_stream_content(mut stream: impl tokio_stream::Stream<Item = Result<StreamEvent>> + Unpin) -> Result<String> {
+pub async fn collect_stream_content(mut stream: impl tokio_stream::Stream<Item = Result<LlmMessage>> + Unpin) -> Result<String> {
     use tokio_stream::StreamExt;
 
     let mut content = String::new();
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
-        if let StreamEvent::Content { chunk: text } = chunk {
+        if let LlmMessage::Content { chunk: text } = chunk {
             content.push_str(&text);
-        } else if let StreamEvent::Done = chunk {
+        } else if let LlmMessage::Done = chunk {
             break;
         }
     }
     Ok(content)
 }
 
-pub async fn collect_stream_chunks(mut stream: impl tokio_stream::Stream<Item = Result<StreamEvent>> + Unpin) -> Result<Vec<StreamEvent>> {
+pub async fn collect_stream_chunks(mut stream: impl tokio_stream::Stream<Item = Result<LlmMessage>> + Unpin) -> Result<Vec<LlmMessage>> {
     use tokio_stream::StreamExt;
 
     let mut chunks = Vec::new();
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
-        let is_done = matches!(chunk, StreamEvent::Done);
+        let is_done = matches!(chunk, LlmMessage::Done);
         chunks.push(chunk);
         if is_done {
             break;
@@ -272,17 +272,17 @@ pub fn assert_tool_in_registry(registry: &ToolRegistry, tool_name: &str, expecte
     );
 }
 
-pub fn assert_stream_event_matches(actual: &StreamEvent, expected: &StreamEvent) {
+pub fn assert_stream_event_matches(actual: &LlmMessage, expected: &LlmMessage) {
     match (actual, expected) {
-        (StreamEvent::Content { chunk: a }, StreamEvent::Content { chunk: b }) => {
+        (LlmMessage::Content { chunk: a }, LlmMessage::Content { chunk: b }) => {
             assert_eq!(a, b)
         }
         (
-            StreamEvent::ToolCallStart {
+            LlmMessage::ToolCallStart {
                 id: id1,
                 name: name1,
             },
-            StreamEvent::ToolCallStart {
+            LlmMessage::ToolCallStart {
                 id: id2,
                 name: name2,
             },
@@ -291,11 +291,11 @@ pub fn assert_stream_event_matches(actual: &StreamEvent, expected: &StreamEvent)
             assert_eq!(name1, name2);
         }
         (
-            StreamEvent::ToolCallArgument {
+            LlmMessage::ToolCallArgument {
                 id: id1,
                 chunk: arg1,
             },
-            StreamEvent::ToolCallArgument {
+            LlmMessage::ToolCallArgument {
                 id: id2,
                 chunk: arg2,
             },
@@ -303,10 +303,10 @@ pub fn assert_stream_event_matches(actual: &StreamEvent, expected: &StreamEvent)
             assert_eq!(id1, id2);
             assert_eq!(arg1, arg2);
         }
-        (StreamEvent::ToolCallComplete { id: id1 }, StreamEvent::ToolCallComplete { id: id2 }) => {
+        (LlmMessage::ToolCallComplete { id: id1 }, LlmMessage::ToolCallComplete { id: id2 }) => {
             assert_eq!(id1, id2);
         }
-        (StreamEvent::Done, StreamEvent::Done) => {}
+        (LlmMessage::Done, LlmMessage::Done) => {}
         _ => panic!("Stream chunk mismatch:\nActual: {actual:?}\nExpected: {expected:?}"),
     }
 }

@@ -73,7 +73,7 @@ pub enum ToolCallState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
-pub enum StreamEvent {
+pub enum LlmMessage {
     Start { message_id: String },
     Content { chunk: String },
     ToolCallStart { id: String, name: String },

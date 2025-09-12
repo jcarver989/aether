@@ -8,7 +8,7 @@ use tracing::{debug, error, info};
 use super::mappers::{map_messages, mapp_tools};
 use super::provider::{ChatRequest, LlmProvider};
 use super::streaming::process_completion_stream;
-use crate::types::StreamEvent;
+use crate::types::LlmMessage;
 
 pub enum LocalProvider {
     Ollama,
@@ -62,7 +62,7 @@ impl LlmProvider for LocalLlmProvider {
     fn complete_stream_chunks(
         &self,
         request: ChatRequest,
-    ) -> impl Stream<Item = Result<StreamEvent>> + Send {
+    ) -> impl Stream<Item = Result<LlmMessage>> + Send {
         let client = self.client.clone();
         let model = self.model.clone();
 
@@ -115,7 +115,6 @@ impl LlmProvider for LocalLlmProvider {
                 }
             };
 
-            // Use the shared streaming logic directly with standard types
             let mut shared_stream = Box::pin(process_completion_stream(stream));
             while let Some(result) = shared_stream.next().await {
                 yield result;
