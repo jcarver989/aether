@@ -1,7 +1,7 @@
 use crate::testing::{InMemoryFileSystem, create_transport_pair};
 use rmcp::{
     RoleClient, RoleServer, ServerHandler, Service,
-    handler::server::{router::tool::ToolRouter, tool::Parameters},
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{ClientInfo, Implementation, ServerCapabilities, ServerInfo},
     serve_client, serve_server,
     service::{ClientInitializeError, RunningService, ServerInitializeError},
@@ -31,6 +31,9 @@ impl ServerHandler for FileServerMcp {
             server_info: Implementation {
                 name: "file-server-mcp".to_string(),
                 version: "0.1.0".to_string(),
+                title: None,
+                icons: None,
+                website_url: None,
             },
             instructions: Some("A file server with write capabilities".into()),
             capabilities: ServerCapabilities::builder().enable_tools().build(),

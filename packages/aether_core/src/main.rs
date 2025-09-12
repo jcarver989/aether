@@ -1,7 +1,6 @@
 use aether_core::{
     agent::{Agent, AgentMessage},
     llm::local::LocalLlmProvider,
-    mcp::McpManager,
 };
 use clap::Parser;
 use futures::pin_mut;

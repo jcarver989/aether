@@ -1,7 +1,6 @@
 use aether_core::{
     agent::{Agent, AgentMessage},
     llm::local::LocalLlmProvider,
-    mcp::McpManager,
 };
 use futures::pin_mut;
 use tokio_stream::StreamExt;

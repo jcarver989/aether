@@ -7,7 +7,9 @@ use rmcp::{
     },
     serve_client, serve_server,
     service::RunningService,
-    transport::StreamableHttpClientTransport,
+    transport::{
+        StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
+    },
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -33,9 +35,8 @@ impl McpManager {
 
     pub async fn with_http_mcp(
         &mut self,
-        name: String,
-        url: String,
-        headers: HashMap<String, String>,
+        name: &str,
+        config: &StreamableHttpClientTransportConfig,
     ) -> Result<()> {
         let client_info = ClientInfo {
             protocol_version: Default::default(),
@@ -43,21 +44,24 @@ impl McpManager {
             client_info: Implementation {
                 name: "aether".to_string(),
                 version: "0.1.0".to_string(),
+                title: None,
+                icons: None,
+                website_url: None,
             },
         };
 
-        let transport = StreamableHttpClientTransport::from_uri(url.clone());
+        let transport = StreamableHttpClientTransport::from_config(config.clone());
         let client = serve_client(client_info, transport).await.map_err(|e| {
             Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
         })?;
 
         let server_connection = McpServerConnection {
-            name: name.clone(),
+            _name: name.to_string(),
             client,
             server_task: None,
         };
 
-        self.servers.insert(name, server_connection);
+        self.servers.insert(name.to_string(), server_connection);
         Ok(())
     }
 
@@ -66,7 +70,7 @@ impl McpManager {
         name: String,
         command: String,
         args: Vec<String>,
-        env: HashMap<String, String>,
+        _env: HashMap<String, String>,
     ) -> Result<()> {
         return Err(Report::msg(format!(
             "Process-based MCP servers not yet implemented for {}: {} {}",
@@ -87,6 +91,9 @@ impl McpManager {
             client_info: Implementation {
                 name: "aether".to_string(),
                 version: "0.1.0".to_string(),
+                title: None,
+                icons: None,
+                website_url: None,
             },
         };
 
@@ -114,7 +121,7 @@ impl McpManager {
             })?;
 
         let server_connection = McpServerConnection {
-            name: name.clone(),
+            _name: name.clone(),
             client,
             server_task: Some(server_handle),
         };
@@ -302,7 +309,7 @@ pub struct Tool {
 }
 
 struct McpServerConnection {
-    name: String,
+    _name: String,
     client: RunningService<RoleClient, InitializeRequestParam>,
     server_task: Option<tokio::task::JoinHandle<()>>,
 }

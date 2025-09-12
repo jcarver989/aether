@@ -1,7 +1,3 @@
-use rmcp::model::Tool as RmcpTool;
-use serde_json::{Map, json};
-use std::sync::Arc;
-
 /// Test that demonstrates the bug where tools with the same name from different servers
 /// overwrite each other instead of being properly namespaced.
 ///
@@ -13,19 +9,6 @@ async fn test_tool_name_collision_bug() {
 
     // We'll verify this by checking the internal structure limitations
     let tool_name = "list_files";
-
-    // Create tools with same name but different schemas
-    let _server_a_tool = create_rmcp_tool_with_different_schema(
-        tool_name,
-        "List files from Server A",
-        vec![("directory", "Directory to list from Server A")],
-    );
-
-    let _server_b_tool = create_rmcp_tool_with_different_schema(
-        tool_name,
-        "List files from Server B",
-        vec![("folder", "Folder to list from Server B")],
-    );
 
     // The bug exists in the discover_tools method in src/mcp/client.rs:108
     // where tools are stored in HashMap<String, Tool> keyed only by tool name,
@@ -40,26 +23,10 @@ async fn test_tool_name_collision_bug() {
 
 #[tokio::test]
 async fn test_tool_namespacing_desired_behavior() {
-    use aether_core::mcp::manager::{McpManager, Tool};
-    use rmcp::model::Tool as RmcpTool;
-    use serde_json::{Map, json};
-    use std::sync::Arc;
+    use aether_core::mcp::manager::McpManager;
 
     // Test that demonstrates the fix: tools are now properly namespaced
-    let mut client = McpManager::new();
-
-    // Create mock tools to simulate what would happen during discover_tools
-    let tool_a = create_rmcp_tool_with_different_schema(
-        "list_files",
-        "List files from Server A",
-        vec![("directory", "Directory to list from Server A")],
-    );
-
-    let tool_b = create_rmcp_tool_with_different_schema(
-        "list_files",
-        "List files from Server B",
-        vec![("folder", "Folder to list from Server B")],
-    );
+    let _client = McpManager::new();
 
     // Since we can't directly call discover_tools without actual servers,
     // we test the namespacing logic by verifying the format
@@ -79,8 +46,12 @@ async fn test_tool_namespacing_desired_behavior() {
     assert_eq!(extracted_tool_name, tool_name);
 }
 
+use rmcp::model::Tool as RmcpTool;
+use serde_json::{Map, json};
+use std::sync::Arc;
+
 // Helper function to create RmcpTool with different schema
-fn create_rmcp_tool_with_different_schema(
+fn _create_rmcp_tool_with_different_schema(
     name: &str,
     description: &str,
     properties: Vec<(&str, &str)>,

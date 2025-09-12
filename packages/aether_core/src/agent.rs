@@ -7,6 +7,7 @@ use async_stream::stream;
 use color_eyre::Result;
 use futures::StreamExt;
 use futures::pin_mut;
+use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use tokio_stream::Stream;
 
 #[derive(Debug, Clone)]
@@ -65,10 +66,9 @@ impl<T: LlmProvider> Agent<T> {
     pub async fn with_http_mcp(
         mut self,
         name: String,
-        url: String,
-        headers: std::collections::HashMap<String, String>,
+        config: &StreamableHttpClientTransportConfig,
     ) -> Result<Self> {
-        self.mcp_client.with_http_mcp(name, url, headers).await?;
+        self.mcp_client.with_http_mcp(&name, config).await?;
         Ok(self)
     }
 

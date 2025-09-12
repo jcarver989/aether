@@ -15,6 +15,9 @@ async fn test_real_mcp_server_client_integration() {
         client_info: Implementation {
             name: "test-client".to_string(),
             version: "0.1.0".to_string(),
+            icons: None,
+            title: None,
+            website_url: None,
         },
         ..Default::default()
     };

@@ -4,7 +4,7 @@ use grep::searcher::{BinaryDetection, SearcherBuilder, Sink, SinkMatch};
 use ignore::WalkBuilder;
 use rmcp::{
     ServerHandler,
-    handler::server::{router::tool::ToolRouter, tool::Parameters},
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{Implementation, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router,
 };
@@ -55,6 +55,9 @@ impl ServerHandler for CodingMcp {
             server_info: Implementation {
                 name: "coding-mcp".to_string(),
                 version: "0.1.0".to_string(),
+                title: None,
+                icons: None,
+                website_url: None,
             },
             instructions: Some(
                 "A coding MCP with grep-powered search server with advanced text search capabilities".into(),

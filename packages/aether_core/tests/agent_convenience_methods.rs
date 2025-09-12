@@ -1,17 +1,20 @@
-use aether_core::{agent::Agent, llm::MockLlm, mcp::builtin_servers::CodingMcp, testing::FileServerMcp, testing::InMemoryFileSystem};
+use aether_core::{agent::Agent, testing::FakeLlmProvider, mcp::builtin_servers::CodingMcp, testing::FileServerMcp, testing::InMemoryFileSystem};
 use std::collections::HashMap;
+use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
 #[tokio::test]
 async fn test_agent_with_http_mcp_method() {
-    let llm = MockLlm::new();
+    let llm = FakeLlmProvider::new(vec![]);
     let agent = Agent::new(llm, None);
     
     // Test that the method exists and returns a Result
-    let headers = HashMap::new();
+    let config = StreamableHttpClientTransportConfig {
+        uri: "http://localhost:3000".into(),
+        ..Default::default()
+    };
     let result = agent.with_http_mcp(
         "test".to_string(),
-        "http://localhost:3000".to_string(),
-        headers,
+        &config,
     ).await;
     
     // For this test, we expect an error since no actual server is running
@@ -21,7 +24,7 @@ async fn test_agent_with_http_mcp_method() {
 
 #[tokio::test]
 async fn test_agent_with_stdio_mcp_method() {
-    let llm = MockLlm::new();
+    let llm = FakeLlmProvider::new(vec![]);
     let agent = Agent::new(llm, None);
     
     // Test that the method exists and returns a Result
@@ -39,7 +42,7 @@ async fn test_agent_with_stdio_mcp_method() {
 
 #[tokio::test]
 async fn test_agent_with_in_memory_mcp_method() {
-    let llm = MockLlm::new();
+    let llm = FakeLlmProvider::new(vec![]);
     let agent = Agent::new(llm, None);
     
     // Test with CodingMcp server
@@ -53,7 +56,7 @@ async fn test_agent_with_in_memory_mcp_method() {
 
 #[tokio::test]
 async fn test_agent_with_file_server_mcp() {
-    let llm = MockLlm::new();
+    let llm = FakeLlmProvider::new(vec![]);
     let agent = Agent::new(llm, None);
     
     let filesystem = InMemoryFileSystem::new();
@@ -70,7 +73,7 @@ async fn test_agent_with_file_server_mcp() {
 
 #[tokio::test]
 async fn test_agent_method_chaining() {
-    let llm = MockLlm::new();
+    let llm = FakeLlmProvider::new(vec![]);
     let agent = Agent::new(llm, None);
     
     // Test method chaining works

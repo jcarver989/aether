@@ -3,6 +3,7 @@ mod utils;
 use crate::utils::*;
 use aether_core::mcp::McpManager;
 use std::collections::HashMap;
+use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
 #[tokio::test]
 async fn test_mcp_client_creation() {
@@ -16,10 +17,14 @@ async fn test_mcp_client_with_http_server() {
     let mut client = McpManager::new();
     let server_name = "test_server".to_string();
     let url = TEST_SERVER_URL.to_string();
-    let headers = HashMap::new();
+    let _headers: HashMap<String, String> = HashMap::new();
 
     // This would fail in a real test since there's no server, but it tests the API
-    let result = client.with_http_mcp(server_name.clone(), url.clone(), headers.clone()).await;
+    let config = StreamableHttpClientTransportConfig { 
+        uri: url.clone().into(),
+        ..Default::default()
+    };
+    let result = client.with_http_mcp(&server_name, &config).await;
     
     // The connection will fail, but we can still test that the API exists
     // In a real test environment, this would succeed
@@ -36,8 +41,14 @@ async fn test_mcp_client_with_headers() {
     headers.insert("Authorization".to_string(), "Bearer token123".to_string());
     headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-    // Test that the API accepts headers
-    let result = client.with_http_mcp(server_name, url, headers).await;
+    // Test that the API accepts headers - encode as auth header for testing
+    let auth_header = headers.get("Authorization").cloned();
+    let config = StreamableHttpClientTransportConfig { 
+        uri: url.into(),
+        auth_header,
+        ..Default::default()
+    };
+    let result = client.with_http_mcp(&server_name, &config).await;
     
     // The connection will fail, but we can test that the API accepts headers
     assert!(result.is_err()); // Expected since no real server is running

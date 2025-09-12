@@ -1,4 +1,4 @@
-use aether_core::agent::{Agent, AgentMessage};
+use aether_core::agent::{Agent, AgentMessage::*};
 use aether_core::llm::local::LocalLlmProvider;
 use futures::pin_mut;
 use std::env;
@@ -21,7 +21,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    println!("🧠 Initializing AI agent...");
     let user_prompt = args[1..].join(" ");
     let llm = LocalLlmProvider::new_llama_cpp()?;
     let system_prompt = Some(
@@ -39,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while let Some(event) = result_stream.next().await {
         match event {
-            AgentMessage::Message {
+            Message {
                 chunk, is_complete, ..
             } => {
                 if is_complete {
@@ -50,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            AgentMessage::ToolCall {
+            ToolCall {
                 tool_call_id,
                 name,
                 result,
@@ -65,7 +64,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if let Some(result) = result {
                         println!("✅ Tool call '{}' completed", tool_name);
-                        // Optionally show a short result preview
                         if result.len() > 100 {
                             println!("   Result: {}...", &result[..97]);
                         } else {
@@ -77,10 +75,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("🔧 Tool call '{}' started", name);
                     active_tool_calls.insert(tool_call_id, (name, String::new()));
                 }
-                // Ignore argument chunks as they create noise in the output
             }
 
-            AgentMessage::Error { message } => {
+            Error { message } => {
                 eprintln!("❌ Error: {}", message);
             }
         }
