@@ -37,10 +37,10 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                             name,
                                             arguments,
                                         };
-                                        yield Ok(LlmMessage::ToolCallRequestComplete { tool_call });
+                                        yield Ok(LlmMessage::ToolRequestComplete { tool_call });
                                     }
                                 }
-                                yield Ok(LlmMessage::Content { chunk: content.clone() });
+                                yield Ok(LlmMessage::Message { chunk: content.clone() });
                             }
                         }
 
@@ -53,7 +53,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                         let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
                                         current_tool_id = Some(id.clone());
                                         active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
-                                        yield Ok(LlmMessage::ToolCallRequestStart {
+                                        yield Ok(LlmMessage::ToolRequestStart {
                                             id,
                                             name: name.clone(),
                                         });
@@ -67,7 +67,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                                 if let Some((_, accumulated_args)) = active_tool_calls.get_mut(id) {
                                                     accumulated_args.push_str(arguments);
                                                 }
-                                                yield Ok(LlmMessage::ToolCallRequestArg {
+                                                yield Ok(LlmMessage::ToolRequestArg {
                                                     id: id.clone(),
                                                     chunk: arguments.clone(),
                                                 });
@@ -91,7 +91,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                         name,
                                         arguments,
                                     };
-                                    yield Ok(LlmMessage::ToolCallRequestComplete { tool_call });
+                                    yield Ok(LlmMessage::ToolRequestComplete { tool_call });
                                 }
                             }
 
@@ -109,7 +109,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                     name,
                                     arguments,
                                 };
-                                yield Ok(LlmMessage::ToolCallRequestComplete { tool_call });
+                                yield Ok(LlmMessage::ToolRequestComplete { tool_call });
                             }
                         }
                         yield Ok(LlmMessage::Done);

@@ -123,6 +123,7 @@ impl From<CustomChatCompletionStreamResponseDelta> for ChatCompletionStreamRespo
             tool_calls: delta
                 .tool_calls
                 .map(|calls| calls.into_iter().map(|call| call.into()).collect()),
+            #[allow(deprecated)]
             function_call: None, // OpenRouter doesn't use legacy function_call
         }
     }

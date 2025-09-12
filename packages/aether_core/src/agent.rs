@@ -99,7 +99,7 @@ impl<T: LlmProvider> Agent<T> {
                         Ok(LlmMessage::Start { message_id }) => {
                             current_message_id = Some(message_id);
                         }
-                        Ok(LlmMessage::Content { chunk }) => {
+                        Ok(LlmMessage::Message { chunk }) => {
                             accumulated_content.push_str(&chunk);
 
                             if let Some(message_id) = &current_message_id {
@@ -110,7 +110,7 @@ impl<T: LlmProvider> Agent<T> {
                                 };
                             }
                         }
-                        Ok(LlmMessage::ToolCallRequestStart { id, name }) => {
+                        Ok(LlmMessage::ToolRequestStart { id, name }) => {
                             yield AgentMessage::ToolCallChunk {
                                 tool_call_id: id,
                                 name,
@@ -119,7 +119,7 @@ impl<T: LlmProvider> Agent<T> {
                                 is_complete: false,
                             };
                         }
-                        Ok(LlmMessage::ToolCallRequestArg { id, chunk }) => {
+                        Ok(LlmMessage::ToolRequestArg { id, chunk }) => {
                             yield AgentMessage::ToolCallChunk {
                                 tool_call_id: id,
                                 name: String::new(), // Name will be available from the start event
@@ -128,7 +128,7 @@ impl<T: LlmProvider> Agent<T> {
                                 is_complete: false,
                             };
                         }
-                        Ok(LlmMessage::ToolCallRequestComplete { tool_call }) => {
+                        Ok(LlmMessage::ToolRequestComplete { tool_call }) => {
                             let result_str = match serde_json::from_str(&tool_call.arguments) {
                                 Ok(args) => {
                                     match self.mcp_client.execute_tool(&tool_call.name, args).await {
@@ -167,7 +167,7 @@ impl<T: LlmProvider> Agent<T> {
                                 .iter()
                                 .map(|(tool_call, _)| tool_call.clone())
                                 .collect();
-                            
+
                             self.messages.push(ChatMessage::Assistant {
                                 content: accumulated_content,
                                 timestamp: IsoString::now(),

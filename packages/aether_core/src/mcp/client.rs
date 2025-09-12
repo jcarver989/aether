@@ -1,10 +1,11 @@
-use color_eyre::Result;
+use color_eyre::{Report, Result};
 use rmcp::{
     RoleClient,
     model::{
         CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation,
         InitializeRequestParam, Tool as RmcpTool,
     },
+    serve_client,
     service::RunningService,
     transport::StreamableHttpClientTransport,
 };
@@ -12,7 +13,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::mcp::mcp_config::McpServerConfig;
-use crate::testing::InMemoryTransport;
 use crate::types::ToolDefinition;
 
 #[derive(Debug, Clone)]
@@ -56,69 +56,37 @@ impl McpClient {
     }
 
     pub async fn connect_server(&mut self, name: String, config: McpServerConfig) -> Result<()> {
-        match config {
+        let client_info = ClientInfo {
+            protocol_version: Default::default(),
+            capabilities: ClientCapabilities::default(),
+            client_info: Implementation {
+                name: "aether".to_string(),
+                version: "0.1.0".to_string(),
+            },
+        };
+
+        let client = match config {
             McpServerConfig::Http { url, .. } => {
                 let transport = StreamableHttpClientTransport::from_uri(url.clone());
-                self.connect_http_server(name, transport).await
+                serve_client(client_info, transport).await.map_err(|e| {
+                    Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
+                })?
             }
-            McpServerConfig::Stdio { command, args, .. } => Err(color_eyre::Report::msg(format!(
-                "Process-based MCP servers not yet implemented: {} {}",
-                command,
-                args.join(" ")
-            ))),
+            McpServerConfig::Stdio { command, args, .. } => {
+                return Err(color_eyre::Report::msg(format!(
+                    "Process-based MCP servers not yet implemented: {} {}",
+                    command,
+                    args.join(" ")
+                )));
+            }
             McpServerConfig::InMemory { transport } => {
-                self.connect_in_memory_server(name, transport).await
+                serve_client(client_info, transport).await.map_err(|e| {
+                    color_eyre::Report::msg(format!(
+                        "Failed to connect to in-memory MCP server {name}: {e}"
+                    ))
+                })?
             }
-        }
-    }
-
-    async fn connect_http_server(
-        &mut self,
-        name: String,
-        transport: StreamableHttpClientTransport<reqwest::Client>,
-    ) -> Result<()> {
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "aether".to_string(),
-                version: "0.1.0".to_string(),
-            },
         };
-
-        let client = rmcp::serve_client(client_info, transport)
-            .await
-            .map_err(|e| {
-                color_eyre::Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
-            })?;
-
-        let server = McpServer { client };
-        self.servers.insert(name.clone(), server);
-
-        Ok(())
-    }
-
-    async fn connect_in_memory_server(
-        &mut self,
-        name: String,
-        transport: InMemoryTransport<RoleClient>,
-    ) -> Result<()> {
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "aether".to_string(),
-                version: "0.1.0".to_string(),
-            },
-        };
-
-        let client = rmcp::serve_client(client_info, transport)
-            .await
-            .map_err(|e| {
-                color_eyre::Report::msg(format!(
-                    "Failed to connect to in-memory MCP server {name}: {e}"
-                ))
-            })?;
 
         let server = McpServer { client };
         self.servers.insert(name.clone(), server);
@@ -224,60 +192,62 @@ impl McpClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{FileServerMcp, InMemoryFileSystem, create_transport_pair};
     use crate::mcp::mcp_config::McpServerConfig;
+    use crate::testing::{FileServerMcp, InMemoryFileSystem, create_transport_pair};
     use rmcp::serve_server;
-    
+
     #[tokio::test]
     async fn test_in_memory_transport_integration() {
         // Create a file system and server
         let filesystem = InMemoryFileSystem::new();
         let server = FileServerMcp::new(filesystem);
-        
+
         // Create transport pair
         let (client_transport, server_transport) = create_transport_pair();
-        
+
         // Start the server with the server transport
-        let _server_handle = tokio::spawn(async move {
-            serve_server(server, server_transport).await
-        });
-        
+        let _server_handle =
+            tokio::spawn(async move { serve_server(server, server_transport).await });
+
         // Give the server a moment to start
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        
+
         // Create client with in-memory transport config
         let mut client = McpClient::new();
         let config = McpServerConfig::InMemory {
             transport: client_transport,
         };
-        
+
         // Connect to server
-        client.connect_server("test_server".to_string(), config).await.unwrap();
-        
+        client
+            .connect_server("test_server".to_string(), config)
+            .await
+            .unwrap();
+
         // Discover tools
         client.discover_tools().await.unwrap();
-        
+
         // Verify tools were discovered
         let tool_definitions = client.get_tool_definitions();
         assert!(!tool_definitions.is_empty());
-        
+
         // Check for the write_file tool
         let write_file_tool = tool_definitions
             .iter()
             .find(|t| t.name.contains("write_file"));
         assert!(write_file_tool.is_some());
-        
+
         // Test tool execution
         let args = serde_json::json!({
             "path": "/test.txt",
             "content": "Hello, World!"
         });
-        
+
         let result = client
             .execute_tool("test_server::write_file", args)
             .await
             .unwrap();
-        
+
         // Verify the result
         let result_text = result
             .get("text")

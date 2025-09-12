@@ -86,7 +86,7 @@ impl FakeLlmProvider {
 
     pub fn with_content(content: &str) -> Self {
         let chunks = vec![
-            LlmMessage::Content {
+            LlmMessage::Message {
                 chunk: content.to_string(),
             },
             LlmMessage::Done,
@@ -97,7 +97,7 @@ impl FakeLlmProvider {
     pub fn with_content_chunks(content_chunks: Vec<&str>) -> Self {
         let mut chunks: Vec<LlmMessage> = content_chunks
             .into_iter()
-            .map(|s| LlmMessage::Content {
+            .map(|s| LlmMessage::Message {
                 chunk: s.to_string(),
             })
             .collect();
@@ -107,18 +107,18 @@ impl FakeLlmProvider {
 
     pub fn with_tool_call(content: &str, tool_id: &str, tool_name: &str, arguments: &str) -> Self {
         let chunks = vec![
-            LlmMessage::Content {
+            LlmMessage::Message {
                 chunk: content.to_string(),
             },
-            LlmMessage::ToolCallRequestStart {
+            LlmMessage::ToolRequestStart {
                 id: tool_id.to_string(),
                 name: tool_name.to_string(),
             },
-            LlmMessage::ToolCallRequestArg {
+            LlmMessage::ToolRequestArg {
                 id: tool_id.to_string(),
                 chunk: arguments.to_string(),
             },
-            LlmMessage::ToolCallRequestComplete {
+            LlmMessage::ToolRequestComplete {
                 tool_call: ToolCallRequest {
                     id: tool_id.to_string(),
                     name: tool_name.to_string(),
@@ -131,7 +131,7 @@ impl FakeLlmProvider {
     }
 
     pub fn with_error_after(content: &str, _chunk_count: usize) -> Self {
-        let chunks = vec![LlmMessage::Content {
+        let chunks = vec![LlmMessage::Message {
             chunk: content.to_string(),
         }];
         // Note: Error handling would be implemented in a specialized provider
@@ -188,7 +188,7 @@ pub async fn collect_stream_content(
     let mut content = String::new();
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
-        if let LlmMessage::Content { chunk: text } = chunk {
+        if let LlmMessage::Message { chunk: text } = chunk {
             content.push_str(&text);
         } else if let LlmMessage::Done = chunk {
             break;
@@ -259,15 +259,15 @@ pub fn fix_json_string_arguments(mut arguments: Value) -> Value {
 
 pub fn assert_stream_event_matches(actual: &LlmMessage, expected: &LlmMessage) {
     match (actual, expected) {
-        (LlmMessage::Content { chunk: a }, LlmMessage::Content { chunk: b }) => {
+        (LlmMessage::Message { chunk: a }, LlmMessage::Message { chunk: b }) => {
             assert_eq!(a, b)
         }
         (
-            LlmMessage::ToolCallRequestStart {
+            LlmMessage::ToolRequestStart {
                 id: id1,
                 name: name1,
             },
-            LlmMessage::ToolCallRequestStart {
+            LlmMessage::ToolRequestStart {
                 id: id2,
                 name: name2,
             },
@@ -276,11 +276,11 @@ pub fn assert_stream_event_matches(actual: &LlmMessage, expected: &LlmMessage) {
             assert_eq!(name1, name2);
         }
         (
-            LlmMessage::ToolCallRequestArg {
+            LlmMessage::ToolRequestArg {
                 id: id1,
                 chunk: arg1,
             },
-            LlmMessage::ToolCallRequestArg {
+            LlmMessage::ToolRequestArg {
                 id: id2,
                 chunk: arg2,
             },
@@ -289,8 +289,8 @@ pub fn assert_stream_event_matches(actual: &LlmMessage, expected: &LlmMessage) {
             assert_eq!(arg1, arg2);
         }
         (
-            LlmMessage::ToolCallRequestComplete { tool_call: tc1 },
-            LlmMessage::ToolCallRequestComplete { tool_call: tc2 },
+            LlmMessage::ToolRequestComplete { tool_call: tc1 },
+            LlmMessage::ToolRequestComplete { tool_call: tc2 },
         ) => {
             assert_eq!(tc1.id, tc2.id);
             assert_eq!(tc1.name, tc2.name);

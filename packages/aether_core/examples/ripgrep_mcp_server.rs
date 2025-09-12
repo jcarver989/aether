@@ -32,22 +32,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🤖 User Question: {}", user_prompt);
 
     println!("🔍 Setting up MCP Server with coding tools...");
-
-    let server_service = CodingMcp::new();
-
-    // Create transport pair
     let (client_transport, server_transport) = create_transport_pair();
-
-    // Start the server in the background
     let _server_handle =
-        tokio::spawn(async move { serve_server(server_service, server_transport).await });
+        tokio::spawn(async move { serve_server(CodingMcp::new(), server_transport).await });
 
-    // Give the server a moment to start
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-
-    println!("🔌 Connecting MCP client via in-memory transport...");
-
-    // Create and connect the MCP client
     let mut mcp_client = McpClient::new();
     mcp_client
         .connect_server(

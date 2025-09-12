@@ -75,10 +75,10 @@ pub enum ToolCallState {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum LlmMessage {
     Start { message_id: String },
-    Content { chunk: String },
-    ToolCallRequestStart { id: String, name: String },
-    ToolCallRequestArg { id: String, chunk: String },
-    ToolCallRequestComplete { tool_call: ToolCallRequest },
+    Message { chunk: String },
+    ToolRequestStart { id: String, name: String },
+    ToolRequestArg { id: String, chunk: String },
+    ToolRequestComplete { tool_call: ToolCallRequest },
     Done,
     Error { message: String },
 }

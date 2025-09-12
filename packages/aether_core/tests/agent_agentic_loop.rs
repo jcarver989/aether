@@ -14,18 +14,18 @@ async fn test_simple_tool_execution() {
         LlmMessage::Start {
             message_id: "msg1".to_string(),
         },
-        LlmMessage::Content {
+        LlmMessage::Message {
             chunk: "I'll help you with that. Let me use a tool.".to_string(),
         },
-        LlmMessage::ToolCallRequestStart {
+        LlmMessage::ToolRequestStart {
             id: "tool1".to_string(),
             name: "test_server::calculator".to_string(),
         },
-        LlmMessage::ToolCallRequestArg {
+        LlmMessage::ToolRequestArg {
             id: "tool1".to_string(),
             chunk: r#"{"operation": "add", "a": 5, "b": 3}"#.to_string(),
         },
-        LlmMessage::ToolCallRequestComplete {
+        LlmMessage::ToolRequestComplete {
             tool_call: ToolCallRequest {
                 id: "tool1".to_string(),
                 name: "test_server::calculator".to_string(),
@@ -90,14 +90,14 @@ async fn test_recursive_tool_calls() {
             LlmMessage::Start {
                 message_id: "msg1".to_string(),
             },
-            LlmMessage::Content {
+            LlmMessage::Message {
                 chunk: "I need to gather some information first.".to_string(),
             },
-            LlmMessage::ToolCallRequestStart {
+            LlmMessage::ToolRequestStart {
                 id: "tool1".to_string(),
                 name: "test_server::get_data".to_string(),
             },
-            LlmMessage::ToolCallRequestComplete {
+            LlmMessage::ToolRequestComplete {
                 tool_call: ToolCallRequest {
                     id: "tool1".to_string(),
                     name: "test_server::get_data".to_string(),
@@ -111,14 +111,14 @@ async fn test_recursive_tool_calls() {
             LlmMessage::Start {
                 message_id: "msg2".to_string(),
             },
-            LlmMessage::Content {
+            LlmMessage::Message {
                 chunk: "Now I'll process that information.".to_string(),
             },
-            LlmMessage::ToolCallRequestStart {
+            LlmMessage::ToolRequestStart {
                 id: "tool2".to_string(),
                 name: "test_server::process_data".to_string(),
             },
-            LlmMessage::ToolCallRequestComplete {
+            LlmMessage::ToolRequestComplete {
                 tool_call: ToolCallRequest {
                     id: "tool2".to_string(),
                     name: "test_server::process_data".to_string(),
@@ -132,7 +132,7 @@ async fn test_recursive_tool_calls() {
             LlmMessage::Start {
                 message_id: "msg3".to_string(),
             },
-            LlmMessage::Content {
+            LlmMessage::Message {
                 chunk: "Here's your final result based on the processed data.".to_string(),
             },
             LlmMessage::Done,
@@ -196,11 +196,11 @@ async fn test_max_recursion_depth() {
         LlmMessage::Start {
             message_id: "msg".to_string(),
         },
-        LlmMessage::ToolCallRequestStart {
+        LlmMessage::ToolRequestStart {
             id: "tool".to_string(),
             name: "test_server::endless_tool".to_string(),
         },
-        LlmMessage::ToolCallRequestComplete {
+        LlmMessage::ToolRequestComplete {
             tool_call: ToolCallRequest {
                 id: "tool".to_string(),
                 name: "test_server::endless_tool".to_string(),
@@ -248,11 +248,11 @@ async fn test_tool_execution_error_handling() {
         LlmMessage::Start {
             message_id: "msg1".to_string(),
         },
-        LlmMessage::ToolCallRequestStart {
+        LlmMessage::ToolRequestStart {
             id: "tool1".to_string(),
             name: "test_server::calculator".to_string(),
         },
-        LlmMessage::ToolCallRequestComplete {
+        LlmMessage::ToolRequestComplete {
             tool_call: ToolCallRequest {
                 id: "tool1".to_string(),
                 name: "test_server::calculator".to_string(),
@@ -300,14 +300,14 @@ async fn test_conversation_history_with_tool_results() {
             LlmMessage::Start {
                 message_id: "msg1".to_string(),
             },
-            LlmMessage::Content {
+            LlmMessage::Message {
                 chunk: "Let me calculate that.".to_string(),
             },
-            LlmMessage::ToolCallRequestStart {
+            LlmMessage::ToolRequestStart {
                 id: "tool1".to_string(),
                 name: "test_server::calc".to_string(),
             },
-            LlmMessage::ToolCallRequestComplete {
+            LlmMessage::ToolRequestComplete {
                 tool_call: ToolCallRequest {
                     id: "tool1".to_string(),
                     name: "test_server::calc".to_string(),
@@ -321,7 +321,7 @@ async fn test_conversation_history_with_tool_results() {
             LlmMessage::Start {
                 message_id: "msg2".to_string(),
             },
-            LlmMessage::Content {
+            LlmMessage::Message {
                 chunk: "The result is ready.".to_string(),
             },
             LlmMessage::Done,
