@@ -1,6 +1,6 @@
 use aether_core::{
-    agent::{Agent, AgentMessage},
-    llm::local::LocalLlmProvider,
+    agent::{Agent, AgentMessage, UserMessage},
+    llm::local::LocalModelProvider,
 };
 use clap::Parser;
 use futures::pin_mut;
@@ -22,15 +22,15 @@ pub async fn main() {
     let cli = Cli::parse();
     let prompt = cli.prompt.unwrap();
 
-    let provider = LocalLlmProvider::new_llama_cpp().unwrap();
+    let provider = LocalModelProvider::llama_cpp().unwrap();
     let mut agent = Agent::new(provider, cli.system);
 
-    let result_stream = agent.send_message(&prompt).await;
+    let result_stream = agent.send(UserMessage::text(&prompt)).await;
     pin_mut!(result_stream);
 
     while let Some(event) = result_stream.next().await {
         match event {
-            AgentMessage::Message {
+            AgentMessage::Text {
                 chunk, is_complete, ..
             } => {
                 if is_complete {

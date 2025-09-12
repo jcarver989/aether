@@ -5,4 +5,4 @@ pub mod openrouter_types;
 pub mod provider;
 pub mod streaming;
 
-pub use provider::{ChatRequest, LlmProvider};
+pub use provider::{Context, ModelProvider};

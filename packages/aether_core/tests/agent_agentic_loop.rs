@@ -1,7 +1,7 @@
 use aether_core::{
-    agent::{Agent, AgentMessage},
+    agent::{Agent, AgentMessage, UserMessage},
     testing::fake_llm::FakeLlmProvider,
-    types::{LlmMessage, ToolCallRequest},
+    types::{LlmResponse, ToolCallRequest},
 };
 use futures::pin_mut;
 use tokio_stream::StreamExt;
@@ -10,28 +10,28 @@ use tokio_stream::StreamExt;
 async fn test_simple_tool_execution() {
     // Create a fake LLM that requests a tool call and then responds
     let fake_llm = FakeLlmProvider::with_single_response(vec![
-        LlmMessage::Start {
+        LlmResponse::Start {
             message_id: "msg1".to_string(),
         },
-        LlmMessage::Message {
+        LlmResponse::Text {
             chunk: "I'll help you with that. Let me use a tool.".to_string(),
         },
-        LlmMessage::ToolRequestStart {
+        LlmResponse::ToolRequestStart {
             id: "tool1".to_string(),
             name: "coding::write_file".to_string(),
         },
-        LlmMessage::ToolRequestArg {
+        LlmResponse::ToolRequestArg {
             id: "tool1".to_string(),
             chunk: r#"{"path": "/test.txt", "content": "Hello World"}"#.to_string(),
         },
-        LlmMessage::ToolRequestComplete {
+        LlmResponse::ToolRequestComplete {
             tool_call: ToolCallRequest {
                 id: "tool1".to_string(),
                 name: "coding::write_file".to_string(),
                 arguments: r#"{"path": "/test.txt", "content": "Hello World"}"#.to_string(),
             },
         },
-        LlmMessage::Done,
+        LlmResponse::Done,
     ]);
 
     let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()))
@@ -39,7 +39,8 @@ async fn test_simple_tool_execution() {
         .await
         .unwrap();
 
-    let stream = agent.send_message("Write a test file").await;
+    let stream = agent.send(UserMessage::text("Write a test file")).await;
+
     pin_mut!(stream);
 
     let mut events = Vec::new();
@@ -51,7 +52,7 @@ async fn test_simple_tool_execution() {
     let content_chunks: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
-            AgentMessage::Message { chunk, .. } => Some(chunk.as_str()),
+            AgentMessage::Text { chunk, .. } => Some(chunk.as_str()),
             _ => None,
         })
         .collect();
@@ -82,38 +83,38 @@ async fn test_recursive_tool_calls() {
     let fake_llm = FakeLlmProvider::new(vec![
         // First LLM response with a tool call
         vec![
-            LlmMessage::Start {
+            LlmResponse::Start {
                 message_id: "msg1".to_string(),
             },
-            LlmMessage::Message {
+            LlmResponse::Text {
                 chunk: "I need to gather some information first.".to_string(),
             },
-            LlmMessage::ToolRequestStart {
+            LlmResponse::ToolRequestStart {
                 id: "tool1".to_string(),
                 name: "coding::read_file".to_string(),
             },
-            LlmMessage::ToolRequestComplete {
+            LlmResponse::ToolRequestComplete {
                 tool_call: ToolCallRequest {
                     id: "tool1".to_string(),
                     name: "coding::read_file".to_string(),
                     arguments: r#"{"path": "/data.txt"}"#.to_string(),
                 },
             },
-            LlmMessage::Done,
+            LlmResponse::Done,
         ],
         // Second LLM response with another tool call based on the first result
         vec![
-            LlmMessage::Start {
+            LlmResponse::Start {
                 message_id: "msg2".to_string(),
             },
-            LlmMessage::Message {
+            LlmResponse::Text {
                 chunk: "Now I'll process that information.".to_string(),
             },
-            LlmMessage::ToolRequestStart {
+            LlmResponse::ToolRequestStart {
                 id: "tool2".to_string(),
                 name: "coding::write_file".to_string(),
             },
-            LlmMessage::ToolRequestComplete {
+            LlmResponse::ToolRequestComplete {
                 tool_call: ToolCallRequest {
                     id: "tool2".to_string(),
                     name: "coding::write_file".to_string(),
@@ -121,17 +122,17 @@ async fn test_recursive_tool_calls() {
                         .to_string(),
                 },
             },
-            LlmMessage::Done,
+            LlmResponse::Done,
         ],
         // Final LLM response with no tool calls (completion)
         vec![
-            LlmMessage::Start {
+            LlmResponse::Start {
                 message_id: "msg3".to_string(),
             },
-            LlmMessage::Message {
+            LlmResponse::Text {
                 chunk: "Here's your final result based on the processed data.".to_string(),
             },
-            LlmMessage::Done,
+            LlmResponse::Done,
         ],
     ]);
 
@@ -140,7 +141,7 @@ async fn test_recursive_tool_calls() {
         .await
         .unwrap();
 
-    let stream = agent.send_message("Process my data").await;
+    let stream = agent.send(UserMessage::text("Process my data")).await;
     pin_mut!(stream);
 
     let mut events = Vec::new();
@@ -154,7 +155,7 @@ async fn test_recursive_tool_calls() {
         .filter(|e| {
             matches!(
                 e,
-                AgentMessage::Message {
+                AgentMessage::Text {
                     is_complete: true,
                     ..
                 }
@@ -187,21 +188,21 @@ async fn test_recursive_tool_calls() {
 async fn test_max_recursion_depth() {
     // Create a fake LLM that keeps making tool calls forever
     let tool_call_response = vec![
-        LlmMessage::Start {
+        LlmResponse::Start {
             message_id: "msg".to_string(),
         },
-        LlmMessage::ToolRequestStart {
+        LlmResponse::ToolRequestStart {
             id: "tool".to_string(),
             name: "coding::list_files".to_string(),
         },
-        LlmMessage::ToolRequestComplete {
+        LlmResponse::ToolRequestComplete {
             tool_call: ToolCallRequest {
                 id: "tool".to_string(),
                 name: "coding::list_files".to_string(),
                 arguments: r#"{"path": "/"}"#.to_string(),
             },
         },
-        LlmMessage::Done,
+        LlmResponse::Done,
     ];
 
     // Create responses that repeat the tool call pattern
@@ -217,7 +218,7 @@ async fn test_max_recursion_depth() {
         .await
         .unwrap();
 
-    let stream = agent.send_message("Start endless loop").await;
+    let stream = agent.send(UserMessage::text("Start endless loop")).await;
     pin_mut!(stream);
 
     let mut events = Vec::new();
@@ -237,21 +238,21 @@ async fn test_max_recursion_depth() {
 async fn test_tool_execution_error_handling() {
     // Create a fake LLM that makes a tool call with invalid arguments
     let fake_llm = FakeLlmProvider::with_single_response(vec![
-        LlmMessage::Start {
+        LlmResponse::Start {
             message_id: "msg1".to_string(),
         },
-        LlmMessage::ToolRequestStart {
+        LlmResponse::ToolRequestStart {
             id: "tool1".to_string(),
             name: "coding::write_file".to_string(),
         },
-        LlmMessage::ToolRequestComplete {
+        LlmResponse::ToolRequestComplete {
             tool_call: ToolCallRequest {
                 id: "tool1".to_string(),
                 name: "coding::write_file".to_string(),
                 arguments: "invalid json".to_string(), // This should cause an error
             },
         },
-        LlmMessage::Done,
+        LlmResponse::Done,
     ]);
 
     let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()))
@@ -259,7 +260,7 @@ async fn test_tool_execution_error_handling() {
         .await
         .unwrap();
 
-    let stream = agent.send_message("Write a file").await;
+    let stream = agent.send(UserMessage::text("Write a file")).await;
     pin_mut!(stream);
 
     let mut events = Vec::new();

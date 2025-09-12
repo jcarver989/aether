@@ -5,16 +5,16 @@ use std::collections::HashMap;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
 
-use crate::types::{LlmMessage, ToolCallRequest};
+use crate::types::{LlmResponse, ToolCallRequest};
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard async_openai CreateChatCompletionStreamResponse types.
 pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
     mut stream: impl Stream<Item = Result<CreateChatCompletionStreamResponse, E>> + Send + Unpin,
-) -> impl Stream<Item = Result<LlmMessage>> + Send {
+) -> impl Stream<Item = Result<LlmResponse>> + Send {
     async_stream::stream! {
         let message_id = uuid::Uuid::new_v4().to_string();
-        yield Ok(LlmMessage::Start { message_id: message_id.clone() });
+        yield Ok(LlmResponse::Start { message_id: message_id.clone() });
 
         let mut current_tool_id: Option<String> = None;
         let mut active_tool_calls: HashMap<String, (String, String)> = HashMap::new();
@@ -37,10 +37,10 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                             name,
                                             arguments,
                                         };
-                                        yield Ok(LlmMessage::ToolRequestComplete { tool_call });
+                                        yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                                     }
                                 }
-                                yield Ok(LlmMessage::Message { chunk: content.clone() });
+                                yield Ok(LlmResponse::Text { chunk: content.clone() });
                             }
                         }
 
@@ -53,7 +53,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                         let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
                                         current_tool_id = Some(id.clone());
                                         active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
-                                        yield Ok(LlmMessage::ToolRequestStart {
+                                        yield Ok(LlmResponse::ToolRequestStart {
                                             id,
                                             name: name.clone(),
                                         });
@@ -67,7 +67,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                                 if let Some((_, accumulated_args)) = active_tool_calls.get_mut(id) {
                                                     accumulated_args.push_str(arguments);
                                                 }
-                                                yield Ok(LlmMessage::ToolRequestArg {
+                                                yield Ok(LlmResponse::ToolRequestArg {
                                                     id: id.clone(),
                                                     chunk: arguments.clone(),
                                                 });
@@ -91,12 +91,12 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                         name,
                                         arguments,
                                     };
-                                    yield Ok(LlmMessage::ToolRequestComplete { tool_call });
+                                    yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                                 }
                             }
 
                             // End the stream for any finish reason
-                            yield Ok(LlmMessage::Done);
+                            yield Ok(LlmResponse::Done);
                             break;
                         }
                     } else {
@@ -109,10 +109,10 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                     name,
                                     arguments,
                                 };
-                                yield Ok(LlmMessage::ToolRequestComplete { tool_call });
+                                yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                             }
                         }
-                        yield Ok(LlmMessage::Done);
+                        yield Ok(LlmResponse::Done);
                         break;
                     }
                 }

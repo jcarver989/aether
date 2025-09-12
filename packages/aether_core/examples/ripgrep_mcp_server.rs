@@ -1,5 +1,5 @@
-use aether_core::agent::{Agent, AgentMessage::*};
-use aether_core::llm::local::LocalLlmProvider;
+use aether_core::agent::{Agent, AgentMessage::*, UserMessage};
+use aether_core::llm::local::LocalModelProvider;
 use futures::pin_mut;
 use std::env;
 use tokio_stream::StreamExt;
@@ -22,13 +22,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let user_prompt = args[1..].join(" ");
-    let llm = LocalLlmProvider::new_llama_cpp()?;
+    let llm = LocalModelProvider::llama_cpp()?;
     let system_prompt = Some(
-        "You are a helpful code search and analysis assistant. You have access to powerful code search tools that can help you find patterns, functions, files, and analyze codebases. When users ask questions about code, use the available tools to search and provide detailed, helpful answers.".to_string()
+        "You are a helpful code search and analysis assistant. 
+         You have access to powerful code search tools that 
+         can help you find patterns, functions, files, and 
+         analyze codebases. When users ask questions about code,
+         use the available tools to search and provide detailed, 
+         helpful answers."
+            .to_string(),
     );
 
     let mut agent = Agent::new(llm, system_prompt).with_coding_tools().await?;
-    let result_stream = agent.send_message(&user_prompt).await;
+    let result_stream = agent.send(UserMessage::text(&user_prompt)).await;
 
     pin_mut!(result_stream);
 
@@ -38,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while let Some(event) = result_stream.next().await {
         match event {
-            Message {
+            Text {
                 chunk, is_complete, ..
             } => {
                 if is_complete {

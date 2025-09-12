@@ -73,9 +73,9 @@ pub enum ToolCallState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
-pub enum LlmMessage {
+pub enum LlmResponse {
     Start { message_id: String },
-    Message { chunk: String },
+    Text { chunk: String },
     ToolRequestStart { id: String, name: String },
     ToolRequestArg { id: String, chunk: String },
     ToolRequestComplete { tool_call: ToolCallRequest },

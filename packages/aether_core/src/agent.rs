@@ -1,8 +1,8 @@
-use crate::llm::ChatRequest;
-use crate::llm::LlmProvider;
+use crate::llm::Context;
+use crate::llm::ModelProvider;
 use crate::mcp::McpManager;
 use crate::mcp::builtin_servers::CodingMcp;
-use crate::types::{ChatMessage, IsoString, LlmMessage};
+use crate::types::{ChatMessage, IsoString, LlmResponse};
 use async_stream::stream;
 use color_eyre::Result;
 use futures::StreamExt;
@@ -12,7 +12,7 @@ use tokio_stream::Stream;
 
 #[derive(Debug, Clone)]
 pub enum AgentMessage {
-    Message {
+    Text {
         message_id: String,
         chunk: String,
         is_complete: bool,
@@ -31,13 +31,26 @@ pub enum AgentMessage {
     },
 }
 
-pub struct Agent<T: LlmProvider> {
+#[derive(Debug, Clone)]
+pub enum UserMessage {
+    Text { content: String },
+}
+
+impl UserMessage {
+    pub fn text(content: &str) -> Self {
+        UserMessage::Text {
+            content: content.to_string(),
+        }
+    }
+}
+
+pub struct Agent<T: ModelProvider> {
     llm: T,
     mcp_client: McpManager,
     messages: Vec<ChatMessage>,
 }
 
-impl<T: LlmProvider> Agent<T> {
+impl<T: ModelProvider> Agent<T> {
     pub fn new(llm: T, system_prompt: Option<String>) -> Self {
         let mut messages = Vec::new();
 
@@ -94,14 +107,18 @@ impl<T: LlmProvider> Agent<T> {
         Ok(self)
     }
 
-    pub async fn send_message(&mut self, content: &str) -> impl Stream<Item = AgentMessage> + Send {
-        let user_message = ChatMessage::User {
-            content: content.to_string(),
-            timestamp: IsoString::now(),
-        };
+    pub async fn send(&mut self, message: UserMessage) -> impl Stream<Item = AgentMessage> + Send {
+        match message {
+            UserMessage::Text { content } => {
+                let user_message = ChatMessage::User {
+                    content,
+                    timestamp: IsoString::now(),
+                };
 
-        self.messages.push(user_message);
-        self.run_agent_loop().await
+                self.messages.push(user_message);
+                self.run_agent_loop().await
+            }
+        }
     }
 
     async fn run_agent_loop(&mut self) -> impl Stream<Item = AgentMessage> + Send {
@@ -135,7 +152,7 @@ impl<T: LlmProvider> Agent<T> {
                 let mut completed_tool_calls: Vec<(crate::types::ToolCallRequest, String)> = Vec::new();
                 let mut has_tool_calls = false;
 
-                let llm_stream = self.llm.complete_stream_chunks(ChatRequest {
+                let llm_stream = self.llm.generate_response(Context {
                     messages: messages_clone,
                     tools,
                 });
@@ -144,21 +161,21 @@ impl<T: LlmProvider> Agent<T> {
 
                 while let Some(event) = llm_stream.next().await {
                     match event {
-                        Ok(LlmMessage::Start { message_id }) => {
+                        Ok(LlmResponse::Start { message_id }) => {
                             current_message_id = Some(message_id);
                         }
-                        Ok(LlmMessage::Message { chunk }) => {
+                        Ok(LlmResponse::Text { chunk }) => {
                             accumulated_content.push_str(&chunk);
 
                             if let Some(message_id) = &current_message_id {
-                                yield AgentMessage::Message {
+                                yield AgentMessage::Text {
                                     message_id: message_id.clone(),
                                     chunk,
                                     is_complete: false,
                                 };
                             }
                         }
-                        Ok(LlmMessage::ToolRequestStart { id, name }) => {
+                        Ok(LlmResponse::ToolRequestStart { id, name }) => {
                             yield AgentMessage::ToolCall {
                                 tool_call_id: id,
                                 name,
@@ -167,7 +184,7 @@ impl<T: LlmProvider> Agent<T> {
                                 is_complete: false,
                             };
                         }
-                        Ok(LlmMessage::ToolRequestArg { id, chunk }) => {
+                        Ok(LlmResponse::ToolRequestArg { id, chunk }) => {
                             yield AgentMessage::ToolCall {
                                 tool_call_id: id,
                                 name: String::new(), // Name will be available from the start event
@@ -176,7 +193,7 @@ impl<T: LlmProvider> Agent<T> {
                                 is_complete: false,
                             };
                         }
-                        Ok(LlmMessage::ToolRequestComplete { tool_call }) => {
+                        Ok(LlmResponse::ToolRequestComplete { tool_call }) => {
                             let result_str = match serde_json::from_str(&tool_call.arguments) {
                                 Ok(args) => {
                                     match self.mcp_client.execute_tool(&tool_call.name, args).await {
@@ -200,10 +217,10 @@ impl<T: LlmProvider> Agent<T> {
                             completed_tool_calls.push((tool_call, result_str));
                             has_tool_calls = true;
                         }
-                        Ok(LlmMessage::Done) => {
+                        Ok(LlmResponse::Done) => {
                             // Send final message chunk to indicate completion
                             if let Some(message_id) = &current_message_id {
-                                yield AgentMessage::Message {
+                                yield AgentMessage::Text {
                                     message_id: message_id.clone(),
                                     chunk: String::new(),
                                     is_complete: true,
@@ -238,7 +255,7 @@ impl<T: LlmProvider> Agent<T> {
                                 return;
                             }
                         }
-                        Ok(LlmMessage::Error { message }) => {
+                        Ok(LlmResponse::Error { message }) => {
                             yield AgentMessage::Error { message };
                             return;
                         }

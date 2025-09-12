@@ -13,9 +13,9 @@ use super::openrouter_types::{
     CustomChatCompletionStreamResponseDelta, CustomFunctionCallDelta, CustomToolCallDelta,
     CustomUsage,
 };
-use super::provider::{ChatRequest, LlmProvider};
+use super::provider::{ModelProvider, Context};
 use super::streaming::process_completion_stream;
-use crate::types::LlmMessage;
+use crate::types::LlmResponse;
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -34,11 +34,11 @@ impl OpenRouterProvider {
     }
 }
 
-impl LlmProvider for OpenRouterProvider {
-    fn complete_stream_chunks(
+impl ModelProvider for OpenRouterProvider {
+    fn generate_response(
         &self,
-        request: ChatRequest,
-    ) -> impl Stream<Item = Result<LlmMessage>> + Send {
+        request: Context,
+    ) -> impl Stream<Item = Result<LlmResponse>> + Send {
         let client = self.client.clone();
         let model = self.model.clone();
 

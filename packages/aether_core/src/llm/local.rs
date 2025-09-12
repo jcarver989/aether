@@ -6,26 +6,26 @@ use tokio_stream::{Stream, StreamExt};
 use tracing::{debug, error, info};
 
 use super::mappers::{map_messages, mapp_tools};
-use super::provider::{ChatRequest, LlmProvider};
+use super::provider::{Context, ModelProvider};
 use super::streaming::process_completion_stream;
-use crate::types::LlmMessage;
+use crate::types::LlmResponse;
 
 pub enum LocalProvider {
     Ollama,
     LlamaCpp,
 }
 
-pub struct LocalLlmProvider {
+pub struct LocalModelProvider {
     client: Client<OpenAIConfig>,
     model: String,
 }
 
-impl LocalLlmProvider {
-    pub fn new_ollama(model: &str) -> Result<Self> {
+impl LocalModelProvider {
+    pub fn ollama(model: &str) -> Result<Self> {
         Self::new("http://localhost:11434", model)
     }
 
-    pub fn new_llama_cpp() -> Result<Self> {
+    pub fn llama_cpp() -> Result<Self> {
         // Currently ignores model as LLama.cpp serves a single model per instance
         Self::new("http://localhost:8080", "")
     }
@@ -41,12 +41,12 @@ impl LocalLlmProvider {
         };
 
         info!(
-            "Creating OllamaProvider with api_base: {}, model: {}",
+            "Creating LocalModelProvider with api_base: {}, model: {}",
             api_base, model
         );
 
         let config = OpenAIConfig::new()
-            .with_api_key("dummy-key") // Ollama doesn't require auth but async-openai needs a key
+            .with_api_key("dummy-key") // Local providers generally don't require auth, but async-openai needs a key
             .with_api_base(api_base.clone());
 
         let client = Client::with_config(config);
@@ -58,11 +58,11 @@ impl LocalLlmProvider {
     }
 }
 
-impl LlmProvider for LocalLlmProvider {
-    fn complete_stream_chunks(
+impl ModelProvider for LocalModelProvider {
+    fn generate_response(
         &self,
-        request: ChatRequest,
-    ) -> impl Stream<Item = Result<LlmMessage>> + Send {
+        request: Context,
+    ) -> impl Stream<Item = Result<LlmResponse>> + Send {
         let client = self.client.clone();
         let model = self.model.clone();
 
