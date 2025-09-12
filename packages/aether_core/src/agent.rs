@@ -1,11 +1,10 @@
 use crate::llm::ChatRequest;
 use crate::llm::LlmProvider;
-use crate::tools::ToolRegistry;
-use crate::types::{ChatMessage, IsoString, LlmMessage, ToolCall, ToolDefinition};
+use crate::mcp::McpClient;
+use crate::types::{ChatMessage, IsoString, LlmMessage};
 use async_stream::stream;
 use futures::StreamExt;
 use futures::pin_mut;
-use std::collections::HashMap;
 use tokio_stream::Stream;
 
 #[derive(Debug, Clone)]
@@ -31,12 +30,12 @@ pub enum AgentEvent {
 
 pub struct Agent<T: LlmProvider> {
     llm: T,
-    tools: ToolRegistry,
+    mcp_client: McpClient,
     messages: Vec<ChatMessage>,
 }
 
 impl<T: LlmProvider> Agent<T> {
-    pub fn new(llm: T, tools: ToolRegistry, system_prompt: Option<String>) -> Self {
+    pub fn new(llm: T, mcp_client: McpClient, system_prompt: Option<String>) -> Self {
         let mut messages = Vec::new();
 
         if let Some(system_prompt) = &system_prompt {
@@ -48,7 +47,7 @@ impl<T: LlmProvider> Agent<T> {
 
         Agent {
             llm,
-            tools,
+            mcp_client,
             messages,
         }
     }
@@ -67,14 +66,13 @@ impl<T: LlmProvider> Agent<T> {
 
         // Capture a mutable reference to messages to update them later
         let llm = &self.llm;
-        let tools = self.build_tool_definitions();
+        let tools = self.mcp_client.get_tool_definitions();
         let messages = &mut self.messages;
         let messages_clone = messages.clone();
 
         stream! {
             let mut current_message_id = None;
             let mut accumulated_content = String::new();
-            let mut active_tool_calls: HashMap<String, (String, String)> = HashMap::new();
             let mut completed_tool_calls = Vec::new();
 
             let llm_stream = llm.complete_stream_chunks(ChatRequest {
@@ -101,8 +99,6 @@ impl<T: LlmProvider> Agent<T> {
                         }
                     }
                     Ok(LlmMessage::ToolCallStart { id, name }) => {
-                        active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
-
                         yield AgentEvent::ToolCallChunk {
                             tool_call_id: id,
                             name,
@@ -112,39 +108,24 @@ impl<T: LlmProvider> Agent<T> {
                         };
                     }
                     Ok(LlmMessage::ToolCallArgument { id, chunk }) => {
-                        if let Some((_, arguments)) = active_tool_calls.get_mut(&id) {
-                            arguments.push_str(&chunk);
-                        }
-
-                        let tool_name = active_tool_calls
-                            .get(&id)
-                            .map(|(name, _)| name.clone())
-                            .unwrap_or_default();
-
                         yield AgentEvent::ToolCallChunk {
                             tool_call_id: id,
-                            name: tool_name,
+                            name: String::new(), // Name will be available from the start event
                             arguments: Some(chunk),
                             result: None,
                             is_complete: false,
                         };
                     }
-                    Ok(LlmMessage::ToolCallComplete { id }) => {
-                        if let Some((name, arguments)) = active_tool_calls.remove(&id) {
-                            completed_tool_calls.push(ToolCall {
-                                id: id.clone(),
-                                name: name.clone(),
-                                arguments,
-                            });
+                    Ok(LlmMessage::ToolCallComplete { tool_call }) => {
+                        completed_tool_calls.push(tool_call.clone());
 
-                            yield AgentEvent::ToolCallChunk {
-                                tool_call_id: id,
-                                name,
-                                arguments: None,
-                                result: None,
-                                is_complete: true,
-                            };
-                        }
+                        yield AgentEvent::ToolCallChunk {
+                            tool_call_id: tool_call.id,
+                            name: tool_call.name,
+                            arguments: None,
+                            result: None,
+                            is_complete: true,
+                        };
                     }
                     Ok(LlmMessage::Done) => {
                         // Send final message chunk to indicate completion
@@ -176,23 +157,5 @@ impl<T: LlmProvider> Agent<T> {
                 }
             }
         }
-    }
-
-    fn build_tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.tools
-            .list_tools()
-            .into_iter()
-            .filter_map(|tool_name| {
-                let description = self.tools.get_tool_description(&tool_name)?;
-                let parameters = self.tools.get_tool_parameters(&tool_name)?.clone();
-
-                Some(ToolDefinition {
-                    name: tool_name.clone(),
-                    description,
-                    parameters: parameters.to_string(),
-                    server: self.tools.get_server_for_tool(&tool_name).cloned(),
-                })
-            })
-            .collect()
     }
 }

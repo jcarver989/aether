@@ -78,7 +78,7 @@ pub enum LlmMessage {
     Content { chunk: String },
     ToolCallStart { id: String, name: String },
     ToolCallArgument { id: String, chunk: String },
-    ToolCallComplete { id: String },
+    ToolCallComplete { tool_call: ToolCall },
     Done,
     Error { message: String },
 }

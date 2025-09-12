@@ -74,11 +74,14 @@ async fn test_mcp_server_config_serialization() -> Result<()> {
 
 #[tokio::test]
 async fn test_mcp_client_tool_discovery() {
-    let client = create_test_mcp_client();
+    let mut client = create_test_mcp_client();
 
-    // Test that tool discovery returns empty list when no servers connected
-    let discovered_tools = client.discover_tools().await.unwrap();
-    assert!(discovered_tools.is_empty());
+    // Test that tool discovery succeeds when no servers connected
+    client.discover_tools().await.unwrap();
+    
+    // Test that tool definitions are empty when no servers connected
+    let tool_definitions = client.get_tool_definitions();
+    assert!(tool_definitions.is_empty());
 }
 
 #[test]

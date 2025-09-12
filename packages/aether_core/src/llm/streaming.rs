@@ -1,10 +1,11 @@
 use async_openai::types::CreateChatCompletionStreamResponse;
 use async_stream;
 use color_eyre::Result;
+use std::collections::HashMap;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
 
-use crate::types::LlmMessage;
+use crate::types::{LlmMessage, ToolCall};
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard async_openai CreateChatCompletionStreamResponse types.
@@ -16,6 +17,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
         yield Ok(LlmMessage::Start { message_id: message_id.clone() });
 
         let mut current_tool_id: Option<String> = None;
+        let mut active_tool_calls: HashMap<String, (String, String)> = HashMap::new();
 
         while let Some(result) = stream.next().await {
             match result {
@@ -29,7 +31,14 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                 // If we have a pending tool call and now we're getting content,
                                 // complete the tool call first
                                 if let Some(id) = current_tool_id.take() {
-                                    yield Ok(LlmMessage::ToolCallComplete { id });
+                                    if let Some((name, arguments)) = active_tool_calls.remove(&id) {
+                                        let tool_call = ToolCall {
+                                            id: id.clone(),
+                                            name,
+                                            arguments,
+                                        };
+                                        yield Ok(LlmMessage::ToolCallComplete { tool_call });
+                                    }
                                 }
                                 yield Ok(LlmMessage::Content { chunk: content.clone() });
                             }
@@ -43,6 +52,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                     if let Some(name) = &function.name {
                                         let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
                                         current_tool_id = Some(id.clone());
+                                        active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
                                         yield Ok(LlmMessage::ToolCallStart {
                                             id,
                                             name: name.clone(),
@@ -53,6 +63,10 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                     if let Some(arguments) = &function.arguments {
                                         if !arguments.is_empty() {
                                             if let Some(id) = &current_tool_id {
+                                                // Accumulate arguments in our state tracking
+                                                if let Some((_, accumulated_args)) = active_tool_calls.get_mut(id) {
+                                                    accumulated_args.push_str(arguments);
+                                                }
                                                 yield Ok(LlmMessage::ToolCallArgument {
                                                     id: id.clone(),
                                                     chunk: arguments.clone(),
@@ -71,7 +85,14 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
 
                             // Complete any pending tool call before ending
                             if let Some(id) = current_tool_id.take() {
-                                yield Ok(LlmMessage::ToolCallComplete { id });
+                                if let Some((name, arguments)) = active_tool_calls.remove(&id) {
+                                    let tool_call = ToolCall {
+                                        id: id.clone(),
+                                        name,
+                                        arguments,
+                                    };
+                                    yield Ok(LlmMessage::ToolCallComplete { tool_call });
+                                }
                             }
 
                             // End the stream for any finish reason
@@ -82,7 +103,14 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                         // No choices means stream is done
                         debug!("No choices in response, ending stream");
                         if let Some(id) = current_tool_id.take() {
-                            yield Ok(LlmMessage::ToolCallComplete { id });
+                            if let Some((name, arguments)) = active_tool_calls.remove(&id) {
+                                let tool_call = ToolCall {
+                                    id: id.clone(),
+                                    name,
+                                    arguments,
+                                };
+                                yield Ok(LlmMessage::ToolCallComplete { tool_call });
+                            }
                         }
                         yield Ok(LlmMessage::Done);
                         break;

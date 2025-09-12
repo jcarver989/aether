@@ -12,9 +12,27 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::mcp::mcp_config::McpServerConfig;
+use crate::types::ToolDefinition;
+
+#[derive(Debug, Clone)]
+pub struct Tool {
+    pub description: String,
+    pub parameters: Value,
+}
+
+impl From<RmcpTool> for Tool {
+    fn from(tool: RmcpTool) -> Self {
+        Self {
+            description: tool.description.unwrap_or_default().to_string(),
+            parameters: serde_json::Value::Object((*tool.input_schema).clone()),
+        }
+    }
+}
 
 pub struct McpClient {
     servers: HashMap<String, McpServer>,
+    tools: HashMap<String, Tool>, // Now keyed by "server_name::tool_name"
+    tool_to_server: HashMap<String, String>, // Maps namespaced tool name to server name
 }
 
 struct McpServer {
@@ -31,6 +49,8 @@ impl McpClient {
     pub fn new() -> Self {
         Self {
             servers: HashMap::new(),
+            tools: HashMap::new(),
+            tool_to_server: HashMap::new(),
         }
     }
 
@@ -74,14 +94,21 @@ impl McpClient {
         Ok(())
     }
 
-    pub async fn discover_tools(&self) -> Result<Vec<(String, RmcpTool)>> {
-        let mut discovered_tools = Vec::new();
+    pub async fn discover_tools(&mut self) -> Result<()> {
+        self.tools.clear();
+        self.tool_to_server.clear();
 
         for (server_name, server) in &self.servers {
             match server.client.list_tools(None).await {
                 Ok(tools_response) => {
-                    for tool in tools_response.tools {
-                        discovered_tools.push((server_name.clone(), tool));
+                    for rmcp_tool in tools_response.tools {
+                        let tool_name = rmcp_tool.name.to_string();
+                        let namespaced_tool_name = format!("{server_name}::{tool_name}");
+                        let tool = Tool::from(rmcp_tool);
+
+                        self.tools.insert(namespaced_tool_name.clone(), tool);
+                        self.tool_to_server
+                            .insert(namespaced_tool_name, server_name.clone());
                     }
                 }
                 Err(_) => {
@@ -90,23 +117,30 @@ impl McpClient {
             }
         }
 
-        Ok(discovered_tools)
+        Ok(())
     }
 
-    pub async fn execute_tool(
-        &self,
-        server_name: &str,
-        tool_name: &str,
-        args: Value,
-    ) -> Result<Value> {
+    pub async fn execute_tool(&self, namespaced_tool_name: &str, args: Value) -> Result<Value> {
+        let server_name = self
+            .tool_to_server
+            .get(namespaced_tool_name)
+            .ok_or_else(|| {
+                color_eyre::Report::msg(format!("Tool not found: {namespaced_tool_name}"))
+            })?;
+
         let server = self
             .servers
             .get(server_name)
             .ok_or_else(|| color_eyre::Report::msg(format!("Server not found: {server_name}")))?;
 
+        // Extract the original tool name from the namespaced name (server_name::tool_name)
+        let original_tool_name = namespaced_tool_name.split("::").nth(1).ok_or_else(|| {
+            color_eyre::Report::msg(format!("Invalid tool name format: {namespaced_tool_name}"))
+        })?;
+
         let arguments = args.as_object().cloned();
         let request = CallToolRequestParam {
-            name: tool_name.to_string().into(),
+            name: original_tool_name.to_string().into(),
             arguments,
         };
 
@@ -114,7 +148,7 @@ impl McpClient {
             Ok(result) => result,
             Err(e) => {
                 return Err(color_eyre::Report::msg(format!(
-                    "Failed to execute tool {tool_name} on server {server_name}: {e}"
+                    "Failed to execute tool {original_tool_name} on server {server_name}: {e}"
                 )));
             }
         };
@@ -140,5 +174,17 @@ impl McpClient {
             .unwrap_or_else(|| Value::String("No result".to_string()));
 
         Ok(result_value)
+    }
+
+    pub fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
+        self.tools
+            .iter()
+            .map(|(namespaced_tool_name, tool)| ToolDefinition {
+                name: namespaced_tool_name.clone(),
+                description: tool.description.clone(),
+                parameters: tool.parameters.to_string(),
+                server: self.tool_to_server.get(namespaced_tool_name).cloned(),
+            })
+            .collect()
     }
 }

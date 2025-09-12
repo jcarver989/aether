@@ -3,7 +3,6 @@
 use aether_core::llm::{ChatRequest, LlmProvider};
 use aether_core::mcp::client::McpClient;
 use aether_core::mcp::mcp_config::McpServerConfig;
-use aether_core::tools::ToolRegistry;
 use aether_core::types::{LlmMessage, ToolCall, ToolDefinition};
 use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
@@ -74,18 +73,6 @@ pub fn create_test_rmcp_tool_with_params(
     RmcpTool::new(name.to_string(), description.to_string(), Arc::new(schema))
 }
 
-pub fn create_test_tool_registry() -> ToolRegistry {
-    ToolRegistry::new()
-}
-
-pub fn create_test_tool_registry_with_tools(tools: Vec<(&str, &str, &str)>) -> ToolRegistry {
-    let mut registry = ToolRegistry::new();
-    for (server, name, description) in tools {
-        let tool = create_test_rmcp_tool(name, description);
-        registry.register_tool(server.to_string(), tool);
-    }
-    registry
-}
 
 // LLM Provider Test Helpers
 
@@ -133,7 +120,11 @@ impl FakeLlmProvider {
                 chunk: arguments.to_string(),
             },
             LlmMessage::ToolCallComplete {
-                id: tool_id.to_string(),
+                tool_call: ToolCall {
+                    id: tool_id.to_string(),
+                    name: tool_name.to_string(),
+                    arguments: arguments.to_string(),
+                },
             },
             LlmMessage::Done,
         ];
@@ -260,17 +251,6 @@ pub fn fix_json_string_arguments(mut arguments: Value) -> Value {
 
 // Assertion Helpers
 
-pub fn assert_tool_in_registry(registry: &ToolRegistry, tool_name: &str, expected_server: &str) {
-    assert!(
-        registry.list_tools().contains(&tool_name.to_string()),
-        "Tool '{tool_name}' should be in registry"
-    );
-    assert_eq!(
-        registry.get_server_for_tool(tool_name),
-        Some(&expected_server.to_string()),
-        "Tool '{tool_name}' should map to server '{expected_server}'"
-    );
-}
 
 pub fn assert_stream_event_matches(actual: &LlmMessage, expected: &LlmMessage) {
     match (actual, expected) {
@@ -303,8 +283,10 @@ pub fn assert_stream_event_matches(actual: &LlmMessage, expected: &LlmMessage) {
             assert_eq!(id1, id2);
             assert_eq!(arg1, arg2);
         }
-        (LlmMessage::ToolCallComplete { id: id1 }, LlmMessage::ToolCallComplete { id: id2 }) => {
-            assert_eq!(id1, id2);
+        (LlmMessage::ToolCallComplete { tool_call: tc1 }, LlmMessage::ToolCallComplete { tool_call: tc2 }) => {
+            assert_eq!(tc1.id, tc2.id);
+            assert_eq!(tc1.name, tc2.name);
+            assert_eq!(tc1.arguments, tc2.arguments);
         }
         (LlmMessage::Done, LlmMessage::Done) => {}
         _ => panic!("Stream chunk mismatch:\nActual: {actual:?}\nExpected: {expected:?}"),

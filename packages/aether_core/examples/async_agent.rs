@@ -1,7 +1,7 @@
 use aether_core::{
     agent::{Agent, AgentEvent},
     llm::local::LocalLlmProvider,
-    tools::ToolRegistry,
+    mcp::McpClient,
 };
 use futures::pin_mut;
 use tokio_stream::StreamExt;
@@ -15,8 +15,8 @@ pub async fn main() {
 
     let _ = tokio::spawn(async move {
         let provider = LocalLlmProvider::new_llama_cpp().unwrap();
-        let tools = ToolRegistry::new();
-        let mut agent = Agent::new(provider, tools, Some("you are a helpful agent".to_string()));
+        let mcp_client = McpClient::new();
+        let mut agent = Agent::new(provider, mcp_client, Some("you are a helpful agent".to_string()));
 
         while let Some(message) = agent_rx.recv().await {
             let result_stream = agent.send_message(message).await;
