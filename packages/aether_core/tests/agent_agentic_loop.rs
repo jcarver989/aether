@@ -1,6 +1,6 @@
 use aether_core::{
     agent::{Agent, AgentMessage},
-    mcp::McpClient,
+    mcp::McpManager,
     testing::fake_llm::FakeLlmProvider,
     types::{ChatMessage, LlmMessage, ToolCallRequest},
 };
@@ -35,14 +35,7 @@ async fn test_simple_tool_execution() {
         LlmMessage::Done,
     ]);
 
-    // Create a mock MCP client (this would need to be enhanced to actually mock tool execution)
-    let mcp_client = McpClient::new();
-
-    let mut agent = Agent::new(
-        fake_llm,
-        mcp_client,
-        Some("You are a helpful assistant.".to_string()),
-    );
+    let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()));
 
     let stream = agent.send_message("Calculate 5 + 3").await;
     pin_mut!(stream);
@@ -139,12 +132,7 @@ async fn test_recursive_tool_calls() {
         ],
     ]);
 
-    let mcp_client = McpClient::new();
-    let mut agent = Agent::new(
-        fake_llm,
-        mcp_client,
-        Some("You are a helpful assistant.".to_string()),
-    );
+    let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()));
 
     let stream = agent.send_message("Process my data").await;
     pin_mut!(stream);
@@ -218,12 +206,7 @@ async fn test_max_recursion_depth() {
     }
 
     let fake_llm = FakeLlmProvider::new(responses);
-    let mcp_client = McpClient::new();
-    let mut agent = Agent::new(
-        fake_llm,
-        mcp_client,
-        Some("You are a helpful assistant.".to_string()),
-    );
+    let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()));
 
     let stream = agent.send_message("Start endless loop").await;
     pin_mut!(stream);
@@ -262,12 +245,7 @@ async fn test_tool_execution_error_handling() {
         LlmMessage::Done,
     ]);
 
-    let mcp_client = McpClient::new();
-    let mut agent = Agent::new(
-        fake_llm,
-        mcp_client,
-        Some("You are a helpful assistant.".to_string()),
-    );
+    let mut agent = Agent::new(fake_llm, Some("You are a helpful assistant.".to_string()));
 
     let stream = agent.send_message("Calculate something").await;
     pin_mut!(stream);
@@ -289,72 +267,5 @@ async fn test_tool_execution_error_handling() {
     assert!(
         has_error_result,
         "Expected tool execution error to be captured"
-    );
-}
-
-#[tokio::test]
-async fn test_conversation_history_with_tool_results() {
-    let fake_llm = FakeLlmProvider::new(vec![
-        // First response with tool call
-        vec![
-            LlmMessage::Start {
-                message_id: "msg1".to_string(),
-            },
-            LlmMessage::Message {
-                chunk: "Let me calculate that.".to_string(),
-            },
-            LlmMessage::ToolRequestStart {
-                id: "tool1".to_string(),
-                name: "test_server::calc".to_string(),
-            },
-            LlmMessage::ToolRequestComplete {
-                tool_call: ToolCallRequest {
-                    id: "tool1".to_string(),
-                    name: "test_server::calc".to_string(),
-                    arguments: r#"{"x": 5}"#.to_string(),
-                },
-            },
-            LlmMessage::Done,
-        ],
-        // Second response (should see tool result in conversation)
-        vec![
-            LlmMessage::Start {
-                message_id: "msg2".to_string(),
-            },
-            LlmMessage::Message {
-                chunk: "The result is ready.".to_string(),
-            },
-            LlmMessage::Done,
-        ],
-    ]);
-
-    let mcp_client = McpClient::new();
-    let mut agent = Agent::new(
-        fake_llm,
-        mcp_client,
-        Some("You are a helpful assistant.".to_string()),
-    );
-
-    {
-        let stream = agent.send_message("Calculate 5 * 2").await;
-        pin_mut!(stream);
-
-        // Consume all events
-        while let Some(_event) = stream.next().await {}
-    } // stream goes out of scope here, releasing the mutable borrow
-
-    // Check that the conversation history includes tool results
-    let messages = agent.messages();
-
-    // Should have: System, User, Assistant (with tool_calls), ToolCallResult, Assistant (final)
-    assert!(messages.len() >= 4);
-
-    let has_tool_result = messages
-        .iter()
-        .any(|msg| matches!(msg, ChatMessage::ToolCallResult { .. }));
-
-    assert!(
-        has_tool_result,
-        "Expected ToolCallResult in conversation history"
     );
 }

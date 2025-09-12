@@ -1,13 +1,7 @@
+use aether_core::agent::{Agent, AgentMessage};
 use aether_core::llm::local::LocalLlmProvider;
-use aether_core::mcp::client::McpClient;
-use aether_core::mcp::mcp_config::McpServerConfig;
-use aether_core::testing::create_transport_pair;
-use aether_core::{
-    agent::{Agent, AgentMessage},
-    mcp::builtin_servers::CodingMcp,
-};
+use aether_core::mcp::mcp_config::BuiltinServer;
 use futures::pin_mut;
-use rmcp::serve_server;
 use std::env;
 use tokio_stream::StreamExt;
 
@@ -29,35 +23,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let user_prompt = args[1..].join(" ");
-    println!("🤖 User Question: {}", user_prompt);
-
-    println!("🔍 Setting up MCP Server with coding tools...");
-    let (client_transport, server_transport) = create_transport_pair();
-    let _server_handle =
-        tokio::spawn(async move { serve_server(CodingMcp::new(), server_transport).await });
-
-    let mut mcp_client = McpClient::new();
-    mcp_client
-        .connect_server(
-            "codingmcp".to_string(),
-            McpServerConfig::InMemory {
-                transport: client_transport,
-            },
-        )
-        .await?;
-
-    println!("🔧 Discovering available tools...");
-    mcp_client.discover_tools().await?;
-
-    let tool_definitions = mcp_client.get_tool_definitions();
-    println!(
-        "📋 Available tools: {}",
-        tool_definitions
-            .iter()
-            .map(|t| t.name.split("::").last().unwrap_or(&t.name))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
 
     println!("🧠 Initializing AI agent...");
     let llm = LocalLlmProvider::new_llama_cpp()?;
@@ -65,7 +30,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "You are a helpful code search and analysis assistant. You have access to powerful code search tools that can help you find patterns, functions, files, and analyze codebases. When users ask questions about code, use the available tools to search and provide detailed, helpful answers.".to_string()
     );
 
-    let mut agent = Agent::new(llm, mcp_client, system_prompt);
+    let mut agent = Agent::new(llm, system_prompt)
+        .with_servers(vec![BuiltinServer::coding()])
+        .await?;
 
     println!("🚀 Processing your request...\n");
 

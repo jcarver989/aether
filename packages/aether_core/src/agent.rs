@@ -1,8 +1,9 @@
 use crate::llm::ChatRequest;
 use crate::llm::LlmProvider;
-use crate::mcp::McpClient;
+use crate::mcp::{McpManager, mcp_config::McpServerConfig};
 use crate::types::{ChatMessage, IsoString, LlmMessage};
 use async_stream::stream;
+use color_eyre::Result;
 use futures::StreamExt;
 use futures::pin_mut;
 use tokio_stream::Stream;
@@ -30,12 +31,12 @@ pub enum AgentMessage {
 
 pub struct Agent<T: LlmProvider> {
     llm: T,
-    mcp_client: McpClient,
+    mcp_client: McpManager,
     messages: Vec<ChatMessage>,
 }
 
 impl<T: LlmProvider> Agent<T> {
-    pub fn new(llm: T, mcp_client: McpClient, system_prompt: Option<String>) -> Self {
+    pub fn new(llm: T, system_prompt: Option<String>) -> Self {
         let mut messages = Vec::new();
 
         if let Some(system_prompt) = &system_prompt {
@@ -47,13 +48,18 @@ impl<T: LlmProvider> Agent<T> {
 
         Agent {
             llm,
-            mcp_client,
+            mcp_client: McpManager::new(),
             messages,
         }
     }
 
-    pub fn messages(&self) -> &[ChatMessage] {
-        &self.messages
+    pub async fn with_servers(mut self, server_configs: Vec<McpServerConfig>) -> Result<Self> {
+        for config in server_configs {
+            self.mcp_client.add_server(config).await?;
+        }
+
+        self.mcp_client.discover_tools().await?;
+        Ok(self)
     }
 
     pub async fn send_message(&mut self, content: &str) -> impl Stream<Item = AgentMessage> + Send {

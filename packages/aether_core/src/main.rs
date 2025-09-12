@@ -1,7 +1,7 @@
 use aether_core::{
     agent::{Agent, AgentMessage},
     llm::local::LocalLlmProvider,
-    mcp::McpClient,
+    mcp::McpManager,
 };
 use clap::Parser;
 use futures::pin_mut;
@@ -24,8 +24,7 @@ pub async fn main() {
     let prompt = cli.prompt.unwrap();
 
     let provider = LocalLlmProvider::new_llama_cpp().unwrap();
-    let mcp_client = McpClient::new();
-    let mut agent = Agent::new(provider, mcp_client, cli.system);
+    let mut agent = Agent::new(provider, cli.system);
 
     let result_stream = agent.send_message(&prompt).await;
     pin_mut!(result_stream);

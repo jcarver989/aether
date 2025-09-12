@@ -1,6 +1,6 @@
 pub mod builtin_servers;
-pub mod client;
+pub mod manager;
 pub mod mcp_config;
 pub mod protocol;
 
-pub use client::McpClient;
+pub use manager::McpManager;

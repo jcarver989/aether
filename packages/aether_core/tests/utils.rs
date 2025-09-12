@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use aether_core::llm::{ChatRequest, LlmProvider};
-use aether_core::mcp::client::McpClient;
+use aether_core::mcp::manager::McpManager;
 use aether_core::mcp::mcp_config::McpServerConfig;
 use aether_core::types::{LlmMessage, ToolCallRequest, ToolDefinition};
 use color_eyre::Result;
@@ -18,12 +18,13 @@ pub const TEST_TOOL_ID: &str = "call_123";
 
 // MCP Test Helpers
 
-pub fn create_test_mcp_client() -> McpClient {
-    McpClient::new()
+pub fn create_test_mcp_client() -> McpManager {
+    McpManager::new()
 }
 
 pub fn create_test_mcp_server_config(url: &str) -> McpServerConfig {
     McpServerConfig::Http {
+        name: "test_server".to_string(),
         url: url.to_string(),
         headers: HashMap::new(),
     }
@@ -34,6 +35,7 @@ pub fn create_test_mcp_server_config_with_headers(
     headers: HashMap<String, String>,
 ) -> McpServerConfig {
     McpServerConfig::Http {
+        name: "test_server_with_headers".to_string(),
         url: url.to_string(),
         headers,
     }

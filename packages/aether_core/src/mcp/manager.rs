@@ -5,48 +5,23 @@ use rmcp::{
         CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation,
         InitializeRequestParam, Tool as RmcpTool,
     },
-    serve_client,
+    serve_client, serve_server,
     service::RunningService,
     transport::StreamableHttpClientTransport,
 };
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::mcp::mcp_config::McpServerConfig;
 use crate::types::ToolDefinition;
+use crate::{mcp::mcp_config::McpServerConfig, testing::create_transport_pair};
 
-#[derive(Debug, Clone)]
-pub struct Tool {
-    pub description: String,
-    pub parameters: Value,
-}
-
-impl From<RmcpTool> for Tool {
-    fn from(tool: RmcpTool) -> Self {
-        Self {
-            description: tool.description.unwrap_or_default().to_string(),
-            parameters: serde_json::Value::Object((*tool.input_schema).clone()),
-        }
-    }
-}
-
-pub struct McpClient {
-    servers: HashMap<String, McpServer>,
+pub struct McpManager {
+    servers: HashMap<String, McpServerConnection>,
     tools: HashMap<String, Tool>, // Now keyed by "server_name::tool_name"
     tool_to_server: HashMap<String, String>, // Maps namespaced tool name to server name
 }
 
-struct McpServer {
-    client: RunningService<RoleClient, InitializeRequestParam>,
-}
-
-impl Default for McpClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl McpClient {
+impl McpManager {
     pub fn new() -> Self {
         Self {
             servers: HashMap::new(),
@@ -55,7 +30,7 @@ impl McpClient {
         }
     }
 
-    pub async fn connect_server(&mut self, name: String, config: McpServerConfig) -> Result<()> {
+    pub async fn add_server(&mut self, config: McpServerConfig) -> Result<()> {
         let client_info = ClientInfo {
             protocol_version: Default::default(),
             capabilities: ClientCapabilities::default(),
@@ -65,31 +40,81 @@ impl McpClient {
             },
         };
 
-        let client = match config {
-            McpServerConfig::Http { url, .. } => {
+        let server = match config {
+            McpServerConfig::Http { name, url, .. } => {
                 let transport = StreamableHttpClientTransport::from_uri(url.clone());
-                serve_client(client_info, transport).await.map_err(|e| {
+                let client = serve_client(client_info, transport).await.map_err(|e| {
                     Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
-                })?
+                })?;
+
+                McpServerConnection {
+                    name,
+                    client,
+                    server_task: None,
+                }
             }
-            McpServerConfig::Stdio { command, args, .. } => {
-                return Err(color_eyre::Report::msg(format!(
-                    "Process-based MCP servers not yet implemented: {} {}",
+
+            McpServerConfig::Stdio {
+                name,
+                command,
+                args,
+                ..
+            } => {
+                return Err(Report::msg(format!(
+                    "Process-based MCP servers not yet implemented for {}: {} {}",
+                    name,
                     command,
                     args.join(" ")
                 )));
             }
-            McpServerConfig::InMemory { transport } => {
-                serve_client(client_info, transport).await.map_err(|e| {
-                    color_eyre::Report::msg(format!(
+
+            McpServerConfig::InMemory { name, transport } => {
+                let client = serve_client(client_info, transport).await.map_err(|e| {
+                    Report::msg(format!(
                         "Failed to connect to in-memory MCP server {name}: {e}"
                     ))
-                })?
+                })?;
+
+                McpServerConnection {
+                    name,
+                    client,
+                    server_task: None,
+                }
+            }
+
+            McpServerConfig::InMemoryServer { name, server } => {
+                let (client_transport, server_transport) = create_transport_pair();
+
+                // Spawn the server task in the background
+                let server_handle = tokio::spawn(async move {
+                    match serve_server(server, server_transport).await {
+                        Ok(_service) => {
+                            // Keep the service running (it will run until the transport is dropped)
+                            std::future::pending::<()>().await;
+                        }
+                        Err(e) => {
+                            eprintln!("MCP server error: {}", e);
+                        }
+                    }
+                });
+
+                let client = serve_client(client_info, client_transport)
+                    .await
+                    .map_err(|e| {
+                        Report::msg(format!(
+                            "Failed to connect to in-memory MCP server {name}: {e}"
+                        ))
+                    })?;
+
+                McpServerConnection {
+                    name,
+                    client,
+                    server_task: Some(server_handle),
+                }
             }
         };
 
-        let server = McpServer { client };
-        self.servers.insert(name.clone(), server);
+        self.servers.insert(server.name.clone(), server);
 
         Ok(())
     }
@@ -187,6 +212,105 @@ impl McpClient {
             })
             .collect()
     }
+
+    /// Shutdown all servers and wait for their tasks to complete
+    pub async fn shutdown(&mut self) {
+        for (server_name, server) in self.servers.drain() {
+            if let Some(handle) = server.server_task {
+                // Drop the client first to signal shutdown
+                drop(server.client);
+
+                // Wait for the server task to complete (with a timeout)
+                match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
+                    Ok(Ok(())) => {
+                        println!("Server '{}' shut down gracefully", server_name);
+                    }
+                    Ok(Err(e)) => {
+                        eprintln!("Server '{}' task panicked: {:?}", server_name, e);
+                    }
+                    Err(_) => {
+                        eprintln!("Server '{}' shutdown timed out", server_name);
+                        // Task will be cancelled when the handle is dropped
+                    }
+                }
+            }
+        }
+
+        // Clear all cached data
+        self.tools.clear();
+        self.tool_to_server.clear();
+    }
+
+    /// Shutdown a specific server by name
+    pub async fn shutdown_server(&mut self, server_name: &str) -> Result<()> {
+        if let Some(server) = self.servers.remove(server_name) {
+            if let Some(handle) = server.server_task {
+                // Drop the client first to signal shutdown
+                drop(server.client);
+
+                // Wait for the server task to complete (with a timeout)
+                match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
+                    Ok(Ok(())) => {
+                        println!("Server '{}' shut down gracefully", server_name);
+                    }
+                    Ok(Err(e)) => {
+                        eprintln!("Server '{}' task panicked: {:?}", server_name, e);
+                    }
+                    Err(_) => {
+                        eprintln!("Server '{}' shutdown timed out", server_name);
+                        // Task will be cancelled when the handle is dropped
+                    }
+                }
+            }
+
+            // Remove tools from this server
+            self.tools
+                .retain(|tool_name, _| !tool_name.starts_with(&format!("{}::", server_name)));
+            self.tool_to_server
+                .retain(|_, server| server != server_name);
+        }
+
+        Ok(())
+    }
+}
+
+impl Drop for McpManager {
+    fn drop(&mut self) {
+        // Cancel all server tasks when the client is dropped
+        for (server_name, server) in self.servers.drain() {
+            if let Some(handle) = server.server_task {
+                handle.abort();
+                eprintln!("Server '{}' task aborted during cleanup", server_name);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Tool {
+    pub description: String,
+    pub parameters: Value,
+}
+
+struct McpServerConnection {
+    name: String,
+    client: RunningService<RoleClient, InitializeRequestParam>,
+    server_task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl From<RmcpTool> for Tool {
+    fn from(tool: RmcpTool) -> Self {
+        Self {
+            description: tool.description.unwrap_or_default().to_string(),
+            parameters: serde_json::Value::Object((*tool.input_schema).clone()),
+        }
+    }
+}
+
+impl Default for McpManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -213,16 +337,14 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
         // Create client with in-memory transport config
-        let mut client = McpClient::new();
+        let mut client = McpManager::new();
         let config = McpServerConfig::InMemory {
+            name: "test_server".to_string(),
             transport: client_transport,
         };
 
         // Connect to server
-        client
-            .connect_server("test_server".to_string(), config)
-            .await
-            .unwrap();
+        client.add_server(config).await.unwrap();
 
         // Discover tools
         client.discover_tools().await.unwrap();

@@ -106,7 +106,9 @@ impl CodingMcp {
         }
     }
 
-    #[tool(description = "Find files by filename pattern (supports wildcards like *.rs, main.*, etc.)")]
+    #[tool(
+        description = "Find files by filename pattern (supports wildcards like *.rs, main.*, etc.)"
+    )]
     pub async fn find_files(&self, request: Parameters<FindFilesArgs>) -> String {
         let Parameters(args) = request;
 
@@ -283,13 +285,16 @@ impl CodingMcp {
                         if let Some(filename) = entry.path().file_name() {
                             let filename_str = filename.to_string_lossy();
                             let pattern = &args.filename_pattern;
-                            
+
                             let matches = if case_insensitive {
-                                self.pattern_matches(&filename_str.to_lowercase(), &pattern.to_lowercase())
+                                self.pattern_matches(
+                                    &filename_str.to_lowercase(),
+                                    &pattern.to_lowercase(),
+                                )
                             } else {
                                 self.pattern_matches(&filename_str, pattern)
                             };
-                            
+
                             if matches {
                                 matching_files.push(entry.path().to_string_lossy().to_string());
                             }
@@ -313,15 +318,13 @@ impl CodingMcp {
         // Simple pattern matching - support * as wildcard
         if pattern.contains('*') {
             // Convert glob pattern to regex
-            let regex_pattern = pattern
-                .replace(".", "\\.")
-                .replace("*", ".*");
-            
+            let regex_pattern = pattern.replace(".", "\\.").replace("*", ".*");
+
             if let Ok(regex) = regex::Regex::new(&format!("^{}$", regex_pattern)) {
                 return regex.is_match(filename);
             }
         }
-        
+
         // Exact match or substring match
         filename == pattern || filename.contains(pattern)
     }

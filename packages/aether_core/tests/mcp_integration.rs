@@ -17,7 +17,8 @@ async fn test_mcp_server_config() {
     let config = create_test_mcp_server_config(TEST_SERVER_URL);
 
     match config {
-        McpServerConfig::Http { url, headers } => {
+        McpServerConfig::Http { name, url, headers } => {
+            assert_eq!(name, "test_server");
             assert_eq!(url, TEST_SERVER_URL);
             assert!(headers.is_empty());
         }
@@ -34,7 +35,8 @@ async fn test_mcp_server_config_with_headers() {
     let config = create_test_mcp_server_config_with_headers("https://api.example.com/mcp", headers);
 
     match config {
-        McpServerConfig::Http { url, headers } => {
+        McpServerConfig::Http { name, url, headers } => {
+            assert_eq!(name, "test_server_with_headers");
             assert_eq!(url, "https://api.example.com/mcp");
             assert_eq!(headers.len(), 2);
             assert_eq!(
@@ -50,14 +52,13 @@ async fn test_mcp_server_config_with_headers() {
     }
 }
 
-
 #[tokio::test]
 async fn test_mcp_client_tool_discovery() {
     let mut client = create_test_mcp_client();
 
     // Test that tool discovery succeeds when no servers connected
     client.discover_tools().await.unwrap();
-    
+
     // Test that tool definitions are empty when no servers connected
     let tool_definitions = client.get_tool_definitions();
     assert!(tool_definitions.is_empty());
@@ -68,7 +69,10 @@ fn test_mcp_server_config_with_empty_headers() {
     let config = create_test_mcp_server_config("http://localhost:8080/mcp");
 
     match config {
-        McpServerConfig::Http { url, headers } => {
+        McpServerConfig::Http {
+            name, url, headers, ..
+        } => {
+            assert_eq!(name, "test_server");
             assert_eq!(url, "http://localhost:8080/mcp");
             assert!(headers.is_empty());
         }
