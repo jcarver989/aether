@@ -84,7 +84,7 @@ impl<T: LlmProvider> Agent<T> {
 
                 let mut current_message_id = None;
                 let mut accumulated_content = String::new();
-                let mut completed_tool_calls = Vec::new();
+                let mut completed_tool_calls: Vec<(crate::types::ToolCallRequest, String)> = Vec::new();
                 let mut has_tool_calls = false;
 
                 let llm_stream = self.llm.complete_stream_chunks(ChatRequest {
@@ -139,21 +139,17 @@ impl<T: LlmProvider> Agent<T> {
                                 Err(e) => format!("Invalid tool arguments: {}", e),
                             };
 
-                            self.messages.push(ChatMessage::ToolCallResult {
-                                tool_call_id: tool_call.id.clone(),
-                                content: result_str.clone(),
-                                timestamp: IsoString::now(),
-                            });
-
+                            // Store tool result but don't add to messages yet - wait for LLM Done
                             yield AgentMessage::ToolCallChunk {
                                 tool_call_id: tool_call.id.clone(),
                                 name: tool_call.name.clone(),
                                 arguments: None,
-                                result: Some(result_str),
+                                result: Some(result_str.clone()),
                                 is_complete: true,
                             };
 
-                            completed_tool_calls.push(tool_call);
+                            // Store the tool call and result for later
+                            completed_tool_calls.push((tool_call, result_str));
                             has_tool_calls = true;
                         }
                         Ok(LlmMessage::Done) => {
@@ -166,12 +162,26 @@ impl<T: LlmProvider> Agent<T> {
                                 };
                             }
 
-                            // Add the completed assistant message to conversation history
+                            // Add the completed assistant message to conversation history first
+                            let tool_call_requests: Vec<_> = completed_tool_calls
+                                .iter()
+                                .map(|(tool_call, _)| tool_call.clone())
+                                .collect();
+                            
                             self.messages.push(ChatMessage::Assistant {
                                 content: accumulated_content,
                                 timestamp: IsoString::now(),
-                                tool_calls: completed_tool_calls.clone(),
+                                tool_calls: tool_call_requests,
                             });
+
+                            // Then add tool results in the correct order
+                            for (tool_call, result_str) in completed_tool_calls {
+                                self.messages.push(ChatMessage::ToolCallResult {
+                                    tool_call_id: tool_call.id,
+                                    content: result_str,
+                                    timestamp: IsoString::now(),
+                                });
+                            }
 
                             if has_tool_calls {
                                 n_iterations += 1;

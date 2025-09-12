@@ -24,3 +24,6 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 uuid = { version = "1.10", features = ["v4"] }
 clap = { version = "4", features = ["derive"] }
+grep = "0.3"
+ignore = "0.4"
+regex = "1.0"

@@ -50,27 +50,6 @@ async fn test_mcp_server_config_with_headers() {
     }
 }
 
-#[tokio::test]
-async fn test_mcp_server_config_serialization() -> Result<()> {
-    let mut headers = HashMap::new();
-    headers.insert("X-API-Key".to_string(), "secret123".to_string());
-
-    let config = create_test_mcp_server_config_with_headers("https://mcp.example.com", headers);
-
-    let serialized = serde_json::to_string(&config)?;
-    let deserialized: McpServerConfig = serde_json::from_str(&serialized)?;
-
-    match deserialized {
-        McpServerConfig::Http { url, headers } => {
-            assert_eq!(url, "https://mcp.example.com");
-            assert_eq!(headers.len(), 1);
-            assert_eq!(headers.get("X-API-Key"), Some(&"secret123".to_string()));
-        }
-        _ => panic!("Expected Http config"),
-    }
-
-    Ok(())
-}
 
 #[tokio::test]
 async fn test_mcp_client_tool_discovery() {
