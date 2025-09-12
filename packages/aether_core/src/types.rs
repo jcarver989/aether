@@ -39,7 +39,7 @@ pub enum ChatMessage {
     Assistant {
         content: String,
         timestamp: IsoString,
-        tool_calls: Vec<ToolCall>,
+        tool_calls: Vec<ToolCallRequest>,
     },
     AssistantStreaming {
         content: String,
@@ -57,7 +57,7 @@ pub enum ChatMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub struct ToolCall {
+pub struct ToolCallRequest {
     pub id: String,
     pub name: String,
     pub arguments: String,
@@ -76,9 +76,9 @@ pub enum ToolCallState {
 pub enum LlmMessage {
     Start { message_id: String },
     Content { chunk: String },
-    ToolCallStart { id: String, name: String },
-    ToolCallArgument { id: String, chunk: String },
-    ToolCallComplete { tool_call: ToolCall },
+    ToolCallRequestStart { id: String, name: String },
+    ToolCallRequestArg { id: String, chunk: String },
+    ToolCallRequestComplete { tool_call: ToolCallRequest },
     Done,
     Error { message: String },
 }

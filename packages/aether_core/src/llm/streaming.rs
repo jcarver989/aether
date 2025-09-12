@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
 
-use crate::types::{LlmMessage, ToolCall};
+use crate::types::{LlmMessage, ToolCallRequest};
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard async_openai CreateChatCompletionStreamResponse types.
@@ -32,12 +32,12 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                 // complete the tool call first
                                 if let Some(id) = current_tool_id.take() {
                                     if let Some((name, arguments)) = active_tool_calls.remove(&id) {
-                                        let tool_call = ToolCall {
+                                        let tool_call = ToolCallRequest {
                                             id: id.clone(),
                                             name,
                                             arguments,
                                         };
-                                        yield Ok(LlmMessage::ToolCallComplete { tool_call });
+                                        yield Ok(LlmMessage::ToolCallRequestComplete { tool_call });
                                     }
                                 }
                                 yield Ok(LlmMessage::Content { chunk: content.clone() });
@@ -53,7 +53,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                         let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
                                         current_tool_id = Some(id.clone());
                                         active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
-                                        yield Ok(LlmMessage::ToolCallStart {
+                                        yield Ok(LlmMessage::ToolCallRequestStart {
                                             id,
                                             name: name.clone(),
                                         });
@@ -67,7 +67,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                                                 if let Some((_, accumulated_args)) = active_tool_calls.get_mut(id) {
                                                     accumulated_args.push_str(arguments);
                                                 }
-                                                yield Ok(LlmMessage::ToolCallArgument {
+                                                yield Ok(LlmMessage::ToolCallRequestArg {
                                                     id: id.clone(),
                                                     chunk: arguments.clone(),
                                                 });
@@ -86,12 +86,12 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                             // Complete any pending tool call before ending
                             if let Some(id) = current_tool_id.take() {
                                 if let Some((name, arguments)) = active_tool_calls.remove(&id) {
-                                    let tool_call = ToolCall {
+                                    let tool_call = ToolCallRequest {
                                         id: id.clone(),
                                         name,
                                         arguments,
                                     };
-                                    yield Ok(LlmMessage::ToolCallComplete { tool_call });
+                                    yield Ok(LlmMessage::ToolCallRequestComplete { tool_call });
                                 }
                             }
 
@@ -104,12 +104,12 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                         debug!("No choices in response, ending stream");
                         if let Some(id) = current_tool_id.take() {
                             if let Some((name, arguments)) = active_tool_calls.remove(&id) {
-                                let tool_call = ToolCall {
+                                let tool_call = ToolCallRequest {
                                     id: id.clone(),
                                     name,
                                     arguments,
                                 };
-                                yield Ok(LlmMessage::ToolCallComplete { tool_call });
+                                yield Ok(LlmMessage::ToolCallRequestComplete { tool_call });
                             }
                         }
                         yield Ok(LlmMessage::Done);

@@ -3,7 +3,7 @@
 use aether_core::llm::{ChatRequest, LlmProvider};
 use aether_core::mcp::client::McpClient;
 use aether_core::mcp::mcp_config::McpServerConfig;
-use aether_core::types::{LlmMessage, ToolCall, ToolDefinition};
+use aether_core::types::{LlmMessage, ToolCallRequest, ToolDefinition};
 use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};
@@ -73,7 +73,6 @@ pub fn create_test_rmcp_tool_with_params(
     RmcpTool::new(name.to_string(), description.to_string(), Arc::new(schema))
 }
 
-
 // LLM Provider Test Helpers
 
 pub struct FakeLlmProvider {
@@ -111,16 +110,16 @@ impl FakeLlmProvider {
             LlmMessage::Content {
                 chunk: content.to_string(),
             },
-            LlmMessage::ToolCallStart {
+            LlmMessage::ToolCallRequestStart {
                 id: tool_id.to_string(),
                 name: tool_name.to_string(),
             },
-            LlmMessage::ToolCallArgument {
+            LlmMessage::ToolCallRequestArg {
                 id: tool_id.to_string(),
                 chunk: arguments.to_string(),
             },
-            LlmMessage::ToolCallComplete {
-                tool_call: ToolCall {
+            LlmMessage::ToolCallRequestComplete {
+                tool_call: ToolCallRequest {
                     id: tool_id.to_string(),
                     name: tool_name.to_string(),
                     arguments: arguments.to_string(),
@@ -141,7 +140,10 @@ impl FakeLlmProvider {
 }
 
 impl LlmProvider for FakeLlmProvider {
-    fn complete_stream_chunks(&self, _request: ChatRequest) -> impl tokio_stream::Stream<Item = Result<LlmMessage>> + Send {
+    fn complete_stream_chunks(
+        &self,
+        _request: ChatRequest,
+    ) -> impl tokio_stream::Stream<Item = Result<LlmMessage>> + Send {
         let chunks = self.chunks.clone();
         iter(chunks.into_iter().map(Ok))
     }
@@ -168,8 +170,8 @@ pub fn create_test_tool_definition(name: &str, description: &str) -> ToolDefinit
     }
 }
 
-pub fn create_test_tool_call(id: &str, name: &str, arguments: Value) -> ToolCall {
-    ToolCall {
+pub fn create_test_tool_call(id: &str, name: &str, arguments: Value) -> ToolCallRequest {
+    ToolCallRequest {
         id: id.to_string(),
         name: name.to_string(),
         arguments: arguments.to_string(),
@@ -178,7 +180,9 @@ pub fn create_test_tool_call(id: &str, name: &str, arguments: Value) -> ToolCall
 
 // Stream Processing Test Helpers
 
-pub async fn collect_stream_content(mut stream: impl tokio_stream::Stream<Item = Result<LlmMessage>> + Unpin) -> Result<String> {
+pub async fn collect_stream_content(
+    mut stream: impl tokio_stream::Stream<Item = Result<LlmMessage>> + Unpin,
+) -> Result<String> {
     use tokio_stream::StreamExt;
 
     let mut content = String::new();
@@ -193,7 +197,9 @@ pub async fn collect_stream_content(mut stream: impl tokio_stream::Stream<Item =
     Ok(content)
 }
 
-pub async fn collect_stream_chunks(mut stream: impl tokio_stream::Stream<Item = Result<LlmMessage>> + Unpin) -> Result<Vec<LlmMessage>> {
+pub async fn collect_stream_chunks(
+    mut stream: impl tokio_stream::Stream<Item = Result<LlmMessage>> + Unpin,
+) -> Result<Vec<LlmMessage>> {
     use tokio_stream::StreamExt;
 
     let mut chunks = Vec::new();
@@ -251,18 +257,17 @@ pub fn fix_json_string_arguments(mut arguments: Value) -> Value {
 
 // Assertion Helpers
 
-
 pub fn assert_stream_event_matches(actual: &LlmMessage, expected: &LlmMessage) {
     match (actual, expected) {
         (LlmMessage::Content { chunk: a }, LlmMessage::Content { chunk: b }) => {
             assert_eq!(a, b)
         }
         (
-            LlmMessage::ToolCallStart {
+            LlmMessage::ToolCallRequestStart {
                 id: id1,
                 name: name1,
             },
-            LlmMessage::ToolCallStart {
+            LlmMessage::ToolCallRequestStart {
                 id: id2,
                 name: name2,
             },
@@ -271,11 +276,11 @@ pub fn assert_stream_event_matches(actual: &LlmMessage, expected: &LlmMessage) {
             assert_eq!(name1, name2);
         }
         (
-            LlmMessage::ToolCallArgument {
+            LlmMessage::ToolCallRequestArg {
                 id: id1,
                 chunk: arg1,
             },
-            LlmMessage::ToolCallArgument {
+            LlmMessage::ToolCallRequestArg {
                 id: id2,
                 chunk: arg2,
             },
@@ -283,7 +288,10 @@ pub fn assert_stream_event_matches(actual: &LlmMessage, expected: &LlmMessage) {
             assert_eq!(id1, id2);
             assert_eq!(arg1, arg2);
         }
-        (LlmMessage::ToolCallComplete { tool_call: tc1 }, LlmMessage::ToolCallComplete { tool_call: tc2 }) => {
+        (
+            LlmMessage::ToolCallRequestComplete { tool_call: tc1 },
+            LlmMessage::ToolCallRequestComplete { tool_call: tc2 },
+        ) => {
             assert_eq!(tc1.id, tc2.id);
             assert_eq!(tc1.name, tc2.name);
             assert_eq!(tc1.arguments, tc2.arguments);

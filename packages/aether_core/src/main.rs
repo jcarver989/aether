@@ -1,5 +1,5 @@
 use aether_core::{
-    agent::{Agent, AgentEvent},
+    agent::{Agent, AgentMessage},
     llm::local::LocalLlmProvider,
     mcp::McpClient,
 };
@@ -32,7 +32,7 @@ pub async fn main() {
 
     while let Some(event) = result_stream.next().await {
         match event {
-            AgentEvent::MessageChunk {
+            AgentMessage::MessageChunk {
                 chunk, is_complete, ..
             } => {
                 if is_complete {
@@ -43,7 +43,7 @@ pub async fn main() {
                 }
             }
 
-            AgentEvent::ToolCallChunk {
+            AgentMessage::ToolCallChunk {
                 name, is_complete, ..
             } => {
                 if is_complete {
@@ -53,7 +53,7 @@ pub async fn main() {
                 }
             }
 
-            AgentEvent::Error { message } => {
+            AgentMessage::Error { message } => {
                 eprintln!("Error: {}", message);
             }
         }

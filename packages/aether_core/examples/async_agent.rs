@@ -1,5 +1,5 @@
 use aether_core::{
-    agent::{Agent, AgentEvent},
+    agent::{Agent, AgentMessage},
     llm::local::LocalLlmProvider,
     mcp::McpClient,
 };
@@ -10,13 +10,17 @@ use tokio_stream::StreamExt;
 pub async fn main() {
     println!("Hello world");
 
-    let (client_tx, mut client_rx) = tokio::sync::mpsc::channel::<AgentEvent>(100);
+    let (client_tx, mut client_rx) = tokio::sync::mpsc::channel::<AgentMessage>(100);
     let (agent_tx, mut agent_rx) = tokio::sync::mpsc::channel::<&str>(100);
 
     let _ = tokio::spawn(async move {
         let provider = LocalLlmProvider::new_llama_cpp().unwrap();
         let mcp_client = McpClient::new();
-        let mut agent = Agent::new(provider, mcp_client, Some("you are a helpful agent".to_string()));
+        let mut agent = Agent::new(
+            provider,
+            mcp_client,
+            Some("you are a helpful agent".to_string()),
+        );
 
         while let Some(message) = agent_rx.recv().await {
             let result_stream = agent.send_message(message).await;
@@ -38,7 +42,7 @@ pub async fn main() {
 
     while let Some(event) = client_rx.recv().await {
         match event {
-            AgentEvent::MessageChunk {
+            AgentMessage::MessageChunk {
                 chunk, is_complete, ..
             } => {
                 if is_complete {
@@ -49,7 +53,7 @@ pub async fn main() {
                 }
             }
 
-            AgentEvent::ToolCallChunk {
+            AgentMessage::ToolCallChunk {
                 name, is_complete, ..
             } => {
                 if is_complete {
@@ -59,7 +63,7 @@ pub async fn main() {
                 }
             }
 
-            AgentEvent::Error { message } => {
+            AgentMessage::Error { message } => {
                 eprintln!("Error: {}", message);
             }
         }
