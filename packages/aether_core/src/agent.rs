@@ -2,6 +2,7 @@ use crate::llm::Context;
 use crate::llm::ModelProvider;
 use crate::mcp::McpManager;
 use crate::mcp::builtin_servers::CodingMcp;
+use crate::types::ToolCallRequest;
 use crate::types::{ChatMessage, IsoString, LlmResponse};
 use async_stream::stream;
 use color_eyre::Result;
@@ -12,6 +13,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use tokio::sync::mpsc;
 use tokio_stream::Stream;
+use tokio_util::sync::CancellationToken;
 
 pub enum McpServerConfig {
     Http {
@@ -109,6 +111,7 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
             llm: self.llm,
             mcp_client: mcp_manager,
             messages,
+            cancellation_token: CancellationToken::new(),
         })
     }
 
@@ -120,7 +123,7 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
 
         tokio::spawn(async move {
             while let Some(message) = user_rx.recv().await {
-                let result_stream = agent.send(message).await;
+                let (result_stream, _cancel_token) = agent.send(message).await;
                 pin_mut!(result_stream);
 
                 while let Some(event) = result_stream.next().await {
@@ -139,11 +142,25 @@ pub struct Agent<T: ModelProvider> {
     llm: T,
     mcp_client: McpManager,
     messages: Vec<ChatMessage>,
+    cancellation_token: CancellationToken,
 }
 
 impl<T: ModelProvider + 'static> Agent<T> {
-    pub async fn send(&mut self, message: UserMessage) -> impl Stream<Item = AgentMessage> + Send {
-        match message {
+    pub async fn send(
+        &mut self,
+        message: UserMessage,
+    ) -> (impl Stream<Item = AgentMessage> + Send, CancellationToken) {
+        self.run_agent_loop(message).await
+    }
+
+    async fn run_agent_loop(
+        &mut self,
+        message: UserMessage,
+    ) -> (impl Stream<Item = AgentMessage> + Send, CancellationToken) {
+        const MAX_ITERATIONS: usize = 10_000;
+        let mut n_iterations = 0;
+
+        let cancellation_token = match message {
             UserMessage::Text { content } => {
                 let user_message = ChatMessage::User {
                     content,
@@ -151,16 +168,23 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 };
 
                 self.messages.push(user_message);
-                self.run_agent_loop().await
+                self.cancellation_token = CancellationToken::new();
+                self.cancellation_token.clone()
             }
-        }
-    }
+            UserMessage::Cancel => {
+                self.cancellation_token.cancel();
+                self.cancellation_token.clone()
+            }
+        };
 
-    async fn run_agent_loop(&mut self) -> impl Stream<Item = AgentMessage> + Send {
-        const MAX_ITERATIONS: usize = 10_000;
-        let mut n_iterations = 0;
+        let stream = stream! {
+            if self.cancellation_token.is_cancelled() {
+                yield AgentMessage::Cancelled {
+                    message: "Operation was cancelled".to_string(),
+                };
+                return;
+            }
 
-        stream! {
             match self.mcp_client.discover_tools().await  {
                 Ok(_) => {}
                 Err(e) => {
@@ -172,6 +196,12 @@ impl<T: ModelProvider + 'static> Agent<T> {
             };
 
             loop {
+                if self.cancellation_token.is_cancelled() {
+                    yield AgentMessage::Cancelled {
+                        message: "Operation was cancelled during agent loop".to_string(),
+                    };
+                    return;
+                }
                 if n_iterations >= MAX_ITERATIONS {
                     yield AgentMessage::Error {
                         message: "Maximum recursion depth reached".to_string(),
@@ -184,7 +214,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
                 let mut current_message_id = None;
                 let mut accumulated_content = String::new();
-                let mut completed_tool_calls: Vec<(crate::types::ToolCallRequest, String)> = Vec::new();
+                let mut completed_tool_calls: Vec<(ToolCallRequest, String)> = Vec::new();
                 let mut has_tool_calls = false;
 
                 let llm_stream = self.llm.generate_response(Context {
@@ -195,6 +225,13 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 pin_mut!(llm_stream);
 
                 while let Some(event) = llm_stream.next().await {
+                    if self.cancellation_token.is_cancelled() {
+                        yield AgentMessage::Cancelled {
+                            message: "Operation was cancelled".to_string(),
+                        };
+                        return;
+                    }
+
                     match event {
                         Ok(LlmResponse::Start { message_id }) => {
                             current_message_id = Some(message_id);
@@ -239,7 +276,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 Err(e) => format!("Invalid tool arguments: {}", e),
                             };
 
-                            // Store tool result but don't add to messages yet - wait for LLM Done
                             yield AgentMessage::ToolCall {
                                 tool_call_id: tool_call.id.clone(),
                                 name: tool_call.name.clone(),
@@ -248,12 +284,10 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 is_complete: true,
                             };
 
-                            // Store the tool call and result for later
                             completed_tool_calls.push((tool_call, result_str));
                             has_tool_calls = true;
                         }
                         Ok(LlmResponse::Done) => {
-                            // Send final message chunk to indicate completion
                             if let Some(message_id) = &current_message_id {
                                 yield AgentMessage::Text {
                                     message_id: message_id.clone(),
@@ -262,7 +296,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 };
                             }
 
-                            // Add the completed assistant message to conversation history first
                             let tool_call_requests: Vec<_> = completed_tool_calls
                                 .iter()
                                 .map(|(tool_call, _)| tool_call.clone())
@@ -274,7 +307,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 tool_calls: tool_call_requests,
                             });
 
-                            // Then add tool results in the correct order
                             for (tool_call, result_str) in completed_tool_calls {
                                 self.messages.push(ChatMessage::ToolCallResult {
                                     tool_call_id: tool_call.id,
@@ -303,7 +335,9 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     }
                 }
             }
-        }
+        };
+
+        (stream, cancellation_token)
     }
 }
 
@@ -324,6 +358,10 @@ pub enum AgentMessage {
     },
 
     Error {
+        message: String,
+    },
+
+    Cancelled {
         message: String,
     },
 }

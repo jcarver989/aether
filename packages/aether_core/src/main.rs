@@ -29,7 +29,7 @@ pub async fn main() {
         .await
         .unwrap();
 
-    let result_stream = agent.send(UserMessage::text(&prompt)).await;
+    let (result_stream, _cancel_token) = agent.send(UserMessage::text(&prompt)).await;
     pin_mut!(result_stream);
 
     while let Some(event) = result_stream.next().await {
@@ -57,6 +57,10 @@ pub async fn main() {
 
             AgentMessage::Error { message } => {
                 eprintln!("Error: {}", message);
+            }
+
+            AgentMessage::Cancelled { message } => {
+                eprintln!("Cancelled: {}", message);
             }
         }
     }

@@ -41,6 +41,10 @@ pub async fn main() -> color_eyre::Result<()> {
             AgentMessage::Error { message } => {
                 eprintln!("Error: {}", message);
             }
+
+            AgentMessage::Cancelled { message } => {
+                eprintln!("Cancelled: {}", message);
+            }
         }
     }
 

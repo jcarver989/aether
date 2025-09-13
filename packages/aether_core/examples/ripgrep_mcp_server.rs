@@ -37,8 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    let result_stream = agent.send(UserMessage::text(&user_prompt)).await;
-
+    let (result_stream, _cancel_token) = agent.send(UserMessage::text(&user_prompt)).await;
     pin_mut!(result_stream);
 
     println!("🤖 AI Agent Response:");
@@ -88,6 +87,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             Error { message } => {
                 eprintln!("❌ Error: {}", message);
+            }
+
+            Cancelled { message } => {
+                eprintln!("⚠️ Cancelled: {}", message);
             }
         }
     }
