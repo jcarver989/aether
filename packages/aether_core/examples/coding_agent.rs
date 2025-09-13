@@ -1,15 +1,56 @@
 use aether_core::agent::{AgentMessage::*, UserMessage, agent};
 use aether_core::llm::local::LocalModelProvider;
-use console::{style, Term};
+use console::Term;
 use futures::pin_mut;
 use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use regex::Regex;
+use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::time::Duration;
 use tokio::fs;
 use tokio_stream::StreamExt;
+
+// Modern futuristic color palette for 2025 terminal applications
+mod colors {
+    use owo_colors::Rgb;
+
+    // Futuristic color scheme with true RGB colors
+    pub fn primary() -> Rgb {
+        Rgb(138, 43, 226) // Electric Violet #8A2BE2
+    }
+    pub fn secondary() -> Rgb {
+        Rgb(0, 255, 255) // Cyan #00FFFF
+    }
+    pub fn accent() -> Rgb {
+        Rgb(255, 215, 0) // Gold #FFD700
+    }
+    pub fn background() -> Rgb {
+        Rgb(10, 10, 20) // Deep Space #0A0A14
+    }
+    pub fn surface() -> Rgb {
+        Rgb(18, 18, 32) // Dark Surface #121220
+    }
+    pub fn text_primary() -> Rgb {
+        Rgb(255, 255, 255) // White #FFFFFF
+    }
+    pub fn text_secondary() -> Rgb {
+        Rgb(176, 176, 208) // Light Gray #B0B0D0
+    }
+    pub fn success() -> Rgb {
+        Rgb(0, 255, 127) // Spring Green #00FF7F
+    }
+    pub fn warning() -> Rgb {
+        Rgb(255, 165, 0) // Orange #FFA500
+    }
+    pub fn error() -> Rgb {
+        Rgb(255, 59, 48) // Red #FF3B30
+    }
+    pub fn info() -> Rgb {
+        Rgb(78, 205, 196) // Turquoise #4ECDC4
+    }
+}
 
 // UI Helper functions for clean output formatting
 mod ui {
@@ -24,19 +65,15 @@ mod ui {
 
         // Regex patterns to filter out
         let xml_patterns = [
-            r"<tool_call>",
-            r"</tool_call>",
-            r"<function=[^>]*>?",         // Complete or incomplete function tags
-            r"</function>",
-            r"<parameter=[^>]*>?",        // Complete or incomplete parameter tags
-            r"</parameter>",
-            r"<invoke[^>]*>?",            // Invoke tags
-            r"</invoke>",
-            r"<[^>]*>?",            // ANTML namespace tags
+            r"<\?xml",             // XML declaration
+            r"</?function[\s>]*",  // Complete or incomplete function tags
+            r"</?parameter[\s>]*", // Complete or incomplete parameter tags
+            r"</?invoke[\s>]*",    // Invoke tags
+            r"<[^>]*>?",           // ANTML namespace tags
             r"</[^>]*>",
-            r"<function=[^<]*$",          // Partial function tags at end of chunk
-            r"<parameter=[^<]*$",         // Partial parameter tags at end of chunk
-            r"<[^<]*$",             // Partial antml tags at end of chunk
+            r"<function=[^<]*$",  // Partial function tags at end of chunk
+            r"<parameter=[^<]*$", // Partial parameter tags at end of chunk
+            r"<[^<]*$",           // Partial antml tags at end of chunk
         ];
 
         let mut filtered = text.to_string();
@@ -70,53 +107,78 @@ mod ui {
     }
 
     pub fn show_usage(program_name: &str) {
-        println!("{}", style("Usage:").bold().cyan());
-        println!("  {} {}", program_name, style("<your question about the code>").yellow());
+        println!("{}", "AETHER CODING AGENT".color(colors::primary()).bold());
+        println!(
+            "  {} {}",
+            program_name,
+            "- AI-powered coding assistant"
+                .color(colors::accent())
+                .italic()
+        );
         println!();
-        println!("{}", style("Examples:").bold().cyan());
-        println!("  {} {}", program_name, style("\"Find all async functions in the agent module\"").green());
-        println!("  {} {}", program_name, style("\"Show me error handling patterns in this codebase\"").green());
+        println!("{}", "Usage:".color(colors::secondary()).bold());
+        println!(
+            "  {} {}",
+            program_name,
+            "<your coding question or request>"
+                .color(colors::success())
+                .italic()
+        );
+        println!(
+            "  {} {}",
+            program_name,
+            "\"help me implement a binary search tree\""
+                .color(colors::warning())
+                .italic()
+        );
     }
 
     pub fn show_agents_loaded() {
-        println!("{} {}",
-            style("[LOAD]").bright_blue().bold(),
-            "Loaded AGENTS.md instructions".bright_white().bold()
+        println!(
+            "{} {}",
+            "▶".color(colors::success()).bold(),
+            "Loaded AGENTS.md instructions".color(colors::text_primary())
         );
     }
 
     pub fn show_agents_warning(error: &str) {
-        eprintln!("{} {}: {}",
-            style("[WARN]").bright_yellow().bold(),
-            "Could not read AGENTS.md".yellow(),
-            error.red()
+        eprintln!(
+            "{} {}: {}",
+            "⚠".color(colors::warning()).bold(),
+            "Could not read AGENTS.md".color(colors::warning()),
+            error.color(colors::error())
         );
     }
 
     pub fn show_no_agents_file() {
-        println!("{} {}",
-            style("[INFO]").bright_cyan().bold(),
-            "No AGENTS.md file found in current directory".dimmed()
+        println!(
+            "{} {}",
+            "ℹ".color(colors::info()).bold(),
+            "No AGENTS.md file found in current directory".color(colors::text_secondary())
         );
     }
 
     pub fn show_query_header(prompt: &str) {
         println!();
-        println!("{} {}",
-            style("[QUERY]").bright_magenta().bold(),
-            style("User Input").bold().bright_white()
+        println!("{}", "─".repeat(60).color(colors::secondary()));
+        println!(
+            "{} {}",
+            "◉".color(colors::secondary()).bold(),
+            "User Input".bold().color(colors::text_primary())
         );
-        println!("   {}", style(prompt).italic().bright_cyan());
+        println!("{}", "─".repeat(60).color(colors::secondary()));
+        println!("   {}", prompt.italic().color(colors::secondary()));
         println!();
     }
 
     pub fn show_response_header() {
-        println!("{}", "─".repeat(60).dimmed());
-        println!("{} {}",
-            style("[AGENT]").bright_green().bold(),
-            style("AI Response").bold().bright_white()
+        println!("{}", "─".repeat(60).color(colors::primary()));
+        println!(
+            "{} {}",
+            "⟨⟩".color(colors::primary()).bold(),
+            "AI Response".bold().color(colors::text_primary())
         );
-        println!("{}", "─".repeat(60).dimmed());
+        println!("{}", "─".repeat(60).color(colors::primary()));
     }
 
     pub fn create_tool_spinner(name: &str) -> Result<ProgressBar, Box<dyn std::error::Error>> {
@@ -124,10 +186,11 @@ mod ui {
         pb.set_style(
             ProgressStyle::default_spinner()
                 .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                .template(&format!("{{spinner:.cyan}} {} {} {{msg}}",
-                    style("[TOOL]").bright_blue().bold(),
-                    style(name).bold().bright_cyan()
-                ))?
+                .template(&format!(
+                    "{{spinner}} {} Tool {} {{msg}}",
+                    "⧗".color(colors::info()).bold(),
+                    name.color(colors::info()).bold()
+                ))?,
         );
         pb.set_message("running...");
         pb.enable_steady_tick(Duration::from_millis(100));
@@ -135,55 +198,58 @@ mod ui {
     }
 
     pub fn show_tool_completed(tool_name: &str, result: Option<&str>) {
-        println!("{} {} {}",
-            style("[DONE]").bright_green().bold(),
-            style("Tool").bold().bright_cyan(),
-            style(tool_name).bold().bright_white()
+        println!(
+            "{} {} {}",
+            "✓".color(colors::success()).bold(),
+            "Tool".bold().color(colors::text_primary()),
+            tool_name.bold().color(colors::success())
         );
 
         if let Some(result) = result {
             // Try to parse JSON and extract meaningful content
-            let display_result = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(result) {
-                // Extract text content from common JSON structures
-                if let Some(text) = parsed.get("text").and_then(|v| v.as_str()) {
-                    text.to_string()
-                } else if let Some(content) = parsed.get("content").and_then(|v| v.as_str()) {
-                    content.to_string()
-                } else if let Some(message) = parsed.get("message").and_then(|v| v.as_str()) {
-                    message.to_string()
+            let display_result =
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(result) {
+                    // Extract text content from common JSON structures
+                    if let Some(text) = parsed.get("text").and_then(|v| v.as_str()) {
+                        text.to_string()
+                    } else if let Some(content) = parsed.get("content").and_then(|v| v.as_str()) {
+                        content.to_string()
+                    } else if let Some(message) = parsed.get("message").and_then(|v| v.as_str()) {
+                        message.to_string()
+                    } else {
+                        // Fallback to pretty-printed JSON if we can't extract simple text
+                        serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| result.to_string())
+                    }
                 } else {
-                    // Fallback to pretty-printed JSON if we can't extract simple text
-                    serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| result.to_string())
-                }
-            } else {
-                result.to_string()
-            };
+                    result.to_string()
+                };
 
             if !display_result.trim().is_empty() {
                 if display_result.len() > 200 {
                     let preview = &display_result[..197];
-                    println!("   {} {}{}",
-                        style("Result:").dimmed(),
-                        style(preview).bright_white(),
-                        style("...").dimmed()
+                    println!(
+                        "   {} {}{}",
+                        "Result:".dimmed(),
+                        preview.bright_white(),
+                        "...".dimmed()
                     );
                 } else {
                     // Handle multi-line results better
                     let lines: Vec<&str> = display_result.lines().collect();
                     if lines.len() == 1 {
-                        println!("   {} {}",
-                            style("Result:").dimmed(),
-                            style(&display_result).bright_white()
+                        println!(
+                            "   {} {}",
+                            "Result:".dimmed(),
+                            &display_result.bright_white()
                         );
                     } else {
-                        println!("   {}",
-                            style("Result:").dimmed()
-                        );
-                        for line in lines.iter().take(5) { // Show max 5 lines
-                            println!("     {}", style(line).bright_white());
+                        println!("   {}", "Result:".dimmed());
+                        for line in lines.iter().take(5) {
+                            // Show max 5 lines
+                            println!("     {}", line.bright_white());
                         }
                         if lines.len() > 5 {
-                            println!("     {}", style("...").dimmed());
+                            println!("     {}", "...".dimmed());
                         }
                     }
                 }
@@ -192,25 +258,28 @@ mod ui {
     }
 
     pub fn show_error(message: &str) {
-        eprintln!("{} {}",
-            style("[ERROR]").bright_red().bold(),
-            message.bright_white()
+        eprintln!(
+            "{} {}",
+            "✗".color(colors::error()).bold(),
+            message.color(colors::error())
         );
     }
 
     pub fn show_cancelled(message: &str) {
-        eprintln!("{} {}",
-            style("[CANCEL]").bright_yellow().bold(),
-            message.bright_white()
+        eprintln!(
+            "{} {}",
+            "⊘".color(colors::warning()).bold(),
+            message.color(colors::warning())
         );
     }
 
     pub fn show_completion() {
         println!();
-        println!("{}", "─".repeat(60).dimmed());
-        println!("{} {}",
-            style("[COMPLETE]").bright_green().bold(),
-            style("Analysis finished!").bold().bright_white()
+        println!("{}", "─".repeat(60).color(colors::accent()));
+        println!(
+            "{} {}",
+            "◆".color(colors::accent()).bold(),
+            "Analysis finished!".bold().color(colors::text_primary())
         );
     }
 }
@@ -230,7 +299,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let llm = LocalModelProvider::llama_cpp()?;
 
     let mut system_prompt =
-        "You are an autonomous coding agent with skills equivalent to a staff+ Rust engineer.".to_string();
+        "You are an autonomous coding agent with skills equivalent to a staff+ Rust engineer."
+            .to_string();
 
     // Check for AGENTS.md file in the current working directory
     let agents_file = Path::new("./AGENTS.md");
@@ -262,8 +332,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     ui::show_response_header();
 
-    let mut active_tool_calls: std::collections::HashMap<String, (String, ProgressBar)> =
-        std::collections::HashMap::new();
+    let mut active_tool_calls: HashMap<String, (String, ProgressBar)> = HashMap::new();
     let mut message_started = false;
 
     while let Some(event) = result_stream.next().await {
@@ -272,19 +341,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 chunk, is_complete, ..
             } => {
                 if is_complete {
-                    println!(); // New line when message is complete
+                    println!();
+                    println!(); // Extra newline for spacing before next tool
                     message_started = false; // Reset for next message
                 } else {
                     // Filter out XML tool call chunks and other noise
                     if let Some(filtered_chunk) = ui::filter_text_chunk(&chunk) {
                         // Add icon prefix for the first chunk of a message
                         if !message_started {
-                            print!("{} ", style("[AI]").bright_green().bold());
+                            print!("{} ", "◉".color(colors::primary()).bold());
                             message_started = true;
                         }
 
                         // Color the text output to match our styling
-                        print!("{}", filtered_chunk.bright_white());
+                        print!("{}", filtered_chunk.color(colors::text_primary()));
                         std::io::Write::flush(&mut std::io::stdout()).unwrap();
                     }
                 }
