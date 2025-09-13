@@ -340,3 +340,11 @@ impl UserMessage {
         }
     }
 }
+
+impl From<&str> for UserMessage {
+    fn from(value: &str) -> Self {
+        UserMessage::Text {
+            content: value.to_string(),
+        }
+    }
+}

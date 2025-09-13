@@ -44,6 +44,7 @@ dependencies = [
  "specta",
  "specta-typescript",
  "tauri-specta",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tokio-util",
