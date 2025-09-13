@@ -11,12 +11,19 @@ use super::common::{HasMatchSink, MatchCollectorSink, OutputMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GrepArgs {
+    /// The regex pattern to search for in file contents
     pub pattern: String,
+    /// Directory path to search recursively (defaults to current directory if not specified)
     pub path: Option<String>,
+    /// Specific file path to search (overrides path if provided)
     pub file_path: Option<String>,
+    /// Output format: 'matches' returns matching lines with context, 'files_only' returns just file paths
     pub output_mode: Option<OutputMode>,
+    /// Whether to perform case-insensitive matching (defaults to false)
     pub case_insensitive: Option<bool>,
+    /// Whether to include line numbers in output (defaults to true)
     pub line_numbers: Option<bool>,
+    /// Number of context lines to show around matches (not currently implemented)
     pub context: Option<u32>,
 }
 

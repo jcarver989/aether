@@ -5,8 +5,10 @@ use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub enum OutputMode {
+    /// Return matching lines with file paths and line numbers
     #[serde(rename = "matches")]
     Matches,
+    /// Return only file paths that contain matches
     #[serde(rename = "files_only")]
     FilesOnly,
 }

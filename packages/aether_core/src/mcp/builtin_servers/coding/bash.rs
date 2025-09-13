@@ -5,7 +5,9 @@ use tokio::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BashArgs {
+    /// The bash command to execute (e.g., "ls -la", "git status", "npm install")
     pub command: String,
+    /// Working directory to execute the command in (defaults to current directory)
     pub working_dir: Option<String>,
 }
 

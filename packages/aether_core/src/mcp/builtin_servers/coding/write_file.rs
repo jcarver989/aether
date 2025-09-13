@@ -5,8 +5,11 @@ use tokio::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WriteFileArgs {
+    /// Path where the file should be written (parent directories will be created if needed)
     pub file_path: String,
+    /// Content to write to the file
     pub content: String,
+    /// Whether to append to existing file instead of overwriting (defaults to false)
     pub append: Option<bool>,
 }
 

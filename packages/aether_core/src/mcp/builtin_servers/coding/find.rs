@@ -4,8 +4,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FindArgs {
+    /// Filename pattern to match (supports wildcards like *.rs, main.*, test*.py)
     pub pattern: String,
+    /// Directory path to search recursively (defaults to current directory if not specified)
     pub path: Option<String>,
+    /// Whether to perform case-insensitive filename matching (defaults to false)
     pub case_insensitive: Option<bool>,
 }
 

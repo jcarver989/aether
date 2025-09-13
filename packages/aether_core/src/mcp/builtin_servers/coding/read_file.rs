@@ -5,6 +5,7 @@ use tokio::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReadFileArgs {
+    /// Path to the file to read (must be an existing file)
     pub file_path: String,
 }
 
