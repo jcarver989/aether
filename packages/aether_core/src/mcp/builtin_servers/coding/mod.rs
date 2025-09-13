@@ -9,12 +9,14 @@ pub mod bash;
 pub mod common;
 pub mod find;
 pub mod grep;
+pub mod list_files;
 pub mod read_file;
 pub mod write_file;
 
 pub use bash::{BashArgs, execute_command};
 pub use find::{FindArgs, find_files_by_name};
 pub use grep::{GrepArgs, perform_grep};
+pub use list_files::{ListFilesArgs, list_files};
 pub use read_file::{ReadFileArgs, read_file_contents};
 pub use write_file::{WriteFileArgs, write_file_contents};
 
@@ -94,6 +96,17 @@ impl CodingMcp {
             Ok(result) => serde_json::to_string_pretty(&result)
                 .unwrap_or_else(|_| "Error serializing result".to_string()),
             Err(e) => format!("Write file error: {}", e),
+        }
+    }
+
+    #[tool(description = "List files and directories in a specified path")]
+    pub async fn list_files(&self, request: Parameters<ListFilesArgs>) -> String {
+        let Parameters(args) = request;
+
+        match list_files(args).await {
+            Ok(result) => serde_json::to_string_pretty(&result)
+                .unwrap_or_else(|_| "Error serializing result".to_string()),
+            Err(e) => format!("List files error: {}", e),
         }
     }
 

@@ -157,7 +157,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
     }
 
     async fn run_agent_loop(&mut self) -> impl Stream<Item = AgentMessage> + Send {
-        const MAX_ITERATIONS: usize = 10;
+        const MAX_ITERATIONS: usize = 10_000;
         let mut n_iterations = 0;
 
         stream! {
@@ -331,6 +331,7 @@ pub enum AgentMessage {
 #[derive(Debug, Clone)]
 pub enum UserMessage {
     Text { content: String },
+    Cancel,
 }
 
 impl UserMessage {
