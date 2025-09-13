@@ -1,0 +1,35 @@
+[package]
+name = "aether"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+color-eyre = "0.6.3"
+futures = "0.3.31"
+serde = { version = "1.0.211", features = ["derive"] }
+serde_json = "1.0.132"
+tokio = { version = "1.40.0", features = ["full"] }
+tokio-stream = "0.1"
+tokio-util = "0.7.12"
+async-openai = { version = "0.29", features = ["byot"] }
+async-stream = "0.3"
+rmcp = { version = "^0.6.4", features = ["client", "server", "macros", "schemars", "transport-streamable-http-client-reqwest"] }
+reqwest = { version = "0.12", features = ["json"] }
+schemars = { version = "1.0", features = ["derive"] }
+specta = "2.0.0-rc.21"
+specta-typescript = "0.0.9"
+tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+uuid = { version = "1.10", features = ["v4"] }
+clap = { version = "4", features = ["derive"] }
+grep = "0.3.2"
+ignore = "0.4"
+regex = "1.0"
+console = "0.15"
+indicatif = "0.17"
+owo-colors = "4.0"
+
+[dev-dependencies]
+tempfile = "3.0"

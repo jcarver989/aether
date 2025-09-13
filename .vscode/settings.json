@@ -2,7 +2,6 @@
     "editor.formatOnSave": true,
     "editor.inlayHints.enabled": "offUnlessPressed",
     "rust-analyzer.linkedProjects": [
-        "packages/aether_core/Cargo.toml",
-        "packages/tui/Cargo.toml"
+        "Cargo.toml",
     ]
 }

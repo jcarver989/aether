@@ -1,0 +1,3 @@
+[workspace]
+resolver = "3"
+members = ["packages/aether", "packages/mcp-lexicon", "packages/wisp"]

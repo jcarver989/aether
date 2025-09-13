@@ -1,0 +1,21 @@
+[package]
+name = "mcp_lexicon"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+color-eyre = "0.6.3"
+futures = "0.3.31"
+serde = { version = "1.0.211", features = ["derive"] }
+serde_json = "1.0.132"
+tokio = { version = "1.40.0", features = ["full"] }
+rmcp = { version = "^0.6.4", features = ["client", "server", "macros", "schemars", "transport-streamable-http-client-reqwest"] }
+schemars = { version = "1.0", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+grep = "0.3.2"
+ignore = "0.4"
+regex = "1.0"
+aether = { path = "../aether" }
+
+[dev-dependencies]
+tempfile = "3.0"
