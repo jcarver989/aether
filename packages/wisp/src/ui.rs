@@ -60,50 +60,28 @@ pub fn show_wisp_logo() {
         println!();
         print!("{}", logo_content);
         println!();
-        // Large ASCII art "WISP" - centered under 128-char logo
+        // Large ASCII art "WISP" with gradient effect - centered under 128-char logo
         let padding = " ".repeat(18); // Center 32-char WISP under 128-char logo: (128-32)/2 = 48
-        println!(
-            "{}{}",
-            padding,
-            "██╗    ██╗██╗███████╗██████╗ "
-                .color(colors::primary())
-                .bold()
-        );
-        println!(
-            "{}{}",
-            padding,
-            "██║    ██║██║██╔════╝██╔══██╗"
-                .color(colors::primary())
-                .bold()
-        );
-        println!(
-            "{}{}",
-            padding,
-            "██║ █╗ ██║██║███████╗██████╔╝"
-                .color(colors::primary())
-                .bold()
-        );
-        println!(
-            "{}{}",
-            padding,
-            "██║███╗██║██║╚════██║██╔═══╝ "
-                .color(colors::primary())
-                .bold()
-        );
-        println!(
-            "{}{}",
-            padding,
-            "╚███╔███╔╝██║███████║██║     "
-                .color(colors::primary())
-                .bold()
-        );
-        println!(
-            "{}{}",
-            padding,
-            " ╚══╝╚══╝ ╚═╝╚══════╝╚═╝     "
-                .color(colors::primary())
-                .bold()
-        );
+
+        #[rustfmt::skip]
+        let wisp_lines = [
+            "██╗    ██╗██╗███████╗██████╗ ",
+            "██║    ██║██║██╔════╝██╔══██╗",
+            "██║ █╗ ██║██║███████╗██████╔╝",
+            "██║███╗██║██║╚════██║██╔═══╝ ",
+            "╚███╔███╔╝██║███████║██║     ",
+            " ╚══╝╚══╝ ╚═╝╚══════╝╚═╝     ",
+        ];
+
+        for line in wisp_lines {
+            print!("{}", padding);
+            let chars: Vec<char> = line.chars().collect();
+
+            for (_i, ch) in chars.iter().enumerate() {
+                print!("{}", ch.to_string().color(colors::primary()).bold());
+            }
+            println!();
+        }
         println!();
         let tagline_padding = " ".repeat(20); // Center "Ethereal AI Assistant" (24 chars): (128-24)/2 = 52, but adjust for visual balance
         println!(
@@ -143,43 +121,53 @@ pub fn show_usage(program_name: &str) {
     );
 }
 
-pub fn show_agents_loaded() {
-    println!(
-        "{} {}",
-        "▶".color(colors::success()).bold(),
-        "Loaded AGENTS.md instructions".color(colors::text_primary())
-    );
-}
-
-pub fn show_agents_warning(error: &str) {
-    eprintln!(
-        "{} {}: {}",
-        "⚠".color(colors::warning()).bold(),
-        "Could not read AGENTS.md".color(colors::warning()),
-        error.color(colors::error())
-    );
-}
-
-pub fn show_no_agents_file() {
-    println!(
-        "{} {}",
-        "ℹ".color(colors::info()).bold(),
-        "No AGENTS.md file found in current directory".color(colors::text_secondary())
-    );
-}
-
-pub fn show_query_header(prompt: &str) {
+pub fn show_init_header(prompt: &str, agents_loaded: bool, agents_error: Option<&str>) {
     println!();
-    println!("{}", "─".repeat(60).color(colors::secondary()));
+    println!("{}", "─".repeat(60).color(colors::info()));
     println!(
         "{} {}",
-        "◉".color(colors::secondary()).bold(),
-        "User Prompt".bold().color(colors::text_primary())
+        "⚙".color(colors::info()).bold(),
+        "Init".bold().color(colors::text_primary())
     );
-    println!("{}", "─".repeat(60).color(colors::secondary()));
-    println!("{}", prompt.italic().color(colors::secondary()));
+    println!("{}", "─".repeat(60).color(colors::info()));
+
+    // User prompt
+    println!(
+        "  {} {}",
+        "◆".color(colors::secondary()).bold(),
+        "User Prompt:".bold().color(colors::text_primary())
+    );
+    println!("    {}", prompt.italic().color(colors::text_primary()));
+    println!();
+
+    // Agents status
+    if agents_loaded {
+        println!(
+            "  {} {}",
+            "✓".color(colors::success()).bold(),
+            "Loaded AGENTS.md as system prompt".color(colors::text_primary())
+        );
+    } else if let Some(error) = agents_error {
+        println!(
+            "  {} {}: {}",
+            "⚠".color(colors::warning()).bold(),
+            "Could not read AGENTS.md".color(colors::warning()),
+            error.color(colors::error())
+        );
+    } else {
+        println!(
+            "  {} {}",
+            "ℹ".color(colors::info()).bold(),
+            "No AGENTS.md file found in current directory".color(colors::text_secondary())
+        );
+    }
+
+    println!("{}", "─".repeat(60).color(colors::info()));
     println!();
 }
+
+
+
 
 pub fn show_response_header() {
     println!("{}", "─".repeat(60).color(colors::primary()));

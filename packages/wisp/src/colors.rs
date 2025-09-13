@@ -5,7 +5,7 @@ pub fn secondary() -> Rgb {
 }
 
 pub fn primary() -> Rgb {
-    Rgb(0, 255, 255) // Cyan #00FFFF
+    Rgb(0x55, 0xc9, 0xd3) // #55c9d3
 }
 
 pub fn accent() -> Rgb {

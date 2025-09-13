@@ -2,35 +2,46 @@ mod colors;
 mod ui;
 
 use aether::agent::{Agent, AgentMessage::*, UserMessage, agent};
-use aether::llm::local::LocalModelProvider;
+use aether::llm::local::DefaultModelProvider;
+use clap::Parser;
 use color_eyre::Report;
-use console::Term;
 use futures::pin_mut;
 use indicatif::ProgressBar;
 use mcp_lexicon::AgentBuilderExt;
 use owo_colors::OwoColorize;
 use std::collections::HashMap;
-use std::env;
 use std::path::Path;
 use tokio::fs;
 use tokio_stream::StreamExt;
 
+#[derive(Parser)]
+#[command(name = "wisp")]
+#[command(about = "A TUI for the Aether AI assistant")]
+struct Cli {
+    #[arg(help = "The prompt to send to the AI assistant")]
+    prompt: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _term = Term::stdout();
+    let cli = Cli::parse();
 
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        ui::show_usage(&args[0]);
+    if cli.prompt.is_empty() {
+        ui::show_usage("wisp");
         return Ok(());
     }
 
-    let user_prompt = args[1..].join(" ");
+    let user_prompt = cli.prompt.join(" ");
 
     ui::show_wisp_logo();
-    let mut agent = build_agent().await?;
+    let (mut agent, agents_status) = build_agent().await?;
 
-    ui::show_query_header(&user_prompt);
+    let (agents_loaded, agents_error) = match agents_status {
+        AgentsStatus::Loaded => (true, None),
+        AgentsStatus::NotFound => (false, None),
+        AgentsStatus::Error(ref e) => (false, Some(e.as_str())),
+    };
+    ui::show_init_header(&user_prompt, agents_loaded, agents_error);
     let (result_stream, _cancel_token) = agent.send(UserMessage::text(&user_prompt)).await;
     pin_mut!(result_stream);
 
@@ -51,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     if let Some(filtered_chunk) = ui::filter_text_chunk(&chunk) {
                         if !message_started {
-                            print!("{} ", "◉".color(colors::primary()).bold());
+                            print!("{} ", "◈".color(colors::primary()).bold());
                             message_started = true;
                         }
 
@@ -95,33 +106,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn build_agent() -> Result<Agent<LocalModelProvider>, Report> {
-    let llm = LocalModelProvider::llama_cpp()?;
+#[derive(Debug)]
+enum AgentsStatus {
+    Loaded,
+    NotFound,
+    Error(String),
+}
 
-    let system_prompt = match load_agents_file().await {
-        Ok(Some(content)) => {
-            ui::show_agents_loaded();
-            Some(content)
-        }
+async fn build_agent() -> Result<(Agent<DefaultModelProvider>, AgentsStatus), Report> {
+    let llm = DefaultModelProvider::llama_cpp()?;
 
-        Ok(None) => {
-            ui::show_no_agents_file();
-            None
-        }
-
-        Err(e) => {
-            ui::show_agents_warning(&e.to_string());
-            None
-        }
+    let (system_prompt, agents_status) = match load_agents_file().await {
+        Ok(Some(content)) => (Some(content), AgentsStatus::Loaded),
+        Ok(None) => (None, AgentsStatus::NotFound),
+        Err(e) => (None, AgentsStatus::Error(e.to_string())),
     };
 
     let agent = agent(llm)
         .system(&system_prompt.unwrap_or("".to_string()))
         .coding_tools()
         .build()
-        .await;
+        .await?;
 
-    agent
+    Ok((agent, agents_status))
 }
 
 async fn load_agents_file() -> Result<Option<String>, std::io::Error> {

@@ -1,66 +1,56 @@
-# Wisp AI Assistant
+# Wisp
 
-Wisp is an AI-powered coding assistant designed for Rust developers. It provides intelligent code analysis, generation, and assistance using local language models.
+Wisp is an Ethereal AI Assistant designed to help with Rust development tasks. It provides a terminal-based interface for interacting with AI agents that specialize in code analysis, generation, and modification.
 
 ## Features
 
-- **Rust-focused AI assistance**: Specialized for Rust systems programming and async/await patterns
-- **Local LLM support**: Runs entirely locally without internet connectivity requirements
-- **Interactive coding interface**: Real-time responses with tool execution visualization
-- **Agent-based architecture**: Built on the aether framework for agent-based interactions
-- **Rich terminal UI**: Colorful, informative terminal output with progress indicators
+- Terminal-based interface with colorful output
+- Integration with local LLM models via llama.cpp
+- Tool calling capabilities for code analysis and manipulation
+- Support for custom agent instructions via AGENTS.md
+- Progress indicators and tool execution feedback
 
 ## Installation
 
-Wisp is built as a Rust crate and requires Cargo to build. To install:
+Wisp is built as a Rust crate and requires a Rust toolchain to compile:
 
 ```bash
 # Clone the repository
  git clone <repository-url>
  cd wisp
-
+ 
 # Build the project
  cargo build --release
 ```
 
 ## Usage
 
-To use Wisp, run it with a coding question or request:
+Run Wisp with a coding question or request:
 
 ```bash
-./wisp "implement a binary search tree in Rust"
+./wisp "Implement a binary search tree in Rust"
 ```
 
-Or with a more complex request:
+Or with a quoted prompt:
 
 ```bash
-./wisp "explain how async/await works in Rust and show examples"
+./wisp "help me implement a binary search tree"
 ```
 
-## Configuration
+## AGENTS.md
 
-Wisp looks for an `AGENTS.md` file in the current directory to provide additional context and instructions to the AI agent. This file contains guidelines for the AI's behavior and capabilities.
+Wisp can load custom agent instructions from an `AGENTS.md` file in the current directory. This file defines the behavior and capabilities of the AI agent. If no AGENTS.md is found, Wisp will use default instructions.
 
 ## Dependencies
 
-Wisp depends on:
+Wisp depends on several crates including:
 
-- Local LLM (via llama.cpp)
-- aether framework
-- mcp-lexicon
-- tokio with full features
-- Various Rust ecosystem crates for terminal UI and utilities
-
-## Development
-
-To contribute to Wisp:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests with `cargo test`
-5. Submit a pull request
+- `aether` - Core agent framework
+- `mcp_lexicon` - Language model communication protocols
+- `tokio` - Asynchronous runtime
+- `indicatif` - Progress bars and spinners
+- `owo-colors` - Colorful terminal output
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License.

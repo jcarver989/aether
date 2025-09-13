@@ -1,6 +1,6 @@
 use aether::{
     agent::{AgentMessage, UserMessage, agent},
-    llm::local::LocalModelProvider,
+    llm::local::DefaultModelProvider,
 };
 use clap::Parser;
 use futures::pin_mut;
@@ -15,6 +15,25 @@ struct Cli {
 
     #[arg(short = 's', long = "system", help = "The LLM's system prompt")]
     system: Option<String>,
+
+    #[arg(
+        short = 'u',
+        long = "url",
+        help = "HTTP endpoint URL for the LLM provider. Defaults to http://localhost:8080 (LLama.cpp server's default port)",
+        default_value = "http://localhost:8080"
+    )]
+    url: String,
+
+    #[arg(short = 'k', long = "api-key", help = "API key for the LLM provider")]
+    api_key: Option<String>,
+
+    #[arg(
+        short = 'm',
+        long = "model",
+        help = "Model name to use",
+        default_value = ""
+    )]
+    model: String,
 }
 
 #[tokio::main]
@@ -22,7 +41,7 @@ pub async fn main() {
     let cli = Cli::parse();
     let prompt = cli.prompt.unwrap();
 
-    let provider = LocalModelProvider::llama_cpp().unwrap();
+    let provider = DefaultModelProvider::new(&cli.url, &cli.model, cli.api_key).unwrap();
     let mut agent = agent(provider)
         .system(&cli.system.unwrap_or_default())
         .build()

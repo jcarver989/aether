@@ -1,13 +1,13 @@
 use aether::{
     agent::{AgentMessage, UserMessage, agent},
-    llm::local::LocalModelProvider,
+    llm::local::DefaultModelProvider,
 };
 
 #[tokio::main]
 pub async fn main() -> color_eyre::Result<()> {
     println!("Hello world");
 
-    let provider = LocalModelProvider::llama_cpp()?;
+    let provider = DefaultModelProvider::llama_cpp()?;
     let (tx, mut rx) = agent(provider)
         .system("you are a helpful agent")
         .spawn()

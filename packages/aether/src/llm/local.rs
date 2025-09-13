@@ -9,27 +9,23 @@ use super::mappers::{map_messages, mapp_tools};
 use super::provider::{Context, LlmResponseStream, ModelProvider};
 use super::streaming::process_completion_stream;
 
-pub enum LocalProvider {
-    Ollama,
-    LlamaCpp,
-}
-
-pub struct LocalModelProvider {
+// Default implemntation that should work with most OpenAI compatible endpoints
+pub struct DefaultModelProvider {
     client: Client<OpenAIConfig>,
     model: String,
 }
 
-impl LocalModelProvider {
+impl DefaultModelProvider {
     pub fn ollama(model: &str) -> Result<Self> {
-        Self::new("http://localhost:11434", model)
+        Self::new("http://localhost:11434", model, None)
     }
 
     pub fn llama_cpp() -> Result<Self> {
         // Currently ignores model as LLama.cpp serves a single model per instance
-        Self::new("http://localhost:8080", "")
+        Self::new("http://localhost:8080", "", None)
     }
 
-    pub fn new(base_url: &str, model: &str) -> Result<Self> {
+    pub fn new(base_url: &str, model: &str, api_key: Option<String>) -> Result<Self> {
         let base_url = base_url.to_string();
 
         // Ensure we have the correct base URL with /v1 for Ollama's OpenAI-compatible API
@@ -45,7 +41,7 @@ impl LocalModelProvider {
         );
 
         let config = OpenAIConfig::new()
-            .with_api_key("dummy-key") // Local providers generally don't require auth, but async-openai needs a key
+            .with_api_key(api_key.unwrap_or("dummy_key".to_string())) // Local providers generally don't require auth, but async-openai needs a key
             .with_api_base(api_base.clone());
 
         let client = Client::with_config(config);
@@ -57,7 +53,7 @@ impl LocalModelProvider {
     }
 }
 
-impl ModelProvider for LocalModelProvider {
+impl ModelProvider for DefaultModelProvider {
     fn generate_response(&self, request: Context) -> LlmResponseStream {
         let client = self.client.clone();
         let model = self.model.clone();

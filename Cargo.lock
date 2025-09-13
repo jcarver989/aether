@@ -6009,6 +6009,7 @@ name = "wisp"
 version = "0.1.0"
 dependencies = [
  "aether",
+ "clap",
  "color-eyre",
  "console",
  "futures",
