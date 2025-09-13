@@ -166,9 +166,6 @@ pub fn show_init_header(prompt: &str, agents_loaded: bool, agents_error: Option<
     println!();
 }
 
-
-
-
 pub fn show_response_header() {
     println!("{}", "─".repeat(60).color(colors::primary()));
     println!(

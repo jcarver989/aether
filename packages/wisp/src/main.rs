@@ -20,6 +20,28 @@ use tokio_stream::StreamExt;
 struct Cli {
     #[arg(help = "The prompt to send to the AI assistant")]
     prompt: Vec<String>,
+
+    #[arg(short = 's', long = "system", help = "The LLM's system prompt")]
+    system: Option<String>,
+
+    #[arg(
+        short = 'u',
+        long = "url",
+        help = "HTTP endpoint URL for the LLM provider. Defaults to http://localhost:8080 (LLama.cpp server's default port)",
+        default_value = "http://localhost:8080"
+    )]
+    url: String,
+
+    #[arg(short = 'k', long = "api-key", help = "API key for the LLM provider")]
+    api_key: Option<String>,
+
+    #[arg(
+        short = 'm',
+        long = "model",
+        help = "Model name to use",
+        default_value = ""
+    )]
+    model: String,
 }
 
 #[tokio::main]
@@ -34,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let user_prompt = cli.prompt.join(" ");
 
     ui::show_wisp_logo();
-    let (mut agent, agents_status) = build_agent().await?;
+    let (mut agent, agents_status) = build_agent(&cli).await?;
 
     let (agents_loaded, agents_error) = match agents_status {
         AgentsStatus::Loaded => (true, None),
@@ -113,8 +135,8 @@ enum AgentsStatus {
     Error(String),
 }
 
-async fn build_agent() -> Result<(Agent<DefaultModelProvider>, AgentsStatus), Report> {
-    let llm = DefaultModelProvider::llama_cpp()?;
+async fn build_agent(cli: &Cli) -> Result<(Agent<DefaultModelProvider>, AgentsStatus), Report> {
+    let llm = DefaultModelProvider::new(&cli.url, &cli.model, cli.api_key.clone())?;
 
     let (system_prompt, agents_status) = match load_agents_file().await {
         Ok(Some(content)) => (Some(content), AgentsStatus::Loaded),
@@ -122,8 +144,19 @@ async fn build_agent() -> Result<(Agent<DefaultModelProvider>, AgentsStatus), Re
         Err(e) => (None, AgentsStatus::Error(e.to_string())),
     };
 
+    let system = cli.system.as_ref().map(|s| s.as_str()).unwrap_or("");
+    let combined_system = if let Some(agents_prompt) = system_prompt {
+        if system.is_empty() {
+            agents_prompt
+        } else {
+            format!("{}\n\n{}", system, agents_prompt)
+        }
+    } else {
+        system.to_string()
+    };
+
     let agent = agent(llm)
-        .system(&system_prompt.unwrap_or("".to_string()))
+        .system(&combined_system)
         .coding_tools()
         .build()
         .await?;
