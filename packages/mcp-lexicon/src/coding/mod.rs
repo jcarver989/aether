@@ -79,7 +79,7 @@ impl CodingMcp {
         }
     }
 
-    #[tool(description = "Read contents of a file")]
+    #[tool(description = "Read contents of a file with line numbers. Returns content formatted as '   1│ line content' for easy reference with write_file line_range operations.")]
     pub async fn read_file(&self, request: Parameters<ReadFileArgs>) -> String {
         let Parameters(args) = request;
 
@@ -90,7 +90,7 @@ impl CodingMcp {
         }
     }
 
-    #[tool(description = "Write content to a file")]
+    #[tool(description = "Write content to a file using operations. Supports 'overwrite' (replace entire file) and 'line_range' (replace/insert/append specific lines using 1-indexed line numbers from read_file). Operations are applied sequentially.")]
     pub async fn write_file(&self, request: Parameters<WriteFileArgs>) -> String {
         let Parameters(args) = request;
 

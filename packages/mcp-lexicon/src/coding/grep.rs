@@ -50,13 +50,15 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
         match output_mode {
             OutputMode::Matches => {
                 let mut sink = MatchCollectorSink::new(path, args.line_numbers.unwrap_or(true));
-                searcher.search_path(&matcher, path, &mut sink)
+                searcher
+                    .search_path(&matcher, path, &mut sink)
                     .map_err(|e| format!("Search error: {}", e))?;
                 all_matches = sink.matches;
             }
             OutputMode::FilesOnly => {
                 let mut sink = HasMatchSink::new();
-                searcher.search_path(&matcher, path, &mut sink)
+                searcher
+                    .search_path(&matcher, path, &mut sink)
                     .map_err(|e| format!("Search error: {}", e))?;
                 if sink.has_match {
                     files_with_matches.push(file_path.clone());
@@ -77,16 +79,24 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
                     if entry.file_type().map_or(false, |ft| ft.is_file()) {
                         match output_mode {
                             OutputMode::Matches => {
-                                let mut sink = MatchCollectorSink::new(entry.path(), args.line_numbers.unwrap_or(true));
-                                if let Ok(_) = searcher.search_path(&matcher, entry.path(), &mut sink) {
+                                let mut sink = MatchCollectorSink::new(
+                                    entry.path(),
+                                    args.line_numbers.unwrap_or(true),
+                                );
+                                if let Ok(_) =
+                                    searcher.search_path(&matcher, entry.path(), &mut sink)
+                                {
                                     all_matches.extend(sink.matches);
                                 }
                             }
                             OutputMode::FilesOnly => {
                                 let mut sink = HasMatchSink::new();
-                                if let Ok(_) = searcher.search_path(&matcher, entry.path(), &mut sink) {
+                                if let Ok(_) =
+                                    searcher.search_path(&matcher, entry.path(), &mut sink)
+                                {
                                     if sink.has_match {
-                                        files_with_matches.push(entry.path().to_string_lossy().to_string());
+                                        files_with_matches
+                                            .push(entry.path().to_string_lossy().to_string());
                                     }
                                 }
                             }
@@ -100,7 +110,11 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
 
     match output_mode {
         OutputMode::Matches => {
-            let search_location = args.file_path.as_deref().or(args.path.as_deref()).unwrap_or(".");
+            let search_location = args
+                .file_path
+                .as_deref()
+                .or(args.path.as_deref())
+                .unwrap_or(".");
             Ok(serde_json::json!({
                 "status": "success",
                 "pattern": args.pattern,
@@ -110,7 +124,11 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
             }))
         }
         OutputMode::FilesOnly => {
-            let search_location = args.file_path.as_deref().or(args.path.as_deref()).unwrap_or(".");
+            let search_location = args
+                .file_path
+                .as_deref()
+                .or(args.path.as_deref())
+                .unwrap_or(".");
             Ok(serde_json::json!({
                 "status": "success",
                 "pattern": args.pattern,

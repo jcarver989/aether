@@ -85,9 +85,9 @@ fn pattern_matches(filename: &str, pattern: &str, compiled_regex: &Option<regex:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::{self, File};
     use std::path::Path;
+    use tempfile::TempDir;
 
     fn create_test_files(temp_dir: &Path) -> Result<(), std::io::Error> {
         File::create(temp_dir.join("test.rs"))?;
@@ -189,7 +189,11 @@ mod tests {
         assert!(!pattern_matches("test.txt", "*.rs", &Some(regex)));
 
         let wildcard_regex = regex::Regex::new("^test.*$").unwrap();
-        assert!(pattern_matches("test123", "test*", &Some(wildcard_regex.clone())));
+        assert!(pattern_matches(
+            "test123",
+            "test*",
+            &Some(wildcard_regex.clone())
+        ));
         assert!(!pattern_matches("main123", "test*", &Some(wildcard_regex)));
     }
 
@@ -213,7 +217,11 @@ mod tests {
         let elapsed = start.elapsed();
 
         // Should complete very quickly with our optimization
-        assert!(elapsed.as_millis() < 100, "Search took too long: {:?}", elapsed);
+        assert!(
+            elapsed.as_millis() < 100,
+            "Search took too long: {:?}",
+            elapsed
+        );
         assert!(!files.is_empty());
     }
 }

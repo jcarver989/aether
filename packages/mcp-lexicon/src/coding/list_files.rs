@@ -1,8 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -52,8 +52,7 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> 
         return Err(format!("Path is not a directory: {}", target_path));
     }
 
-    let entries = fs::read_dir(path)
-        .map_err(|e| format!("Failed to read directory: {}", e))?;
+    let entries = fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
     let mut files = Vec::new();
 
@@ -67,7 +66,8 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> 
             continue;
         }
 
-        let metadata = entry.metadata()
+        let metadata = entry
+            .metadata()
             .map_err(|e| format!("Failed to read metadata for {}: {}", file_name, e))?;
 
         let file_type = if metadata.is_dir() {
@@ -80,7 +80,8 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> 
 
         let permissions = format!("{:o}", metadata.permissions().mode() & 0o777);
 
-        let modified = metadata.modified()
+        let modified = metadata
+            .modified()
             .ok()
             .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
             .map(|duration| {
@@ -104,7 +105,8 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> 
     files.sort_by(|a, b| a.name.cmp(&b.name));
 
     let total_count = files.len();
-    let canonical_path = path.canonicalize()
+    let canonical_path = path
+        .canonicalize()
         .unwrap_or_else(|_| PathBuf::from(target_path))
         .to_string_lossy()
         .to_string();
