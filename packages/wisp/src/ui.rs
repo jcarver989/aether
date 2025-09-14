@@ -80,8 +80,7 @@ pub fn filter_text_chunk(text: &str) -> Option<String> {
 
 pub fn show_wisp_logo() -> Result<(), std::io::Error> {
     let mut stdout = stdout();
-    let logo_path = std::path::Path::new("src/logo.txt");
-    let logo_content = std::fs::read_to_string(logo_path)?;
+    let logo_content = include_str!("logo.txt");
     let padding = " ".repeat(18);
 
     #[rustfmt::skip]
