@@ -16,6 +16,7 @@ pub enum OutputMode {
 pub struct MatchCollectorSink {
     file_path: std::path::PathBuf,
     line_numbers: bool,
+    max_results: Option<usize>,
     pub matches: Vec<String>,
 }
 
@@ -24,6 +25,16 @@ impl MatchCollectorSink {
         Self {
             file_path: file_path.to_path_buf(),
             line_numbers,
+            max_results: None,
+            matches: Vec::new(),
+        }
+    }
+
+    pub fn with_max_results(file_path: &Path, line_numbers: bool, max_results: Option<usize>) -> Self {
+        Self {
+            file_path: file_path.to_path_buf(),
+            line_numbers,
+            max_results,
             matches: Vec::new(),
         }
     }
@@ -37,6 +48,13 @@ impl Sink for MatchCollectorSink {
         _searcher: &grep::searcher::Searcher,
         mat: &SinkMatch<'_>,
     ) -> Result<bool, Self::Error> {
+        // Check if we've hit the max results limit
+        if let Some(max) = self.max_results {
+            if self.matches.len() >= max {
+                return Ok(false); // Stop searching
+            }
+        }
+
         let line_str = std::str::from_utf8(mat.bytes()).unwrap_or("<invalid utf8>");
         let match_str = if self.line_numbers {
             format!(

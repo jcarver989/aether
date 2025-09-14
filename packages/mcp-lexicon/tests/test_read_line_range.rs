@@ -50,8 +50,8 @@ async fn test_read_file_line_range() {
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["total_lines"], 6);
             assert_eq!(parsed["lines_shown"], 6);
-            assert!(parsed["content"].as_str().unwrap().contains("   1│ line 1"));
-            assert!(parsed["content"].as_str().unwrap().contains("   6│ line 6"));
+            assert!(parsed["content"].as_str().unwrap().contains("    1\tline 1"));
+            assert!(parsed["content"].as_str().unwrap().contains("    6\tline 6"));
         }
     }
 
@@ -81,7 +81,7 @@ async fn test_read_file_line_range() {
             assert_eq!(parsed["lines_shown"], 3); // Lines actually shown (2, 3, 4)
             assert_eq!(parsed["offset"], 2);
             assert_eq!(parsed["limit"], 3);
-            let expected_content = "   2│ line 2\n   3│ line 3\n   4│ line 4";
+            let expected_content = "    2\tline 2\n    3\tline 3\n    4\tline 4";
             assert_eq!(parsed["content"], expected_content);
         }
     }
@@ -109,7 +109,7 @@ async fn test_read_file_line_range() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["lines_shown"], 1);
-            assert_eq!(parsed["content"], "   3│ line 3");
+            assert_eq!(parsed["content"], "    3\tline 3");
         }
     }
 
@@ -137,7 +137,7 @@ async fn test_read_file_line_range() {
             assert_eq!(parsed["lines_shown"], 3); // Lines 4, 5, 6
             assert_eq!(parsed["offset"], 4);
             assert_eq!(parsed["limit"], serde_json::Value::Null);
-            let expected_content = "   4│ line 4\n   5│ line 5\n   6│ line 6";
+            let expected_content = "    4\tline 4\n    5\tline 5\n    6\tline 6";
             assert_eq!(parsed["content"], expected_content);
         }
     }

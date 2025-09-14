@@ -54,7 +54,7 @@ impl CodingMcp {
     }
 
     #[tool(
-        description = "Search for patterns in file contents using ripgrep. Use output_mode 'matches' for matching lines or 'files_only' for filenames. Specify file_path to search a single file."
+        description = "Search for patterns in file contents using ripgrep with advanced features. Supports context lines (-A, -B, -C), file type filtering (--type rust, python, etc.), max results limiting, inverse matching, and word boundary matching. Use output_mode 'matches' for matching lines or 'files_only' for filenames."
     )]
     pub async fn grep(&self, request: Parameters<GrepArgs>) -> String {
         let Parameters(args) = request;
