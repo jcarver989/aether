@@ -5,11 +5,15 @@ use aether::agent::{Agent, AgentMessage::*, UserMessage, agent};
 use aether::llm::local::DefaultModelProvider;
 use clap::Parser;
 use color_eyre::Report;
-use crossterm::style::Stylize;
+use crossterm::{
+    queue,
+    style::{PrintStyledContent, Stylize},
+};
 use futures::pin_mut;
 use indicatif::ProgressBar;
 use mcp_lexicon::AgentBuilderExt;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::Path;
 use tokio::fs;
 use tokio_stream::StreamExt;
@@ -46,16 +50,17 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut stdout = std::io::stdout();
     let cli = Cli::parse();
 
     if cli.prompt.is_empty() {
-        ui::show_usage("wisp");
+        ui::show_usage("wisp")?;
         return Ok(());
     }
 
     let user_prompt = cli.prompt.join(" ");
 
-    ui::show_wisp_logo();
+    ui::show_wisp_logo()?;
     let (mut agent, agents_status) = build_agent(&cli).await?;
 
     let (agents_loaded, agents_error) = match agents_status {
@@ -63,11 +68,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         AgentsStatus::NotFound => (false, None),
         AgentsStatus::Error(ref e) => (false, Some(e.as_str())),
     };
-    ui::show_init_header(&user_prompt, agents_loaded, agents_error);
+    ui::show_init_header(&user_prompt, agents_loaded, agents_error)?;
     let (result_stream, _cancel_token) = agent.send(UserMessage::text(&user_prompt)).await;
     pin_mut!(result_stream);
 
-    ui::show_response_header();
+    ui::show_response_header()?;
 
     let mut active_tool_calls: HashMap<String, (String, ProgressBar)> = HashMap::new();
     let mut message_started = false;
@@ -78,18 +83,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 chunk, is_complete, ..
             } => {
                 if is_complete {
-                    println!();
-                    println!();
+                    queue!(stdout, PrintStyledContent("\n\n".stylize()))?;
+                    stdout.flush()?;
                     message_started = false;
                 } else {
                     if let Some(filtered_chunk) = ui::filter_text_chunk(&chunk) {
                         if !message_started {
-                            print!("{} ", "◈".with(colors::primary()).bold());
+                            queue!(
+                                stdout,
+                                PrintStyledContent(
+                                    format!("{} ", "◈".with(colors::primary()).bold()).stylize()
+                                )
+                            )?;
                             message_started = true;
                         }
 
-                        print!("{}", filtered_chunk.with(colors::text_primary()));
-                        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                        queue!(
+                            stdout,
+                            PrintStyledContent(filtered_chunk.with(colors::text_primary()))
+                        )?;
+                        stdout.flush()?;
                     }
                 }
             }
@@ -104,27 +117,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if is_complete {
                     if let Some((tool_name, pb)) = active_tool_calls.get(&tool_call_id) {
                         pb.finish_and_clear();
-                        ui::show_tool_completed(tool_name, result.as_deref());
+                        ui::show_tool_completed(tool_name, result.as_deref())?;
                     }
                     active_tool_calls.remove(&tool_call_id);
                 } else if !name.is_empty() {
-                    println!();
+                    queue!(stdout, PrintStyledContent("\n".stylize()))?;
+                    stdout.flush()?;
                     let pb = ui::create_tool_spinner(&name)?;
                     active_tool_calls.insert(tool_call_id, (name, pb));
                 }
             }
 
             Error { message } => {
-                ui::show_error(&message);
+                ui::show_error(&message)?;
             }
 
             Cancelled { message } => {
-                ui::show_cancelled(&message);
+                ui::show_cancelled(&message)?;
             }
         }
     }
 
-    ui::show_completion();
+    // Ensure any remaining output is flushed before showing completion
+    stdout.flush()?;
+    ui::show_completion()?;
     Ok(())
 }
 
