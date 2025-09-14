@@ -223,7 +223,7 @@ pub fn show_tool_completed(tool_name: &str, result: Option<&str>) {
                 println!(
                     "   {} {}{}",
                     "Result:".dim(),
-                    preview.white().bold(),
+                    preview.dim(),
                     "...".dim()
                 );
             } else {
@@ -232,12 +232,12 @@ pub fn show_tool_completed(tool_name: &str, result: Option<&str>) {
                     println!(
                         "   {} {}",
                         "Result:".dim(),
-                        &display_result.white().bold()
+                        &display_result.dim()
                     );
                 } else {
                     println!("   {}", "Result:".dim());
                     for line in lines.iter().take(5) {
-                        println!("     {}", line.white().bold());
+                        println!("     {}", line.dim());
                     }
                     if lines.len() > 5 {
                         println!("     {}", "...".dim());
