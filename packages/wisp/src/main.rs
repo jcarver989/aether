@@ -5,10 +5,10 @@ use aether::agent::{Agent, AgentMessage::*, UserMessage, agent};
 use aether::llm::local::DefaultModelProvider;
 use clap::Parser;
 use color_eyre::Report;
+use crossterm::style::Stylize;
 use futures::pin_mut;
 use indicatif::ProgressBar;
 use mcp_lexicon::AgentBuilderExt;
-use owo_colors::OwoColorize;
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::fs;
@@ -84,11 +84,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     if let Some(filtered_chunk) = ui::filter_text_chunk(&chunk) {
                         if !message_started {
-                            print!("{} ", "◈".color(colors::primary()).bold());
+                            print!("{} ", "◈".with(colors::primary()).bold());
                             message_started = true;
                         }
 
-                        print!("{}", filtered_chunk.color(colors::text_primary()));
+                        print!("{}", filtered_chunk.with(colors::text_primary()));
                         std::io::Write::flush(&mut std::io::stdout()).unwrap();
                     }
                 }

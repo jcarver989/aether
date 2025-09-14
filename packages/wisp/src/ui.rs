@@ -1,6 +1,6 @@
 use crate::colors;
+use crossterm::style::Stylize;
 use indicatif::{ProgressBar, ProgressStyle};
-use owo_colors::OwoColorize;
 use regex::Regex;
 use std::time::Duration;
 
@@ -78,7 +78,7 @@ pub fn show_wisp_logo() {
             let chars: Vec<char> = line.chars().collect();
 
             for (_i, ch) in chars.iter().enumerate() {
-                print!("{}", ch.to_string().color(colors::primary()).bold());
+                print!("{}", ch.to_string().with(colors::primary()).bold());
             }
             println!();
         }
@@ -87,16 +87,16 @@ pub fn show_wisp_logo() {
         println!(
             "{}{}",
             tagline_padding,
-            "Ethereal AI Assistant".dimmed().italic()
+            "Ethereal AI Assistant".dim().italic()
         );
         println!();
     } else {
         // Fallback to simple text logo if file not found
         println!();
-        println!("           {}", "W I S P".color(colors::primary()).bold());
+        println!("           {}", "W I S P".with(colors::primary()).bold());
         println!(
             "           {}",
-            "Ethereal AI Assistant".color(colors::info()).italic()
+            "Ethereal AI Assistant".with(colors::info()).italic()
         );
         println!();
     }
@@ -104,76 +104,76 @@ pub fn show_wisp_logo() {
 
 pub fn show_usage(program_name: &str) {
     show_wisp_logo();
-    println!("{}", "Usage:".color(colors::secondary()).bold());
+    println!("{}", "Usage:".with(colors::secondary()).bold());
     println!(
         "  {} {}",
         program_name,
         "<your coding question or request>"
-            .color(colors::success())
+            .with(colors::success())
             .italic()
     );
     println!(
         "  {} {}",
         program_name,
         "\"help me implement a binary search tree\""
-            .color(colors::warning())
+            .with(colors::warning())
             .italic()
     );
 }
 
 pub fn show_init_header(prompt: &str, agents_loaded: bool, agents_error: Option<&str>) {
     println!();
-    println!("{}", "─".repeat(60).color(colors::info()));
+    println!("{}", "─".repeat(60).with(colors::info()));
     println!(
         "{} {}",
-        "⚙".color(colors::info()).bold(),
-        "Init".bold().color(colors::text_primary())
+        "⚙".with(colors::info()).bold(),
+        "Init".bold().with(colors::text_primary())
     );
-    println!("{}", "─".repeat(60).color(colors::info()));
+    println!("{}", "─".repeat(60).with(colors::info()));
 
     // User prompt
     println!(
         "  {} {}",
-        "◆".color(colors::secondary()).bold(),
-        "User Prompt:".bold().color(colors::text_primary())
+        "◆".with(colors::secondary()).bold(),
+        "User Prompt:".bold().with(colors::text_primary())
     );
-    println!("    {}", prompt.italic().color(colors::text_primary()));
+    println!("    {}", prompt.italic().with(colors::text_primary()));
     println!();
 
     // Agents status
     if agents_loaded {
         println!(
             "  {} {}",
-            "✓".color(colors::success()).bold(),
-            "Loaded AGENTS.md as system prompt".color(colors::text_primary())
+            "✓".with(colors::success()).bold(),
+            "Loaded AGENTS.md as system prompt".with(colors::text_primary())
         );
     } else if let Some(error) = agents_error {
         println!(
             "  {} {}: {}",
-            "⚠".color(colors::warning()).bold(),
-            "Could not read AGENTS.md".color(colors::warning()),
-            error.color(colors::error())
+            "⚠".with(colors::warning()).bold(),
+            "Could not read AGENTS.md".with(colors::warning()),
+            error.with(colors::error())
         );
     } else {
         println!(
             "  {} {}",
-            "ℹ".color(colors::info()).bold(),
-            "No AGENTS.md file found in current directory".color(colors::text_secondary())
+            "ℹ".with(colors::info()).bold(),
+            "No AGENTS.md file found in current directory".with(colors::text_secondary())
         );
     }
 
-    println!("{}", "─".repeat(60).color(colors::info()));
+    println!("{}", "─".repeat(60).with(colors::info()));
     println!();
 }
 
 pub fn show_response_header() {
-    println!("{}", "─".repeat(60).color(colors::primary()));
+    println!("{}", "─".repeat(60).with(colors::primary()));
     println!(
         "{} {}",
-        "⟨⟩".color(colors::primary()).bold(),
-        "Wisp's Response".bold().color(colors::text_primary())
+        "⟨⟩".with(colors::primary()).bold(),
+        "Wisp's Response".bold().with(colors::text_primary())
     );
-    println!("{}", "─".repeat(60).color(colors::primary()));
+    println!("{}", "─".repeat(60).with(colors::primary()));
 }
 
 pub fn create_tool_spinner(name: &str) -> Result<ProgressBar, Box<dyn std::error::Error>> {
@@ -183,7 +183,7 @@ pub fn create_tool_spinner(name: &str) -> Result<ProgressBar, Box<dyn std::error
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
             .template(&format!(
                 "{{spinner}} Tool {} {{msg}}",
-                name.color(colors::info()).bold()
+                name.with(colors::info()).bold()
             ))?,
     );
     pb.set_message("running...");
@@ -194,9 +194,9 @@ pub fn create_tool_spinner(name: &str) -> Result<ProgressBar, Box<dyn std::error
 pub fn show_tool_completed(tool_name: &str, result: Option<&str>) {
     println!(
         "{} {} {}",
-        "✓".color(colors::success()).bold(),
-        "Tool".bold().color(colors::text_primary()),
-        tool_name.bold().color(colors::success())
+        "✓".with(colors::success()).bold(),
+        "Tool".bold().with(colors::text_primary()),
+        tool_name.bold().with(colors::success())
     );
 
     if let Some(result) = result {
@@ -222,25 +222,25 @@ pub fn show_tool_completed(tool_name: &str, result: Option<&str>) {
                 let preview = &display_result[..197];
                 println!(
                     "   {} {}{}",
-                    "Result:".dimmed(),
-                    preview.bright_white(),
-                    "...".dimmed()
+                    "Result:".dim(),
+                    preview.white().bold(),
+                    "...".dim()
                 );
             } else {
                 let lines: Vec<&str> = display_result.lines().collect();
                 if lines.len() == 1 {
                     println!(
                         "   {} {}",
-                        "Result:".dimmed(),
-                        &display_result.bright_white()
+                        "Result:".dim(),
+                        &display_result.white().bold()
                     );
                 } else {
-                    println!("   {}", "Result:".dimmed());
+                    println!("   {}", "Result:".dim());
                     for line in lines.iter().take(5) {
-                        println!("     {}", line.bright_white());
+                        println!("     {}", line.white().bold());
                     }
                     if lines.len() > 5 {
-                        println!("     {}", "...".dimmed());
+                        println!("     {}", "...".dim());
                     }
                 }
             }
@@ -251,25 +251,25 @@ pub fn show_tool_completed(tool_name: &str, result: Option<&str>) {
 pub fn show_error(message: &str) {
     eprintln!(
         "{} {}",
-        "✗".color(colors::error()).bold(),
-        message.color(colors::error())
+        "✗".with(colors::error()).bold(),
+        message.with(colors::error())
     );
 }
 
 pub fn show_cancelled(message: &str) {
     eprintln!(
         "{} {}",
-        "⊘".color(colors::warning()).bold(),
-        message.color(colors::warning())
+        "⊘".with(colors::warning()).bold(),
+        message.with(colors::warning())
     );
 }
 
 pub fn show_completion() {
     println!();
-    println!("{}", "─".repeat(60).color(colors::accent()));
+    println!("{}", "─".repeat(60).with(colors::accent()));
     println!(
         "{} {}",
-        "◆".color(colors::accent()).bold(),
-        "Analysis finished!".bold().color(colors::text_primary())
+        "◆".with(colors::accent()).bold(),
+        "Analysis finished!".bold().with(colors::text_primary())
     );
 }
