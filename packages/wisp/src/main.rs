@@ -5,10 +5,7 @@ use aether::agent::{Agent, AgentMessage::*, UserMessage, agent};
 use aether::llm::local::DefaultModelProvider;
 use clap::Parser;
 use color_eyre::Report;
-use crossterm::{
-    queue,
-    style::{PrintStyledContent, Stylize},
-};
+use crossterm::{queue, style::Stylize};
 use futures::pin_mut;
 use indicatif::ProgressBar;
 use mcp_lexicon::AgentBuilderExt;
@@ -83,25 +80,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 chunk, is_complete, ..
             } => {
                 if is_complete {
-                    queue!(stdout, PrintStyledContent("\n\n".stylize()))?;
+                    print_styled!(stdout, "\n\n");
                     stdout.flush()?;
                     message_started = false;
                 } else {
                     if let Some(filtered_chunk) = ui::filter_text_chunk(&chunk) {
                         if !message_started {
-                            queue!(
-                                stdout,
-                                PrintStyledContent(
-                                    format!("{} ", "◈".with(colors::primary()).bold()).stylize()
-                                )
-                            )?;
+                            print_styled!(stdout, format!("{} ", "◈".with(colors::primary()).bold()));
                             message_started = true;
                         }
 
-                        queue!(
-                            stdout,
-                            PrintStyledContent(filtered_chunk.with(colors::text_primary()))
-                        )?;
+                        print_styled!(stdout, filtered_chunk.with(colors::text_primary()));
                         stdout.flush()?;
                     }
                 }
@@ -121,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     active_tool_calls.remove(&tool_call_id);
                 } else if !name.is_empty() {
-                    queue!(stdout, PrintStyledContent("\n".stylize()))?;
+                    print_styled_line!(stdout, "");
                     stdout.flush()?;
                     let pb = ui::create_tool_spinner(&name)?;
                     active_tool_calls.insert(tool_call_id, (name, pb));
