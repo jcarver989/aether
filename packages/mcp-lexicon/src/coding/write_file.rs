@@ -17,6 +17,14 @@ pub enum WriteOperation {
         end_line: usize,
         content: String,
     },
+    /// Replace exact string occurrences in file content (similar to Claude Code's Edit tool)
+    Replace {
+        old_string: String,
+        new_string: String,
+        /// Replace all occurrences (default: false - replace only first match)
+        #[serde(default)]
+        replace_all: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -24,8 +32,12 @@ pub struct WriteFileArgs {
     /// Path where the file should be written (parent directories will be created if needed)
     pub file_path: String,
     /// Operations to perform on the file (executed in order).
-    /// Line numbers are 1-indexed to match read_file output format "   1│ line content"
+    /// Line numbers are 1-indexed to match read_file output format "     1	line content"
     pub operations: Vec<WriteOperation>,
+    /// Optional: return a preview of the file content with line numbers after writing
+    /// If specified, returns up to this many lines starting from line 1
+    #[serde(default)]
+    pub preview_lines: Option<usize>,
 }
 
 pub async fn write_file_contents(args: WriteFileArgs) -> Result<serde_json::Value, String> {
@@ -61,6 +73,38 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<serde_json::Valu
                 lines = content.lines().map(|s| s.to_string()).collect();
                 final_has_trailing_newline = content.ends_with('\n');
                 applied_operations.push("Overwrite entire file".to_string());
+            }
+            WriteOperation::Replace {
+                old_string,
+                new_string,
+                replace_all,
+            } => {
+                // Convert lines back to string for string replacement
+                let current_content = lines.join("\n");
+                let updated_content = if *replace_all {
+                    current_content.replace(old_string, new_string)
+                } else {
+                    current_content.replacen(old_string, new_string, 1)
+                };
+
+                // Check if any replacement actually occurred
+                if current_content == updated_content {
+                    return Err(format!("String replacement failed for file {}: string '{}' not found", args.file_path, old_string));
+                }
+
+                // Convert back to lines
+                lines = updated_content.lines().map(|s| s.to_string()).collect();
+                final_has_trailing_newline = updated_content.ends_with('\n');
+
+                let count = if *replace_all {
+                    current_content.matches(old_string).count()
+                } else {
+                    1
+                };
+                applied_operations.push(format!(
+                    "Replaced {} occurrence(s) of string",
+                    count
+                ));
             }
             WriteOperation::LineRange {
                 start_line,
@@ -130,10 +174,30 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<serde_json::Valu
         return Err(format!("Failed to write to file {}: {}", args.file_path, e));
     }
 
-    Ok(serde_json::json!({
+    // Generate preview if requested
+    let preview_content = if let Some(preview_lines) = args.preview_lines {
+        let preview_limit = preview_lines.min(lines.len());
+        let preview_lines: Vec<String> = lines
+            .iter()
+            .take(preview_limit)
+            .enumerate()
+            .map(|(i, line)| format!("{:5}\t{}", i + 1, line))
+            .collect();
+        Some(preview_lines.join("\n"))
+    } else {
+        None
+    };
+
+    let mut response = serde_json::json!({
         "status": "success",
         "file_path": args.file_path,
         "operations_applied": applied_operations,
         "total_lines": lines.len()
-    }))
+    });
+
+    if let Some(content) = preview_content {
+        response["preview_content"] = serde_json::Value::String(content);
+    }
+
+    Ok(response)
 }

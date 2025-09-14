@@ -79,7 +79,7 @@ impl CodingMcp {
         }
     }
 
-    #[tool(description = "Read contents of a file with line numbers. Returns content formatted as '   1│ line content' for easy reference with write_file line_range operations.")]
+    #[tool(description = "Read contents of a file with line numbers. Use 'offset' to start from specific line (1-indexed) and 'limit' to specify max lines. Defaults to reading entire file. Returns content formatted as '   1│ line content' for easy reference with write_file operations.")]
     pub async fn read_file(&self, request: Parameters<ReadFileArgs>) -> String {
         let Parameters(args) = request;
 

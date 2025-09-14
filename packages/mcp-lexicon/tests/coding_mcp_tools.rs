@@ -1,5 +1,5 @@
 use aether::testing::connect;
-use lexicon::CodingMcp;
+use mcp_lexicon::CodingMcp;
 use rmcp::model::{CallToolRequestParam, ClientInfo, Implementation};
 use std::fs;
 
@@ -51,7 +51,12 @@ async fn test_read_file_tool() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["status"], "success");
-            assert_eq!(parsed["content"], test_content);
+
+            // Verify line-numbered content format (should read full file by default)
+            let expected_formatted = "    1\tHello, World!\n    2\tThis is a test file.";
+            assert_eq!(parsed["content"], expected_formatted);
+            assert_eq!(parsed["total_lines"], 2);
+            assert_eq!(parsed["lines_shown"], 2);
         } else {
             panic!("Expected text content");
         }
@@ -85,14 +90,16 @@ async fn test_write_file_tool() {
     let test_content = "This is test content written by the tool.";
     let test_path = "/tmp/test_write_file.txt";
 
-    // Test write_file tool
+    // Test write_file tool with new API
     let result = client
         .call_tool(CallToolRequestParam {
             name: "write_file".into(),
             arguments: Some(
                 serde_json::json!({
                     "file_path": test_path,
-                    "content": test_content
+                    "operations": [
+                        {"type": "overwrite", "content": test_content}
+                    ]
                 })
                 .as_object()
                 .unwrap()
@@ -109,7 +116,7 @@ async fn test_write_file_tool() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["status"], "success");
-            assert_eq!(parsed["operation"], "written");
+            assert!(parsed["operations_applied"].as_array().unwrap().len() > 0);
         } else {
             panic!("Expected text content");
         }
@@ -215,7 +222,9 @@ async fn test_write_file_append_mode() {
             arguments: Some(
                 serde_json::json!({
                     "file_path": test_path,
-                    "content": first_content
+                    "operations": [
+                        {"type": "overwrite", "content": first_content}
+                    ]
                 })
                 .as_object()
                 .unwrap()
@@ -225,15 +234,16 @@ async fn test_write_file_append_mode() {
         .await
         .expect("Failed to call write_file tool");
 
-    // Append content
+    // Append content using line_range (start beyond end of file)
     let result = client
         .call_tool(CallToolRequestParam {
             name: "write_file".into(),
             arguments: Some(
                 serde_json::json!({
                     "file_path": test_path,
-                    "content": second_content,
-                    "append": true
+                    "operations": [
+                        {"type": "line_range", "start_line": 10, "end_line": 10, "content": second_content}
+                    ]
                 })
                 .as_object()
                 .unwrap()
@@ -249,7 +259,7 @@ async fn test_write_file_append_mode() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["status"], "success");
-            assert_eq!(parsed["operation"], "appended");
+            assert!(parsed["operations_applied"].as_array().unwrap().len() > 0);
         }
     }
 
@@ -366,4 +376,149 @@ async fn test_list_files_tool() {
 
     // Clean up
     let _ = fs::remove_dir_all(test_dir);
+}
+
+#[tokio::test]
+async fn test_line_range_operations() {
+    // Create server and client
+    let server_service = CodingMcp::new();
+    let client_info = ClientInfo {
+        client_info: Implementation {
+            name: "test-client".to_string(),
+            version: "0.1.0".to_string(),
+            icons: None,
+            title: None,
+            website_url: None,
+        },
+        ..Default::default()
+    };
+
+    let (_server_handle, client) = connect(server_service, client_info)
+        .await
+        .expect("Failed to connect MCP server and client");
+
+    let test_path = "/tmp/test_line_range.txt";
+
+    // Create initial file with 5 lines
+    let initial_content = "line 1\nline 2\nline 3\nline 4\nline 5";
+    let _ = client
+        .call_tool(CallToolRequestParam {
+            name: "write_file".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "file_path": test_path,
+                    "operations": [
+                        {"type": "overwrite", "content": initial_content}
+                    ]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to create initial file");
+
+    // Test 1: Replace line range (lines 2-3)
+    let _result = client
+        .call_tool(CallToolRequestParam {
+            name: "write_file".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "file_path": test_path,
+                    "operations": [
+                        {"type": "line_range", "start_line": 2, "end_line": 3, "content": "replaced line 2\nreplaced line 3"}
+                    ]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to replace line range");
+
+    // Verify replacement worked
+    let file_content = tokio::fs::read_to_string(test_path)
+        .await
+        .expect("Failed to read file");
+    assert_eq!(file_content, "line 1\nreplaced line 2\nreplaced line 3\nline 4\nline 5");
+
+    // Test 2: Insert between lines (insert at line 3)
+    let _ = client
+        .call_tool(CallToolRequestParam {
+            name: "write_file".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "file_path": test_path,
+                    "operations": [
+                        {"type": "line_range", "start_line": 3, "end_line": 2, "content": "inserted line"}
+                    ]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to insert line");
+
+    let file_content = tokio::fs::read_to_string(test_path)
+        .await
+        .expect("Failed to read file after insert");
+    assert_eq!(file_content, "line 1\nreplaced line 2\ninserted line\nreplaced line 3\nline 4\nline 5");
+
+    // Test 3: Append to end using line number beyond file length
+    let _ = client
+        .call_tool(CallToolRequestParam {
+            name: "write_file".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "file_path": test_path,
+                    "operations": [
+                        {"type": "line_range", "start_line": 10, "end_line": 10, "content": "appended line"}
+                    ]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to append line");
+
+    let file_content = tokio::fs::read_to_string(test_path)
+        .await
+        .expect("Failed to read file after append");
+    assert!(file_content.ends_with("line 5\nappended line"));
+
+    // Test 4: Multiple operations in one call
+    let _ = client
+        .call_tool(CallToolRequestParam {
+            name: "write_file".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "file_path": test_path,
+                    "operations": [
+                        {"type": "overwrite", "content": "fresh start\nline 2\nline 3"},
+                        {"type": "line_range", "start_line": 2, "end_line": 2, "content": "modified line 2"},
+                        {"type": "line_range", "start_line": 4, "end_line": 3, "content": "new line 4"}
+                    ]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to perform multiple operations");
+
+    let file_content = tokio::fs::read_to_string(test_path)
+        .await
+        .expect("Failed to read file after multiple operations");
+    assert_eq!(file_content, "fresh start\nmodified line 2\nline 3\nnew line 4");
+
+
+    // Clean up
+    let _ = tokio::fs::remove_file(test_path).await;
 }
