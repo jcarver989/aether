@@ -2470,6 +2470,7 @@ dependencies = [
  "chrono",
  "color-eyre",
  "futures",
+ "glob",
  "grep",
  "ignore",
  "regex",

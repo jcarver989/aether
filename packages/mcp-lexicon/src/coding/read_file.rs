@@ -35,20 +35,26 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<serde_json::Value,
             let total_lines = all_lines.len();
 
             if args.offset == 0 {
-                return Err(format!("Invalid offset for file {}: offset must be 1-indexed (start from 1)", args.file_path));
+                return Err(format!(
+                    "Invalid offset for file {}: offset must be 1-indexed (start from 1)",
+                    args.file_path
+                ));
             }
 
             let start_idx = (args.offset - 1).min(total_lines);
 
             if start_idx >= total_lines {
-                return Err(format!("Invalid offset for file {}: offset {} is beyond file length {}", args.file_path, args.offset, total_lines));
+                return Err(format!(
+                    "Invalid offset for file {}: offset {} is beyond file length {}",
+                    args.file_path, args.offset, total_lines
+                ));
             }
 
             let selected_lines: Vec<&str> = match args.limit {
                 Some(limit) => {
                     let end_idx = (start_idx + limit).min(total_lines);
                     all_lines[start_idx..end_idx].to_vec()
-                },
+                }
                 None => all_lines[start_idx..].to_vec(),
             };
 
@@ -70,7 +76,7 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<serde_json::Value,
                 "limit": args.limit,
                 "size": content.len()
             }))
-        },
+        }
         Err(e) => Err(format!("Failed to read file {}: {}", args.file_path, e)),
     }
 }

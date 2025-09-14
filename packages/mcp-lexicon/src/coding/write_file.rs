@@ -89,7 +89,10 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<serde_json::Valu
 
                 // Check if any replacement actually occurred
                 if current_content == updated_content {
-                    return Err(format!("String replacement failed for file {}: string '{}' not found", args.file_path, old_string));
+                    return Err(format!(
+                        "String replacement failed for file {}: string '{}' not found",
+                        args.file_path, old_string
+                    ));
                 }
 
                 // Convert back to lines
@@ -101,10 +104,7 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<serde_json::Valu
                 } else {
                     1
                 };
-                applied_operations.push(format!(
-                    "Replaced {} occurrence(s) of string",
-                    count
-                ));
+                applied_operations.push(format!("Replaced {} occurrence(s) of string", count));
             }
             WriteOperation::LineRange {
                 start_line,

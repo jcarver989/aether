@@ -1,5 +1,5 @@
 use aether::testing::connect;
-use mcp_lexicon::coding::{GrepArgs, perform_grep, CodingMcp};
+use mcp_lexicon::coding::{CodingMcp, GrepArgs, perform_grep};
 use rmcp::model::{CallToolRequestParam, ClientInfo, Implementation};
 use std::fs;
 use tempfile::TempDir;
@@ -10,11 +10,31 @@ async fn create_test_dir() -> TempDir {
     let test_dir = temp_dir.path();
 
     // Create test files of different types
-    fs::write(test_dir.join("test.rs"), "fn main() {\n    println!(\"Hello, world!\");\n    let x = 42;\n}").unwrap();
-    fs::write(test_dir.join("script.py"), "def hello():\n    print(\"Hello, world!\")\n    x = 42\n").unwrap();
-    fs::write(test_dir.join("app.js"), "function hello() {\n    console.log(\"Hello, world!\");\n    const x = 42;\n}").unwrap();
-    fs::write(test_dir.join("README.md"), "# Test Project\n\nThis is a test project.\nHello, world!\n").unwrap();
-    fs::write(test_dir.join("data.txt"), "line one\nline two with hello\nline three\nline four\n").unwrap();
+    fs::write(
+        test_dir.join("test.rs"),
+        "fn main() {\n    println!(\"Hello, world!\");\n    let x = 42;\n}",
+    )
+    .unwrap();
+    fs::write(
+        test_dir.join("script.py"),
+        "def hello():\n    print(\"Hello, world!\")\n    x = 42\n",
+    )
+    .unwrap();
+    fs::write(
+        test_dir.join("app.js"),
+        "function hello() {\n    console.log(\"Hello, world!\");\n    const x = 42;\n}",
+    )
+    .unwrap();
+    fs::write(
+        test_dir.join("README.md"),
+        "# Test Project\n\nThis is a test project.\nHello, world!\n",
+    )
+    .unwrap();
+    fs::write(
+        test_dir.join("data.txt"),
+        "line one\nline two with hello\nline three\nline four\n",
+    )
+    .unwrap();
 
     temp_dir
 }
@@ -48,7 +68,11 @@ async fn test_file_type_filtering() {
     let matches = result["matches"].as_array().unwrap();
     assert!(matches.len() > 0);
     // Should only find matches in .rs files
-    assert!(matches.iter().all(|m| m.as_str().unwrap().contains("test.rs")));
+    assert!(
+        matches
+            .iter()
+            .all(|m| m.as_str().unwrap().contains("test.rs"))
+    );
 }
 
 #[tokio::test]
@@ -103,8 +127,12 @@ async fn test_multiple_file_types() {
     let matches = parsed["matches"].as_array().unwrap();
     assert!(matches.len() > 0);
     // Should find matches in both .rs and .py files
-    let has_rust = matches.iter().any(|m| m.as_str().unwrap().contains("test.rs"));
-    let has_python = matches.iter().any(|m| m.as_str().unwrap().contains("script.py"));
+    let has_rust = matches
+        .iter()
+        .any(|m| m.as_str().unwrap().contains("test.rs"));
+    let has_python = matches
+        .iter()
+        .any(|m| m.as_str().unwrap().contains("script.py"));
     assert!(has_rust && has_python);
 }
 
@@ -185,7 +213,11 @@ async fn test_word_boundary_matching() {
     let temp_dir = create_test_dir().await;
 
     // Create a specific test file for word boundary testing
-    fs::write(temp_dir.path().join("words.txt"), "hello world\nhelloworld\nworld hello\n").unwrap();
+    fs::write(
+        temp_dir.path().join("words.txt"),
+        "hello world\nhelloworld\nworld hello\n",
+    )
+    .unwrap();
 
     let test_path = temp_dir.path().to_str().unwrap();
 
@@ -218,7 +250,11 @@ async fn test_word_boundary_matching() {
     assert_eq!(matches.len(), 2); // Should find "hello world" and "world hello" but not "helloworld"
 
     // Verify it didn't match "helloworld"
-    assert!(!matches.iter().any(|m| m.as_str().unwrap().contains("helloworld")));
+    assert!(
+        !matches
+            .iter()
+            .any(|m| m.as_str().unwrap().contains("helloworld"))
+    );
 }
 
 #[tokio::test]
@@ -242,7 +278,11 @@ async fn test_invert_match() {
 
     let temp_dir = create_test_dir().await;
     let test_path = temp_dir.path().join("invert_test.txt");
-    fs::write(&test_path, "line with hello\nline without target\nanother line with hello\n").unwrap();
+    fs::write(
+        &test_path,
+        "line with hello\nline without target\nanother line with hello\n",
+    )
+    .unwrap();
 
     // Test invert matching - should find lines that DON'T contain "hello"
     let result = client
@@ -348,7 +388,11 @@ async fn test_context_before_after() {
 
     let temp_dir = create_test_dir().await;
     let test_path = temp_dir.path().join("context_test2.txt");
-    fs::write(&test_path, "line 1\nline 2\nline 3\ntarget line\nline 5\nline 6\nline 7\n").unwrap();
+    fs::write(
+        &test_path,
+        "line 1\nline 2\nline 3\ntarget line\nline 5\nline 6\nline 7\n",
+    )
+    .unwrap();
 
     // Test different before/after context
     let result = client

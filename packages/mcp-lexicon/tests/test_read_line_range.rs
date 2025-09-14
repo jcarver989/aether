@@ -50,8 +50,18 @@ async fn test_read_file_line_range() {
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["total_lines"], 6);
             assert_eq!(parsed["lines_shown"], 6);
-            assert!(parsed["content"].as_str().unwrap().contains("    1\tline 1"));
-            assert!(parsed["content"].as_str().unwrap().contains("    6\tline 6"));
+            assert!(
+                parsed["content"]
+                    .as_str()
+                    .unwrap()
+                    .contains("    1\tline 1")
+            );
+            assert!(
+                parsed["content"]
+                    .as_str()
+                    .unwrap()
+                    .contains("    6\tline 6")
+            );
         }
     }
 

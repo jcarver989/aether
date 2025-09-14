@@ -150,7 +150,7 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
                 let mut sink = MatchCollectorSink::with_max_results(
                     path,
                     args.line_numbers.unwrap_or(true),
-                    args.max_results
+                    args.max_results,
                 );
                 searcher
                     .search_path(&matcher, path, &mut sink)
@@ -198,7 +198,7 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
                                 let mut sink = MatchCollectorSink::with_max_results(
                                     entry.path(),
                                     args.line_numbers.unwrap_or(true),
-                                    Some(remaining_results)
+                                    Some(remaining_results),
                                 );
                                 if let Ok(_) =
                                     searcher.search_path(&matcher, entry.path(), &mut sink)
@@ -251,7 +251,10 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
             }
             if let Some(file_types) = &args.file_types {
                 response["file_types"] = serde_json::Value::Array(
-                    file_types.iter().map(|t| serde_json::Value::String(t.clone())).collect()
+                    file_types
+                        .iter()
+                        .map(|t| serde_json::Value::String(t.clone()))
+                        .collect(),
                 );
             }
             if args.invert_match.unwrap_or(false) {
@@ -260,7 +263,10 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
             if args.word_boundary.unwrap_or(false) {
                 response["word_boundary"] = serde_json::Value::Bool(true);
             }
-            if args.context_around.is_some() || args.context_before.is_some() || args.context_after.is_some() {
+            if args.context_around.is_some()
+                || args.context_before.is_some()
+                || args.context_after.is_some()
+            {
                 response["context_lines"] = serde_json::json!({
                     "before": args.context_before.unwrap_or(args.context_around.unwrap_or(0)),
                     "after": args.context_after.unwrap_or(args.context_around.unwrap_or(0))
@@ -292,7 +298,10 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
             }
             if let Some(file_types) = &args.file_types {
                 response["file_types"] = serde_json::Value::Array(
-                    file_types.iter().map(|t| serde_json::Value::String(t.clone())).collect()
+                    file_types
+                        .iter()
+                        .map(|t| serde_json::Value::String(t.clone()))
+                        .collect(),
                 );
             }
             if args.invert_match.unwrap_or(false) {

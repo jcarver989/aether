@@ -30,7 +30,11 @@ impl MatchCollectorSink {
         }
     }
 
-    pub fn with_max_results(file_path: &Path, line_numbers: bool, max_results: Option<usize>) -> Self {
+    pub fn with_max_results(
+        file_path: &Path,
+        line_numbers: bool,
+        max_results: Option<usize>,
+    ) -> Self {
         Self {
             file_path: file_path.to_path_buf(),
             line_numbers,

@@ -442,7 +442,10 @@ async fn test_line_range_operations() {
     let file_content = tokio::fs::read_to_string(test_path)
         .await
         .expect("Failed to read file");
-    assert_eq!(file_content, "line 1\nreplaced line 2\nreplaced line 3\nline 4\nline 5");
+    assert_eq!(
+        file_content,
+        "line 1\nreplaced line 2\nreplaced line 3\nline 4\nline 5"
+    );
 
     // Test 2: Insert between lines (insert at line 3)
     let _ = client
@@ -466,7 +469,10 @@ async fn test_line_range_operations() {
     let file_content = tokio::fs::read_to_string(test_path)
         .await
         .expect("Failed to read file after insert");
-    assert_eq!(file_content, "line 1\nreplaced line 2\ninserted line\nreplaced line 3\nline 4\nline 5");
+    assert_eq!(
+        file_content,
+        "line 1\nreplaced line 2\ninserted line\nreplaced line 3\nline 4\nline 5"
+    );
 
     // Test 3: Append to end using line number beyond file length
     let _ = client
@@ -516,8 +522,10 @@ async fn test_line_range_operations() {
     let file_content = tokio::fs::read_to_string(test_path)
         .await
         .expect("Failed to read file after multiple operations");
-    assert_eq!(file_content, "fresh start\nmodified line 2\nline 3\nnew line 4");
-
+    assert_eq!(
+        file_content,
+        "fresh start\nmodified line 2\nline 3\nnew line 4"
+    );
 
     // Clean up
     let _ = tokio::fs::remove_file(test_path).await;
