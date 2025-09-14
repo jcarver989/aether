@@ -1,25 +1,31 @@
 use crate::colors;
-use crossterm::{
-    queue,
-    style::Stylize,
-};
+use crossterm::{queue, style::Stylize};
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
-use std::io::{Write, stdout, stderr};
+use std::io::{Write, stderr, stdout};
 use std::time::Duration;
 
 #[macro_export]
 macro_rules! print_styled {
     ($writer:expr, $content:expr) => {
-        queue!($writer, crossterm::style::PrintStyledContent($content.stylize()))?
+        queue!(
+            $writer,
+            crossterm::style::PrintStyledContent($content.stylize())
+        )?
     };
 }
 
 #[macro_export]
 macro_rules! print_styled_line {
     ($writer:expr, $content:expr) => {
-        queue!($writer, crossterm::style::PrintStyledContent($content.stylize()))?;
-        queue!($writer, crossterm::style::PrintStyledContent("\n".stylize()))?
+        queue!(
+            $writer,
+            crossterm::style::PrintStyledContent($content.stylize())
+        )?;
+        queue!(
+            $writer,
+            crossterm::style::PrintStyledContent("\n".stylize())
+        )?
     };
 }
 
@@ -74,16 +80,11 @@ pub fn filter_text_chunk(text: &str) -> Option<String> {
 
 pub fn show_wisp_logo() -> Result<(), std::io::Error> {
     let mut stdout = stdout();
-    // Load and display the pre-colored logo from logo.txt
     let logo_path = std::path::Path::new("src/logo.txt");
-    if let Ok(logo_content) = std::fs::read_to_string(logo_path) {
-        print_styled_line!(stdout, "");
-        print_styled!(stdout, logo_content);
-        print_styled_line!(stdout, "");
-        // Large ASCII art "WISP" with gradient effect - centered under 128-char logo
-        let padding = " ".repeat(18); // Center 32-char WISP under 128-char logo: (128-32)/2 = 48
+    let logo_content = std::fs::read_to_string(logo_path)?;
+    let padding = " ".repeat(18);
 
-        #[rustfmt::skip]
+    #[rustfmt::skip]
         let wisp_lines = [
             "██╗    ██╗██╗███████╗██████╗ ",
             "██║    ██║██║██╔════╝██╔══██╗",
@@ -93,33 +94,31 @@ pub fn show_wisp_logo() -> Result<(), std::io::Error> {
             " ╚══╝╚══╝ ╚═╝╚══════╝╚═╝     ",
         ];
 
-        for line in wisp_lines {
-            print_styled!(stdout, padding.clone());
-            let chars: Vec<char> = line.chars().collect();
+    for line in wisp_lines {
+        print_styled!(stdout, padding.clone());
+        let chars: Vec<char> = line.chars().collect();
 
-            for (_i, ch) in chars.iter().enumerate() {
-                print_styled!(stdout, ch.to_string().with(colors::primary()).bold());
-            }
-            print_styled_line!(stdout, "");
+        for (_i, ch) in chars.iter().enumerate() {
+            print_styled!(stdout, ch.to_string().with(colors::primary()).bold());
         }
         print_styled_line!(stdout, "");
-        let tagline_padding = " ".repeat(20); // Center "Ethereal AI Assistant" (24 chars): (128-24)/2 = 52, but adjust for visual balance
-        print_styled!(stdout, format!(
+    }
+    print_styled_line!(stdout, "");
+    let tagline_padding = " ".repeat(20); // Center "Ethereal AI Assistant" (24 chars): (128-24)/2 = 52, but adjust for visual balance
+    print_styled!(
+        stdout,
+        format!(
             "{}{}",
             tagline_padding,
             "Ethereal AI Assistant".dim().italic()
-        ));
-        print_styled!(stdout, "\n\n");
-    } else {
-        // Fallback to simple text logo if file not found
-        print_styled_line!(stdout, "");
-        print_styled_line!(stdout, format!("           {}", "W I S P".with(colors::primary()).bold()));
-        print_styled_line!(stdout, format!(
-            "           {}",
-            "Ethereal AI Assistant".with(colors::info()).italic()
-        ));
-        print_styled!(stdout, "\n");
-    }
+        )
+    );
+    print_styled!(stdout, "\n\n");
+
+    print_styled_line!(stdout, "");
+    print_styled!(stdout, logo_content);
+    print_styled_line!(stdout, "");
+
     stdout.flush()?;
     Ok(())
 }
@@ -128,20 +127,26 @@ pub fn show_usage(program_name: &str) -> Result<(), std::io::Error> {
     show_wisp_logo()?;
     let mut stdout = stdout();
     print_styled_line!(stdout, "Usage:".with(colors::secondary()).bold());
-    print_styled_line!(stdout, format!(
-        "  {} {}",
-        program_name,
-        "<your coding question or request>"
-            .with(colors::success())
-            .italic()
-    ));
-    print_styled_line!(stdout, format!(
-        "  {} {}",
-        program_name,
-        "\"help me implement a binary search tree\""
-            .with(colors::warning())
-            .italic()
-    ));
+    print_styled_line!(
+        stdout,
+        format!(
+            "  {} {}",
+            program_name,
+            "<your coding question or request>"
+                .with(colors::success())
+                .italic()
+        )
+    );
+    print_styled_line!(
+        stdout,
+        format!(
+            "  {} {}",
+            program_name,
+            "\"help me implement a binary search tree\""
+                .with(colors::warning())
+                .italic()
+        )
+    );
     stdout.flush()?;
     Ok(())
 }
@@ -154,43 +159,61 @@ pub fn show_init_header(
     let mut stdout = stdout();
     print_styled_line!(stdout, "");
     print_styled_line!(stdout, "─".repeat(60).with(colors::info()));
-    print_styled_line!(stdout, format!(
-        "{} {}",
-        "⚙".with(colors::info()).bold(),
-        "Init".bold().with(colors::text_primary())
-    ));
+    print_styled_line!(
+        stdout,
+        format!(
+            "{} {}",
+            "⚙".with(colors::info()).bold(),
+            "Init".bold().with(colors::text_primary())
+        )
+    );
     print_styled_line!(stdout, "─".repeat(60).with(colors::info()));
     print_styled!(stdout, "\n");
 
     // User prompt
-    print_styled_line!(stdout, format!(
-        "  {} {}",
-        "◆".with(colors::secondary()).bold(),
-        "User Prompt:".bold().with(colors::text_primary())
-    ));
-    print_styled!(stdout, format!("    {}", prompt.italic().with(colors::text_primary())));
+    print_styled_line!(
+        stdout,
+        format!(
+            "  {} {}",
+            "◆".with(colors::secondary()).bold(),
+            "User Prompt:".bold().with(colors::text_primary())
+        )
+    );
+    print_styled!(
+        stdout,
+        format!("    {}", prompt.italic().with(colors::text_primary()))
+    );
     print_styled!(stdout, "\n\n");
 
     // Agents status
     if agents_loaded {
-        print_styled!(stdout, format!(
-            "  {} {}",
-            "✓".with(colors::success()).bold(),
-            "Loaded AGENTS.md as system prompt".with(colors::text_primary())
-        ));
+        print_styled!(
+            stdout,
+            format!(
+                "  {} {}",
+                "✓".with(colors::success()).bold(),
+                "Loaded AGENTS.md as system prompt".with(colors::text_primary())
+            )
+        );
     } else if let Some(error) = agents_error {
-        print_styled!(stdout, format!(
-            "  {} {}: {}",
-            "⚠".with(colors::warning()).bold(),
-            "Could not read AGENTS.md".with(colors::warning()),
-            error.with(colors::error())
-        ));
+        print_styled!(
+            stdout,
+            format!(
+                "  {} {}: {}",
+                "⚠".with(colors::warning()).bold(),
+                "Could not read AGENTS.md".with(colors::warning()),
+                error.with(colors::error())
+            )
+        );
     } else {
-        print_styled!(stdout, format!(
-            "  {} {}",
-            "ℹ".with(colors::info()).bold(),
-            "No AGENTS.md file found in current directory".with(colors::text_secondary())
-        ));
+        print_styled!(
+            stdout,
+            format!(
+                "  {} {}",
+                "ℹ".with(colors::info()).bold(),
+                "No AGENTS.md file found in current directory".with(colors::text_secondary())
+            )
+        );
     }
     print_styled_line!(stdout, "");
     print_styled_line!(stdout, "─".repeat(60).with(colors::info()));
@@ -202,11 +225,14 @@ pub fn show_init_header(
 pub fn show_response_header() -> Result<(), std::io::Error> {
     let mut stdout = stdout();
     print_styled_line!(stdout, "─".repeat(60).with(colors::primary()));
-    print_styled_line!(stdout, format!(
-        "{} {}",
-        "⟨⟩".with(colors::primary()).bold(),
-        "Wisp's Response".bold().with(colors::text_primary())
-    ));
+    print_styled_line!(
+        stdout,
+        format!(
+            "{} {}",
+            "⟨⟩".with(colors::primary()).bold(),
+            "Wisp's Response".bold().with(colors::text_primary())
+        )
+    );
     print_styled_line!(stdout, "─".repeat(60).with(colors::primary()));
     stdout.flush()?;
     Ok(())
@@ -229,12 +255,15 @@ pub fn create_tool_spinner(name: &str) -> Result<ProgressBar, Box<dyn std::error
 
 pub fn show_tool_completed(tool_name: &str, result: Option<&str>) -> Result<(), std::io::Error> {
     let mut stdout = stdout();
-    print_styled_line!(stdout, format!(
-        "{} {} {}",
-        "✓".with(colors::success()).bold(),
-        "Tool".bold().with(colors::text_primary()),
-        tool_name.bold().with(colors::success())
-    ));
+    print_styled_line!(
+        stdout,
+        format!(
+            "{} {} {}",
+            "✓".with(colors::success()).bold(),
+            "Tool".bold().with(colors::text_primary()),
+            tool_name.bold().with(colors::success())
+        )
+    );
 
     if let Some(result) = result {
         // Try to parse JSON and extract meaningful content
@@ -257,11 +286,17 @@ pub fn show_tool_completed(tool_name: &str, result: Option<&str>) -> Result<(), 
         if !display_result.trim().is_empty() {
             if display_result.len() > 200 {
                 let preview = &display_result[..197];
-                print_styled_line!(stdout, format!("   {} {}{}", "Result:".dim(), preview.dim(), "...".dim()));
+                print_styled_line!(
+                    stdout,
+                    format!("   {} {}{}", "Result:".dim(), preview.dim(), "...".dim())
+                );
             } else {
                 let lines: Vec<&str> = display_result.lines().collect();
                 if lines.len() == 1 {
-                    print_styled_line!(stdout, format!("   {} {}", "Result:".dim(), &display_result.dim()));
+                    print_styled_line!(
+                        stdout,
+                        format!("   {} {}", "Result:".dim(), &display_result.dim())
+                    );
                 } else {
                     print_styled_line!(stdout, format!("   {}", "Result:".dim()));
                     for line in lines.iter().take(5) {
@@ -280,22 +315,28 @@ pub fn show_tool_completed(tool_name: &str, result: Option<&str>) -> Result<(), 
 
 pub fn show_error(message: &str) -> Result<(), std::io::Error> {
     let mut stderr = stderr();
-    print_styled_line!(stderr, format!(
-        "{} {}",
-        "✗".with(colors::error()).bold(),
-        message.with(colors::error())
-    ));
+    print_styled_line!(
+        stderr,
+        format!(
+            "{} {}",
+            "✗".with(colors::error()).bold(),
+            message.with(colors::error())
+        )
+    );
     stderr.flush()?;
     Ok(())
 }
 
 pub fn show_cancelled(message: &str) -> Result<(), std::io::Error> {
     let mut stderr = stderr();
-    print_styled_line!(stderr, format!(
-        "{} {}",
-        "⊘".with(colors::warning()).bold(),
-        message.with(colors::warning())
-    ));
+    print_styled_line!(
+        stderr,
+        format!(
+            "{} {}",
+            "⊘".with(colors::warning()).bold(),
+            message.with(colors::warning())
+        )
+    );
     stderr.flush()?;
     Ok(())
 }
@@ -304,11 +345,14 @@ pub fn show_completion() -> Result<(), std::io::Error> {
     let mut stdout = stdout();
     print_styled_line!(stdout, "");
     print_styled_line!(stdout, "─".repeat(60).with(colors::accent()));
-    print_styled_line!(stdout, format!(
-        "{} {}",
-        "◆".with(colors::accent()).bold(),
-        "Analysis finished!".bold().with(colors::text_primary())
-    ));
+    print_styled_line!(
+        stdout,
+        format!(
+            "{} {}",
+            "◆".with(colors::accent()).bold(),
+            "Analysis finished!".bold().with(colors::text_primary())
+        )
+    );
     stdout.flush()?;
     Ok(())
 }

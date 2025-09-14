@@ -86,7 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     if let Some(filtered_chunk) = ui::filter_text_chunk(&chunk) {
                         if !message_started {
-                            print_styled!(stdout, format!("{} ", "◈".with(colors::primary()).bold()));
+                            print_styled!(
+                                stdout,
+                                format!("{} ", "◈".with(colors::primary()).bold())
+                            );
                             message_started = true;
                         }
 
