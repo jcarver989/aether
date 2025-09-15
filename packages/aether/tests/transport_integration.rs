@@ -1,10 +1,10 @@
-use aether::testing::{InMemoryFileSystem, create_transport_pair};
+use aether::{testing::InMemoryFileSystem, transport::create_in_memory_transport};
 use rmcp::transport::Transport;
 
 #[tokio::test]
 async fn test_transport_pair_creation() {
     // Test that we can create transport pairs without panicking
-    let (_client_transport, _server_transport) = create_transport_pair();
+    let (_client_transport, _server_transport) = create_in_memory_transport();
     // This test passes if no panic occurs during creation
 }
 
@@ -52,7 +52,7 @@ async fn test_in_memory_filesystem_integration() {
 
 #[tokio::test]
 async fn test_transport_closes_properly() {
-    let (mut client_transport, mut server_transport) = create_transport_pair();
+    let (mut client_transport, mut server_transport) = create_in_memory_transport();
 
     // Test that close works without error
     client_transport

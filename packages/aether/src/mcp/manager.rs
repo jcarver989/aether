@@ -1,27 +1,46 @@
 use color_eyre::{Report, Result};
 use rmcp::{
-    RoleClient,
+    RoleClient, RoleServer, ServiceExt,
     model::{
         CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation,
         InitializeRequestParam, Tool as RmcpTool,
     },
-    serve_client, serve_server,
-    service::RunningService,
+    serve_client,
+    service::{DynService, RunningService},
     transport::{
-        StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
+        StreamableHttpClientTransport, TokioChildProcess,
+        streamable_http_client::StreamableHttpClientTransportConfig,
     },
 };
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::testing::create_transport_pair;
-use crate::types::ToolDefinition;
-use rmcp::ServerHandler;
+use crate::{transport::create_in_memory_transport, types::ToolDefinition};
+use tokio::process::Command;
+
+pub enum McpServerConfig {
+    Http {
+        name: String,
+        config: StreamableHttpClientTransportConfig,
+    },
+
+    Stdio {
+        name: String,
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+    },
+
+    InMemory {
+        name: String,
+        server: Box<dyn DynService<RoleServer>>,
+    },
+}
 
 pub struct McpManager {
     servers: HashMap<String, McpServerConnection>,
     tools: HashMap<String, Tool>, // Now keyed by "server_name::tool_name"
-    tool_to_server: HashMap<String, String>, // Maps namespaced tool name to server name
+    client_info: ClientInfo,
 }
 
 impl McpManager {
@@ -29,111 +48,109 @@ impl McpManager {
         Self {
             servers: HashMap::new(),
             tools: HashMap::new(),
-            tool_to_server: HashMap::new(),
+            client_info: ClientInfo {
+                protocol_version: Default::default(),
+                capabilities: ClientCapabilities::default(),
+                client_info: Implementation {
+                    name: "aether".to_string(),
+                    version: "0.1.0".to_string(),
+                    title: None,
+                    icons: None,
+                    website_url: None,
+                },
+            },
         }
     }
 
-    pub async fn with_http_mcp(
-        &mut self,
-        name: &str,
-        config: &StreamableHttpClientTransportConfig,
-    ) -> Result<()> {
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "aether".to_string(),
-                version: "0.1.0".to_string(),
-                title: None,
-                icons: None,
-                website_url: None,
-            },
-        };
+    pub async fn add_mcp(&mut self, config: McpServerConfig) -> Result<()> {
+        use McpServerConfig::*;
+        match config {
+            Http { name, config } => {
+                let transport = StreamableHttpClientTransport::from_config(config.clone());
+                let client = serve_client(self.client_info.clone(), transport)
+                    .await
+                    .map_err(|e| {
+                        Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
+                    })?;
 
-        let transport = StreamableHttpClientTransport::from_config(config.clone());
-        let client = serve_client(client_info, transport).await.map_err(|e| {
-            Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
-        })?;
+                let server_connection = McpServerConnection {
+                    _name: name.clone(),
+                    client,
+                    server_task: None,
+                };
 
-        let server_connection = McpServerConnection {
-            _name: name.to_string(),
-            client,
-            server_task: None,
-        };
-
-        self.servers.insert(name.to_string(), server_connection);
-        Ok(())
-    }
-
-    pub async fn with_stdio_mcp(
-        &mut self,
-        name: String,
-        command: String,
-        args: Vec<String>,
-        _env: HashMap<String, String>,
-    ) -> Result<()> {
-        return Err(Report::msg(format!(
-            "Process-based MCP servers not yet implemented for {}: {} {}",
-            name,
-            command,
-            args.join(" ")
-        )));
-    }
-
-    pub async fn with_in_memory_mcp<T: ServerHandler>(
-        &mut self,
-        name: String,
-        server: T,
-    ) -> Result<()> {
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "aether".to_string(),
-                version: "0.1.0".to_string(),
-                title: None,
-                icons: None,
-                website_url: None,
-            },
-        };
-
-        let (client_transport, server_transport) = create_transport_pair();
-
-        // Spawn the server task in the background
-        let server_handle = tokio::spawn(async move {
-            match serve_server(server, server_transport).await {
-                Ok(_service) => {
-                    // Keep the service running (it will run until the transport is dropped)
-                    std::future::pending::<()>().await;
-                }
-                Err(e) => {
-                    eprintln!("MCP server error: {}", e);
-                }
+                self.servers.insert(name, server_connection);
+                Ok(())
             }
-        });
 
-        let client = serve_client(client_info, client_transport)
-            .await
-            .map_err(|e| {
-                Report::msg(format!(
-                    "Failed to connect to in-memory MCP server {name}: {e}"
-                ))
-            })?;
+            Stdio {
+                name,
+                command,
+                args,
+                env: _env,
+            } => {
+                let cmd = {
+                    let mut cmd = Command::new(&command);
+                    cmd.args(&args);
+                    cmd
+                };
 
-        let server_connection = McpServerConnection {
-            _name: name.clone(),
-            client,
-            server_task: Some(server_handle),
-        };
+                let client = self
+                    .client_info
+                    .clone()
+                    .serve(TokioChildProcess::new(cmd)?)
+                    .await?;
 
-        self.servers.insert(name, server_connection);
+                self.servers.insert(
+                    name.clone(),
+                    McpServerConnection {
+                        _name: name.clone(),
+                        client,
+                        server_task: None,
+                    },
+                );
 
-        Ok(())
+                Ok(())
+            }
+
+            InMemory { name, server } => {
+                let (client_transport, server_transport) = create_in_memory_transport();
+
+                let server_handle = tokio::spawn(async move {
+                    match server.serve(server_transport).await {
+                        Ok(_service) => {
+                            // Keep the service running (it will run until the transport is dropped)
+                            std::future::pending::<()>().await;
+                        }
+                        Err(e) => {
+                            eprintln!("MCP server error: {}", e);
+                        }
+                    }
+                });
+
+                let client = serve_client(self.client_info.clone(), client_transport)
+                    .await
+                    .map_err(|e| {
+                        Report::msg(format!(
+                            "Failed to connect to in-memory MCP server {name}: {e}"
+                        ))
+                    })?;
+
+                let server_connection = McpServerConnection {
+                    _name: name.clone(),
+                    client,
+                    server_task: Some(server_handle),
+                };
+
+                self.servers.insert(name, server_connection);
+
+                Ok(())
+            }
+        }
     }
 
     pub async fn discover_tools(&mut self) -> Result<()> {
         self.tools.clear();
-        self.tool_to_server.clear();
 
         for (server_name, server) in &self.servers {
             match server.client.list_tools(None).await {
@@ -143,9 +160,7 @@ impl McpManager {
                         let namespaced_tool_name = format!("{server_name}__{tool_name}");
                         let tool = Tool::from(rmcp_tool);
 
-                        self.tools.insert(namespaced_tool_name.clone(), tool);
-                        self.tool_to_server
-                            .insert(namespaced_tool_name, server_name.clone());
+                        self.tools.insert(namespaced_tool_name, tool);
                     }
                 }
                 Err(_) => {
@@ -158,22 +173,22 @@ impl McpManager {
     }
 
     pub async fn execute_tool(&self, namespaced_tool_name: &str, args: Value) -> Result<Value> {
-        let server_name = self
-            .tool_to_server
-            .get(namespaced_tool_name)
-            .ok_or_else(|| {
-                color_eyre::Report::msg(format!("Tool not found: {namespaced_tool_name}"))
+        // Check if the tool exists first
+        if !self.tools.contains_key(namespaced_tool_name) {
+            return Err(color_eyre::Report::msg(format!(
+                "Tool not found: {namespaced_tool_name}"
+            )));
+        }
+
+        let (server_name, original_tool_name) =
+            namespaced_tool_name.split_once("__").ok_or_else(|| {
+                color_eyre::Report::msg(format!("Invalid tool name format: {namespaced_tool_name}"))
             })?;
 
         let server = self
             .servers
             .get(server_name)
             .ok_or_else(|| color_eyre::Report::msg(format!("Server not found: {server_name}")))?;
-
-        // Extract the original tool name from the namespaced name (server_name::tool_name)
-        let original_tool_name = namespaced_tool_name.split("__").nth(1).ok_or_else(|| {
-            color_eyre::Report::msg(format!("Invalid tool name format: {namespaced_tool_name}"))
-        })?;
 
         let arguments = args.as_object().cloned();
         let request = CallToolRequestParam {
@@ -216,11 +231,18 @@ impl McpManager {
     pub fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tools
             .iter()
-            .map(|(namespaced_tool_name, tool)| ToolDefinition {
-                name: namespaced_tool_name.clone(),
-                description: tool.description.clone(),
-                parameters: tool.parameters.to_string(),
-                server: self.tool_to_server.get(namespaced_tool_name).cloned(),
+            .map(|(namespaced_tool_name, tool)| {
+                let server_name = namespaced_tool_name
+                    .split("__")
+                    .next()
+                    .map(|s| s.to_string());
+
+                ToolDefinition {
+                    name: namespaced_tool_name.clone(),
+                    description: tool.description.clone(),
+                    parameters: tool.parameters.to_string(),
+                    server: server_name,
+                }
             })
             .collect()
     }
@@ -250,7 +272,6 @@ impl McpManager {
 
         // Clear all cached data
         self.tools.clear();
-        self.tool_to_server.clear();
     }
 
     /// Shutdown a specific server by name
@@ -278,8 +299,6 @@ impl McpManager {
             // Remove tools from this server
             self.tools
                 .retain(|tool_name, _| !tool_name.starts_with(&format!("{}__", server_name)));
-            self.tool_to_server
-                .retain(|_, server| server != server_name);
         }
 
         Ok(())
@@ -335,13 +354,15 @@ mod tests {
         // Create a file system and server
         let filesystem = InMemoryFileSystem::new();
         let server = FileServerMcp::new(filesystem);
+        let dyn_service = Box::new(server.into_dyn());
 
         // Create client and connect in-memory server directly
         let mut client = McpManager::new();
-        client
-            .with_in_memory_mcp("test_server".to_string(), server)
-            .await
-            .unwrap();
+        let mcp_config = McpServerConfig::InMemory {
+            name: "test_server".to_string(),
+            server: dyn_service,
+        };
+        client.add_mcp(mcp_config).await.unwrap();
 
         // Discover tools
         client.discover_tools().await.unwrap();

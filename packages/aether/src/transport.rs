@@ -42,7 +42,8 @@ impl<R: ServiceRole> InMemoryTransport<R> {
 }
 
 /// Create a pair of transports for client and server
-pub fn create_transport_pair() -> (InMemoryTransport<RoleClient>, InMemoryTransport<RoleServer>) {
+pub fn create_in_memory_transport() -> (InMemoryTransport<RoleClient>, InMemoryTransport<RoleServer>)
+{
     // Client sends ClientRequest/ClientResult, receives ServerRequest/ServerResult
     // Server sends ServerRequest/ServerResult, receives ClientRequest/ClientResult
     let (client_tx, server_rx) = mpsc::unbounded_channel(); // Client -> Server

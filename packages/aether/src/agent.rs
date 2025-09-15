@@ -1,34 +1,15 @@
 use crate::llm::Context;
 use crate::llm::ModelProvider;
-use crate::mcp::McpManager;
+use crate::mcp::{manager::McpServerConfig, McpManager};
 use crate::types::ToolCallRequest;
 use crate::types::{ChatMessage, IsoString, LlmResponse};
 use async_stream::stream;
 use color_eyre::Result;
 use futures::StreamExt;
 use futures::pin_mut;
-use rmcp::ServerHandler;
-use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
-use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 use tokio::sync::mpsc;
 use tokio_stream::Stream;
 use tokio_util::sync::CancellationToken;
-
-pub enum McpServerConfig {
-    Http {
-        name: String,
-        config: StreamableHttpClientTransportConfig,
-    },
-
-    Stdio {
-        name: String,
-        command: String,
-        args: Vec<String>,
-        env: HashMap<String, String>,
-    },
-}
 
 pub fn agent<T: ModelProvider + 'static>(llm: T) -> AgentBuilder<T> {
     AgentBuilder {
@@ -36,7 +17,6 @@ pub fn agent<T: ModelProvider + 'static>(llm: T) -> AgentBuilder<T> {
         system_prompt: None,
         mcp_manager: McpManager::new(),
         mcp_configs: Vec::new(),
-        in_memory_mcps: Vec::new(),
     }
 }
 
@@ -45,12 +25,6 @@ pub struct AgentBuilder<T: ModelProvider> {
     system_prompt: Option<String>,
     mcp_manager: McpManager,
     mcp_configs: Vec<McpServerConfig>,
-    in_memory_mcps: Vec<
-        Box<
-            dyn FnOnce(&mut McpManager) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>
-                + Send,
-        >,
-    >,
 }
 
 impl<T: ModelProvider + 'static> AgentBuilder<T> {
@@ -68,15 +42,6 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
         self
     }
 
-    pub fn in_memory_mcp<U: ServerHandler + 'static>(mut self, name: &str, mcp: U) -> Self {
-        let name = name.to_string();
-        self.in_memory_mcps.push(Box::new(move |manager| {
-            Box::pin(async move { manager.with_in_memory_mcp(name, mcp).await })
-        }));
-
-        self
-    }
-
     pub async fn build(self) -> Result<Agent<T>> {
         let mut messages = Vec::new();
 
@@ -90,24 +55,7 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
         let mut mcp_manager = self.mcp_manager;
 
         for config in self.mcp_configs {
-            match config {
-                McpServerConfig::Http { name, config } => {
-                    mcp_manager.with_http_mcp(&name, &config).await?;
-                }
-
-                McpServerConfig::Stdio {
-                    name,
-                    command,
-                    args,
-                    env,
-                } => {
-                    mcp_manager.with_stdio_mcp(name, command, args, env).await?;
-                }
-            }
-        }
-
-        for connect in self.in_memory_mcps {
-            connect(&mut mcp_manager).await?;
+            mcp_manager.add_mcp(config).await?;
         }
 
         Ok(Agent {

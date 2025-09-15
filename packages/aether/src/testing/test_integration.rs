@@ -1,4 +1,4 @@
-use crate::testing::InMemoryFileSystem;
+use crate::transport::InMemoryFileSystem;
 
 /// A simple mock tool that writes to the in-memory filesystem
 /// This simulates what a real MCP server tool would do

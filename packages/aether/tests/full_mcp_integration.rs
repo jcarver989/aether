@@ -1,4 +1,4 @@
-use aether::testing::{FileServerMcp, InMemoryFileSystem, connect, create_transport_pair};
+use aether::{testing::{FileServerMcp, InMemoryFileSystem, connect}, transport::create_in_memory_transport};
 use rmcp::model::{CallToolRequestParam, ClientInfo, Implementation};
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn test_transport_pair_ready_for_mcp() {
     // This test verifies that our transport pair is ready to be used
     // with real MCP server and client implementations
 
-    let (_client_transport, _server_transport) = create_transport_pair();
+    let (_client_transport, _server_transport) = create_in_memory_transport();
 
     // The transport types are correct for use with rmcp::serve_client and rmcp::serve_server
     // This compilation success proves our types are compatible

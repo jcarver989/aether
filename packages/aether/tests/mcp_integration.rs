@@ -1,7 +1,7 @@
 mod utils;
 
 use crate::utils::*;
-use aether::mcp::McpManager;
+use aether::mcp::{McpManager, manager::McpServerConfig};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
 
@@ -24,7 +24,11 @@ async fn test_mcp_client_with_http_server() {
         uri: url.clone().into(),
         ..Default::default()
     };
-    let result = client.with_http_mcp(&server_name, &config).await;
+    let mcp_config = McpServerConfig::Http {
+        name: server_name,
+        config,
+    };
+    let result = client.add_mcp(mcp_config).await;
 
     // The connection will fail, but we can still test that the API exists
     // In a real test environment, this would succeed
@@ -48,7 +52,11 @@ async fn test_mcp_client_with_headers() {
         auth_header,
         ..Default::default()
     };
-    let result = client.with_http_mcp(&server_name, &config).await;
+    let mcp_config = McpServerConfig::Http {
+        name: server_name,
+        config,
+    };
+    let result = client.add_mcp(mcp_config).await;
 
     // The connection will fail, but we can test that the API accepts headers
     assert!(result.is_err()); // Expected since no real server is running

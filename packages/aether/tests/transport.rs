@@ -1,4 +1,4 @@
-use aether::testing::{InMemoryFileSystem, create_transport_pair};
+use aether::{testing::InMemoryFileSystem, transport::create_in_memory_transport};
 
 #[tokio::test]
 async fn test_in_memory_filesystem() {
@@ -24,6 +24,6 @@ async fn test_in_memory_filesystem() {
 
 #[tokio::test]
 async fn test_transport_creation() {
-    let (_client, _server) = create_transport_pair();
+    let (_client, _server) = create_in_memory_transport();
     // Just test that we can create the transport pair without panicking
 }

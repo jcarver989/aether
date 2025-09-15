@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, UserMessage, agent},
+    agent::{AgentMessage::*, UserMessage, agent},
     llm::local::DefaultModelProvider,
 };
 use clap::Parser;
@@ -53,7 +53,7 @@ pub async fn main() {
 
     while let Some(event) = result_stream.next().await {
         match event {
-            AgentMessage::Text {
+            Text {
                 chunk, is_complete, ..
             } => {
                 if is_complete {
@@ -64,7 +64,7 @@ pub async fn main() {
                 }
             }
 
-            AgentMessage::ToolCall {
+            ToolCall {
                 name, is_complete, ..
             } => {
                 if is_complete {
@@ -74,11 +74,11 @@ pub async fn main() {
                 }
             }
 
-            AgentMessage::Error { message } => {
+            Error { message } => {
                 eprintln!("Error: {}", message);
             }
 
-            AgentMessage::Cancelled { message } => {
+            Cancelled { message } => {
                 eprintln!("Cancelled: {}", message);
             }
         }

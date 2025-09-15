@@ -1,4 +1,4 @@
-use crate::testing::{InMemoryFileSystem, create_transport_pair};
+use crate::{testing::InMemoryFileSystem, transport::create_in_memory_transport};
 use rmcp::{
     RoleClient, RoleServer, ServerHandler, Service,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -77,7 +77,7 @@ pub async fn connect<S>(
 where
     S: Service<RoleServer>,
 {
-    let (client_transport, server_transport) = create_transport_pair();
+    let (client_transport, server_transport) = create_in_memory_transport();
 
     let (server_result, client_result) = tokio::join!(
         serve_server(server, server_transport),
