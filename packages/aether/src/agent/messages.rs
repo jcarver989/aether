@@ -1,4 +1,7 @@
-#[derive(Debug, Clone)]
+use rmcp::model::{CreateElicitationRequestParam, CreateElicitationResult};
+use tokio::sync::oneshot;
+
+#[derive(Debug)]
 pub enum AgentMessage {
     Text {
         message_id: String,
@@ -20,6 +23,12 @@ pub enum AgentMessage {
 
     Cancelled {
         message: String,
+    },
+
+    ElicitationRequest {
+        request_id: String,
+        request: CreateElicitationRequestParam,
+        response_sender: oneshot::Sender<CreateElicitationResult>,
     },
 }
 

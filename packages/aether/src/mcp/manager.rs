@@ -2,8 +2,8 @@ use color_eyre::{Report, Result};
 use rmcp::{
     RoleClient, RoleServer, ServiceExt,
     model::{
-        CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation,
-        InitializeRequestParam, Tool as RmcpTool,
+        CallToolRequestParam, ClientCapabilities, ClientInfo, CreateElicitationRequestParam,
+        CreateElicitationResult, ElicitationAction, Implementation, Tool as RmcpTool,
     },
     serve_client,
     service::{DynService, RunningService},
@@ -15,8 +15,23 @@ use rmcp::{
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::{transport::create_in_memory_transport, types::ToolDefinition};
+use crate::{mcp::client::McpClient, transport::create_in_memory_transport, types::ToolDefinition};
 use tokio::process::Command;
+use tokio::sync::{mpsc, oneshot};
+
+const TOOL_NAMESPACE_DELIMITER: &str = "__";
+
+#[derive(Debug)]
+pub struct ElicitationRequest {
+    pub request: CreateElicitationRequestParam,
+    pub response_sender: oneshot::Sender<CreateElicitationResult>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ElicitationResponse {
+    pub action: ElicitationAction,
+    pub content: Option<Value>,
+}
 
 pub enum McpServerConfig {
     Http {
@@ -37,14 +52,16 @@ pub enum McpServerConfig {
     },
 }
 
+/// Manages connections to multiple MCP servers and their tools
 pub struct McpManager {
     servers: HashMap<String, McpServerConnection>,
     tools: HashMap<String, Tool>, // Now keyed by "server_name::tool_name"
     client_info: ClientInfo,
+    elicitation_sender: mpsc::UnboundedSender<ElicitationRequest>,
 }
 
 impl McpManager {
-    pub fn new() -> Self {
+    pub fn new(elicitation_sender: mpsc::UnboundedSender<ElicitationRequest>) -> Self {
         Self {
             servers: HashMap::new(),
             tools: HashMap::new(),
@@ -59,7 +76,12 @@ impl McpManager {
                     website_url: None,
                 },
             },
+            elicitation_sender,
         }
+    }
+
+    fn create_mcp_client(&self) -> McpClient {
+        McpClient::new(self.client_info.clone(), self.elicitation_sender.clone())
     }
 
     pub async fn add_mcp(&mut self, config: McpServerConfig) -> Result<()> {
@@ -67,11 +89,10 @@ impl McpManager {
         match config {
             Http { name, config } => {
                 let transport = StreamableHttpClientTransport::from_config(config.clone());
-                let client = serve_client(self.client_info.clone(), transport)
-                    .await
-                    .map_err(|e| {
-                        Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
-                    })?;
+                let mcp_client = self.create_mcp_client();
+                let client = serve_client(mcp_client, transport).await.map_err(|e| {
+                    Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
+                })?;
 
                 let server_connection = McpServerConnection {
                     _name: name.clone(),
@@ -95,11 +116,8 @@ impl McpManager {
                     cmd
                 };
 
-                let client = self
-                    .client_info
-                    .clone()
-                    .serve(TokioChildProcess::new(cmd)?)
-                    .await?;
+                let mcp_client = self.create_mcp_client();
+                let client = mcp_client.serve(TokioChildProcess::new(cmd)?).await?;
 
                 self.servers.insert(
                     name.clone(),
@@ -128,7 +146,8 @@ impl McpManager {
                     }
                 });
 
-                let client = serve_client(self.client_info.clone(), client_transport)
+                let mcp_client = self.create_mcp_client();
+                let client = serve_client(mcp_client, client_transport)
                     .await
                     .map_err(|e| {
                         Report::msg(format!(
@@ -157,7 +176,8 @@ impl McpManager {
                 Ok(tools_response) => {
                     for rmcp_tool in tools_response.tools {
                         let tool_name = rmcp_tool.name.to_string();
-                        let namespaced_tool_name = format!("{server_name}__{tool_name}");
+                        let namespaced_tool_name =
+                            create_namespaced_tool_name(server_name, &tool_name);
                         let tool = Tool::from(rmcp_tool);
 
                         self.tools.insert(namespaced_tool_name, tool);
@@ -173,15 +193,14 @@ impl McpManager {
     }
 
     pub async fn execute_tool(&self, namespaced_tool_name: &str, args: Value) -> Result<Value> {
-        // Check if the tool exists first
         if !self.tools.contains_key(namespaced_tool_name) {
             return Err(color_eyre::Report::msg(format!(
                 "Tool not found: {namespaced_tool_name}"
             )));
         }
 
-        let (server_name, original_tool_name) =
-            namespaced_tool_name.split_once("__").ok_or_else(|| {
+        let (server_name, original_tool_name) = parse_namespaced_tool_name(namespaced_tool_name)
+            .ok_or_else(|| {
                 color_eyre::Report::msg(format!("Invalid tool name format: {namespaced_tool_name}"))
             })?;
 
@@ -232,10 +251,8 @@ impl McpManager {
         self.tools
             .iter()
             .map(|(namespaced_tool_name, tool)| {
-                let server_name = namespaced_tool_name
-                    .split("__")
-                    .next()
-                    .map(|s| s.to_string());
+                let server_name = parse_namespaced_tool_name(namespaced_tool_name)
+                    .map(|(server, _)| server.to_string());
 
                 ToolDefinition {
                     name: namespaced_tool_name.clone(),
@@ -298,7 +315,7 @@ impl McpManager {
 
             // Remove tools from this server
             self.tools
-                .retain(|tool_name, _| !tool_name.starts_with(&format!("{}__", server_name)));
+                .retain(|tool_name, _| !tool_name.starts_with(server_name));
         }
 
         Ok(())
@@ -325,7 +342,7 @@ pub struct Tool {
 
 struct McpServerConnection {
     _name: String,
-    client: RunningService<RoleClient, InitializeRequestParam>,
+    client: RunningService<RoleClient, McpClient>,
     server_task: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -338,10 +355,12 @@ impl From<RmcpTool> for Tool {
     }
 }
 
-impl Default for McpManager {
-    fn default() -> Self {
-        Self::new()
-    }
+fn create_namespaced_tool_name(server_name: &str, tool_name: &str) -> String {
+    format!("{server_name}{TOOL_NAMESPACE_DELIMITER}{tool_name}")
+}
+
+fn parse_namespaced_tool_name(namespaced_name: &str) -> Option<(&str, &str)> {
+    namespaced_name.split_once(TOOL_NAMESPACE_DELIMITER)
 }
 
 #[cfg(test)]
@@ -356,8 +375,11 @@ mod tests {
         let server = FileServerMcp::new(filesystem);
         let dyn_service = Box::new(server.into_dyn());
 
+        // Create elicitation channel for test
+        let (elicitation_tx, _elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+
         // Create client and connect in-memory server directly
-        let mut client = McpManager::new();
+        let mut client = McpManager::new(elicitation_tx);
         let mcp_config = McpServerConfig::InMemory {
             name: "test_server".to_string(),
             server: dyn_service,
@@ -394,5 +416,62 @@ mod tests {
             .and_then(|t| t.as_str())
             .expect("Result should contain text field");
         assert!(result_text.contains("Successfully wrote"));
+    }
+
+    #[test]
+    fn test_namespacing_functions() {
+        // Test creating namespaced tool name
+        let namespaced = create_namespaced_tool_name("server1", "tool1");
+        assert_eq!(namespaced, "server1__tool1");
+
+        // Test parsing namespaced tool name
+        let (server, tool) = parse_namespaced_tool_name(&namespaced).unwrap();
+        assert_eq!(server, "server1");
+        assert_eq!(tool, "tool1");
+
+        // Test invalid namespaced tool name
+        assert!(parse_namespaced_tool_name("invalid_name").is_none());
+
+        // Test that tool names start with server name for filtering
+        assert!(namespaced.starts_with("server1"));
+    }
+
+    #[tokio::test]
+    async fn test_elicitation_channel_creation() {
+        // Test that elicitation channels are properly wired up
+        let (elicitation_tx, mut elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+
+        let _manager = McpManager::new(elicitation_tx.clone());
+
+        // Simulate an elicitation request being sent
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let test_request = ElicitationRequest {
+            request: rmcp::model::CreateElicitationRequestParam {
+                message: "Test elicitation".to_string(),
+                requested_schema: serde_json::Map::new(),
+            },
+            response_sender: response_tx,
+        };
+
+        // Send the request through the channel
+        elicitation_tx.send(test_request).unwrap();
+
+        // Verify we can receive the request
+        let received_request = elicitation_rx.recv().await.unwrap();
+        assert_eq!(received_request.request.message, "Test elicitation");
+
+        // Simulate responding to the request
+        let response = rmcp::model::CreateElicitationResult {
+            action: rmcp::model::ElicitationAction::Accept,
+            content: Some(serde_json::json!({"test": "data"})),
+        };
+        received_request.response_sender.send(response).unwrap();
+
+        // Verify the response was received
+        let received_response = response_rx.await.unwrap();
+        assert_eq!(
+            received_response.action,
+            rmcp::model::ElicitationAction::Accept
+        );
     }
 }

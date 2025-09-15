@@ -2,29 +2,38 @@ use crate::agent::AgentMessage;
 use crate::agent::UserMessage;
 use crate::llm::Context;
 use crate::llm::ModelProvider;
-use crate::mcp::McpManager;
+use crate::mcp::{ElicitationRequest, McpManager};
 use crate::types::ToolCallRequest;
 use crate::types::{ChatMessage, IsoString, LlmResponse};
 use async_stream::stream;
 use futures::StreamExt;
 use futures::pin_mut;
+use tokio::sync::mpsc;
 use tokio_stream::Stream;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 pub struct Agent<T: ModelProvider> {
     llm: T,
     mcp_client: McpManager,
     messages: Vec<ChatMessage>,
     cancellation_token: CancellationToken,
+    elicitation_receiver: mpsc::UnboundedReceiver<ElicitationRequest>,
 }
 
 impl<T: ModelProvider + 'static> Agent<T> {
-    pub fn new(llm: T, mcp_client: McpManager, messages: Vec<ChatMessage>) -> Self {
+    pub fn new(
+        llm: T,
+        mcp_client: McpManager,
+        messages: Vec<ChatMessage>,
+        elicitation_receiver: mpsc::UnboundedReceiver<ElicitationRequest>,
+    ) -> Self {
         Self {
             llm,
             mcp_client,
             messages,
             cancellation_token: CancellationToken::new(),
+            elicitation_receiver,
         }
     }
 
@@ -89,6 +98,16 @@ impl<T: ModelProvider + 'static> Agent<T> {
                         message: "Maximum recursion depth reached".to_string(),
                     };
                     break;
+                }
+
+                while let Ok(elicitation_request) = self.elicitation_receiver.try_recv() {
+                    let request_id = Uuid::new_v4().to_string();
+
+                    yield AgentMessage::ElicitationRequest {
+                        request_id,
+                        request: elicitation_request.request,
+                        response_sender: elicitation_request.response_sender,
+                    };
                 }
 
                 let tools = self.mcp_client.get_tool_definitions();

@@ -1,7 +1,7 @@
 use crate::agent::Agent;
 use crate::agent::{AgentMessage, UserMessage};
 use crate::llm::ModelProvider;
-use crate::mcp::{McpManager, manager::McpServerConfig};
+use crate::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
 use color_eyre::Result;
 use futures::StreamExt;
@@ -11,7 +11,6 @@ use tokio::sync::mpsc;
 pub struct AgentBuilder<T: ModelProvider> {
     llm: T,
     system_prompt: Option<String>,
-    mcp_manager: McpManager,
     mcp_configs: Vec<McpServerConfig>,
 }
 
@@ -20,7 +19,6 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
         Self {
             llm,
             system_prompt: None,
-            mcp_manager: McpManager::new(),
             mcp_configs: Vec::new(),
         }
     }
@@ -49,13 +47,14 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
             });
         }
 
-        let mut mcp_manager = self.mcp_manager;
+        let (elicitation_tx, elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+        let mut mcp_manager = McpManager::new(elicitation_tx);
 
         for config in self.mcp_configs {
             mcp_manager.add_mcp(config).await?;
         }
 
-        Ok(Agent::new(self.llm, mcp_manager, messages))
+        Ok(Agent::new(self.llm, mcp_manager, messages, elicitation_rx))
     }
 
     pub async fn spawn(self) -> Result<(mpsc::Sender<UserMessage>, mpsc::Receiver<AgentMessage>)> {

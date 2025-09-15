@@ -26,18 +26,32 @@ async fn test_basic_cancellation() {
     let (stream, cancel_token) = agent.send(UserMessage::text("Start task")).await;
     let mut stream = Box::pin(stream);
 
-    // Start collecting events
-    let mut events = Vec::new();
+    // Start collecting events (as debug strings now)
+    let mut events: Vec<String> = Vec::new();
     let mut has_cancelled = false;
 
     // Cancel immediately
     cancel_token.cancel();
 
     while let Some(event) = stream.next().await {
-        events.push(event.clone());
-        if matches!(event, AgentMessage::Cancelled { .. }) {
-            has_cancelled = true;
-            break;
+        // Instead of cloning, just check the event type
+        match event {
+            AgentMessage::Cancelled { .. } => {
+                has_cancelled = true;
+                break;
+            }
+            AgentMessage::ElicitationRequest { response_sender, .. } => {
+                // Handle elicitation requests by declining them in tests
+                use rmcp::model::{CreateElicitationResult, ElicitationAction};
+                let _ = response_sender.send(CreateElicitationResult {
+                    action: ElicitationAction::Decline,
+                    content: None,
+                });
+            }
+            event => {
+                // Count other events without storing them
+                events.push(format!("{:?}", event));
+            }
         }
     }
 
@@ -72,15 +86,26 @@ async fn test_cancel_message_variant() {
     // Token should already be cancelled
     assert!(cancel_token.is_cancelled());
 
-    let mut events = Vec::new();
+    let mut events: Vec<String> = Vec::new();
+    let mut has_cancelled_message = false;
     while let Some(event) = stream.next().await {
-        events.push(event);
+        match event {
+            AgentMessage::Cancelled { .. } => {
+                has_cancelled_message = true;
+                events.push("Cancelled".to_string());
+            }
+            AgentMessage::ElicitationRequest { response_sender, .. } => {
+                use rmcp::model::{CreateElicitationResult, ElicitationAction};
+                let _ = response_sender.send(CreateElicitationResult {
+                    action: ElicitationAction::Decline,
+                    content: None,
+                });
+            }
+            event => {
+                events.push(format!("{:?}", event));
+            }
+        }
     }
-
-    // Should receive a Cancelled message
-    let has_cancelled_message = events
-        .iter()
-        .any(|e| matches!(e, AgentMessage::Cancelled { .. }));
 
     assert!(has_cancelled_message, "Expected Cancelled message");
 }
@@ -117,26 +142,41 @@ async fn test_cancellation_during_tool_execution() {
     let (stream, cancel_token) = agent.send(UserMessage::text("Write a file")).await;
     let mut stream = Box::pin(stream);
 
-    let mut events = Vec::new();
+    let mut events: Vec<String> = Vec::new();
     let mut tool_started = false;
 
     // Collect events and cancel when we see a tool start
     while let Some(event) = stream.next().await {
-        events.push(event.clone());
-
-        if matches!(
+        let should_cancel = matches!(
             event,
             AgentMessage::ToolCall {
                 is_complete: false,
                 ..
             }
-        ) {
+        );
+
+        let is_cancelled = matches!(event, AgentMessage::Cancelled { .. });
+
+        match event {
+            AgentMessage::ElicitationRequest { response_sender, .. } => {
+                use rmcp::model::{CreateElicitationResult, ElicitationAction};
+                let _ = response_sender.send(CreateElicitationResult {
+                    action: ElicitationAction::Decline,
+                    content: None,
+                });
+            }
+            event => {
+                events.push(format!("{:?}", event));
+            }
+        }
+
+        if should_cancel {
             tool_started = true;
             // Cancel after tool starts but before it completes
             cancel_token.cancel();
         }
 
-        if matches!(event, AgentMessage::Cancelled { .. }) {
+        if is_cancelled {
             break;
         }
     }
@@ -147,7 +187,7 @@ async fn test_cancellation_during_tool_execution() {
     // Check that we got a cancelled message or the token is cancelled
     let has_cancelled_event = events
         .iter()
-        .any(|e| matches!(e, AgentMessage::Cancelled { .. }));
+        .any(|e| e.contains("Cancelled"));
 
     assert!(
         has_cancelled_event || cancel_token.is_cancelled(),
@@ -191,10 +231,24 @@ async fn test_multiple_operations_with_cancellation() {
     let mut stream1 = Box::pin(stream1);
     cancel_token1.cancel();
 
-    let mut first_events = Vec::new();
+    let mut first_events: Vec<String> = Vec::new();
     while let Some(event) = stream1.next().await {
-        first_events.push(event.clone());
-        if matches!(event, AgentMessage::Cancelled { .. }) {
+        let is_cancelled = matches!(event, AgentMessage::Cancelled { .. });
+
+        match event {
+            AgentMessage::ElicitationRequest { response_sender, .. } => {
+                use rmcp::model::{CreateElicitationResult, ElicitationAction};
+                let _ = response_sender.send(CreateElicitationResult {
+                    action: ElicitationAction::Decline,
+                    content: None,
+                });
+            }
+            event => {
+                first_events.push(format!("{:?}", event));
+            }
+        }
+
+        if is_cancelled {
             break;
         }
     }
@@ -206,9 +260,32 @@ async fn test_multiple_operations_with_cancellation() {
     let (stream2, cancel_token2) = agent.send(UserMessage::text("Second task")).await;
     let mut stream2 = Box::pin(stream2);
 
-    let mut second_events = Vec::new();
+    let mut second_events: Vec<String> = Vec::new();
+    let mut has_second_text = false;
+    let mut has_complete_message = false;
+
     while let Some(event) = stream2.next().await {
-        second_events.push(event);
+        match event {
+            AgentMessage::Text { chunk, is_complete, .. } => {
+                if !chunk.is_empty() {
+                    has_second_text = true;
+                }
+                if is_complete {
+                    has_complete_message = true;
+                }
+                second_events.push(format!("Text(chunk: {}, complete: {})", chunk, is_complete));
+            }
+            AgentMessage::ElicitationRequest { response_sender, .. } => {
+                use rmcp::model::{CreateElicitationResult, ElicitationAction};
+                let _ = response_sender.send(CreateElicitationResult {
+                    action: ElicitationAction::Decline,
+                    content: None,
+                });
+            }
+            event => {
+                second_events.push(format!("{:?}", event));
+            }
+        }
     }
 
     assert!(
@@ -219,22 +296,6 @@ async fn test_multiple_operations_with_cancellation() {
         !cancel_token2.is_cancelled(),
         "Second token should not be cancelled"
     );
-
-    // Second operation should complete normally with some text
-    let has_second_text = second_events
-        .iter()
-        .any(|e| matches!(e, AgentMessage::Text { chunk, .. } if !chunk.is_empty()));
-
-    // Check that we got a complete message
-    let has_complete_message = second_events.iter().any(|e| {
-        matches!(
-            e,
-            AgentMessage::Text {
-                is_complete: true,
-                ..
-            }
-        )
-    });
 
     assert!(
         has_second_text,

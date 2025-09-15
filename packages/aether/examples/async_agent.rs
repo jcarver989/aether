@@ -45,6 +45,17 @@ pub async fn main() -> color_eyre::Result<()> {
             AgentMessage::Cancelled { message } => {
                 eprintln!("Cancelled: {}", message);
             }
+
+            AgentMessage::ElicitationRequest { request_id, request, response_sender } => {
+                println!("Elicitation request ({}): {}", request_id, request.message);
+                // For this example, just decline all elicitation requests
+                use rmcp::model::{CreateElicitationResult, ElicitationAction};
+                let result = CreateElicitationResult {
+                    action: ElicitationAction::Decline,
+                    content: None,
+                };
+                let _ = response_sender.send(result);
+            }
         }
     }
 

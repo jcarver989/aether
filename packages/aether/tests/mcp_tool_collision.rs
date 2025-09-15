@@ -24,9 +24,12 @@ async fn test_tool_name_collision_bug() {
 #[tokio::test]
 async fn test_tool_namespacing_desired_behavior() {
     use aether::mcp::manager::McpManager;
+    use aether::mcp::ElicitationRequest;
+    use tokio::sync::mpsc;
 
     // Test that demonstrates the fix: tools are now properly namespaced
-    let _client = McpManager::new();
+    let (elicitation_tx, _elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+    let _client = McpManager::new(elicitation_tx);
 
     // Since we can't directly call discover_tools without actual servers,
     // we test the namespacing logic by verifying the format

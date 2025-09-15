@@ -1,9 +1,10 @@
 mod utils;
 
 use crate::utils::*;
-use aether::mcp::{McpManager, manager::McpServerConfig};
+use aether::mcp::{McpManager, manager::McpServerConfig, ElicitationRequest};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
+use tokio::sync::mpsc;
 
 #[tokio::test]
 async fn test_mcp_client_creation() {
@@ -14,7 +15,8 @@ async fn test_mcp_client_creation() {
 
 #[tokio::test]
 async fn test_mcp_client_with_http_server() {
-    let mut client = McpManager::new();
+    let (elicitation_tx, _elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+    let mut client = McpManager::new(elicitation_tx);
     let server_name = "test_server".to_string();
     let url = TEST_SERVER_URL.to_string();
     let _headers: HashMap<String, String> = HashMap::new();
@@ -37,7 +39,8 @@ async fn test_mcp_client_with_http_server() {
 
 #[tokio::test]
 async fn test_mcp_client_with_headers() {
-    let mut client = McpManager::new();
+    let (elicitation_tx, _elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+    let mut client = McpManager::new(elicitation_tx);
     let server_name = "test_server_with_headers".to_string();
     let url = "https://api.example.com/mcp".to_string();
 

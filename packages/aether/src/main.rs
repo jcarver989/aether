@@ -81,6 +81,18 @@ pub async fn main() {
             Cancelled { message } => {
                 eprintln!("Cancelled: {}", message);
             }
+
+            ElicitationRequest { request_id, request, response_sender } => {
+                println!("Elicitation request ({}): {}", request_id, request.message);
+                // For now, just decline the request. In a real implementation,
+                // you would prompt the user for input and use the response_sender
+                use rmcp::model::{CreateElicitationResult, ElicitationAction};
+                let result = CreateElicitationResult {
+                    action: ElicitationAction::Decline,
+                    content: None,
+                };
+                let _ = response_sender.send(result); // Ignore send errors
+            }
         }
     }
 }
