@@ -1,6 +1,3 @@
 [submodule "vendored/gitui"]
 	path = vendored/gitui
 	url = git@github.com:gitui-org/gitui.git
-[submodule "vendored/gemini-cli"]
-	path = vendored/gemini-cli
-	url = https://github.com/google-gemini/gemini-cli
