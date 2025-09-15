@@ -164,7 +164,7 @@ async fn build_agent(cli: &Cli) -> Result<(Agent<DefaultModelProvider>, AgentsSt
     };
 
     let agent = agent(llm)
-        .system(&combined_system)
+        .system_prompt(&combined_system)
         .coding_tools()
         .build()
         .await?;

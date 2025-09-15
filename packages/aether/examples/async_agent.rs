@@ -9,7 +9,7 @@ pub async fn main() -> color_eyre::Result<()> {
 
     let provider = DefaultModelProvider::llama_cpp()?;
     let (tx, mut rx) = agent(provider)
-        .system("you are a helpful agent")
+        .system_prompt("you are a helpful agent")
         .spawn()
         .await?;
 

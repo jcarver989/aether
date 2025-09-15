@@ -43,7 +43,7 @@ pub async fn main() {
 
     let provider = DefaultModelProvider::new(&cli.url, &cli.model, cli.api_key).unwrap();
     let mut agent = agent(provider)
-        .system(&cli.system.unwrap_or_default())
+        .system_prompt(&cli.system.unwrap_or_default())
         .build()
         .await
         .unwrap();

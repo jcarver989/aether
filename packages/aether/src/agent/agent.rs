@@ -1,93 +1,15 @@
+use crate::agent::AgentMessage;
+use crate::agent::UserMessage;
 use crate::llm::Context;
 use crate::llm::ModelProvider;
-use crate::mcp::{manager::McpServerConfig, McpManager};
+use crate::mcp::McpManager;
 use crate::types::ToolCallRequest;
 use crate::types::{ChatMessage, IsoString, LlmResponse};
 use async_stream::stream;
-use color_eyre::Result;
 use futures::StreamExt;
 use futures::pin_mut;
-use tokio::sync::mpsc;
 use tokio_stream::Stream;
 use tokio_util::sync::CancellationToken;
-
-pub fn agent<T: ModelProvider + 'static>(llm: T) -> AgentBuilder<T> {
-    AgentBuilder {
-        llm,
-        system_prompt: None,
-        mcp_manager: McpManager::new(),
-        mcp_configs: Vec::new(),
-    }
-}
-
-pub struct AgentBuilder<T: ModelProvider> {
-    llm: T,
-    system_prompt: Option<String>,
-    mcp_manager: McpManager,
-    mcp_configs: Vec<McpServerConfig>,
-}
-
-impl<T: ModelProvider + 'static> AgentBuilder<T> {
-    pub fn system(mut self, prompt: &str) -> Self {
-        if prompt.is_empty() {
-            return self;
-        }
-
-        self.system_prompt = Some(prompt.to_string());
-        self
-    }
-
-    pub fn mcp(mut self, config: McpServerConfig) -> Self {
-        self.mcp_configs.push(config);
-        self
-    }
-
-    pub async fn build(self) -> Result<Agent<T>> {
-        let mut messages = Vec::new();
-
-        if let Some(system_prompt) = &self.system_prompt {
-            messages.push(ChatMessage::System {
-                content: system_prompt.clone(),
-                timestamp: IsoString::now(),
-            });
-        }
-
-        let mut mcp_manager = self.mcp_manager;
-
-        for config in self.mcp_configs {
-            mcp_manager.add_mcp(config).await?;
-        }
-
-        Ok(Agent {
-            llm: self.llm,
-            mcp_client: mcp_manager,
-            messages,
-            cancellation_token: CancellationToken::new(),
-        })
-    }
-
-    pub async fn spawn(self) -> Result<(mpsc::Sender<UserMessage>, mpsc::Receiver<AgentMessage>)> {
-        let (user_tx, mut user_rx) = mpsc::channel::<UserMessage>(100);
-        let (agent_tx, agent_rx) = mpsc::channel::<AgentMessage>(100);
-
-        let mut agent = self.build().await?;
-
-        tokio::spawn(async move {
-            while let Some(message) = user_rx.recv().await {
-                let (result_stream, _cancel_token) = agent.send(message).await;
-                pin_mut!(result_stream);
-
-                while let Some(event) = result_stream.next().await {
-                    if agent_tx.send(event).await.is_err() {
-                        break;
-                    }
-                }
-            }
-        });
-
-        Ok((user_tx, agent_rx))
-    }
-}
 
 pub struct Agent<T: ModelProvider> {
     llm: T,
@@ -97,6 +19,15 @@ pub struct Agent<T: ModelProvider> {
 }
 
 impl<T: ModelProvider + 'static> Agent<T> {
+    pub fn new(llm: T, mcp_client: McpManager, messages: Vec<ChatMessage>) -> Self {
+        Self {
+            llm,
+            mcp_client,
+            messages,
+            cancellation_token: CancellationToken::new(),
+        }
+    }
+
     pub async fn send(
         &mut self,
         message: UserMessage,
@@ -183,11 +114,12 @@ impl<T: ModelProvider + 'static> Agent<T> {
                         return;
                     }
 
+                    use LlmResponse::*;
                     match event {
-                        Ok(LlmResponse::Start { message_id }) => {
+                        Ok(Start { message_id }) => {
                             current_message_id = Some(message_id);
                         }
-                        Ok(LlmResponse::Text { chunk }) => {
+                        Ok(Text { chunk }) => {
                             accumulated_content.push_str(&chunk);
 
                             if let Some(message_id) = &current_message_id {
@@ -198,7 +130,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 };
                             }
                         }
-                        Ok(LlmResponse::ToolRequestStart { id, name }) => {
+                        Ok(ToolRequestStart { id, name }) => {
                             yield AgentMessage::ToolCall {
                                 tool_call_id: id,
                                 name,
@@ -207,7 +139,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 is_complete: false,
                             };
                         }
-                        Ok(LlmResponse::ToolRequestArg { id, chunk }) => {
+                        Ok(ToolRequestArg { id, chunk }) => {
                             yield AgentMessage::ToolCall {
                                 tool_call_id: id,
                                 name: String::new(), // Name will be available from the start event
@@ -216,7 +148,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 is_complete: false,
                             };
                         }
-                        Ok(LlmResponse::ToolRequestComplete { tool_call }) => {
+                        Ok(ToolRequestComplete { tool_call }) => {
                             let result_str = match serde_json::from_str(&tool_call.arguments) {
                                 Ok(args) => {
                                     match self.mcp_client.execute_tool(&tool_call.name, args).await {
@@ -238,7 +170,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                             completed_tool_calls.push((tool_call, result_str));
                             has_tool_calls = true;
                         }
-                        Ok(LlmResponse::Done) => {
+                        Ok(Done) => {
                             if let Some(message_id) = &current_message_id {
                                 yield AgentMessage::Text {
                                     message_id: message_id.clone(),
@@ -273,7 +205,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 return;
                             }
                         }
-                        Ok(LlmResponse::Error { message }) => {
+                        Ok(Error { message }) => {
                             yield AgentMessage::Error { message };
                             return;
                         }
@@ -289,52 +221,5 @@ impl<T: ModelProvider + 'static> Agent<T> {
         };
 
         (stream, cancellation_token)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum AgentMessage {
-    Text {
-        message_id: String,
-        chunk: String,
-        is_complete: bool,
-    },
-
-    ToolCall {
-        tool_call_id: String,
-        name: String,
-        arguments: Option<String>,
-        result: Option<String>,
-        is_complete: bool,
-    },
-
-    Error {
-        message: String,
-    },
-
-    Cancelled {
-        message: String,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub enum UserMessage {
-    Text { content: String },
-    Cancel,
-}
-
-impl UserMessage {
-    pub fn text(content: &str) -> Self {
-        UserMessage::Text {
-            content: content.to_string(),
-        }
-    }
-}
-
-impl From<&str> for UserMessage {
-    fn from(value: &str) -> Self {
-        UserMessage::Text {
-            content: value.to_string(),
-        }
     }
 }

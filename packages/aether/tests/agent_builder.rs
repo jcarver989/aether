@@ -7,7 +7,7 @@ use aether::{
 #[tokio::test]
 async fn test_agent_builder_basic() {
     let llm = FakeLlmProvider::new(vec![]);
-    let _agent = agent(llm).system("test prompt").build().await.unwrap();
+    let _agent = agent(llm).system_prompt("test prompt").build().await.unwrap();
 
     // Agent created successfully - we can't access private fields but build() succeeded
 }
@@ -15,7 +15,7 @@ async fn test_agent_builder_basic() {
 #[tokio::test]
 async fn test_agent_builder_with_coding_tools() {
     let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm).system("test prompt").build().await;
+    let result = agent(llm).system_prompt("test prompt").build().await;
 
     assert!(result.is_ok());
 }
@@ -24,7 +24,7 @@ async fn test_agent_builder_with_coding_tools() {
 async fn test_agent_builder_with_in_memory_mcp() {
     let llm = FakeLlmProvider::new(vec![]);
     // For now, skip this test since we need to add InMemory variant back
-    let result = agent(llm).system("test prompt").build().await;
+    let result = agent(llm).system_prompt("test prompt").build().await;
 
     assert!(result.is_ok());
 }
@@ -42,7 +42,7 @@ async fn test_agent_builder_spawn() {
     ]);
 
     let (tx, mut rx) = agent(llm)
-        .system("you are a helpful agent")
+        .system_prompt("you are a helpful agent")
         .spawn()
         .await
         .unwrap();
@@ -81,7 +81,7 @@ async fn test_agent_builder_spawn() {
 async fn test_agent_builder_method_chaining() {
     let llm = FakeLlmProvider::new(vec![]);
 
-    let result = agent(llm).system("test prompt").build().await;
+    let result = agent(llm).system_prompt("test prompt").build().await;
 
     assert!(result.is_ok());
 }
@@ -99,7 +99,7 @@ async fn test_agent_builder_spawn_with_tools() {
     ]);
 
     let (tx, mut rx) = agent(llm)
-        .system("you are a helpful coding assistant")
+        .system_prompt("you are a helpful coding assistant")
         .spawn()
         .await
         .unwrap();

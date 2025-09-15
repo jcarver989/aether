@@ -72,7 +72,7 @@ async fn test_agent_method_chaining() {
     let llm = FakeLlmProvider::new(vec![]);
 
     // Test method chaining works
-    let result = agent(llm).system("test system prompt").build().await;
+    let result = agent(llm).system_prompt("test system prompt").build().await;
 
     assert!(result.is_ok());
 }

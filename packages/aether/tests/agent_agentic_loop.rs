@@ -34,7 +34,7 @@ async fn test_simple_tool_execution() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system("You are a helpful assistant.")
+        .system_prompt("You are a helpful assistant.")
         .build()
         .await
         .unwrap();
@@ -136,7 +136,7 @@ async fn test_recursive_tool_calls() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system("You are a helpful assistant.")
+        .system_prompt("You are a helpful assistant.")
         .build()
         .await
         .unwrap();
@@ -214,7 +214,7 @@ async fn test_max_recursion_depth() {
 
     let fake_llm = FakeLlmProvider::new(responses);
     let mut agent = agent(fake_llm)
-        .system("You are a helpful assistant.")
+        .system_prompt("You are a helpful assistant.")
         .build()
         .await
         .unwrap();
@@ -257,7 +257,7 @@ async fn test_tool_execution_error_handling() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system("You are a helpful assistant.")
+        .system_prompt("You are a helpful assistant.")
         .build()
         .await
         .unwrap();

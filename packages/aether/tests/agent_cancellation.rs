@@ -18,7 +18,7 @@ async fn test_basic_cancellation() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system("You are a helpful assistant.")
+        .system_prompt("You are a helpful assistant.")
         .build()
         .await
         .unwrap();
@@ -60,7 +60,7 @@ async fn test_cancel_message_variant() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system("You are a helpful assistant.")
+        .system_prompt("You are a helpful assistant.")
         .build()
         .await
         .unwrap();
@@ -109,7 +109,7 @@ async fn test_cancellation_during_tool_execution() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system("You are a helpful assistant.")
+        .system_prompt("You are a helpful assistant.")
         .build()
         .await
         .unwrap();
@@ -181,7 +181,7 @@ async fn test_multiple_operations_with_cancellation() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system("You are a helpful assistant.")
+        .system_prompt("You are a helpful assistant.")
         .build()
         .await
         .unwrap();
@@ -259,7 +259,7 @@ async fn test_cancellation_token_isolation() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system("You are a helpful assistant.")
+        .system_prompt("You are a helpful assistant.")
         .build()
         .await
         .unwrap();
