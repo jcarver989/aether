@@ -93,6 +93,10 @@ pub fn show_wisp_logo() -> Result<(), std::io::Error> {
             " ╚══╝╚══╝ ╚═╝╚══════╝╚═╝     ",
         ];
 
+    print_styled_line!(stdout, "");
+    print_styled!(stdout, logo_content);
+    print_styled_line!(stdout, "");
+
     for line in wisp_lines {
         print_styled!(stdout, padding.clone());
         let chars: Vec<char> = line.chars().collect();
@@ -103,20 +107,16 @@ pub fn show_wisp_logo() -> Result<(), std::io::Error> {
         print_styled_line!(stdout, "");
     }
     print_styled_line!(stdout, "");
-    let tagline_padding = " ".repeat(20); // Center "Ethereal AI Assistant" (24 chars): (128-24)/2 = 52, but adjust for visual balance
+    let tagline_padding = " ".repeat(15); // Center "Ethereal AI Assistant" (24 chars): (128-24)/2 = 52, but adjust for visual balance
     print_styled!(
         stdout,
         format!(
             "{}{}",
             tagline_padding,
-            "Ethereal AI Assistant".dim().italic()
+            "AI agent, conjured from aether".dim().italic()
         )
     );
     print_styled!(stdout, "\n\n");
-
-    print_styled_line!(stdout, "");
-    print_styled!(stdout, logo_content);
-    print_styled_line!(stdout, "");
 
     stdout.flush()?;
     Ok(())
