@@ -4,6 +4,7 @@ use aether::{
 };
 use clap::Parser;
 use futures::pin_mut;
+use inquire::Confirm;
 use tokio_stream::StreamExt;
 
 #[derive(Parser)]
@@ -84,13 +85,29 @@ pub async fn main() {
 
             ElicitationRequest { request_id, request, response_sender } => {
                 println!("Elicitation request ({}): {}", request_id, request.message);
-                // For now, just decline the request. In a real implementation,
-                // you would prompt the user for input and use the response_sender
+
                 use rmcp::model::{CreateElicitationResult, ElicitationAction};
-                let result = CreateElicitationResult {
-                    action: ElicitationAction::Decline,
-                    content: None,
+
+                let confirm_result = Confirm::new(&request.message)
+                    .with_default(false)
+                    .with_help_message("The AI is requesting permission to proceed")
+                    .prompt();
+
+                let result = match confirm_result {
+                    Ok(true) => CreateElicitationResult {
+                        action: ElicitationAction::Approve,
+                        content: Some("User approved the request".to_string()),
+                    },
+                    Ok(false) => CreateElicitationResult {
+                        action: ElicitationAction::Decline,
+                        content: Some("User declined the request".to_string()),
+                    },
+                    Err(_) => CreateElicitationResult {
+                        action: ElicitationAction::Decline,
+                        content: Some("User cancelled the prompt".to_string()),
+                    },
                 };
+
                 let _ = response_sender.send(result); // Ignore send errors
             }
         }

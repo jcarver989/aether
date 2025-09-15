@@ -8,6 +8,7 @@ use color_eyre::Report;
 use crossterm::{queue, style::Stylize};
 use futures::pin_mut;
 use indicatif::ProgressBar;
+use inquire::Confirm;
 use mcp_lexicon::AgentBuilderExt;
 use std::collections::HashMap;
 use std::io::Write;
@@ -126,6 +127,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             Cancelled { message } => {
                 ui::show_cancelled(&message)?;
+            }
+
+            ElicitationRequest {
+                request,
+                response_sender,
+                ..
+            } => {
+                println!(
+                    "\n{}",
+                    "🤖 AI Request for Permission"
+                        .with(colors::primary())
+                        .bold()
+                );
+                println!("{}", request.message.with(colors::text_primary()));
+
+                use aether::{CreateElicitationResult, ElicitationAction};
+
+                let confirm_result = Confirm::new("Do you want to allow this action?")
+                    .with_default(false)
+                    .with_help_message("The AI is requesting permission to proceed")
+                    .prompt();
+
+                let result = match confirm_result {
+                    Ok(true) => CreateElicitationResult {
+                        action: ElicitationAction::Accept,
+                        content: None,
+                    },
+                    Ok(false) => CreateElicitationResult {
+                        action: ElicitationAction::Decline,
+                        content: None,
+                    },
+                    Err(_) => CreateElicitationResult {
+                        action: ElicitationAction::Cancel,
+                        content: None,
+                    },
+                };
+
+                let _ = response_sender.send(result);
+                println!();
             }
         }
     }
