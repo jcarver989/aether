@@ -38,4 +38,4 @@ cargo clippy
 1. Always write tests to prove your code works
 2. If fixing a bug, write a failing test  FIRST, BEFORE making changes. Then make the test(s) pass.
 3. ALWAYS run tests before declaring your work done -- you may have broken something 
-
+- When creating private helper methods those go at the end of the file, or at the bottom of a trait/impl def so the most important bits (public API) appear first to the reader
