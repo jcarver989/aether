@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod integration_tests {
     use super::super::provider::AnthropicProvider;
-    use super::super::types::{AnthropicSystemContent, Role};
+    use super::super::types::{Role, SystemContent};
     use crate::llm::provider::Context;
     use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest, ToolDefinition};
     use futures::StreamExt;
@@ -64,7 +64,7 @@ mod integration_tests {
 
         if let Some(system) = &request.system {
             match system {
-                AnthropicSystemContent::Text(text) => {
+                SystemContent::Text(text) => {
                     assert_eq!(text, "You are a helpful assistant.");
                 }
                 _ => panic!("Expected text system content"),

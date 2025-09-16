@@ -1,6 +1,6 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
-use super::types::AnthropicRequest;
+use super::types::Request;
 use crate::llm::provider::{Context, LlmResponseStream, ModelProvider};
 use async_stream;
 use color_eyre::Result;
@@ -19,7 +19,7 @@ pub struct AnthropicProvider {
     model: String,
     base_url: Option<String>,
     temperature: Option<f32>,
-    max_tokens: Option<u32>,
+    max_tokens: u32,
     enable_prompt_caching: bool,
 }
 
@@ -46,7 +46,7 @@ impl AnthropicProvider {
             model: "claude-3-5-sonnet-20241022".to_string(),
             base_url: Some("https://api.anthropic.com".to_string()),
             temperature: None,
-            max_tokens: Some(16_384),
+            max_tokens: 16_384,
             enable_prompt_caching: true,
         })
     }
@@ -74,7 +74,7 @@ impl AnthropicProvider {
     }
 
     pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
-        self.max_tokens = Some(max_tokens);
+        self.max_tokens = max_tokens;
         self
     }
 
@@ -83,16 +83,16 @@ impl AnthropicProvider {
         self
     }
 
-    pub(crate) fn build_request(&self, context: Context) -> Result<AnthropicRequest> {
-        let (system_prompt, messages) = map_messages(context.messages, self.enable_prompt_caching)?;
+    pub(crate) fn build_request(&self, context: Context) -> Result<Request> {
+        let (system_prompt, messages) = map_messages(context.messages)?;
         let tools = if context.tools.is_empty() {
             None
         } else {
             Some(map_tools(context.tools)?)
         };
 
-        let mut request = AnthropicRequest::new(self.model.clone(), messages)
-            .with_max_tokens(self.max_tokens.unwrap_or(4096))
+        let mut request = Request::new(self.model.clone(), messages)
+            .with_max_tokens(self.max_tokens)
             .with_stream(true);
 
         if let Some(temp) = self.temperature {
@@ -117,7 +117,7 @@ impl AnthropicProvider {
 
     async fn send_request(
         &self,
-        request: AnthropicRequest,
+        request: Request,
     ) -> Result<impl futures::Stream<Item = Result<String>>> {
         let base_url = self
             .base_url
@@ -199,7 +199,7 @@ impl ModelProvider for AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm::anthropic::types::{AnthropicSystemContent, SystemContentBlock};
+    use crate::llm::anthropic::types::{SystemContent, SystemContentBlock};
     use crate::types::{ChatMessage, IsoString, ToolDefinition};
 
     fn create_test_provider() -> AnthropicProvider {
@@ -264,7 +264,7 @@ mod tests {
         let request = provider.build_request(context).unwrap();
         if let Some(system) = &request.system {
             match system {
-                AnthropicSystemContent::Text(text) => {
+                SystemContent::Text(text) => {
                     assert_eq!(text, "You are helpful");
                 }
                 _ => panic!("Expected text system content"),
@@ -306,7 +306,7 @@ mod tests {
         // With caching enabled, system prompt should be cached
         if let Some(system) = &request.system {
             match system {
-                AnthropicSystemContent::Blocks(blocks) => {
+                SystemContent::Blocks(blocks) => {
                     assert_eq!(blocks.len(), 1);
                     let SystemContentBlock::Text {
                         text,
@@ -352,7 +352,7 @@ mod tests {
         // With caching disabled, system prompt should be simple text
         if let Some(system) = &request.system {
             match system {
-                AnthropicSystemContent::Text(text) => {
+                SystemContent::Text(text) => {
                     assert_eq!(text, "Hello");
                 }
                 _ => panic!("Expected text system content when caching disabled"),

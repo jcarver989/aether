@@ -13,24 +13,23 @@ pub enum CacheType {
     Ephemeral,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct AnthropicRequest {
+pub struct Request {
     pub model: String,
-    pub messages: Vec<AnthropicMessage>,
+    pub messages: Vec<Message>,
     pub max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub system: Option<AnthropicSystemContent>,
+    pub system: Option<SystemContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<AnthropicTool>>,
+    pub tools: Option<Vec<Tool>>,
     pub stream: bool,
 }
 
-impl AnthropicRequest {
-    pub fn new(model: String, messages: Vec<AnthropicMessage>) -> Self {
+impl Request {
+    pub fn new(model: String, messages: Vec<Message>) -> Self {
         Self {
             model,
             messages,
@@ -53,21 +52,19 @@ impl AnthropicRequest {
     }
 
     pub fn with_system(mut self, system: String) -> Self {
-        self.system = Some(AnthropicSystemContent::Text(system));
+        self.system = Some(SystemContent::Text(system));
         self
     }
 
     pub fn with_system_cached(mut self, system: String) -> Self {
-        self.system = Some(AnthropicSystemContent::Blocks(vec![
-            SystemContentBlock::Text {
-                text: system,
-                cache_control: Some(CacheControl::ephemeral()),
-            }
-        ]));
+        self.system = Some(SystemContent::Blocks(vec![SystemContentBlock::Text {
+            text: system,
+            cache_control: Some(CacheControl::ephemeral()),
+        }]));
         self
     }
 
-    pub fn with_tools(mut self, tools: Vec<AnthropicTool>) -> Self {
+    pub fn with_tools(mut self, tools: Vec<Tool>) -> Self {
         self.tools = Some(tools);
         self
     }
@@ -80,23 +77,23 @@ impl AnthropicRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct AnthropicMessage {
+pub struct Message {
     pub role: Role,
-    pub content: AnthropicContent,
+    pub content: Content,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_control: Option<CacheControl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum AnthropicContent {
+pub enum Content {
     Text(String),
     Blocks(Vec<ContentBlock>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum AnthropicSystemContent {
+pub enum SystemContent {
     Text(String),
     Blocks(Vec<SystemContentBlock>),
 }
@@ -152,7 +149,7 @@ impl CacheControl {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct AnthropicTool {
+pub struct Tool {
     pub name: String,
     pub description: String,
     pub input_schema: serde_json::Value,
@@ -162,7 +159,7 @@ pub struct AnthropicTool {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum AnthropicStreamEvent {
+pub enum StreamEvent {
     MessageStart {
         #[serde(flatten)]
         data: MessageStart,
@@ -198,12 +195,12 @@ pub enum AnthropicStreamEvent {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MessageStart {
-    pub message: AnthropicResponseMessage,
+    pub message: ResponseMessage,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct AnthropicResponseMessage {
+pub struct ResponseMessage {
     pub id: String,
     #[serde(rename = "type")]
     pub message_type: String,
@@ -212,12 +209,12 @@ pub struct AnthropicResponseMessage {
     pub model: String,
     pub stop_reason: Option<String>,
     pub stop_sequence: Option<String>,
-    pub usage: AnthropicUsage,
+    pub usage: Usage,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct AnthropicUsage {
+pub struct Usage {
     pub input_tokens: u32,
     pub output_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -275,7 +272,7 @@ pub struct MessageDeltaData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_sequence: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<AnthropicUsage>,
+    pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -284,14 +281,13 @@ pub struct MessageStop {}
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ErrorEvent {
-    pub error: AnthropicError,
+    pub error: Error,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct AnthropicError {
+pub struct Error {
     #[serde(rename = "type")]
     pub error_type: String,
     pub message: String,
 }
-

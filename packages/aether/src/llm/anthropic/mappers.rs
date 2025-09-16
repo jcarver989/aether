@@ -1,11 +1,8 @@
-use super::types::{AnthropicContent, AnthropicMessage, AnthropicTool, ContentBlock, Role};
+use super::types::{Content, ContentBlock, Message, Role, Tool};
 use crate::types::{ChatMessage, ToolDefinition};
 use color_eyre::Result;
 
-pub fn map_messages(
-    messages: Vec<ChatMessage>,
-    _enable_caching: bool,
-) -> Result<(Option<String>, Vec<AnthropicMessage>)> {
+pub fn map_messages(messages: Vec<ChatMessage>) -> Result<(Option<String>, Vec<Message>)> {
     let mut system_prompt = None;
     let mut anthropic_messages = Vec::new();
 
@@ -15,9 +12,9 @@ pub fn map_messages(
                 system_prompt = Some(content);
             }
             ChatMessage::User { content, .. } => {
-                anthropic_messages.push(AnthropicMessage {
+                anthropic_messages.push(Message {
                     role: Role::User,
-                    content: AnthropicContent::Text(content),
+                    content: Content::Text(content),
                     cache_control: None,
                 });
             }
@@ -27,9 +24,9 @@ pub fn map_messages(
                 ..
             } => {
                 if tool_calls.is_empty() {
-                    anthropic_messages.push(AnthropicMessage {
+                    anthropic_messages.push(Message {
                         role: Role::Assistant,
-                        content: AnthropicContent::Text(content),
+                        content: Content::Text(content),
                         cache_control: None,
                     });
                 } else {
@@ -53,18 +50,18 @@ pub fn map_messages(
                         });
                     }
 
-                    anthropic_messages.push(AnthropicMessage {
+                    anthropic_messages.push(Message {
                         role: Role::Assistant,
-                        content: AnthropicContent::Blocks(blocks),
+                        content: Content::Blocks(blocks),
                         cache_control: None,
                     });
                 }
             }
             ChatMessage::AssistantStreaming { content, .. } => {
                 if !content.is_empty() {
-                    anthropic_messages.push(AnthropicMessage {
+                    anthropic_messages.push(Message {
                         role: Role::Assistant,
-                        content: AnthropicContent::Text(content),
+                        content: Content::Text(content),
                         cache_control: None,
                     });
                 }
@@ -74,9 +71,9 @@ pub fn map_messages(
                 content,
                 ..
             } => {
-                anthropic_messages.push(AnthropicMessage {
+                anthropic_messages.push(Message {
                     role: Role::User,
-                    content: AnthropicContent::Blocks(vec![ContentBlock::ToolResult {
+                    content: Content::Blocks(vec![ContentBlock::ToolResult {
                         tool_use_id: tool_call_id,
                         content,
                         is_error: None,
@@ -85,9 +82,9 @@ pub fn map_messages(
                 });
             }
             ChatMessage::Error { message, .. } => {
-                anthropic_messages.push(AnthropicMessage {
+                anthropic_messages.push(Message {
                     role: Role::User,
-                    content: AnthropicContent::Text(format!("Error: {}", message)),
+                    content: Content::Text(format!("Error: {}", message)),
                     cache_control: None,
                 });
             }
@@ -97,7 +94,7 @@ pub fn map_messages(
     Ok((system_prompt, anthropic_messages))
 }
 
-pub fn map_tools(tools: Vec<ToolDefinition>) -> Result<Vec<AnthropicTool>> {
+pub fn map_tools(tools: Vec<ToolDefinition>) -> Result<Vec<Tool>> {
     let mut anthropic_tools = Vec::new();
 
     for tool in tools.into_iter() {
@@ -106,7 +103,7 @@ pub fn map_tools(tools: Vec<ToolDefinition>) -> Result<Vec<AnthropicTool>> {
                 color_eyre::eyre::eyre!("Failed to parse tool parameters for {}: {}", tool.name, e)
             })?;
 
-        anthropic_tools.push(AnthropicTool {
+        anthropic_tools.push(Tool {
             name: tool.name,
             description: tool.description,
             input_schema,
@@ -129,11 +126,11 @@ mod tests {
             timestamp: IsoString::now(),
         }];
 
-        let (system, mapped) = map_messages(messages, false).unwrap();
+        let (system, mapped) = map_messages(messages).unwrap();
         assert_eq!(system, None);
         assert_eq!(mapped.len(), 1);
         assert_eq!(mapped[0].role, Role::User);
-        assert!(matches!(mapped[0].content, AnthropicContent::Text(_)));
+        assert!(matches!(mapped[0].content, Content::Text(_)));
     }
 
     #[test]
@@ -149,7 +146,7 @@ mod tests {
             },
         ];
 
-        let (system, mapped) = map_messages(messages, false).unwrap();
+        let (system, mapped) = map_messages(messages).unwrap();
         assert_eq!(system, Some("You are a helpful assistant".to_string()));
         assert_eq!(mapped.len(), 1);
     }
@@ -166,11 +163,11 @@ mod tests {
             }],
         }];
 
-        let (_system, mapped) = map_messages(messages, false).unwrap();
+        let (_system, mapped) = map_messages(messages).unwrap();
         assert_eq!(mapped.len(), 1);
         assert_eq!(mapped[0].role, Role::Assistant);
 
-        if let AnthropicContent::Blocks(blocks) = &mapped[0].content {
+        if let Content::Blocks(blocks) = &mapped[0].content {
             assert_eq!(blocks.len(), 2);
             assert!(matches!(blocks[0], ContentBlock::Text { .. }));
             assert!(matches!(blocks[1], ContentBlock::ToolUse { .. }));
