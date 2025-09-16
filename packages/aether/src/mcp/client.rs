@@ -7,7 +7,7 @@ use rmcp::{
     },
     service::RequestContext,
 };
-use std::{f32::consts::E, future::Future};
+use std::future::Future;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::mcp::ElicitationRequest;

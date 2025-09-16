@@ -1,7 +1,6 @@
 use crate::types::{ChatMessage, LlmResponse, ToolDefinition};
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::pin::Pin;
 use tokio_stream::Stream;
 
@@ -9,7 +8,7 @@ use tokio_stream::Stream;
 // alloyed models -- i.e. it allows us to have Vec<Box<dyn ModelProvider>> in AlloyedModelProvider
 pub type LlmResponseStream = Pin<Box<dyn Stream<Item = Result<LlmResponse>> + Send>>;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolDefinition>,

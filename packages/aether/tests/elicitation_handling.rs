@@ -44,8 +44,8 @@ async fn test_elicitation_request_handling() {
 
                 // Simulate approving the request (like our CLI implementation would)
                 let result = CreateElicitationResult {
-                    action: ElicitationAction::Approve,
-                    content: Some("Test approved the request".to_string()),
+                    action: ElicitationAction::Accept,
+                    content: None,
                 };
 
                 let _ = response_sender.send(result);
@@ -96,7 +96,7 @@ async fn test_elicitation_request_decline() {
                 // Simulate declining the request
                 let result = CreateElicitationResult {
                     action: ElicitationAction::Decline,
-                    content: Some("Test declined the request".to_string()),
+                    content: None,
                 };
 
                 let _ = response_sender.send(result);

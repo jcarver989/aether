@@ -3,7 +3,8 @@ use rmcp::{
     RoleClient, RoleServer, ServiceExt,
     model::{
         CallToolRequestParam, ClientCapabilities, ClientInfo, CreateElicitationRequestParam,
-        CreateElicitationResult, ElicitationAction, Implementation, Tool as RmcpTool,
+        CreateElicitationResult, ElicitationAction, ElicitationCapability, Implementation,
+        Tool as RmcpTool,
     },
     serve_client,
     service::{DynService, RunningService},
@@ -67,7 +68,12 @@ impl McpManager {
             tools: HashMap::new(),
             client_info: ClientInfo {
                 protocol_version: Default::default(),
-                capabilities: ClientCapabilities::default(),
+                capabilities: ClientCapabilities {
+                    elicitation: Some(ElicitationCapability {
+                        schema_validation: Some(true),
+                    }),
+                    ..ClientCapabilities::default()
+                },
                 client_info: Implementation {
                     name: "aether".to_string(),
                     version: "0.1.0".to_string(),

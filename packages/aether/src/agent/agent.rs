@@ -168,12 +168,38 @@ impl<T: ModelProvider + 'static> Agent<T> {
                             };
                         }
                         Ok(ToolRequestComplete { tool_call }) => {
+                            // Execute tool with concurrent elicitation handling
                             let result_str = match serde_json::from_str(&tool_call.arguments) {
                                 Ok(args) => {
-                                    match self.mcp_client.execute_tool(&tool_call.name, args).await {
-                                        Ok(result) => result.to_string(),
-                                        Err(e) => format!("Tool execution failed: {}", e),
+                                    // Execute tool while monitoring for elicitation requests
+                                    let execute_future = self.mcp_client.execute_tool(&tool_call.name, args);
+                                    futures::pin_mut!(execute_future);
+
+                                    let mut tool_result = None;
+                                    while tool_result.is_none() {
+                                        tokio::select! {
+                                            // Check for tool completion
+                                            result = &mut execute_future => {
+                                                match result {
+                                                    Ok(result) => tool_result = Some(result.to_string()),
+                                                    Err(e) => tool_result = Some(format!("Tool execution failed: {}", e)),
+                                                }
+                                            }
+                                            // Check for elicitation requests
+                                            elicitation_request = self.elicitation_receiver.recv() => {
+                                                if let Some(elicitation_request) = elicitation_request {
+                                                    let request_id = Uuid::new_v4().to_string();
+                                                    yield AgentMessage::ElicitationRequest {
+                                                        request_id,
+                                                        request: elicitation_request.request,
+                                                        response_sender: elicitation_request.response_sender,
+                                                    };
+                                                }
+                                            }
+                                        }
                                     }
+
+                                    tool_result.unwrap()
                                 }
                                 Err(e) => format!("Invalid tool arguments: {}", e),
                             };

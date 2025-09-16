@@ -4,7 +4,7 @@ use aether::{
 };
 use clap::Parser;
 use futures::pin_mut;
-use inquire::Confirm;
+use rmcp::model::{CreateElicitationResult, ElicitationAction};
 use tokio_stream::StreamExt;
 
 #[derive(Parser)]
@@ -83,29 +83,16 @@ pub async fn main() {
                 eprintln!("Cancelled: {}", message);
             }
 
-            ElicitationRequest { request_id, request, response_sender } => {
+            ElicitationRequest {
+                request_id,
+                request,
+                response_sender,
+            } => {
                 println!("Elicitation request ({}): {}", request_id, request.message);
 
-                use rmcp::model::{CreateElicitationResult, ElicitationAction};
-
-                let confirm_result = Confirm::new(&request.message)
-                    .with_default(false)
-                    .with_help_message("The AI is requesting permission to proceed")
-                    .prompt();
-
-                let result = match confirm_result {
-                    Ok(true) => CreateElicitationResult {
-                        action: ElicitationAction::Approve,
-                        content: Some("User approved the request".to_string()),
-                    },
-                    Ok(false) => CreateElicitationResult {
-                        action: ElicitationAction::Decline,
-                        content: Some("User declined the request".to_string()),
-                    },
-                    Err(_) => CreateElicitationResult {
-                        action: ElicitationAction::Decline,
-                        content: Some("User cancelled the prompt".to_string()),
-                    },
+                let result = CreateElicitationResult {
+                    action: ElicitationAction::Decline,
+                    content: None,
                 };
 
                 let _ = response_sender.send(result); // Ignore send errors
