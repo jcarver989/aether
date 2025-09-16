@@ -15,5 +15,5 @@ pub struct Context {
 }
 
 pub trait ModelProvider: Send + Sync {
-    fn generate_response(&self, context: Context) -> LlmResponseStream;
+    fn stream_response(&self, context: Context) -> LlmResponseStream;
 }

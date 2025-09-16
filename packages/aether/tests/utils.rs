@@ -1,14 +1,14 @@
 #![allow(dead_code)]
 
 use aether::llm::{Context, LlmResponseStream, ModelProvider};
-use aether::mcp::{McpManager, ElicitationRequest};
+use aether::mcp::{ElicitationRequest, McpManager};
 use aether::types::{LlmResponse, ToolCallRequest, ToolDefinition};
 use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
-use tokio_stream::iter;
 use tokio::sync::mpsc;
+use tokio_stream::iter;
 
 // Common test configurations
 pub const TEST_MODEL: &str = "test-model";
@@ -123,7 +123,7 @@ impl FakeLlmProvider {
 }
 
 impl ModelProvider for FakeLlmProvider {
-    fn generate_response(&self, _request: Context) -> LlmResponseStream {
+    fn stream_response(&self, _request: Context) -> LlmResponseStream {
         let chunks = self.chunks.clone();
         Box::pin(iter(chunks.into_iter().map(Ok)))
     }

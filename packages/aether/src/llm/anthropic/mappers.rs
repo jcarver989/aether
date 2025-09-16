@@ -1,0 +1,258 @@
+use super::types::{AnthropicContent, AnthropicMessage, AnthropicTool, ContentBlock, Role};
+use crate::types::{ChatMessage, ToolDefinition};
+use color_eyre::Result;
+
+pub fn map_messages(
+    messages: Vec<ChatMessage>,
+    _enable_caching: bool,
+) -> Result<(Option<String>, Vec<AnthropicMessage>)> {
+    let mut system_prompt = None;
+    let mut anthropic_messages = Vec::new();
+
+    for message in messages {
+        match message {
+            ChatMessage::System { content, .. } => {
+                system_prompt = Some(content);
+            }
+            ChatMessage::User { content, .. } => {
+                anthropic_messages.push(AnthropicMessage {
+                    role: Role::User,
+                    content: AnthropicContent::Text(content),
+                    cache_control: None,
+                });
+            }
+            ChatMessage::Assistant {
+                content,
+                tool_calls,
+                ..
+            } => {
+                if tool_calls.is_empty() {
+                    anthropic_messages.push(AnthropicMessage {
+                        role: Role::Assistant,
+                        content: AnthropicContent::Text(content),
+                        cache_control: None,
+                    });
+                } else {
+                    let mut blocks = Vec::new();
+
+                    if !content.is_empty() {
+                        blocks.push(ContentBlock::Text {
+                            text: content,
+                            cache_control: None,
+                        });
+                    }
+
+                    for tool_call in tool_calls {
+                        let input: serde_json::Value = serde_json::from_str(&tool_call.arguments)
+                            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+
+                        blocks.push(ContentBlock::ToolUse {
+                            id: tool_call.id,
+                            name: tool_call.name,
+                            input,
+                        });
+                    }
+
+                    anthropic_messages.push(AnthropicMessage {
+                        role: Role::Assistant,
+                        content: AnthropicContent::Blocks(blocks),
+                        cache_control: None,
+                    });
+                }
+            }
+            ChatMessage::AssistantStreaming { content, .. } => {
+                if !content.is_empty() {
+                    anthropic_messages.push(AnthropicMessage {
+                        role: Role::Assistant,
+                        content: AnthropicContent::Text(content),
+                        cache_control: None,
+                    });
+                }
+            }
+            ChatMessage::ToolCallResult {
+                tool_call_id,
+                content,
+                ..
+            } => {
+                anthropic_messages.push(AnthropicMessage {
+                    role: Role::User,
+                    content: AnthropicContent::Blocks(vec![ContentBlock::ToolResult {
+                        tool_use_id: tool_call_id,
+                        content,
+                        is_error: None,
+                    }]),
+                    cache_control: None,
+                });
+            }
+            ChatMessage::Error { message, .. } => {
+                anthropic_messages.push(AnthropicMessage {
+                    role: Role::User,
+                    content: AnthropicContent::Text(format!("Error: {}", message)),
+                    cache_control: None,
+                });
+            }
+        }
+    }
+
+    Ok((system_prompt, anthropic_messages))
+}
+
+pub fn map_tools(tools: Vec<ToolDefinition>) -> Result<Vec<AnthropicTool>> {
+    let mut anthropic_tools = Vec::new();
+
+    for tool in tools.into_iter() {
+        let input_schema: serde_json::Value =
+            serde_json::from_str(&tool.parameters).map_err(|e| {
+                color_eyre::eyre::eyre!("Failed to parse tool parameters for {}: {}", tool.name, e)
+            })?;
+
+        anthropic_tools.push(AnthropicTool {
+            name: tool.name,
+            description: tool.description,
+            input_schema,
+            cache_control: None,
+        });
+    }
+
+    Ok(anthropic_tools)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{IsoString, ToolCallRequest};
+
+    #[test]
+    fn test_map_simple_user_message() {
+        let messages = vec![ChatMessage::User {
+            content: "Hello".to_string(),
+            timestamp: IsoString::now(),
+        }];
+
+        let (system, mapped) = map_messages(messages, false).unwrap();
+        assert_eq!(system, None);
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(mapped[0].role, Role::User);
+        assert!(matches!(mapped[0].content, AnthropicContent::Text(_)));
+    }
+
+    #[test]
+    fn test_map_system_message() {
+        let messages = vec![
+            ChatMessage::System {
+                content: "You are a helpful assistant".to_string(),
+                timestamp: IsoString::now(),
+            },
+            ChatMessage::User {
+                content: "Hello".to_string(),
+                timestamp: IsoString::now(),
+            },
+        ];
+
+        let (system, mapped) = map_messages(messages, false).unwrap();
+        assert_eq!(system, Some("You are a helpful assistant".to_string()));
+        assert_eq!(mapped.len(), 1);
+    }
+
+    #[test]
+    fn test_map_assistant_with_tool_calls() {
+        let messages = vec![ChatMessage::Assistant {
+            content: "I'll help you with that".to_string(),
+            timestamp: IsoString::now(),
+            tool_calls: vec![ToolCallRequest {
+                id: "call_1".to_string(),
+                name: "search".to_string(),
+                arguments: r#"{"query": "test"}"#.to_string(),
+            }],
+        }];
+
+        let (_system, mapped) = map_messages(messages, false).unwrap();
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(mapped[0].role, Role::Assistant);
+
+        if let AnthropicContent::Blocks(blocks) = &mapped[0].content {
+            assert_eq!(blocks.len(), 2);
+            assert!(matches!(blocks[0], ContentBlock::Text { .. }));
+            assert!(matches!(blocks[1], ContentBlock::ToolUse { .. }));
+        } else {
+            panic!("Expected blocks content");
+        }
+    }
+
+    #[test]
+    fn test_map_tools() {
+        let tools = vec![ToolDefinition {
+            name: "search".to_string(),
+            description: "Search for information".to_string(),
+            parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#
+                .to_string(),
+            server: None,
+        }];
+
+        let mapped = map_tools(tools).unwrap();
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(mapped[0].name, "search");
+        assert_eq!(mapped[0].description, "Search for information");
+    }
+
+    #[test]
+    fn test_map_tools_no_cache_control() {
+        let tools = vec![ToolDefinition {
+            name: "search".to_string(),
+            description: "Search for information".to_string(),
+            parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#
+                .to_string(),
+            server: None,
+        }];
+
+        let mapped = map_tools(tools).unwrap();
+        assert_eq!(mapped.len(), 1);
+        // Tools don't have cache_control - they're auto-cached when system prompt is cached
+        assert!(mapped[0].cache_control.is_none());
+    }
+
+    #[test]
+    fn test_role_enum_serialization() {
+        use super::super::types::Role;
+
+        // Test Role::User serialization
+        let user_role = Role::User;
+        let serialized = serde_json::to_string(&user_role).unwrap();
+        assert_eq!(serialized, "\"user\"");
+
+        // Test Role::Assistant serialization
+        let assistant_role = Role::Assistant;
+        let serialized = serde_json::to_string(&assistant_role).unwrap();
+        assert_eq!(serialized, "\"assistant\"");
+
+        // Test Role deserialization
+        let user_role: Role = serde_json::from_str("\"user\"").unwrap();
+        assert_eq!(user_role, Role::User);
+
+        let assistant_role: Role = serde_json::from_str("\"assistant\"").unwrap();
+        assert_eq!(assistant_role, Role::Assistant);
+    }
+
+    #[test]
+    fn test_cache_type_enum_serialization() {
+        use super::super::types::{CacheControl, CacheType};
+
+        // Test CacheType::Ephemeral serialization
+        let ephemeral_type = CacheType::Ephemeral;
+        let serialized = serde_json::to_string(&ephemeral_type).unwrap();
+        assert_eq!(serialized, "\"ephemeral\"");
+
+        // Test CacheType deserialization
+        let ephemeral_type: CacheType = serde_json::from_str("\"ephemeral\"").unwrap();
+        assert_eq!(ephemeral_type, CacheType::Ephemeral);
+
+        // Test CacheControl struct serialization
+        let cache_control = CacheControl::ephemeral();
+        let serialized = serde_json::to_string(&cache_control).unwrap();
+        assert_eq!(serialized, "{\"type\":\"ephemeral\"}");
+
+        // Test CacheControl struct deserialization
+        let cache_control: CacheControl = serde_json::from_str("{\"type\":\"ephemeral\"}").unwrap();
+        assert_eq!(cache_control.cache_type, CacheType::Ephemeral);
+    }
+}

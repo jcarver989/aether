@@ -118,7 +118,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 let mut completed_tool_calls: Vec<(ToolCallRequest, String)> = Vec::new();
                 let mut has_tool_calls = false;
 
-                let llm_stream = self.llm.generate_response(Context {
+                let llm_stream = self.llm.stream_response(Context {
                     messages: messages_clone,
                     tools,
                 });

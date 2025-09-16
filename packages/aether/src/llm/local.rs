@@ -54,7 +54,7 @@ impl DefaultModelProvider {
 }
 
 impl ModelProvider for DefaultModelProvider {
-    fn generate_response(&self, request: Context) -> LlmResponseStream {
+    fn stream_response(&self, request: Context) -> LlmResponseStream {
         let client = self.client.clone();
         let model = self.model.clone();
 

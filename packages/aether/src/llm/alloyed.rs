@@ -21,7 +21,7 @@ impl AlloyedModelProvider {
 }
 
 impl ModelProvider for AlloyedModelProvider {
-    fn generate_response(&self, context: Context) -> LlmResponseStream {
+    fn stream_response(&self, context: Context) -> LlmResponseStream {
         if self.providers.is_empty() {
             return Box::pin(tokio_stream::empty());
         }
@@ -29,6 +29,6 @@ impl ModelProvider for AlloyedModelProvider {
         let index =
             self.current_provider_index.fetch_add(1, Ordering::Relaxed) % self.providers.len();
         let provider = &self.providers[index];
-        provider.generate_response(context)
+        provider.stream_response(context)
     }
 }

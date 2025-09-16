@@ -3349,6 +3349,7 @@ name = "wisp"
 version = "0.1.0"
 dependencies = [
  "aether",
+ "async-stream",
  "clap",
  "color-eyre",
  "console",

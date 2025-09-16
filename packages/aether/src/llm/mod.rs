@@ -1,4 +1,5 @@
 pub mod alloyed;
+pub mod anthropic;
 pub mod local;
 pub mod mappers;
 pub mod openrouter;

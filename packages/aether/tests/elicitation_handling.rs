@@ -3,7 +3,7 @@ use aether::{
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };
-use rmcp::model::{CreateElicitationRequestParam, CreateElicitationResult, ElicitationAction};
+use rmcp::model::{CreateElicitationResult, ElicitationAction};
 use tokio_stream::StreamExt;
 
 #[tokio::test]
@@ -13,11 +13,12 @@ async fn test_elicitation_request_handling() {
         LlmResponse::Start {
             message_id: "msg1".to_string(),
         },
-        LlmResponse::ToolCall {
-            tool_call_id: "tc1".to_string(),
-            name: "test_tool".to_string(),
-            arguments: r#"{"action": "sensitive_operation"}"#.to_string(),
-            result: None,
+        LlmResponse::ToolRequestComplete {
+            tool_call: ToolCallRequest {
+                id: "tc1".to_string(),
+                name: "test_tool".to_string(),
+                arguments: r#"{"action": "sensitive_operation"}"#.to_string(),
+            },
         },
         LlmResponse::Done,
     ]);
@@ -35,7 +36,11 @@ async fn test_elicitation_request_handling() {
 
     while let Some(event) = stream.next().await {
         match event {
-            AgentMessage::ElicitationRequest { request_id, request, response_sender } => {
+            AgentMessage::ElicitationRequest {
+                request_id,
+                request,
+                response_sender,
+            } => {
                 elicitation_received = true;
 
                 // Verify the request structure
@@ -59,7 +64,10 @@ async fn test_elicitation_request_handling() {
         }
     }
 
-    assert!(elicitation_received, "Expected an elicitation request to be received");
+    assert!(
+        elicitation_received,
+        "Expected an elicitation request to be received"
+    );
 }
 
 #[tokio::test]
@@ -68,11 +76,12 @@ async fn test_elicitation_request_decline() {
         LlmResponse::Start {
             message_id: "msg1".to_string(),
         },
-        LlmResponse::ToolCall {
-            tool_call_id: "tc1".to_string(),
-            name: "test_tool".to_string(),
-            arguments: r#"{"action": "sensitive_operation"}"#.to_string(),
-            result: None,
+        LlmResponse::ToolRequestComplete {
+            tool_call: ToolCallRequest {
+                id: "tc1".to_string(),
+                name: "test_tool".to_string(),
+                arguments: r#"{"action": "sensitive_operation"}"#.to_string(),
+            },
         },
         LlmResponse::Done,
     ]);
@@ -90,7 +99,9 @@ async fn test_elicitation_request_decline() {
 
     while let Some(event) = stream.next().await {
         match event {
-            AgentMessage::ElicitationRequest { request_id, request, response_sender } => {
+            AgentMessage::ElicitationRequest {
+                response_sender, ..
+            } => {
                 elicitation_received = true;
 
                 // Simulate declining the request
@@ -111,5 +122,8 @@ async fn test_elicitation_request_decline() {
         }
     }
 
-    assert!(elicitation_received, "Expected an elicitation request to be received");
+    assert!(
+        elicitation_received,
+        "Expected an elicitation request to be received"
+    );
 }

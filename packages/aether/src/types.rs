@@ -102,6 +102,7 @@ pub struct ToolDefinition {
 pub enum LlmProvider {
     OpenRouter,
     Ollama,
+    Anthropic,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -117,6 +118,16 @@ pub struct OllamaConfig {
     pub base_url: String,
     pub model: String,
     pub temperature: Option<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnthropicConfig {
+    pub api_key: String,
+    pub model: String,
+    pub base_url: Option<String>,
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub enable_prompt_caching: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
