@@ -15,6 +15,14 @@ use color_eyre::Report;
 use crossterm::{queue, style::Stylize};
 use futures::pin_mut;
 use indicatif::ProgressBar;
+
+#[derive(Debug)]
+struct PartialToolCall {
+    name: String,
+    model_name: String,
+    arguments: String,
+    progress_bar: ProgressBar,
+}
 use inquire::Confirm;
 use mcp_lexicon::AgentBuilderExt;
 use std::collections::HashMap;
@@ -155,7 +163,8 @@ async fn run_agent(
             format!("{:?} ({})", spec.provider, spec.model)
         }
     } else {
-        let provider_names: Vec<String> = model_specs.iter()
+        let provider_names: Vec<String> = model_specs
+            .iter()
             .map(|spec| {
                 if spec.model.is_empty() {
                     format!("{:?}", spec.provider)
@@ -178,15 +187,17 @@ async fn run_agent(
     let (result_stream, _cancel_token) = agent.send(UserMessage::text(user_prompt)).await;
     pin_mut!(result_stream);
 
-    ui::show_response_header()?;
+    let mut active_tool_calls: HashMap<String, PartialToolCall> = HashMap::new();
 
-    let mut active_tool_calls: HashMap<String, (String, String, ProgressBar)> = HashMap::new();
     let mut message_started = false;
 
     while let Some(event) = result_stream.next().await {
         match event {
             Text {
-                chunk, is_complete, model_name, ..
+                chunk,
+                is_complete,
+                model_name,
+                ..
             } => {
                 if is_complete {
                     print_styled!(stdout, "\n\n");
@@ -212,22 +223,46 @@ async fn run_agent(
             ToolCall {
                 tool_call_id,
                 name,
+                arguments,
                 result,
                 is_complete,
                 model_name,
-                ..
             } => {
                 if is_complete {
-                    if let Some((tool_name, tool_model_name, pb)) = active_tool_calls.get(&tool_call_id) {
-                        pb.finish_and_clear();
-                        ui::show_tool_completed(tool_name, tool_model_name, result.as_deref())?;
+                    if let Some(tool_call) = active_tool_calls.get(&tool_call_id) {
+                        tool_call.progress_bar.finish_and_clear();
+                        let args_to_show = if tool_call.arguments.is_empty() {
+                            None
+                        } else {
+                            Some(tool_call.arguments.as_str())
+                        };
+                        ui::show_tool_completed(
+                            &tool_call.name,
+                            &tool_call.model_name,
+                            args_to_show,
+                            result.as_deref(),
+                        )?;
                     }
                     active_tool_calls.remove(&tool_call_id);
                 } else if !name.is_empty() {
+                    // Tool starting - create spinner and initialize arguments
                     print_styled_line!(stdout, "");
                     stdout.flush()?;
                     let pb = ui::create_tool_spinner(&name, &model_name)?;
-                    active_tool_calls.insert(tool_call_id, (name, model_name, pb));
+                    active_tool_calls.insert(
+                        tool_call_id.clone(),
+                        PartialToolCall {
+                            name: name.clone(),
+                            model_name: model_name.clone(),
+                            arguments: String::new(),
+                            progress_bar: pb,
+                        },
+                    );
+                } else if let Some(args_chunk) = arguments {
+                    // Tool argument chunk - accumulate arguments
+                    if let Some(tool_call) = active_tool_calls.get_mut(&tool_call_id) {
+                        tool_call.arguments.push_str(&args_chunk);
+                    }
                 }
             }
 

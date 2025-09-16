@@ -254,22 +254,6 @@ pub fn show_init_header(
     Ok(())
 }
 
-pub fn show_response_header() -> Result<(), std::io::Error> {
-    let mut stdout = stdout();
-    print_styled_line!(stdout, "─".repeat(60).with(colors::primary()));
-    print_styled_line!(
-        stdout,
-        format!(
-            "{} {}",
-            "⟨⟩".with(colors::primary()).bold(),
-            "Wisp's Response".bold().with(colors::text_primary())
-        )
-    );
-    print_styled_line!(stdout, "─".repeat(60).with(colors::primary()));
-    stdout.flush()?;
-    Ok(())
-}
-
 pub fn create_tool_spinner(
     name: &str,
     model_name: &str,
@@ -294,6 +278,7 @@ pub fn create_tool_spinner(
 pub fn show_tool_completed(
     tool_name: &str,
     model_name: &str,
+    arguments: Option<&str>,
     result: Option<&str>,
 ) -> Result<(), std::io::Error> {
     let mut stdout = stdout();
@@ -310,9 +295,24 @@ pub fn show_tool_completed(
         )
     );
 
+    // Display tool arguments/inputs
+    if let Some(args) = arguments {
+        if !args.trim().is_empty() {
+            if args.len() > 120 {
+                let truncated = &args[..117];
+                print_styled_line!(
+                    stdout,
+                    format!("   {} {}...", "Input:".dim(), truncated.dim())
+                );
+            } else {
+                print_styled_line!(stdout, format!("   {} {}", "Input:".dim(), args.dim()));
+            }
+        }
+    }
+
     if let Some(result) = result {
         // Try to parse JSON and extract meaningful content
-        let display_result = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(result) {
+        let raw_result = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(result) {
             // Extract text content from common JSON structures
             if let Some(text) = parsed.get("text").and_then(|v| v.as_str()) {
                 text.to_string()
@@ -328,28 +328,39 @@ pub fn show_tool_completed(
             result.to_string()
         };
 
+        // Apply escape sequence formatting
+        let display_result = format_tool_result(&raw_result);
+
         if !display_result.trim().is_empty() {
-            if display_result.len() > 200 {
-                let preview = &display_result[..197];
+            let lines: Vec<&str> = display_result.lines().collect();
+
+            // For long results, show a preview with proper line handling
+            if display_result.len() > 500 {
+                print_styled_line!(stdout, format!("   {}", "Result:".dim()));
+                let mut char_count = 0;
+                for line in &lines {
+                    if char_count + line.len() > 400 {
+                        print_styled_line!(stdout, format!("     {}", "...".dim()));
+                        break;
+                    }
+                    print_styled_line!(stdout, format!("     {}", line.dim()));
+                    char_count += line.len() + 1; // +1 for newline
+                }
+            } else if lines.len() == 1 && display_result.len() < 100 {
+                // Only show as single line if it's actually short and truly single line
                 print_styled_line!(
                     stdout,
-                    format!("   {} {}{}", "Result:".dim(), preview.dim(), "...".dim())
+                    format!("   {} {}", "Result:".dim(), &display_result.dim())
                 );
             } else {
-                let lines: Vec<&str> = display_result.lines().collect();
-                if lines.len() == 1 {
-                    print_styled_line!(
-                        stdout,
-                        format!("   {} {}", "Result:".dim(), &display_result.dim())
-                    );
-                } else {
-                    print_styled_line!(stdout, format!("   {}", "Result:".dim()));
-                    for line in lines.iter().take(5) {
-                        print_styled_line!(stdout, format!("     {}", line.dim()));
-                    }
-                    if lines.len() > 5 {
-                        print_styled_line!(stdout, format!("     {}", "...".dim()));
-                    }
+                // Always use multi-line format for better readability
+                print_styled_line!(stdout, format!("   {}", "Result:".dim()));
+                for line in lines.iter().take(10) {
+                    // Show more lines since formatting is better
+                    print_styled_line!(stdout, format!("     {}", line.dim()));
+                }
+                if lines.len() > 10 {
+                    print_styled_line!(stdout, format!("     {}", "...".dim()));
                 }
             }
         }
@@ -394,6 +405,17 @@ fn format_model_name(model_name: &str) -> String {
     } else {
         model_name.to_lowercase()
     }
+}
+
+fn format_tool_result(result: &str) -> String {
+    // Handle common escape sequences to improve readability
+    result
+        .replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace("\\r", "\r")
+        .replace("\\\"", "\"")
+        .replace("\\'", "'")
+        .replace("\\\\", "\\")
 }
 
 pub fn show_model_info(model_name: &str) -> Result<(), std::io::Error> {
