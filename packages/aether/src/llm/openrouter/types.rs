@@ -1,83 +1,58 @@
 use async_openai::types::{
     ChatChoiceStream, ChatCompletionMessageToolCallChunk, ChatCompletionStreamResponseDelta,
-    CreateChatCompletionRequest, CreateChatCompletionStreamResponse, FunctionCallStream,
+    CreateChatCompletionStreamResponse, FinishReason, FunctionCallStream, Role,
 };
-use async_openai::{Client, config::OpenAIConfig};
-use async_stream;
-use color_eyre::Result;
-use tokio_stream::StreamExt;
+use serde::{Deserialize, Serialize};
 
-use super::mappers::{map_messages, mapp_tools};
-use super::openrouter_types::{
-    CustomChatCompletionStreamChoice, CustomChatCompletionStreamResponse,
-    CustomChatCompletionStreamResponseDelta, CustomFunctionCallDelta, CustomToolCallDelta,
-    CustomUsage,
-};
-use super::provider::{Context, LlmResponseStream, ModelProvider};
-use super::streaming::process_completion_stream;
+/// OpenRouter can return negative token values,
+/// so we had to impelemnt custon types to get around that
 
-pub struct OpenRouterProvider {
-    client: Client<OpenAIConfig>,
-    model: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomChatCompletionStreamResponse {
+    pub id: String,
+    pub choices: Vec<CustomChatCompletionStreamChoice>,
+    pub created: u64,
+    pub model: String,
+    pub system_fingerprint: Option<String>,
+    pub object: String,
+    pub usage: Option<CustomUsage>,
 }
 
-impl OpenRouterProvider {
-    pub fn new(api_key: String, model: String) -> Result<Self> {
-        let config = OpenAIConfig::new()
-            .with_api_key(api_key)
-            .with_api_base("https://openrouter.ai/api/v1");
-
-        let client = Client::with_config(config);
-
-        Ok(Self { client, model })
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomChatCompletionStreamChoice {
+    pub index: i32,
+    pub delta: CustomChatCompletionStreamResponseDelta,
+    pub finish_reason: Option<FinishReason>,
+    pub logprobs: Option<serde_json::Value>,
 }
 
-impl ModelProvider for OpenRouterProvider {
-    fn stream_response(&self, request: Context) -> LlmResponseStream {
-        let client = self.client.clone();
-        let model = self.model.clone();
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomChatCompletionStreamResponseDelta {
+    pub role: Option<Role>,
+    pub content: Option<String>,
+    pub tool_calls: Option<Vec<CustomToolCallDelta>>,
+}
 
-        Box::pin(async_stream::stream! {
-            let messages = map_messages(request.messages);
-            let tools = if request.tools.is_empty() {
-                None
-            } else {
-                Some(mapp_tools(request.tools))
-            };
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomToolCallDelta {
+    pub index: i32,
+    pub id: Option<String>,
+    #[serde(rename = "type")]
+    pub tool_type: Option<String>,
+    pub function: Option<CustomFunctionCallDelta>,
+}
 
-            let req = CreateChatCompletionRequest {
-                model: model.clone(),
-                messages,
-                stream: Some(true),
-                tools,
-                ..Default::default()
-            };
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomFunctionCallDelta {
+    pub name: Option<String>,
+    pub arguments: Option<String>,
+}
 
-            let stream = match client
-                .chat()
-                .create_stream_byot::<CreateChatCompletionRequest, CustomChatCompletionStreamResponse>(req)
-                .await {
-                Ok(stream) => stream,
-                Err(e) => {
-                    yield Err(color_eyre::eyre::eyre!("OpenRouter API request failed: {}", e));
-                    return;
-                }
-            };
-
-            // Convert custom responses to standard async_openai types and handle errors
-            let standard_stream = stream.map(|result| {
-                result
-                    .map(|custom| custom.into())
-                    .map_err(|e| color_eyre::eyre::eyre!("OpenRouter API error: {}", e))
-            });
-
-            let mut shared_stream = Box::pin(process_completion_stream(standard_stream));
-            while let Some(result) = shared_stream.next().await {
-                yield result;
-            }
-        })
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomUsage {
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub total_tokens: i64,
 }
 
 impl From<CustomChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {

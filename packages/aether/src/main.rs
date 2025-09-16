@@ -1,6 +1,6 @@
 use aether::{
     agent::{AgentMessage::*, UserMessage, agent},
-    llm::local::DefaultModelProvider,
+    llm::local::llama_cpp::LlamaCppProvider,
 };
 use clap::Parser;
 use futures::pin_mut;
@@ -42,7 +42,7 @@ pub async fn main() {
     let cli = Cli::parse();
     let prompt = cli.prompt.unwrap();
 
-    let provider = DefaultModelProvider::new(&cli.url, &cli.model, cli.api_key).unwrap();
+    let provider = LlamaCppProvider::default();
     let mut agent = agent(provider)
         .system_prompt(&cli.system.unwrap_or_default())
         .build()

@@ -1,62 +1,30 @@
-use async_openai::{Client, config::OpenAIConfig, types::CreateChatCompletionRequest};
+use async_openai::{Client, config::Config, types::CreateChatCompletionRequest};
 use async_stream;
-use color_eyre::Result;
 use std::error::Error;
 use tokio_stream::StreamExt;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
-use super::mappers::{map_messages, mapp_tools};
-use super::provider::{Context, LlmResponseStream, ModelProvider};
-use super::streaming::process_completion_stream;
+use crate::llm::{
+    Context, LlmResponseStream, ModelProvider,
+    openai::{
+        mappers::{map_messages, map_tools},
+        streaming::process_completion_stream,
+    },
+};
 
-// Default implemntation that should work with most OpenAI compatible endpoints
-pub struct DefaultModelProvider {
-    client: Client<OpenAIConfig>,
-    model: String,
+/// A Provider that's compatible with OpenAI's chat completion API
+/// Other providers (e.g. Ollama, Llama.cpp etc) that are "OpenAI compatible" should implement this trait as well
+pub trait OpenAiChatProvider {
+    type Config: Config + Clone + 'static;
+
+    fn client(&self) -> &Client<Self::Config>;
+    fn model(&self) -> &str;
 }
 
-impl DefaultModelProvider {
-    pub fn ollama(model: &str) -> Result<Self> {
-        Self::new("http://localhost:11434", model, None)
-    }
-
-    pub fn llama_cpp() -> Result<Self> {
-        // Currently ignores model as LLama.cpp serves a single model per instance
-        Self::new("http://localhost:8080", "", None)
-    }
-
-    pub fn new(base_url: &str, model: &str, api_key: Option<String>) -> Result<Self> {
-        let base_url = base_url.to_string();
-
-        // Ensure we have the correct base URL with /v1 for Ollama's OpenAI-compatible API
-        let api_base = if base_url.ends_with("/v1") {
-            base_url
-        } else {
-            format!("{}/v1", base_url)
-        };
-
-        info!(
-            "Creating LocalModelProvider with api_base: {}, model: {}",
-            api_base, model
-        );
-
-        let config = OpenAIConfig::new()
-            .with_api_key(api_key.unwrap_or("dummy_key".to_string())) // Local providers generally don't require auth, but async-openai needs a key
-            .with_api_base(api_base.clone());
-
-        let client = Client::with_config(config);
-
-        Ok(Self {
-            client,
-            model: model.to_string(),
-        })
-    }
-}
-
-impl ModelProvider for DefaultModelProvider {
+impl<T: OpenAiChatProvider + Send + Sync> ModelProvider for T {
     fn stream_response(&self, request: Context) -> LlmResponseStream {
-        let client = self.client.clone();
-        let model = self.model.clone();
+        let client = self.client().clone();
+        let model = self.model().to_string();
 
         Box::pin(async_stream::stream! {
             debug!("Starting chat completion stream for model: {}", model);
@@ -66,7 +34,7 @@ impl ModelProvider for DefaultModelProvider {
             let tools = if request.tools.is_empty() {
                 None
             } else {
-                Some(mapp_tools(request.tools))
+                Some(map_tools(request.tools))
             };
 
             let req = CreateChatCompletionRequest {

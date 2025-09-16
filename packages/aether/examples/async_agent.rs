@@ -1,13 +1,13 @@
 use aether::{
     agent::{AgentMessage, UserMessage, agent},
-    llm::local::DefaultModelProvider,
+    llm::local::llama_cpp::LlamaCppProvider,
 };
 
 #[tokio::main]
 pub async fn main() -> color_eyre::Result<()> {
     println!("Hello world");
 
-    let provider = DefaultModelProvider::llama_cpp()?;
+    let provider = LlamaCppProvider::default();
     let (tx, mut rx) = agent(provider)
         .system_prompt("you are a helpful agent")
         .spawn()
@@ -46,7 +46,11 @@ pub async fn main() -> color_eyre::Result<()> {
                 eprintln!("Cancelled: {}", message);
             }
 
-            AgentMessage::ElicitationRequest { request_id, request, response_sender } => {
+            AgentMessage::ElicitationRequest {
+                request_id,
+                request,
+                response_sender,
+            } => {
                 println!("Elicitation request ({}): {}", request_id, request.message);
                 // For this example, just decline all elicitation requests
                 use rmcp::model::{CreateElicitationResult, ElicitationAction};

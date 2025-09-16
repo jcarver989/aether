@@ -92,6 +92,6 @@ pub fn map_messages(messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMess
     messages.into_iter().filter_map(Into::into).collect()
 }
 
-pub fn mapp_tools(tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
+pub fn map_tools(tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
     tools.into_iter().map(Into::into).collect()
 }

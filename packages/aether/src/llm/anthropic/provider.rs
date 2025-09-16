@@ -51,7 +51,7 @@ impl AnthropicProvider {
         })
     }
 
-    pub fn from_env() -> Result<Self> {
+    pub fn default() -> Result<Self> {
         let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
             color_eyre::eyre::eyre!("ANTHROPIC_API_KEY environment variable not set")
         })?;

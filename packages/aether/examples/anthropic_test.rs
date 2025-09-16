@@ -52,8 +52,7 @@ async fn main() -> Result<()> {
     println!("Max tokens: {}", args.max_tokens);
     println!("{}", "=".repeat(50));
 
-    // Create provider using new inlined API
-    let provider = AnthropicProvider::from_env()?
+    let provider = AnthropicProvider::default()?
         .with_model(args.model)
         .with_temperature(args.temperature)
         .with_max_tokens(args.max_tokens);
