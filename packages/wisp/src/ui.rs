@@ -281,7 +281,7 @@ pub fn create_tool_spinner(
             .template(&format!(
                 "{{spinner:.cyan}} Tool {} {} {{msg}}",
                 name.with(colors::info()).bold(),
-                format!("({})", model_name)
+                format!("({})", format_model_name(model_name))
                     .with(colors::text_secondary())
                     .dim()
             ))?,
@@ -302,11 +302,11 @@ pub fn show_tool_completed(
         format!(
             "{} {} {} {}",
             "✓".with(colors::success()).bold(),
-            "Tool".bold().with(colors::text_primary()),
-            tool_name.bold().with(colors::success()),
-            format!("({})", model_name)
+            format!("({})", format_model_name(model_name))
                 .with(colors::text_secondary())
-                .dim()
+                .dim(),
+            "Tool".bold().with(colors::text_primary()),
+            tool_name.bold().with(colors::success())
         )
     );
 
@@ -386,13 +386,25 @@ pub fn show_cancelled(message: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+fn format_model_name(model_name: &str) -> String {
+    // Parse model name and format as "provider:model"
+    if let Some((provider, model)) = model_name.split_once(" (") {
+        let model = model.trim_end_matches(')');
+        format!("{}:{}", provider.to_lowercase(), model)
+    } else {
+        model_name.to_lowercase()
+    }
+}
+
 pub fn show_model_info(model_name: &str) -> Result<(), std::io::Error> {
     let mut stdout = stdout();
+    let formatted_name = format_model_name(model_name);
+
     print_styled!(
         stdout,
         format!(
             "{} ",
-            format!("({})", model_name)
+            format!("({})", formatted_name)
                 .with(colors::text_secondary())
                 .dim()
         )

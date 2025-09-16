@@ -195,11 +195,11 @@ async fn run_agent(
                 } else {
                     if let Some(filtered_chunk) = ui::filter_text_chunk(&chunk) {
                         if !message_started {
-                            ui::show_model_info(&model_name)?;
                             print_styled!(
                                 stdout,
                                 format!("{} ", "◈".with(colors::primary()).bold())
                             );
+                            ui::show_model_info(&model_name)?;
                             message_started = true;
                         }
 

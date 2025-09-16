@@ -1,11 +1,22 @@
 use async_openai::types::{
     ChatChoiceStream, ChatCompletionMessageToolCallChunk, ChatCompletionStreamResponseDelta,
-    CreateChatCompletionStreamResponse, FinishReason, FunctionCallStream, Role,
+    CreateChatCompletionStreamResponse, FunctionCallStream, Role,
 };
 use serde::{Deserialize, Serialize};
 
-/// OpenRouter can return negative token values,
-/// so we had to impelemnt custon types to get around that
+/// OpenRouter can return negative token values and additional finish reasons,
+/// so we had to implement custom types to get around that
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CustomFinishReason {
+    Stop,
+    Length,
+    ToolCalls,
+    ContentFilter,
+    FunctionCall,
+    Error,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomChatCompletionStreamResponse {
@@ -22,7 +33,7 @@ pub struct CustomChatCompletionStreamResponse {
 pub struct CustomChatCompletionStreamChoice {
     pub index: i32,
     pub delta: CustomChatCompletionStreamResponseDelta,
-    pub finish_reason: Option<FinishReason>,
+    pub finish_reason: Option<CustomFinishReason>,
     pub logprobs: Option<serde_json::Value>,
 }
 
@@ -74,12 +85,25 @@ impl From<CustomChatCompletionStreamResponse> for CreateChatCompletionStreamResp
     }
 }
 
+impl From<CustomFinishReason> for async_openai::types::FinishReason {
+    fn from(reason: CustomFinishReason) -> Self {
+        match reason {
+            CustomFinishReason::Stop => async_openai::types::FinishReason::Stop,
+            CustomFinishReason::Length => async_openai::types::FinishReason::Length,
+            CustomFinishReason::ToolCalls => async_openai::types::FinishReason::ToolCalls,
+            CustomFinishReason::ContentFilter => async_openai::types::FinishReason::ContentFilter,
+            CustomFinishReason::FunctionCall => async_openai::types::FinishReason::FunctionCall,
+            CustomFinishReason::Error => async_openai::types::FinishReason::Stop, // Map error to stop
+        }
+    }
+}
+
 impl From<CustomChatCompletionStreamChoice> for ChatChoiceStream {
     fn from(choice: CustomChatCompletionStreamChoice) -> Self {
         ChatChoiceStream {
             index: choice.index as u32, // Convert i32 to u32
             delta: choice.delta.into(),
-            finish_reason: choice.finish_reason,
+            finish_reason: choice.finish_reason.map(|r| r.into()),
             logprobs: None, // OpenRouter doesn't provide detailed logprobs in our custom type
         }
     }
