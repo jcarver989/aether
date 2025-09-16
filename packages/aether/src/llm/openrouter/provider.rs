@@ -87,4 +87,8 @@ impl ModelProvider for OpenRouterProvider {
             }
         })
     }
+
+    fn display_name(&self) -> String {
+        format!("OpenRouter ({})", self.model)
+    }
 }

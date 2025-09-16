@@ -19,6 +19,7 @@ pub trait OpenAiChatProvider {
 
     fn client(&self) -> &Client<Self::Config>;
     fn model(&self) -> &str;
+    fn provider_name(&self) -> &str;
 }
 
 impl<T: OpenAiChatProvider + Send + Sync> ModelProvider for T {
@@ -80,5 +81,14 @@ impl<T: OpenAiChatProvider + Send + Sync> ModelProvider for T {
                 yield result;
             }
         })
+    }
+
+    fn display_name(&self) -> String {
+        let model = self.model();
+        if model.is_empty() {
+            self.provider_name().to_string()
+        } else {
+            format!("{} ({})", self.provider_name(), model)
+        }
     }
 }

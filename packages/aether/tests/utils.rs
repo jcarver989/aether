@@ -127,6 +127,10 @@ impl ModelProvider for FakeLlmProvider {
         let chunks = self.chunks.clone();
         Box::pin(iter(chunks.into_iter().map(Ok)))
     }
+
+    fn display_name(&self) -> String {
+        "Fake LLM".to_string()
+    }
 }
 
 // Chat Message Test Helpers

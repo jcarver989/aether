@@ -40,4 +40,8 @@ impl ModelProvider for FakeLlmProvider {
 
         Box::pin(tokio_stream::iter(response.into_iter().map(Ok)))
     }
+
+    fn display_name(&self) -> String {
+        "Fake LLM".to_string()
+    }
 }

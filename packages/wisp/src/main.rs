@@ -2,7 +2,14 @@ mod colors;
 mod ui;
 
 use aether::agent::{Agent, AgentMessage::*, UserMessage, agent};
-use aether::llm::local::DefaultModelProvider;
+use aether::llm::{
+    ModelProvider,
+    alloyed::AlloyedModelProvider,
+    anthropic::AnthropicProvider,
+    local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
+    openrouter::OpenRouterProvider,
+};
+use aether::types::LlmProvider;
 use clap::Parser;
 use color_eyre::Report;
 use crossterm::{queue, style::Stylize};
@@ -40,15 +47,57 @@ struct Cli {
     #[arg(
         short = 'm',
         long = "model",
-        help = "Model name to use",
-        default_value = ""
+        help = "Model specification in format 'provider:model' or comma-separated for alloyed providers. Examples: 'anthropic:claude-3.5-sonnet', 'llamacpp', 'ollama:llama3.2,anthropic:claude-3-haiku'",
+        default_value = "llamacpp"
     )]
     model: String,
 }
 
+#[derive(Debug, Clone)]
+struct ModelSpec {
+    provider: LlmProvider,
+    model: String,
+}
+
+impl ModelSpec {
+    fn parse(spec: &str) -> Result<Self, String> {
+        if let Some((provider_str, model)) = spec.split_once(':') {
+            let provider = Self::parse_provider(provider_str)?;
+            Ok(ModelSpec {
+                provider,
+                model: model.to_string(),
+            })
+        } else {
+            // For providers that don't require a model (like llamacpp), allow just the provider name
+            match spec {
+                "llamacpp" => Ok(ModelSpec {
+                    provider: LlmProvider::LlamaCpp,
+                    model: "".to_string(),
+                }),
+                _ => Err(format!(
+                    "Invalid model spec '{}'. Expected format 'provider:model' or 'llamacpp'",
+                    spec
+                )),
+            }
+        }
+    }
+
+    fn parse_provider(provider_str: &str) -> Result<LlmProvider, String> {
+        match provider_str {
+            "anthropic" => Ok(LlmProvider::Anthropic),
+            "openrouter" => Ok(LlmProvider::OpenRouter),
+            "ollama" => Ok(LlmProvider::Ollama),
+            "llamacpp" => Ok(LlmProvider::LlamaCpp),
+            _ => Err(format!(
+                "Unknown provider: {}. Supported providers: anthropic, openrouter, ollama, llamacpp",
+                provider_str
+            )),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut stdout = std::io::stdout();
     let cli = Cli::parse();
 
     if cli.prompt.is_empty() {
@@ -58,27 +107,86 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let user_prompt = cli.prompt.join(" ");
 
+    let model_specs = match parse_model_specs(&cli.model) {
+        Ok(specs) => specs,
+        Err(e) => {
+            eprintln!("Error parsing model specification: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let mut providers = Vec::new();
+    for spec in &model_specs {
+        match create_provider(spec) {
+            Ok(provider) => providers.push(provider),
+            Err(e) => {
+                eprintln!("Error creating provider for {:?}: {}", spec.provider, e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Use single provider or alloyed provider
+    if providers.len() == 1 {
+        let provider = providers.into_iter().next().unwrap();
+        run_agent(provider, &model_specs, &cli, &user_prompt).await
+    } else {
+        let alloyed_provider = AlloyedModelProvider::new(providers);
+        run_agent(Box::new(alloyed_provider), &model_specs, &cli, &user_prompt).await
+    }
+}
+
+async fn run_agent(
+    provider: Box<dyn ModelProvider>,
+    model_specs: &[ModelSpec],
+    cli: &Cli,
+    user_prompt: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut stdout = std::io::stdout();
+
     ui::show_wisp_logo()?;
-    let (mut agent, agents_status) = build_agent(&cli).await?;
+
+    // Create display string from model specs
+    let init_display_name = if model_specs.len() == 1 {
+        let spec = &model_specs[0];
+        if spec.model.is_empty() {
+            format!("{:?}", spec.provider)
+        } else {
+            format!("{:?} ({})", spec.provider, spec.model)
+        }
+    } else {
+        let provider_names: Vec<String> = model_specs.iter()
+            .map(|spec| {
+                if spec.model.is_empty() {
+                    format!("{:?}", spec.provider)
+                } else {
+                    format!("{:?} ({})", spec.provider, spec.model)
+                }
+            })
+            .collect();
+        format!("Alloyed [{}]", provider_names.join(", "))
+    };
+
+    let (mut agent, agents_status) = build_agent(provider, cli).await?;
 
     let (agents_loaded, agents_error) = match agents_status {
         AgentsStatus::Loaded => (true, None),
         AgentsStatus::NotFound => (false, None),
         AgentsStatus::Error(ref e) => (false, Some(e.as_str())),
     };
-    ui::show_init_header(&user_prompt, agents_loaded, agents_error)?;
-    let (result_stream, _cancel_token) = agent.send(UserMessage::text(&user_prompt)).await;
+    ui::show_init_header(user_prompt, &init_display_name, agents_loaded, agents_error)?;
+    let (result_stream, _cancel_token) = agent.send(UserMessage::text(user_prompt)).await;
     pin_mut!(result_stream);
 
     ui::show_response_header()?;
 
-    let mut active_tool_calls: HashMap<String, (String, ProgressBar)> = HashMap::new();
+    let mut active_tool_calls: HashMap<String, (String, String, ProgressBar)> = HashMap::new();
     let mut message_started = false;
 
     while let Some(event) = result_stream.next().await {
         match event {
             Text {
-                chunk, is_complete, ..
+                chunk, is_complete, model_name, ..
             } => {
                 if is_complete {
                     print_styled!(stdout, "\n\n");
@@ -87,6 +195,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     if let Some(filtered_chunk) = ui::filter_text_chunk(&chunk) {
                         if !message_started {
+                            ui::show_model_info(&model_name)?;
                             print_styled!(
                                 stdout,
                                 format!("{} ", "◈".with(colors::primary()).bold())
@@ -105,19 +214,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 name,
                 result,
                 is_complete,
+                model_name,
                 ..
             } => {
                 if is_complete {
-                    if let Some((tool_name, pb)) = active_tool_calls.get(&tool_call_id) {
+                    if let Some((tool_name, tool_model_name, pb)) = active_tool_calls.get(&tool_call_id) {
                         pb.finish_and_clear();
-                        ui::show_tool_completed(tool_name, result.as_deref())?;
+                        ui::show_tool_completed(tool_name, tool_model_name, result.as_deref())?;
                     }
                     active_tool_calls.remove(&tool_call_id);
                 } else if !name.is_empty() {
                     print_styled_line!(stdout, "");
                     stdout.flush()?;
-                    let pb = ui::create_tool_spinner(&name)?;
-                    active_tool_calls.insert(tool_call_id, (name, pb));
+                    let pb = ui::create_tool_spinner(&name, &model_name)?;
+                    active_tool_calls.insert(tool_call_id, (name, model_name, pb));
                 }
             }
 
@@ -183,9 +293,10 @@ enum AgentsStatus {
     Error(String),
 }
 
-async fn build_agent(cli: &Cli) -> Result<(Agent<DefaultModelProvider>, AgentsStatus), Report> {
-    let llm = DefaultModelProvider::new(&cli.url, &cli.model, cli.api_key.clone())?;
-
+async fn build_agent(
+    provider: Box<dyn ModelProvider>,
+    cli: &Cli,
+) -> Result<(Agent<Box<dyn ModelProvider>>, AgentsStatus), Report> {
     let (system_prompt, agents_status) = match load_agents_file().await {
         Ok(Some(content)) => (Some(content), AgentsStatus::Loaded),
         Ok(None) => (None, AgentsStatus::NotFound),
@@ -203,7 +314,7 @@ async fn build_agent(cli: &Cli) -> Result<(Agent<DefaultModelProvider>, AgentsSt
         system.to_string()
     };
 
-    let agent = agent(llm)
+    let agent = agent(provider)
         .system_prompt(&combined_system)
         .coding_tools()
         .build()
@@ -220,4 +331,54 @@ async fn load_agents_file() -> Result<Option<String>, std::io::Error> {
     }
 
     fs::read_to_string(agents_file).await.map(Some)
+}
+
+fn create_provider(spec: &ModelSpec) -> Result<Box<dyn ModelProvider>, Box<dyn std::error::Error>> {
+    use LlmProvider::*;
+    match spec.provider {
+        Anthropic => {
+            let provider = if spec.model.is_empty() {
+                AnthropicProvider::default()?
+            } else {
+                AnthropicProvider::default_with_model(&spec.model)?
+            };
+            Ok(Box::new(provider))
+        }
+        OpenRouter => {
+            let model = if spec.model.is_empty() {
+                "anthropic/claude-3.5-sonnet"
+            } else {
+                &spec.model
+            };
+            let provider = OpenRouterProvider::default(model)?;
+            Ok(Box::new(provider))
+        }
+        Ollama => {
+            let model = if spec.model.is_empty() {
+                "llama3.2"
+            } else {
+                &spec.model
+            };
+            let provider = OllamaProvider::default(model);
+            Ok(Box::new(provider))
+        }
+        LlamaCpp => {
+            let provider = LlamaCppProvider::default();
+            Ok(Box::new(provider))
+        }
+    }
+}
+
+fn parse_model_specs(model_arg: &str) -> Result<Vec<ModelSpec>, String> {
+    if model_arg.is_empty() || model_arg == "llamacpp:" || model_arg == "llamacpp" {
+        return Ok(vec![ModelSpec {
+            provider: LlmProvider::LlamaCpp,
+            model: "".to_string(),
+        }]);
+    }
+
+    model_arg
+        .split(',')
+        .map(|spec| ModelSpec::parse(spec.trim()))
+        .collect()
 }

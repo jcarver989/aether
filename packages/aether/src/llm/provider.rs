@@ -16,4 +16,15 @@ pub struct Context {
 
 pub trait ModelProvider: Send + Sync {
     fn stream_response(&self, context: Context) -> LlmResponseStream;
+    fn display_name(&self) -> String;
+}
+
+impl ModelProvider for Box<dyn ModelProvider> {
+    fn stream_response(&self, context: Context) -> LlmResponseStream {
+        (**self).stream_response(context)
+    }
+
+    fn display_name(&self) -> String {
+        (**self).display_name()
+    }
 }

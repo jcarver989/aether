@@ -32,4 +32,8 @@ impl OpenAiChatProvider for OllamaProvider {
     fn model(&self) -> &str {
         &self.model
     }
+
+    fn provider_name(&self) -> &str {
+        "Ollama"
+    }
 }

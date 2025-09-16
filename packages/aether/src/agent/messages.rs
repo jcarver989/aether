@@ -7,6 +7,7 @@ pub enum AgentMessage {
         message_id: String,
         chunk: String,
         is_complete: bool,
+        model_name: String,
     },
 
     ToolCall {
@@ -15,6 +16,7 @@ pub enum AgentMessage {
         arguments: Option<String>,
         result: Option<String>,
         is_complete: bool,
+        model_name: String,
     },
 
     Error {

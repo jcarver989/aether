@@ -29,4 +29,8 @@ impl OpenAiChatProvider for LlamaCppProvider {
     fn model(&self) -> &str {
         "" // llama.cpp server serves a single model on boot and does not allow swapping models
     }
+
+    fn provider_name(&self) -> &str {
+        "LlamaCpp"
+    }
 }

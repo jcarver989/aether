@@ -58,6 +58,13 @@ impl AnthropicProvider {
         Self::new(api_key)
     }
 
+    pub fn default_with_model(model: &str) -> Result<Self> {
+        let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
+            color_eyre::eyre::eyre!("ANTHROPIC_API_KEY environment variable not set")
+        })?;
+        Self::new(api_key).map(|provider| provider.with_model(model.to_string()))
+    }
+
     pub fn with_model(mut self, model: String) -> Self {
         self.model = model;
         self
@@ -193,6 +200,10 @@ impl ModelProvider for AnthropicProvider {
                 yield result;
             }
         })
+    }
+
+    fn display_name(&self) -> String {
+        format!("Anthropic ({})", self.model)
     }
 }
 
@@ -360,5 +371,17 @@ mod tests {
         } else {
             panic!("Expected system prompt");
         }
+    }
+
+    #[test]
+    fn test_anthropic_provider_display_name() {
+        let provider = create_test_provider();
+        assert_eq!(provider.display_name(), "Anthropic (claude-3-5-sonnet-20241022)");
+    }
+
+    #[test]
+    fn test_anthropic_provider_display_name_default() {
+        let provider = AnthropicProvider::new("test-api-key".to_string()).unwrap();
+        assert_eq!(provider.display_name(), "Anthropic (claude-3-5-sonnet-20241022)");
     }
 }

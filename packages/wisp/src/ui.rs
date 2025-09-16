@@ -97,12 +97,28 @@ pub fn show_wisp_logo() -> Result<(), std::io::Error> {
     print_styled!(stdout, logo_content);
     print_styled_line!(stdout, "");
 
-    for line in wisp_lines {
+    for (line_idx, line) in wisp_lines.iter().enumerate() {
         print_styled!(stdout, padding.clone());
         let chars: Vec<char> = line.chars().collect();
 
-        for (_i, ch) in chars.iter().enumerate() {
-            print_styled!(stdout, ch.to_string().with(colors::primary()).bold());
+        for ch in chars.iter() {
+            if *ch == '█' {
+                // Create vertical lighting gradient: top=full, bottom=light
+                let opacity_char = match line_idx {
+                    0 => '█', // Top line - full block (brightest)
+                    1 => '▓', // Second line - dark shade
+                    2 => '▒', // Third line - medium shade
+                    3 => '▒', // Fourth line - medium shade
+                    4 => '░', // Fifth line - light shade
+                    _ => '░', // Bottom line - light shade (darkest)
+                };
+                print_styled!(
+                    stdout,
+                    opacity_char.to_string().with(colors::primary()).bold()
+                );
+            } else {
+                print_styled!(stdout, ch.to_string().with(colors::primary()).bold());
+            }
         }
         print_styled_line!(stdout, "");
     }
@@ -113,7 +129,7 @@ pub fn show_wisp_logo() -> Result<(), std::io::Error> {
         format!(
             "{}{}",
             tagline_padding,
-            "AI agent, conjured from aether".dim().italic()
+            "An AI agent, conjured from aether".dim().italic()
         )
     );
     print_styled!(stdout, "\n\n");
@@ -152,6 +168,7 @@ pub fn show_usage(program_name: &str) -> Result<(), std::io::Error> {
 
 pub fn show_init_header(
     prompt: &str,
+    model_display_name: &str,
     agents_loaded: bool,
     agents_error: Option<&str>,
 ) -> Result<(), std::io::Error> {
@@ -169,21 +186,6 @@ pub fn show_init_header(
     print_styled_line!(stdout, "─".repeat(60).with(colors::info()));
     print_styled!(stdout, "\n");
 
-    // User prompt
-    print_styled_line!(
-        stdout,
-        format!(
-            "  {} {}",
-            "◆".with(colors::secondary()).bold(),
-            "User Prompt:".bold().with(colors::text_primary())
-        )
-    );
-    print_styled!(
-        stdout,
-        format!("    {}", prompt.italic().with(colors::text_primary()))
-    );
-    print_styled!(stdout, "\n\n");
-
     // Agents status
     if agents_loaded {
         print_styled!(
@@ -191,7 +193,11 @@ pub fn show_init_header(
             format!(
                 "  {} {}",
                 "✓".with(colors::success()).bold(),
-                "Loaded AGENTS.md as system prompt".with(colors::text_primary())
+                format!(
+                    "{} {}",
+                    "System prompt:".bold().with(colors::text_primary()),
+                    "loaded AGENTS.md".with(colors::text_primary())
+                )
             )
         );
     } else if let Some(error) = agents_error {
@@ -214,6 +220,33 @@ pub fn show_init_header(
             )
         );
     }
+    print_styled!(stdout, "\n\n");
+
+    // User prompt
+    print_styled_line!(
+        stdout,
+        format!(
+            "  {} {} {}",
+            "◆".with(colors::secondary()).bold(),
+            "User Prompt:".bold().with(colors::text_primary()),
+            prompt.italic().with(colors::text_primary())
+        )
+    );
+    print_styled!(stdout, "\n");
+
+    // Model information
+    print_styled_line!(
+        stdout,
+        format!(
+            "  {} {}",
+            "🤖".with(colors::primary()).bold(),
+            format!(
+                "{} {}",
+                "Model:".bold().with(colors::text_primary()),
+                model_display_name.with(colors::text_primary())
+            )
+        )
+    );
     print_styled_line!(stdout, "");
     print_styled_line!(stdout, "─".repeat(60).with(colors::info()));
     print_styled!(stdout, "\n");
@@ -237,14 +270,20 @@ pub fn show_response_header() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-pub fn create_tool_spinner(name: &str) -> Result<ProgressBar, Box<dyn std::error::Error>> {
+pub fn create_tool_spinner(
+    name: &str,
+    model_name: &str,
+) -> Result<ProgressBar, Box<dyn std::error::Error>> {
     let pb = ProgressBar::new_spinner();
     pb.set_style(
         ProgressStyle::default_spinner()
             .tick_chars("˚∘○◌◯❍◉⊙✦✧⋆✨")
             .template(&format!(
-                "{{spinner:.cyan}} Tool {} {{msg}}",
-                name.with(colors::info()).bold()
+                "{{spinner:.cyan}} Tool {} {} {{msg}}",
+                name.with(colors::info()).bold(),
+                format!("({})", model_name)
+                    .with(colors::text_secondary())
+                    .dim()
             ))?,
     );
     pb.set_message("running...");
@@ -252,15 +291,22 @@ pub fn create_tool_spinner(name: &str) -> Result<ProgressBar, Box<dyn std::error
     Ok(pb)
 }
 
-pub fn show_tool_completed(tool_name: &str, result: Option<&str>) -> Result<(), std::io::Error> {
+pub fn show_tool_completed(
+    tool_name: &str,
+    model_name: &str,
+    result: Option<&str>,
+) -> Result<(), std::io::Error> {
     let mut stdout = stdout();
     print_styled_line!(
         stdout,
         format!(
-            "{} {} {}",
+            "{} {} {} {}",
             "✓".with(colors::success()).bold(),
             "Tool".bold().with(colors::text_primary()),
-            tool_name.bold().with(colors::success())
+            tool_name.bold().with(colors::success()),
+            format!("({})", model_name)
+                .with(colors::text_secondary())
+                .dim()
         )
     );
 
@@ -337,6 +383,21 @@ pub fn show_cancelled(message: &str) -> Result<(), std::io::Error> {
         )
     );
     stderr.flush()?;
+    Ok(())
+}
+
+pub fn show_model_info(model_name: &str) -> Result<(), std::io::Error> {
+    let mut stdout = stdout();
+    print_styled!(
+        stdout,
+        format!(
+            "{} ",
+            format!("({})", model_name)
+                .with(colors::text_secondary())
+                .dim()
+        )
+    );
+    stdout.flush()?;
     Ok(())
 }
 

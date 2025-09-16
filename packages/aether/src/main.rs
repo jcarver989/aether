@@ -1,6 +1,12 @@
 use aether::{
     agent::{AgentMessage::*, UserMessage, agent},
-    llm::local::llama_cpp::LlamaCppProvider,
+    llm::{
+        ModelProvider,
+        anthropic::AnthropicProvider,
+        local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
+        openrouter::OpenRouterProvider,
+    },
+    types::LlmProvider,
 };
 use clap::Parser;
 use futures::pin_mut;
@@ -18,38 +24,70 @@ struct Cli {
     system: Option<String>,
 
     #[arg(
-        short = 'u',
-        long = "url",
-        help = "HTTP endpoint URL for the LLM provider. Defaults to http://localhost:8080 (LLama.cpp server's default port)",
-        default_value = "http://localhost:8080"
-    )]
-    url: String,
-
-    #[arg(short = 'k', long = "api-key", help = "API key for the LLM provider")]
-    api_key: Option<String>,
-
-    #[arg(
         short = 'm',
         long = "model",
         help = "Model name to use",
         default_value = ""
     )]
     model: String,
+
+    #[arg(long = "provider", help = "LLM provider to use", value_enum)]
+    provider: Option<LlmProvider>,
 }
 
 #[tokio::main]
 pub async fn main() {
     let cli = Cli::parse();
-    let prompt = cli.prompt.unwrap();
+    let prompt = match cli.prompt.clone() {
+        Some(p) => p,
+        None => {
+            eprintln!("Error: --prompt is required");
+            std::process::exit(1);
+        }
+    };
 
-    let provider = LlamaCppProvider::default();
+    match cli.provider {
+        Some(LlmProvider::Anthropic) => {
+            let provider = if cli.model.is_empty() {
+                AnthropicProvider::default().unwrap()
+            } else {
+                AnthropicProvider::default_with_model(&cli.model).unwrap()
+            };
+            run_agent(provider, &cli, &prompt).await;
+        }
+        Some(LlmProvider::OpenRouter) => {
+            let model = if cli.model.is_empty() {
+                "anthropic/claude-3.5-sonnet"
+            } else {
+                &cli.model
+            };
+            let provider = OpenRouterProvider::default(model).unwrap();
+            run_agent(provider, &cli, &prompt).await;
+        }
+        Some(LlmProvider::Ollama) => {
+            let model = if cli.model.is_empty() {
+                "llama3.2"
+            } else {
+                &cli.model
+            };
+            let provider = OllamaProvider::default(model);
+            run_agent(provider, &cli, &prompt).await;
+        }
+        Some(LlmProvider::LlamaCpp) | None => {
+            let provider = LlamaCppProvider::default();
+            run_agent(provider, &cli, &prompt).await;
+        }
+    }
+}
+
+async fn run_agent<T: ModelProvider + 'static>(provider: T, cli: &Cli, prompt: &str) {
     let mut agent = agent(provider)
-        .system_prompt(&cli.system.unwrap_or_default())
+        .system_prompt(&cli.system.clone().unwrap_or_default())
         .build()
         .await
         .unwrap();
 
-    let (result_stream, _cancel_token) = agent.send(UserMessage::text(&prompt)).await;
+    let (result_stream, _cancel_token) = agent.send(UserMessage::text(prompt)).await;
     pin_mut!(result_stream);
 
     while let Some(event) = result_stream.next().await {

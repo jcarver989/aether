@@ -37,6 +37,10 @@ impl<T: ModelProvider + 'static> Agent<T> {
         }
     }
 
+    pub fn current_model_display_name(&self) -> String {
+        self.llm.display_name()
+    }
+
     pub async fn send(
         &mut self,
         message: UserMessage,
@@ -146,6 +150,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                     message_id: message_id.clone(),
                                     chunk,
                                     is_complete: false,
+                                    model_name: self.llm.display_name(),
                                 };
                             }
                         }
@@ -156,6 +161,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 arguments: None,
                                 result: None,
                                 is_complete: false,
+                                model_name: self.llm.display_name(),
                             };
                         }
                         Ok(ToolRequestArg { id, chunk }) => {
@@ -165,6 +171,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 arguments: Some(chunk),
                                 result: None,
                                 is_complete: false,
+                                model_name: self.llm.display_name(),
                             };
                         }
                         Ok(ToolRequestComplete { tool_call }) => {
@@ -210,6 +217,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 arguments: None,
                                 result: Some(result_str.clone()),
                                 is_complete: true,
+                                model_name: self.llm.display_name(),
                             };
 
                             completed_tool_calls.push((tool_call, result_str));
@@ -221,6 +229,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                     message_id: message_id.clone(),
                                     chunk: String::new(),
                                     is_complete: true,
+                                    model_name: self.llm.display_name(),
                                 };
                             }
 

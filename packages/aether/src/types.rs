@@ -1,3 +1,6 @@
+use std::fmt::Display;
+
+use chrono::{DateTime, TimeZone};
 use serde::{Deserialize, Serialize};
 
 /// A newtype wrapper for ISO 8601 timestamp strings
@@ -11,9 +14,9 @@ impl IsoString {
     }
 
     /// Create an IsoString from a chrono DateTime
-    pub fn from_datetime<Tz: chrono::TimeZone>(datetime: chrono::DateTime<Tz>) -> Self
+    pub fn from_datetime<T: TimeZone>(datetime: DateTime<T>) -> Self
     where
-        Tz::Offset: std::fmt::Display,
+        T::Offset: Display,
     {
         Self(datetime.to_rfc3339())
     }
@@ -98,11 +101,12 @@ pub struct ToolDefinition {
     pub server: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 pub enum LlmProvider {
+    Anthropic,
     OpenRouter,
     Ollama,
-    Anthropic,
+    LlamaCpp,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
