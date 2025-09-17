@@ -85,7 +85,7 @@ async fn run_agent<T: ModelProvider + 'static>(provider: T, cli: &Cli, prompt: &
         .await
         .unwrap();
 
-    let mut result_receiver = agent.send(UserMessage::text(prompt)).await;
+    let (mut result_receiver, _cancel_token) = agent.send(UserMessage::text(prompt)).await;
 
     while let Some(event) = result_receiver.recv().await {
         match event {

@@ -1,10 +1,10 @@
 use crate::agent::AgentMessage;
 use crate::agent::UserMessage;
-use crate::agent::agent_task::AgentTask;
+use crate::agent::process_user_message_task::ProcessUserMessageTask;
 use crate::llm::Context;
 use crate::llm::ModelProvider;
 use crate::mcp::{ElicitationRequest, McpManager};
-use crate::types::{ChatMessage, IsoString};
+use crate::types::ChatMessage;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
@@ -13,7 +13,7 @@ pub struct Agent<T: ModelProvider> {
     llm: Arc<Mutex<T>>,
     mcp_client: Arc<Mutex<McpManager>>,
     context: Arc<Mutex<Context>>,
-    cancellation_token: CancellationToken,
+    current_task_token: Option<CancellationToken>,
     elicitation_receiver: Arc<Mutex<mpsc::UnboundedReceiver<ElicitationRequest>>>,
 }
 
@@ -27,11 +27,11 @@ impl<T: ModelProvider + 'static> Agent<T> {
         Self {
             llm: Arc::new(Mutex::new(llm)),
             mcp_client: Arc::new(Mutex::new(mcp_client)),
-            context: Arc::new(Mutex::new(Context {
+            context: Arc::new(Mutex::new(Context::new(
                 messages,
-                tools: Vec::new(), // Will be populated when tools are discovered
-            })),
-            cancellation_token: CancellationToken::new(),
+                Vec::new(), // Will be populated when tools are discovered
+            ))),
+            current_task_token: None,
             elicitation_receiver: Arc::new(Mutex::new(elicitation_receiver)),
         }
     }
@@ -40,19 +40,25 @@ impl<T: ModelProvider + 'static> Agent<T> {
         self.llm.lock().await.display_name()
     }
 
-    pub async fn send(&mut self, message: UserMessage) -> mpsc::Receiver<AgentMessage> {
+    pub async fn send(
+        &mut self,
+        message: UserMessage,
+    ) -> (mpsc::Receiver<AgentMessage>, CancellationToken) {
         let (tx, rx) = mpsc::channel(100);
 
         match message {
             UserMessage::Text { content } => {
-                self.cancellation_token = CancellationToken::new();
-                self.context.lock().await.messages.push(ChatMessage::User {
-                    content,
-                    timestamp: IsoString::now(),
-                });
+                if let Some(token) = &self.current_task_token {
+                    token.cancel();
+                }
 
-                let task = AgentTask::new(
-                    self.cancellation_token.clone(),
+                let message_token = CancellationToken::new();
+                self.current_task_token = Some(message_token.clone());
+
+                self.context.lock().await.add_user_message(content);
+
+                let task = ProcessUserMessageTask::new(
+                    message_token.clone(),
                     self.context.clone(),
                     self.mcp_client.clone(),
                     self.llm.clone(),
@@ -61,18 +67,25 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 );
 
                 tokio::spawn(task.run());
+                (rx, message_token)
             }
             UserMessage::Cancel => {
-                self.cancellation_token.cancel();
+                let cancel_token = CancellationToken::new();
+                cancel_token.cancel(); // Pre-cancelled token
+
+                if let Some(token) = &self.current_task_token {
+                    token.cancel();
+                }
+                self.current_task_token = None;
+
                 let _ = tx
                     .send(AgentMessage::Cancelled {
                         message: "Operation was cancelled".to_string(),
                     })
                     .await;
+
+                (rx, cancel_token)
             }
-        };
-
-        rx
+        }
     }
-
 }

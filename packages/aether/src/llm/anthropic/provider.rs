@@ -91,11 +91,11 @@ impl AnthropicProvider {
     }
 
     pub(crate) fn build_request(&self, context: &Context) -> Result<Request> {
-        let (system_prompt, messages) = map_messages(&context.messages)?;
-        let tools = if context.tools.is_empty() {
+        let (system_prompt, messages) = map_messages(context.messages())?;
+        let tools = if context.tools().is_empty() {
             None
         } else {
-            Some(map_tools(&context.tools)?)
+            Some(map_tools(context.tools())?)
         };
 
         let mut request = Request::new(self.model.clone(), messages)
@@ -232,13 +232,13 @@ mod tests {
     fn test_build_request_simple() {
         let provider = create_test_provider();
 
-        let context = Context {
-            messages: vec![ChatMessage::User {
+        let context = Context::new(
+            vec![ChatMessage::User {
                 content: "Hello".to_string(),
                 timestamp: IsoString::now(),
             }],
-            tools: vec![],
-        };
+            vec![],
+        );
 
         let request = provider.build_request(&context).unwrap();
         assert_eq!(request.model, "claude-3-5-sonnet-20241022");
@@ -252,8 +252,8 @@ mod tests {
     fn test_build_request_with_system_and_tools() {
         let provider = create_test_provider();
 
-        let context = Context {
-            messages: vec![
+        let context = Context::new(
+            vec![
                 ChatMessage::System {
                     content: "You are helpful".to_string(),
                     timestamp: IsoString::now(),
@@ -263,14 +263,14 @@ mod tests {
                     timestamp: IsoString::now(),
                 },
             ],
-            tools: vec![ToolDefinition {
+            vec![ToolDefinition {
                 name: "search".to_string(),
                 description: "Search for information".to_string(),
                 parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#
                     .to_string(),
                 server: None,
             }],
-        };
+        );
 
         let request = provider.build_request(&context).unwrap();
         if let Some(system) = &request.system {
@@ -292,8 +292,8 @@ mod tests {
     fn test_build_request_with_caching() {
         let provider = AnthropicProvider::new("test-api-key".to_string()).unwrap(); // Caching is enabled by default
 
-        let context = Context {
-            messages: vec![
+        let context = Context::new(
+            vec![
                 ChatMessage::System {
                     content: "Hello".to_string(),
                     timestamp: IsoString::now(),
@@ -303,14 +303,14 @@ mod tests {
                     timestamp: IsoString::now(),
                 },
             ],
-            tools: vec![ToolDefinition {
+            vec![ToolDefinition {
                 name: "search".to_string(),
                 description: "Search for information".to_string(),
                 parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#
                     .to_string(),
                 server: None,
             }],
-        };
+        );
 
         let request = provider.build_request(&context).unwrap();
 
@@ -344,8 +344,8 @@ mod tests {
             .unwrap()
             .with_prompt_caching(false);
 
-        let context = Context {
-            messages: vec![
+        let context = Context::new(
+            vec![
                 ChatMessage::System {
                     content: "Hello".to_string(),
                     timestamp: IsoString::now(),
@@ -355,8 +355,8 @@ mod tests {
                     timestamp: IsoString::now(),
                 },
             ],
-            tools: vec![],
-        };
+            vec![],
+        );
 
         let request = provider.build_request(&context).unwrap();
 

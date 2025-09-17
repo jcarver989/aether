@@ -2,7 +2,7 @@ use aether::{
     agent::{AgentMessage, UserMessage, agent},
     mcp::manager::McpServerConfig,
     testing::FakeLlmProvider,
-    types::{ChatMessage, LlmResponse, ToolCallRequest},
+    types::{LlmResponse, ToolCallRequest},
 };
 use rmcp::ServiceExt;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
@@ -84,7 +84,7 @@ async fn test_simple_tool_call_completes() {
     let llm = FakeLlmProvider::with_single_response(responses);
     let test_mcp = SimpleMcp::new();
 
-    let mut agent = agent(llm)
+    let mut test_agent = agent(llm)
         .system_prompt("You are a test assistant")
         .mcp(McpServerConfig::InMemory {
             name: "simple_mcp".to_string(),
@@ -94,7 +94,7 @@ async fn test_simple_tool_call_completes() {
         .await
         .unwrap();
 
-    let mut receiver = agent.send(UserMessage::text("Use the echo tool")).await;
+    let (mut receiver, _cancel_token) = test_agent.send(UserMessage::text("Use the echo tool")).await;
 
     // Collect messages until completion
     let mut messages = Vec::new();
@@ -142,4 +142,102 @@ async fn test_simple_tool_call_completes() {
     assert_eq!(tool_call_count, 1, "Should have exactly 1 completed tool call, got {}", tool_call_count);
 
     println!("✅ Simple tool call test passed! Received {} messages in {} iterations", messages.len(), iterations);
+}
+
+#[tokio::test]
+async fn test_agent_control_flow_scenarios() {
+    // Test 1: Error handling - should terminate immediately
+    let error_responses = vec![
+        LlmResponse::Start { message_id: "msg_1".to_string() },
+        LlmResponse::Error { message: "Test error".to_string() },
+    ];
+
+    let llm = FakeLlmProvider::with_single_response(error_responses);
+    let test_mcp = SimpleMcp::new();
+
+    let mut error_agent = agent(llm)
+        .system_prompt("You are a test assistant")
+        .mcp(McpServerConfig::InMemory {
+            name: "simple_mcp".to_string(),
+            server: test_mcp.into_dyn(),
+        })
+        .build()
+        .await
+        .unwrap();
+
+    let (mut receiver, _cancel_token) = error_agent.send(UserMessage::text("This should error")).await;
+
+    // Collect messages - should get error and then terminate
+    let mut messages = Vec::new();
+    let mut error_received = false;
+    let mut iterations = 0;
+    const MAX_ITERATIONS: usize = 100;
+
+    while !error_received && iterations < MAX_ITERATIONS {
+        iterations += 1;
+        match tokio::time::timeout(std::time::Duration::from_millis(50), receiver.recv()).await {
+            Ok(Some(msg)) => {
+                if let AgentMessage::Error { .. } = &msg {
+                    error_received = true;
+                }
+                messages.push(msg);
+            },
+            Ok(None) => break, // Channel closed
+            Err(_) => break, // Timeout
+        }
+    }
+
+    assert!(error_received, "Should have received an error message");
+    assert!(messages.iter().any(|msg| matches!(msg, AgentMessage::Error { .. })), "Should contain error message");
+
+    // Test 2: No tool calls - should terminate after text completion
+    {
+        let no_tool_responses = vec![
+            LlmResponse::Start { message_id: "msg_2".to_string() },
+            LlmResponse::Text { chunk: "Just text response".to_string() },
+            LlmResponse::Done,
+        ];
+
+        let llm2 = FakeLlmProvider::with_single_response(no_tool_responses);
+        let test_mcp2 = SimpleMcp::new();
+
+        let mut text_agent = agent(llm2)
+            .system_prompt("You are a test assistant")
+            .mcp(McpServerConfig::InMemory {
+                name: "simple_mcp".to_string(),
+                server: test_mcp2.into_dyn(),
+            })
+            .build()
+            .await
+            .unwrap();
+
+        let (mut receiver2, _cancel_token) = text_agent.send(UserMessage::text("Just respond with text")).await;
+
+        let mut messages2 = Vec::new();
+        let mut completed = false;
+        let mut iterations2 = 0;
+
+        while !completed && iterations2 < MAX_ITERATIONS {
+            iterations2 += 1;
+            match tokio::time::timeout(std::time::Duration::from_millis(50), receiver2.recv()).await {
+                Ok(Some(msg)) => {
+                    if let AgentMessage::Text { is_complete: true, .. } = &msg {
+                        completed = true;
+                    }
+                    messages2.push(msg);
+                },
+                Ok(None) => break, // Channel closed = completion
+                Err(_) => break, // Timeout = likely completion
+            }
+        }
+
+        // Should have text messages but no tool calls
+        let text_messages = messages2.iter().filter(|msg| matches!(msg, AgentMessage::Text { .. })).count();
+        let tool_messages = messages2.iter().filter(|msg| matches!(msg, AgentMessage::ToolCall { .. })).count();
+
+        assert!(text_messages > 0, "Should have text messages");
+        assert_eq!(tool_messages, 0, "Should have no tool call messages");
+    }
+
+    println!("✅ Control flow test passed! Error handling and no-tool completion work correctly");
 }

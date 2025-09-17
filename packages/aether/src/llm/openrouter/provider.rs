@@ -46,11 +46,11 @@ impl ModelProvider for OpenRouterProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
         let client = self.client.clone();
         let model = self.model.clone();
-        let messages = map_messages(&context.messages);
-        let tools = if context.tools.is_empty() {
+        let messages = map_messages(context.messages());
+        let tools = if context.tools().is_empty() {
             None
         } else {
-            Some(map_tools(&context.tools))
+            Some(map_tools(context.tools()))
         };
 
         Box::pin(async_stream::stream! {

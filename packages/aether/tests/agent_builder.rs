@@ -34,7 +34,7 @@ async fn test_agent_builder_with_in_memory_mcp() {
 }
 
 #[tokio::test]
-async fn test_agent_builder_spawn() {
+async fn test_agent_builder_direct_send() {
     let llm = FakeLlmProvider::with_single_response(vec![
         LlmResponse::Start {
             message_id: "test".to_string(),
@@ -45,14 +45,14 @@ async fn test_agent_builder_spawn() {
         LlmResponse::Done,
     ]);
 
-    let (tx, mut rx) = agent(llm)
+    let mut agent = agent(llm)
         .system_prompt("you are a helpful agent")
-        .spawn()
+        .build()
         .await
         .unwrap();
 
     // Send a message
-    tx.send(UserMessage::text("What is 5+5?")).await.unwrap();
+    let (mut rx, _cancel_token) = agent.send(UserMessage::text("What is 5+5?")).await;
 
     // Receive response
     let mut received_text = String::new();
@@ -91,7 +91,7 @@ async fn test_agent_builder_method_chaining() {
 }
 
 #[tokio::test]
-async fn test_agent_builder_spawn_with_tools() {
+async fn test_agent_builder_direct_send_with_tools() {
     let llm = FakeLlmProvider::with_single_response(vec![
         LlmResponse::Start {
             message_id: "test".to_string(),
@@ -102,16 +102,14 @@ async fn test_agent_builder_spawn_with_tools() {
         LlmResponse::Done,
     ]);
 
-    let (tx, mut rx) = agent(llm)
+    let mut agent = agent(llm)
         .system_prompt("you are a helpful coding assistant")
-        .spawn()
+        .build()
         .await
         .unwrap();
 
     // Send a message
-    tx.send(UserMessage::text("Create a new file"))
-        .await
-        .unwrap();
+    let (mut rx, _cancel_token) = agent.send(UserMessage::text("Create a new file")).await;
 
     // Receive response (just verify we get some response)
     let message = rx.recv().await;

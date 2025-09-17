@@ -93,10 +93,7 @@ mod tests {
         let provider =
             AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
 
-        let context = Context {
-            messages: vec![],
-            tools: vec![],
-        };
+        let context = Context::new(vec![], vec![]);
 
         // stream_response should advance to next provider each time
         let _stream1 = provider.stream_response(&context); // Uses provider 0, advances to 1

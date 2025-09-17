@@ -1,4 +1,4 @@
-use crate::types::{ChatMessage, LlmResponse, ToolDefinition};
+use crate::types::{ChatMessage, LlmResponse, ToolDefinition, IsoString, ToolCallRequest};
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
@@ -10,8 +10,76 @@ pub type LlmResponseStream = Pin<Box<dyn Stream<Item = Result<LlmResponse>> + Se
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
-    pub messages: Vec<ChatMessage>,
-    pub tools: Vec<ToolDefinition>,
+    messages: Vec<ChatMessage>,
+    tools: Vec<ToolDefinition>,
+}
+
+impl Context {
+    pub fn new(messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Self {
+        Self { messages, tools }
+    }
+
+    pub fn add_message(&mut self, message: ChatMessage) {
+        self.messages.push(message);
+    }
+
+    pub fn add_user_message(&mut self, content: String) {
+        self.messages.push(ChatMessage::User {
+            content,
+            timestamp: IsoString::now(),
+        });
+    }
+
+    pub fn add_system_message(&mut self, content: String) {
+        self.messages.push(ChatMessage::System {
+            content,
+            timestamp: IsoString::now(),
+        });
+    }
+
+    pub fn add_assistant_message(&mut self, content: String) {
+        self.messages.push(ChatMessage::Assistant {
+            content,
+            timestamp: IsoString::now(),
+            tool_calls: Vec::new(),
+        });
+    }
+
+    pub fn add_assistant_message_with_tools(&mut self, content: String, tool_calls: Vec<ToolCallRequest>) {
+        self.messages.push(ChatMessage::Assistant {
+            content,
+            timestamp: IsoString::now(),
+            tool_calls,
+        });
+    }
+
+    pub fn add_tool_call_result(&mut self, tool_call_id: String, content: String) {
+        self.messages.push(ChatMessage::ToolCallResult {
+            tool_call_id,
+            content,
+            timestamp: IsoString::now(),
+        });
+    }
+
+    pub fn add_tool(&mut self, tool: ToolDefinition) {
+        self.tools.push(tool);
+    }
+
+    pub fn add_tools(&mut self, tools: Vec<ToolDefinition>) {
+        self.tools.extend(tools);
+    }
+
+    pub fn set_tools(&mut self, tools: Vec<ToolDefinition>) {
+        self.tools = tools;
+    }
+
+    pub fn messages(&self) -> &Vec<ChatMessage> {
+        &self.messages
+    }
+
+    pub fn tools(&self) -> &Vec<ToolDefinition> {
+        &self.tools
+    }
 }
 
 pub trait ModelProvider: Send + Sync {

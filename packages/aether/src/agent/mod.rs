@@ -1,8 +1,8 @@
 mod agent;
 mod agent_builder;
-mod agent_task;
 mod elicitation_task;
 mod messages;
+mod process_user_message_task;
 mod tool_execution_task;
 
 pub use agent::*;

@@ -24,7 +24,7 @@ async fn test_cancel_message_variant() {
         .unwrap();
 
     // Send a cancel message directly
-    let mut receiver = agent.send(UserMessage::Cancel).await;
+    let (mut receiver, _cancel_token) = agent.send(UserMessage::Cancel).await;
 
     let mut events: Vec<String> = Vec::new();
     let mut has_cancelled_message = false;
@@ -81,7 +81,7 @@ async fn test_cancellation_during_tool_execution() {
         .await
         .unwrap();
 
-    let mut receiver = agent.send(UserMessage::text("Write a file")).await;
+    let (mut receiver, _cancel_token) = agent.send(UserMessage::text("Write a file")).await;
 
     let mut events: Vec<String> = Vec::new();
     let mut tool_started = false;
@@ -164,7 +164,7 @@ async fn test_multiple_operations_with_cancellation() {
         .unwrap();
 
     // First operation
-    let mut receiver1 = agent.send(UserMessage::text("First task")).await;
+    let (mut receiver1, _cancel_token1) = agent.send(UserMessage::text("First task")).await;
     // TODO: Cancellation needs to be reworked without cancel tokens
 
     let mut first_events: Vec<String> = Vec::new();
@@ -192,7 +192,7 @@ async fn test_multiple_operations_with_cancellation() {
     }
 
     // Second operation should work normally
-    let mut receiver2 = agent.send(UserMessage::text("Second task")).await;
+    let (mut receiver2, _cancel_token2) = agent.send(UserMessage::text("Second task")).await;
 
     let mut second_events: Vec<String> = Vec::new();
     let mut has_second_text = false;
@@ -257,10 +257,10 @@ async fn test_cancellation_token_isolation() {
         .unwrap();
 
     // Get first receiver
-    let receiver1 = agent.send(UserMessage::text("Task 1")).await;
+    let (receiver1, _cancel_token1) = agent.send(UserMessage::text("Task 1")).await;
 
     // Get second receiver
-    let receiver2 = agent.send(UserMessage::text("Task 2")).await;
+    let (receiver2, _cancel_token2) = agent.send(UserMessage::text("Task 2")).await;
 
     // TODO: Cancellation testing needs to be reworked without cancel tokens
     // Cleanup receivers

@@ -83,7 +83,7 @@ async fn test_basic_functionality_still_works() {
         .await
         .unwrap();
 
-    let mut receiver = agent.send(UserMessage::text("Hello")).await;
+    let (mut receiver, _cancel_token) = agent.send(UserMessage::text("Hello")).await;
 
     let mut text_chunks = Vec::new();
     while let Some(event) = receiver.recv().await {

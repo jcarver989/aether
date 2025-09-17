@@ -103,7 +103,7 @@ async fn test_tool_call_message_ordering_race_condition() {
         .await
         .unwrap();
 
-    let mut receiver = agent.send(UserMessage::text("Use the fast tool")).await;
+    let (mut receiver, _cancel_token) = agent.send(UserMessage::text("Use the fast tool")).await;
 
     // Collect all messages
     let mut tool_results = Vec::new();

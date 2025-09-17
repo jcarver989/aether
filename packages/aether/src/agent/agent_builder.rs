@@ -1,5 +1,4 @@
 use crate::agent::Agent;
-use crate::agent::{AgentMessage, UserMessage};
 use crate::llm::ModelProvider;
 use crate::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
@@ -55,24 +54,4 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
         Ok(Agent::new(self.llm, mcp_manager, messages, elicitation_rx))
     }
 
-    pub async fn spawn(self) -> Result<(mpsc::Sender<UserMessage>, mpsc::Receiver<AgentMessage>)> {
-        let (user_tx, mut user_rx) = mpsc::channel::<UserMessage>(100);
-        let (agent_tx, agent_rx) = mpsc::channel::<AgentMessage>(100);
-
-        let mut agent = self.build().await?;
-
-        tokio::spawn(async move {
-            while let Some(message) = user_rx.recv().await {
-                let mut result_receiver = agent.send(message).await;
-
-                while let Some(event) = result_receiver.recv().await {
-                    if agent_tx.send(event).await.is_err() {
-                        break;
-                    }
-                }
-            }
-        });
-
-        Ok((user_tx, agent_rx))
-    }
 }

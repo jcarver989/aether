@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
             server: None,
         },
     ];
-    let context = Context { messages, tools };
+    let context = Context::new(messages, tools);
 
     // Stream the response
     let stream = provider.stream_response(&context);
