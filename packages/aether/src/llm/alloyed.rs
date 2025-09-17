@@ -23,6 +23,14 @@ impl AlloyedModelProvider {
         if self.providers.is_empty() {
             return None;
         }
+        let index = self.current_provider_index.load(Ordering::Relaxed) % self.providers.len();
+        Some(&self.providers[index])
+    }
+
+    fn get_next_provider(&self) -> Option<&Box<dyn ModelProvider>> {
+        if self.providers.is_empty() {
+            return None;
+        }
         let index =
             self.current_provider_index.fetch_add(1, Ordering::Relaxed) % self.providers.len();
         Some(&self.providers[index])
@@ -31,7 +39,7 @@ impl AlloyedModelProvider {
 
 impl ModelProvider for AlloyedModelProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        match self.get_current_provider() {
+        match self.get_next_provider() {
             Some(provider) => provider.stream_response(context),
             None => Box::pin(tokio_stream::empty()),
         }
@@ -90,13 +98,36 @@ mod tests {
             tools: vec![],
         };
 
-        // Both stream_response and display_name should cycle through providers
-        let _stream1 = provider.stream_response(&context);
-        let _stream2 = provider.stream_response(&context);
-        let _stream3 = provider.stream_response(&context);
+        // stream_response should advance to next provider each time
+        let _stream1 = provider.stream_response(&context); // Uses provider 0, advances to 1
+        let name1 = provider.display_name(); // Should show provider 1
 
-        // display_name should cycle and return individual provider names
-        assert_eq!(provider.display_name(), "Fake LLM");
-        assert_eq!(provider.display_name(), "Fake LLM");
+        let _stream2 = provider.stream_response(&context); // Uses provider 1, advances to 0 (wraps)
+        let name2 = provider.display_name(); // Should show provider 0
+
+        let _stream3 = provider.stream_response(&context); // Uses provider 0, advances to 1
+        let name3 = provider.display_name(); // Should show provider 1
+
+        // All should return "Fake LLM" but they're cycling through different instances
+        assert_eq!(name1, "Fake LLM");
+        assert_eq!(name2, "Fake LLM");
+        assert_eq!(name3, "Fake LLM");
+    }
+
+    #[test]
+    fn test_display_name_doesnt_advance_counter() {
+        let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
+        let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
+        let provider =
+            AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
+
+        // Calling display_name multiple times should return the same result
+        let name1 = provider.display_name();
+        let name2 = provider.display_name();
+        let name3 = provider.display_name();
+
+        assert_eq!(name1, "Fake LLM");
+        assert_eq!(name2, "Fake LLM");
+        assert_eq!(name3, "Fake LLM");
     }
 }
