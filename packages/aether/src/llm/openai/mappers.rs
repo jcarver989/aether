@@ -76,7 +76,7 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
 
 impl From<&ChatMessage> for Option<ChatCompletionRequestMessage> {
     fn from(msg: &ChatMessage) -> Self {
-        msg.into()
+        msg.clone().into()
     }
 }
 
@@ -96,7 +96,7 @@ impl From<ToolDefinition> for ChatCompletionTool {
 
 impl From<&ToolDefinition> for ChatCompletionTool {
     fn from(tool: &ToolDefinition) -> Self {
-        tool.into()
+        tool.clone().into()
     }
 }
 

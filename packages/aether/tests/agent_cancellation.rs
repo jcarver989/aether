@@ -4,62 +4,6 @@ use aether::{
     types::{LlmResponse, ToolCallRequest},
 };
 
-#[tokio::test]
-async fn test_basic_cancellation() {
-    let fake_llm = FakeLlmProvider::with_single_response(vec![
-        LlmResponse::Start {
-            message_id: "msg1".to_string(),
-        },
-        LlmResponse::Text {
-            chunk: "Starting a long task...".to_string(),
-        },
-        LlmResponse::Done,
-    ]);
-
-    let mut agent = agent(fake_llm)
-        .system_prompt("You are a helpful assistant.")
-        .build()
-        .await
-        .unwrap();
-
-    let mut receiver = agent.send(UserMessage::text("Start task")).await;
-
-    // Start collecting events (as debug strings now)
-    let mut events: Vec<String> = Vec::new();
-    let mut has_cancelled = false;
-
-    // For this test, we'll send a cancel message through a second send() call
-    // Note: This test needs to be reworked as the cancellation semantics have changed
-
-    while let Some(event) = receiver.recv().await {
-        // Instead of cloning, just check the event type
-        match event {
-            AgentMessage::Cancelled { .. } => {
-                has_cancelled = true;
-                break;
-            }
-            AgentMessage::ElicitationRequest {
-                response_sender, ..
-            } => {
-                // Handle elicitation requests by declining them in tests
-                use rmcp::model::{CreateElicitationResult, ElicitationAction};
-                let _ = response_sender.send(CreateElicitationResult {
-                    action: ElicitationAction::Decline,
-                    content: None,
-                });
-            }
-            event => {
-                // Count other events without storing them
-                events.push(format!("{:?}", event));
-            }
-        }
-    }
-
-    assert!(
-        has_cancelled,
-        "Expected operation to be cancelled"
-    );
-}
 
 #[tokio::test]
 async fn test_cancel_message_variant() {

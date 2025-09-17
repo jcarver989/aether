@@ -1,15 +1,15 @@
 use aether::{
     agent::{AgentMessage, UserMessage, agent},
+    mcp::manager::McpServerConfig,
     testing::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
-    mcp::manager::McpServerConfig,
 };
-use rmcp::{ServiceExt};
+use rmcp::ServiceExt;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
-use rmcp::{tool, tool_handler, tool_router, ServerHandler};
-use serde::{Deserialize, Serialize};
+use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 // Simple test tools for parallel execution testing
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -56,101 +56,6 @@ impl TestMcp {
 }
 
 #[tokio::test]
-async fn test_parallel_tool_execution() {
-    // Create a fake LLM that returns multiple tool calls
-    let tool_call_1 = ToolCallRequest {
-        id: "call_1".to_string(),
-        name: "test_mcp__delay_tool".to_string(),
-        arguments: r#"{"duration_ms": 100}"#.to_string(),
-    };
-
-    let tool_call_2 = ToolCallRequest {
-        id: "call_2".to_string(),
-        name: "test_mcp__delay_tool".to_string(),
-        arguments: r#"{"duration_ms": 50}"#.to_string(),
-    };
-
-    let responses = vec![
-        LlmResponse::Start {
-            message_id: "msg_1".to_string(),
-        },
-        LlmResponse::Text {
-            chunk: "I'll execute two tools in parallel.".to_string(),
-        },
-        LlmResponse::ToolRequestStart {
-            id: "call_1".to_string(),
-            name: "test_mcp__delay_tool".to_string(),
-        },
-        LlmResponse::ToolRequestArg {
-            id: "call_1".to_string(),
-            chunk: r#"{"duration_ms": 100}"#.to_string(),
-        },
-        LlmResponse::ToolRequestComplete {
-            tool_call: tool_call_1,
-        },
-        LlmResponse::ToolRequestStart {
-            id: "call_2".to_string(),
-            name: "test_mcp__delay_tool".to_string(),
-        },
-        LlmResponse::ToolRequestArg {
-            id: "call_2".to_string(),
-            chunk: r#"{"duration_ms": 50}"#.to_string(),
-        },
-        LlmResponse::ToolRequestComplete {
-            tool_call: tool_call_2,
-        },
-        LlmResponse::Done,
-    ];
-
-    let llm = FakeLlmProvider::with_single_response(responses);
-
-    let mut agent = agent(llm)
-        .system_prompt("You are a test assistant")
-        .mcp(McpServerConfig::InMemory {
-            name: "test_mcp".to_string(),
-            server: TestMcp::new().into_dyn(),
-        })
-        .build()
-        .await
-        .unwrap();
-
-    let mut receiver = agent.send(UserMessage::text("Execute tools in parallel")).await;
-
-    let mut events = Vec::new();
-    while let Some(event) = receiver.recv().await {
-        println!("Received event: {:?}", event);
-        events.push(event);
-    }
-
-    // Verify we received tool call events
-    let tool_call_events: Vec<_> = events
-        .iter()
-        .filter_map(|event| match event {
-            AgentMessage::ToolCall { tool_call_id, is_complete, result, .. } => {
-                if *is_complete {
-                    Some((tool_call_id.clone(), result.as_ref().unwrap().clone()))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
-        .collect();
-
-    println!("Tool call events: {:?}", tool_call_events);
-
-    // Should have completed both tool calls
-    assert_eq!(tool_call_events.len(), 2);
-
-    // Verify both tools were executed
-    let tool_ids: Vec<&String> = tool_call_events.iter().map(|(id, _)| id).collect();
-    assert!(tool_ids.contains(&&"call_1".to_string()));
-    assert!(tool_ids.contains(&&"call_2".to_string()));
-
-    println!("✅ Parallel tool execution test passed!");
-}
-
-#[tokio::test]
 async fn test_basic_functionality_still_works() {
     // Simple test to verify basic functionality still works
     let responses = vec![
@@ -191,4 +96,84 @@ async fn test_basic_functionality_still_works() {
     assert_eq!(combined_text, "Hello! How can I help you?");
 
     println!("✅ Basic functionality test passed!");
+}
+
+#[tokio::test]
+async fn test_parallel_tool_execution_waits_for_completion() {
+    // Test that multiple tool calls execute in parallel but agent waits for all to complete
+    let responses = vec![
+        LlmResponse::Start {
+            message_id: "msg_1".to_string(),
+        },
+        LlmResponse::Text {
+            chunk: "I'll run multiple delay tools in parallel.".to_string(),
+        },
+        LlmResponse::ToolRequestStart {
+            id: "call_1".to_string(),
+            name: "delay_tool".to_string(),
+        },
+        LlmResponse::ToolRequestArg {
+            id: "call_1".to_string(),
+            chunk: r#"{"duration_ms": 100}"#.to_string(),
+        },
+        LlmResponse::ToolRequestComplete {
+            tool_call: ToolCallRequest {
+                id: "call_1".to_string(),
+                name: "delay_tool".to_string(),
+                arguments: r#"{"duration_ms": 100}"#.to_string(),
+            },
+        },
+        LlmResponse::ToolRequestStart {
+            id: "call_2".to_string(),
+            name: "delay_tool".to_string(),
+        },
+        LlmResponse::ToolRequestArg {
+            id: "call_2".to_string(),
+            chunk: r#"{"duration_ms": 100}"#.to_string(),
+        },
+        LlmResponse::ToolRequestComplete {
+            tool_call: ToolCallRequest {
+                id: "call_2".to_string(),
+                name: "delay_tool".to_string(),
+                arguments: r#"{"duration_ms": 100}"#.to_string(),
+            },
+        },
+        LlmResponse::Done,
+    ];
+
+    let llm = FakeLlmProvider::with_single_response(responses);
+
+    let mut agent = agent(llm)
+        .system_prompt("You are a test assistant")
+        .mcp(McpServerConfig::InMemory {
+            name: "test_mcp".to_string(),
+            server: TestMcp::new().into_dyn(),
+        })
+        .build()
+        .await
+        .unwrap();
+
+    let start_time = std::time::Instant::now();
+    let mut receiver = agent.send(UserMessage::text("Test parallel execution")).await;
+
+    let mut tool_results = Vec::new();
+    while let Some(event) = receiver.recv().await {
+        if let AgentMessage::ToolCall { result: Some(result), .. } = event {
+            tool_results.push(result);
+        }
+    }
+
+    let elapsed = start_time.elapsed();
+
+    // Should have received 2 tool results
+    assert_eq!(tool_results.len(), 2);
+
+    // Both should have completed with the expected message
+    assert!(tool_results.iter().all(|r| r.contains("Completed delay of 100ms")));
+
+    // Since tools run in parallel, total time should be closer to 100ms than 200ms
+    // Allow some overhead for test execution
+    assert!(elapsed.as_millis() < 150, "Expected parallel execution to take < 150ms, took {}ms", elapsed.as_millis());
+
+    println!("✅ Parallel tool execution test passed! Took {}ms", elapsed.as_millis());
 }

@@ -37,8 +37,6 @@ impl<T: OpenAiChatProvider + Send + Sync> ModelProvider for T {
         Box::pin(async_stream::stream! {
             debug!("Starting chat completion stream for model: {}", model);
 
-
-
             let req = CreateChatCompletionRequest {
                 model: model.clone(),
                 messages,
