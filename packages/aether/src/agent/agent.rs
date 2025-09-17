@@ -90,6 +90,10 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 }
             };
 
+            let tools = self.mcp_client.get_tool_definitions();
+            let messages_clone = self.messages.clone();
+            let context = Context { messages: messages_clone, tools };
+
             loop {
                 if self.cancellation_token.is_cancelled() {
                     yield AgentMessage::Cancelled {
@@ -114,18 +118,12 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     };
                 }
 
-                let tools = self.mcp_client.get_tool_definitions();
-                let messages_clone = self.messages.clone();
-
                 let mut current_message_id = None;
                 let mut accumulated_content = String::new();
                 let mut completed_tool_calls: Vec<(ToolCallRequest, String)> = Vec::new();
                 let mut has_tool_calls = false;
 
-                let llm_stream = self.llm.stream_response(Context {
-                    messages: messages_clone,
-                    tools,
-                });
+                let llm_stream = self.llm.stream_response(&context);
 
                 pin_mut!(llm_stream);
 

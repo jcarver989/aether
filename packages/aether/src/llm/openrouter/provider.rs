@@ -43,18 +43,17 @@ impl OpenRouterProvider {
 }
 
 impl ModelProvider for OpenRouterProvider {
-    fn stream_response(&self, request: Context) -> LlmResponseStream {
+    fn stream_response(&self, context: &Context) -> LlmResponseStream {
         let client = self.client.clone();
         let model = self.model.clone();
+        let messages = map_messages(&context.messages);
+        let tools = if context.tools.is_empty() {
+            None
+        } else {
+            Some(map_tools(&context.tools))
+        };
 
         Box::pin(async_stream::stream! {
-            let messages = map_messages(request.messages);
-            let tools = if request.tools.is_empty() {
-                None
-            } else {
-                Some(map_tools(request.tools))
-            };
-
             let req = CreateChatCompletionRequest {
                 model: model.clone(),
                 messages,

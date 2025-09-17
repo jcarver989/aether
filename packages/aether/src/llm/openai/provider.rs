@@ -23,20 +23,21 @@ pub trait OpenAiChatProvider {
 }
 
 impl<T: OpenAiChatProvider + Send + Sync> ModelProvider for T {
-    fn stream_response(&self, request: Context) -> LlmResponseStream {
+    fn stream_response(&self, context: &Context) -> LlmResponseStream {
         let client = self.client().clone();
         let model = self.model().to_string();
+        let messages = map_messages(&context.messages);
+        let message_count = messages.len();
+        let tools = if context.tools.is_empty() {
+            None
+        } else {
+            Some(map_tools(&context.tools))
+        };
 
         Box::pin(async_stream::stream! {
             debug!("Starting chat completion stream for model: {}", model);
 
-            let messages = map_messages(request.messages);
-            let message_count = messages.len();
-            let tools = if request.tools.is_empty() {
-                None
-            } else {
-                Some(map_tools(request.tools))
-            };
+
 
             let req = CreateChatCompletionRequest {
                 model: model.clone(),

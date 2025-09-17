@@ -2,19 +2,19 @@ use super::types::{Content, ContentBlock, Message, Role, Tool};
 use crate::types::{ChatMessage, ToolDefinition};
 use color_eyre::Result;
 
-pub fn map_messages(messages: Vec<ChatMessage>) -> Result<(Option<String>, Vec<Message>)> {
+pub fn map_messages(messages: &Vec<ChatMessage>) -> Result<(Option<String>, Vec<Message>)> {
     let mut system_prompt = None;
     let mut anthropic_messages = Vec::new();
 
     for message in messages {
         match message {
             ChatMessage::System { content, .. } => {
-                system_prompt = Some(content);
+                system_prompt = Some(content.clone());
             }
             ChatMessage::User { content, .. } => {
                 anthropic_messages.push(Message {
                     role: Role::User,
-                    content: Content::Text(content),
+                    content: Content::Text(content.clone()),
                     cache_control: None,
                 });
             }
@@ -26,7 +26,7 @@ pub fn map_messages(messages: Vec<ChatMessage>) -> Result<(Option<String>, Vec<M
                 if tool_calls.is_empty() {
                     anthropic_messages.push(Message {
                         role: Role::Assistant,
-                        content: Content::Text(content),
+                        content: Content::Text(content.clone()),
                         cache_control: None,
                     });
                 } else {
@@ -34,7 +34,7 @@ pub fn map_messages(messages: Vec<ChatMessage>) -> Result<(Option<String>, Vec<M
 
                     if !content.is_empty() {
                         blocks.push(ContentBlock::Text {
-                            text: content,
+                            text: content.clone(),
                             cache_control: None,
                         });
                     }
@@ -44,8 +44,8 @@ pub fn map_messages(messages: Vec<ChatMessage>) -> Result<(Option<String>, Vec<M
                             .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
 
                         blocks.push(ContentBlock::ToolUse {
-                            id: tool_call.id,
-                            name: tool_call.name,
+                            id: tool_call.id.clone(),
+                            name: tool_call.name.clone(),
                             input,
                         });
                     }
@@ -61,7 +61,7 @@ pub fn map_messages(messages: Vec<ChatMessage>) -> Result<(Option<String>, Vec<M
                 if !content.is_empty() {
                     anthropic_messages.push(Message {
                         role: Role::Assistant,
-                        content: Content::Text(content),
+                        content: Content::Text(content.clone()),
                         cache_control: None,
                     });
                 }
@@ -74,8 +74,8 @@ pub fn map_messages(messages: Vec<ChatMessage>) -> Result<(Option<String>, Vec<M
                 anthropic_messages.push(Message {
                     role: Role::User,
                     content: Content::Blocks(vec![ContentBlock::ToolResult {
-                        tool_use_id: tool_call_id,
-                        content,
+                        tool_use_id: tool_call_id.clone(),
+                        content: content.clone(),
                         is_error: None,
                     }]),
                     cache_control: None,
@@ -94,7 +94,7 @@ pub fn map_messages(messages: Vec<ChatMessage>) -> Result<(Option<String>, Vec<M
     Ok((system_prompt, anthropic_messages))
 }
 
-pub fn map_tools(tools: Vec<ToolDefinition>) -> Result<Vec<Tool>> {
+pub fn map_tools(tools: &Vec<ToolDefinition>) -> Result<Vec<Tool>> {
     let mut anthropic_tools = Vec::new();
 
     for tool in tools.into_iter() {
@@ -104,8 +104,8 @@ pub fn map_tools(tools: Vec<ToolDefinition>) -> Result<Vec<Tool>> {
             })?;
 
         anthropic_tools.push(Tool {
-            name: tool.name,
-            description: tool.description,
+            name: tool.name.clone(),
+            description: tool.description.clone(),
             input_schema,
             cache_control: None,
         });
@@ -126,7 +126,7 @@ mod tests {
             timestamp: IsoString::now(),
         }];
 
-        let (system, mapped) = map_messages(messages).unwrap();
+        let (system, mapped) = map_messages(&messages).unwrap();
         assert_eq!(system, None);
         assert_eq!(mapped.len(), 1);
         assert_eq!(mapped[0].role, Role::User);
@@ -146,7 +146,7 @@ mod tests {
             },
         ];
 
-        let (system, mapped) = map_messages(messages).unwrap();
+        let (system, mapped) = map_messages(&messages).unwrap();
         assert_eq!(system, Some("You are a helpful assistant".to_string()));
         assert_eq!(mapped.len(), 1);
     }
@@ -163,7 +163,7 @@ mod tests {
             }],
         }];
 
-        let (_system, mapped) = map_messages(messages).unwrap();
+        let (_system, mapped) = map_messages(&messages).unwrap();
         assert_eq!(mapped.len(), 1);
         assert_eq!(mapped[0].role, Role::Assistant);
 
@@ -186,7 +186,7 @@ mod tests {
             server: None,
         }];
 
-        let mapped = map_tools(tools).unwrap();
+        let mapped = map_tools(&tools).unwrap();
         assert_eq!(mapped.len(), 1);
         assert_eq!(mapped[0].name, "search");
         assert_eq!(mapped[0].description, "Search for information");
@@ -202,7 +202,7 @@ mod tests {
             server: None,
         }];
 
-        let mapped = map_tools(tools).unwrap();
+        let mapped = map_tools(&tools).unwrap();
         assert_eq!(mapped.len(), 1);
         // Tools don't have cache_control - they're auto-cached when system prompt is cached
         assert!(mapped[0].cache_control.is_none());

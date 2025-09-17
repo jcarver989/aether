@@ -24,7 +24,7 @@ impl FakeLlmProvider {
 }
 
 impl ModelProvider for FakeLlmProvider {
-    fn stream_response(&self, _request: Context) -> LlmResponseStream {
+    fn stream_response(&self, _context: &Context) -> LlmResponseStream {
         let current_call = self
             .call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);

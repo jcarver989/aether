@@ -74,6 +74,12 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
     }
 }
 
+impl From<&ChatMessage> for Option<ChatCompletionRequestMessage> {
+    fn from(msg: &ChatMessage) -> Self {
+        msg.into()
+    }
+}
+
 impl From<ToolDefinition> for ChatCompletionTool {
     fn from(tool: ToolDefinition) -> Self {
         ChatCompletionTool {
@@ -88,10 +94,16 @@ impl From<ToolDefinition> for ChatCompletionTool {
     }
 }
 
-pub fn map_messages(messages: Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
+impl From<&ToolDefinition> for ChatCompletionTool {
+    fn from(tool: &ToolDefinition) -> Self {
+        tool.into()
+    }
+}
+
+pub fn map_messages(messages: &Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
     messages.into_iter().filter_map(Into::into).collect()
 }
 
-pub fn map_tools(tools: Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
+pub fn map_tools(tools: &Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
     tools.into_iter().map(Into::into).collect()
 }

@@ -90,12 +90,12 @@ impl AnthropicProvider {
         self
     }
 
-    pub(crate) fn build_request(&self, context: Context) -> Result<Request> {
-        let (system_prompt, messages) = map_messages(context.messages)?;
+    pub(crate) fn build_request(&self, context: &Context) -> Result<Request> {
+        let (system_prompt, messages) = map_messages(&context.messages)?;
         let tools = if context.tools.is_empty() {
             None
         } else {
-            Some(map_tools(context.tools)?)
+            Some(map_tools(&context.tools)?)
         };
 
         let mut request = Request::new(self.model.clone(), messages)
@@ -174,19 +174,19 @@ impl AnthropicProvider {
 }
 
 impl ModelProvider for AnthropicProvider {
-    fn stream_response(&self, context: Context) -> LlmResponseStream {
+    fn stream_response<'a>(&self, context: &Context) -> LlmResponseStream {
         let provider = self.clone();
 
-        Box::pin(async_stream::stream! {
-
-            let request = match provider.build_request(context) {
-                Ok(req) => req,
-                Err(e) => {
+        let request = match self.build_request(context) {
+            Ok(req) => req,
+            Err(e) => {
+                return Box::pin(async_stream::stream! {
                     yield Err(e);
-                    return;
-                }
-            };
+                });
+            }
+        };
 
+        Box::pin(async_stream::stream! {
             let stream = match provider.send_request(request).await {
                 Ok(stream) => stream,
                 Err(e) => {
@@ -240,7 +240,7 @@ mod tests {
             tools: vec![],
         };
 
-        let request = provider.build_request(context).unwrap();
+        let request = provider.build_request(&context).unwrap();
         assert_eq!(request.model, "claude-3-5-sonnet-20241022");
         assert_eq!(request.max_tokens, 1000);
         assert_eq!(request.messages.len(), 1);
@@ -272,7 +272,7 @@ mod tests {
             }],
         };
 
-        let request = provider.build_request(context).unwrap();
+        let request = provider.build_request(&context).unwrap();
         if let Some(system) = &request.system {
             match system {
                 SystemContent::Text(text) => {
@@ -312,7 +312,7 @@ mod tests {
             }],
         };
 
-        let request = provider.build_request(context).unwrap();
+        let request = provider.build_request(&context).unwrap();
 
         // With caching enabled, system prompt should be cached
         if let Some(system) = &request.system {
@@ -358,7 +358,7 @@ mod tests {
             tools: vec![],
         };
 
-        let request = provider.build_request(context).unwrap();
+        let request = provider.build_request(&context).unwrap();
 
         // With caching disabled, system prompt should be simple text
         if let Some(system) = &request.system {
@@ -376,12 +376,18 @@ mod tests {
     #[test]
     fn test_anthropic_provider_display_name() {
         let provider = create_test_provider();
-        assert_eq!(provider.display_name(), "Anthropic (claude-3-5-sonnet-20241022)");
+        assert_eq!(
+            provider.display_name(),
+            "Anthropic (claude-3-5-sonnet-20241022)"
+        );
     }
 
     #[test]
     fn test_anthropic_provider_display_name_default() {
         let provider = AnthropicProvider::new("test-api-key".to_string()).unwrap();
-        assert_eq!(provider.display_name(), "Anthropic (claude-3-5-sonnet-20241022)");
+        assert_eq!(
+            provider.display_name(),
+            "Anthropic (claude-3-5-sonnet-20241022)"
+        );
     }
 }

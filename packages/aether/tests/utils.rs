@@ -123,7 +123,7 @@ impl FakeLlmProvider {
 }
 
 impl ModelProvider for FakeLlmProvider {
-    fn stream_response(&self, _request: Context) -> LlmResponseStream {
+    fn stream_response(&self, _context: &Context) -> LlmResponseStream {
         let chunks = self.chunks.clone();
         Box::pin(iter(chunks.into_iter().map(Ok)))
     }

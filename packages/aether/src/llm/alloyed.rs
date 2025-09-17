@@ -23,14 +23,14 @@ impl AlloyedModelProvider {
         if self.providers.is_empty() {
             return None;
         }
-        let index = self.current_provider_index.fetch_add(1, Ordering::Relaxed) % self.providers.len();
+        let index =
+            self.current_provider_index.fetch_add(1, Ordering::Relaxed) % self.providers.len();
         Some(&self.providers[index])
     }
-
 }
 
 impl ModelProvider for AlloyedModelProvider {
-    fn stream_response(&self, context: Context) -> LlmResponseStream {
+    fn stream_response(&self, context: &Context) -> LlmResponseStream {
         match self.get_current_provider() {
             Some(provider) => provider.stream_response(context),
             None => Box::pin(tokio_stream::empty()),
@@ -70,10 +70,8 @@ mod tests {
     fn test_alloyed_provider_display_name_multiple() {
         let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
         let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
-        let provider = AlloyedModelProvider::new(vec![
-            Box::new(fake_provider1),
-            Box::new(fake_provider2),
-        ]);
+        let provider =
+            AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
 
         // Should cycle through individual provider names
         assert_eq!(provider.display_name(), "Fake LLM"); // First call
@@ -84,10 +82,8 @@ mod tests {
     fn test_alloyed_provider_cycling() {
         let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
         let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
-        let provider = AlloyedModelProvider::new(vec![
-            Box::new(fake_provider1),
-            Box::new(fake_provider2),
-        ]);
+        let provider =
+            AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
 
         let context = Context {
             messages: vec![],
@@ -95,9 +91,9 @@ mod tests {
         };
 
         // Both stream_response and display_name should cycle through providers
-        let _stream1 = provider.stream_response(context.clone());
-        let _stream2 = provider.stream_response(context.clone());
-        let _stream3 = provider.stream_response(context);
+        let _stream1 = provider.stream_response(&context);
+        let _stream2 = provider.stream_response(&context);
+        let _stream3 = provider.stream_response(&context);
 
         // display_name should cycle and return individual provider names
         assert_eq!(provider.display_name(), "Fake LLM");

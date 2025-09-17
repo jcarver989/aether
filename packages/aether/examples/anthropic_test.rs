@@ -114,7 +114,7 @@ async fn main() -> Result<()> {
     let context = Context { messages, tools };
 
     // Stream the response
-    let stream = provider.stream_response(context);
+    let stream = provider.stream_response(&context);
     let mut stream = Box::pin(stream);
 
     print!("🔄 Streaming response: ");
