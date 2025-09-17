@@ -1,4 +1,4 @@
-use crate::agent::AgentMessage;
+use crate::agent::{AgentMessage, ToolCallResult};
 use crate::mcp::McpManager;
 use crate::types::ToolCallRequest;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ pub struct ToolExecutionTask {
     tx: mpsc::Sender<AgentMessage>,
     tool_call: ToolCallRequest,
     model_name: String,
-    result_sender: oneshot::Sender<(String, String)>,
+    result_sender: oneshot::Sender<ToolCallResult>,
 }
 
 impl ToolExecutionTask {
@@ -18,7 +18,7 @@ impl ToolExecutionTask {
         tx: mpsc::Sender<AgentMessage>,
         tool_call: ToolCallRequest,
         model_name: String,
-        result_sender: oneshot::Sender<(String, String)>,
+        result_sender: oneshot::Sender<ToolCallResult>,
     ) -> Self {
         Self {
             mcp_client,
@@ -58,6 +58,9 @@ impl ToolExecutionTask {
             .await;
 
         // Send result back to AgentTask for context management
-        let _ = self.result_sender.send((self.tool_call.id, result_str));
+        let _ = self.result_sender.send(ToolCallResult {
+            id: self.tool_call.id,
+            result: result_str,
+        });
     }
 }

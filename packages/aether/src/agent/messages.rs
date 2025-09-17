@@ -37,7 +37,6 @@ pub enum AgentMessage {
 #[derive(Debug, Clone)]
 pub enum UserMessage {
     Text { content: String },
-    Cancel,
 }
 
 impl UserMessage {
