@@ -1,30 +1,24 @@
-use crate::agent::{AgentMessage, ToolCallResult};
+use crate::agent::ToolCallResult;
 use crate::mcp::McpManager;
 use crate::types::ToolCallRequest;
 use std::sync::Arc;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc};
 
 pub struct ToolExecutionTask {
     mcp_client: Arc<Mutex<McpManager>>,
-    tx: mpsc::Sender<AgentMessage>,
     tool_call: ToolCallRequest,
-    model_name: String,
-    result_sender: oneshot::Sender<ToolCallResult>,
+    result_sender: mpsc::UnboundedSender<ToolCallResult>,
 }
 
 impl ToolExecutionTask {
     pub fn new(
         mcp_client: Arc<Mutex<McpManager>>,
-        tx: mpsc::Sender<AgentMessage>,
         tool_call: ToolCallRequest,
-        model_name: String,
-        result_sender: oneshot::Sender<ToolCallResult>,
+        result_sender: mpsc::UnboundedSender<ToolCallResult>,
     ) -> Self {
         Self {
             mcp_client,
-            tx,
             tool_call,
-            model_name,
             result_sender,
         }
     }
@@ -44,22 +38,11 @@ impl ToolExecutionTask {
             Err(e) => format!("Invalid tool arguments: {}", e),
         };
 
-        // Send result for user-facing output
-        let _ = self
-            .tx
-            .send(AgentMessage::ToolCall {
-                tool_call_id: self.tool_call.id.clone(),
-                name: self.tool_call.name.clone(),
-                arguments: None,
-                result: Some(result_str.clone()),
-                is_complete: true,
-                model_name: self.model_name,
-            })
-            .await;
-
-        // Send result back to AgentTask for context management
+        // Send result back to agent for context management
         let _ = self.result_sender.send(ToolCallResult {
             id: self.tool_call.id,
+            name: self.tool_call.name,
+            arguments: self.tool_call.arguments,
             result: result_str,
         });
     }

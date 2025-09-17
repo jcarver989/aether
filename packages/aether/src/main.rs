@@ -9,6 +9,7 @@ use aether::{
     types::LlmProvider,
 };
 use clap::Parser;
+use futures::{StreamExt, pin_mut};
 use rmcp::model::{CreateElicitationResult, ElicitationAction};
 
 #[derive(Parser)]
@@ -85,9 +86,10 @@ async fn run_agent<T: ModelProvider + 'static>(provider: T, cli: &Cli, prompt: &
         .await
         .unwrap();
 
-    let (mut result_receiver, _cancel_token) = agent.send(UserMessage::text(prompt)).await;
+    let (result_stream, _cancel_token) = agent.send(UserMessage::text(prompt));
+    pin_mut!(result_stream);
 
-    while let Some(event) = result_receiver.recv().await {
+    while let Some(event) = result_stream.next().await {
         match event {
             Text {
                 chunk, is_complete, ..

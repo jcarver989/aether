@@ -3,6 +3,7 @@ use aether::{
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };
+use futures::{StreamExt, pin_mut};
 
 #[tokio::test]
 async fn test_simple_tool_execution() {
@@ -38,10 +39,11 @@ async fn test_simple_tool_execution() {
         .await
         .unwrap();
 
-    let (mut receiver, _cancel_token) = agent.send(UserMessage::text("Write a test file")).await;
+    let (receiver, _cancel_token) = agent.send(UserMessage::text("Write a test file"));
+    pin_mut!(receiver);
 
     let mut events = Vec::new();
-    while let Some(event) = receiver.recv().await {
+    while let Some(event) = receiver.next().await {
         events.push(event);
     }
 
@@ -139,10 +141,11 @@ async fn test_recursive_tool_calls() {
         .await
         .unwrap();
 
-    let (mut receiver, _cancel_token) = agent.send(UserMessage::text("Process my data")).await;
+    let (receiver, _cancel_token) = agent.send(UserMessage::text("Process my data"));
+    pin_mut!(receiver);
 
     let mut events = Vec::new();
-    while let Some(event) = receiver.recv().await {
+    while let Some(event) = receiver.next().await {
         events.push(event);
     }
 
@@ -216,10 +219,11 @@ async fn test_max_recursion_depth() {
         .await
         .unwrap();
 
-    let (mut receiver, _cancel_token) = agent.send(UserMessage::text("Start endless loop")).await;
+    let (receiver, _cancel_token) = agent.send(UserMessage::text("Start endless loop"));
+    pin_mut!(receiver);
 
     let mut events = Vec::new();
-    while let Some(event) = receiver.recv().await {
+    while let Some(event) = receiver.next().await {
         events.push(event);
     }
 
@@ -258,10 +262,11 @@ async fn test_tool_execution_error_handling() {
         .await
         .unwrap();
 
-    let (mut receiver, _cancel_token) = agent.send(UserMessage::text("Write a file")).await;
+    let (receiver, _cancel_token) = agent.send(UserMessage::text("Write a file"));
+    pin_mut!(receiver);
 
     let mut events = Vec::new();
-    while let Some(event) = receiver.recv().await {
+    while let Some(event) = receiver.next().await {
         events.push(event);
     }
 

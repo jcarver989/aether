@@ -8,14 +8,13 @@ use crate::types::ChatMessage;
 use crate::types::IsoString;
 use crate::types::LlmResponse;
 use crate::types::ToolCallRequest;
+use async_stream::stream;
+use futures::Stream;
 use futures::StreamExt;
-use futures::future::join_all;
 use futures::pin_mut;
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::oneshot;
+use std::sync::Mutex as StdMutex;
 use tokio::sync::{Mutex, mpsc};
-use std::sync::{ Mutex as StdMutex }
 use tokio_util::sync::CancellationToken;
 
 pub struct Agent<T: ModelProvider> {
@@ -49,12 +48,10 @@ impl<T: ModelProvider + 'static> Agent<T> {
         self.llm.display_name()
     }
 
-    pub async fn send(
+    pub fn send(
         &mut self,
         message: UserMessage,
-    ) -> (mpsc::Receiver<AgentMessage>, CancellationToken) {
-        let (tx, rx) = mpsc::channel(100);
-
+    ) -> (impl Stream<Item = AgentMessage>, CancellationToken) {
         match message {
             UserMessage::Text { content } => {
                 if let Some(token) = &self.current_task_token {
@@ -63,115 +60,159 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
                 let cancellation_token = CancellationToken::new();
                 self.current_task_token = Some(cancellation_token.clone());
-                { 
+                {
                     let mut context = self.context.lock().unwrap();
-                context.add_message(ChatMessage::User {
-                    content,
-                    timestamp: IsoString::now(),
-                });
-            };
+                    context.add_message(ChatMessage::User {
+                        content,
+                        timestamp: IsoString::now(),
+                    });
+                };
 
-                tokio::spawn(
-                    Self::run_agent_loop(
+                let stream = Self::run_agent_loop(
                     self.mcp_client.clone(),
-                    self.context.clone(), self.llm.clone(), tx));
-                (rx, cancellation_token)
+                    self.context.clone(),
+                    self.llm.clone(),
+                );
+
+                (stream, cancellation_token)
             }
         }
     }
 
-    async fn run_agent_loop(
+    fn run_agent_loop(
         mcp_client: Arc<Mutex<McpManager>>,
-        context: Arc<StdMutex<Context>>, 
-        llm: Arc<T>, 
-        tx: Sender<AgentMessage>) -> () {
-        loop {
-            let response_stream =  { 
-                let context = context.lock().unwrap();
-                llm.stream_response(&context)
-            };
-
-            let model_name = llm.display_name();
+        context: Arc<StdMutex<Context>>,
+        llm: Arc<T>,
+    ) -> impl Stream<Item = AgentMessage> {
+        stream! {
             let mut tool_collector = ToolResultsCollector::new();
-            pin_mut!(response_stream);
 
             loop {
+                let response_stream = {
+                    let context = context.lock().unwrap();
+                    llm.stream_response(&context)
+                };
+
+                let model_name = llm.display_name();
+                pin_mut!(response_stream);
+
                 let mut current_message_id: Option<String> = None;
                 let mut message_content = String::new();
 
-                tokio::select! {
-                    event = response_stream.next() => {
+                loop {
+                    while let Some(tool_result) = tool_collector.try_recv_result() {
+                        yield AgentMessage::ToolCall {
+                            tool_call_id: tool_result.id.clone(),
+                            name: tool_result.name.clone(),
+                            arguments: Some(tool_result.arguments.clone()),
+                            result: Some(tool_result.result),
+                            is_complete: true,
+                            model_name: model_name.clone(),
+                        };
+                    }
+
+                    if let Some(event) = response_stream.next().await {
                         use LlmResponse::*;
                         match event {
-                            Some(Ok(Start { message_id})) => {
+                            Ok(Start { message_id}) => {
                                 current_message_id = Some(message_id);
                             }
 
-                            Some(Ok(Text { chunk})) => {
+                            Ok(Text { chunk}) => {
                                 message_content.push_str(&chunk);
-                                if let Some(id) = current_message_id {
-                                    tx.send(AgentMessage::Text { message_id: id.clone(), chunk, is_complete: false, model_name: model_name.clone()  }).await;
+                                if let Some(ref id) = current_message_id {
+                                    yield AgentMessage::Text {
+                                        message_id: id.clone(),
+                                        chunk,
+                                        is_complete: false,
+                                        model_name: model_name.clone()
+                                    };
                                 }
                             }
 
-                            Some(Ok(ToolRequestStart { id, name})) => {
-                                tx.send(AgentMessage::ToolCall { tool_call_id: id, name, arguments: None, result: None, is_complete: false, model_name: model_name.clone() }).await;
+                            Ok(ToolRequestStart { id, name}) => {
+                                yield AgentMessage::ToolCall {
+                                    tool_call_id: id,
+                                    name,
+                                    arguments: None,
+                                    result: None,
+                                    is_complete: false,
+                                    model_name: model_name.clone()
+                                };
                             }
 
-                            Some(Ok(ToolRequestArg { id, chunk})) => {
-                                tx.send(AgentMessage::ToolCall { tool_call_id: id, name: String::new(), arguments: Some(chunk.to_string()), result: None, is_complete: false, model_name: model_name.clone() }).await;
+                            Ok(ToolRequestArg { id, chunk}) => {
+                                yield AgentMessage::ToolCall {
+                                    tool_call_id: id,
+                                    name: String::new(),
+                                    arguments: Some(chunk.to_string()),
+                                    result: None,
+                                    is_complete: false,
+                                    model_name: model_name.clone()
+                                };
                             }
 
-                            Some(Ok(ToolRequestComplete { tool_call})) => {
-                               let tool_tx = tool_collector.start_tool_request(tool_call.clone());
-                               let task = ToolExecutionTask::new(
+                            Ok(ToolRequestComplete { tool_call}) => {
+                                let tool_tx = tool_collector.start_tool_request(tool_call.clone());
+                                let task = ToolExecutionTask::new(
                                     mcp_client.clone(),
-                                    tx.clone(),
                                     tool_call.clone(),
-                                    model_name.clone(),
                                     tool_tx,
                                 );
 
                                 tokio::spawn(task.run());
                             }
 
-                            Some(Ok(Done)) => {
-                                let (requests, results) = tool_collector.collect_results().await;
+                            Ok(Done) => {
+                                // Collect all tool results for context management
+                                let all_results = tool_collector.get_all_results();
                                 {
                                     let mut context = context.lock().unwrap();
-                                    context.add_message(ChatMessage::Assistant { content: message_content, timestamp: IsoString::now(), tool_calls: requests });
+                                    context.add_message(ChatMessage::Assistant {
+                                        content: message_content.clone(),
+                                        timestamp: IsoString::now(),
+                                        tool_calls: tool_collector.requests.clone()
+                                    });
 
-                                    for result in results {
-                                        context.add_message(ChatMessage::ToolCallResult { tool_call_id: result.id, content: result.result, timestamp: IsoString::now() });
+                                    for result in all_results {
+                                        context.add_message(ChatMessage::ToolCallResult {
+                                            tool_call_id: result.id,
+                                            content: result.result,
+                                            timestamp: IsoString::now()
+                                        });
                                     }
                                 };
 
-                                if let Some(id) = current_message_id {
-                                    tx.send(AgentMessage::Text {
-                                        message_id: id,
+                                if let Some(ref id) = current_message_id {
+                                    yield AgentMessage::Text {
+                                        message_id: id.clone(),
                                         chunk: String::new(),
                                         is_complete: true,
                                         model_name: model_name.clone()
-                                    }).await;
+                                    };
                                 }
+
+                                if tool_collector.requests.is_empty() {
+                                    return;
+                                }
+
+                                tool_collector = ToolResultsCollector::new();
+                                break;
                             }
 
-
-                            Some(Ok(Error { message })) => {
-                                tx.send(AgentMessage::Error { message: message.to_string() }).await;
+                            Ok(Error { message }) => {
+                                yield AgentMessage::Error { message: message.to_string() };
                                 return;
                             }
 
-                            Some(Err(e)) => {
-                                tx.send(AgentMessage::Error { message: e.to_string() }).await;
+                            Err(e) => {
+                                yield AgentMessage::Error { message: e.to_string() };
                                 return;
-                            }
-
-                            None => {
-                                tx.send(AgentMessage::Error { message: "Empty LLM stream".to_string() }).await;
-                                return
                             }
                         }
+                    } else {
+                        yield AgentMessage::Error { message: "Empty LLM stream".to_string() };
+                        return;
                     }
                 }
             }
@@ -181,44 +222,53 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
 struct ToolResultsCollector {
     requests: Vec<ToolCallRequest>,
-    results: Vec<oneshot::Receiver<ToolCallResult>>,
+    tool_result_rx: mpsc::UnboundedReceiver<ToolCallResult>,
+    tool_result_tx: mpsc::UnboundedSender<ToolCallResult>,
+    completed_results: Vec<ToolCallResult>,
 }
 
 impl ToolResultsCollector {
     pub fn new() -> Self {
+        let (tool_result_tx, tool_result_rx) = mpsc::unbounded_channel();
         Self {
             requests: Vec::new(),
-            results: Vec::new(),
+            tool_result_rx,
+            tool_result_tx,
+            completed_results: Vec::new(),
         }
     }
 
     pub fn start_tool_request(
         &mut self,
         request: ToolCallRequest,
-    ) -> oneshot::Sender<ToolCallResult> {
-        let (result_sender, result_receiver) = oneshot::channel();
+    ) -> mpsc::UnboundedSender<ToolCallResult> {
         self.requests.push(request);
-        self.results.push(result_receiver);
-        result_sender
+        self.tool_result_tx.clone()
     }
 
-    pub async fn collect_results(&mut self) -> (Vec<ToolCallRequest>, Vec<ToolCallResult>) {
-        let mut tool_results = Vec::<ToolCallResult>::new();
-        if !self.results.is_empty() {
-            let receivers = std::mem::take(&mut self.results);
-            let results = join_all(receivers).await;
-            for result in results {
-                if let Ok(result) = result {
-                    tool_results.push(result);
-                }
-            }
+    pub fn try_recv_result(&mut self) -> Option<ToolCallResult> {
+        if let Ok(result) = self.tool_result_rx.try_recv() {
+            self.completed_results.push(result.clone());
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_all_results(&mut self) -> Vec<ToolCallResult> {
+        // Collect any remaining results from channel first
+        while let Ok(result) = self.tool_result_rx.try_recv() {
+            self.completed_results.push(result);
         }
 
-        (self.requests.clone(), tool_results)
+        self.completed_results.clone()
     }
 }
 
+#[derive(Clone)]
 pub struct ToolCallResult {
     pub id: String,
+    pub name: String,
+    pub arguments: String,
     pub result: String,
 }
