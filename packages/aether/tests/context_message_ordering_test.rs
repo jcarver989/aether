@@ -109,13 +109,11 @@ async fn test_simple_tool_call_completes() {
             Ok(Some(msg)) => {
                 match &msg {
                     AgentMessage::Text { is_complete: true, .. } => {
-                        // Text completion means we're done with this iteration
-                        // In a real agent loop, there might be more iterations for tool calls
-                        // but for our simple test, this should be the end
-                        completed = true;
+                        // Don't end immediately - wait for tool calls to complete
                     },
                     AgentMessage::ToolCall { is_complete: true, .. } => {
-                        // Tool call completed
+                        // Tool call completed - this is what we're waiting for
+                        completed = true;
                     },
                     _ => {}
                 }
