@@ -7,7 +7,11 @@ use aether::{
 #[tokio::test]
 async fn test_agent_builder_basic() {
     let llm = FakeLlmProvider::new(vec![]);
-    let _agent = agent(llm).system_prompt("test prompt").build().await.unwrap();
+    let _agent = agent(llm)
+        .system_prompt("test prompt")
+        .build()
+        .await
+        .unwrap();
 
     // Agent created successfully - we can't access private fields but build() succeeded
 }

@@ -1,7 +1,7 @@
 mod utils;
 
 use crate::utils::*;
-use aether::mcp::{McpManager, manager::McpServerConfig, ElicitationRequest};
+use aether::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
 use tokio::sync::mpsc;

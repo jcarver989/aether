@@ -23,8 +23,8 @@ async fn test_tool_name_collision_bug() {
 
 #[tokio::test]
 async fn test_tool_namespacing_desired_behavior() {
-    use aether::mcp::manager::McpManager;
     use aether::mcp::ElicitationRequest;
+    use aether::mcp::manager::McpManager;
     use tokio::sync::mpsc;
 
     // Test that demonstrates the fix: tools are now properly namespaced

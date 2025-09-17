@@ -40,7 +40,9 @@ async fn test_basic_cancellation() {
                 has_cancelled = true;
                 break;
             }
-            AgentMessage::ElicitationRequest { response_sender, .. } => {
+            AgentMessage::ElicitationRequest {
+                response_sender, ..
+            } => {
                 // Handle elicitation requests by declining them in tests
                 use rmcp::model::{CreateElicitationResult, ElicitationAction};
                 let _ = response_sender.send(CreateElicitationResult {
@@ -94,7 +96,9 @@ async fn test_cancel_message_variant() {
                 has_cancelled_message = true;
                 events.push("Cancelled".to_string());
             }
-            AgentMessage::ElicitationRequest { response_sender, .. } => {
+            AgentMessage::ElicitationRequest {
+                response_sender, ..
+            } => {
                 use rmcp::model::{CreateElicitationResult, ElicitationAction};
                 let _ = response_sender.send(CreateElicitationResult {
                     action: ElicitationAction::Decline,
@@ -158,7 +162,9 @@ async fn test_cancellation_during_tool_execution() {
         let is_cancelled = matches!(event, AgentMessage::Cancelled { .. });
 
         match event {
-            AgentMessage::ElicitationRequest { response_sender, .. } => {
+            AgentMessage::ElicitationRequest {
+                response_sender, ..
+            } => {
                 use rmcp::model::{CreateElicitationResult, ElicitationAction};
                 let _ = response_sender.send(CreateElicitationResult {
                     action: ElicitationAction::Decline,
@@ -185,9 +191,7 @@ async fn test_cancellation_during_tool_execution() {
     assert!(cancel_token.is_cancelled(), "Token should be cancelled");
 
     // Check that we got a cancelled message or the token is cancelled
-    let has_cancelled_event = events
-        .iter()
-        .any(|e| e.contains("Cancelled"));
+    let has_cancelled_event = events.iter().any(|e| e.contains("Cancelled"));
 
     assert!(
         has_cancelled_event || cancel_token.is_cancelled(),
@@ -236,7 +240,9 @@ async fn test_multiple_operations_with_cancellation() {
         let is_cancelled = matches!(event, AgentMessage::Cancelled { .. });
 
         match event {
-            AgentMessage::ElicitationRequest { response_sender, .. } => {
+            AgentMessage::ElicitationRequest {
+                response_sender, ..
+            } => {
                 use rmcp::model::{CreateElicitationResult, ElicitationAction};
                 let _ = response_sender.send(CreateElicitationResult {
                     action: ElicitationAction::Decline,
@@ -266,7 +272,9 @@ async fn test_multiple_operations_with_cancellation() {
 
     while let Some(event) = stream2.next().await {
         match event {
-            AgentMessage::Text { chunk, is_complete, .. } => {
+            AgentMessage::Text {
+                chunk, is_complete, ..
+            } => {
                 if !chunk.is_empty() {
                     has_second_text = true;
                 }
@@ -275,7 +283,9 @@ async fn test_multiple_operations_with_cancellation() {
                 }
                 second_events.push(format!("Text(chunk: {}, complete: {})", chunk, is_complete));
             }
-            AgentMessage::ElicitationRequest { response_sender, .. } => {
+            AgentMessage::ElicitationRequest {
+                response_sender, ..
+            } => {
                 use rmcp::model::{CreateElicitationResult, ElicitationAction};
                 let _ = response_sender.send(CreateElicitationResult {
                     action: ElicitationAction::Decline,

@@ -1,8 +1,4 @@
-use aether::{
-    agent::agent,
-    mcp::manager::McpServerConfig,
-    testing::FakeLlmProvider,
-};
+use aether::{agent::agent, mcp::manager::McpServerConfig, testing::FakeLlmProvider};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
 

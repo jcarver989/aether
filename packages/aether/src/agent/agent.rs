@@ -16,7 +16,7 @@ use uuid::Uuid;
 pub struct Agent<T: ModelProvider> {
     llm: T,
     mcp_client: McpManager,
-    messages: Vec<ChatMessage>,
+    context: Context,
     cancellation_token: CancellationToken,
     elicitation_receiver: mpsc::UnboundedReceiver<ElicitationRequest>,
 }
@@ -31,7 +31,10 @@ impl<T: ModelProvider + 'static> Agent<T> {
         Self {
             llm,
             mcp_client,
-            messages,
+            context: Context {
+                messages,
+                tools: Vec::new(), // Will be populated when tools are discovered
+            },
             cancellation_token: CancellationToken::new(),
             elicitation_receiver,
         }
@@ -62,7 +65,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     timestamp: IsoString::now(),
                 };
 
-                self.messages.push(user_message);
+                self.context.messages.push(user_message);
                 self.cancellation_token = CancellationToken::new();
                 self.cancellation_token.clone()
             }
@@ -81,7 +84,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
             }
 
             match self.mcp_client.discover_tools().await  {
-                Ok(_) => {}
+                Ok(_) => { self.context.tools = self.mcp_client.get_tool_definitions(); }
                 Err(e) => {
                     yield AgentMessage::Error {
                         message: format!("Failed to discover tools: {}", e),
@@ -89,10 +92,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     return
                 }
             };
-
-            let tools = self.mcp_client.get_tool_definitions();
-            let messages_clone = self.messages.clone();
-            let context = Context { messages: messages_clone, tools };
 
             loop {
                 if self.cancellation_token.is_cancelled() {
@@ -123,7 +122,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 let mut completed_tool_calls: Vec<(ToolCallRequest, String)> = Vec::new();
                 let mut has_tool_calls = false;
 
-                let llm_stream = self.llm.stream_response(&context);
+                let llm_stream = self.llm.stream_response(&self.context);
 
                 pin_mut!(llm_stream);
 
@@ -236,14 +235,14 @@ impl<T: ModelProvider + 'static> Agent<T> {
                                 .map(|(tool_call, _)| tool_call.clone())
                                 .collect();
 
-                            self.messages.push(ChatMessage::Assistant {
+                            self.context.messages.push(ChatMessage::Assistant {
                                 content: accumulated_content,
                                 timestamp: IsoString::now(),
                                 tool_calls: tool_call_requests,
                             });
 
                             for (tool_call, result_str) in completed_tool_calls {
-                                self.messages.push(ChatMessage::ToolCallResult {
+                                self.context.messages.push(ChatMessage::ToolCallResult {
                                     tool_call_id: tool_call.id,
                                     content: result_str,
                                     timestamp: IsoString::now(),
