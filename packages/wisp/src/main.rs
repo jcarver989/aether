@@ -13,7 +13,6 @@ use aether::types::LlmProvider;
 use clap::Parser;
 use color_eyre::Report;
 use crossterm::{queue, style::Stylize};
-use futures::pin_mut;
 use indicatif::ProgressBar;
 
 #[derive(Debug)]
@@ -29,7 +28,6 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 use tokio::fs;
-use tokio_stream::StreamExt;
 
 #[derive(Parser)]
 #[command(name = "wisp")]
@@ -184,14 +182,13 @@ async fn run_agent(
         AgentsStatus::Error(ref e) => (false, Some(e.as_str())),
     };
     ui::show_init_header(user_prompt, &init_display_name, agents_loaded, agents_error)?;
-    let (result_stream, _cancel_token) = agent.send(UserMessage::text(user_prompt)).await;
-    pin_mut!(result_stream);
+    let mut result_receiver = agent.send(UserMessage::text(user_prompt)).await;
 
     let mut active_tool_calls: HashMap<String, PartialToolCall> = HashMap::new();
 
     let mut message_started = false;
 
-    while let Some(event) = result_stream.next().await {
+    while let Some(event) = result_receiver.recv().await {
         match event {
             Text {
                 chunk,

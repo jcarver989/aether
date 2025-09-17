@@ -4,7 +4,6 @@ use aether::{
     types::{LlmResponse, ToolCallRequest},
 };
 use rmcp::model::{CreateElicitationResult, ElicitationAction};
-use tokio_stream::StreamExt;
 
 #[tokio::test]
 async fn test_elicitation_request_handling() {
@@ -29,12 +28,11 @@ async fn test_elicitation_request_handling() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = agent.send(UserMessage::text("Perform action")).await;
-    let mut stream = Box::pin(stream);
+    let mut receiver = agent.send(UserMessage::text("Perform action")).await;
 
     let mut elicitation_received = false;
 
-    while let Some(event) = stream.next().await {
+    while let Some(event) = receiver.recv().await {
         match event {
             AgentMessage::ElicitationRequest {
                 request_id,
@@ -92,12 +90,11 @@ async fn test_elicitation_request_decline() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = agent.send(UserMessage::text("Perform action")).await;
-    let mut stream = Box::pin(stream);
+    let mut receiver = agent.send(UserMessage::text("Perform action")).await;
 
     let mut elicitation_received = false;
 
-    while let Some(event) = stream.next().await {
+    while let Some(event) = receiver.recv().await {
         match event {
             AgentMessage::ElicitationRequest {
                 response_sender, ..

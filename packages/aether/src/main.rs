@@ -9,9 +9,7 @@ use aether::{
     types::LlmProvider,
 };
 use clap::Parser;
-use futures::pin_mut;
 use rmcp::model::{CreateElicitationResult, ElicitationAction};
-use tokio_stream::StreamExt;
 
 #[derive(Parser)]
 #[command(name = "aether-cli")]
@@ -87,10 +85,9 @@ async fn run_agent<T: ModelProvider + 'static>(provider: T, cli: &Cli, prompt: &
         .await
         .unwrap();
 
-    let (result_stream, _cancel_token) = agent.send(UserMessage::text(prompt)).await;
-    pin_mut!(result_stream);
+    let mut result_receiver = agent.send(UserMessage::text(prompt)).await;
 
-    while let Some(event) = result_stream.next().await {
+    while let Some(event) = result_receiver.recv().await {
         match event {
             Text {
                 chunk, is_complete, ..

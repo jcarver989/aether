@@ -4,8 +4,6 @@ use crate::llm::ModelProvider;
 use crate::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
 use color_eyre::Result;
-use futures::StreamExt;
-use futures::pin_mut;
 use tokio::sync::mpsc;
 
 pub struct AgentBuilder<T: ModelProvider> {
@@ -65,10 +63,9 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
 
         tokio::spawn(async move {
             while let Some(message) = user_rx.recv().await {
-                let (result_stream, _cancel_token) = agent.send(message).await;
-                pin_mut!(result_stream);
+                let mut result_receiver = agent.send(message).await;
 
-                while let Some(event) = result_stream.next().await {
+                while let Some(event) = result_receiver.recv().await {
                     if agent_tx.send(event).await.is_err() {
                         break;
                     }
