@@ -295,6 +295,17 @@ pub fn show_tool_completed(
         )
     );
 
+    show_tool_details(arguments, result)?;
+    stdout.flush()?;
+    Ok(())
+}
+
+pub fn show_tool_details(
+    arguments: Option<&str>,
+    result: Option<&str>,
+) -> Result<(), std::io::Error> {
+    let mut stdout = stdout();
+
     // Display tool arguments/inputs
     if let Some(args) = arguments {
         if !args.trim().is_empty() {
@@ -397,7 +408,7 @@ pub fn show_cancelled(message: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn format_model_name(model_name: &str) -> String {
+pub fn format_model_name(model_name: &str) -> String {
     // Parse model name and format as "provider:model"
     if let Some((provider, model)) = model_name.split_once(" (") {
         let model = model.trim_end_matches(')');

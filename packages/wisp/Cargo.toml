@@ -18,6 +18,8 @@ color-eyre = "0.6.3"
 clap = { version = "4.0", features = ["derive"] }
 inquire = "0.8.0"
 async-stream = "^0.3"
+tracing = "^0.1.41"
+tracing-subscriber = { version = "^0.3.19", features = ["env-filter"] }
 
 
 

@@ -1,4 +1,4 @@
-use crate::types::{ChatMessage, LlmResponse, ToolDefinition, IsoString, ToolCallRequest};
+use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest, ToolDefinition};
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
@@ -45,7 +45,11 @@ impl Context {
         });
     }
 
-    pub fn add_assistant_message_with_tools(&mut self, content: String, tool_calls: Vec<ToolCallRequest>) {
+    pub fn add_assistant_message_with_tools(
+        &mut self,
+        content: String,
+        tool_calls: Vec<ToolCallRequest>,
+    ) {
         self.messages.push(ChatMessage::Assistant {
             content,
             timestamp: IsoString::now(),

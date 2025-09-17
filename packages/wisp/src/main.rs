@@ -13,7 +13,7 @@ use aether::llm::{
 use aether::types::LlmProvider;
 use clap::Parser;
 use color_eyre::Report;
-use crossterm::{queue, style::Stylize};
+use crossterm::{queue, style::Stylize, cursor, terminal};
 use indicatif::ProgressBar;
 
 #[derive(Debug)]
@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 use tokio::fs;
+use tracing_subscriber;
 
 #[derive(Parser)]
 #[command(name = "wisp")]
@@ -105,6 +106,11 @@ impl ModelSpec {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize tracing - can be controlled with RUST_LOG environment variable
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("aether=debug".parse()?))
+        .init();
+
     let cli = Cli::parse();
 
     if cli.prompt.is_empty() {
@@ -228,21 +234,36 @@ async fn run_agent(
                 model_name,
             } => {
                 if is_complete {
-                    if let Some(tool_call) = active_tool_calls.get(&tool_call_id) {
+                    if let Some(tool_call) = active_tool_calls.remove(&tool_call_id) {
+                        // Clear the spinner completely and print a clean completion line
                         tool_call.progress_bar.finish_and_clear();
+
+                        // Move cursor up one line and clear it, then print completion message
+                        queue!(stdout, cursor::MoveToPreviousLine(1))?;
+                        queue!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
+
+                        print_styled_line!(
+                            stdout,
+                            format!(
+                                "{} {} {} {}",
+                                "✓".with(colors::success()).bold(),
+                                format!("({})", ui::format_model_name(&tool_call.model_name))
+                                    .with(colors::text_secondary())
+                                    .dim(),
+                                "Tool".bold().with(colors::text_primary()),
+                                tool_call.name.bold().with(colors::success())
+                            )
+                        );
+                        stdout.flush()?;
+
+                        // Show additional details (arguments/result) on new lines if present
                         let args_to_show = if tool_call.arguments.is_empty() {
                             None
                         } else {
                             Some(tool_call.arguments.as_str())
                         };
-                        ui::show_tool_completed(
-                            &tool_call.name,
-                            &tool_call.model_name,
-                            args_to_show,
-                            result.as_deref(),
-                        )?;
+                        ui::show_tool_details(args_to_show, result.as_deref())?;
                     }
-                    active_tool_calls.remove(&tool_call_id);
                 } else if !name.is_empty() {
                     // Tool starting - create spinner and initialize arguments
                     print_styled_line!(stdout, "");

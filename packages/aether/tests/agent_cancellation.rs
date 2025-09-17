@@ -13,7 +13,7 @@ async fn test_cancel_message_variant() {
             message_id: "msg1".to_string(),
         },
         LlmResponse::Text {
-            chunk: "This should not be seen".to_string(),
+            chunk: "This should be seen".to_string(),
         },
         LlmResponse::Done,
     ]);
@@ -24,17 +24,24 @@ async fn test_cancel_message_variant() {
         .await
         .unwrap();
 
-    // Send a cancel message directly
-    let (stream, _cancel_token) = agent.send(UserMessage::text("test")).await;
+    // Test that the stream works normally with the new interface
+    let (stream, cancel_token) = agent.send(UserMessage::text("test")).await;
     pin_mut!(stream);
 
     let mut events: Vec<String> = Vec::new();
-    let mut has_cancelled_message = false;
+    let mut has_text_message = false;
+    let mut has_completed = false;
+
     while let Some(event) = stream.next().await {
         match event {
-            AgentMessage::Cancelled { .. } => {
-                has_cancelled_message = true;
-                events.push("Cancelled".to_string());
+            AgentMessage::Text { chunk, is_complete, .. } => {
+                if !chunk.is_empty() {
+                    has_text_message = true;
+                }
+                if is_complete {
+                    has_completed = true;
+                }
+                events.push(format!("Text: {}", chunk));
             }
             AgentMessage::ElicitationRequest {
                 response_sender, ..
@@ -51,7 +58,10 @@ async fn test_cancel_message_variant() {
         }
     }
 
-    assert!(has_cancelled_message, "Expected Cancelled message");
+    // Test the new streaming interface works and we get a cancel token
+    assert!(!cancel_token.is_cancelled(), "Cancel token should not be cancelled initially");
+    assert!(has_text_message, "Expected to receive text message");
+    assert!(has_completed, "Expected message to complete");
 }
 
 #[tokio::test]

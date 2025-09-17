@@ -3,7 +3,6 @@ mod agent_builder;
 mod elicitation_task;
 mod messages;
 // mod process_user_message_task;  // Temporarily commented out during refactor
-mod tool_execution_task;
 
 pub use agent::*;
 pub use agent_builder::*;
