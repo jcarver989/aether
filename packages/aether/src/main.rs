@@ -86,7 +86,7 @@ async fn run_agent<T: ModelProvider + 'static>(provider: T, cli: &Cli, prompt: &
         .await
         .unwrap();
 
-    let (result_stream, _cancel_token) = agent.send(UserMessage::text(prompt));
+    let (result_stream, _cancel_token) = agent.send(UserMessage::text(prompt)).await;
     pin_mut!(result_stream);
 
     while let Some(event) = result_stream.next().await {

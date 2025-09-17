@@ -2,6 +2,7 @@ mod colors;
 mod ui;
 
 use aether::agent::{Agent, AgentMessage::*, UserMessage, agent};
+use futures::{StreamExt, pin_mut};
 use aether::llm::{
     ModelProvider,
     alloyed::AlloyedModelProvider,
@@ -182,13 +183,14 @@ async fn run_agent(
         AgentsStatus::Error(ref e) => (false, Some(e.as_str())),
     };
     ui::show_init_header(user_prompt, &init_display_name, agents_loaded, agents_error)?;
-    let mut result_receiver = agent.send(UserMessage::text(user_prompt)).await;
+    let (stream, _cancel_token) = agent.send(UserMessage::text(user_prompt)).await;
+    pin_mut!(stream);
 
     let mut active_tool_calls: HashMap<String, PartialToolCall> = HashMap::new();
 
     let mut message_started = false;
 
-    while let Some(event) = result_receiver.recv().await {
+    while let Some(event) = stream.next().await {
         match event {
             Text {
                 chunk,

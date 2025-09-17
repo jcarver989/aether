@@ -3,6 +3,7 @@ use aether::{
     testing::FakeLlmProvider,
     types::LlmResponse,
 };
+use futures::{StreamExt, pin_mut};
 
 #[tokio::test]
 async fn test_agent_builder_basic() {
@@ -52,13 +53,14 @@ async fn test_agent_builder_direct_send() {
         .unwrap();
 
     // Send a message
-    let (mut rx, _cancel_token) = agent.send(UserMessage::text("What is 5+5?")).await;
+    let (stream, _cancel_token) = agent.send(UserMessage::text("What is 5+5?")).await;
+    pin_mut!(stream);
 
     // Receive response
     let mut received_text = String::new();
     let mut completed = false;
 
-    while let Some(message) = rx.recv().await {
+    while let Some(message) = stream.next().await {
         match message {
             AgentMessage::Text {
                 chunk, is_complete, ..
@@ -109,10 +111,11 @@ async fn test_agent_builder_direct_send_with_tools() {
         .unwrap();
 
     // Send a message
-    let (mut rx, _cancel_token) = agent.send(UserMessage::text("Create a new file")).await;
+    let (stream, _cancel_token) = agent.send(UserMessage::text("Create a new file")).await;
+    pin_mut!(stream);
 
     // Receive response (just verify we get some response)
-    let message = rx.recv().await;
+    let message = stream.next().await;
     assert!(message.is_some());
 }
 

@@ -4,6 +4,7 @@ use aether::{
     testing::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };
+use futures::{StreamExt, pin_mut};
 use rmcp::ServiceExt;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
@@ -94,7 +95,8 @@ async fn test_simple_tool_call_completes() {
         .await
         .unwrap();
 
-    let (mut receiver, _cancel_token) = test_agent.send(UserMessage::text("Use the echo tool")).await;
+    let (stream, _cancel_token) = test_agent.send(UserMessage::text("Use the echo tool")).await;
+    pin_mut!(stream);
 
     // Collect messages until completion
     let mut messages = Vec::new();
@@ -105,7 +107,7 @@ async fn test_simple_tool_call_completes() {
     while !completed && iterations < MAX_ITERATIONS {
         iterations += 1;
 
-        match tokio::time::timeout(std::time::Duration::from_millis(100), receiver.recv()).await {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), stream.next()).await {
             Ok(Some(msg)) => {
                 match &msg {
                     AgentMessage::Text { is_complete: true, .. } => {
@@ -165,7 +167,8 @@ async fn test_agent_control_flow_scenarios() {
         .await
         .unwrap();
 
-    let (mut receiver, _cancel_token) = error_agent.send(UserMessage::text("This should error")).await;
+    let (stream, _cancel_token) = error_agent.send(UserMessage::text("This should error")).await;
+    pin_mut!(stream);
 
     // Collect messages - should get error and then terminate
     let mut messages = Vec::new();
@@ -175,7 +178,7 @@ async fn test_agent_control_flow_scenarios() {
 
     while !error_received && iterations < MAX_ITERATIONS {
         iterations += 1;
-        match tokio::time::timeout(std::time::Duration::from_millis(50), receiver.recv()).await {
+        match tokio::time::timeout(std::time::Duration::from_millis(50), stream.next()).await {
             Ok(Some(msg)) => {
                 if let AgentMessage::Error { .. } = &msg {
                     error_received = true;
@@ -211,7 +214,8 @@ async fn test_agent_control_flow_scenarios() {
             .await
             .unwrap();
 
-        let (mut receiver2, _cancel_token) = text_agent.send(UserMessage::text("Just respond with text")).await;
+        let (stream2, _cancel_token) = text_agent.send(UserMessage::text("Just respond with text")).await;
+        pin_mut!(stream2);
 
         let mut messages2 = Vec::new();
         let mut completed = false;
@@ -219,7 +223,7 @@ async fn test_agent_control_flow_scenarios() {
 
         while !completed && iterations2 < MAX_ITERATIONS {
             iterations2 += 1;
-            match tokio::time::timeout(std::time::Duration::from_millis(50), receiver2.recv()).await {
+            match tokio::time::timeout(std::time::Duration::from_millis(50), stream2.next()).await {
                 Ok(Some(msg)) => {
                     if let AgentMessage::Text { is_complete: true, .. } = &msg {
                         completed = true;

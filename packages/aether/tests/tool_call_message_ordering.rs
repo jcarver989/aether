@@ -4,6 +4,7 @@ use aether::{
     testing::FakeLlmProvider,
     types::{ChatMessage, LlmResponse, ToolCallRequest},
 };
+use futures::{StreamExt, pin_mut};
 use rmcp::ServiceExt;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
@@ -103,11 +104,12 @@ async fn test_tool_call_message_ordering_race_condition() {
         .await
         .unwrap();
 
-    let (mut receiver, _cancel_token) = agent.send(UserMessage::text("Use the fast tool")).await;
+    let (stream, _cancel_token) = agent.send(UserMessage::text("Use the fast tool")).await;
+    pin_mut!(stream);
 
     // Collect all messages
     let mut tool_results = Vec::new();
-    while let Some(event) = receiver.recv().await {
+    while let Some(event) = stream.next().await {
         if let AgentMessage::ToolCall { result: Some(_), .. } = event {
             tool_results.push(event);
         }

@@ -9,18 +9,18 @@ use crate::types::IsoString;
 use crate::types::LlmResponse;
 use crate::types::ToolCallRequest;
 use async_stream::stream;
+use color_eyre::{Report, Result};
 use futures::Stream;
 use futures::StreamExt;
 use futures::pin_mut;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
 pub struct Agent<T: ModelProvider> {
-    llm: Arc<T>,
+    llm: T,
     mcp_client: Arc<Mutex<McpManager>>,
-    context: Arc<StdMutex<Context>>,
+    context: Context,
     current_task_token: Option<CancellationToken>,
     elicitation_receiver: Arc<Mutex<mpsc::UnboundedReceiver<ElicitationRequest>>>,
 }
@@ -33,12 +33,12 @@ impl<T: ModelProvider + 'static> Agent<T> {
         elicitation_receiver: mpsc::UnboundedReceiver<ElicitationRequest>,
     ) -> Self {
         Self {
-            llm: Arc::new(llm),
+            llm: llm,
             mcp_client: Arc::new(Mutex::new(mcp_client)),
-            context: Arc::new(StdMutex::new(Context::new(
+            context: Context::new(
                 messages,
                 Vec::new(), // populated when tools are discovered
-            ))),
+            ),
             current_task_token: None,
             elicitation_receiver: Arc::new(Mutex::new(elicitation_receiver)),
         }
@@ -48,7 +48,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
         self.llm.display_name()
     }
 
-    pub fn send(
+    pub async fn send(
         &mut self,
         message: UserMessage,
     ) -> (impl Stream<Item = AgentMessage>, CancellationToken) {
@@ -60,40 +60,44 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
                 let cancellation_token = CancellationToken::new();
                 self.current_task_token = Some(cancellation_token.clone());
-                {
-                    let mut context = self.context.lock().unwrap();
-                    context.add_message(ChatMessage::User {
-                        content,
-                        timestamp: IsoString::now(),
-                    });
-                };
+                self.context.add_message(ChatMessage::User {
+                    content,
+                    timestamp: IsoString::now(),
+                });
 
-                let stream = Self::run_agent_loop(
-                    self.mcp_client.clone(),
-                    self.context.clone(),
-                    self.llm.clone(),
-                );
-
+                let stream = self.process_user_message().await;
                 (stream, cancellation_token)
             }
         }
     }
 
-    fn run_agent_loop(
-        mcp_client: Arc<Mutex<McpManager>>,
-        context: Arc<StdMutex<Context>>,
-        llm: Arc<T>,
-    ) -> impl Stream<Item = AgentMessage> {
+    async fn update_tools(&mut self) -> Result<()> {
+        let mut mcp = self.mcp_client.lock().await;
+        mcp.discover_tools().await?;
+        let tools = mcp.get_tool_definitions();
+        self.context.set_tools(tools);
+        Ok(())
+    }
+
+    async fn process_user_message(&mut self) -> impl Stream<Item = AgentMessage> {
         stream! {
+            match self.update_tools().await {
+                Ok(_) => {}
+                Err(e) => {
+                    yield AgentMessage::Error { message: format!("Error fetching tools: {:?}", e) };
+                    return;
+                }
+            };
+
             let mut tool_collector = ToolResultsCollector::new();
 
+            // Main "agentic" loop.
+            // Each iteration of the outer loop procesess 1 LLM call
+            // Each iteration of the inner loop processes 1 streaming "event" chunk from the LLM's response
             loop {
-                let response_stream = {
-                    let context = context.lock().unwrap();
-                    llm.stream_response(&context)
-                };
+                let response_stream = self.llm.stream_response(&self.context);
+                let model_name = self.llm.display_name();
 
-                let model_name = llm.display_name();
                 pin_mut!(response_stream);
 
                 let mut current_message_id: Option<String> = None;
@@ -155,7 +159,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                             Ok(ToolRequestComplete { tool_call}) => {
                                 let tool_tx = tool_collector.start_tool_request(tool_call.clone());
                                 let task = ToolExecutionTask::new(
-                                    mcp_client.clone(),
+                                    self.mcp_client.clone(),
                                     tool_call.clone(),
                                     tool_tx,
                                 );
@@ -164,24 +168,20 @@ impl<T: ModelProvider + 'static> Agent<T> {
                             }
 
                             Ok(Done) => {
-                                // Collect all tool results for context management
-                                let all_results = tool_collector.get_all_results();
-                                {
-                                    let mut context = context.lock().unwrap();
-                                    context.add_message(ChatMessage::Assistant {
-                                        content: message_content.clone(),
-                                        timestamp: IsoString::now(),
-                                        tool_calls: tool_collector.requests.clone()
-                                    });
+                                let tool_results = tool_collector.get_all_results();
+                                self.context.add_message(ChatMessage::Assistant {
+                                    content: message_content.clone(),
+                                    timestamp: IsoString::now(),
+                                    tool_calls: tool_collector.requests.clone()
+                                });
 
-                                    for result in all_results {
-                                        context.add_message(ChatMessage::ToolCallResult {
-                                            tool_call_id: result.id,
-                                            content: result.result,
-                                            timestamp: IsoString::now()
-                                        });
-                                    }
-                                };
+                                for result in tool_results {
+                                    self.context.add_message(ChatMessage::ToolCallResult {
+                                        tool_call_id: result.id,
+                                        content: result.result,
+                                        timestamp: IsoString::now()
+                                    });
+                                }
 
                                 if let Some(ref id) = current_message_id {
                                     yield AgentMessage::Text {
