@@ -28,9 +28,9 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
 
                         if let Some(content) = &delta.content {
                             if !content.is_empty() {
-                                // If we have a pending tool call and now we're getting content,
-                                // complete the tool call first
-                                if let Some(tool_call) = tool_collector.complete_current_tool_call() {
+                                // If we have pending tool calls and now we're getting content,
+                                // complete all tool calls first
+                                for tool_call in tool_collector.complete_all_tool_calls() {
                                     yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                                 }
                                 yield Ok(LlmResponse::Text { chunk: content.clone() });
@@ -50,7 +50,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                             let finish_reason_str = format!("{finish_reason:?}");
                             debug!("Received finish reason: {}", finish_reason_str);
 
-                            if let Some(tool_call) = tool_collector.complete_current_tool_call() {
+                            for tool_call in tool_collector.complete_all_tool_calls() {
                                 yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                             }
 
@@ -60,7 +60,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                     } else {
                         // No choices means stream is done
                         debug!("No choices in response, ending stream");
-                        if let Some(tool_call) = tool_collector.complete_current_tool_call() {
+                        for tool_call in tool_collector.complete_all_tool_calls() {
                             yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                         }
                         yield Ok(LlmResponse::Done);
@@ -77,14 +77,12 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
 }
 
 struct ToolCallCollector {
-    current_tool_id: Option<String>,
-    active_tool_calls: HashMap<String, (String, String)>,
+    active_tool_calls: HashMap<u32, (String, String, String)>,
 }
 
 impl ToolCallCollector {
     fn new() -> Self {
         Self {
-            current_tool_id: None,
             active_tool_calls: HashMap::new(),
         }
     }
@@ -94,14 +92,15 @@ impl ToolCallCollector {
         tool_call: &ChatCompletionMessageToolCallChunk,
     ) -> Vec<LlmResponse> {
         let mut responses = Vec::new();
+        let index = tool_call.index;
 
         if let Some(function) = &tool_call.function {
             if let Some(name) = &function.name {
                 let id = tool_call
                     .id
                     .clone()
-                    .unwrap_or_else(|| "tool_call_0".to_string());
-                self.start_tool_call(id.clone(), name.clone());
+                    .unwrap_or_else(|| format!("tool_call_{}", index));
+                self.start_tool_call(index, id.clone(), name.clone());
                 responses.push(LlmResponse::ToolRequestStart {
                     id,
                     name: name.clone(),
@@ -110,7 +109,7 @@ impl ToolCallCollector {
 
             if let Some(arguments) = &function.arguments {
                 if !arguments.is_empty() {
-                    if let Some(id) = self.add_arguments(arguments) {
+                    if let Some(id) = self.add_arguments(index, arguments) {
                         responses.push(LlmResponse::ToolRequestArg {
                             id,
                             chunk: arguments.clone(),
@@ -123,30 +122,27 @@ impl ToolCallCollector {
         responses
     }
 
-    pub fn complete_current_tool_call(&mut self) -> Option<ToolCallRequest> {
-        if let Some(id) = self.current_tool_id.take() {
-            if let Some((name, arguments)) = self.active_tool_calls.remove(&id) {
-                return Some(ToolCallRequest {
-                    id: id.clone(),
-                    name,
-                    arguments,
-                });
-            }
+    pub fn complete_all_tool_calls(&mut self) -> Vec<ToolCallRequest> {
+        let mut completed = Vec::new();
+        for (_, (id, name, arguments)) in self.active_tool_calls.drain() {
+            completed.push(ToolCallRequest {
+                id,
+                name,
+                arguments,
+            });
         }
-        None
+        completed
     }
 
-    fn start_tool_call(&mut self, id: String, name: String) {
-        self.current_tool_id = Some(id.clone());
-        self.active_tool_calls.insert(id, (name, String::new()));
+    fn start_tool_call(&mut self, index: u32, id: String, name: String) {
+        self.active_tool_calls
+            .insert(index, (id, name, String::new()));
     }
 
-    fn add_arguments(&mut self, arguments: &str) -> Option<String> {
-        if let Some(id) = &self.current_tool_id {
-            if let Some((_, accumulated_args)) = self.active_tool_calls.get_mut(id) {
-                accumulated_args.push_str(arguments);
-                return Some(id.clone());
-            }
+    fn add_arguments(&mut self, index: u32, arguments: &str) -> Option<String> {
+        if let Some((id, _, accumulated_args)) = self.active_tool_calls.get_mut(&index) {
+            accumulated_args.push_str(arguments);
+            return Some(id.clone());
         }
         None
     }
