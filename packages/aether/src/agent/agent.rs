@@ -231,6 +231,94 @@ impl<T: ModelProvider + 'static> Agent<T> {
             }
         }
     }
+
+    async fn process_llm_stream(
+        &self,
+        tool_call_manager: &mut ToolCallManager,
+    ) -> impl Stream<Item = AgentMessage> {
+        stream! {
+            let response_stream = self.llm.stream_response(&self.context);
+            let model_name = self.llm.display_name();
+            pin_mut!(response_stream);
+
+            let mut current_message_id: Option<String> = None;
+            let mut message_content = String::new();
+
+            while let Some(event) = response_stream.next().await {
+                use LlmResponse::*;
+                match event {
+                    Ok(Start { message_id }) => {
+                        current_message_id = Some(message_id);
+                    }
+
+                    Ok(Text { chunk }) => {
+                        message_content.push_str(&chunk);
+                        if let Some(ref id) = current_message_id {
+                            yield AgentMessage::Text {
+                                message_id: id.clone(),
+                                chunk,
+                                is_complete: false,
+                                model_name: model_name.clone(),
+                            };
+                        }
+                    }
+
+                    Ok(ToolRequestStart { id, name }) => {
+                        yield AgentMessage::ToolCall {
+                            tool_call_id: id,
+                            name,
+                            arguments: None,
+                            result: None,
+                            is_complete: false,
+                            model_name: model_name.clone(),
+                        };
+                    }
+
+                    Ok(ToolRequestArg { id, chunk }) => {
+                        yield AgentMessage::ToolCall {
+                            tool_call_id: id,
+                            name: String::new(),
+                            arguments: Some(chunk.to_string()),
+                            result: None,
+                            is_complete: false,
+                            model_name: model_name.clone(),
+                        };
+                    }
+
+                    Ok(ToolRequestComplete { tool_call }) => {
+                        tracing::debug!(
+                            "Tool request completed: {} ({})",
+                            tool_call.name,
+                            tool_call.id
+                        );
+                        tool_call_manager.execute_tool(self.mcp.clone(), tool_call.clone());
+                    }
+
+                    Ok(Done) => {
+                        tracing::debug!(
+                            "LLM response Done. Tool requests: {}",
+                            tool_call_manager.tool_handles.len()
+                        );
+                        break;
+                    }
+
+                    Ok(Error { message }) => {
+                        yield AgentMessage::Error {
+                            message: message.to_string(),
+                        };
+                        return;
+                    }
+
+                    Err(e) => {
+                        yield AgentMessage::Error {
+                            message: e.to_string(),
+                        };
+                        return;
+                    }
+                }
+            }
+        }
+    }
 }
 
 struct ToolCallManager {
