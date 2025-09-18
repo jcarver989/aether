@@ -94,7 +94,7 @@ async fn test_simple_tool_execution() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = agent.send(UserMessage::text("Write a test file")).await;
+    let stream = agent.send(UserMessage::text("Write a test file")).await;
     pin_mut!(stream);
 
     let mut events = Vec::new();
@@ -203,7 +203,7 @@ async fn test_tool_execution_error_handling() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = agent.send(UserMessage::text("Write a file")).await;
+    let stream = agent.send(UserMessage::text("Write a file")).await;
     pin_mut!(stream);
 
     let mut events = Vec::new();

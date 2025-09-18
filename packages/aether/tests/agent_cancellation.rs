@@ -25,7 +25,7 @@ async fn test_cancel_message_variant() {
         .unwrap();
 
     // Test that the stream works normally with the new interface
-    let (stream, cancel_token) = agent.send(UserMessage::text("test")).await;
+    let stream = agent.send(UserMessage::text("test")).await;
     pin_mut!(stream);
 
     let mut events: Vec<String> = Vec::new();
@@ -59,7 +59,7 @@ async fn test_cancel_message_variant() {
     }
 
     // Test the new streaming interface works and we get a cancel token
-    assert!(!cancel_token.is_cancelled(), "Cancel token should not be cancelled initially");
+    // Basic test that stream works without cancellation tokens
     assert!(has_text_message, "Expected to receive text message");
     assert!(has_completed, "Expected message to complete");
 }
@@ -93,7 +93,7 @@ async fn test_cancellation_during_tool_execution() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = agent.send(UserMessage::text("Write a file")).await;
+    let stream = agent.send(UserMessage::text("Write a file")).await;
     pin_mut!(stream);
 
     let mut events: Vec<String> = Vec::new();
@@ -178,7 +178,7 @@ async fn test_multiple_operations_with_cancellation() {
 
     // First operation (consume it completely)
     {
-        let (stream1, _cancel_token1) = agent.send(UserMessage::text("First task")).await;
+        let stream1 = agent.send(UserMessage::text("First task")).await;
         pin_mut!(stream1);
 
         let mut first_events: Vec<String> = Vec::new();
@@ -201,7 +201,7 @@ async fn test_multiple_operations_with_cancellation() {
     }
 
     // Second operation should work normally
-    let (stream2, _cancel_token2) = agent.send(UserMessage::text("Second task")).await;
+    let stream2 = agent.send(UserMessage::text("Second task")).await;
     pin_mut!(stream2);
 
     let mut second_events: Vec<String> = Vec::new();
@@ -268,7 +268,7 @@ async fn test_cancellation_token_isolation() {
 
     // First task (consume it completely)
     {
-        let (stream1, _cancel_token1) = agent.send(UserMessage::text("Task 1")).await;
+        let stream1 = agent.send(UserMessage::text("Task 1")).await;
         pin_mut!(stream1);
 
         // Consume the stream
@@ -277,7 +277,7 @@ async fn test_cancellation_token_isolation() {
 
     // Second task
     {
-        let (stream2, _cancel_token2) = agent.send(UserMessage::text("Task 2")).await;
+        let stream2 = agent.send(UserMessage::text("Task 2")).await;
         pin_mut!(stream2);
 
         // Consume the stream

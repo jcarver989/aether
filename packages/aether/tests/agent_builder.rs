@@ -53,7 +53,7 @@ async fn test_agent_builder_direct_send() {
         .unwrap();
 
     // Send a message
-    let (stream, _cancel_token) = agent.send(UserMessage::text("What is 5+5?")).await;
+    let stream = agent.send(UserMessage::text("What is 5+5?")).await;
     pin_mut!(stream);
 
     // Receive response
@@ -111,7 +111,7 @@ async fn test_agent_builder_direct_send_with_tools() {
         .unwrap();
 
     // Send a message
-    let (stream, _cancel_token) = agent.send(UserMessage::text("Create a new file")).await;
+    let stream = agent.send(UserMessage::text("Create a new file")).await;
     pin_mut!(stream);
 
     // Receive response (just verify we get some response)

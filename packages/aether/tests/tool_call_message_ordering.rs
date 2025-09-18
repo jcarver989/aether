@@ -104,7 +104,7 @@ async fn test_tool_call_message_ordering_race_condition() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = agent.send(UserMessage::text("Use the fast tool")).await;
+    let stream = agent.send(UserMessage::text("Use the fast tool")).await;
     pin_mut!(stream);
 
     // Collect all messages with timeout to avoid infinite loop

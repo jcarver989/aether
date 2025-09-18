@@ -2,7 +2,7 @@ use crate::agent::AgentMessage;
 use crate::agent::UserMessage;
 use crate::llm::Context;
 use crate::llm::ModelProvider;
-use crate::mcp::{ElicitationRequest, McpManager};
+use crate::mcp::McpManager;
 use crate::types::ChatMessage;
 use crate::types::IsoString;
 use crate::types::LlmResponse;
@@ -16,32 +16,22 @@ use std::sync::Arc;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
 
 pub struct Agent<T: ModelProvider> {
     llm: T,
-    mcp_client: Arc<Mutex<McpManager>>,
+    mcp: Arc<Mutex<McpManager>>,
     context: Context,
-    current_task_token: Option<CancellationToken>,
-    elicitation_receiver: Arc<Mutex<mpsc::UnboundedReceiver<ElicitationRequest>>>,
 }
 
 impl<T: ModelProvider + 'static> Agent<T> {
-    pub fn new(
-        llm: T,
-        mcp_client: McpManager,
-        messages: Vec<ChatMessage>,
-        elicitation_receiver: mpsc::UnboundedReceiver<ElicitationRequest>,
-    ) -> Self {
+    pub fn new(llm: T, mcp_client: McpManager, messages: Vec<ChatMessage>) -> Self {
         Self {
             llm: llm,
-            mcp_client: Arc::new(Mutex::new(mcp_client)),
+            mcp: Arc::new(Mutex::new(mcp_client)),
             context: Context::new(
                 messages,
                 Vec::new(), // populated when tools are discovered
             ),
-            current_task_token: None,
-            elicitation_receiver: Arc::new(Mutex::new(elicitation_receiver)),
         }
     }
 
@@ -49,31 +39,21 @@ impl<T: ModelProvider + 'static> Agent<T> {
         self.llm.display_name()
     }
 
-    pub async fn send(
-        &mut self,
-        message: UserMessage,
-    ) -> (impl Stream<Item = AgentMessage>, CancellationToken) {
+    pub async fn send(&mut self, message: UserMessage) -> impl Stream<Item = AgentMessage> {
         match message {
             UserMessage::Text { content } => {
-                if let Some(token) = &self.current_task_token {
-                    token.cancel();
-                }
-
-                let cancellation_token = CancellationToken::new();
-                self.current_task_token = Some(cancellation_token.clone());
                 self.context.add_message(ChatMessage::User {
                     content,
                     timestamp: IsoString::now(),
                 });
 
-                let stream = self.process_user_message().await;
-                (stream, cancellation_token)
+                self.process_user_message().await
             }
         }
     }
 
     async fn update_tools(&mut self) -> Result<()> {
-        let mut mcp = self.mcp_client.lock().await;
+        let mut mcp = self.mcp.lock().await;
         mcp.discover_tools().await?;
         let tools = mcp.get_tool_definitions();
         self.context.set_tools(tools);
@@ -90,7 +70,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 }
             };
 
-            let mut tool_collector = ToolResultsCollector::new();
+            let mut tool_collector = ToolCallManager::new();
 
             // Main "agentic" loop.
             // Each iteration of the outer loop procesess 1 LLM call
@@ -160,13 +140,11 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
                             Ok(ToolRequestComplete { tool_call}) => {
                                 tracing::debug!("Tool request completed: {} ({})", tool_call.name, tool_call.id);
-                                let tool_tx = tool_collector.start_tool_request(tool_call.clone());
-                                let handle = Self::execute_tool(self.mcp_client.clone(), tool_call.clone(), tool_tx);
-                                tool_collector.add_tool_handle(handle);
+                                tool_collector.execute_tool(self.mcp.clone(), tool_call.clone());
                             }
 
                             Ok(Done) => {
-                                tracing::debug!("LLM response Done. Tool requests: {}", tool_collector.requests.len());
+                                tracing::debug!("LLM response Done. Tool requests: {}", tool_collector.tool_handles.len());
                                 break;
                             }
 
@@ -200,14 +178,14 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     };
                 }
 
-                if tool_collector.requests.is_empty() {
+                if tool_collector.tool_handles.is_empty() {
                     tracing::debug!("No tool requests, terminating agent loop");
                     return;
                 }
 
-                if !tool_collector.requests.is_empty() {
-                    tracing::debug!("Waiting for {} tool results after stream completion...", tool_collector.requests.len());
-                    let tool_results = tool_collector.wait_for_all_results().await;
+                if !tool_collector.tool_handles.is_empty() {
+                    tracing::debug!("Waiting for {} tool results after stream completion...", tool_collector.tool_handles.len());
+                    let tool_results = tool_collector.wait_for_all_tools_to_execute().await;
 
                     for result in tool_results {
                         tracing::debug!("Tool result received: {} -> {}", result.name, result.result.len());
@@ -228,20 +206,39 @@ impl<T: ModelProvider + 'static> Agent<T> {
                         };
                     }
 
-                    tool_collector = ToolResultsCollector::new();
+                    tool_collector = ToolCallManager::new();
                 }
 
                 current_iteration += 1;
             }
         }
     }
+}
 
-    fn execute_tool(
-        mcp_client: Arc<Mutex<McpManager>>,
-        request: ToolCallRequest,
-        rx: mpsc::UnboundedSender<ToolCallResult>,
-    ) -> JoinHandle<Result<(), SendError<ToolCallResult>>> {
-        tokio::spawn(async move {
+struct ToolCallManager {
+    requests: Vec<ToolCallRequest>,
+    tool_result_rx: mpsc::UnboundedReceiver<ToolCallResult>,
+    tool_result_tx: mpsc::UnboundedSender<ToolCallResult>,
+    completed_results: Vec<ToolCallResult>,
+    tool_handles: Vec<JoinHandle<Result<(), SendError<ToolCallResult>>>>,
+}
+
+impl ToolCallManager {
+    pub fn new() -> Self {
+        let (tool_result_tx, tool_result_rx) = mpsc::unbounded_channel();
+        Self {
+            requests: Vec::new(),
+            tool_result_rx,
+            tool_result_tx,
+            completed_results: Vec::new(),
+            tool_handles: Vec::new(),
+        }
+    }
+
+    pub fn execute_tool(&mut self, mcp_client: Arc<Mutex<McpManager>>, request: ToolCallRequest) {
+        self.requests.push(request.clone());
+        let tx = self.tool_result_tx.clone();
+        let handle = tokio::spawn(async move {
             let result_str = match serde_json::from_str(&request.arguments) {
                 Ok(args) => {
                     let mcp_client_guard = mcp_client.lock().await;
@@ -258,51 +255,18 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 }
             };
 
-            rx.send(ToolCallResult {
+            tx.send(ToolCallResult {
                 id: request.id.clone(),
                 name: request.name.clone(),
                 arguments: request.arguments,
                 result: result_str,
             })
-        })
-    }
-}
-
-struct ToolResultsCollector {
-    requests: Vec<ToolCallRequest>,
-    tool_result_rx: mpsc::UnboundedReceiver<ToolCallResult>,
-    tool_result_tx: mpsc::UnboundedSender<ToolCallResult>,
-    completed_results: Vec<ToolCallResult>,
-    tool_handles: Vec<JoinHandle<Result<(), SendError<ToolCallResult>>>>,
-}
-
-impl ToolResultsCollector {
-    pub fn new() -> Self {
-        let (tool_result_tx, tool_result_rx) = mpsc::unbounded_channel();
-        Self {
-            requests: Vec::new(),
-            tool_result_rx,
-            tool_result_tx,
-            completed_results: Vec::new(),
-            tool_handles: Vec::new(),
-        }
-    }
-
-    pub fn start_tool_request(
-        &mut self,
-        request: ToolCallRequest,
-    ) -> mpsc::UnboundedSender<ToolCallResult> {
-        self.requests.push(request);
-        self.tool_result_tx.clone()
-    }
-
-    pub fn add_tool_handle(&mut self, handle: JoinHandle<Result<(), SendError<ToolCallResult>>>) {
+        });
         self.tool_handles.push(handle);
     }
 
-    pub async fn wait_for_all_results(&mut self) -> Vec<ToolCallResult> {
+    pub async fn wait_for_all_tools_to_execute(&mut self) -> Vec<ToolCallResult> {
         let handles = std::mem::take(&mut self.tool_handles);
-        tracing::debug!("Waiting for {} tool handles to complete", handles.len());
         let _ = futures::future::join_all(handles).await;
 
         while let Ok(result) = self.tool_result_rx.try_recv() {

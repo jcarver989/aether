@@ -1,8 +1,7 @@
 mod colors;
 mod ui;
 
-use aether::agent::{Agent, AgentMessage::*, UserMessage, agent};
-use futures::{StreamExt, pin_mut};
+use aether::agent::{AgentMessage::*, SpawnedAgent, UserMessage, agent};
 use aether::llm::{
     ModelProvider,
     alloyed::AlloyedModelProvider,
@@ -13,7 +12,7 @@ use aether::llm::{
 use aether::types::LlmProvider;
 use clap::Parser;
 use color_eyre::Report;
-use crossterm::{queue, style::Stylize, cursor, terminal};
+use crossterm::{cursor, queue, style::Stylize, terminal};
 use indicatif::ProgressBar;
 
 #[derive(Debug)]
@@ -106,9 +105,9 @@ impl ModelSpec {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize tracing - can be controlled with RUST_LOG environment variable
+    // Initialize tracing - set RUST_LOG env var to control log level
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("aether=debug".parse()?))
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
     let cli = Cli::parse();
@@ -181,7 +180,7 @@ async fn run_agent(
         format!("Alloyed [{}]", provider_names.join(", "))
     };
 
-    let (mut agent, agents_status) = build_agent(provider, cli).await?;
+    let (spawned_agent, agents_status) = build_spawned_agent(provider, cli).await?;
 
     let (agents_loaded, agents_error) = match agents_status {
         AgentsStatus::Loaded => (true, None),
@@ -189,14 +188,15 @@ async fn run_agent(
         AgentsStatus::Error(ref e) => (false, Some(e.as_str())),
     };
     ui::show_init_header(user_prompt, &init_display_name, agents_loaded, agents_error)?;
-    let (stream, _cancel_token) = agent.send(UserMessage::text(user_prompt)).await;
-    pin_mut!(stream);
+
+    // Send the user message to the spawned agent
+    spawned_agent.tx.send(UserMessage::text(user_prompt))?;
 
     let mut active_tool_calls: HashMap<String, PartialToolCall> = HashMap::new();
-
     let mut message_started = false;
+    let mut rx = spawned_agent.rx;
 
-    while let Some(event) = stream.next().await {
+    while let Some(event) = rx.recv().await {
         match event {
             Text {
                 chunk,
@@ -338,6 +338,9 @@ async fn run_agent(
     // Ensure any remaining output is flushed before showing completion
     stdout.flush()?;
     ui::show_completion()?;
+
+    // Clean up the spawned agent task
+    spawned_agent.task_handle.abort();
     Ok(())
 }
 
@@ -348,10 +351,10 @@ enum AgentsStatus {
     Error(String),
 }
 
-async fn build_agent(
+async fn build_spawned_agent(
     provider: Box<dyn ModelProvider>,
     cli: &Cli,
-) -> Result<(Agent<Box<dyn ModelProvider>>, AgentsStatus), Report> {
+) -> Result<(SpawnedAgent, AgentsStatus), Report> {
     let (system_prompt, agents_status) = match load_agents_file().await {
         Ok(Some(content)) => (Some(content), AgentsStatus::Loaded),
         Ok(None) => (None, AgentsStatus::NotFound),
@@ -369,13 +372,13 @@ async fn build_agent(
         system.to_string()
     };
 
-    let agent = agent(provider)
+    let spawned_agent = agent(provider)
         .system_prompt(&combined_system)
         .coding_tools()
-        .build()
+        .spawn()
         .await?;
 
-    Ok((agent, agents_status))
+    Ok((spawned_agent, agents_status))
 }
 
 async fn load_agents_file() -> Result<Option<String>, std::io::Error> {

@@ -84,7 +84,7 @@ async fn test_basic_functionality_still_works() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = agent.send(UserMessage::text("Hello")).await;
+    let stream = agent.send(UserMessage::text("Hello")).await;
     pin_mut!(stream);
 
     let mut text_chunks = Vec::new();

@@ -95,7 +95,7 @@ async fn test_simple_tool_call_completes() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = test_agent.send(UserMessage::text("Use the echo tool")).await;
+    let stream = test_agent.send(UserMessage::text("Use the echo tool")).await;
     pin_mut!(stream);
 
     // Collect messages until completion
@@ -167,7 +167,7 @@ async fn test_agent_control_flow_scenarios() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = error_agent.send(UserMessage::text("This should error")).await;
+    let stream = error_agent.send(UserMessage::text("This should error")).await;
     pin_mut!(stream);
 
     // Collect messages - should get error and then terminate
@@ -214,7 +214,7 @@ async fn test_agent_control_flow_scenarios() {
             .await
             .unwrap();
 
-        let (stream2, _cancel_token) = text_agent.send(UserMessage::text("Just respond with text")).await;
+        let stream2 = text_agent.send(UserMessage::text("Just respond with text")).await;
         pin_mut!(stream2);
 
         let mut messages2 = Vec::new();
@@ -293,7 +293,7 @@ async fn test_no_consecutive_assistant_messages() {
         .await
         .unwrap();
 
-    let (stream, _cancel_token) = test_agent.send(UserMessage::text("Use the echo tool")).await;
+    let stream = test_agent.send(UserMessage::text("Use the echo tool")).await;
     pin_mut!(stream);
 
     // Collect all messages
