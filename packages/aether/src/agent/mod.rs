@@ -1,9 +1,10 @@
 mod agent;
 mod agent_builder;
+mod agent_task;
 pub mod error;
 mod messages;
 mod process_llm_stream_task;
-mod tool_execution_task;
+mod tool_executor_task;
 // mod process_user_message_task;  // Temporarily commented out during refactor
 
 pub use agent::*;

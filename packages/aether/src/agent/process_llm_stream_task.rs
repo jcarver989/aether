@@ -8,8 +8,9 @@ use crate::types::ToolCallRequest;
 use futures::StreamExt;
 use futures::pin_mut;
 use std::sync::Arc;
+use std::sync::Mutex;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex as TokioMutex, mpsc};
 use tokio::task::JoinHandle;
 
 pub struct ProcessLlmStreamTask {}
@@ -23,9 +24,10 @@ impl ProcessLlmStreamTask {
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let response_stream = {
-                let c = context.lock().await;
+                let c = context.lock().unwrap();
                 llm.stream_response(&c)
             };
+
             let model_name = llm.display_name();
             pin_mut!(response_stream);
 
@@ -138,7 +140,7 @@ impl ProcessLlmStreamTask {
             }
 
             if let Some(ref id) = current_message_id {
-                context.lock().await.add_message(ChatMessage::Assistant {
+                context.lock().unwrap().add_message(ChatMessage::Assistant {
                     content: message_content.clone(),
                     timestamp: IsoString::now(),
                     tool_calls: tool_call_requests,
