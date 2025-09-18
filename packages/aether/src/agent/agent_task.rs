@@ -16,7 +16,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::{Mutex as TokioMutex, mpsc};
 use tokio::task::JoinHandle;
 use tracing::Level;
-use tracing::{debug, span, trace};
+use tracing::span;
 
 pub struct AgentTask {}
 
@@ -65,6 +65,7 @@ impl AgentTask {
             // "Agentic" loop.
             // Each iteration of the outer loop procesess 1 LLM call
             // Each iteration of the inner loop processes 1 streaming "event" chunk from the LLM's response
+            tracing::debug!("Starting agent task main loop");
             loop {
                 let model_name = llm.display_name();
 
@@ -95,12 +96,11 @@ impl AgentTask {
                     tokio::select! {
                         llm_msg = llm_rx.recv() => {
                             match llm_msg {
-
-                                Some(AgentMessage::Text { chunk, is_complete: true,.. }) => {
-                                    final_message = chunk;
-                                }
-
                                 Some(msg) => {
+                                    if let AgentMessage::Text { chunk, is_complete: true, .. } = &msg {
+                                        final_message = chunk.clone();
+                                    }
+
                                     if let Err(e) = tx.send(msg).await {
                                         tracing::warn!("Failed to send LLM message to output: {:?}", e);
                                     }
@@ -145,8 +145,7 @@ impl AgentTask {
                     }
 
                     if llm_finished && tools_finished {
-                        tracing::debug!("Agent: Completed inner loop; both tools and llm finished");
-
+                        tracing::debug!("LLM and tools finished for this iteration");
                         let mut tool_requests = Vec::new();
                         let mut c = context.lock().unwrap();
 
@@ -173,9 +172,21 @@ impl AgentTask {
                 }
 
                 join_all(vec![llm_handle, tool_executor_handle]).await;
+                tracing::debug!(
+                    "Agent iteration complete, has_tool_calls: {}",
+                    has_tool_calls
+                );
                 if !has_tool_calls {
+                    tracing::debug!("No tool calls, breaking from agent loop");
                     break;
+                } else {
+                    tracing::debug!("Has tool calls, continuing agent loop");
                 }
+            }
+
+            tracing::debug!("Agent task main loop exited, task ending");
+            if let Err(e) = tx.send(AgentMessage::Done).await {
+                tracing::warn!("Failed to send Done message: {:?}", e);
             }
         });
 

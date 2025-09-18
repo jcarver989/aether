@@ -125,6 +125,11 @@ async fn run_agent<T: ModelProvider + 'static>(provider: T, cli: &Cli, prompt: &
 
                 let _ = response_sender.send(result); // Ignore send errors
             }
+
+            Done => {
+                println!("Agent task completed");
+                break;
+            }
         }
     }
 }

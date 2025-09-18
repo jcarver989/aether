@@ -1,10 +1,10 @@
-mod app_state;
+mod app_view;
 mod cli;
 mod colors;
+mod simple_input;
 mod ui;
-mod ui_event;
 
-use aether::agent::{SpawnedAgent, UserMessage, agent};
+use aether::agent::{AgentMessage, SpawnedAgent, UserMessage, agent};
 use aether::llm::{
     ModelProvider,
     alloyed::AlloyedModelProvider,
@@ -15,7 +15,6 @@ use aether::llm::{
 use aether::types::LlmProvider;
 use clap::Parser;
 use color_eyre::Report;
-use indicatif::ProgressBar;
 
 use mcp_lexicon::AgentBuilderExt;
 use std::io::Write;
@@ -23,16 +22,9 @@ use std::path::Path;
 use tokio::fs;
 use tracing_subscriber;
 
-use crate::app_state::AppState;
+use crate::app_view::AppView;
 use crate::cli::{Cli, ModelSpec};
-
-#[derive(Debug)]
-struct PartialToolCall {
-    name: String,
-    model_name: String,
-    arguments: String,
-    progress_bar: ProgressBar,
-}
+use crate::simple_input::{InputResult, SimpleInput};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,9 +35,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
 
+    // Check if we should run in interactive mode or single-shot mode
     if cli.prompt.is_empty() {
-        ui::show_usage("wisp")?;
-        return Ok(());
+        return run_interactive_mode(&cli).await;
     }
 
     let user_prompt = cli.prompt.join(" ");
@@ -79,6 +71,97 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+async fn run_interactive_mode(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    let model_specs = match parse_model_specs(&cli.model) {
+        Ok(specs) => specs,
+        Err(e) => {
+            eprintln!("Error parsing model specification: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let mut providers = Vec::new();
+    for spec in &model_specs {
+        match create_provider(spec) {
+            Ok(provider) => providers.push(provider),
+            Err(e) => {
+                eprintln!("Error creating provider for {:?}: {}", spec.provider, e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Use single provider or alloyed provider
+    let provider: Box<dyn ModelProvider> = if providers.len() == 1 {
+        providers.into_iter().next().unwrap()
+    } else {
+        Box::new(AlloyedModelProvider::new(providers))
+    };
+
+    ui::show_wisp_logo()?;
+
+    let init_display_name = ui::format_model_display_name(&model_specs);
+    let (spawned_agent, agents_status) = spawn_agent(provider, cli).await?;
+
+    let (agents_loaded, agents_error) = match agents_status {
+        AgentsStatus::Loaded => (true, None),
+        AgentsStatus::NotFound => (false, None),
+        AgentsStatus::Error(ref e) => (false, Some(e.as_str())),
+    };
+
+    // Show initial header without a prompt
+    ui::show_init_header(
+        "Interactive Mode",
+        &init_display_name,
+        agents_loaded,
+        agents_error,
+    )?;
+
+    run_interactive_conversation(spawned_agent).await
+}
+
+async fn run_interactive_conversation(
+    spawned_agent: SpawnedAgent,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut app_view = AppView::new();
+    let mut rx = spawned_agent.rx;
+    let tx = spawned_agent.tx;
+
+    loop {
+        // Get input from user
+        let mut input = SimpleInput::new();
+        let user_input = match input.run()? {
+            InputResult::Submit(content) => content,
+            InputResult::Exit => break,
+            InputResult::Cancel => continue,
+        };
+
+        // Reset app view state for new conversation
+        app_view.reset_for_new_conversation();
+
+        // Send message to agent
+        tx.send(UserMessage::text(&user_input)).await?;
+
+        // Process agent responses until agent is completely done
+        while let Some(event) = rx.recv().await {
+            tracing::trace!("Received agent event: {:?}", std::mem::discriminant(&event));
+            let is_done = matches!(event, AgentMessage::Done);
+            app_view.update(event)?;
+            if is_done {
+                break;
+            }
+        }
+
+        // Agent is done - clean up any remaining spinners
+        app_view.stop_all_spinners()?;
+        std::io::stdout().flush()?;
+    }
+
+    spawned_agent.task_handle.abort();
+    ui::show_completion()?;
+    Ok(())
+}
+
 async fn run_agent(
     provider: Box<dyn ModelProvider>,
     model_specs: &[ModelSpec],
@@ -104,19 +187,19 @@ async fn run_agent(
         .send(UserMessage::text(user_prompt))
         .await?;
 
-    let mut app_state = AppState::new();
+    let mut app_view = AppView::new();
     let mut rx = spawned_agent.rx;
 
+    tracing::debug!("Starting main event loop");
     while let Some(event) = rx.recv().await {
-        let ui_events = app_state.update(event)?;
-        ui::render_ui_events(ui_events)?;
+        tracing::trace!("Received agent event: {:?}", std::mem::discriminant(&event));
+        app_view.update(event)?;
     }
+    tracing::debug!("Main event loop ended - no more events");
 
-    // Ensure any remaining output is flushed before showing completion
     stdout.flush()?;
     ui::show_completion()?;
 
-    // Clean up the spawned agent task
     spawned_agent.task_handle.abort();
     Ok(())
 }

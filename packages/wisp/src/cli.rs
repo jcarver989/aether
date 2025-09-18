@@ -5,7 +5,9 @@ use clap::Parser;
 #[command(name = "wisp")]
 #[command(about = "A TUI for the Aether AI assistant")]
 pub struct Cli {
-    #[arg(help = "The prompt to send to the AI assistant")]
+    #[arg(
+        help = "The prompt to send to the AI assistant (optional - if not provided, starts interactive mode)"
+    )]
     pub prompt: Vec<String>,
 
     #[arg(short = 's', long = "system", help = "The LLM's system prompt")]

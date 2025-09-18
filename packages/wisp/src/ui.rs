@@ -1,11 +1,121 @@
 use crate::cli::ModelSpec;
 use crate::colors;
-use crate::ui_event::UiEvent;
 use crossterm::{cursor, queue, style::Stylize, terminal};
-use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
-use std::io::{Write, stderr, stdout};
+use std::io::{Write, stdout};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::time::interval;
+
+#[derive(Debug)]
+pub struct CrosstermSpinner {
+    message: Arc<Mutex<String>>,
+    spinner_chars: Vec<char>,
+    current_frame: Arc<Mutex<usize>>,
+    is_running: Arc<Mutex<bool>>,
+    task_handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl CrosstermSpinner {
+    pub fn new(tool_name: &str, model_name: &str, message: &str) -> Self {
+        let spinner_chars: Vec<char> = "˚∘○◌◉◯❍⊙❍◯◉◌○".chars().collect();
+        let formatted_message = format!(
+            "Tool {} {} {}",
+            tool_name,
+            format!("({})", format_model_name(model_name)),
+            message
+        );
+
+        Self {
+            message: Arc::new(Mutex::new(formatted_message)),
+            spinner_chars,
+            current_frame: Arc::new(Mutex::new(0)),
+            is_running: Arc::new(Mutex::new(false)),
+            task_handle: None,
+        }
+    }
+
+    pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        *self.is_running.lock().unwrap() = true;
+
+        let message = Arc::clone(&self.message);
+        let current_frame = Arc::clone(&self.current_frame);
+        let is_running = Arc::clone(&self.is_running);
+        let spinner_chars = self.spinner_chars.clone();
+
+        let handle = tokio::spawn(async move {
+            let mut ticker = interval(Duration::from_millis(80));
+
+            while *is_running.lock().unwrap() {
+                ticker.tick().await;
+
+                if !*is_running.lock().unwrap() {
+                    break;
+                }
+
+                let frame = {
+                    let mut current = current_frame.lock().unwrap();
+                    let frame = *current;
+                    *current = (*current + 1) % spinner_chars.len();
+                    frame
+                };
+
+                let spinner_char = spinner_chars[frame];
+                let msg = message.lock().unwrap();
+
+                // Print the spinner line with styling
+                let spinner_line = format!(
+                    "{} {}",
+                    spinner_char.to_string().with(colors::primary()),
+                    &*msg
+                );
+
+                // Use crossterm to print and position cursor
+                let mut stdout = stdout();
+                if let Err(_) = queue!(
+                    stdout,
+                    cursor::SavePosition,
+                    crossterm::style::PrintStyledContent(spinner_line.stylize()),
+                    cursor::RestorePosition
+                ) {
+                    break;
+                }
+
+                if stdout.flush().is_err() {
+                    break;
+                }
+            }
+        });
+
+        self.task_handle = Some(handle);
+        Ok(())
+    }
+
+    pub fn finish_and_clear(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        *self.is_running.lock().unwrap() = false;
+
+        if let Some(handle) = self.task_handle.take() {
+            handle.abort();
+        }
+
+        // Clear the spinner line - use a simpler approach
+        let mut stdout = stdout();
+        queue!(
+            stdout,
+            terminal::Clear(terminal::ClearType::CurrentLine),
+            cursor::MoveToColumn(0)
+        )?;
+        stdout.flush()?;
+
+        Ok(())
+    }
+}
+
+impl Drop for CrosstermSpinner {
+    fn drop(&mut self) {
+        let _ = self.finish_and_clear();
+    }
+}
 
 #[macro_export]
 macro_rules! print_styled {
@@ -259,47 +369,8 @@ pub fn show_init_header(
 pub fn create_tool_spinner(
     name: &str,
     model_name: &str,
-) -> Result<ProgressBar, Box<dyn std::error::Error>> {
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_chars("˚∘○◌◯❍◉⊙✦✧⋆✨")
-            .template(&format!(
-                "{{spinner:.cyan}} Tool {} {} {{msg}}",
-                name.with(colors::info()).bold(),
-                format!("({})", format_model_name(model_name))
-                    .with(colors::text_secondary())
-                    .dim()
-            ))?,
-    );
-    pb.set_message("running...");
-    pb.enable_steady_tick(Duration::from_millis(80));
-    Ok(pb)
-}
-
-pub fn show_tool_completed(
-    tool_name: &str,
-    model_name: &str,
-    arguments: Option<&str>,
-    result: Option<&str>,
-) -> Result<(), std::io::Error> {
-    let mut stdout = stdout();
-    print_styled_line!(
-        stdout,
-        format!(
-            "{} {} {} {}",
-            "✓".with(colors::success()).bold(),
-            format!("({})", format_model_name(model_name))
-                .with(colors::text_secondary())
-                .dim(),
-            "Tool".bold().with(colors::text_primary()),
-            tool_name.bold().with(colors::success())
-        )
-    );
-
-    show_tool_details(arguments, result)?;
-    stdout.flush()?;
-    Ok(())
+) -> Result<CrosstermSpinner, Box<dyn std::error::Error>> {
+    Ok(CrosstermSpinner::new(name, model_name, "running..."))
 }
 
 pub fn show_tool_details(
@@ -382,34 +453,6 @@ pub fn show_tool_details(
     Ok(())
 }
 
-pub fn show_error(message: &str) -> Result<(), std::io::Error> {
-    let mut stderr = stderr();
-    print_styled_line!(
-        stderr,
-        format!(
-            "{} {}",
-            "✗".with(colors::error()).bold(),
-            message.with(colors::error())
-        )
-    );
-    stderr.flush()?;
-    Ok(())
-}
-
-pub fn show_cancelled(message: &str) -> Result<(), std::io::Error> {
-    let mut stderr = stderr();
-    print_styled_line!(
-        stderr,
-        format!(
-            "{} {}",
-            "⊘".with(colors::warning()).bold(),
-            message.with(colors::warning())
-        )
-    );
-    stderr.flush()?;
-    Ok(())
-}
-
 pub fn format_model_name(model_name: &str) -> String {
     // Parse model name and format as "provider:model"
     if let Some((provider, model)) = model_name.split_once(" (") {
@@ -420,7 +463,7 @@ pub fn format_model_name(model_name: &str) -> String {
     }
 }
 
-fn format_tool_result(result: &str) -> String {
+pub fn format_tool_result(result: &str) -> String {
     // Handle common escape sequences to improve readability
     result
         .replace("\\n", "\n")
@@ -429,23 +472,6 @@ fn format_tool_result(result: &str) -> String {
         .replace("\\\"", "\"")
         .replace("\\'", "'")
         .replace("\\\\", "\\")
-}
-
-pub fn show_model_info(model_name: &str) -> Result<(), std::io::Error> {
-    let mut stdout = stdout();
-    let formatted_name = format_model_name(model_name);
-
-    print_styled!(
-        stdout,
-        format!(
-            "{} ",
-            format!("({})", formatted_name)
-                .with(colors::text_secondary())
-                .dim()
-        )
-    );
-    stdout.flush()?;
-    Ok(())
 }
 
 pub fn format_model_display_name(model_specs: &[ModelSpec]) -> String {
@@ -471,24 +497,6 @@ pub fn format_model_display_name(model_specs: &[ModelSpec]) -> String {
     }
 }
 
-pub fn show_tool_completion_line(tool_name: &str, model_name: &str) -> Result<(), std::io::Error> {
-    let mut stdout = stdout();
-    print_styled_line!(
-        stdout,
-        format!(
-            "{} {} {} {}",
-            "✓".with(colors::success()).bold(),
-            format!("({})", format_model_name(model_name))
-                .with(colors::text_secondary())
-                .dim(),
-            "Tool".bold().with(colors::text_primary()),
-            tool_name.bold().with(colors::success())
-        )
-    );
-    stdout.flush()?;
-    Ok(())
-}
-
 pub fn show_completion() -> Result<(), std::io::Error> {
     let mut stdout = stdout();
     print_styled_line!(stdout, "");
@@ -502,103 +510,5 @@ pub fn show_completion() -> Result<(), std::io::Error> {
         )
     );
     stdout.flush()?;
-    Ok(())
-}
-
-pub fn render_ui_events(events: Vec<UiEvent>) -> Result<(), Box<dyn std::error::Error>> {
-    let mut stdout = stdout();
-
-    for event in events {
-        match event {
-            UiEvent::TextChunk {
-                content,
-                model_name,
-                is_first_chunk,
-            } => {
-                if is_first_chunk {
-                    print_styled!(stdout, format!("{} ", "◈".with(colors::primary()).bold()));
-                    show_model_info(&model_name)?;
-                }
-                print_styled!(stdout, content.with(colors::text_primary()));
-                stdout.flush()?;
-            }
-
-            UiEvent::TextComplete => {
-                print_styled!(stdout, "\n\n");
-                stdout.flush()?;
-            }
-
-            UiEvent::ToolStarted { .. } => {
-                // Tool spinner is already created in update_state, just print empty line
-                print_styled_line!(stdout, "");
-                stdout.flush()?;
-            }
-
-            UiEvent::ToolCompleted {
-                name,
-                model_name,
-                arguments,
-                result,
-            } => {
-                // Move cursor up one line and clear it, then print completion message
-                queue!(stdout, cursor::MoveToPreviousLine(1))?;
-                queue!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-
-                show_tool_completion_line(&name, &model_name)?;
-
-                // Show additional details (arguments/result) on new lines if present
-                let args_to_show = arguments.as_deref();
-                show_tool_details(args_to_show, result.as_deref())?;
-            }
-
-            UiEvent::Error { message } => {
-                show_error(&message)?;
-            }
-
-            UiEvent::Cancelled { message } => {
-                show_cancelled(&message)?;
-            }
-
-            UiEvent::ElicitationRequest {
-                request,
-                response_sender,
-            } => {
-                println!(
-                    "\n{}",
-                    "🤖 AI Request for Permission"
-                        .with(colors::primary())
-                        .bold()
-                );
-                println!("{}", request.message.with(colors::text_primary()));
-
-                use aether::{CreateElicitationResult, ElicitationAction};
-                use inquire::Confirm;
-
-                let confirm_result = Confirm::new("Do you want to allow this action?")
-                    .with_default(false)
-                    .with_help_message("The AI is requesting permission to proceed")
-                    .prompt();
-
-                let result = match confirm_result {
-                    Ok(true) => CreateElicitationResult {
-                        action: ElicitationAction::Accept,
-                        content: None,
-                    },
-                    Ok(false) => CreateElicitationResult {
-                        action: ElicitationAction::Decline,
-                        content: None,
-                    },
-                    Err(_) => CreateElicitationResult {
-                        action: ElicitationAction::Cancel,
-                        content: None,
-                    },
-                };
-
-                let _ = response_sender.send(result);
-                println!();
-            }
-        }
-    }
-
     Ok(())
 }

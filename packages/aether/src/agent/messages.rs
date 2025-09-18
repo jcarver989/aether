@@ -32,6 +32,8 @@ pub enum AgentMessage {
         request: CreateElicitationRequestParam,
         response_sender: oneshot::Sender<CreateElicitationResult>,
     },
+
+    Done,
 }
 
 #[derive(Debug, Clone)]

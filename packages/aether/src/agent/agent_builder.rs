@@ -62,6 +62,7 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
         let mut agent = self.build().await?;
 
         let task_handle = tokio::spawn(async move {
+            tracing::debug!("Spawned agent task starting");
             while let Some(user_message) = user_message_rx.recv().await {
                 let response_stream = agent.send(user_message).await;
                 pin_mut!(response_stream);
@@ -72,8 +73,12 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
                         return;
                     }
                 }
+                tracing::debug!("Response stream ended for user message");
             }
 
+            tracing::debug!("User message receiver loop ended - no more user messages");
+            tracing::debug!("Dropping agent_message_tx to close channel");
+            drop(agent_message_tx);
             tracing::debug!("User message sender dropped, terminating agent task");
         });
 

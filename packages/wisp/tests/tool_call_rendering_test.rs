@@ -144,6 +144,45 @@ fn test_correct_tool_call_rendering() {
     assert_eq!(output[0], "✓ (llamacpp) Tool read_file");
 }
 
+#[tokio::test]
+async fn test_app_view_handles_events_correctly() {
+    // This test verifies that AppView can handle the typical event sequence
+    // without trying to control conversation flow
+    use wisp::app_view::AppView;
+
+    let mut app_view = AppView::new();
+
+    // Tool call starts
+    app_view.update(AgentMessage::ToolCall {
+        tool_call_id: "call_123".to_string(),
+        name: "read_file".to_string(),
+        arguments: None,
+        result: None,
+        is_complete: false,
+        model_name: "llamacpp".to_string(),
+    }).unwrap();
+
+    // Text generation completes
+    app_view.update(AgentMessage::Text {
+        message_id: "msg_123".to_string(),
+        chunk: "I'll read that file for you.".to_string(),
+        is_complete: true,
+        model_name: "llamacpp".to_string(),
+    }).unwrap();
+
+    // Tool call completes
+    app_view.update(AgentMessage::ToolCall {
+        tool_call_id: "call_123".to_string(),
+        name: "read_file".to_string(),
+        arguments: Some(r#"{"file_path": "/path/to/file.rs"}"#.to_string()),
+        result: Some("File contents here...".to_string()),
+        is_complete: true,
+        model_name: "llamacpp".to_string(),
+    }).unwrap();
+
+    // Test passes if no panics occur - AppView just handles the events
+}
+
 /// Corrected version of the tool call handling logic
 fn simulate_corrected_tool_call_handling(messages: Vec<AgentMessage>) -> Vec<String> {
     let mut active_tool_calls: HashMap<String, MockPartialToolCall> = HashMap::new();
