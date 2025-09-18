@@ -88,8 +88,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 }
             };
 
-            let mut tool_call_manager = ToolCallManager::new();
-
             // Main "agentic" loop.
             // Each iteration of the outer loop procesess 1 LLM call
             // Each iteration of the inner loop processes 1 streaming "event" chunk from the LLM's response
@@ -106,95 +104,34 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 }
 
                 tracing::debug!("Getting LLM response stream for iteration {}", current_iteration);
-                let response_stream = self.llm.stream_response(&self.context);
                 let model_name = self.llm.display_name();
 
-                pin_mut!(response_stream);
+                let mut tool_call_manager = ToolCallManager::new();
+                let llm_stream =  self.process_llm_stream().await;
+                pin_mut!(llm_stream);
 
-                let mut current_message_id: Option<String> = None;
-                let mut message_content = String::new();
+                while let Some(event) = llm_stream.next().await {
+                    match &event {
+                        AgentMessage::Text { chunk, is_complete: true, .. } => {
+                            self.context.add_message(ChatMessage::Assistant {
+                                content: chunk.clone(),
+                                timestamp: IsoString::now(),
+                                tool_calls: tool_call_manager.requests.clone()
+                            });
+                        },
 
-                loop {
-                    if let Some(event) = response_stream.next().await {
-                        use LlmResponse::*;
-                        match event {
-                            Ok(Start { message_id}) => {
-                                current_message_id = Some(message_id);
-                            }
+                        AgentMessage::ToolCall { tool_call_id, name, arguments: Some(args), is_complete: true, .. } => {
+                            tool_call_manager.execute_tool(self.mcp.clone(),
+                            ToolCallRequest { id: tool_call_id.clone(), name: name.clone(), arguments: args.clone() });
+                        },
 
-                            Ok(Text { chunk}) => {
-                                message_content.push_str(&chunk);
-                                if let Some(ref id) = current_message_id {
-                                    yield AgentMessage::Text {
-                                        message_id: id.clone(),
-                                        chunk,
-                                        is_complete: false,
-                                        model_name: model_name.clone()
-                                    };
-                                }
-                            }
-
-                            Ok(ToolRequestStart { id, name}) => {
-                                yield AgentMessage::ToolCall {
-                                    tool_call_id: id,
-                                    name,
-                                    arguments: None,
-                                    result: None,
-                                    is_complete: false,
-                                    model_name: model_name.clone()
-                                };
-                            }
-
-                            Ok(ToolRequestArg { id, chunk}) => {
-                                yield AgentMessage::ToolCall {
-                                    tool_call_id: id,
-                                    name: String::new(),
-                                    arguments: Some(chunk.to_string()),
-                                    result: None,
-                                    is_complete: false,
-                                    model_name: model_name.clone()
-                                };
-                            }
-
-                            Ok(ToolRequestComplete { tool_call}) => {
-                                tracing::debug!("Tool request completed: {} ({})", tool_call.name, tool_call.id);
-                                tool_call_manager.execute_tool(self.mcp.clone(), tool_call.clone());
-                            }
-
-                            Ok(Done) => {
-                                tracing::debug!("LLM response Done. Tool requests: {}", tool_call_manager.tool_handles.len());
-                                break;
-                            }
-
-                            Ok(Error { message }) => {
-                                yield AgentMessage::Error { message: message.to_string() };
-                                return;
-                            }
-
-                            Err(e) => {
-                                yield AgentMessage::Error { message: e.to_string() };
-                                return;
-                            }
-                        }
-                    } else {
-                        break;
+                        _ => {}
                     }
+
+
+                    yield event;
                 }
 
-                self.context.add_message(ChatMessage::Assistant {
-                    content: message_content.clone(),
-                    timestamp: IsoString::now(),
-                    tool_calls: tool_call_manager.requests.clone()
-                });
-
-                if let Some(ref id) = current_message_id {
-                    yield AgentMessage::Text {
-                        message_id: id.clone(),
-                        chunk: String::new(),
-                        is_complete: true,
-                        model_name: model_name.clone()
-                    };
-                }
 
                 if tool_call_manager.tool_handles.is_empty() {
                     tracing::debug!("No tool requests, terminating agent loop");
@@ -223,8 +160,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
                             model_name: model_name.clone(),
                         };
                     }
-
-                    tool_call_manager = ToolCallManager::new();
                 }
 
                 current_iteration += 1;
@@ -232,10 +167,9 @@ impl<T: ModelProvider + 'static> Agent<T> {
         }
     }
 
-    async fn process_llm_stream(
-        &self,
-        tool_call_manager: &mut ToolCallManager,
-    ) -> impl Stream<Item = AgentMessage> {
+    async fn x() {}
+
+    async fn process_llm_stream(&self) -> impl Stream<Item = AgentMessage> {
         stream! {
             let response_stream = self.llm.stream_response(&self.context);
             let model_name = self.llm.display_name();
@@ -291,14 +225,20 @@ impl<T: ModelProvider + 'static> Agent<T> {
                             tool_call.name,
                             tool_call.id
                         );
-                        tool_call_manager.execute_tool(self.mcp.clone(), tool_call.clone());
+
+                        yield AgentMessage::ToolCall {
+                            tool_call_id: tool_call.id,
+                            name: String::new(),
+                            arguments: Some(tool_call.arguments),
+                            result: None,
+                            is_complete: false,
+                            model_name: model_name.clone(),
+                        }
+
+                        //tool_call_manager.execute_tool(self.mcp.clone(), tool_call.clone());
                     }
 
                     Ok(Done) => {
-                        tracing::debug!(
-                            "LLM response Done. Tool requests: {}",
-                            tool_call_manager.tool_handles.len()
-                        );
                         break;
                     }
 
@@ -316,6 +256,15 @@ impl<T: ModelProvider + 'static> Agent<T> {
                         return;
                     }
                 }
+            }
+
+            if let Some(ref id) = current_message_id {
+                yield AgentMessage::Text {
+                    message_id: id.clone(),
+                    chunk: message_content,
+                    is_complete: true,
+                    model_name: model_name.clone()
+                };
             }
         }
     }
