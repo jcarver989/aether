@@ -1,4 +1,4 @@
-use async_openai::types::CreateChatCompletionStreamResponse;
+use async_openai::types::{ChatCompletionMessageToolCallChunk, CreateChatCompletionStreamResponse};
 use async_stream;
 use color_eyre::Result;
 use std::collections::HashMap;
@@ -16,8 +16,7 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
         let message_id = uuid::Uuid::new_v4().to_string();
         yield Ok(LlmResponse::Start { message_id: message_id.clone() });
 
-        let mut current_tool_id: Option<String> = None;
-        let mut active_tool_calls: HashMap<String, (String, String)> = HashMap::new();
+        let mut tool_collector = ToolCallCollector::new();
 
         while let Some(result) = stream.next().await {
             match result {
@@ -30,15 +29,8 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                             if !content.is_empty() {
                                 // If we have a pending tool call and now we're getting content,
                                 // complete the tool call first
-                                if let Some(id) = current_tool_id.take() {
-                                    if let Some((name, arguments)) = active_tool_calls.remove(&id) {
-                                        let tool_call = ToolCallRequest {
-                                            id: id.clone(),
-                                            name,
-                                            arguments,
-                                        };
-                                        yield Ok(LlmResponse::ToolRequestComplete { tool_call });
-                                    }
+                                if let Some(tool_call) = tool_collector.complete_current_tool_call() {
+                                    yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                                 }
                                 yield Ok(LlmResponse::Text { chunk: content.clone() });
                             }
@@ -47,33 +39,9 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                         // Handle tool calls
                         if let Some(tool_calls) = &delta.tool_calls {
                             for tool_call in tool_calls {
-                                if let Some(function) = &tool_call.function {
-                                    // Tool call start
-                                    if let Some(name) = &function.name {
-                                        let id = tool_call.id.clone().unwrap_or_else(|| "tool_call_0".to_string());
-                                        current_tool_id = Some(id.clone());
-                                        active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
-                                        yield Ok(LlmResponse::ToolRequestStart {
-                                            id,
-                                            name: name.clone(),
-                                        });
-                                    }
-
-                                    // Tool call arguments
-                                    if let Some(arguments) = &function.arguments {
-                                        if !arguments.is_empty() {
-                                            if let Some(id) = &current_tool_id {
-                                                // Accumulate arguments in our state tracking
-                                                if let Some((_, accumulated_args)) = active_tool_calls.get_mut(id) {
-                                                    accumulated_args.push_str(arguments);
-                                                }
-                                                yield Ok(LlmResponse::ToolRequestArg {
-                                                    id: id.clone(),
-                                                    chunk: arguments.clone(),
-                                                });
-                                            }
-                                        }
-                                    }
+                                let responses = tool_collector.handle_tool_call_delta(tool_call);
+                                for response in responses {
+                                    yield Ok(response);
                                 }
                             }
                         }
@@ -84,15 +52,8 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                             debug!("Received finish reason: {}", finish_reason_str);
 
                             // Complete any pending tool call before ending
-                            if let Some(id) = current_tool_id.take() {
-                                if let Some((name, arguments)) = active_tool_calls.remove(&id) {
-                                    let tool_call = ToolCallRequest {
-                                        id: id.clone(),
-                                        name,
-                                        arguments,
-                                    };
-                                    yield Ok(LlmResponse::ToolRequestComplete { tool_call });
-                                }
+                            if let Some(tool_call) = tool_collector.complete_current_tool_call() {
+                                yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                             }
 
                             // End the stream for any finish reason
@@ -102,15 +63,8 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                     } else {
                         // No choices means stream is done
                         debug!("No choices in response, ending stream");
-                        if let Some(id) = current_tool_id.take() {
-                            if let Some((name, arguments)) = active_tool_calls.remove(&id) {
-                                let tool_call = ToolCallRequest {
-                                    id: id.clone(),
-                                    name,
-                                    arguments,
-                                };
-                                yield Ok(LlmResponse::ToolRequestComplete { tool_call });
-                            }
+                        if let Some(tool_call) = tool_collector.complete_current_tool_call() {
+                            yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                         }
                         yield Ok(LlmResponse::Done);
                         break;
@@ -122,5 +76,82 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                 }
             }
         }
+    }
+}
+
+struct ToolCallCollector {
+    current_tool_id: Option<String>,
+    active_tool_calls: HashMap<String, (String, String)>,
+}
+
+impl ToolCallCollector {
+    fn new() -> Self {
+        Self {
+            current_tool_id: None,
+            active_tool_calls: HashMap::new(),
+        }
+    }
+
+    pub fn handle_tool_call_delta(
+        &mut self,
+        tool_call: &ChatCompletionMessageToolCallChunk,
+    ) -> Vec<LlmResponse> {
+        let mut responses = Vec::new();
+
+        if let Some(function) = &tool_call.function {
+            if let Some(name) = &function.name {
+                let id = tool_call
+                    .id
+                    .clone()
+                    .unwrap_or_else(|| "tool_call_0".to_string());
+                self.start_tool_call(id.clone(), name.clone());
+                responses.push(LlmResponse::ToolRequestStart {
+                    id,
+                    name: name.clone(),
+                });
+            }
+
+            // Tool call arguments
+            if let Some(arguments) = &function.arguments {
+                if !arguments.is_empty() {
+                    if let Some(id) = self.add_arguments(arguments) {
+                        responses.push(LlmResponse::ToolRequestArg {
+                            id,
+                            chunk: arguments.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        responses
+    }
+
+    pub fn complete_current_tool_call(&mut self) -> Option<ToolCallRequest> {
+        if let Some(id) = self.current_tool_id.take() {
+            if let Some((name, arguments)) = self.active_tool_calls.remove(&id) {
+                return Some(ToolCallRequest {
+                    id: id.clone(),
+                    name,
+                    arguments,
+                });
+            }
+        }
+        None
+    }
+
+    fn start_tool_call(&mut self, id: String, name: String) {
+        self.current_tool_id = Some(id.clone());
+        self.active_tool_calls.insert(id, (name, String::new()));
+    }
+
+    fn add_arguments(&mut self, arguments: &str) -> Option<String> {
+        if let Some(id) = &self.current_tool_id {
+            if let Some((_, accumulated_args)) = self.active_tool_calls.get_mut(id) {
+                accumulated_args.push_str(arguments);
+                return Some(id.clone());
+            }
+        }
+        None
     }
 }
