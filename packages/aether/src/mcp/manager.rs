@@ -16,7 +16,7 @@ use rmcp::{
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::{mcp::client::McpClient, transport::create_in_memory_transport, types::ToolDefinition};
+use crate::{mcp::client::McpClient, transport::create_in_memory_transport};
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 
@@ -97,7 +97,9 @@ impl McpManager {
                 let transport = StreamableHttpClientTransport::from_config(config.clone());
                 let mcp_client = self.create_mcp_client();
                 let client = serve_client(mcp_client, transport).await.map_err(|e| {
-                    McpError::ConnectionFailed(format!("Failed to connect to HTTP MCP server {name}: {e}"))
+                    McpError::ConnectionFailed(format!(
+                        "Failed to connect to HTTP MCP server {name}: {e}"
+                    ))
                 })?;
 
                 let server_connection = McpServerConnection {
@@ -249,21 +251,8 @@ impl McpManager {
         Ok(result_value)
     }
 
-    pub fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.tools
-            .iter()
-            .map(|(namespaced_tool_name, tool)| {
-                let server_name = parse_namespaced_tool_name(namespaced_tool_name)
-                    .map(|(server, _)| server.to_string());
-
-                ToolDefinition {
-                    name: namespaced_tool_name.clone(),
-                    description: tool.description.clone(),
-                    parameters: tool.parameters.to_string(),
-                    server: server_name,
-                }
-            })
-            .collect()
+    pub fn tools(&self) -> &HashMap<String, Tool> {
+        &self.tools
     }
 
     /// Shutdown all servers and wait for their tasks to complete
@@ -360,7 +349,7 @@ fn create_namespaced_tool_name(server_name: &str, tool_name: &str) -> String {
     format!("{server_name}{TOOL_NAMESPACE_DELIMITER}{tool_name}")
 }
 
-fn parse_namespaced_tool_name(namespaced_name: &str) -> Option<(&str, &str)> {
+pub fn parse_namespaced_tool_name(namespaced_name: &str) -> Option<(&str, &str)> {
     namespaced_name.split_once(TOOL_NAMESPACE_DELIMITER)
 }
 
@@ -391,13 +380,11 @@ mod tests {
         client.discover_tools().await.unwrap();
 
         // Verify tools were discovered
-        let tool_definitions = client.get_tool_definitions();
-        assert!(!tool_definitions.is_empty());
+        let tools = client.tools();
+        assert!(!tools.is_empty());
 
         // Check for the write_file tool
-        let write_file_tool = tool_definitions
-            .iter()
-            .find(|t| t.name.contains("write_file"));
+        let write_file_tool = tools.keys().find(|name| name.contains("write_file"));
         assert!(write_file_tool.is_some());
 
         // Test tool execution

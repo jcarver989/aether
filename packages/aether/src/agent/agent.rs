@@ -4,10 +4,12 @@ use crate::agent::UserMessage;
 use crate::llm::Context;
 use crate::llm::ModelProvider;
 use crate::mcp::McpManager;
+use crate::mcp::manager::parse_namespaced_tool_name;
 use crate::types::ChatMessage;
 use crate::types::IsoString;
 use crate::types::LlmResponse;
 use crate::types::ToolCallRequest;
+use crate::types::ToolDefinition;
 use async_stream::stream;
 use futures::Stream;
 use futures::StreamExt;
@@ -55,7 +57,23 @@ impl<T: ModelProvider + 'static> Agent<T> {
     async fn update_tools(&mut self) -> Result<()> {
         let mut mcp = self.mcp.lock().await;
         mcp.discover_tools().await?;
-        let tools = mcp.get_tool_definitions();
+
+        let tools = mcp
+            .tools()
+            .iter()
+            .map(|(namespaced_tool_name, tool)| {
+                let server_name = parse_namespaced_tool_name(namespaced_tool_name)
+                    .map(|(server, _)| server.to_string());
+
+                ToolDefinition {
+                    name: namespaced_tool_name.clone(),
+                    description: tool.description.clone(),
+                    parameters: tool.parameters.to_string(),
+                    server: server_name,
+                }
+            })
+            .collect();
+
         self.context.set_tools(tools);
         Ok(())
     }

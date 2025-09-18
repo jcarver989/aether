@@ -72,7 +72,7 @@ async fn test_mcp_client_tool_discovery() {
     // Test that tool discovery succeeds when no servers connected
     client.discover_tools().await.unwrap();
 
-    // Test that tool definitions are empty when no servers connected
-    let tool_definitions = client.get_tool_definitions();
-    assert!(tool_definitions.is_empty());
+    // Test that tools are empty when no servers connected
+    let tools = client.tools();
+    assert!(tools.is_empty());
 }
