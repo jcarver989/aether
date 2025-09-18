@@ -95,7 +95,12 @@ fn test_tool_call_rendering_bug() {
     let output = simulate_tool_call_handling(messages);
 
     // This demonstrates the bug: we get 2 lines instead of 1 replaced line
-    assert_eq!(output.len(), 2, "Should only have 1 line (replacement), but got: {:?}", output);
+    assert_eq!(
+        output.len(),
+        2,
+        "Should only have 1 line (replacement), but got: {:?}",
+        output
+    );
     assert_eq!(output[0], "○ Tool read_file (llamacpp) running...");
     assert_eq!(output[1], "✓ (llamacpp) Tool read_file");
 
@@ -157,7 +162,10 @@ fn simulate_corrected_tool_call_handling(messages: Vec<AgentMessage>) -> Vec<Str
             if is_complete {
                 // Tool completed - show final result (this replaces the spinner in real UI)
                 if let Some(tool_call) = active_tool_calls.remove(&tool_call_id) {
-                    output_lines.push(format!("✓ ({}) Tool {}", tool_call.model_name, tool_call.name));
+                    output_lines.push(format!(
+                        "✓ ({}) Tool {}",
+                        tool_call.model_name, tool_call.name
+                    ));
                 }
             } else if !name.is_empty() {
                 // Tool starting - this would show a spinner in real UI

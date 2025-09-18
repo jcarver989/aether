@@ -1,6 +1,6 @@
+use aether::llm::Result;
 use aether::llm::anthropic::AnthropicProvider;
 use aether::llm::provider::{Context, ModelProvider};
-use aether::llm::Result;
 use aether::types::{ChatMessage, IsoString, LlmResponse, ToolDefinition};
 use clap::Parser;
 use futures::StreamExt;
@@ -37,7 +37,6 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
     let args = Args::parse();
 
     println!("🤖 Testing Anthropic Provider");

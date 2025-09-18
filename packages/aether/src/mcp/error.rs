@@ -9,7 +9,11 @@ pub enum McpError {
     /// MCP server not found
     ServerNotFound(String),
     /// Failed to execute tool on MCP server
-    ToolExecutionFailed { tool_name: String, server_name: String, error: String },
+    ToolExecutionFailed {
+        tool_name: String,
+        server_name: String,
+        error: String,
+    },
     /// Tool execution returned an error
     ToolExecutionError(String),
     /// Server connection failed
@@ -28,10 +32,20 @@ impl fmt::Display for McpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             McpError::ToolNotFound(tool) => write!(f, "Tool not found: {}", tool),
-            McpError::InvalidToolNameFormat(name) => write!(f, "Invalid tool name format: {}", name),
+            McpError::InvalidToolNameFormat(name) => {
+                write!(f, "Invalid tool name format: {}", name)
+            }
             McpError::ServerNotFound(server) => write!(f, "Server not found: {}", server),
-            McpError::ToolExecutionFailed { tool_name, server_name, error } => {
-                write!(f, "Failed to execute tool {} on server {}: {}", tool_name, server_name, error)
+            McpError::ToolExecutionFailed {
+                tool_name,
+                server_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Failed to execute tool {} on server {}: {}",
+                    tool_name, server_name, error
+                )
             }
             McpError::ToolExecutionError(msg) => write!(f, "Tool execution failed: {}", msg),
             McpError::ConnectionFailed(msg) => write!(f, "Connection failed: {}", msg),

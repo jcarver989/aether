@@ -1,8 +1,4 @@
-use aether::{
-    agent::AgentBuilder,
-    llm::ModelProvider,
-    mcp::manager::McpServerConfig,
-};
+use aether::{agent::AgentBuilder, llm::ModelProvider, mcp::manager::McpServerConfig};
 use rmcp::ServiceExt;
 
 use crate::CodingMcp;

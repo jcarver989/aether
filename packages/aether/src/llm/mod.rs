@@ -6,5 +6,5 @@ pub mod openai;
 pub mod openrouter;
 pub mod provider;
 
-pub use provider::{Context, LlmResponseStream, ModelProvider};
 pub use error::{LlmError, Result};
+pub use provider::{Context, LlmResponseStream, ModelProvider};

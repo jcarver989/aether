@@ -10,7 +10,9 @@ use crate::types::{LlmResponse, ToolCallRequest};
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard async_openai CreateChatCompletionStreamResponse types.
 pub fn process_completion_stream<E: Into<LlmError> + Send>(
-    mut stream: impl Stream<Item = std::result::Result<CreateChatCompletionStreamResponse, E>> + Send + Unpin,
+    mut stream: impl Stream<Item = std::result::Result<CreateChatCompletionStreamResponse, E>>
+    + Send
+    + Unpin,
 ) -> impl Stream<Item = Result<LlmResponse>> + Send {
     async_stream::stream! {
         let message_id = uuid::Uuid::new_v4().to_string();

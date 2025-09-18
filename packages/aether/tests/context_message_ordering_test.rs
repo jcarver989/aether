@@ -95,7 +95,9 @@ async fn test_simple_tool_call_completes() {
         .await
         .unwrap();
 
-    let stream = test_agent.send(UserMessage::text("Use the echo tool")).await;
+    let stream = test_agent
+        .send(UserMessage::text("Use the echo tool"))
+        .await;
     pin_mut!(stream);
 
     // Collect messages until completion
@@ -110,21 +112,25 @@ async fn test_simple_tool_call_completes() {
         match tokio::time::timeout(std::time::Duration::from_millis(100), stream.next()).await {
             Ok(Some(msg)) => {
                 match &msg {
-                    AgentMessage::Text { is_complete: true, .. } => {
+                    AgentMessage::Text {
+                        is_complete: true, ..
+                    } => {
                         // Don't end immediately - wait for tool calls to complete
-                    },
-                    AgentMessage::ToolCall { is_complete: true, .. } => {
+                    }
+                    AgentMessage::ToolCall {
+                        is_complete: true, ..
+                    } => {
                         // Tool call completed - this is what we're waiting for
                         completed = true;
-                    },
+                    }
                     _ => {}
                 }
                 messages.push(msg);
-            },
+            }
             Ok(None) => {
                 // Channel closed, we're done
                 completed = true;
-            },
+            }
             Err(_) => {
                 // Timeout - for this test, we'll consider this completion
                 completed = true;
@@ -133,7 +139,11 @@ async fn test_simple_tool_call_completes() {
     }
 
     // Check that tools completed properly (should NOT hit iteration limit)
-    assert!(iterations < MAX_ITERATIONS, "Tool execution should complete without hitting iteration limit, got {} iterations", iterations);
+    assert!(
+        iterations < MAX_ITERATIONS,
+        "Tool execution should complete without hitting iteration limit, got {} iterations",
+        iterations
+    );
     assert!(!messages.is_empty(), "Should have received some messages");
 
     // Count completed tool calls
@@ -141,17 +151,28 @@ async fn test_simple_tool_call_completes() {
         .filter(|msg| matches!(msg, AgentMessage::ToolCall { name, is_complete: true, .. } if name == "echo_tool"))
         .count();
 
-    assert!(completed_tool_calls > 0, "Should have at least one completed tool call, got {}", completed_tool_calls);
+    assert!(
+        completed_tool_calls > 0,
+        "Should have at least one completed tool call, got {}",
+        completed_tool_calls
+    );
 
-    println!("✅ Simple tool call test passed! Tool calls completed properly in {} iterations", iterations);
+    println!(
+        "✅ Simple tool call test passed! Tool calls completed properly in {} iterations",
+        iterations
+    );
 }
 
 #[tokio::test]
 async fn test_agent_control_flow_scenarios() {
     // Test 1: Error handling - should terminate immediately
     let error_responses = vec![
-        LlmResponse::Start { message_id: "msg_1".to_string() },
-        LlmResponse::Error { message: "Test error".to_string() },
+        LlmResponse::Start {
+            message_id: "msg_1".to_string(),
+        },
+        LlmResponse::Error {
+            message: "Test error".to_string(),
+        },
     ];
 
     let llm = FakeLlmProvider::with_single_response(error_responses);
@@ -167,7 +188,9 @@ async fn test_agent_control_flow_scenarios() {
         .await
         .unwrap();
 
-    let stream = error_agent.send(UserMessage::text("This should error")).await;
+    let stream = error_agent
+        .send(UserMessage::text("This should error"))
+        .await;
     pin_mut!(stream);
 
     // Collect messages - should get error and then terminate
@@ -184,20 +207,29 @@ async fn test_agent_control_flow_scenarios() {
                     error_received = true;
                 }
                 messages.push(msg);
-            },
+            }
             Ok(None) => break, // Channel closed
-            Err(_) => break, // Timeout
+            Err(_) => break,   // Timeout
         }
     }
 
     assert!(error_received, "Should have received an error message");
-    assert!(messages.iter().any(|msg| matches!(msg, AgentMessage::Error { .. })), "Should contain error message");
+    assert!(
+        messages
+            .iter()
+            .any(|msg| matches!(msg, AgentMessage::Error { .. })),
+        "Should contain error message"
+    );
 
     // Test 2: No tool calls - should terminate after text completion
     {
         let no_tool_responses = vec![
-            LlmResponse::Start { message_id: "msg_2".to_string() },
-            LlmResponse::Text { chunk: "Just text response".to_string() },
+            LlmResponse::Start {
+                message_id: "msg_2".to_string(),
+            },
+            LlmResponse::Text {
+                chunk: "Just text response".to_string(),
+            },
             LlmResponse::Done,
         ];
 
@@ -214,7 +246,9 @@ async fn test_agent_control_flow_scenarios() {
             .await
             .unwrap();
 
-        let stream2 = text_agent.send(UserMessage::text("Just respond with text")).await;
+        let stream2 = text_agent
+            .send(UserMessage::text("Just respond with text"))
+            .await;
         pin_mut!(stream2);
 
         let mut messages2 = Vec::new();
@@ -225,19 +259,28 @@ async fn test_agent_control_flow_scenarios() {
             iterations2 += 1;
             match tokio::time::timeout(std::time::Duration::from_millis(50), stream2.next()).await {
                 Ok(Some(msg)) => {
-                    if let AgentMessage::Text { is_complete: true, .. } = &msg {
+                    if let AgentMessage::Text {
+                        is_complete: true, ..
+                    } = &msg
+                    {
                         completed = true;
                     }
                     messages2.push(msg);
-                },
+                }
                 Ok(None) => break, // Channel closed = completion
-                Err(_) => break, // Timeout = likely completion
+                Err(_) => break,   // Timeout = likely completion
             }
         }
 
         // Should have text messages but no tool calls
-        let text_messages = messages2.iter().filter(|msg| matches!(msg, AgentMessage::Text { .. })).count();
-        let tool_messages = messages2.iter().filter(|msg| matches!(msg, AgentMessage::ToolCall { .. })).count();
+        let text_messages = messages2
+            .iter()
+            .filter(|msg| matches!(msg, AgentMessage::Text { .. }))
+            .count();
+        let tool_messages = messages2
+            .iter()
+            .filter(|msg| matches!(msg, AgentMessage::ToolCall { .. }))
+            .count();
 
         assert!(text_messages > 0, "Should have text messages");
         assert_eq!(tool_messages, 0, "Should have no tool call messages");
@@ -253,8 +296,12 @@ async fn test_no_consecutive_assistant_messages() {
     // 2. Second response without tool call (should not create consecutive assistant message)
     let responses_1 = vec![
         // First response with tool call
-        LlmResponse::Start { message_id: "msg_1".to_string() },
-        LlmResponse::Text { chunk: "First response".to_string() },
+        LlmResponse::Start {
+            message_id: "msg_1".to_string(),
+        },
+        LlmResponse::Text {
+            chunk: "First response".to_string(),
+        },
         LlmResponse::ToolRequestStart {
             id: "call_1".to_string(),
             name: "echo_tool".to_string(),
@@ -275,8 +322,12 @@ async fn test_no_consecutive_assistant_messages() {
 
     let responses_2 = vec![
         // Second response without tool call (should terminate properly)
-        LlmResponse::Start { message_id: "msg_2".to_string() },
-        LlmResponse::Text { chunk: "Second response".to_string() },
+        LlmResponse::Start {
+            message_id: "msg_2".to_string(),
+        },
+        LlmResponse::Text {
+            chunk: "Second response".to_string(),
+        },
         LlmResponse::Done,
     ];
 
@@ -293,7 +344,9 @@ async fn test_no_consecutive_assistant_messages() {
         .await
         .unwrap();
 
-    let stream = test_agent.send(UserMessage::text("Use the echo tool")).await;
+    let stream = test_agent
+        .send(UserMessage::text("Use the echo tool"))
+        .await;
     pin_mut!(stream);
 
     // Collect all messages
@@ -306,7 +359,7 @@ async fn test_no_consecutive_assistant_messages() {
         match tokio::time::timeout(std::time::Duration::from_millis(100), stream.next()).await {
             Ok(Some(msg)) => {
                 messages.push(msg);
-            },
+            }
             Ok(None) | Err(_) => break,
         }
     }
@@ -317,11 +370,17 @@ async fn test_no_consecutive_assistant_messages() {
 
     // The test verifies that the agent doesn't create infinite loops due to
     // consecutive assistant messages, which would manifest as hitting MAX_ITERATIONS
-    assert!(iterations < MAX_ITERATIONS,
-        "Agent should complete processing without hitting iteration limit. Got {} iterations", iterations);
+    assert!(
+        iterations < MAX_ITERATIONS,
+        "Agent should complete processing without hitting iteration limit. Got {} iterations",
+        iterations
+    );
 
     // Should have received some messages
     assert!(!messages.is_empty(), "Should have received some messages");
 
-    println!("✅ No consecutive assistant messages test passed! Agent completed in {} iterations", iterations);
+    println!(
+        "✅ No consecutive assistant messages test passed! Agent completed in {} iterations",
+        iterations
+    );
 }

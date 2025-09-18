@@ -157,8 +157,7 @@ fn process_stream_event(
 
         Error { data: error_data } => Err(LlmError::ApiError(format!(
             "Anthropic API error: {} - {}",
-            error_data.error.error_type,
-            error_data.error.message
+            error_data.error.error_type, error_data.error.message
         ))),
 
         Ping => {

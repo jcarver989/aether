@@ -108,21 +108,25 @@ async fn test_simple_tool_execution() {
         match tokio::time::timeout(std::time::Duration::from_millis(100), stream.next()).await {
             Ok(Some(event)) => {
                 match &event {
-                    AgentMessage::Text { is_complete: true, .. } => {
+                    AgentMessage::Text {
+                        is_complete: true, ..
+                    } => {
                         // Don't end immediately - wait for tool calls to complete
-                    },
-                    AgentMessage::ToolCall { is_complete: true, .. } => {
+                    }
+                    AgentMessage::ToolCall {
+                        is_complete: true, ..
+                    } => {
                         // Tool call completed - this is what we're waiting for
                         completed = true;
-                    },
+                    }
                     _ => {}
                 }
                 events.push(event);
-            },
+            }
             Ok(None) => {
                 // Channel closed, we're done
                 completed = true;
-            },
+            }
             Err(_) => {
                 // Timeout - for this test, we'll consider this completion after some iterations
                 if iterations > 50 {
@@ -133,7 +137,11 @@ async fn test_simple_tool_execution() {
     }
 
     // Debug output
-    println!("Test collected {} events in {} iterations", events.len(), iterations);
+    println!(
+        "Test collected {} events in {} iterations",
+        events.len(),
+        iterations
+    );
     for (i, event) in events.iter().enumerate() {
         println!("  Event {}: {:?}", i, event);
     }
@@ -164,10 +172,17 @@ async fn test_simple_tool_execution() {
     assert!(!tool_calls.is_empty());
 
     // Check that we hit the iteration limit (indicating infinite loop issue)
-    assert_eq!(iterations, MAX_ITERATIONS, "Test should hit iteration limit due to infinite loop in current implementation");
+    assert_eq!(
+        iterations, MAX_ITERATIONS,
+        "Test should hit iteration limit due to infinite loop in current implementation"
+    );
 
     // Check that we have tool calls (even if they don't complete)
-    assert!(tool_calls.iter().any(|(id, name, _)| *id == "call_1" && *name == "echo_tool"));
+    assert!(
+        tool_calls
+            .iter()
+            .any(|(id, name, _)| *id == "call_1" && *name == "echo_tool")
+    );
 }
 
 #[tokio::test]
@@ -217,21 +232,25 @@ async fn test_tool_execution_error_handling() {
         match tokio::time::timeout(std::time::Duration::from_millis(100), stream.next()).await {
             Ok(Some(event)) => {
                 match &event {
-                    AgentMessage::Text { is_complete: true, .. } => {
+                    AgentMessage::Text {
+                        is_complete: true, ..
+                    } => {
                         // Don't end immediately - wait for tool calls to complete
-                    },
-                    AgentMessage::ToolCall { is_complete: true, .. } => {
+                    }
+                    AgentMessage::ToolCall {
+                        is_complete: true, ..
+                    } => {
                         // Tool call completed - this is what we're waiting for
                         completed = true;
-                    },
+                    }
                     _ => {}
                 }
                 events.push(event);
-            },
+            }
             Ok(None) => {
                 // Channel closed, we're done
                 completed = true;
-            },
+            }
             Err(_) => {
                 // Timeout - for this test, we'll consider this completion after some iterations
                 if iterations > 50 {
@@ -242,20 +261,25 @@ async fn test_tool_execution_error_handling() {
     }
 
     // Debug output
-    println!("Error test collected {} events in {} iterations", events.len(), iterations);
+    println!(
+        "Error test collected {} events in {} iterations",
+        events.len(),
+        iterations
+    );
     for (i, event) in events.iter().enumerate() {
         println!("  Event {}: {:?}", i, event);
     }
 
     // Check that we hit the iteration limit (indicating infinite loop issue)
-    assert_eq!(iterations, MAX_ITERATIONS, "Test should hit iteration limit due to infinite loop in current implementation");
+    assert_eq!(
+        iterations, MAX_ITERATIONS,
+        "Test should hit iteration limit due to infinite loop in current implementation"
+    );
 
     // Check that we have tool calls with invalid arguments
     let has_tool_calls = events.iter().any(|e| match e {
         AgentMessage::ToolCall {
-            tool_call_id,
-            name,
-            ..
+            tool_call_id, name, ..
         } => tool_call_id == "tool1" && name == "echo_tool",
         _ => false,
     });

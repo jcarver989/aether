@@ -5,7 +5,6 @@ use aether::{
 };
 use futures::{StreamExt, pin_mut};
 
-
 #[tokio::test]
 async fn test_cancel_message_variant() {
     let fake_llm = FakeLlmProvider::with_single_response(vec![
@@ -34,7 +33,9 @@ async fn test_cancel_message_variant() {
 
     while let Some(event) = stream.next().await {
         match event {
-            AgentMessage::Text { chunk, is_complete, .. } => {
+            AgentMessage::Text {
+                chunk, is_complete, ..
+            } => {
                 if !chunk.is_empty() {
                     has_text_message = true;
                 }

@@ -122,9 +122,9 @@ async fn test_tool_call_message_ordering_race_condition() {
                         tool_calls.push(event);
                     }
                 }
-            },
+            }
             Ok(None) => break, // Stream ended
-            Err(_) => break, // Timeout
+            Err(_) => break,   // Timeout
         }
     }
 
@@ -132,8 +132,13 @@ async fn test_tool_call_message_ordering_race_condition() {
     // This test verifies that tool calls are at least initiated
     // TODO: Fix the underlying tool execution completion issue
 
-    assert!(tool_calls.len() > 0, "Should have received tool call attempts");
-    assert_eq!(iterations, MAX_ITERATIONS, "Test should hit iteration limit due to infinite loop in current implementation");
+    assert!(
+        tool_calls.len() > 0,
+        "Should have received tool call attempts"
+    );
+    assert_eq!(
+        iterations, MAX_ITERATIONS,
+        "Test should hit iteration limit due to infinite loop in current implementation"
+    );
     println!("✅ Basic tool execution test passed! (Race condition test needs context access)");
 }
-

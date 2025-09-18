@@ -30,10 +30,7 @@ pub struct InMemoryTransport<R: ServiceRole> {
 }
 
 impl<R: ServiceRole> InMemoryTransport<R> {
-    fn new(
-        tx: mpsc::Sender<TxJsonRpcMessage<R>>,
-        rx: mpsc::Receiver<RxJsonRpcMessage<R>>,
-    ) -> Self {
+    fn new(tx: mpsc::Sender<TxJsonRpcMessage<R>>, rx: mpsc::Receiver<RxJsonRpcMessage<R>>) -> Self {
         Self {
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
@@ -65,7 +62,8 @@ impl<R: ServiceRole> Transport<R> for InMemoryTransport<R> {
         let tx = self.tx.clone();
         async move {
             let tx = tx.lock().await;
-            tx.send(item).await
+            tx.send(item)
+                .await
                 .map_err(|_| InMemoryTransportError::ChannelClosed)?;
             Ok(())
         }
