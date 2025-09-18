@@ -24,7 +24,7 @@ async fn test_agent_spawn_basic_communication() {
 
     // Send a message to the agent
     let user_message = UserMessage::text("Test message");
-    spawned_agent.tx.send(user_message).expect("Failed to send message");
+    spawned_agent.tx.send(user_message).await.expect("Failed to send message");
 
     // Collect responses with timeout
     let mut responses = Vec::new();
@@ -91,7 +91,7 @@ async fn test_agent_spawn_multiple_messages() {
     let timeout_duration = Duration::from_secs(5);
 
     // Send first message
-    spawned_agent.tx.send(UserMessage::text("First message")).expect("Failed to send first message");
+    spawned_agent.tx.send(UserMessage::text("First message")).await.expect("Failed to send first message");
 
     // Collect first response
     let mut first_responses = Vec::new();
@@ -112,7 +112,7 @@ async fn test_agent_spawn_multiple_messages() {
     }
 
     // Send second message
-    spawned_agent.tx.send(UserMessage::text("Second message")).expect("Failed to send second message");
+    spawned_agent.tx.send(UserMessage::text("Second message")).await.expect("Failed to send second message");
 
     // Collect second response
     let mut second_responses = Vec::new();

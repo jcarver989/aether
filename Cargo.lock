@@ -25,7 +25,6 @@ dependencies = [
  "async-stream",
  "chrono",
  "clap",
- "color-eyre",
  "futures",
  "reqwest",
  "rmcp",

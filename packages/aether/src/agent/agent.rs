@@ -1,4 +1,5 @@
 use crate::agent::AgentMessage;
+use crate::agent::Result;
 use crate::agent::UserMessage;
 use crate::llm::Context;
 use crate::llm::ModelProvider;
@@ -8,7 +9,6 @@ use crate::types::IsoString;
 use crate::types::LlmResponse;
 use crate::types::ToolCallRequest;
 use async_stream::stream;
-use color_eyre::Result;
 use futures::Stream;
 use futures::StreamExt;
 use futures::pin_mut;
@@ -70,7 +70,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 }
             };
 
-            let mut tool_collector = ToolCallManager::new();
+            let mut tool_call_manager = ToolCallManager::new();
 
             // Main "agentic" loop.
             // Each iteration of the outer loop procesess 1 LLM call
@@ -140,11 +140,11 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
                             Ok(ToolRequestComplete { tool_call}) => {
                                 tracing::debug!("Tool request completed: {} ({})", tool_call.name, tool_call.id);
-                                tool_collector.execute_tool(self.mcp.clone(), tool_call.clone());
+                                tool_call_manager.execute_tool(self.mcp.clone(), tool_call.clone());
                             }
 
                             Ok(Done) => {
-                                tracing::debug!("LLM response Done. Tool requests: {}", tool_collector.tool_handles.len());
+                                tracing::debug!("LLM response Done. Tool requests: {}", tool_call_manager.tool_handles.len());
                                 break;
                             }
 
@@ -166,7 +166,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 self.context.add_message(ChatMessage::Assistant {
                     content: message_content.clone(),
                     timestamp: IsoString::now(),
-                    tool_calls: tool_collector.requests.clone()
+                    tool_calls: tool_call_manager.requests.clone()
                 });
 
                 if let Some(ref id) = current_message_id {
@@ -178,14 +178,14 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     };
                 }
 
-                if tool_collector.tool_handles.is_empty() {
+                if tool_call_manager.tool_handles.is_empty() {
                     tracing::debug!("No tool requests, terminating agent loop");
                     return;
                 }
 
-                if !tool_collector.tool_handles.is_empty() {
-                    tracing::debug!("Waiting for {} tool results after stream completion...", tool_collector.tool_handles.len());
-                    let tool_results = tool_collector.wait_for_all_tools_to_execute().await;
+                if !tool_call_manager.tool_handles.is_empty() {
+                    tracing::debug!("Waiting for {} tool results after stream completion...", tool_call_manager.tool_handles.len());
+                    let tool_results = tool_call_manager.wait_for_all_tools_to_execute().await;
 
                     for result in tool_results {
                         tracing::debug!("Tool result received: {} -> {}", result.name, result.result.len());
@@ -206,7 +206,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                         };
                     }
 
-                    tool_collector = ToolCallManager::new();
+                    tool_call_manager = ToolCallManager::new();
                 }
 
                 current_iteration += 1;
@@ -217,15 +217,15 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
 struct ToolCallManager {
     requests: Vec<ToolCallRequest>,
-    tool_result_rx: mpsc::UnboundedReceiver<ToolCallResult>,
-    tool_result_tx: mpsc::UnboundedSender<ToolCallResult>,
+    tool_result_rx: mpsc::Receiver<ToolCallResult>,
+    tool_result_tx: mpsc::Sender<ToolCallResult>,
     completed_results: Vec<ToolCallResult>,
-    tool_handles: Vec<JoinHandle<Result<(), SendError<ToolCallResult>>>>,
+    tool_handles: Vec<JoinHandle<std::result::Result<(), SendError<ToolCallResult>>>>,
 }
 
 impl ToolCallManager {
     pub fn new() -> Self {
-        let (tool_result_tx, tool_result_rx) = mpsc::unbounded_channel();
+        let (tool_result_tx, tool_result_rx) = mpsc::channel(100);
         Self {
             requests: Vec::new(),
             tool_result_rx,
@@ -261,6 +261,7 @@ impl ToolCallManager {
                 arguments: request.arguments,
                 result: result_str,
             })
+            .await
         });
         self.tool_handles.push(handle);
     }

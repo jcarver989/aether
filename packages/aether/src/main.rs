@@ -22,12 +22,7 @@ struct Cli {
     #[arg(short = 's', long = "system", help = "The LLM's system prompt")]
     system: Option<String>,
 
-    #[arg(
-        short = 'm',
-        long = "model",
-        help = "Model name to use",
-        default_value = ""
-    )]
+    #[arg(short = 'm', long = "model", help = "Model name to use")]
     model: String,
 
     #[arg(long = "provider", help = "LLM provider to use", value_enum)]
@@ -47,11 +42,7 @@ pub async fn main() {
 
     match cli.provider {
         Some(LlmProvider::Anthropic) => {
-            let provider = if cli.model.is_empty() {
-                AnthropicProvider::default().unwrap()
-            } else {
-                AnthropicProvider::default_with_model(&cli.model).unwrap()
-            };
+            let provider = AnthropicProvider::default().unwrap().with_model(&cli.model);
             run_agent(provider, &cli, &prompt).await;
         }
         Some(LlmProvider::OpenRouter) => {

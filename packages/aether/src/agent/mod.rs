@@ -1,10 +1,12 @@
 mod agent;
 mod agent_builder;
+pub mod error;
 mod messages;
 // mod process_user_message_task;  // Temporarily commented out during refactor
 
 pub use agent::*;
 pub use agent_builder::*;
+pub use error::{AgentError, Result};
 pub use messages::*;
 
 use crate::llm::ModelProvider;

@@ -1,6 +1,6 @@
 use super::types::{Content, ContentBlock, Message, Role, Tool};
+use crate::llm::{LlmError, Result};
 use crate::types::{ChatMessage, ToolDefinition};
-use color_eyre::Result;
 
 pub fn map_messages(messages: &Vec<ChatMessage>) -> Result<(Option<String>, Vec<Message>)> {
     let mut system_prompt = None;
@@ -100,7 +100,10 @@ pub fn map_tools(tools: &Vec<ToolDefinition>) -> Result<Vec<Tool>> {
     for tool in tools.into_iter() {
         let input_schema: serde_json::Value =
             serde_json::from_str(&tool.parameters).map_err(|e| {
-                color_eyre::eyre::eyre!("Failed to parse tool parameters for {}: {}", tool.name, e)
+                LlmError::ToolParameterParsing {
+                    tool_name: tool.name.clone(),
+                    error: e.to_string()
+                }
             })?;
 
         anthropic_tools.push(Tool {

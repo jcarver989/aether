@@ -1,4 +1,5 @@
-use color_eyre::Result;
+use crate::tools::Result;
+use std::future::Future;
 
 pub trait Summarizer {
     fn summarize(&self, text: &str) -> impl Future<Output = Result<String>>;

@@ -1,16 +1,16 @@
 use async_openai::types::{ChatCompletionMessageToolCallChunk, CreateChatCompletionStreamResponse};
 use async_stream;
-use color_eyre::Result;
 use std::collections::HashMap;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
 
+use crate::llm::{LlmError, Result};
 use crate::types::{LlmResponse, ToolCallRequest};
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard async_openai CreateChatCompletionStreamResponse types.
-pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
-    mut stream: impl Stream<Item = Result<CreateChatCompletionStreamResponse, E>> + Send + Unpin,
+pub fn process_completion_stream<E: Into<LlmError> + Send>(
+    mut stream: impl Stream<Item = std::result::Result<CreateChatCompletionStreamResponse, E>> + Send + Unpin,
 ) -> impl Stream<Item = Result<LlmResponse>> + Send {
     async_stream::stream! {
         let message_id = uuid::Uuid::new_v4().to_string();
@@ -24,7 +24,6 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                     if let Some(choice) = response.choices.first() {
                         let delta = &choice.delta;
 
-                        // Handle content
                         if let Some(content) = &delta.content {
                             if !content.is_empty() {
                                 // If we have a pending tool call and now we're getting content,
@@ -36,7 +35,6 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                             }
                         }
 
-                        // Handle tool calls
                         if let Some(tool_calls) = &delta.tool_calls {
                             for tool_call in tool_calls {
                                 let responses = tool_collector.handle_tool_call_delta(tool_call);
@@ -46,17 +44,14 @@ pub fn process_completion_stream<E: Into<color_eyre::Report> + Send>(
                             }
                         }
 
-                        // Handle finish reason - this indicates stream completion
                         if let Some(finish_reason) = &choice.finish_reason {
                             let finish_reason_str = format!("{finish_reason:?}");
                             debug!("Received finish reason: {}", finish_reason_str);
 
-                            // Complete any pending tool call before ending
                             if let Some(tool_call) = tool_collector.complete_current_tool_call() {
                                 yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                             }
 
-                            // End the stream for any finish reason
                             yield Ok(LlmResponse::Done);
                             break;
                         }
@@ -111,7 +106,6 @@ impl ToolCallCollector {
                 });
             }
 
-            // Tool call arguments
             if let Some(arguments) = &function.arguments {
                 if !arguments.is_empty() {
                     if let Some(id) = self.add_arguments(arguments) {

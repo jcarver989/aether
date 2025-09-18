@@ -1,4 +1,4 @@
-use color_eyre::Result;
+// Don't use custom Result type here as we need to return rmcp::ErrorData
 use rmcp::{
     ClientHandler, RoleClient,
     model::{
@@ -8,19 +8,20 @@ use rmcp::{
     service::RequestContext,
 };
 use std::future::Future;
+use std::result::Result;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::mcp::ElicitationRequest;
 
 pub struct McpClient {
     client_info: ClientInfo,
-    elicitation_sender: mpsc::UnboundedSender<ElicitationRequest>,
+    elicitation_sender: mpsc::Sender<ElicitationRequest>,
 }
 
 impl McpClient {
     pub fn new(
         client_info: ClientInfo,
-        elicitation_sender: mpsc::UnboundedSender<ElicitationRequest>,
+        elicitation_sender: mpsc::Sender<ElicitationRequest>,
     ) -> Self {
         Self {
             client_info,
@@ -46,7 +47,7 @@ impl ClientHandler for McpClient {
                 response_sender: response_tx,
             };
 
-            match self.elicitation_sender.send(elicitation_request) {
+            match self.elicitation_sender.send(elicitation_request).await {
                 Ok(_) => match response_rx.await {
                     Ok(result) => Ok(result),
                     Err(_) => Ok(CreateElicitationResult {

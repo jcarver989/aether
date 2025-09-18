@@ -1,5 +1,6 @@
 mod client;
+pub mod error;
 pub mod manager;
-pub mod protocol;
 
 pub use manager::{ElicitationRequest, McpManager};
+pub use error::{McpError, Result};

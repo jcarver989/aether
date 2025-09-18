@@ -1,13 +1,12 @@
 use async_openai::types::CreateChatCompletionRequest;
 use async_openai::{Client, config::OpenAIConfig};
 use async_stream;
-use color_eyre::Result;
 use tokio_stream::StreamExt;
 
 use crate::llm::openai::mappers::{map_messages, map_tools};
 use crate::llm::openai::process_completion_stream;
 use crate::llm::openrouter::CustomChatCompletionStreamResponse;
-use crate::llm::{Context, LlmResponseStream, ModelProvider};
+use crate::llm::{Context, LlmError, LlmResponseStream, ModelProvider, Result};
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -25,9 +24,8 @@ impl OpenRouterProvider {
     }
 
     pub fn default(model: &str) -> Result<Self> {
-        let api_key = std::env::var("OPENROUTER_API_KEY").map_err(|_| {
-            color_eyre::eyre::eyre!("OPENROUTER_API_KEY environment variable not set")
-        })?;
+        let api_key = std::env::var("OPENROUTER_API_KEY")
+            .map_err(|_| LlmError::MissingApiKey("OPENROUTER_API_KEY".to_string()))?;
 
         let config = OpenAIConfig::new()
             .with_api_key(api_key)
@@ -68,7 +66,7 @@ impl ModelProvider for OpenRouterProvider {
                 .await {
                 Ok(stream) => stream,
                 Err(e) => {
-                    yield Err(color_eyre::eyre::eyre!("OpenRouter API request failed: {}", e));
+                    yield Err(LlmError::ApiRequest(e.to_string()));
                     return;
                 }
             };
@@ -77,7 +75,7 @@ impl ModelProvider for OpenRouterProvider {
             let standard_stream = stream.map(|result| {
                 result
                     .map(|custom| custom.into())
-                    .map_err(|e| color_eyre::eyre::eyre!("OpenRouter API error: {}", e))
+                    .map_err(|e| LlmError::ApiError(e.to_string()))
             });
 
             let mut shared_stream = Box::pin(process_completion_stream(standard_stream));

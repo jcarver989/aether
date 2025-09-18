@@ -13,7 +13,7 @@ use crate::llm::{
 };
 
 /// A Provider that's compatible with OpenAI's chat completion API
-/// Other providers (e.g. Ollama, Llama.cpp etc) that are "OpenAI compatible" should implement this trait as well
+/// Other providers (e.g. Ollama, Llama.cpp etc) that are "OpenAI compatible" should implement this trait
 pub trait OpenAiChatProvider {
     type Config: Config + Clone + 'static;
 
@@ -70,7 +70,7 @@ impl<T: OpenAiChatProvider + Send + Sync> ModelProvider for T {
                         }
                     }
 
-                    yield Err(color_eyre::eyre::eyre!("Ollama API request failed: {}", e));
+                    yield Err(crate::llm::LlmError::ApiRequest(e.to_string()));
                     return;
                 }
             };

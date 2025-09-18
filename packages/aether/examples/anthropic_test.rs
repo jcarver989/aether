@@ -1,8 +1,8 @@
 use aether::llm::anthropic::AnthropicProvider;
 use aether::llm::provider::{Context, ModelProvider};
+use aether::llm::Result;
 use aether::types::{ChatMessage, IsoString, LlmResponse, ToolDefinition};
 use clap::Parser;
-use color_eyre::Result;
 use futures::StreamExt;
 use serde_json::json;
 use std::io::{self, Write};
@@ -37,7 +37,6 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    color_eyre::install()?;
 
     let args = Args::parse();
 
@@ -53,7 +52,7 @@ async fn main() -> Result<()> {
     println!("{}", "=".repeat(50));
 
     let provider = AnthropicProvider::default()?
-        .with_model(args.model)
+        .with_model(&args.model)
         .with_temperature(args.temperature)
         .with_max_tokens(args.max_tokens);
 

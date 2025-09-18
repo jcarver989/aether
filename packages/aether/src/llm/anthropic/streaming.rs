@@ -1,7 +1,7 @@
 use super::types::{ContentBlockDeltaData, ContentBlockStartData, StreamEvent};
+use crate::llm::{LlmError, Result};
 use crate::types::{LlmResponse, ToolCallRequest};
 use async_stream;
-use color_eyre::Result;
 use futures::Stream;
 use std::collections::HashMap;
 use tokio_stream::StreamExt;
@@ -155,11 +155,11 @@ fn process_stream_event(
             Ok(None)
         }
 
-        Error { data: error_data } => Err(color_eyre::eyre::eyre!(
+        Error { data: error_data } => Err(LlmError::ApiError(format!(
             "Anthropic API error: {} - {}",
             error_data.error.error_type,
             error_data.error.message
-        )),
+        ))),
 
         Ping => {
             debug!("Received ping event");

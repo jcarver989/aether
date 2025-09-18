@@ -2,8 +2,8 @@ use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
 use super::types::Request;
 use crate::llm::provider::{Context, LlmResponseStream, ModelProvider};
+use crate::llm::{LlmError, Result};
 use async_stream;
-use color_eyre::Result;
 use futures::StreamExt;
 use reqwest::header::{CONTENT_TYPE, HeaderValue};
 use reqwest::{Client, header};
@@ -29,17 +29,13 @@ impl AnthropicProvider {
 
         headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        headers.insert(
-            "x-api-key",
-            HeaderValue::from_str(&api_key)
-                .map_err(|e| color_eyre::eyre::eyre!("Invalid API key: {}", e))?,
-        );
+        headers.insert("x-api-key", HeaderValue::from_str(&api_key)?);
 
         let client = Client::builder()
             .timeout(Duration::from_secs(60))
             .default_headers(headers)
             .build()
-            .map_err(|e| color_eyre::eyre::eyre!("Failed to create HTTP client: {}", e))?;
+            .map_err(|e| LlmError::HttpClientCreation(e.to_string()))?;
 
         Ok(Self {
             client,
@@ -52,26 +48,18 @@ impl AnthropicProvider {
     }
 
     pub fn default() -> Result<Self> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
-            color_eyre::eyre::eyre!("ANTHROPIC_API_KEY environment variable not set")
-        })?;
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .map_err(|_| LlmError::MissingApiKey("ANTHROPIC_API_KEY".to_string()))?;
         Self::new(api_key)
     }
 
-    pub fn default_with_model(model: &str) -> Result<Self> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
-            color_eyre::eyre::eyre!("ANTHROPIC_API_KEY environment variable not set")
-        })?;
-        Self::new(api_key).map(|provider| provider.with_model(model.to_string()))
-    }
-
-    pub fn with_model(mut self, model: String) -> Self {
-        self.model = model;
+    pub fn with_model(mut self, model: &str) -> Self {
+        self.model = model.to_string();
         self
     }
 
-    pub fn with_base_url(mut self, base_url: String) -> Self {
-        self.base_url = Some(base_url);
+    pub fn with_base_url(mut self, base_url: &str) -> Self {
+        self.base_url = Some(base_url.to_string());
         self
     }
 
@@ -140,9 +128,7 @@ impl AnthropicProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|e| {
-                color_eyre::eyre::eyre!("Failed to send request to Anthropic API: {}", e)
-            })?;
+            .map_err(|e| LlmError::ApiRequest(e.to_string()))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -150,11 +136,10 @@ impl AnthropicProvider {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(color_eyre::eyre::eyre!(
+            return Err(LlmError::ApiError(format!(
                 "Anthropic API request failed with status {}: {}",
-                status,
-                error_text
-            ));
+                status, error_text
+            )));
         }
 
         let stream = response.bytes_stream();
@@ -165,9 +150,8 @@ impl AnthropicProvider {
 
         let lines_stream = LinesStream::new(tokio::io::BufReader::new(stream_reader).lines());
 
-        let processed_stream = lines_stream.map(|result| {
-            result.map_err(|e| color_eyre::eyre::eyre!("IO error reading stream: {}", e))
-        });
+        let processed_stream =
+            lines_stream.map(|result| result.map_err(|e| LlmError::IoError(e.to_string())));
 
         Ok(processed_stream)
     }
@@ -216,7 +200,7 @@ mod tests {
     fn create_test_provider() -> AnthropicProvider {
         AnthropicProvider::new("test-api-key".to_string())
             .unwrap()
-            .with_model("claude-3-5-sonnet-20241022".to_string())
+            .with_model("claude-3-5-sonnet-20241022")
             .with_temperature(0.7)
             .with_max_tokens(1000)
             .with_prompt_caching(false)

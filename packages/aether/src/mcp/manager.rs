@@ -1,4 +1,4 @@
-use color_eyre::{Report, Result};
+use crate::mcp::{McpError, Result};
 use rmcp::{
     RoleClient, RoleServer, ServiceExt,
     model::{
@@ -58,11 +58,11 @@ pub struct McpManager {
     servers: HashMap<String, McpServerConnection>,
     tools: HashMap<String, Tool>, // Now keyed by "server_name::tool_name"
     client_info: ClientInfo,
-    elicitation_sender: mpsc::UnboundedSender<ElicitationRequest>,
+    elicitation_sender: mpsc::Sender<ElicitationRequest>,
 }
 
 impl McpManager {
-    pub fn new(elicitation_sender: mpsc::UnboundedSender<ElicitationRequest>) -> Self {
+    pub fn new(elicitation_sender: mpsc::Sender<ElicitationRequest>) -> Self {
         Self {
             servers: HashMap::new(),
             tools: HashMap::new(),
@@ -97,7 +97,7 @@ impl McpManager {
                 let transport = StreamableHttpClientTransport::from_config(config.clone());
                 let mcp_client = self.create_mcp_client();
                 let client = serve_client(mcp_client, transport).await.map_err(|e| {
-                    Report::msg(format!("Failed to connect to HTTP MCP server {name}: {e}"))
+                    McpError::ConnectionFailed(format!("Failed to connect to HTTP MCP server {name}: {e}"))
                 })?;
 
                 let server_connection = McpServerConnection {
@@ -156,7 +156,7 @@ impl McpManager {
                 let client = serve_client(mcp_client, client_transport)
                     .await
                     .map_err(|e| {
-                        Report::msg(format!(
+                        McpError::ConnectionFailed(format!(
                             "Failed to connect to in-memory MCP server {name}: {e}"
                         ))
                     })?;
@@ -200,20 +200,16 @@ impl McpManager {
 
     pub async fn execute_tool(&self, namespaced_tool_name: &str, args: Value) -> Result<Value> {
         if !self.tools.contains_key(namespaced_tool_name) {
-            return Err(color_eyre::Report::msg(format!(
-                "Tool not found: {namespaced_tool_name}"
-            )));
+            return Err(McpError::ToolNotFound(namespaced_tool_name.to_string()));
         }
 
         let (server_name, original_tool_name) = parse_namespaced_tool_name(namespaced_tool_name)
-            .ok_or_else(|| {
-                color_eyre::Report::msg(format!("Invalid tool name format: {namespaced_tool_name}"))
-            })?;
+            .ok_or_else(|| McpError::InvalidToolNameFormat(namespaced_tool_name.to_string()))?;
 
         let server = self
             .servers
             .get(server_name)
-            .ok_or_else(|| color_eyre::Report::msg(format!("Server not found: {server_name}")))?;
+            .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?;
 
         let arguments = args.as_object().cloned();
         let request = CallToolRequestParam {
@@ -224,9 +220,11 @@ impl McpManager {
         let result = match server.client.call_tool(request).await {
             Ok(result) => result,
             Err(e) => {
-                return Err(color_eyre::Report::msg(format!(
-                    "Failed to execute tool {original_tool_name} on server {server_name}: {e}"
-                )));
+                return Err(McpError::ToolExecutionFailed {
+                    tool_name: original_tool_name.to_string(),
+                    server_name: server_name.to_string(),
+                    error: e.to_string(),
+                });
             }
         };
 
@@ -236,9 +234,7 @@ impl McpManager {
                 .first()
                 .map(|content| format!("{content:?}"))
                 .unwrap_or_else(|| "Unknown error".to_string());
-            return Err(color_eyre::Report::msg(format!(
-                "Tool execution failed: {error_msg}"
-            )));
+            return Err(McpError::ToolExecutionError(error_msg));
         }
 
         let result_value = result
@@ -293,7 +289,6 @@ impl McpManager {
             }
         }
 
-        // Clear all cached data
         self.tools.clear();
     }
 
@@ -382,7 +377,7 @@ mod tests {
         let dyn_service = Box::new(server.into_dyn());
 
         // Create elicitation channel for test
-        let (elicitation_tx, _elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+        let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
 
         // Create client and connect in-memory server directly
         let mut client = McpManager::new(elicitation_tx);
@@ -445,7 +440,7 @@ mod tests {
     #[tokio::test]
     async fn test_elicitation_channel_creation() {
         // Test that elicitation channels are properly wired up
-        let (elicitation_tx, mut elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+        let (elicitation_tx, mut elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
 
         let _manager = McpManager::new(elicitation_tx.clone());
 
@@ -460,7 +455,7 @@ mod tests {
         };
 
         // Send the request through the channel
-        elicitation_tx.send(test_request).unwrap();
+        elicitation_tx.send(test_request).await.unwrap();
 
         // Verify we can receive the request
         let received_request = elicitation_rx.recv().await.unwrap();
