@@ -8,10 +8,6 @@ pub enum AgentError {
     McpError(mcp::McpError),
     /// LLM provider error
     LlmError(llm::LlmError),
-    /// Channel communication error
-    ChannelError(String),
-    /// Agent configuration error
-    ConfigurationError(String),
     /// Generic error for other cases
     Other(String),
 }
@@ -21,8 +17,6 @@ impl fmt::Display for AgentError {
         match self {
             AgentError::McpError(e) => write!(f, "MCP error: {}", e),
             AgentError::LlmError(e) => write!(f, "LLM error: {}", e),
-            AgentError::ChannelError(msg) => write!(f, "Channel error: {}", msg),
-            AgentError::ConfigurationError(msg) => write!(f, "Configuration error: {}", msg),
             AgentError::Other(msg) => write!(f, "{}", msg),
         }
     }
