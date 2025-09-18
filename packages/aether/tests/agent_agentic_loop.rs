@@ -171,17 +171,37 @@ async fn test_simple_tool_execution() {
     assert!(!content_chunks.is_empty());
     assert!(!tool_calls.is_empty());
 
-    // Check that we hit the iteration limit (indicating infinite loop issue)
-    assert_eq!(
-        iterations, MAX_ITERATIONS,
-        "Test should hit iteration limit due to infinite loop in current implementation"
+    // Check that we completed within reasonable time (no infinite loop)
+    assert!(
+        iterations < MAX_ITERATIONS,
+        "Test should complete without infinite loop, took {} iterations", iterations
     );
 
-    // Check that we have tool calls (even if they don't complete)
+    // Check that we have tool calls that start
     assert!(
         tool_calls
             .iter()
             .any(|(id, name, _)| *id == "call_1" && *name == "echo_tool")
+    );
+
+    // Check that we eventually get tool results
+    let tool_results: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentMessage::ToolCall {
+                tool_call_id,
+                result: Some(result),
+                is_complete: true,
+                ..
+            } => Some((tool_call_id.as_str(), result.as_str())),
+            _ => None,
+        })
+        .collect();
+
+    // We expect to see tool execution results
+    assert!(
+        !tool_results.is_empty(),
+        "Expected to see tool execution results, but got none"
     );
 }
 
@@ -270,10 +290,10 @@ async fn test_tool_execution_error_handling() {
         println!("  Event {}: {:?}", i, event);
     }
 
-    // Check that we hit the iteration limit (indicating infinite loop issue)
-    assert_eq!(
-        iterations, MAX_ITERATIONS,
-        "Test should hit iteration limit due to infinite loop in current implementation"
+    // Check that we completed within reasonable time (no infinite loop)
+    assert!(
+        iterations < MAX_ITERATIONS,
+        "Test should complete without infinite loop, took {} iterations", iterations
     );
 
     // Check that we have tool calls with invalid arguments
@@ -287,5 +307,25 @@ async fn test_tool_execution_error_handling() {
     assert!(
         has_tool_calls,
         "Expected to see tool calls with invalid arguments"
+    );
+
+    // Check that we get tool execution results (likely error results)
+    let tool_results: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentMessage::ToolCall {
+                tool_call_id,
+                result: Some(result),
+                is_complete: true,
+                ..
+            } => Some((tool_call_id.as_str(), result.as_str())),
+            _ => None,
+        })
+        .collect();
+
+    // We expect to see tool execution results (even if they're errors)
+    assert!(
+        !tool_results.is_empty(),
+        "Expected to see tool execution results (errors), but got none"
     );
 }
