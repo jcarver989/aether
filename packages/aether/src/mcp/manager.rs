@@ -15,6 +15,7 @@ use rmcp::{
 };
 use serde_json::Value;
 use std::collections::HashMap;
+use tracing::{Level, span};
 
 use crate::{mcp::client::McpClient, transport::create_in_memory_transport};
 use tokio::process::Command;
@@ -201,6 +202,9 @@ impl McpManager {
     }
 
     pub async fn execute_tool(&self, namespaced_tool_name: &str, args: Value) -> Result<Value> {
+        let span = span!(Level::DEBUG, "mcp_manager_execute_tool");
+        let _guard = span.enter();
+
         if !self.tools.contains_key(namespaced_tool_name) {
             return Err(McpError::ToolNotFound(namespaced_tool_name.to_string()));
         }

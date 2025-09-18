@@ -6,20 +6,14 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
+use tracing::Level;
+use tracing::span;
 
-pub struct ToolExecutorTask {
-    pending_count: Arc<std::sync::atomic::AtomicUsize>,
-}
+pub struct ToolExecutorTask {}
 
 impl ToolExecutorTask {
     pub fn new() -> Self {
-        Self {
-            pending_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-        }
-    }
-
-    pub fn get_pending_count(&self) -> usize {
-        self.pending_count.load(std::sync::atomic::Ordering::SeqCst)
+        Self {}
     }
 
     pub fn run(
@@ -32,50 +26,44 @@ impl ToolExecutorTask {
     ) {
         let (tool_call_tx, mut tool_call_rx) = mpsc::channel::<ToolCallRequest>(100);
         let (tool_result_tx, tool_result_rx) = mpsc::channel::<ToolCallResult>(100);
-        let pending_count = self.pending_count.clone();
 
         let handle = tokio::spawn(async move {
-            while let Some(request) = tool_call_rx.recv().await {
-                let new_pending =
-                    pending_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                tracing::debug!(
-                    "ToolExecutor received request: {} ({}) - pending count now: {}",
-                    request.name,
-                    request.id,
-                    new_pending
-                );
+            let span = span!(Level::DEBUG, "tool_executor_task");
+            let _guard = span.enter();
 
+            while let Some(request) = tool_call_rx.recv().await {
                 let result_str = match serde_json::from_str(&request.arguments) {
                     Ok(args) => {
-                        tracing::trace!("Executing tool {} with parsed args", request.name);
+                        tracing::trace!("Executing tool {} with parsed args", &request.name);
                         let mcp_client_guard = mcp.lock().await;
                         match mcp_client_guard.execute_tool(&request.name, args).await {
                             Ok(result) => {
                                 tracing::trace!(
                                     "Tool {} execution successful, result length: {}",
-                                    request.name,
+                                    &request.name,
                                     result.to_string().len()
                                 );
                                 result.to_string()
                             }
                             Err(e) => {
-                                tracing::warn!("Tool {} execution failed: {}", request.name, e);
+                                tracing::warn!("Tool {} execution failed: {}", &request.name, e);
                                 format!("Tool execution failed: {}", e)
                             }
                         }
                     }
 
                     Err(e) => {
-                        tracing::error!("Invalid tool arguments for {}: {}", request.name, e);
+                        tracing::error!("Invalid tool arguments for {}: {}", &request.name, e);
                         format!("Invalid tool arguments: {}", e)
                     }
                 };
 
                 let tool_result = ToolCallResult {
-                    id: request.id.clone(),
-                    name: request.name.clone(),
-                    arguments: request.arguments,
+                    id: (&request).id.clone(),
+                    name: (&request).name.clone(),
+                    arguments: (&request).arguments.clone(),
                     result: result_str.clone(),
+                    request: request.clone(),
                 };
 
                 tracing::trace!(
@@ -102,14 +90,7 @@ impl ToolExecutorTask {
                     }
                 }
 
-                let new_pending =
-                    pending_count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) - 1;
-                tracing::debug!(
-                    "ToolExecutor completed {} ({}) - pending count now: {}",
-                    request.name,
-                    request.id,
-                    new_pending
-                );
+                tracing::debug!("ToolExecutor completed {} ({})", request.name, request.id,);
             }
             tracing::trace!("ToolExecutor task ending - tool_call_rx channel closed");
         });

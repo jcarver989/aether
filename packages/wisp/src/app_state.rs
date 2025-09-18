@@ -54,8 +54,6 @@ impl AppState {
                 is_complete,
                 model_name,
             } => {
-                tracing::debug!("AppState received ToolCall: id={}, name={}, is_complete={}, has_result={}",
-                    tool_call_id, name, is_complete, result.is_some());
                 if is_complete {
                     if let Some(tool_call) = self.active_tool_calls.remove(&tool_call_id) {
                         // Clean up the progress bar

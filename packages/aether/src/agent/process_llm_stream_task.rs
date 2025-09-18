@@ -1,8 +1,6 @@
 use crate::agent::AgentMessage;
 use crate::llm::Context;
 use crate::llm::ModelProvider;
-use crate::types::ChatMessage;
-use crate::types::IsoString;
 use crate::types::LlmResponse;
 use crate::types::ToolCallRequest;
 use futures::StreamExt;
@@ -10,8 +8,9 @@ use futures::pin_mut;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex as TokioMutex, mpsc};
 use tokio::task::JoinHandle;
+use tracing::Level;
+use tracing::span;
 
 pub struct ProcessLlmStreamTask {}
 
@@ -23,6 +22,9 @@ impl ProcessLlmStreamTask {
         tool_call_tx: Sender<ToolCallRequest>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
+            let span = span!(Level::DEBUG, "process_llm_stream_task");
+            let _guard = span.enter();
+
             let response_stream = {
                 let c = context.lock().unwrap();
                 llm.stream_response(&c)
@@ -140,12 +142,6 @@ impl ProcessLlmStreamTask {
             }
 
             if let Some(ref id) = current_message_id {
-                context.lock().unwrap().add_message(ChatMessage::Assistant {
-                    content: message_content.clone(),
-                    timestamp: IsoString::now(),
-                    tool_calls: tool_call_requests,
-                });
-
                 let _ = tx
                     .send(AgentMessage::Text {
                         message_id: id.clone(),

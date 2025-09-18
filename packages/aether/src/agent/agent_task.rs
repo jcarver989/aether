@@ -1,4 +1,5 @@
 use crate::agent::AgentMessage;
+use crate::agent::ToolCallResult;
 use crate::agent::process_llm_stream_task::ProcessLlmStreamTask;
 use crate::agent::tool_executor_task::ToolExecutorTask;
 use crate::llm::Context;
@@ -14,6 +15,8 @@ use std::sync::Mutex;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{Mutex as TokioMutex, mpsc};
 use tokio::task::JoinHandle;
+use tracing::Level;
+use tracing::{debug, span, trace};
 
 pub struct AgentTask {}
 
@@ -25,6 +28,8 @@ impl AgentTask {
     ) -> (JoinHandle<()>, Receiver<AgentMessage>) {
         let (tx, rx) = mpsc::channel::<AgentMessage>(100);
         let handle = tokio::spawn(async move {
+            let span = span!(Level::DEBUG, "agent_task");
+            let _guard = span.enter();
             {
                 let mut mcp = mcp.lock().await;
                 let update_tools_result = mcp.discover_tools().await;
@@ -67,6 +72,9 @@ impl AgentTask {
                 let mut tools_finished = false;
                 let mut has_tool_calls = false;
 
+                let mut tool_results = Vec::<ToolCallResult>::new();
+                let mut final_message = String::new();
+
                 let (llm_handle, tool_executor_handle, mut tool_result_rx, mut llm_rx) = {
                     let (llm_tx, llm_rx) = mpsc::channel::<AgentMessage>(100);
 
@@ -87,6 +95,10 @@ impl AgentTask {
                     tokio::select! {
                         llm_msg = llm_rx.recv() => {
                             match llm_msg {
+
+                                Some(AgentMessage::Text { chunk, is_complete: true,.. }) => {
+                                    final_message = chunk;
+                                }
 
                                 Some(msg) => {
                                     if let Err(e) = tx.send(msg).await {
@@ -111,18 +123,7 @@ impl AgentTask {
                                         result.result.len()
                                     );
                                     tracing::trace!("Processing tool result for tool_call_id: {}", result.id);
-
-                                    {
-                                        context
-                                            .lock()
-                                            .unwrap()
-                                            .add_message(ChatMessage::ToolCallResult {
-                                                tool_call_id: result.id.clone(),
-                                                content: result.result.clone(),
-                                                timestamp: IsoString::now(),
-                                            });
-                                    }
-
+                                    tool_results.push(result.clone());
                                     let msg = AgentMessage::ToolCall {
                                         tool_call_id: result.id.clone(),
                                         name: result.name.clone(),
@@ -135,7 +136,6 @@ impl AgentTask {
                                     if let Err(e) = tx.send(msg).await {
                                         tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
                                     }
-                                    tracing::debug!("Successfully sent ToolCall completion message");
                                 }
                                 None => {
                                     tools_finished = true;
@@ -146,6 +146,28 @@ impl AgentTask {
 
                     if llm_finished && tools_finished {
                         tracing::debug!("Agent: Completed inner loop; both tools and llm finished");
+
+                        let mut tool_requests = Vec::new();
+                        let mut c = context.lock().unwrap();
+
+                        for result in &tool_results {
+                            tool_requests.push(result.request.clone());
+                        }
+
+                        c.add_message(ChatMessage::Assistant {
+                            content: final_message,
+                            timestamp: IsoString::now(),
+                            tool_calls: tool_requests,
+                        });
+
+                        for result in &tool_results {
+                            c.add_message(ChatMessage::ToolCallResult {
+                                tool_call_id: result.id.clone(),
+                                content: result.result.clone(),
+                                timestamp: IsoString::now(),
+                            });
+                        }
+
                         break;
                     }
                 }

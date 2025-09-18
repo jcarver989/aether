@@ -6,6 +6,7 @@ use crate::llm::ModelProvider;
 use crate::mcp::McpManager;
 use crate::types::ChatMessage;
 use crate::types::IsoString;
+use crate::types::ToolCallRequest;
 use futures::Stream;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -59,4 +60,5 @@ pub struct ToolCallResult {
     pub name: String,
     pub arguments: String,
     pub result: String,
+    pub request: ToolCallRequest,
 }
