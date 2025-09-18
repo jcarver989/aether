@@ -1,7 +1,10 @@
+mod app_state;
+mod cli;
 mod colors;
 mod ui;
+mod ui_event;
 
-use aether::agent::{AgentMessage::*, SpawnedAgent, UserMessage, agent};
+use aether::agent::{SpawnedAgent, UserMessage, agent};
 use aether::llm::{
     ModelProvider,
     alloyed::AlloyedModelProvider,
@@ -12,8 +15,16 @@ use aether::llm::{
 use aether::types::LlmProvider;
 use clap::Parser;
 use color_eyre::Report;
-use crossterm::{cursor, queue, style::Stylize, terminal};
 use indicatif::ProgressBar;
+
+use mcp_lexicon::AgentBuilderExt;
+use std::io::Write;
+use std::path::Path;
+use tokio::fs;
+use tracing_subscriber;
+
+use crate::app_state::AppState;
+use crate::cli::{Cli, ModelSpec};
 
 #[derive(Debug)]
 struct PartialToolCall {
@@ -21,86 +32,6 @@ struct PartialToolCall {
     model_name: String,
     arguments: String,
     progress_bar: ProgressBar,
-}
-use inquire::Confirm;
-use mcp_lexicon::AgentBuilderExt;
-use std::collections::HashMap;
-use std::io::Write;
-use std::path::Path;
-use tokio::fs;
-use tracing_subscriber;
-
-#[derive(Parser)]
-#[command(name = "wisp")]
-#[command(about = "A TUI for the Aether AI assistant")]
-struct Cli {
-    #[arg(help = "The prompt to send to the AI assistant")]
-    prompt: Vec<String>,
-
-    #[arg(short = 's', long = "system", help = "The LLM's system prompt")]
-    system: Option<String>,
-
-    #[arg(
-        short = 'u',
-        long = "url",
-        help = "HTTP endpoint URL for the LLM provider. Defaults to http://localhost:8080 (LLama.cpp server's default port)",
-        default_value = "http://localhost:8080"
-    )]
-    url: String,
-
-    #[arg(short = 'k', long = "api-key", help = "API key for the LLM provider")]
-    api_key: Option<String>,
-
-    #[arg(
-        short = 'm',
-        long = "model",
-        help = "Model specification in format 'provider:model' or comma-separated for alloyed providers. Examples: 'anthropic:claude-3.5-sonnet', 'llamacpp', 'ollama:llama3.2,anthropic:claude-3-haiku'",
-        default_value = "llamacpp"
-    )]
-    model: String,
-}
-
-#[derive(Debug, Clone)]
-struct ModelSpec {
-    provider: LlmProvider,
-    model: String,
-}
-
-impl ModelSpec {
-    fn parse(spec: &str) -> Result<Self, String> {
-        if let Some((provider_str, model)) = spec.split_once(':') {
-            let provider = Self::parse_provider(provider_str)?;
-            Ok(ModelSpec {
-                provider,
-                model: model.to_string(),
-            })
-        } else {
-            // For providers that don't require a model (like llamacpp), allow just the provider name
-            match spec {
-                "llamacpp" => Ok(ModelSpec {
-                    provider: LlmProvider::LlamaCpp,
-                    model: "".to_string(),
-                }),
-                _ => Err(format!(
-                    "Invalid model spec '{}'. Expected format 'provider:model' or 'llamacpp'",
-                    spec
-                )),
-            }
-        }
-    }
-
-    fn parse_provider(provider_str: &str) -> Result<LlmProvider, String> {
-        match provider_str {
-            "anthropic" => Ok(LlmProvider::Anthropic),
-            "openrouter" => Ok(LlmProvider::OpenRouter),
-            "ollama" => Ok(LlmProvider::Ollama),
-            "llamacpp" => Ok(LlmProvider::LlamaCpp),
-            _ => Err(format!(
-                "Unknown provider: {}. Supported providers: anthropic, openrouter, ollama, llamacpp",
-                provider_str
-            )),
-        }
-    }
 }
 
 #[tokio::main]
@@ -158,29 +89,8 @@ async fn run_agent(
 
     ui::show_wisp_logo()?;
 
-    // Create display string from model specs
-    let init_display_name = if model_specs.len() == 1 {
-        let spec = &model_specs[0];
-        if spec.model.is_empty() {
-            format!("{:?}", spec.provider)
-        } else {
-            format!("{:?} ({})", spec.provider, spec.model)
-        }
-    } else {
-        let provider_names: Vec<String> = model_specs
-            .iter()
-            .map(|spec| {
-                if spec.model.is_empty() {
-                    format!("{:?}", spec.provider)
-                } else {
-                    format!("{:?} ({})", spec.provider, spec.model)
-                }
-            })
-            .collect();
-        format!("Alloyed [{}]", provider_names.join(", "))
-    };
-
-    let (spawned_agent, agents_status) = build_spawned_agent(provider, cli).await?;
+    let init_display_name = ui::format_model_display_name(&model_specs);
+    let (spawned_agent, agents_status) = spawn_agent(provider, cli).await?;
 
     let (agents_loaded, agents_error) = match agents_status {
         AgentsStatus::Loaded => (true, None),
@@ -189,150 +99,17 @@ async fn run_agent(
     };
     ui::show_init_header(user_prompt, &init_display_name, agents_loaded, agents_error)?;
 
-    // Send the user message to the spawned agent
-    spawned_agent.tx.send(UserMessage::text(user_prompt))?;
+    spawned_agent
+        .tx
+        .send(UserMessage::text(user_prompt))
+        .await?;
 
-    let mut active_tool_calls: HashMap<String, PartialToolCall> = HashMap::new();
-    let mut message_started = false;
+    let mut app_state = AppState::new();
     let mut rx = spawned_agent.rx;
 
     while let Some(event) = rx.recv().await {
-        match event {
-            Text {
-                chunk,
-                is_complete,
-                model_name,
-                ..
-            } => {
-                if is_complete {
-                    print_styled!(stdout, "\n\n");
-                    stdout.flush()?;
-                    message_started = false;
-                } else {
-                    if let Some(filtered_chunk) = ui::filter_text_chunk(&chunk) {
-                        if !message_started {
-                            print_styled!(
-                                stdout,
-                                format!("{} ", "◈".with(colors::primary()).bold())
-                            );
-                            ui::show_model_info(&model_name)?;
-                            message_started = true;
-                        }
-
-                        print_styled!(stdout, filtered_chunk.with(colors::text_primary()));
-                        stdout.flush()?;
-                    }
-                }
-            }
-
-            ToolCall {
-                tool_call_id,
-                name,
-                arguments,
-                result,
-                is_complete,
-                model_name,
-            } => {
-                if is_complete {
-                    if let Some(tool_call) = active_tool_calls.remove(&tool_call_id) {
-                        // Clear the spinner completely and print a clean completion line
-                        tool_call.progress_bar.finish_and_clear();
-
-                        // Move cursor up one line and clear it, then print completion message
-                        queue!(stdout, cursor::MoveToPreviousLine(1))?;
-                        queue!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-
-                        print_styled_line!(
-                            stdout,
-                            format!(
-                                "{} {} {} {}",
-                                "✓".with(colors::success()).bold(),
-                                format!("({})", ui::format_model_name(&tool_call.model_name))
-                                    .with(colors::text_secondary())
-                                    .dim(),
-                                "Tool".bold().with(colors::text_primary()),
-                                tool_call.name.bold().with(colors::success())
-                            )
-                        );
-                        stdout.flush()?;
-
-                        // Show additional details (arguments/result) on new lines if present
-                        let args_to_show = if tool_call.arguments.is_empty() {
-                            None
-                        } else {
-                            Some(tool_call.arguments.as_str())
-                        };
-                        ui::show_tool_details(args_to_show, result.as_deref())?;
-                    }
-                } else if !name.is_empty() {
-                    // Tool starting - create spinner and initialize arguments
-                    print_styled_line!(stdout, "");
-                    stdout.flush()?;
-                    let pb = ui::create_tool_spinner(&name, &model_name)?;
-                    active_tool_calls.insert(
-                        tool_call_id.clone(),
-                        PartialToolCall {
-                            name: name.clone(),
-                            model_name: model_name.clone(),
-                            arguments: String::new(),
-                            progress_bar: pb,
-                        },
-                    );
-                } else if let Some(args_chunk) = arguments {
-                    // Tool argument chunk - accumulate arguments
-                    if let Some(tool_call) = active_tool_calls.get_mut(&tool_call_id) {
-                        tool_call.arguments.push_str(&args_chunk);
-                    }
-                }
-            }
-
-            Error { message } => {
-                ui::show_error(&message)?;
-            }
-
-            Cancelled { message } => {
-                ui::show_cancelled(&message)?;
-            }
-
-            ElicitationRequest {
-                request,
-                response_sender,
-                ..
-            } => {
-                println!(
-                    "\n{}",
-                    "🤖 AI Request for Permission"
-                        .with(colors::primary())
-                        .bold()
-                );
-                println!("{}", request.message.with(colors::text_primary()));
-
-                use aether::{CreateElicitationResult, ElicitationAction};
-
-                let confirm_result = Confirm::new("Do you want to allow this action?")
-                    .with_default(false)
-                    .with_help_message("The AI is requesting permission to proceed")
-                    .prompt();
-
-                let result = match confirm_result {
-                    Ok(true) => CreateElicitationResult {
-                        action: ElicitationAction::Accept,
-                        content: None,
-                    },
-                    Ok(false) => CreateElicitationResult {
-                        action: ElicitationAction::Decline,
-                        content: None,
-                    },
-                    Err(_) => CreateElicitationResult {
-                        action: ElicitationAction::Cancel,
-                        content: None,
-                    },
-                };
-
-                let _ = response_sender.send(result);
-                println!();
-            }
-        }
+        let ui_events = app_state.update(event)?;
+        ui::render_ui_events(ui_events)?;
     }
 
     // Ensure any remaining output is flushed before showing completion
@@ -351,7 +128,7 @@ enum AgentsStatus {
     Error(String),
 }
 
-async fn build_spawned_agent(
+async fn spawn_agent(
     provider: Box<dyn ModelProvider>,
     cli: &Cli,
 ) -> Result<(SpawnedAgent, AgentsStatus), Report> {
@@ -395,11 +172,7 @@ fn create_provider(spec: &ModelSpec) -> Result<Box<dyn ModelProvider>, Box<dyn s
     use LlmProvider::*;
     match spec.provider {
         Anthropic => {
-            let provider = if spec.model.is_empty() {
-                AnthropicProvider::default()?
-            } else {
-                AnthropicProvider::default_with_model(&spec.model)?
-            };
+            let provider = AnthropicProvider::default()?.with_model(&spec.model);
             Ok(Box::new(provider))
         }
         OpenRouter => {

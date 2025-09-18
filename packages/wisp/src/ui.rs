@@ -1,5 +1,7 @@
+use crate::cli::ModelSpec;
 use crate::colors;
-use crossterm::{queue, style::Stylize};
+use crate::ui_event::UiEvent;
+use crossterm::{cursor, queue, style::Stylize, terminal};
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use std::io::{Write, stderr, stdout};
@@ -446,6 +448,47 @@ pub fn show_model_info(model_name: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+pub fn format_model_display_name(model_specs: &[ModelSpec]) -> String {
+    if model_specs.len() == 1 {
+        let spec = &model_specs[0];
+        if spec.model.is_empty() {
+            format!("{:?}", spec.provider)
+        } else {
+            format!("{:?} ({})", spec.provider, spec.model)
+        }
+    } else {
+        let provider_names: Vec<String> = model_specs
+            .iter()
+            .map(|spec| {
+                if spec.model.is_empty() {
+                    format!("{:?}", spec.provider)
+                } else {
+                    format!("{:?} ({})", spec.provider, spec.model)
+                }
+            })
+            .collect();
+        format!("Alloyed [{}]", provider_names.join(", "))
+    }
+}
+
+pub fn show_tool_completion_line(tool_name: &str, model_name: &str) -> Result<(), std::io::Error> {
+    let mut stdout = stdout();
+    print_styled_line!(
+        stdout,
+        format!(
+            "{} {} {} {}",
+            "✓".with(colors::success()).bold(),
+            format!("({})", format_model_name(model_name))
+                .with(colors::text_secondary())
+                .dim(),
+            "Tool".bold().with(colors::text_primary()),
+            tool_name.bold().with(colors::success())
+        )
+    );
+    stdout.flush()?;
+    Ok(())
+}
+
 pub fn show_completion() -> Result<(), std::io::Error> {
     let mut stdout = stdout();
     print_styled_line!(stdout, "");
@@ -459,5 +502,103 @@ pub fn show_completion() -> Result<(), std::io::Error> {
         )
     );
     stdout.flush()?;
+    Ok(())
+}
+
+pub fn render_ui_events(events: Vec<UiEvent>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut stdout = stdout();
+
+    for event in events {
+        match event {
+            UiEvent::TextChunk {
+                content,
+                model_name,
+                is_first_chunk,
+            } => {
+                if is_first_chunk {
+                    print_styled!(stdout, format!("{} ", "◈".with(colors::primary()).bold()));
+                    show_model_info(&model_name)?;
+                }
+                print_styled!(stdout, content.with(colors::text_primary()));
+                stdout.flush()?;
+            }
+
+            UiEvent::TextComplete => {
+                print_styled!(stdout, "\n\n");
+                stdout.flush()?;
+            }
+
+            UiEvent::ToolStarted { .. } => {
+                // Tool spinner is already created in update_state, just print empty line
+                print_styled_line!(stdout, "");
+                stdout.flush()?;
+            }
+
+            UiEvent::ToolCompleted {
+                name,
+                model_name,
+                arguments,
+                result,
+            } => {
+                // Move cursor up one line and clear it, then print completion message
+                queue!(stdout, cursor::MoveToPreviousLine(1))?;
+                queue!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
+
+                show_tool_completion_line(&name, &model_name)?;
+
+                // Show additional details (arguments/result) on new lines if present
+                let args_to_show = arguments.as_deref();
+                show_tool_details(args_to_show, result.as_deref())?;
+            }
+
+            UiEvent::Error { message } => {
+                show_error(&message)?;
+            }
+
+            UiEvent::Cancelled { message } => {
+                show_cancelled(&message)?;
+            }
+
+            UiEvent::ElicitationRequest {
+                request,
+                response_sender,
+            } => {
+                println!(
+                    "\n{}",
+                    "🤖 AI Request for Permission"
+                        .with(colors::primary())
+                        .bold()
+                );
+                println!("{}", request.message.with(colors::text_primary()));
+
+                use aether::{CreateElicitationResult, ElicitationAction};
+                use inquire::Confirm;
+
+                let confirm_result = Confirm::new("Do you want to allow this action?")
+                    .with_default(false)
+                    .with_help_message("The AI is requesting permission to proceed")
+                    .prompt();
+
+                let result = match confirm_result {
+                    Ok(true) => CreateElicitationResult {
+                        action: ElicitationAction::Accept,
+                        content: None,
+                    },
+                    Ok(false) => CreateElicitationResult {
+                        action: ElicitationAction::Decline,
+                        content: None,
+                    },
+                    Err(_) => CreateElicitationResult {
+                        action: ElicitationAction::Cancel,
+                        content: None,
+                    },
+                };
+
+                let _ = response_sender.send(result);
+                println!();
+            }
+        }
+    }
+
     Ok(())
 }
