@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 
-use aether::llm::{Context, LlmResponseStream, ModelProvider};
+use aether::llm::{Context, LlmResponseStream, ModelProvider, Result};
 use aether::mcp::{ElicitationRequest, McpManager};
 use aether::types::{LlmResponse, ToolCallRequest, ToolDefinition};
-use color_eyre::Result;
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -18,7 +17,7 @@ pub const TEST_TOOL_ID: &str = "call_123";
 // MCP Test Helpers
 
 pub fn create_test_mcp_client() -> McpManager {
-    let (elicitation_tx, _elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+    let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
     McpManager::new(elicitation_tx)
 }
 

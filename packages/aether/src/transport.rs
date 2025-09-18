@@ -25,14 +25,14 @@ impl std::error::Error for InMemoryTransportError {}
 
 /// In-memory transport for connecting McpServer and McpClient in tests
 pub struct InMemoryTransport<R: ServiceRole> {
-    tx: Arc<Mutex<mpsc::UnboundedSender<TxJsonRpcMessage<R>>>>,
-    rx: Arc<Mutex<mpsc::UnboundedReceiver<RxJsonRpcMessage<R>>>>,
+    tx: Arc<Mutex<mpsc::Sender<TxJsonRpcMessage<R>>>>,
+    rx: Arc<Mutex<mpsc::Receiver<RxJsonRpcMessage<R>>>>,
 }
 
 impl<R: ServiceRole> InMemoryTransport<R> {
     fn new(
-        tx: mpsc::UnboundedSender<TxJsonRpcMessage<R>>,
-        rx: mpsc::UnboundedReceiver<RxJsonRpcMessage<R>>,
+        tx: mpsc::Sender<TxJsonRpcMessage<R>>,
+        rx: mpsc::Receiver<RxJsonRpcMessage<R>>,
     ) -> Self {
         Self {
             tx: Arc::new(Mutex::new(tx)),
@@ -46,8 +46,8 @@ pub fn create_in_memory_transport() -> (InMemoryTransport<RoleClient>, InMemoryT
 {
     // Client sends ClientRequest/ClientResult, receives ServerRequest/ServerResult
     // Server sends ServerRequest/ServerResult, receives ClientRequest/ClientResult
-    let (client_tx, server_rx) = mpsc::unbounded_channel(); // Client -> Server
-    let (server_tx, client_rx) = mpsc::unbounded_channel(); // Server -> Client
+    let (client_tx, server_rx) = mpsc::channel(1000); // Client -> Server
+    let (server_tx, client_rx) = mpsc::channel(1000); // Server -> Client
 
     let client_transport = InMemoryTransport::new(client_tx, client_rx);
     let server_transport = InMemoryTransport::new(server_tx, server_rx);
@@ -65,7 +65,7 @@ impl<R: ServiceRole> Transport<R> for InMemoryTransport<R> {
         let tx = self.tx.clone();
         async move {
             let tx = tx.lock().await;
-            tx.send(item)
+            tx.send(item).await
                 .map_err(|_| InMemoryTransportError::ChannelClosed)?;
             Ok(())
         }

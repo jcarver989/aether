@@ -28,7 +28,7 @@ async fn test_tool_namespacing_desired_behavior() {
     use tokio::sync::mpsc;
 
     // Test that demonstrates the fix: tools are now properly namespaced
-    let (elicitation_tx, _elicitation_rx) = mpsc::unbounded_channel::<ElicitationRequest>();
+    let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
     let _client = McpManager::new(elicitation_tx);
 
     // Since we can't directly call discover_tools without actual servers,

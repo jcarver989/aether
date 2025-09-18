@@ -13,8 +13,8 @@ use url::Url;
 
 /// LSP client that spawns process in background task and provides typed API
 pub struct LspClient {
-    request_tx: mpsc::UnboundedSender<LspRequest>,
-    notification_rx: Arc<Mutex<mpsc::UnboundedReceiver<Value>>>,
+    request_tx: mpsc::Sender<LspRequest>,
+    notification_rx: Arc<Mutex<mpsc::Receiver<Value>>>,
     shutdown_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
 }
 
@@ -43,14 +43,14 @@ impl LspClient {
 
     async fn process_task() -> Result<
         (
-            mpsc::UnboundedSender<LspRequest>,
-            mpsc::UnboundedReceiver<Value>,
+            mpsc::Sender<LspRequest>,
+            mpsc::Receiver<Value>,
             oneshot::Sender<()>,
         ),
         String,
     > {
-        let (request_tx, request_rx) = mpsc::unbounded_channel();
-        let (notification_tx, notification_rx) = mpsc::unbounded_channel();
+        let (request_tx, request_rx) = mpsc::channel(100);
+        let (notification_tx, notification_rx) = mpsc::channel(100);
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
         // Spawn background task to manage the rust-analyzer process
@@ -125,7 +125,17 @@ impl LspClient {
                                     }
                                 }
                             } else {
-                                let _ = notification_tx.send(message);
+                                if let Err(e) = notification_tx.try_send(message) {
+                                    match e {
+                                        mpsc::error::TrySendError::Full(_) => {
+                                            eprintln!("Warning: LSP notification channel full, dropping message");
+                                        }
+                                        mpsc::error::TrySendError::Closed(_) => {
+                                            eprintln!("LSP notification channel closed");
+                                            break;
+                                        }
+                                    }
+                                }
                             }
                         }
                         Ok(None) => break, // EOF
@@ -284,8 +294,11 @@ impl LspClient {
         };
 
         self.request_tx
-            .send(request)
-            .map_err(|_| "LSP client channel closed".to_string())?;
+            .try_send(request)
+            .map_err(|e| match e {
+                mpsc::error::TrySendError::Full(_) => "LSP client channel full".to_string(),
+                mpsc::error::TrySendError::Closed(_) => "LSP client channel closed".to_string(),
+            })?;
 
         let response = response_rx
             .await
@@ -309,8 +322,11 @@ impl LspClient {
         };
 
         self.request_tx
-            .send(request)
-            .map_err(|_| "LSP client channel closed".to_string())
+            .try_send(request)
+            .map_err(|e| match e {
+                mpsc::error::TrySendError::Full(_) => "LSP client channel full".to_string(),
+                mpsc::error::TrySendError::Closed(_) => "LSP client channel closed".to_string(),
+            })
     }
 
     pub async fn get_next_notification(&self) -> Option<Value> {
