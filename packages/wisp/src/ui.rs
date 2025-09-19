@@ -145,7 +145,7 @@ pub fn filter_text_chunk(text: &str) -> Option<String> {
 
 pub fn show_wisp_logo() -> Result<(), std::io::Error> {
     let mut stdout = stdout();
-    let logo_content = include_str!("logo.txt");
+    let logo_content = include_str!("./components/logo.txt");
     let padding = " ".repeat(18);
 
     #[rustfmt::skip]

@@ -1,6 +1,7 @@
 mod app_view;
 mod cli;
 mod colors;
+mod components;
 mod simple_input;
 mod ui;
 
@@ -14,7 +15,9 @@ mod app_state;
 use crate::app_state::AppState;
 use crate::app_view::AppView;
 use crate::cli::Cli;
+use crate::components::{Input, Logo, Screen};
 use crate::simple_input::{InputResult, SimpleInput};
+use iocraft::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,31 +28,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
     let state = AppState::from_cli(&cli).await?;
+
+    tokio::spawn(async move {
+        element! {
+            Screen()
+        }
+        .render_loop()
+        .await
+    });
+
     return run_interactive_mode(state).await;
 }
 
 async fn run_interactive_mode(state: AppState) -> Result<(), Box<dyn std::error::Error>> {
-    ui::show_wisp_logo()?;
     let init_display_name = ui::format_model_display_name(&state.model_specs);
-    ui::show_init_header("Interactive Mode", &init_display_name, true)?;
-
-    use crossterm::terminal;
 
     let mut app_view = AppView::new();
     let mut rx = state.agent.rx;
     let tx = state.agent.tx;
-
-    // Enable raw mode once at the beginning
-    terminal::enable_raw_mode()?;
-
-    // Ensure raw mode is disabled on exit using a defer-like pattern
-    struct RawModeGuard;
-    impl Drop for RawModeGuard {
-        fn drop(&mut self) {
-            let _ = terminal::disable_raw_mode();
-        }
-    }
-    let _guard = RawModeGuard;
 
     loop {
         // Get input from user - SimpleInput no longer manages raw mode
