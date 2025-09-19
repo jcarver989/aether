@@ -19,6 +19,7 @@ inquire = "0.8.0"
 async-stream = "^0.3"
 tracing = "^0.1.41"
 tracing-subscriber = { version = "^0.3.19", features = ["env-filter"] }
+iocraft = "=0.7.11"
 
 
 

@@ -60,6 +60,34 @@ impl SimpleInput {
         Ok(result)
     }
 
+    pub fn run_with_raw_mode_managed(&mut self) -> Result<InputResult, Box<dyn std::error::Error>> {
+        let mut stdout = stdout();
+
+        // Show initial prompt (raw mode already enabled by caller)
+        self.show_prompt(&mut stdout)?;
+        self.update_display(&mut stdout)?;
+
+        let result = loop {
+            match event::read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    match self.handle_key(key_event.code, key_event.modifiers) {
+                        Some(result) => break result,
+                        None => {
+                            self.update_display(&mut stdout)?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        };
+
+        // Cleanup cursor but don't disable raw mode
+        execute!(stdout, cursor::Show)?;
+        println!(); // Move to next line
+
+        Ok(result)
+    }
+
     fn handle_key(&mut self, key: KeyCode, modifiers: KeyModifiers) -> Option<InputResult> {
         match (key, modifiers) {
             // Submit on Enter

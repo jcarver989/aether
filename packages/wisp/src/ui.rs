@@ -3,22 +3,18 @@ use crate::colors;
 use crossterm::{cursor, queue, style::Stylize, terminal};
 use regex::Regex;
 use std::io::{Write, stdout};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tokio::time::interval;
 
 #[derive(Debug)]
 pub struct CrosstermSpinner {
-    message: Arc<Mutex<String>>,
+    message: String,
     spinner_chars: Vec<char>,
-    current_frame: Arc<Mutex<usize>>,
-    is_running: Arc<Mutex<bool>>,
-    task_handle: Option<tokio::task::JoinHandle<()>>,
+    current_frame: usize,
+    is_running: bool,
 }
 
 impl CrosstermSpinner {
     pub fn new(tool_name: &str, model_name: &str, message: &str) -> Self {
-        let spinner_chars: Vec<char> = "˚∘○◌◉◯❍⊙❍◯◉◌○".chars().collect();
+        let spinner_chars: Vec<char> = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".chars().collect();
         let formatted_message = format!(
             "Tool {} {} {}",
             tool_name,
@@ -27,78 +23,24 @@ impl CrosstermSpinner {
         );
 
         Self {
-            message: Arc::new(Mutex::new(formatted_message)),
+            message: formatted_message,
             spinner_chars,
-            current_frame: Arc::new(Mutex::new(0)),
-            is_running: Arc::new(Mutex::new(false)),
-            task_handle: None,
+            current_frame: 0,
+            is_running: false,
         }
     }
 
     pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        *self.is_running.lock().unwrap() = true;
-
-        let message = Arc::clone(&self.message);
-        let current_frame = Arc::clone(&self.current_frame);
-        let is_running = Arc::clone(&self.is_running);
-        let spinner_chars = self.spinner_chars.clone();
-
-        let handle = tokio::spawn(async move {
-            let mut ticker = interval(Duration::from_millis(80));
-
-            while *is_running.lock().unwrap() {
-                ticker.tick().await;
-
-                if !*is_running.lock().unwrap() {
-                    break;
-                }
-
-                let frame = {
-                    let mut current = current_frame.lock().unwrap();
-                    let frame = *current;
-                    *current = (*current + 1) % spinner_chars.len();
-                    frame
-                };
-
-                let spinner_char = spinner_chars[frame];
-                let msg = message.lock().unwrap();
-
-                // Print the spinner line with styling
-                let spinner_line = format!(
-                    "{} {}",
-                    spinner_char.to_string().with(colors::primary()),
-                    &*msg
-                );
-
-                // Use crossterm to print and position cursor
-                let mut stdout = stdout();
-                if let Err(_) = queue!(
-                    stdout,
-                    cursor::SavePosition,
-                    crossterm::style::PrintStyledContent(spinner_line.stylize()),
-                    cursor::RestorePosition
-                ) {
-                    break;
-                }
-
-                if stdout.flush().is_err() {
-                    break;
-                }
-            }
-        });
-
-        self.task_handle = Some(handle);
+        self.is_running = true;
+        // Display initial spinner state
+        let mut stdout = stdout();
+        self.render_frame(&mut stdout)?;
         Ok(())
     }
 
     pub fn finish_and_clear(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        *self.is_running.lock().unwrap() = false;
-
-        if let Some(handle) = self.task_handle.take() {
-            handle.abort();
-        }
-
-        // Clear the spinner line - use a simpler approach
+        self.is_running = false;
+        // Clear the spinner line
         let mut stdout = stdout();
         queue!(
             stdout,
@@ -106,14 +48,25 @@ impl CrosstermSpinner {
             cursor::MoveToColumn(0)
         )?;
         stdout.flush()?;
-
         Ok(())
     }
-}
 
-impl Drop for CrosstermSpinner {
-    fn drop(&mut self) {
-        let _ = self.finish_and_clear();
+    fn render_frame(&mut self, stdout: &mut impl Write) -> Result<(), Box<dyn std::error::Error>> {
+        if self.is_running {
+            let spinner_char = self.spinner_chars[self.current_frame % self.spinner_chars.len()];
+            queue!(
+                stdout,
+                cursor::SavePosition,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                crossterm::style::PrintStyledContent(
+                    format!("{} {}", spinner_char, self.message).with(colors::primary())
+                ),
+                cursor::RestorePosition
+            )?;
+            stdout.flush()?;
+            self.current_frame += 1;
+        }
+        Ok(())
     }
 }
 
@@ -282,7 +235,6 @@ pub fn show_init_header(
     prompt: &str,
     model_display_name: &str,
     agents_loaded: bool,
-    agents_error: Option<&str>,
 ) -> Result<(), std::io::Error> {
     let mut stdout = stdout();
     print_styled_line!(stdout, "");
@@ -310,16 +262,6 @@ pub fn show_init_header(
                     "System prompt:".bold().with(colors::text_primary()),
                     "loaded AGENTS.md".with(colors::text_primary())
                 )
-            )
-        );
-    } else if let Some(error) = agents_error {
-        print_styled!(
-            stdout,
-            format!(
-                "  {} {}: {}",
-                "⚠".with(colors::warning()).bold(),
-                "Could not read AGENTS.md".with(colors::warning()),
-                error.with(colors::error())
             )
         );
     } else {

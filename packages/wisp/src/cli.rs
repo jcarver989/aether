@@ -1,4 +1,15 @@
-use aether::types::LlmProvider;
+use std::{fs, path::Path};
+
+use aether::{
+    llm::{
+        ModelProvider,
+        alloyed::AlloyedModelProvider,
+        anthropic::AnthropicProvider,
+        local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
+        openrouter::OpenRouterProvider,
+    },
+    types::LlmProvider,
+};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -33,6 +44,69 @@ pub struct Cli {
     pub model: String,
 }
 
+impl Cli {
+    pub fn load_system_prompt(&self) -> Option<SystemPrompt> {
+        self.system
+            .as_ref()
+            .map(|s| SystemPrompt::CliArg(s.to_string()))
+            .or_else(|| {
+                let agents_file = Path::new("./AGENTS.md");
+                if agents_file.exists() && agents_file.is_file() {
+                    fs::read_to_string(agents_file)
+                        .ok()
+                        .map(SystemPrompt::AgentsMd)
+                } else {
+                    None
+                }
+            })
+    }
+
+    pub fn load_model_provider(
+        &self,
+    ) -> Result<(Box<dyn ModelProvider>, Vec<ModelSpec>), Box<dyn std::error::Error>> {
+        use LlmProvider::*;
+        let model_result: Result<Vec<ModelSpec>, String> = self
+            .model
+            .split(',')
+            .map(|spec| ModelSpec::from_str(spec.trim()))
+            .collect();
+
+        let model_specs = model_result?;
+
+        let mut providers = Vec::new();
+        for spec in &model_specs {
+            let provider: Box<dyn ModelProvider> = match spec.provider {
+                Anthropic => {
+                    let provider = AnthropicProvider::default()?.with_model(&spec.model);
+                    Box::new(provider)
+                }
+                OpenRouter => {
+                    let provider = OpenRouterProvider::default(&spec.model)?;
+                    Box::new(provider)
+                }
+                Ollama => {
+                    let provider = OllamaProvider::default(&spec.model);
+                    Box::new(provider)
+                }
+                LlamaCpp => {
+                    let provider = LlamaCppProvider::default();
+                    Box::new(provider)
+                }
+            };
+
+            providers.push(provider);
+        }
+
+        let provider: Box<dyn ModelProvider> = if providers.len() == 1 {
+            providers.into_iter().next().unwrap()
+        } else {
+            Box::new(AlloyedModelProvider::new(providers))
+        };
+
+        Ok((provider, model_specs))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ModelSpec {
     pub provider: LlmProvider,
@@ -40,38 +114,38 @@ pub struct ModelSpec {
 }
 
 impl ModelSpec {
-    pub fn parse(spec: &str) -> Result<Self, String> {
-        if let Some((provider_str, model)) = spec.split_once(':') {
-            let provider = Self::parse_provider(provider_str)?;
-            Ok(ModelSpec {
-                provider,
+    fn from_str(spec: &str) -> Result<Self, String> {
+        if spec == "llamacpp" {
+            return Ok(ModelSpec {
+                provider: LlmProvider::LlamaCpp,
+                model: "".to_string(),
+            });
+        }
+
+        match spec.split_once(":") {
+            Some((provider_str, model)) => Ok(ModelSpec {
+                provider: LlmProvider::from_str(provider_str)?,
                 model: model.to_string(),
-            })
-        } else {
-            // For providers that don't require a model (like llamacpp), allow just the provider name
-            match spec {
-                "llamacpp" => Ok(ModelSpec {
-                    provider: LlmProvider::LlamaCpp,
-                    model: "".to_string(),
-                }),
-                _ => Err(format!(
-                    "Invalid model spec '{}'. Expected format 'provider:model' or 'llamacpp'",
-                    spec
-                )),
-            }
+            }),
+
+            None => Err(format!(
+                "Invalid model spec '{}'. Expected format 'provider:model' or 'llamacpp'",
+                spec
+            )),
         }
     }
+}
 
-    fn parse_provider(provider_str: &str) -> Result<LlmProvider, String> {
-        match provider_str {
-            "anthropic" => Ok(LlmProvider::Anthropic),
-            "openrouter" => Ok(LlmProvider::OpenRouter),
-            "ollama" => Ok(LlmProvider::Ollama),
-            "llamacpp" => Ok(LlmProvider::LlamaCpp),
-            _ => Err(format!(
-                "Unknown provider: {}. Supported providers: anthropic, openrouter, ollama, llamacpp",
-                provider_str
-            )),
+pub enum SystemPrompt {
+    AgentsMd(String),
+    CliArg(String),
+}
+
+impl SystemPrompt {
+    pub fn as_str(&self) -> &str {
+        match self {
+            SystemPrompt::AgentsMd(prompt) => prompt.as_ref(),
+            SystemPrompt::CliArg(prompt) => prompt.as_ref(),
         }
     }
 }

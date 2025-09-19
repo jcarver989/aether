@@ -1,5 +1,6 @@
-use crate::{colors, ui};
-use crossterm::style::Stylize;
+use crate::{colors, ui, print_styled_line};
+use aether::agent::AgentMessage;
+use crossterm::{queue, style::Stylize};
 use std::collections::HashMap;
 use std::io::{Write, stdout};
 
@@ -34,10 +35,24 @@ impl AppView {
         Ok(())
     }
 
-    pub fn update(
-        &mut self,
-        event: aether::agent::AgentMessage,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn batch_render(&mut self, events: Vec<AgentMessage>) -> Result<(), Box<dyn std::error::Error>> {
+        // Process all events - CrosstermSpinner manages its own rendering
+        for event in events {
+            self.update_internal(event)?;
+        }
+
+        // Flush once at the end
+        let mut stdout = stdout();
+        stdout.flush()?;
+        Ok(())
+    }
+
+    fn update_internal(&mut self, event: AgentMessage) -> Result<(), Box<dyn std::error::Error>> {
+        // This is the same logic as update() but without immediate flushing
+        self.update(event)
+    }
+
+    pub fn update(&mut self, event: AgentMessage) -> Result<(), Box<dyn std::error::Error>> {
         use aether::agent::AgentMessage::*;
 
         match event {
@@ -154,12 +169,15 @@ impl AppView {
         let mut stdout = stdout();
 
         if is_first_chunk {
-            println!(
-                "{} {} ",
-                "◈".with(colors::primary()).bold(),
-                format!("({})", ui::format_model_name(&model_name))
-                    .with(colors::text_secondary())
-                    .dim()
+            print_styled_line!(
+                stdout,
+                format!(
+                    "{} {} ",
+                    "◈".with(colors::primary()).bold(),
+                    format!("({})", ui::format_model_name(&model_name))
+                        .with(colors::text_secondary())
+                        .dim()
+                )
             );
         }
 
@@ -172,8 +190,9 @@ impl AppView {
     }
 
     fn render_text_complete(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("\n");
-        stdout().flush()?;
+        let mut stdout = stdout();
+        print_styled_line!(stdout, "");
+        stdout.flush()?;
         Ok(())
     }
 
@@ -183,47 +202,59 @@ impl AppView {
         model_name: &str,
         arguments: Option<String>,
         result: Option<String>,
-        progress_bar: Option<ui::CrosstermSpinner>,
+        _progress_bar: Option<ui::CrosstermSpinner>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(mut progress_bar) = progress_bar {
-            progress_bar.finish_and_clear()?;
-        }
+        // No need to explicitly clear spinner - it's already stopped
 
         // Show tool completion
-        println!(
-            "{} {} {} {}",
-            "✓".with(colors::success()).bold(),
-            format!("({})", ui::format_model_name(model_name))
-                .with(colors::text_secondary())
-                .dim(),
-            "Tool".bold().with(colors::text_primary()),
-            name.bold().with(colors::success())
+        let mut stdout = stdout();
+        print_styled_line!(
+            stdout,
+            format!(
+                "{} {} {} {}",
+                "✓".with(colors::success()).bold(),
+                format!("({})", ui::format_model_name(model_name))
+                    .with(colors::text_secondary())
+                    .dim(),
+                "Tool".bold().with(colors::text_primary()),
+                name.bold().with(colors::success())
+            )
         );
 
         // Show tool details
         ui::show_tool_details(arguments.as_deref(), result.as_deref())?;
 
         // Ensure output is flushed
-        stdout().flush()?;
+        stdout.flush()?;
 
         Ok(())
     }
 
     fn render_error(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
-        println!(
-            "{} {}",
-            "✗".with(colors::error()).bold(),
-            message.with(colors::error())
+        let mut stdout = stdout();
+        print_styled_line!(
+            stdout,
+            format!(
+                "{} {}",
+                "✗".with(colors::error()).bold(),
+                message.with(colors::error())
+            )
         );
+        stdout.flush()?;
         Ok(())
     }
 
     fn render_cancelled(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
-        println!(
-            "{} {}",
-            "⊘".with(colors::warning()).bold(),
-            message.with(colors::warning())
+        let mut stdout = stdout();
+        print_styled_line!(
+            stdout,
+            format!(
+                "{} {}",
+                "⊘".with(colors::warning()).bold(),
+                message.with(colors::warning())
+            )
         );
+        stdout.flush()?;
         Ok(())
     }
 
@@ -232,13 +263,17 @@ impl AppView {
         request: aether::CreateElicitationRequestParam,
         response_sender: tokio::sync::oneshot::Sender<aether::CreateElicitationResult>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!(
-            "\n{}",
-            "🤖 AI Request for Permission"
-                .with(crate::colors::primary())
-                .bold()
+        let mut stdout = stdout();
+        print_styled_line!(
+            stdout,
+            format!(
+                "\n{}",
+                "🤖 AI Request for Permission"
+                    .with(crate::colors::primary())
+                    .bold()
+            )
         );
-        println!("{}", request.message.with(crate::colors::text_primary()));
+        print_styled_line!(stdout, request.message.with(crate::colors::text_primary()));
 
         use aether::{CreateElicitationResult, ElicitationAction};
         use inquire::Confirm;
@@ -264,7 +299,7 @@ impl AppView {
         };
 
         let _ = response_sender.send(result);
-        println!();
+        print_styled_line!(stdout, "");
 
         Ok(())
     }

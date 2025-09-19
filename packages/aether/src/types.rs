@@ -109,6 +109,21 @@ pub enum LlmProvider {
     LlamaCpp,
 }
 
+impl LlmProvider {
+    pub fn from_str(provider: &str) -> Result<LlmProvider, String> {
+        match provider {
+            "anthropic" => Ok(LlmProvider::Anthropic),
+            "openrouter" => Ok(LlmProvider::OpenRouter),
+            "ollama" => Ok(LlmProvider::Ollama),
+            "llamacpp" => Ok(LlmProvider::LlamaCpp),
+            _ => Err(format!(
+                "Unknown provider: {}. Supported providers: anthropic, openrouter, ollama, llamacpp",
+                provider
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpenRouterConfig {
     pub api_key: String,
