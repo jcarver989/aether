@@ -1,7 +1,7 @@
 use rmcp::model::{CreateElicitationRequestParam, CreateElicitationResult};
 use tokio::sync::oneshot;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AgentMessage {
     Text {
         message_id: String,
@@ -30,7 +30,6 @@ pub enum AgentMessage {
     ElicitationRequest {
         request_id: String,
         request: CreateElicitationRequestParam,
-        response_sender: oneshot::Sender<CreateElicitationResult>,
     },
 
     Done,

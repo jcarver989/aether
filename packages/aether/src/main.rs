@@ -114,7 +114,6 @@ async fn run_agent<T: ModelProvider + 'static>(provider: T, cli: &Cli, prompt: &
             ElicitationRequest {
                 request_id,
                 request,
-                response_sender,
             } => {
                 println!("Elicitation request ({}): {}", request_id, request.message);
 
@@ -122,8 +121,6 @@ async fn run_agent<T: ModelProvider + 'static>(provider: T, cli: &Cli, prompt: &
                     action: ElicitationAction::Decline,
                     content: None,
                 };
-
-                let _ = response_sender.send(result); // Ignore send errors
             }
 
             Done => {

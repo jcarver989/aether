@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use crate::cli::SystemPrompt;
 use crate::cli::{Cli, ModelSpec};
-use aether::agent::{AgentMessage, SpawnedAgent, UserMessage, agent};
+use aether::agent::{AgentMessage, UserMessage, agent};
+use mcp_lexicon::AgentBuilderExt;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
@@ -26,7 +27,7 @@ impl AppState {
             agent_builder = agent_builder.system_prompt(prompt.as_str());
         }
 
-        let agent = agent_builder.spawn().await?;
+        let agent = agent_builder.coding_tools().spawn().await?;
 
         Ok(Self {
             model_specs,
@@ -40,6 +41,19 @@ impl AppState {
 
 #[derive(Debug, Clone)]
 pub enum ChatMessage {
-    Assistant { message_id: String, text: String },
-    User { text: String },
+    Assistant {
+        message_id: String,
+        text: String,
+    },
+    ToolCall {
+        id: String,
+        name: String,
+        arguments: Option<String>,
+        result: Option<String>,
+        model_name: String,
+        is_complete: bool,
+    },
+    User {
+        text: String,
+    },
 }

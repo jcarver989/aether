@@ -18,10 +18,12 @@ pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'s
     let mut should_exit = hooks.use_state(|| false);
     let mut should_submit = hooks.use_state(|| false);
     let mut messages = hooks.use_state(|| Vec::<ChatMessage>::new());
+    let mut scroll_offset = hooks.use_state(|| 0i32);
     let (width, height) = hooks.use_terminal_size();
 
     hooks.use_future(async move {
         while let Some(message) = rx.lock().await.recv().await {
+            let mut msgs = messages.write();
             match message {
                 AgentMessage::Text {
                     message_id,
@@ -29,7 +31,6 @@ pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'s
                     is_complete: false,
                     ..
                 } => {
-                    let mut msgs = messages.write();
                     if let Some(index) = msgs.iter().position(|msg| match msg {
                         ChatMessage::Assistant {
                             message_id: existing_id,
@@ -48,6 +49,47 @@ pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'s
                         })
                     }
                 }
+
+                AgentMessage::ToolCall {
+                    tool_call_id,
+                    name,
+                    arguments,
+                    result,
+                    is_complete,
+                    model_name,
+                } => {
+                    if let Some(index) = msgs.iter().position(|msg| match msg {
+                        ChatMessage::ToolCall { id, .. } => id == &tool_call_id,
+                        _ => false,
+                    }) {
+                        // Update existing tool call
+                        if let ChatMessage::ToolCall {
+                            arguments: existing_args,
+                            result: existing_result,
+                            is_complete: existing_complete,
+                            ..
+                        } = &mut msgs[index]
+                        {
+                            if arguments.is_some() {
+                                *existing_args = arguments;
+                            }
+                            if result.is_some() {
+                                *existing_result = result;
+                            }
+                            *existing_complete = is_complete;
+                        }
+                    } else {
+                        // Create new tool call
+                        msgs.push(ChatMessage::ToolCall {
+                            id: tool_call_id,
+                            name,
+                            arguments,
+                            result,
+                            model_name,
+                            is_complete,
+                        });
+                    }
+                }
                 _ => {}
             }
         }
@@ -62,8 +104,23 @@ pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'s
                 KeyCode::Enter if !input_message.to_string().trim().is_empty() => {
                     should_submit.set(true);
                 }
+                KeyCode::Up => {
+                    scroll_offset.set((scroll_offset.get() - 1).max(0));
+                }
+                KeyCode::Down => {
+                    scroll_offset.set(scroll_offset.get() + 1);
+                }
                 _ => {}
             }
+        }
+        TerminalEvent::FullscreenMouse(FullscreenMouseEvent { kind, .. }) => match kind {
+            MouseEventKind::ScrollUp => {
+                scroll_offset.set((scroll_offset.get() - 3).max(0));
+            }
+            MouseEventKind::ScrollDown => {
+                scroll_offset.set(scroll_offset.get() + 3);
+            }
+            _ => {}
         }
         _ => {}
     });
@@ -102,12 +159,17 @@ pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'s
                 margin: 2,
                 flex_grow: 1.0,
                 flex_direction: FlexDirection::Column,
-                overflow: Overflow::Hidden,
+                overflow: Overflow::Hidden
             ) {
-                ChatMessageList(
-                    show_input: true,
-                    messages: messages
-                )
+                View(
+                    position: Position::Absolute,
+                    top: -scroll_offset.get(),
+                ) {
+                    ChatMessageList(
+                        show_input: true,
+                        messages: messages
+                    )
+                }
             }
 
             View(
@@ -121,7 +183,12 @@ pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'s
                         color: crate::colors::accent(),
                         weight: Weight::Bold,
                     )
-                    View(flex_grow: 1.0) {
+                    View(
+                        flex_grow: 1.0,
+                        width: width,
+                        height: 1,
+                        padding: 0
+                    ) {
                         TextInput(
                             has_focus: true,
                             value: input_message.to_string(),

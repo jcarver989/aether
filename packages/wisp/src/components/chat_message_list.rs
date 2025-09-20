@@ -35,7 +35,41 @@ pub fn ChatMessageList(props: &AppViewProps) -> impl Into<AnyElement<'static>> {
                                     Text(content: text)
                                 }
                             }
-
+                        }
+                        ChatMessage::ToolCall { id, name, arguments, result, is_complete, .. } => {
+                            element! {
+                                View(key: id.clone(), border_style: BorderStyle::Round, border_color: colors::info(), padding: 1) {
+                                    Text(key: format!("{}-name", id), content: format!("🔧 {}", name), weight: Weight::Bold)
+                                    #(if let Some(args) = arguments {
+                                        element! {
+                                            View {
+                                                Text(key: format!("{}-args", id), content: format!("Args: {}", args))
+                                            }
+                                        }
+                                    } else {
+                                        element! { View }
+                                    })
+                                    #(if let Some(res) = result {
+                                        element! {
+                                            View {
+                                                Text(key: format!("{}-result", id), content: format!("Result: {}", res))
+                                            }
+                                        }
+                                    } else if *is_complete {
+                                        element! {
+                                            View {
+                                                Text(key: format!("{}-complete", id), content: "✓ Complete")
+                                            }
+                                        }
+                                    } else {
+                                        element! {
+                                            View {
+                                                Text(key: format!("{}-running", id), content: "⏳ Running...")
+                                            }
+                                        }
+                                    })
+                                }
+                            }
                         }
                     }
                 })

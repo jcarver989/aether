@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Screen()
             }
         }
-        .render_loop()
+        .fullscreen()
         .await;
     })
     .await?;
