@@ -1,20 +1,16 @@
 use crate::cli::ModelSpec;
-use crate::colors;
-use crossterm::{cursor, queue, style::Stylize, terminal};
 use regex::Regex;
 use std::io::{Write, stdout};
 
+// Legacy CrosstermSpinner - kept for compatibility during transition
 #[derive(Debug)]
 pub struct CrosstermSpinner {
     message: String,
-    spinner_chars: Vec<char>,
-    current_frame: usize,
     is_running: bool,
 }
 
 impl CrosstermSpinner {
     pub fn new(tool_name: &str, model_name: &str, message: &str) -> Self {
-        let spinner_chars: Vec<char> = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".chars().collect();
         let formatted_message = format!(
             "Tool {} {} {}",
             tool_name,
@@ -24,73 +20,37 @@ impl CrosstermSpinner {
 
         Self {
             message: formatted_message,
-            spinner_chars,
-            current_frame: 0,
             is_running: false,
         }
     }
 
     pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.is_running = true;
-        // Display initial spinner state
-        let mut stdout = stdout();
-        self.render_frame(&mut stdout)?;
+        // Simple text output for now
+        print!("{}", self.message);
+        stdout().flush()?;
         Ok(())
     }
 
     pub fn finish_and_clear(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.is_running = false;
-        // Clear the spinner line
-        let mut stdout = stdout();
-        queue!(
-            stdout,
-            terminal::Clear(terminal::ClearType::CurrentLine),
-            cursor::MoveToColumn(0)
-        )?;
-        stdout.flush()?;
-        Ok(())
-    }
-
-    fn render_frame(&mut self, stdout: &mut impl Write) -> Result<(), Box<dyn std::error::Error>> {
-        if self.is_running {
-            let spinner_char = self.spinner_chars[self.current_frame % self.spinner_chars.len()];
-            queue!(
-                stdout,
-                cursor::SavePosition,
-                terminal::Clear(terminal::ClearType::CurrentLine),
-                crossterm::style::PrintStyledContent(
-                    format!("{} {}", spinner_char, self.message).with(colors::primary())
-                ),
-                cursor::RestorePosition
-            )?;
-            stdout.flush()?;
-            self.current_frame += 1;
-        }
+        println!(); // Just move to next line
         Ok(())
     }
 }
 
+// Simple print macros without styling
 #[macro_export]
 macro_rules! print_styled {
     ($writer:expr, $content:expr) => {
-        queue!(
-            $writer,
-            crossterm::style::PrintStyledContent($content.stylize())
-        )?
+        write!($writer, "{}", $content)?
     };
 }
 
 #[macro_export]
 macro_rules! print_styled_line {
     ($writer:expr, $content:expr) => {
-        queue!(
-            $writer,
-            crossterm::style::PrintStyledContent($content.stylize())
-        )?;
-        queue!(
-            $writer,
-            crossterm::style::PrintStyledContent("\n".stylize())
-        )?
+        writeln!($writer, "{}", $content)?
     };
 }
 
@@ -177,25 +137,18 @@ pub fn show_wisp_logo() -> Result<(), std::io::Error> {
                     4 => '░', // Fifth line - light shade
                     _ => '░', // Bottom line - light shade (darkest)
                 };
-                print_styled!(
-                    stdout,
-                    opacity_char.to_string().with(colors::primary()).bold()
-                );
+                print_styled!(stdout, opacity_char.to_string());
             } else {
-                print_styled!(stdout, ch.to_string().with(colors::primary()).bold());
+                print_styled!(stdout, ch.to_string());
             }
         }
         print_styled_line!(stdout, "");
     }
     print_styled_line!(stdout, "");
-    let tagline_padding = " ".repeat(15); // Center "Ethereal AI Assistant" (24 chars): (128-24)/2 = 52, but adjust for visual balance
+    let tagline_padding = " ".repeat(15);
     print_styled!(
         stdout,
-        format!(
-            "{}{}",
-            tagline_padding,
-            "An AI agent, conjured from aether".dim().italic()
-        )
+        format!("{}{}", tagline_padding, "An AI agent, conjured from aether")
     );
     print_styled!(stdout, "\n\n");
 
@@ -206,25 +159,16 @@ pub fn show_wisp_logo() -> Result<(), std::io::Error> {
 pub fn show_usage(program_name: &str) -> Result<(), std::io::Error> {
     show_wisp_logo()?;
     let mut stdout = stdout();
-    print_styled_line!(stdout, "Usage:".with(colors::secondary()).bold());
+    print_styled_line!(stdout, "Usage:");
     print_styled_line!(
         stdout,
-        format!(
-            "  {} {}",
-            program_name,
-            "<your coding question or request>"
-                .with(colors::success())
-                .italic()
-        )
+        format!("  {} {}", program_name, "<your coding question or request>")
     );
     print_styled_line!(
         stdout,
         format!(
             "  {} {}",
-            program_name,
-            "\"help me implement a binary search tree\""
-                .with(colors::warning())
-                .italic()
+            program_name, "\"help me implement a binary search tree\""
         )
     );
     stdout.flush()?;
@@ -238,71 +182,30 @@ pub fn show_init_header(
 ) -> Result<(), std::io::Error> {
     let mut stdout = stdout();
     print_styled_line!(stdout, "");
-    print_styled_line!(stdout, "─".repeat(60).with(colors::info()));
-    print_styled_line!(
-        stdout,
-        format!(
-            "{} {}",
-            "⚙".with(colors::info()).bold(),
-            "Init".bold().with(colors::text_primary())
-        )
-    );
-    print_styled_line!(stdout, "─".repeat(60).with(colors::info()));
+    print_styled_line!(stdout, "─".repeat(60));
+    print_styled_line!(stdout, format!("{} {}", "⚙", "Init"));
+    print_styled_line!(stdout, "─".repeat(60));
     print_styled!(stdout, "\n");
 
     // Agents status
     if agents_loaded {
-        print_styled!(
-            stdout,
-            format!(
-                "  {} {}",
-                "✓".with(colors::success()).bold(),
-                format!(
-                    "{} {}",
-                    "System prompt:".bold().with(colors::text_primary()),
-                    "loaded AGENTS.md".with(colors::text_primary())
-                )
-            )
-        );
+        print_styled!(stdout, format!("  {} System prompt: loaded AGENTS.md", "✓"));
     } else {
         print_styled!(
             stdout,
-            format!(
-                "  {} {}",
-                "ℹ".with(colors::info()).bold(),
-                "No AGENTS.md file found in current directory".with(colors::text_secondary())
-            )
+            format!("  {} No AGENTS.md file found in current directory", "ℹ")
         );
     }
     print_styled!(stdout, "\n\n");
 
     // User prompt
-    print_styled_line!(
-        stdout,
-        format!(
-            "  {} {} {}",
-            "◆".with(colors::secondary()).bold(),
-            "User Prompt:".bold().with(colors::text_primary()),
-            prompt.italic().with(colors::text_primary())
-        )
-    );
+    print_styled_line!(stdout, format!("  {} User Prompt: {}", "◆", prompt));
     print_styled!(stdout, "\n");
 
     // Model information
-    print_styled_line!(
-        stdout,
-        format!(
-            "  {} {}",
-            "🤖".with(colors::primary()).bold(),
-            format!(
-                "{} {}",
-                "Model:".bold().with(colors::text_primary()),
-                model_display_name.with(colors::text_primary())
-            )
-        )
-    );
+    print_styled_line!(stdout, format!("  {} Model: {}", "🤖", model_display_name));
     print_styled_line!(stdout, "");
-    print_styled_line!(stdout, "─".repeat(60).with(colors::info()));
+    print_styled_line!(stdout, "─".repeat(60));
     print_styled!(stdout, "\n");
     stdout.flush()?;
     Ok(())
@@ -326,12 +229,9 @@ pub fn show_tool_details(
         if !args.trim().is_empty() {
             if args.len() > 120 {
                 let truncated = &args[..117];
-                print_styled_line!(
-                    stdout,
-                    format!("   {} {}...", "Input:".dim(), truncated.dim())
-                );
+                print_styled_line!(stdout, format!("   Input: {}...", truncated));
             } else {
-                print_styled_line!(stdout, format!("   {} {}", "Input:".dim(), args.dim()));
+                print_styled_line!(stdout, format!("   Input: {}", args));
             }
         }
     }
@@ -362,31 +262,28 @@ pub fn show_tool_details(
 
             // For long results, show a preview with proper line handling
             if display_result.len() > 500 {
-                print_styled_line!(stdout, format!("   {}", "Result:".dim()));
+                print_styled_line!(stdout, "   Result:");
                 let mut char_count = 0;
                 for line in &lines {
                     if char_count + line.len() > 400 {
-                        print_styled_line!(stdout, format!("     {}", "...".dim()));
+                        print_styled_line!(stdout, "     ...");
                         break;
                     }
-                    print_styled_line!(stdout, format!("     {}", line.dim()));
+                    print_styled_line!(stdout, format!("     {}", line));
                     char_count += line.len() + 1; // +1 for newline
                 }
             } else if lines.len() == 1 && display_result.len() < 100 {
                 // Only show as single line if it's actually short and truly single line
-                print_styled_line!(
-                    stdout,
-                    format!("   {} {}", "Result:".dim(), &display_result.dim())
-                );
+                print_styled_line!(stdout, format!("   Result: {}", &display_result));
             } else {
                 // Always use multi-line format for better readability
-                print_styled_line!(stdout, format!("   {}", "Result:".dim()));
+                print_styled_line!(stdout, "   Result:");
                 for line in lines.iter().take(10) {
                     // Show more lines since formatting is better
-                    print_styled_line!(stdout, format!("     {}", line.dim()));
+                    print_styled_line!(stdout, format!("     {}", line));
                 }
                 if lines.len() > 10 {
-                    print_styled_line!(stdout, format!("     {}", "...".dim()));
+                    print_styled_line!(stdout, "     ...");
                 }
             }
         }
@@ -437,20 +334,4 @@ pub fn format_model_display_name(model_specs: &[ModelSpec]) -> String {
             .collect();
         format!("Alloyed [{}]", provider_names.join(", "))
     }
-}
-
-pub fn show_completion() -> Result<(), std::io::Error> {
-    let mut stdout = stdout();
-    print_styled_line!(stdout, "");
-    print_styled_line!(stdout, "─".repeat(60).with(colors::accent()));
-    print_styled_line!(
-        stdout,
-        format!(
-            "{} {}",
-            "◆".with(colors::accent()).bold(),
-            "Analysis finished!".bold().with(colors::text_primary())
-        )
-    );
-    stdout.flush()?;
-    Ok(())
 }

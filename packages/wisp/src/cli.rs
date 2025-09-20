@@ -12,7 +12,7 @@ use aether::{
 };
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 #[command(name = "wisp")]
 #[command(about = "A TUI for the Aether AI assistant")]
 pub struct Cli {
