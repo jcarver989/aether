@@ -4,7 +4,6 @@ use aether::{
     testing::FakeLlmProvider,
     types::LlmResponse,
 };
-use futures::{StreamExt, pin_mut};
 use rmcp::ServiceExt;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
@@ -80,17 +79,20 @@ async fn test_basic_functionality_still_works() {
             name: "test_mcp".to_string(),
             server: TestMcp::new().into_dyn(),
         })
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    let stream = agent.send(UserMessage::text("Hello")).await;
-    pin_mut!(stream);
+    agent.send(UserMessage::text("Hello")).await.unwrap();
 
     let mut text_chunks = Vec::new();
-    while let Some(event) = stream.next().await {
-        if let AgentMessage::Text { chunk, .. } = event {
-            text_chunks.push(chunk);
+    while let Some(event) = agent.recv().await {
+        match event {
+            AgentMessage::Text { chunk, .. } => {
+                text_chunks.push(chunk);
+            }
+            AgentMessage::Done => break,
+            _ => {}
         }
     }
 

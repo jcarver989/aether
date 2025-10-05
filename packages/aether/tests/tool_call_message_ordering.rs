@@ -4,7 +4,6 @@ use aether::{
     testing::FakeLlmProvider,
     types::{ChatMessage, LlmResponse, ToolCallRequest},
 };
-use futures::{StreamExt, pin_mut};
 use rmcp::ServiceExt;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
@@ -100,12 +99,11 @@ async fn test_tool_call_message_ordering_race_condition() {
             name: "test_mcp".to_string(),
             server: test_mcp.clone().into_dyn(),
         })
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    let stream = agent.send(UserMessage::text("Use the fast tool")).await;
-    pin_mut!(stream);
+    agent.send(UserMessage::text("Use the fast tool")).await.unwrap();
 
     // Collect all messages with timeout to avoid infinite loop
     let mut tool_calls = Vec::new();
@@ -115,12 +113,15 @@ async fn test_tool_call_message_ordering_race_condition() {
     while iterations < MAX_ITERATIONS {
         iterations += 1;
 
-        match tokio::time::timeout(std::time::Duration::from_millis(10), stream.next()).await {
+        match tokio::time::timeout(std::time::Duration::from_millis(10), agent.recv()).await {
             Ok(Some(event)) => {
                 if let AgentMessage::ToolCall { name, .. } = &event {
                     if name == "fast_tool" {
                         tool_calls.push(event);
                     }
+                }
+                if let AgentMessage::Done = &event {
+                    break;
                 }
             }
             Ok(None) => break, // Stream ended

@@ -2,15 +2,12 @@ mod agent;
 mod agent_builder;
 pub mod error;
 mod iteration_state;
-mod llm_stream_processor;
 mod messages;
-mod process_llm_stream_task;
 mod tool_executor_task;
 
 pub use agent::*;
 pub use agent_builder::*;
 pub use error::{AgentError, Result};
-pub use llm_stream_processor::LlmStreamProcessor;
 pub use messages::*;
 pub use tool_executor_task::ToolExecutor;
 

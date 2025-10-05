@@ -4,7 +4,6 @@ use aether::{
     testing::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };
-use futures::{StreamExt, pin_mut};
 use rmcp::ServiceExt;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
@@ -91,14 +90,11 @@ async fn test_simple_tool_call_completes() {
             name: "simple_mcp".to_string(),
             server: test_mcp.into_dyn(),
         })
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    let stream = test_agent
-        .send(UserMessage::text("Use the echo tool"))
-        .await;
-    pin_mut!(stream);
+    test_agent.send(UserMessage::text("Use the echo tool")).await.unwrap();
 
     // Collect messages until completion
     let mut messages = Vec::new();
@@ -109,7 +105,7 @@ async fn test_simple_tool_call_completes() {
     while !completed && iterations < MAX_ITERATIONS {
         iterations += 1;
 
-        match tokio::time::timeout(std::time::Duration::from_millis(100), stream.next()).await {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), test_agent.recv()).await {
             Ok(Some(msg)) => {
                 match &msg {
                     AgentMessage::Text {
@@ -121,6 +117,9 @@ async fn test_simple_tool_call_completes() {
                         is_complete: true, ..
                     } => {
                         // Tool call completed - this is what we're waiting for
+                        completed = true;
+                    }
+                    AgentMessage::Done => {
                         completed = true;
                     }
                     _ => {}
@@ -184,14 +183,11 @@ async fn test_agent_control_flow_scenarios() {
             name: "simple_mcp".to_string(),
             server: test_mcp.into_dyn(),
         })
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    let stream = error_agent
-        .send(UserMessage::text("This should error"))
-        .await;
-    pin_mut!(stream);
+    error_agent.send(UserMessage::text("This should error")).await.unwrap();
 
     // Collect messages - should get error and then terminate
     let mut messages = Vec::new();
@@ -201,7 +197,7 @@ async fn test_agent_control_flow_scenarios() {
 
     while !error_received && iterations < MAX_ITERATIONS {
         iterations += 1;
-        match tokio::time::timeout(std::time::Duration::from_millis(50), stream.next()).await {
+        match tokio::time::timeout(std::time::Duration::from_millis(50), error_agent.recv()).await {
             Ok(Some(msg)) => {
                 if let AgentMessage::Error { .. } = &msg {
                     error_received = true;
@@ -242,14 +238,11 @@ async fn test_agent_control_flow_scenarios() {
                 name: "simple_mcp".to_string(),
                 server: test_mcp2.into_dyn(),
             })
-            .build()
+            .spawn()
             .await
             .unwrap();
 
-        let stream2 = text_agent
-            .send(UserMessage::text("Just respond with text"))
-            .await;
-        pin_mut!(stream2);
+        text_agent.send(UserMessage::text("Just respond with text")).await.unwrap();
 
         let mut messages2 = Vec::new();
         let mut completed = false;
@@ -257,12 +250,15 @@ async fn test_agent_control_flow_scenarios() {
 
         while !completed && iterations2 < MAX_ITERATIONS {
             iterations2 += 1;
-            match tokio::time::timeout(std::time::Duration::from_millis(50), stream2.next()).await {
+            match tokio::time::timeout(std::time::Duration::from_millis(50), text_agent.recv()).await {
                 Ok(Some(msg)) => {
                     if let AgentMessage::Text {
                         is_complete: true, ..
                     } = &msg
                     {
+                        completed = true;
+                    }
+                    if let AgentMessage::Done = &msg {
                         completed = true;
                     }
                     messages2.push(msg);
@@ -340,14 +336,11 @@ async fn test_no_consecutive_assistant_messages() {
             name: "simple_mcp".to_string(),
             server: test_mcp.into_dyn(),
         })
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    let stream = test_agent
-        .send(UserMessage::text("Use the echo tool"))
-        .await;
-    pin_mut!(stream);
+    test_agent.send(UserMessage::text("Use the echo tool")).await.unwrap();
 
     // Collect all messages
     let mut messages = Vec::new();
@@ -356,8 +349,11 @@ async fn test_no_consecutive_assistant_messages() {
 
     while iterations < MAX_ITERATIONS {
         iterations += 1;
-        match tokio::time::timeout(std::time::Duration::from_millis(100), stream.next()).await {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), test_agent.recv()).await {
             Ok(Some(msg)) => {
+                if let AgentMessage::Done = &msg {
+                    break;
+                }
                 messages.push(msg);
             }
             Ok(None) | Err(_) => break,

@@ -4,7 +4,6 @@ use crate::llm::ModelProvider;
 use crate::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
 use tokio::sync::mpsc;
-
 use tokio::task::JoinHandle;
 
 /// Handle for communicating with a running Agent
@@ -16,11 +15,11 @@ pub struct AgentHandle {
 
 impl AgentHandle {
     /// Send a message to the agent
-    pub async fn send(
-        &self,
-        message: UserMessage,
-    ) -> std::result::Result<(), mpsc::error::SendError<UserMessage>> {
-        self.user_message_tx.send(message).await
+    pub async fn send(&mut self, message: UserMessage) -> Result<()> {
+        self.user_message_tx
+            .send(message)
+            .await
+            .map_err(|_| crate::agent::AgentError::Other("Agent channel closed".to_string()))
     }
 
     /// Receive a message from the agent
@@ -74,8 +73,14 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
         let mcp_manager = McpManager::new(elicitation_tx);
         mcp_manager.add_mcps(self.mcp_configs).await?;
 
-        let agent = Agent::new(self.llm, mcp_manager, messages);
-        let handle = tokio::spawn(agent.run(user_message_rx, agent_message_tx));
+        let agent = Agent::new(
+            self.llm,
+            mcp_manager,
+            messages,
+            user_message_rx,
+            agent_message_tx,
+        );
+        let handle = tokio::spawn(agent.run());
 
         Ok(AgentHandle {
             handle,

@@ -32,9 +32,9 @@ impl AppState {
         Ok(Self {
             model_specs,
             system_prompt,
-            agent_handle: agent.task_handle,
-            agent_tx: agent.tx,
-            agent_rx: Arc::new(Mutex::new(agent.rx)),
+            agent_handle: agent.handle,
+            agent_tx: agent.user_message_tx,
+            agent_rx: Arc::new(Mutex::new(agent.agent_message_rx)),
         })
     }
 }

@@ -1,31 +1,54 @@
 use crate::agent::iteration_state::AgenticIterationState;
-use crate::agent::llm_stream_processor::LlmStreamProcessor;
 use crate::agent::tool_executor_task::ToolExecutor;
 use crate::agent::{AgentMessage, UserMessage};
-use crate::llm::Context;
 use crate::llm::ModelProvider;
+use crate::llm::{Context, LlmError};
 use crate::mcp::McpManager;
 use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest};
-use std::sync::Arc;
+use std::pin::pin;
 use tokio::sync::mpsc;
+use tokio_stream::StreamExt;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
+/// Unified event type for the agent event loop
+#[derive(Debug)]
+enum AgentEvent {
+    /// LLM response event (success or error)
+    Llm(Result<LlmResponse, LlmError>),
+    /// Tool execution result
+    ToolResult(ToolCallResult),
+}
+
 pub struct Agent<T: ModelProvider> {
-    llm: Arc<T>,
+    llm: T,
     mcp: McpManager,
     context: Context,
     tool_executor: ToolExecutor,
+    tool_result_stream: ReceiverStream<ToolCallResult>,
+    user_message_rx: mpsc::Receiver<UserMessage>,
+    agent_message_tx: mpsc::Sender<AgentMessage>,
 }
 
 impl<T: ModelProvider + 'static> Agent<T> {
-    pub fn new(llm: T, mcp_manager: McpManager, messages: Vec<ChatMessage>) -> Self {
+    pub fn new(
+        llm: T,
+        mcp_manager: McpManager,
+        messages: Vec<ChatMessage>,
+        user_message_rx: mpsc::Receiver<UserMessage>,
+        agent_message_tx: mpsc::Sender<AgentMessage>,
+    ) -> Self {
         let context = Context::new(messages, Vec::new());
+        let (tool_executor, tool_result_stream) = ToolExecutor::new(mcp_manager.clone());
 
         Self {
-            llm: Arc::new(llm),
-            tool_executor: ToolExecutor::new(mcp_manager.clone()),
+            llm,
+            tool_executor,
+            tool_result_stream,
             mcp: mcp_manager,
             context,
+            user_message_rx,
+            agent_message_tx,
         }
     }
 
@@ -33,19 +56,16 @@ impl<T: ModelProvider + 'static> Agent<T> {
         self.llm.display_name()
     }
 
-    pub async fn run(
-        mut self,
-        mut user_message_rx: mpsc::Receiver<UserMessage>,
-        agent_message_tx: mpsc::Sender<AgentMessage>,
-    ) {
+    pub async fn run(mut self) {
         let mut current_cancellation: Option<CancellationToken> = None;
 
-        while let Some(message) = user_message_rx.recv().await {
+        while let Some(message) = self.user_message_rx.recv().await {
             match message {
                 UserMessage::Cancel => {
                     if let Some(token) = current_cancellation.take() {
                         token.cancel();
-                        let _ = agent_message_tx
+                        let _ = self
+                            .agent_message_tx
                             .send(AgentMessage::Cancelled {
                                 message: "Processing cancelled by user".to_string(),
                             })
@@ -69,8 +89,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                         timestamp: IsoString::now(),
                     });
 
-                    self.run_agentic_loop(&agent_message_tx, cancellation_token)
-                        .await;
+                    self.run_agentic_loop(cancellation_token).await;
                 }
             }
         }
@@ -79,62 +98,59 @@ impl<T: ModelProvider + 'static> Agent<T> {
         tracing::debug!("Agent task shutting down - input channel closed");
     }
 
-    async fn run_agentic_loop(
-        &mut self,
-        output_tx: &mpsc::Sender<AgentMessage>,
-        cancellation_token: CancellationToken,
-    ) {
+    async fn run_agentic_loop(&mut self, cancellation_token: CancellationToken) {
         tracing::debug!("Starting agent task main loop");
         let model_name = self.llm.display_name();
 
         loop {
             let mut state = AgenticIterationState::new();
-            let mut llm_processor =
-                LlmStreamProcessor::new(self.llm.clone(), Arc::new(self.context.clone()));
+            let llm_stream = self.llm.stream_response(&self.context).map(AgentEvent::Llm);
+            let tool_stream = (&mut self.tool_result_stream).map(AgentEvent::ToolResult);
 
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        tracing::debug!("Iteration cancelled");
-                        break;
-                    }
+            let mut events = pin!(llm_stream.merge(tool_stream));
+            while let Some(event) = events.next().await {
+                if cancellation_token.is_cancelled() {
+                    Self::handle_cancellation(&self.agent_message_tx).await;
+                    return; // Exit entire agentic loop
+                }
 
-                    llm_response = llm_processor.recv_response(), if !llm_processor.is_complete() => {
-                        self.handle_llm_response(
-                            llm_response,
+                match event {
+                    AgentEvent::Llm(result) => {
+                        Self::handle_llm_response(
+                            result,
                             &mut state,
                             &model_name,
-                            output_tx
-                        ).await;
+                            &self.agent_message_tx,
+                            &self.tool_executor,
+                        )
+                        .await;
                     }
 
-                    tool_result = self.tool_executor.recv_result() => {
-                        if let Some(result) = tool_result {
-                            self.handle_tool_result(result, &mut state, &model_name, output_tx).await;
-                        }
+                    AgentEvent::ToolResult(result) => {
+                        Self::handle_tool_result(
+                            result,
+                            &mut state,
+                            &model_name,
+                            &self.agent_message_tx,
+                        )
+                        .await;
                     }
-                }
-
-                if cancellation_token.is_cancelled() {
-                    tracing::debug!("Iteration cancelled");
-                    break;
-                }
-
-                if state.is_complete() {
-                    tracing::debug!("Iteration complete normally");
-                    break;
                 }
             }
 
-            llm_processor.shutdown().await;
+            tracing::debug!("Event stream complete");
 
-            if cancellation_token.is_cancelled() {
-                let _ = output_tx
-                    .send(AgentMessage::Cancelled {
-                        message: "Processing cancelled".to_string(),
+            // Stream ended - send final complete message if we have accumulated content
+            if let Some(id) = state.current_message_id() {
+                let _ = self
+                    .agent_message_tx
+                    .send(AgentMessage::Text {
+                        message_id: id.to_string(),
+                        chunk: state.message_content().to_string(),
+                        is_complete: true,
+                        model_name: model_name.to_string(),
                     })
                     .await;
-                break;
             }
 
             // Update context and determine if we should continue
@@ -158,35 +174,41 @@ impl<T: ModelProvider + 'static> Agent<T> {
         }
 
         tracing::debug!("Agent task main loop exited, task ending");
-        if let Err(e) = output_tx.send(AgentMessage::Done).await {
+        if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
             tracing::warn!("Failed to send Done message: {:?}", e);
         }
     }
 
+    /// Handle cancellation event
+    async fn handle_cancellation(output_tx: &mpsc::Sender<AgentMessage>) {
+        tracing::debug!("Iteration cancelled");
+        let _ = output_tx
+            .send(AgentMessage::Cancelled {
+                message: "Processing cancelled".to_string(),
+            })
+            .await;
+    }
+
     /// Handle LLM response from the stream
     async fn handle_llm_response(
-        &self,
-        response: Option<LlmResponse>,
+        result: Result<LlmResponse, LlmError>,
         state: &mut AgenticIterationState,
         model_name: &str,
         output_tx: &mpsc::Sender<AgentMessage>,
+        tool_executor: &ToolExecutor,
     ) {
         use LlmResponse::*;
 
-        let Some(response) = response else {
-            // Stream finished - mark it and send final complete message
-            state.mark_stream_finished();
-            if let Some(id) = state.current_message_id() {
+        let response = match result {
+            Ok(response) => response,
+            Err(e) => {
                 let _ = output_tx
-                    .send(AgentMessage::Text {
-                        message_id: id.to_string(),
-                        chunk: state.message_content().to_string(),
-                        is_complete: true,
-                        model_name: model_name.to_string(),
+                    .send(AgentMessage::Error {
+                        message: e.to_string(),
                     })
                     .await;
+                return;
             }
-            return;
         };
 
         match response {
@@ -260,13 +282,13 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     .await;
 
                 state.mark_tool_sent(tool_call.id);
-                if let Err(e) = self.tool_executor.send_request(request).await {
+                if let Err(e) = tool_executor.send_request(request).await {
                     tracing::warn!("Failed to send tool request: {:?}", e);
                 }
             }
 
             Done => {
-                // Stream will be marked as finished when recv returns None
+                // No-op: stream completion is handled after the event loop
             }
 
             Error { message } => {
@@ -277,7 +299,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
     /// Handle tool result from the executor
     async fn handle_tool_result(
-        &self,
         result: ToolCallResult,
         state: &mut AgenticIterationState,
         model_name: &str,

@@ -9,8 +9,6 @@ pub struct AgenticIterationState {
     current_message_id: Option<String>,
     /// Accumulated message content
     message_content: String,
-    /// Whether the LLM stream has finished
-    llm_stream_finished: bool,
     /// Tool call IDs that have been sent but not yet completed
     pending_tools: HashSet<String>,
     /// Tool call results that have been completed
@@ -22,7 +20,6 @@ impl AgenticIterationState {
         Self {
             current_message_id: None,
             message_content: String::new(),
-            llm_stream_finished: false,
             pending_tools: HashSet::new(),
             completed_tools: Vec::new(),
         }
@@ -39,11 +36,6 @@ impl AgenticIterationState {
         self.message_content.push_str(chunk);
     }
 
-    /// Mark the LLM stream as finished
-    pub fn mark_stream_finished(&mut self) {
-        self.llm_stream_finished = true;
-    }
-
     /// Get the current message ID
     pub fn current_message_id(&self) -> Option<&str> {
         self.current_message_id.as_deref()
@@ -54,9 +46,9 @@ impl AgenticIterationState {
         &self.message_content
     }
 
-    /// Get final message content if stream is finished and we have a message
+    /// Get final message content if we have a message
     pub fn final_message_content(&self) -> Option<&str> {
-        if self.llm_stream_finished && self.current_message_id.is_some() {
+        if self.current_message_id.is_some() {
             Some(&self.message_content)
         } else {
             None
@@ -72,17 +64,6 @@ impl AgenticIterationState {
     pub fn mark_tool_complete(&mut self, result: ToolCallResult) {
         self.pending_tools.remove(&result.id);
         self.completed_tools.push(result);
-    }
-
-    /// Check if there are pending tool calls
-    pub fn has_pending(&self) -> bool {
-        !self.pending_tools.is_empty()
-    }
-
-    /// Check if this iteration is complete
-    /// Complete when: LLM stream finished AND we have final message content AND no pending tools
-    pub fn is_complete(&self) -> bool {
-        self.llm_stream_finished && self.final_message_content().is_some() && !self.has_pending()
     }
 
     /// Check if this iteration produced any tool results

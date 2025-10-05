@@ -5,39 +5,34 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
+use tokio_stream::wrappers::ReceiverStream;
 
 const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
 /// Encapsulates tool execution machinery: spawning, channels, and cleanup
 pub struct ToolExecutor {
     call_tx: mpsc::Sender<ToolCallRequest>,
-    result_rx: mpsc::Receiver<ToolCallResult>,
     handle: JoinHandle<()>,
 }
 
 impl ToolExecutor {
     /// Create a new tool executor with the given MCP manager
-    pub fn new(mcp: McpManager) -> Self {
+    /// Returns (executor, result_stream)
+    pub fn new(mcp: McpManager) -> (Self, ReceiverStream<ToolCallResult>) {
         let (call_tx, call_rx) = mpsc::channel(100);
         let (result_tx, result_rx) = mpsc::channel(100);
-
         let handle = tokio::spawn(run_tool_executor(mcp, call_rx, result_tx));
-
-        Self {
-            call_tx,
-            result_rx,
-            handle,
-        }
+        let result_stream = ReceiverStream::new(result_rx);
+        let executor = Self { call_tx, handle };
+        (executor, result_stream)
     }
 
     /// Send a tool request for execution
-    pub async fn send_request(&self, request: ToolCallRequest) -> Result<(), mpsc::error::SendError<ToolCallRequest>> {
+    pub async fn send_request(
+        &self,
+        request: ToolCallRequest,
+    ) -> Result<(), mpsc::error::SendError<ToolCallRequest>> {
         self.call_tx.send(request).await
-    }
-
-    /// Receive the next tool result
-    pub async fn recv_result(&mut self) -> Option<ToolCallResult> {
-        self.result_rx.recv().await
     }
 
     /// Shutdown the tool executor, closing channels and awaiting completion
@@ -65,7 +60,11 @@ pub async fn run_tool_executor(
                 tracing::trace!("Executing tool {} with parsed args", &request.name);
 
                 // Execute with timeout
-                match timeout(TOOL_EXECUTION_TIMEOUT, mcp.execute_tool(&request.name, args)).await
+                match timeout(
+                    TOOL_EXECUTION_TIMEOUT,
+                    mcp.execute_tool(&request.name, args),
+                )
+                .await
                 {
                     Ok(Ok(result)) => {
                         tracing::trace!(
@@ -85,7 +84,10 @@ pub async fn run_tool_executor(
                             &request.name,
                             TOOL_EXECUTION_TIMEOUT
                         );
-                        format!("Tool execution timed out after {:?}", TOOL_EXECUTION_TIMEOUT)
+                        format!(
+                            "Tool execution timed out after {:?}",
+                            TOOL_EXECUTION_TIMEOUT
+                        )
                     }
                 }
             }

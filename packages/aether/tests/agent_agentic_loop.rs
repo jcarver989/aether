@@ -4,7 +4,6 @@ use aether::{
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };
-use futures::{StreamExt, pin_mut};
 use rmcp::ServiceExt;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
@@ -90,12 +89,11 @@ async fn test_simple_tool_execution() {
             name: "test_mcp".to_string(),
             server: test_mcp.into_dyn(),
         })
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    let stream = agent.send(UserMessage::text("Write a test file")).await;
-    pin_mut!(stream);
+    agent.send(UserMessage::text("Write a test file")).await.unwrap();
 
     let mut events = Vec::new();
     let mut completed = false;
@@ -105,7 +103,7 @@ async fn test_simple_tool_execution() {
     while !completed && iterations < MAX_ITERATIONS {
         iterations += 1;
 
-        match tokio::time::timeout(std::time::Duration::from_millis(100), stream.next()).await {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), agent.recv()).await {
             Ok(Some(event)) => {
                 match &event {
                     AgentMessage::Text {
@@ -117,6 +115,9 @@ async fn test_simple_tool_execution() {
                         is_complete: true, ..
                     } => {
                         // Tool call completed - this is what we're waiting for
+                        completed = true;
+                    }
+                    AgentMessage::Done => {
                         completed = true;
                     }
                     _ => {}
@@ -234,12 +235,11 @@ async fn test_tool_execution_error_handling() {
             name: "test_mcp".to_string(),
             server: test_mcp.into_dyn(),
         })
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    let stream = agent.send(UserMessage::text("Write a file")).await;
-    pin_mut!(stream);
+    agent.send(UserMessage::text("Write a file")).await.unwrap();
 
     let mut events = Vec::new();
     let mut completed = false;
@@ -249,7 +249,7 @@ async fn test_tool_execution_error_handling() {
     while !completed && iterations < MAX_ITERATIONS {
         iterations += 1;
 
-        match tokio::time::timeout(std::time::Duration::from_millis(100), stream.next()).await {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), agent.recv()).await {
             Ok(Some(event)) => {
                 match &event {
                     AgentMessage::Text {
@@ -261,6 +261,9 @@ async fn test_tool_execution_error_handling() {
                         is_complete: true, ..
                     } => {
                         // Tool call completed - this is what we're waiting for
+                        completed = true;
+                    }
+                    AgentMessage::Done => {
                         completed = true;
                     }
                     _ => {}

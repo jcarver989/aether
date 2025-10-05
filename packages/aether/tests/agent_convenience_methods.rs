@@ -17,7 +17,7 @@ async fn test_agent_with_http_mcp_method() {
         config,
     };
 
-    let result = agent(llm).mcp(mcp_config).build().await;
+    let result = agent(llm).mcp(mcp_config).spawn().await;
 
     // For this test, we expect an error since no actual server is running
     // but the method should exist and be callable
@@ -37,7 +37,7 @@ async fn test_agent_with_stdio_mcp_method() {
         env,
     };
 
-    let result = agent(llm).mcp(mcp_config).build().await;
+    let result = agent(llm).mcp(mcp_config).spawn().await;
 
     // For this test, we expect an error since stdio MCP is not yet implemented
     assert!(result.is_err());
@@ -48,7 +48,7 @@ async fn test_agent_with_in_memory_mcp_method() {
     let llm = FakeLlmProvider::new(vec![]);
 
     // Test with coding tools - this is now done via coding_tools() method
-    let result = agent(llm).build().await;
+    let result = agent(llm).spawn().await;
 
     assert!(result.is_ok());
 }
@@ -58,7 +58,7 @@ async fn test_agent_with_file_server_mcp() {
     let llm = FakeLlmProvider::new(vec![]);
 
     // Test with coding tools which includes file operations
-    let result = agent(llm).build().await;
+    let result = agent(llm).spawn().await;
 
     assert!(result.is_ok());
 }
@@ -68,7 +68,7 @@ async fn test_agent_method_chaining() {
     let llm = FakeLlmProvider::new(vec![]);
 
     // Test method chaining works
-    let result = agent(llm).system_prompt("test system prompt").build().await;
+    let result = agent(llm).system_prompt("test system prompt").spawn().await;
 
     assert!(result.is_ok());
 }
