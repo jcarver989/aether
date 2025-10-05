@@ -60,7 +60,6 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
 
     pub async fn spawn(self) -> Result<AgentHandle> {
         let mut messages = Vec::new();
-
         if let Some(system_prompt) = &self.system_prompt {
             messages.push(ChatMessage::System {
                 content: system_prompt.clone(),

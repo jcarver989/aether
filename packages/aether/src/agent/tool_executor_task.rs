@@ -1,7 +1,6 @@
 use crate::agent::ToolCallResult;
 use crate::mcp::McpManager;
 use crate::types::ToolCallRequest;
-use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -9,13 +8,11 @@ use tokio::time::timeout;
 
 const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
-/// Encapsulates tool execution machinery: spawning, channels, cleanup, and bookkeeping
+/// Encapsulates tool execution machinery: spawning, channels, and cleanup
 pub struct ToolExecutor {
     call_tx: mpsc::Sender<ToolCallRequest>,
     result_rx: mpsc::Receiver<ToolCallResult>,
     handle: JoinHandle<()>,
-    pending: HashSet<String>,
-    completed: Vec<ToolCallResult>,
 }
 
 impl ToolExecutor {
@@ -30,41 +27,17 @@ impl ToolExecutor {
             call_tx,
             result_rx,
             handle,
-            pending: HashSet::new(),
-            completed: Vec::new(),
         }
     }
 
-    /// Send a tool request and track it as pending
-    pub async fn send_request(&mut self, request: ToolCallRequest) -> Result<(), mpsc::error::SendError<ToolCallRequest>> {
-        self.pending.insert(request.id.clone());
+    /// Send a tool request for execution
+    pub async fn send_request(&self, request: ToolCallRequest) -> Result<(), mpsc::error::SendError<ToolCallRequest>> {
         self.call_tx.send(request).await
     }
 
-    /// Receive the next tool result and update bookkeeping
+    /// Receive the next tool result
     pub async fn recv_result(&mut self) -> Option<ToolCallResult> {
-        if let Some(result) = self.result_rx.recv().await {
-            self.pending.remove(&result.id);
-            self.completed.push(result.clone());
-            Some(result)
-        } else {
-            None
-        }
-    }
-
-    /// Check if there are pending tool calls
-    pub fn has_pending(&self) -> bool {
-        !self.pending.is_empty()
-    }
-
-    /// Check if there are completed tool results
-    pub fn has_results(&self) -> bool {
-        !self.completed.is_empty()
-    }
-
-    /// Take all completed tool results, clearing the internal list
-    pub fn take_results(&mut self) -> Vec<ToolCallResult> {
-        std::mem::take(&mut self.completed)
+        self.result_rx.recv().await
     }
 
     /// Shutdown the tool executor, closing channels and awaiting completion

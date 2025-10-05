@@ -25,14 +25,11 @@ impl LlmStreamProcessor {
             while let Some(event) = response_stream.next().await {
                 match event {
                     Ok(response) => {
-                        let is_done = matches!(response, LlmResponse::Done);
                         if response_tx.send(response).await.is_err() {
                             break;
                         }
-                        if is_done {
-                            break;
-                        }
                     }
+
                     Err(e) => {
                         let _ = response_tx
                             .send(LlmResponse::Error {

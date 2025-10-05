@@ -1,6 +1,7 @@
 mod agent;
 mod agent_builder;
 pub mod error;
+mod iteration_state;
 mod llm_stream_processor;
 mod messages;
 mod process_llm_stream_task;

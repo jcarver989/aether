@@ -1,28 +1,29 @@
+use crate::agent::iteration_state::AgenticIterationState;
 use crate::agent::llm_stream_processor::LlmStreamProcessor;
 use crate::agent::tool_executor_task::ToolExecutor;
 use crate::agent::{AgentMessage, UserMessage};
 use crate::llm::Context;
 use crate::llm::ModelProvider;
 use crate::mcp::McpManager;
-use crate::types::{ChatMessage, IsoString, LlmResponse};
+use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{Level, span};
 
 pub struct Agent<T: ModelProvider> {
     llm: Arc<T>,
     mcp: McpManager,
     context: Context,
+    tool_executor: ToolExecutor,
 }
 
 impl<T: ModelProvider + 'static> Agent<T> {
-    /// Create a new agent
-    pub(crate) fn new(llm: T, mcp_manager: McpManager, messages: Vec<ChatMessage>) -> Self {
+    pub fn new(llm: T, mcp_manager: McpManager, messages: Vec<ChatMessage>) -> Self {
         let context = Context::new(messages, Vec::new());
 
         Self {
             llm: Arc::new(llm),
+            tool_executor: ToolExecutor::new(mcp_manager.clone()),
             mcp: mcp_manager,
             context,
         }
@@ -32,21 +33,19 @@ impl<T: ModelProvider + 'static> Agent<T> {
         self.llm.display_name()
     }
 
-    /// Main agent loop - runs in a dedicated task
-    pub(crate) async fn run(
+    pub async fn run(
         mut self,
-        mut input_rx: mpsc::Receiver<UserMessage>,
-        output_tx: mpsc::Sender<AgentMessage>,
+        mut user_message_rx: mpsc::Receiver<UserMessage>,
+        agent_message_tx: mpsc::Sender<AgentMessage>,
     ) {
         let mut current_cancellation: Option<CancellationToken> = None;
 
-        while let Some(message) = input_rx.recv().await {
+        while let Some(message) = user_message_rx.recv().await {
             match message {
                 UserMessage::Cancel => {
-                    // Cancel current processing if any
                     if let Some(token) = current_cancellation.take() {
                         token.cancel();
-                        let _ = output_tx
+                        let _ = agent_message_tx
                             .send(AgentMessage::Cancelled {
                                 message: "Processing cancelled by user".to_string(),
                             })
@@ -55,16 +54,13 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 }
 
                 UserMessage::Text { content } => {
-                    // Cancel any ongoing processing
                     if let Some(token) = current_cancellation.take() {
                         token.cancel();
                     }
 
-                    // Create new cancellation token for this message
                     let cancellation_token = CancellationToken::new();
                     current_cancellation = Some(cancellation_token.clone());
 
-                    // Update context with tools before processing
                     let tools = self.mcp.tool_definitions();
                     self.context.set_tools(tools);
 
@@ -73,119 +69,66 @@ impl<T: ModelProvider + 'static> Agent<T> {
                         timestamp: IsoString::now(),
                     });
 
-                    // Run the agentic loop directly
-                    self.run_agentic_loop(&output_tx, cancellation_token).await;
+                    self.run_agentic_loop(&agent_message_tx, cancellation_token)
+                        .await;
                 }
             }
         }
 
+        self.tool_executor.shutdown().await;
         tracing::debug!("Agent task shutting down - input channel closed");
     }
 
-    /// Run the agentic loop to completion with cancellation support
     async fn run_agentic_loop(
         &mut self,
         output_tx: &mpsc::Sender<AgentMessage>,
         cancellation_token: CancellationToken,
     ) {
-        let mut tool_executor = ToolExecutor::new(self.mcp.clone());
-
-        let span = span!(Level::DEBUG, "agent_task");
-        let _guard = span.enter();
-
         tracing::debug!("Starting agent task main loop");
-
         let model_name = self.llm.display_name();
 
-        // Main agentic loop
         loop {
-            // Check for cancellation before starting next iteration
-            if cancellation_token.is_cancelled() {
-                tracing::debug!("Agentic loop cancelled");
-                let _ = output_tx
-                    .send(AgentMessage::Cancelled {
-                        message: "Processing cancelled".to_string(),
-                    })
-                    .await;
-                break;
-            }
-
-            // Track iteration completion state
-            let mut llm_stream_finished = false;
-            let mut final_message_content: Option<String> = None;
-            let mut cancelled = false;
-            let mut current_message_id: Option<String> = None;
-            let mut message_content = String::new();
-
+            let mut state = AgenticIterationState::new();
             let mut llm_processor =
                 LlmStreamProcessor::new(self.llm.clone(), Arc::new(self.context.clone()));
 
-            // Process LLM and tool messages until iteration complete or cancellation
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
                         tracing::debug!("Iteration cancelled");
-                        cancelled = true;
                         break;
                     }
 
-                    llm_response = llm_processor.recv_response() => {
-                        match llm_response {
-                            Some(response) => {
-                                self.handle_llm_response(
-                                    response,
-                                    &mut tool_executor,
-                                    &model_name,
-                                    &mut current_message_id,
-                                    &mut message_content,
-                                    output_tx
-                                ).await;
-                            }
-                            None => {
-                                llm_stream_finished = true;
-                                // Send final complete message if we have one
-                                if let Some(ref id) = current_message_id {
-                                    final_message_content = Some(message_content.clone());
-                                    let _ = output_tx.send(AgentMessage::Text {
-                                        message_id: id.clone(),
-                                        chunk: message_content.clone(),
-                                        is_complete: true,
-                                        model_name: model_name.clone(),
-                                    }).await;
-                                }
-                            }
-                        }
+                    llm_response = llm_processor.recv_response(), if !llm_processor.is_complete() => {
+                        self.handle_llm_response(
+                            llm_response,
+                            &mut state,
+                            &model_name,
+                            output_tx
+                        ).await;
                     }
 
-                    tool_result = tool_executor.recv_result() => {
+                    tool_result = self.tool_executor.recv_result() => {
                         if let Some(result) = tool_result {
-                            self.handle_tool_result(result, &model_name, output_tx).await;
+                            self.handle_tool_result(result, &mut state, &model_name, output_tx).await;
                         }
                     }
                 }
 
-                // Check if iteration is complete:
-                // If cancelled: exit immediately (don't wait for pending tools)
-                // If not cancelled: wait for LLM stream to finish AND have a complete message AND no pending tools
-                if cancelled {
+                if cancellation_token.is_cancelled() {
                     tracing::debug!("Iteration cancelled");
                     break;
                 }
 
-                if llm_stream_finished
-                    && final_message_content.is_some()
-                    && !tool_executor.has_pending()
-                {
+                if state.is_complete() {
                     tracing::debug!("Iteration complete normally");
                     break;
                 }
             }
 
-            // Shutdown the LLM processor
             llm_processor.shutdown().await;
 
-            // Handle cancellation
-            if cancelled {
+            if cancellation_token.is_cancelled() {
                 let _ = output_tx
                     .send(AgentMessage::Cancelled {
                         message: "Processing cancelled".to_string(),
@@ -194,16 +137,15 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 break;
             }
 
-            // Update context if LLM completed successfully
-            let should_continue = if let Some(final_message) = final_message_content {
-                let tool_results = tool_executor.take_results();
-                self.update_context(&tool_results, &final_message);
+            // Update context and determine if we should continue
+            let should_continue = state.should_continue_loop();
 
-                // Continue loop if we had tool results
-                !tool_results.is_empty()
-            } else {
-                false
-            };
+            if state.final_message_content().is_some() {
+                let messages = state.into_context_messages();
+                for message in messages {
+                    self.context.add_message(message);
+                }
+            }
 
             tracing::debug!(
                 "Agent iteration complete, should_continue: {}",
@@ -215,9 +157,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
             }
         }
 
-        // Clean up tool executor
-        tool_executor.shutdown().await;
-
         tracing::debug!("Agent task main loop exited, task ending");
         if let Err(e) = output_tx.send(AgentMessage::Done).await {
             tracing::warn!("Failed to send Done message: {:?}", e);
@@ -227,27 +166,40 @@ impl<T: ModelProvider + 'static> Agent<T> {
     /// Handle LLM response from the stream
     async fn handle_llm_response(
         &self,
-        response: LlmResponse,
-        tool_executor: &mut ToolExecutor,
+        response: Option<LlmResponse>,
+        state: &mut AgenticIterationState,
         model_name: &str,
-        current_message_id: &mut Option<String>,
-        message_content: &mut String,
         output_tx: &mpsc::Sender<AgentMessage>,
     ) {
         use LlmResponse::*;
 
+        let Some(response) = response else {
+            // Stream finished - mark it and send final complete message
+            state.mark_stream_finished();
+            if let Some(id) = state.current_message_id() {
+                let _ = output_tx
+                    .send(AgentMessage::Text {
+                        message_id: id.to_string(),
+                        chunk: state.message_content().to_string(),
+                        is_complete: true,
+                        model_name: model_name.to_string(),
+                    })
+                    .await;
+            }
+            return;
+        };
+
         match response {
             Start { message_id } => {
-                *current_message_id = Some(message_id);
-                message_content.clear();
+                state.set_message_id(message_id);
             }
 
             Text { chunk } => {
-                message_content.push_str(&chunk);
-                if let Some(id) = current_message_id {
+                state.append_content(&chunk);
+                if let Some(id) = state.current_message_id() {
                     let _ = output_tx
                         .send(AgentMessage::Text {
-                            message_id: id.clone(),
+                            message_id: id.to_string(),
                             chunk,
                             is_complete: false,
                             model_name: model_name.to_string(),
@@ -289,6 +241,12 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     tool_call.id
                 );
 
+                let request = ToolCallRequest {
+                    id: tool_call.id.clone(),
+                    name: tool_call.name.clone(),
+                    arguments: tool_call.arguments.clone(),
+                };
+
                 // Send tool call message to UI
                 let _ = output_tx
                     .send(AgentMessage::ToolCall {
@@ -301,13 +259,8 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     })
                     .await;
 
-                // Execute the tool
-                let request = crate::types::ToolCallRequest {
-                    id: tool_call.id,
-                    name: tool_call.name,
-                    arguments: tool_call.arguments,
-                };
-                if let Err(e) = tool_executor.send_request(request).await {
+                state.mark_tool_sent(tool_call.id);
+                if let Err(e) = self.tool_executor.send_request(request).await {
                     tracing::warn!("Failed to send tool request: {:?}", e);
                 }
             }
@@ -326,6 +279,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
     async fn handle_tool_result(
         &self,
         result: ToolCallResult,
+        state: &mut AgenticIterationState,
         model_name: &str,
         output_tx: &mpsc::Sender<AgentMessage>,
     ) {
@@ -335,6 +289,9 @@ impl<T: ModelProvider + 'static> Agent<T> {
             result.result.len()
         );
         tracing::trace!("Processing tool result for tool_call_id: {}", result.id);
+
+        // Mark tool as complete in state
+        state.mark_tool_complete(result.clone());
 
         // Send completion message
         let msg = AgentMessage::ToolCall {
@@ -348,32 +305,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
         if let Err(e) = output_tx.send(msg).await {
             tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
-        }
-    }
-
-    /// Update the context with results from this iteration
-    fn update_context(&mut self, tool_results: &[ToolCallResult], final_message: &str) {
-        let mut tool_requests = Vec::new();
-        for result in tool_results {
-            tool_requests.push(result.request.clone());
-        }
-
-        // Add assistant message with tool calls
-        let assistant_msg = ChatMessage::Assistant {
-            content: final_message.to_string(),
-            timestamp: IsoString::now(),
-            tool_calls: tool_requests,
-        };
-
-        self.context.add_message(assistant_msg);
-
-        // Add tool results
-        for result in tool_results {
-            self.context.add_message(ChatMessage::ToolCallResult {
-                tool_call_id: result.id.clone(),
-                content: result.result.clone(),
-                timestamp: IsoString::now(),
-            });
         }
     }
 }
