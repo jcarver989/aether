@@ -16,6 +16,8 @@ pub enum McpError {
     },
     /// Tool execution returned an error
     ToolExecutionError(String),
+    /// Tool discovery failed
+    ToolDiscoveryFailed(String),
     /// Server connection failed
     ConnectionFailed(String),
     /// Server startup failed
@@ -48,6 +50,7 @@ impl fmt::Display for McpError {
                 )
             }
             McpError::ToolExecutionError(msg) => write!(f, "Tool execution failed: {}", msg),
+            McpError::ToolDiscoveryFailed(msg) => write!(f, "Tool discovery failed: {}", msg),
             McpError::ConnectionFailed(msg) => write!(f, "Connection failed: {}", msg),
             McpError::ServerStartupFailed(msg) => write!(f, "Server startup failed: {}", msg),
             McpError::TransportError(msg) => write!(f, "Transport error: {}", msg),

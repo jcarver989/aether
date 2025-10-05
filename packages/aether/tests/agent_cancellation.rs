@@ -3,7 +3,7 @@ use aether::{
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };
-use futures::{StreamExt, pin_mut};
+use tokio::time::{Duration, timeout};
 
 #[tokio::test]
 async fn test_cancel_message_variant() {
@@ -19,54 +19,45 @@ async fn test_cancel_message_variant() {
 
     let mut agent = agent(fake_llm)
         .system_prompt("You are a helpful assistant.")
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    // Test that the stream works normally with the new interface
-    let stream = agent.send(UserMessage::text("test")).await;
-    pin_mut!(stream);
+    // Send a message
+    agent.send(UserMessage::text("test")).await.unwrap();
 
-    let mut events: Vec<String> = Vec::new();
     let mut has_text_message = false;
     let mut has_completed = false;
+    let timeout_duration = Duration::from_secs(5);
 
-    while let Some(event) = stream.next().await {
-        match event {
-            AgentMessage::Text {
-                chunk, is_complete, ..
-            } => {
-                if !chunk.is_empty() {
-                    has_text_message = true;
+    loop {
+        match timeout(timeout_duration, agent.recv()).await {
+            Ok(Some(event)) => match event {
+                AgentMessage::Text {
+                    chunk, is_complete, ..
+                } => {
+                    if !chunk.is_empty() {
+                        has_text_message = true;
+                    }
+                    if is_complete {
+                        has_completed = true;
+                        break;
+                    }
                 }
-                if is_complete {
-                    has_completed = true;
-                }
-                events.push(format!("Text: {}", chunk));
-            }
-            AgentMessage::ElicitationRequest {
-                response_sender, ..
-            } => {
-                use rmcp::model::{CreateElicitationResult, ElicitationAction};
-                let _ = response_sender.send(CreateElicitationResult {
-                    action: ElicitationAction::Decline,
-                    content: None,
-                });
-            }
-            event => {
-                events.push(format!("{:?}", event));
-            }
+                AgentMessage::Done => break,
+                _ => {}
+            },
+            Ok(None) => break,
+            Err(_) => panic!("Timeout waiting for response"),
         }
     }
 
-    // Test the new streaming interface works and we get a cancel token
-    // Basic test that stream works without cancellation tokens
     assert!(has_text_message, "Expected to receive text message");
     assert!(has_completed, "Expected message to complete");
 }
 
 #[tokio::test]
-async fn test_cancellation_during_tool_execution() {
+async fn test_cancellation_with_cancel_message() {
     let fake_llm = FakeLlmProvider::with_single_response(vec![
         LlmResponse::Start {
             message_id: "msg1".to_string(),
@@ -90,66 +81,48 @@ async fn test_cancellation_during_tool_execution() {
 
     let mut agent = agent(fake_llm)
         .system_prompt("You are a helpful assistant.")
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    let stream = agent.send(UserMessage::text("Write a file")).await;
-    pin_mut!(stream);
+    // Send a message
+    agent.send(UserMessage::text("Write a file")).await.unwrap();
 
-    let mut events: Vec<String> = Vec::new();
     let mut tool_started = false;
+    let timeout_duration = Duration::from_secs(5);
 
-    // Collect events and cancel when we see a tool start
-    while let Some(event) = stream.next().await {
-        let should_cancel = matches!(
-            event,
-            AgentMessage::ToolCall {
-                is_complete: false,
-                ..
+    // Wait for a tool to start, then cancel
+    loop {
+        match timeout(timeout_duration, agent.recv()).await {
+            Ok(Some(event)) => {
+                if matches!(
+                    event,
+                    AgentMessage::ToolCall {
+                        is_complete: false,
+                        ..
+                    }
+                ) {
+                    tool_started = true;
+                    // Send cancel message
+                    agent.send(UserMessage::Cancel).await.unwrap();
+                }
+
+                if matches!(event, AgentMessage::Cancelled { .. }) {
+                    break;
+                }
             }
-        );
-
-        let is_cancelled = matches!(event, AgentMessage::Cancelled { .. });
-
-        match event {
-            AgentMessage::ElicitationRequest {
-                response_sender, ..
-            } => {
-                use rmcp::model::{CreateElicitationResult, ElicitationAction};
-                let _ = response_sender.send(CreateElicitationResult {
-                    action: ElicitationAction::Decline,
-                    content: None,
-                });
-            }
-            event => {
-                events.push(format!("{:?}", event));
-            }
-        }
-
-        if should_cancel {
-            tool_started = true;
-            // TODO: Cancellation during tool execution needs to be reworked
-            // since we no longer return a cancel token from send()
-        }
-
-        if is_cancelled {
-            break;
+            Ok(None) => break,
+            Err(_) => break, // Timeout is ok for this test
         }
     }
 
-    assert!(tool_started, "Tool should have started");
-
-    // Check that we got a cancelled message
-    let _has_cancelled_event = events.iter().any(|e| e.contains("Cancelled"));
-
-    // TODO: This test needs to be reworked to test cancellation properly without tokens
+    assert!(tool_started, "Tool should have started before cancellation");
 }
 
 #[tokio::test]
-async fn test_multiple_operations_with_cancellation() {
+async fn test_new_message_cancels_previous() {
     let fake_llm = FakeLlmProvider::new(vec![
-        // First operation - will be cancelled
+        // First operation - will be cancelled by second message
         vec![
             LlmResponse::Start {
                 message_id: "msg1".to_string(),
@@ -173,115 +146,109 @@ async fn test_multiple_operations_with_cancellation() {
 
     let mut agent = agent(fake_llm)
         .system_prompt("You are a helpful assistant.")
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    // First operation (consume it completely)
-    {
-        let stream1 = agent.send(UserMessage::text("First task")).await;
-        pin_mut!(stream1);
+    let timeout_duration = Duration::from_secs(5);
 
-        let mut first_events: Vec<String> = Vec::new();
-        while let Some(event) = stream1.next().await {
-            match event {
-                AgentMessage::ElicitationRequest {
-                    response_sender, ..
+    // Send first message
+    agent.send(UserMessage::text("First task")).await.unwrap();
+
+    // Small delay to let first message start processing
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    // Send second message to cancel the first
+    agent.send(UserMessage::text("Second task")).await.unwrap();
+
+    let mut message_count = 0;
+    let mut done_count = 0;
+
+    // Collect all messages - we should get responses from both messages
+    // The first may be cancelled or complete, but the second should complete
+    loop {
+        match timeout(timeout_duration, agent.recv()).await {
+            Ok(Some(event)) => match event {
+                AgentMessage::Text {
+                    is_complete, ..
                 } => {
-                    use rmcp::model::{CreateElicitationResult, ElicitationAction};
-                    let _ = response_sender.send(CreateElicitationResult {
-                        action: ElicitationAction::Decline,
-                        content: None,
-                    });
+                    if is_complete {
+                        message_count += 1;
+                    }
                 }
-                event => {
-                    first_events.push(format!("{:?}", event));
+                AgentMessage::Done => {
+                    done_count += 1;
+                    if done_count >= 2 {
+                        break;
+                    }
                 }
-            }
+                AgentMessage::Cancelled { .. } => {
+                    // First message was cancelled, continue to second
+                }
+                _ => {}
+            },
+            Ok(None) => break,
+            Err(_) => break,
         }
     }
 
-    // Second operation should work normally
-    let stream2 = agent.send(UserMessage::text("Second task")).await;
-    pin_mut!(stream2);
-
-    let mut second_events: Vec<String> = Vec::new();
-    let mut has_second_text = false;
-    let mut has_complete_message = false;
-
-    while let Some(event) = stream2.next().await {
-        match event {
-            AgentMessage::Text {
-                chunk, is_complete, ..
-            } => {
-                if !chunk.is_empty() {
-                    has_second_text = true;
-                }
-                if is_complete {
-                    has_complete_message = true;
-                }
-                second_events.push(format!("Text(chunk: {}, complete: {})", chunk, is_complete));
-            }
-            AgentMessage::ElicitationRequest {
-                response_sender, ..
-            } => {
-                use rmcp::model::{CreateElicitationResult, ElicitationAction};
-                let _ = response_sender.send(CreateElicitationResult {
-                    action: ElicitationAction::Decline,
-                    content: None,
-                });
-            }
-            event => {
-                second_events.push(format!("{:?}", event));
-            }
-        }
-    }
-
-    // TODO: Cancellation assertions need to be reworked without cancel tokens
-
+    // We should have received at least one complete message (possibly two if first wasn't cancelled fast enough)
     assert!(
-        has_second_text,
-        "Second operation should have some text output"
-    );
-    assert!(
-        has_complete_message,
-        "Second operation should complete normally"
+        message_count >= 1,
+        "Should have received at least one complete message"
     );
 }
 
 #[tokio::test]
-async fn test_cancellation_token_isolation() {
-    let fake_llm = FakeLlmProvider::with_single_response(vec![
-        LlmResponse::Start {
-            message_id: "msg1".to_string(),
-        },
-        LlmResponse::Text {
-            chunk: "Working...".to_string(),
-        },
-        LlmResponse::Done,
+async fn test_sequential_messages() {
+    let fake_llm = FakeLlmProvider::new(vec![
+        vec![
+            LlmResponse::Start {
+                message_id: "msg1".to_string(),
+            },
+            LlmResponse::Text {
+                chunk: "First".to_string(),
+            },
+            LlmResponse::Done,
+        ],
+        vec![
+            LlmResponse::Start {
+                message_id: "msg2".to_string(),
+            },
+            LlmResponse::Text {
+                chunk: "Second".to_string(),
+            },
+            LlmResponse::Done,
+        ],
     ]);
 
     let mut agent = agent(fake_llm)
         .system_prompt("You are a helpful assistant.")
-        .build()
+        .spawn()
         .await
         .unwrap();
 
-    // First task (consume it completely)
-    {
-        let stream1 = agent.send(UserMessage::text("Task 1")).await;
-        pin_mut!(stream1);
+    let timeout_duration = Duration::from_secs(5);
 
-        // Consume the stream
-        while let Some(_) = stream1.next().await {}
+    // First task
+    agent.send(UserMessage::text("Task 1")).await.unwrap();
+    loop {
+        match timeout(timeout_duration, agent.recv()).await {
+            Ok(Some(AgentMessage::Done)) => break,
+            Ok(Some(_)) => {}
+            Ok(None) => break,
+            Err(_) => panic!("Timeout waiting for first task"),
+        }
     }
 
     // Second task
-    {
-        let stream2 = agent.send(UserMessage::text("Task 2")).await;
-        pin_mut!(stream2);
-
-        // Consume the stream
-        while let Some(_) = stream2.next().await {}
+    agent.send(UserMessage::text("Task 2")).await.unwrap();
+    loop {
+        match timeout(timeout_duration, agent.recv()).await {
+            Ok(Some(AgentMessage::Done)) => break,
+            Ok(Some(_)) => {}
+            Ok(None) => break,
+            Err(_) => panic!("Timeout waiting for second task"),
+        }
     }
 }

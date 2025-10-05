@@ -16,7 +16,7 @@ async fn test_mcp_client_creation() {
 #[tokio::test]
 async fn test_mcp_client_with_http_server() {
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut client = McpManager::new(elicitation_tx);
+    let client = McpManager::new(elicitation_tx);
     let server_name = "test_server".to_string();
     let url = TEST_SERVER_URL.to_string();
     let _headers: HashMap<String, String> = HashMap::new();
@@ -40,7 +40,7 @@ async fn test_mcp_client_with_http_server() {
 #[tokio::test]
 async fn test_mcp_client_with_headers() {
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut client = McpManager::new(elicitation_tx);
+    let client = McpManager::new(elicitation_tx);
     let server_name = "test_server_with_headers".to_string();
     let url = "https://api.example.com/mcp".to_string();
 
@@ -67,12 +67,12 @@ async fn test_mcp_client_with_headers() {
 
 #[tokio::test]
 async fn test_mcp_client_tool_discovery() {
-    let mut client = create_test_mcp_client();
+    let client = create_test_mcp_client();
 
     // Test that tool discovery succeeds when no servers connected
     client.discover_tools().await.unwrap();
 
-    // Test that tools are empty when no servers connected
-    let tools = client.tools();
-    assert!(tools.is_empty());
+    // Test that tool definitions are empty when no servers connected
+    let tool_definitions = client.tool_definitions();
+    assert!(tool_definitions.is_empty());
 }

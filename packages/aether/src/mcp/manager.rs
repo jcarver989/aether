@@ -1,4 +1,6 @@
 use crate::mcp::{McpError, Result};
+use crate::types::ToolDefinition;
+use futures::future::join_all;
 use rmcp::{
     RoleClient, RoleServer, ServiceExt,
     model::{
@@ -14,7 +16,10 @@ use rmcp::{
     },
 };
 use serde_json::Value;
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use tracing::{Level, span};
 
 use crate::{mcp::client::McpClient, transport::create_in_memory_transport};
@@ -55,9 +60,11 @@ pub enum McpServerConfig {
 }
 
 /// Manages connections to multiple MCP servers and their tools
+#[derive(Clone)]
 pub struct McpManager {
-    servers: HashMap<String, McpServerConnection>,
-    tools: HashMap<String, Tool>, // Now keyed by "server_name::tool_name"
+    servers: Arc<Mutex<HashMap<String, McpServerConnection>>>,
+    tools: Arc<Mutex<HashMap<String, Tool>>>,
+    tool_definitions: Arc<Mutex<Vec<ToolDefinition>>>,
     client_info: ClientInfo,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
 }
@@ -65,8 +72,9 @@ pub struct McpManager {
 impl McpManager {
     pub fn new(elicitation_sender: mpsc::Sender<ElicitationRequest>) -> Self {
         Self {
-            servers: HashMap::new(),
-            tools: HashMap::new(),
+            servers: Arc::new(Mutex::new(HashMap::new())),
+            tools: Arc::new(Mutex::new(HashMap::new())),
+            tool_definitions: Arc::new(Mutex::new(Vec::new())),
             client_info: ClientInfo {
                 protocol_version: Default::default(),
                 capabilities: ClientCapabilities {
@@ -91,7 +99,16 @@ impl McpManager {
         McpClient::new(self.client_info.clone(), self.elicitation_sender.clone())
     }
 
-    pub async fn add_mcp(&mut self, config: McpServerConfig) -> Result<()> {
+    pub async fn add_mcps(&self, configs: Vec<McpServerConfig>) -> Result<()> {
+        let futures = configs.into_iter().map(|config| self.add_mcp(config));
+        join_all(futures)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?;
+        Ok(())
+    }
+
+    pub async fn add_mcp(&self, config: McpServerConfig) -> Result<()> {
         use McpServerConfig::*;
         match config {
             Http { name, config } => {
@@ -103,13 +120,17 @@ impl McpManager {
                     ))
                 })?;
 
+                // Discover tools before adding to servers map
+                self.discover_tools_for_server(&name, &client).await?;
+
                 let server_connection = McpServerConnection {
                     _name: name.clone(),
                     client,
                     server_task: None,
                 };
 
-                self.servers.insert(name, server_connection);
+                self.servers.lock().unwrap().insert(name, server_connection);
+
                 Ok(())
             }
 
@@ -128,7 +149,10 @@ impl McpManager {
                 let mcp_client = self.create_mcp_client();
                 let client = mcp_client.serve(TokioChildProcess::new(cmd)?).await?;
 
-                self.servers.insert(
+                // Discover tools before adding to servers map
+                self.discover_tools_for_server(&name, &client).await?;
+
+                self.servers.lock().unwrap().insert(
                     name.clone(),
                     McpServerConnection {
                         _name: name.clone(),
@@ -164,38 +188,67 @@ impl McpManager {
                         ))
                     })?;
 
+                // Discover tools before adding to servers map
+                self.discover_tools_for_server(&name, &client).await?;
+
                 let server_connection = McpServerConnection {
                     _name: name.clone(),
                     client,
                     server_task: Some(server_handle),
                 };
 
-                self.servers.insert(name, server_connection);
+                self.servers.lock().unwrap().insert(name, server_connection);
 
                 Ok(())
             }
         }
     }
 
-    pub async fn discover_tools(&mut self) -> Result<()> {
-        self.tools.clear();
+    /// Discover tools for all connected servers (useful for refreshing tool list)
+    pub async fn discover_tools(&self) -> Result<()> {
+        // Clear existing tools before rediscovery
+        {
+            self.tools.lock().unwrap().clear();
+            self.tool_definitions.lock().unwrap().clear();
+        }
 
-        for (server_name, server) in &self.servers {
-            match server.client.list_tools(None).await {
-                Ok(tools_response) => {
-                    for rmcp_tool in tools_response.tools {
-                        let tool_name = rmcp_tool.name.to_string();
-                        let namespaced_tool_name =
-                            create_namespaced_tool_name(server_name, &tool_name);
-                        let tool = Tool::from(rmcp_tool);
+        let servers = self.servers.lock().unwrap();
+        for (name, server) in servers.iter() {
+            self.discover_tools_for_server(name, &server.client).await?;
+        }
 
-                        self.tools.insert(namespaced_tool_name, tool);
-                    }
-                }
-                Err(_) => {
-                    continue;
-                }
-            }
+        Ok(())
+    }
+
+    /// Discover tools for a specific server and add them to the manager's bookkeeping
+    async fn discover_tools_for_server(
+        &self,
+        server_name: &str,
+        client: &RunningService<RoleClient, McpClient>,
+    ) -> Result<()> {
+        let tools_response = client.list_tools(None).await.map_err(|e| {
+            McpError::ToolDiscoveryFailed(format!(
+                "Failed to list tools for {}: {}",
+                server_name, e
+            ))
+        })?;
+
+        let mut tools = self.tools.lock().unwrap();
+        let mut tool_definitions = self.tool_definitions.lock().unwrap();
+
+        for rmcp_tool in &tools_response.tools {
+            let tool_name = rmcp_tool.name.to_string();
+            let namespaced_tool_name = create_namespaced_tool_name(server_name, &tool_name);
+            let tool = Tool::from(rmcp_tool);
+
+            tool_definitions.push(ToolDefinition {
+                name: namespaced_tool_name.clone(),
+                description: tool.description.clone(),
+                parameters: tool.parameters.to_string(),
+                server: Some(server_name.to_string()),
+            });
+
+            tools.insert(namespaced_tool_name, tool);
         }
 
         Ok(())
@@ -205,17 +258,26 @@ impl McpManager {
         let span = span!(Level::DEBUG, "mcp_manager_execute_tool");
         let _guard = span.enter();
 
-        if !self.tools.contains_key(namespaced_tool_name) {
+        if !self
+            .tools
+            .lock()
+            .unwrap()
+            .contains_key(namespaced_tool_name)
+        {
             return Err(McpError::ToolNotFound(namespaced_tool_name.to_string()));
         }
 
         let (server_name, original_tool_name) = parse_namespaced_tool_name(namespaced_tool_name)
             .ok_or_else(|| McpError::InvalidToolNameFormat(namespaced_tool_name.to_string()))?;
 
-        let server = self
-            .servers
-            .get(server_name)
-            .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?;
+        let client = {
+            self.servers
+                .lock()
+                .unwrap()
+                .get(server_name)
+                .map(|server| server.client.clone())
+                .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?
+        };
 
         let arguments = args.as_object().cloned();
         let request = CallToolRequestParam {
@@ -223,7 +285,7 @@ impl McpManager {
             arguments,
         };
 
-        let result = match server.client.call_tool(request).await {
+        let result = match client.call_tool(request).await {
             Ok(result) => result,
             Err(e) => {
                 return Err(McpError::ToolExecutionFailed {
@@ -255,13 +317,16 @@ impl McpManager {
         Ok(result_value)
     }
 
-    pub fn tools(&self) -> &HashMap<String, Tool> {
-        &self.tools
+    pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
+        self.tool_definitions.lock().unwrap().clone()
     }
 
     /// Shutdown all servers and wait for their tasks to complete
-    pub async fn shutdown(&mut self) {
-        for (server_name, server) in self.servers.drain() {
+    pub async fn shutdown(&self) {
+        let servers: Vec<(String, McpServerConnection)> =
+            { self.servers.lock().unwrap().drain().collect() };
+
+        for (server_name, server) in servers {
             if let Some(handle) = server.server_task {
                 // Drop the client first to signal shutdown
                 drop(server.client);
@@ -282,12 +347,15 @@ impl McpManager {
             }
         }
 
-        self.tools.clear();
+        self.tools.lock().unwrap().clear();
+        self.tool_definitions.lock().unwrap().clear();
     }
 
     /// Shutdown a specific server by name
-    pub async fn shutdown_server(&mut self, server_name: &str) -> Result<()> {
-        if let Some(server) = self.servers.remove(server_name) {
+    pub async fn shutdown_server(&self, server_name: &str) -> Result<()> {
+        let server = self.servers.lock().unwrap().remove(server_name);
+
+        if let Some(server) = server {
             if let Some(handle) = server.server_task {
                 // Drop the client first to signal shutdown
                 drop(server.client);
@@ -309,7 +377,14 @@ impl McpManager {
 
             // Remove tools from this server
             self.tools
+                .lock()
+                .unwrap()
                 .retain(|tool_name, _| !tool_name.starts_with(server_name));
+
+            self.tool_definitions
+                .lock()
+                .unwrap()
+                .retain(|tool_def| !tool_def.name.starts_with(server_name));
         }
 
         Ok(())
@@ -319,7 +394,10 @@ impl McpManager {
 impl Drop for McpManager {
     fn drop(&mut self) {
         // Cancel all server tasks when the client is dropped
-        for (server_name, server) in self.servers.drain() {
+        let servers: Vec<(String, McpServerConnection)> =
+            { self.servers.lock().unwrap().drain().collect() };
+
+        for (server_name, server) in servers {
             if let Some(handle) = server.server_task {
                 handle.abort();
                 eprintln!("Server '{}' task aborted during cleanup", server_name);
@@ -349,6 +427,15 @@ impl From<RmcpTool> for Tool {
     }
 }
 
+impl From<&RmcpTool> for Tool {
+    fn from(tool: &RmcpTool) -> Self {
+        Self {
+            description: tool.description.clone().unwrap_or_default().to_string(),
+            parameters: serde_json::Value::Object((*tool.input_schema).clone()),
+        }
+    }
+}
+
 fn create_namespaced_tool_name(server_name: &str, tool_name: &str) -> String {
     format!("{server_name}{TOOL_NAMESPACE_DELIMITER}{tool_name}")
 }
@@ -373,22 +460,21 @@ mod tests {
         let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
 
         // Create client and connect in-memory server directly
-        let mut client = McpManager::new(elicitation_tx);
+        let client = McpManager::new(elicitation_tx);
         let mcp_config = McpServerConfig::InMemory {
             name: "test_server".to_string(),
             server: dyn_service,
         };
         client.add_mcp(mcp_config).await.unwrap();
 
-        // Discover tools
-        client.discover_tools().await.unwrap();
-
-        // Verify tools were discovered
-        let tools = client.tools();
-        assert!(!tools.is_empty());
+        // Verify tools were discovered immediately after adding server (no need to call discover_tools)
+        let tool_definitions = client.tool_definitions();
+        assert!(!tool_definitions.is_empty());
 
         // Check for the write_file tool
-        let write_file_tool = tools.keys().find(|name| name.contains("write_file"));
+        let write_file_tool = tool_definitions
+            .iter()
+            .find(|tool| tool.name.contains("write_file"));
         assert!(write_file_tool.is_some());
 
         // Test tool execution

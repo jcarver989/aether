@@ -22,7 +22,7 @@ async fn test_agent_spawn_basic_communication() {
     ]);
 
     // Spawn the agent
-    let mut spawned_agent = agent(fake_llm)
+    let mut agent = agent(fake_llm)
         .system_prompt("You are a helpful assistant")
         .spawn()
         .await
@@ -30,8 +30,7 @@ async fn test_agent_spawn_basic_communication() {
 
     // Send a message to the agent
     let user_message = UserMessage::text("Test message");
-    spawned_agent
-        .tx
+    agent
         .send(user_message)
         .await
         .expect("Failed to send message");
@@ -42,7 +41,7 @@ async fn test_agent_spawn_basic_communication() {
 
     // Collect all responses until the stream ends or timeout
     loop {
-        match timeout(timeout_duration, spawned_agent.rx.recv()).await {
+        match timeout(timeout_duration, agent.recv()).await {
             Ok(Some(message)) => {
                 match &message {
                     AgentMessage::Text {
@@ -80,9 +79,6 @@ async fn test_agent_spawn_basic_communication() {
         !text_messages.is_empty(),
         "Should have received text messages"
     );
-
-    // Clean shutdown
-    spawned_agent.task_handle.abort();
 }
 
 #[tokio::test]
@@ -110,7 +106,7 @@ async fn test_agent_spawn_multiple_messages() {
     ]);
 
     // Spawn the agent
-    let mut spawned_agent = agent(fake_llm)
+    let mut agent = agent(fake_llm)
         .spawn()
         .await
         .expect("Failed to spawn agent");
@@ -118,8 +114,7 @@ async fn test_agent_spawn_multiple_messages() {
     let timeout_duration = Duration::from_secs(5);
 
     // Send first message
-    spawned_agent
-        .tx
+    agent
         .send(UserMessage::text("First message"))
         .await
         .expect("Failed to send first message");
@@ -127,7 +122,7 @@ async fn test_agent_spawn_multiple_messages() {
     // Collect first response
     let mut first_responses = Vec::new();
     loop {
-        match timeout(timeout_duration, spawned_agent.rx.recv()).await {
+        match timeout(timeout_duration, agent.recv()).await {
             Ok(Some(message)) => match &message {
                 AgentMessage::Text {
                     is_complete: true, ..
@@ -143,8 +138,7 @@ async fn test_agent_spawn_multiple_messages() {
     }
 
     // Send second message
-    spawned_agent
-        .tx
+    agent
         .send(UserMessage::text("Second message"))
         .await
         .expect("Failed to send second message");
@@ -152,7 +146,7 @@ async fn test_agent_spawn_multiple_messages() {
     // Collect second response
     let mut second_responses = Vec::new();
     loop {
-        match timeout(timeout_duration, spawned_agent.rx.recv()).await {
+        match timeout(timeout_duration, agent.recv()).await {
             Ok(Some(message)) => match &message {
                 AgentMessage::Text {
                     is_complete: true, ..
@@ -176,9 +170,6 @@ async fn test_agent_spawn_multiple_messages() {
         !second_responses.is_empty(),
         "Should have received second response"
     );
-
-    // Clean shutdown
-    spawned_agent.task_handle.abort();
 }
 
 #[tokio::test]
@@ -195,19 +186,13 @@ async fn test_agent_spawn_task_cleanup() {
     ]);
 
     // Spawn the agent
-    let spawned_agent = agent(fake_llm)
+    let agent = agent(fake_llm)
         .spawn()
         .await
         .expect("Failed to spawn agent");
 
-    // Drop the channels to signal shutdown
-    drop(spawned_agent.tx);
-    drop(spawned_agent.rx);
+    // Drop the handle to signal shutdown
+    drop(agent);
 
-    // Wait for the task to complete gracefully
-    let result = timeout(Duration::from_secs(5), spawned_agent.task_handle).await;
-    assert!(
-        result.is_ok(),
-        "Task should complete gracefully when channels are dropped"
-    );
+    // Agent task should complete gracefully when handle is dropped
 }

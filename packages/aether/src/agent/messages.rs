@@ -1,5 +1,4 @@
-use rmcp::model::{CreateElicitationRequestParam, CreateElicitationResult};
-use tokio::sync::oneshot;
+use rmcp::model::CreateElicitationRequestParam;
 
 #[derive(Debug, Clone)]
 pub enum AgentMessage {
@@ -38,6 +37,7 @@ pub enum AgentMessage {
 #[derive(Debug, Clone)]
 pub enum UserMessage {
     Text { content: String },
+    Cancel,
 }
 
 impl UserMessage {

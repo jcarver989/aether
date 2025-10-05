@@ -3,9 +3,31 @@ use crate::agent::{Agent, AgentMessage, UserMessage};
 use crate::llm::ModelProvider;
 use crate::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
-use futures::{StreamExt, pin_mut};
 use tokio::sync::mpsc;
+
 use tokio::task::JoinHandle;
+
+/// Handle for communicating with a running Agent
+pub struct AgentHandle {
+    handle: JoinHandle<()>,
+    user_message_tx: mpsc::Sender<UserMessage>,
+    agent_message_rx: mpsc::Receiver<AgentMessage>,
+}
+
+impl AgentHandle {
+    /// Send a message to the agent
+    pub async fn send(
+        &self,
+        message: UserMessage,
+    ) -> std::result::Result<(), mpsc::error::SendError<UserMessage>> {
+        self.user_message_tx.send(message).await
+    }
+
+    /// Receive a message from the agent
+    pub async fn recv(&mut self) -> Option<AgentMessage> {
+        self.agent_message_rx.recv().await
+    }
+}
 
 pub struct AgentBuilder<T: ModelProvider> {
     llm: T,
@@ -36,7 +58,7 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
         self
     }
 
-    pub async fn build(self) -> Result<Agent<T>> {
+    pub async fn spawn(self) -> Result<AgentHandle> {
         let mut messages = Vec::new();
 
         if let Some(system_prompt) = &self.system_prompt {
@@ -46,52 +68,20 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
             });
         }
 
-        let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-        let mut mcp_manager = McpManager::new(elicitation_tx);
-
-        for config in self.mcp_configs {
-            mcp_manager.add_mcp(config).await?;
-        }
-
-        Ok(Agent::new(self.llm, mcp_manager, messages))
-    }
-
-    pub async fn spawn(self) -> Result<SpawnedAgent> {
-        let (user_message_tx, mut user_message_rx) = mpsc::channel::<UserMessage>(100);
+        let (user_message_tx, user_message_rx) = mpsc::channel::<UserMessage>(100);
         let (agent_message_tx, agent_message_rx) = mpsc::channel::<AgentMessage>(100);
-        let mut agent = self.build().await?;
+        let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(100);
 
-        let task_handle = tokio::spawn(async move {
-            tracing::debug!("Spawned agent task starting");
-            while let Some(user_message) = user_message_rx.recv().await {
-                let response_stream = agent.send(user_message).await;
-                pin_mut!(response_stream);
+        let mcp_manager = McpManager::new(elicitation_tx);
+        mcp_manager.add_mcps(self.mcp_configs).await?;
 
-                while let Some(agent_message) = response_stream.next().await {
-                    if agent_message_tx.send(agent_message).await.is_err() {
-                        tracing::debug!("Agent message receiver dropped, terminating agent task");
-                        return;
-                    }
-                }
-                tracing::debug!("Response stream ended for user message");
-            }
+        let agent = Agent::new(self.llm, mcp_manager, messages);
+        let handle = tokio::spawn(agent.run(user_message_rx, agent_message_tx));
 
-            tracing::debug!("User message receiver loop ended - no more user messages");
-            tracing::debug!("Dropping agent_message_tx to close channel");
-            drop(agent_message_tx);
-            tracing::debug!("User message sender dropped, terminating agent task");
-        });
-
-        Ok(SpawnedAgent {
-            task_handle,
-            tx: user_message_tx,
-            rx: agent_message_rx,
+        Ok(AgentHandle {
+            handle,
+            user_message_tx,
+            agent_message_rx,
         })
     }
-}
-
-pub struct SpawnedAgent {
-    pub task_handle: JoinHandle<()>,
-    pub tx: mpsc::Sender<UserMessage>,
-    pub rx: mpsc::Receiver<AgentMessage>,
 }

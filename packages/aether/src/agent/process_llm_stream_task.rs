@@ -2,155 +2,128 @@ use crate::agent::AgentMessage;
 use crate::llm::Context;
 use crate::llm::ModelProvider;
 use crate::types::LlmResponse;
-use crate::types::ToolCallRequest;
 use futures::StreamExt;
 use futures::pin_mut;
 use std::sync::Arc;
-use std::sync::Mutex;
 use tokio::sync::mpsc::Sender;
-use tokio::task::JoinHandle;
 use tracing::Level;
 use tracing::span;
 
-pub struct ProcessLlmStreamTask {}
+pub async fn run_llm_stream_processor<T: ModelProvider + 'static>(
+    llm: Arc<T>,
+    context: Arc<Context>,
+    tx: Sender<AgentMessage>,
+) {
+    let span = span!(Level::DEBUG, "process_llm_stream");
+    let _guard = span.enter();
 
-impl ProcessLlmStreamTask {
-    pub fn run<T: ModelProvider + 'static>(
-        llm: Arc<T>,
-        context: Arc<Mutex<Context>>,
-        tx: Sender<AgentMessage>,
-        tool_call_tx: Sender<ToolCallRequest>,
-    ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let span = span!(Level::DEBUG, "process_llm_stream_task");
-            let _guard = span.enter();
+    let response_stream = llm.stream_response(&context);
 
-            let response_stream = {
-                let c = context.lock().unwrap();
-                llm.stream_response(&c)
-            };
+    let model_name = llm.display_name();
+    pin_mut!(response_stream);
 
-            let model_name = llm.display_name();
-            pin_mut!(response_stream);
+    let mut current_message_id: Option<String> = None;
+    let mut message_content = String::new();
 
-            let mut current_message_id: Option<String> = None;
-            let mut message_content = String::new();
-            let mut tool_call_requests = Vec::<ToolCallRequest>::new();
+    while let Some(event) = response_stream.next().await {
+        use LlmResponse::*;
+        match event {
+            Ok(Start { message_id }) => {
+                current_message_id = Some(message_id);
+            }
 
-            while let Some(event) = response_stream.next().await {
-                use LlmResponse::*;
-                match event {
-                    Ok(Start { message_id }) => {
-                        current_message_id = Some(message_id);
-                    }
-
-                    Ok(Text { chunk }) => {
-                        message_content.push_str(&chunk);
-                        if let Some(ref id) = current_message_id {
-                            let _ = tx
-                                .send(AgentMessage::Text {
-                                    message_id: id.clone(),
-                                    chunk,
-                                    is_complete: false,
-                                    model_name: model_name.clone(),
-                                })
-                                .await;
-                        }
-                    }
-
-                    Ok(ToolRequestStart { id, name }) => {
-                        let _ = tx
-                            .send(AgentMessage::ToolCall {
-                                tool_call_id: id,
-                                name,
-                                arguments: None,
-                                result: None,
-                                is_complete: false,
-                                model_name: model_name.clone(),
-                            })
-                            .await;
-                    }
-
-                    Ok(ToolRequestArg { id, chunk }) => {
-                        let _ = tx
-                            .send(AgentMessage::ToolCall {
-                                tool_call_id: id,
-                                name: String::new(),
-                                arguments: Some(chunk.to_string()),
-                                result: None,
-                                is_complete: false,
-                                model_name: model_name.clone(),
-                            })
-                            .await;
-                    }
-
-                    Ok(ToolRequestComplete { tool_call }) => {
-                        tracing::debug!(
-                            "Tool request completed: {} ({})",
-                            tool_call.name,
-                            tool_call.id
-                        );
-
-                        tool_call_requests.push(tool_call.clone());
-                        tracing::debug!(
-                            "Sending tool call to executor: {} ({})",
-                            tool_call.name,
-                            tool_call.id
-                        );
-                        let send_result = tool_call_tx.send(tool_call.clone()).await;
-                        tracing::debug!(
-                            "Tool call send result for {} ({}): {:?}",
-                            tool_call.name,
-                            tool_call.id,
-                            send_result
-                        );
-
-                        let _ = tx
-                            .send(AgentMessage::ToolCall {
-                                tool_call_id: tool_call.id.clone(),
-                                name: tool_call.name.clone(),
-                                arguments: Some(tool_call.arguments.clone()),
-                                result: None,
-                                is_complete: false,
-                                model_name: model_name.clone(),
-                            })
-                            .await;
-                    }
-
-                    Ok(Done) => {
-                        break;
-                    }
-
-                    Ok(Error { message }) => {
-                        let _ = tx
-                            .send(AgentMessage::Error {
-                                message: message.to_string(),
-                            })
-                            .await;
-                        return;
-                    }
-
-                    Err(e) => {
-                        let _ = tx
-                            .send(AgentMessage::Error {
-                                message: e.to_string(),
-                            })
-                            .await;
-                        return;
-                    }
+            Ok(Text { chunk }) => {
+                message_content.push_str(&chunk);
+                if let Some(ref id) = current_message_id {
+                    let _ = tx
+                        .send(AgentMessage::Text {
+                            message_id: id.clone(),
+                            chunk,
+                            is_complete: false,
+                            model_name: model_name.clone(),
+                        })
+                        .await;
                 }
             }
 
-            if let Some(ref id) = current_message_id {
+            Ok(ToolRequestStart { id, name }) => {
                 let _ = tx
-                    .send(AgentMessage::Text {
-                        message_id: id.clone(),
-                        chunk: message_content,
-                        is_complete: true,
+                    .send(AgentMessage::ToolCall {
+                        tool_call_id: id,
+                        name,
+                        arguments: None,
+                        result: None,
+                        is_complete: false,
                         model_name: model_name.clone(),
                     })
                     .await;
             }
-        })
+
+            Ok(ToolRequestArg { id, chunk }) => {
+                let _ = tx
+                    .send(AgentMessage::ToolCall {
+                        tool_call_id: id,
+                        name: String::new(),
+                        arguments: Some(chunk.to_string()),
+                        result: None,
+                        is_complete: false,
+                        model_name: model_name.clone(),
+                    })
+                    .await;
+            }
+
+            Ok(ToolRequestComplete { tool_call }) => {
+                tracing::debug!(
+                    "Tool request completed: {} ({})",
+                    tool_call.name,
+                    tool_call.id
+                );
+
+                // Send tool call message to agent (which will forward to executor)
+                let _ = tx
+                    .send(AgentMessage::ToolCall {
+                        tool_call_id: tool_call.id.clone(),
+                        name: tool_call.name.clone(),
+                        arguments: Some(tool_call.arguments.clone()),
+                        result: None,
+                        is_complete: false,
+                        model_name: model_name.clone(),
+                    })
+                    .await;
+            }
+
+            Ok(Done) => {
+                break;
+            }
+
+            Ok(Error { message }) => {
+                let _ = tx
+                    .send(AgentMessage::Error {
+                        message: message.to_string(),
+                    })
+                    .await;
+                return;
+            }
+
+            Err(e) => {
+                let _ = tx
+                    .send(AgentMessage::Error {
+                        message: e.to_string(),
+                    })
+                    .await;
+                return;
+            }
+        }
+    }
+
+    if let Some(ref id) = current_message_id {
+        let _ = tx
+            .send(AgentMessage::Text {
+                message_id: id.clone(),
+                chunk: message_content,
+                is_complete: true,
+                model_name: model_name.clone(),
+            })
+            .await;
     }
 }
