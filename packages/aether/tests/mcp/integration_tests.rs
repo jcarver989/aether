@@ -1,6 +1,4 @@
-mod utils;
-
-use crate::utils::*;
+use super::super::common::*;
 use aether::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
@@ -64,4 +62,3 @@ async fn test_mcp_client_with_headers() {
     // The connection will fail, but we can test that the API accepts headers
     assert!(result.is_err()); // Expected since no real server is running
 }
-

@@ -1,3 +1,5 @@
+mod common;
+
 mod mcp {
     mod full_integration_tests;
     mod integration_tests;
