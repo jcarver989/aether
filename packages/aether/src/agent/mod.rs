@@ -1,7 +1,6 @@
 mod agent;
 mod agent_builder;
 pub mod error;
-mod iteration_state;
 mod messages;
 
 pub use agent::*;

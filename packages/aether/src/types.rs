@@ -2,6 +2,9 @@ use std::fmt::Display;
 
 use chrono::{DateTime, TimeZone};
 use serde::{Deserialize, Serialize};
+use rmcp::model::CallToolRequestParam;
+
+use crate::mcp::manager::parse_namespaced_tool_name;
 
 /// A newtype wrapper for ISO 8601 timestamp strings
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,6 +66,28 @@ pub struct ToolCallRequest {
     pub id: String,
     pub name: String,
     pub arguments: String,
+}
+
+impl TryFrom<&ToolCallRequest> for CallToolRequestParam {
+    type Error = String;
+
+    fn try_from(request: &ToolCallRequest) -> Result<Self, Self::Error> {
+        // Parse the tool name to remove namespace prefix if present
+        let tool_name = parse_namespaced_tool_name(&request.name)
+            .map(|(_, tool_name)| tool_name.to_string())
+            .unwrap_or_else(|| request.name.clone());
+
+        // Parse arguments from JSON string
+        let arguments = serde_json::from_str::<serde_json::Value>(&request.arguments)
+            .map_err(|e| format!("Invalid tool arguments: {}", e))?
+            .as_object()
+            .cloned();
+
+        Ok(CallToolRequestParam {
+            name: tool_name.into(),
+            arguments,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

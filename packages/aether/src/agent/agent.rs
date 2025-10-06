@@ -1,9 +1,9 @@
-use crate::agent::iteration_state::AgenticIterationState;
 use crate::agent::{AgentMessage, UserMessage};
 use crate::llm::ModelProvider;
 use crate::llm::{Context, LlmError};
-use crate::mcp::mcp_task::{McpCommand, McpEvent};
+use crate::mcp::run_mcp_task::{McpCommand, McpEvent};
 use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest};
+use std::collections::HashSet;
 use std::pin::pin;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
@@ -13,9 +13,7 @@ use tokio_util::sync::CancellationToken;
 /// Unified event type for the agent event loop
 #[derive(Debug)]
 enum AgentEvent {
-    /// LLM response event (success or error)
     Llm(Result<LlmResponse, LlmError>),
-    /// MCP event (tool results, tool changes, etc.)
     Mcp(McpEvent),
 }
 
@@ -33,7 +31,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
         llm: T,
         context: Context,
         mcp_command_tx: mpsc::Sender<McpCommand>,
-        mcp_event_stream: ReceiverStream<McpEvent>,
+        mcp_event_rx: mpsc::Receiver<McpEvent>,
         user_message_rx: mpsc::Receiver<UserMessage>,
         agent_message_tx: mpsc::Sender<AgentMessage>,
     ) -> Self {
@@ -41,7 +39,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
             llm,
             context,
             mcp_command_tx,
-            mcp_event_stream,
+            mcp_event_stream: ReceiverStream::new(mcp_event_rx),
             user_message_rx,
             agent_message_tx,
         }
@@ -59,12 +57,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 UserMessage::Cancel => {
                     if let Some(token) = current_cancellation.take() {
                         token.cancel();
-                        let _ = self
-                            .agent_message_tx
-                            .send(AgentMessage::Cancelled {
-                                message: "Processing cancelled by user".to_string(),
-                            })
-                            .await;
+                        self.on_cancel_event().await;
                     }
                 }
 
@@ -86,8 +79,6 @@ impl<T: ModelProvider + 'static> Agent<T> {
             }
         }
 
-        // Send shutdown command to MCP task
-        let _ = self.mcp_command_tx.send(McpCommand::Shutdown).await;
         tracing::debug!("Agent task shutting down - input channel closed");
     }
 
@@ -96,22 +87,31 @@ impl<T: ModelProvider + 'static> Agent<T> {
         let model_name = self.llm.display_name();
 
         loop {
-            let mut state = AgenticIterationState::new();
-            let llm_stream = self.llm.stream_response(&self.context).map(AgentEvent::Llm);
-            let mcp_stream = (&mut self.mcp_event_stream).map(AgentEvent::Mcp);
+            let mut current_message_id: Option<String> = None;
+            let mut message_content = String::new();
+            let mut pending_tools: HashSet<String> = HashSet::new();
+            let mut completed_tools: Vec<ToolCallResult> = Vec::new();
+            let mut llm_done = false;
+            let mut stream = {
+                let llm_stream = self.llm.stream_response(&self.context).map(AgentEvent::Llm);
+                let mcp_stream = (&mut self.mcp_event_stream).map(AgentEvent::Mcp);
+                pin!(llm_stream.merge(mcp_stream))
+            };
 
-            let mut events = pin!(llm_stream.merge(mcp_stream));
-            while let Some(event) = events.next().await {
+            while let Some(event) = stream.next().await {
                 if cancellation_token.is_cancelled() {
-                    Self::handle_cancellation(&self.agent_message_tx).await;
-                    return; // Exit entire agentic loop
+                    self.on_cancel_event().await;
+                    return;
                 }
 
                 match event {
-                    AgentEvent::Llm(result) => {
-                        Self::handle_llm_response(
-                            result,
-                            &mut state,
+                    AgentEvent::Llm(llm_event) => {
+                        Self::on_llm_event(
+                            llm_event,
+                            &mut current_message_id,
+                            &mut message_content,
+                            &mut pending_tools,
+                            &mut llm_done,
                             &model_name,
                             &self.agent_message_tx,
                             &self.mcp_command_tx,
@@ -120,9 +120,10 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     }
 
                     AgentEvent::Mcp(mcp_event) => {
-                        Self::handle_mcp_event(
+                        Self::on_mcp_event(
                             mcp_event,
-                            &mut state,
+                            &mut pending_tools,
+                            &mut completed_tools,
                             &model_name,
                             &self.agent_message_tx,
                         )
@@ -130,18 +131,16 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     }
                 }
 
-                if state.is_llm_done() && state.all_tools_complete() {
+                if llm_done && pending_tools.is_empty() {
                     break;
                 }
             }
 
-            tracing::debug!("Event stream complete");
-
-            if let Some(id) = state.current_message_id() {
+            if let Some(ref id) = current_message_id {
                 let _ = self
                     .agent_message_tx
                     .send(AgentMessage::Text {
-                        message_id: id.to_string(),
+                        message_id: id.clone(),
                         chunk: String::new(), // Empty chunk for completion signal
                         is_complete: true,
                         model_name: model_name.to_string(),
@@ -149,20 +148,13 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     .await;
             }
 
-            let should_continue = state.should_continue_loop();
-            if state.final_message_content().is_some() {
-                let messages = state.into_context_messages();
-                for message in messages {
-                    self.context.add_message(message);
-                }
+            if current_message_id.is_some() {
+                self.update_context(&message_content, &completed_tools);
+            } else {
+                break;
             }
 
-            tracing::debug!(
-                "Agent iteration complete, should_continue: {}",
-                should_continue
-            );
-
-            if !should_continue {
+            if completed_tools.is_empty() {
                 break;
             }
         }
@@ -173,20 +165,21 @@ impl<T: ModelProvider + 'static> Agent<T> {
         }
     }
 
-    /// Handle cancellation event
-    async fn handle_cancellation(output_tx: &mpsc::Sender<AgentMessage>) {
-        tracing::debug!("Iteration cancelled");
-        let _ = output_tx
+    async fn on_cancel_event(&self) {
+        let _ = self
+            .agent_message_tx
             .send(AgentMessage::Cancelled {
                 message: "Processing cancelled".to_string(),
             })
             .await;
     }
 
-    /// Handle LLM response from the stream
-    async fn handle_llm_response(
+    async fn on_llm_event(
         result: Result<LlmResponse, LlmError>,
-        state: &mut AgenticIterationState,
+        current_message_id: &mut Option<String>,
+        message_content: &mut String,
+        pending_tools: &mut HashSet<String>,
+        llm_done: &mut bool,
         model_name: &str,
         output_tx: &mpsc::Sender<AgentMessage>,
         mcp_command_tx: &mpsc::Sender<McpCommand>,
@@ -207,15 +200,16 @@ impl<T: ModelProvider + 'static> Agent<T> {
 
         match response {
             Start { message_id } => {
-                state.set_message_id(message_id);
+                *current_message_id = Some(message_id);
+                message_content.clear();
             }
 
             Text { chunk } => {
-                state.append_content(&chunk);
-                if let Some(id) = state.current_message_id() {
+                message_content.push_str(&chunk);
+                if let Some(id) = current_message_id {
                     let _ = output_tx
                         .send(AgentMessage::Text {
-                            message_id: id.to_string(),
+                            message_id: id.clone(),
                             chunk,
                             is_complete: false,
                             model_name: model_name.to_string(),
@@ -251,39 +245,32 @@ impl<T: ModelProvider + 'static> Agent<T> {
             }
 
             ToolRequestComplete { tool_call } => {
-                tracing::debug!(
-                    "Tool request completed: {} ({})",
-                    tool_call.name,
-                    tool_call.id
-                );
-
+                pending_tools.insert(tool_call.id.clone());
                 let request = ToolCallRequest {
                     id: tool_call.id.clone(),
                     name: tool_call.name.clone(),
                     arguments: tool_call.arguments.clone(),
                 };
 
-                // Send tool call message to UI
-                let _ = output_tx
-                    .send(AgentMessage::ToolCall {
-                        tool_call_id: tool_call.id.clone(),
-                        name: tool_call.name.clone(),
-                        arguments: Some(tool_call.arguments.clone()),
-                        result: None,
-                        is_complete: false,
-                        model_name: model_name.to_string(),
-                    })
-                    .await;
+                let msg_future = output_tx.send(AgentMessage::ToolCall {
+                    tool_call_id: tool_call.id.clone(),
+                    name: tool_call.name.clone(),
+                    arguments: Some(tool_call.arguments.clone()),
+                    result: None,
+                    is_complete: false,
+                    model_name: model_name.to_string(),
+                });
 
-                state.mark_tool_sent(tool_call.id);
-                if let Err(e) = mcp_command_tx.send(McpCommand::ExecuteTool(request)).await {
+                let mcp_future = mcp_command_tx.send(McpCommand::ExecuteTool(request));
+                let (_, mcp_result) = tokio::join!(msg_future, mcp_future);
+
+                if let Err(e) = mcp_result {
                     tracing::warn!("Failed to send tool request to MCP task: {:?}", e);
                 }
             }
 
             Done => {
-                // LLM stream complete - mark in state
-                state.mark_llm_done();
+                *llm_done = true;
             }
 
             Error { message } => {
@@ -292,10 +279,10 @@ impl<T: ModelProvider + 'static> Agent<T> {
         }
     }
 
-    /// Handle MCP event from the stream
-    async fn handle_mcp_event(
+    async fn on_mcp_event(
         event: McpEvent,
-        state: &mut AgenticIterationState,
+        pending_tools: &mut HashSet<String>,
+        completed_tools: &mut Vec<ToolCallResult>,
         model_name: &str,
         output_tx: &mpsc::Sender<AgentMessage>,
     ) {
@@ -307,11 +294,9 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     result.result.len()
                 );
                 tracing::trace!("Processing tool result for tool_call_id: {}", result.id);
+                pending_tools.remove(&result.id);
+                completed_tools.push(result.clone());
 
-                // Mark tool as complete in state
-                state.mark_tool_complete(result.clone());
-
-                // Send completion message
                 let msg = AgentMessage::ToolCall {
                     tool_call_id: result.id.clone(),
                     name: result.name.clone(),
@@ -330,11 +315,27 @@ impl<T: ModelProvider + 'static> Agent<T> {
                 // TODO: Update context with new tools when needed
                 tracing::debug!("MCP tools changed - dynamic updates not yet implemented");
             }
+        }
+    }
 
-            McpEvent::Error(message) => {
-                tracing::error!("MCP error: {}", message);
-                let _ = output_tx.send(AgentMessage::Error { message }).await;
-            }
+    fn update_context(&mut self, message_content: &str, completed_tools: &[ToolCallResult]) {
+        let tool_requests: Vec<_> = completed_tools
+            .iter()
+            .map(|result| result.request.clone())
+            .collect();
+
+        self.context.add_message(ChatMessage::Assistant {
+            content: message_content.to_string(),
+            timestamp: IsoString::now(),
+            tool_calls: tool_requests,
+        });
+
+        for result in completed_tools {
+            self.context.add_message(ChatMessage::ToolCallResult {
+                tool_call_id: result.id.clone(),
+                content: result.result.clone(),
+                timestamp: IsoString::now(),
+            });
         }
     }
 }
@@ -345,5 +346,5 @@ pub struct ToolCallResult {
     pub name: String,
     pub arguments: String,
     pub result: String,
-    pub request: crate::types::ToolCallRequest,
+    pub request: ToolCallRequest,
 }
