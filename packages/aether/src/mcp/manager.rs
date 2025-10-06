@@ -1,6 +1,5 @@
 use crate::mcp::{McpError, Result};
 use crate::types::ToolDefinition;
-use futures::future::join_all;
 use rmcp::{
     RoleClient, RoleServer, ServiceExt,
     model::{
@@ -16,10 +15,7 @@ use rmcp::{
     },
 };
 use serde_json::Value;
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 use tracing::{Level, span};
 
 use crate::{mcp::client::McpClient, transport::create_in_memory_transport};
@@ -60,11 +56,10 @@ pub enum McpServerConfig {
 }
 
 /// Manages connections to multiple MCP servers and their tools
-#[derive(Clone)]
 pub struct McpManager {
-    servers: Arc<Mutex<HashMap<String, McpServerConnection>>>,
-    tools: Arc<Mutex<HashMap<String, Tool>>>,
-    tool_definitions: Arc<Mutex<Vec<ToolDefinition>>>,
+    servers: HashMap<String, McpServerConnection>,
+    tools: HashMap<String, Tool>,
+    tool_definitions: Vec<ToolDefinition>,
     client_info: ClientInfo,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
 }
@@ -72,9 +67,9 @@ pub struct McpManager {
 impl McpManager {
     pub fn new(elicitation_sender: mpsc::Sender<ElicitationRequest>) -> Self {
         Self {
-            servers: Arc::new(Mutex::new(HashMap::new())),
-            tools: Arc::new(Mutex::new(HashMap::new())),
-            tool_definitions: Arc::new(Mutex::new(Vec::new())),
+            servers: HashMap::new(),
+            tools: HashMap::new(),
+            tool_definitions: Vec::new(),
             client_info: ClientInfo {
                 protocol_version: Default::default(),
                 capabilities: ClientCapabilities {
@@ -99,16 +94,14 @@ impl McpManager {
         McpClient::new(self.client_info.clone(), self.elicitation_sender.clone())
     }
 
-    pub async fn add_mcps(&self, configs: Vec<McpServerConfig>) -> Result<()> {
-        let futures = configs.into_iter().map(|config| self.add_mcp(config));
-        join_all(futures)
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?;
+    pub async fn add_mcps(&mut self, configs: Vec<McpServerConfig>) -> Result<()> {
+        for config in configs {
+            self.add_mcp(config).await?;
+        }
         Ok(())
     }
 
-    pub async fn add_mcp(&self, config: McpServerConfig) -> Result<()> {
+    pub async fn add_mcp(&mut self, config: McpServerConfig) -> Result<()> {
         use McpServerConfig::*;
         match config {
             Http { name, config } => {
@@ -129,7 +122,7 @@ impl McpManager {
                     server_task: None,
                 };
 
-                self.servers.lock().unwrap().insert(name, server_connection);
+                self.servers.insert(name, server_connection);
 
                 Ok(())
             }
@@ -152,7 +145,7 @@ impl McpManager {
                 // Discover tools before adding to servers map
                 self.discover_tools_for_server(&name, &client).await?;
 
-                self.servers.lock().unwrap().insert(
+                self.servers.insert(
                     name.clone(),
                     McpServerConnection {
                         _name: name.clone(),
@@ -197,32 +190,17 @@ impl McpManager {
                     server_task: Some(server_handle),
                 };
 
-                self.servers.lock().unwrap().insert(name, server_connection);
+                self.servers.insert(name, server_connection);
 
                 Ok(())
             }
         }
     }
 
-    /// Discover tools for all connected servers (useful for refreshing tool list)
-    pub async fn discover_tools(&self) -> Result<()> {
-        // Clear existing tools before rediscovery
-        {
-            self.tools.lock().unwrap().clear();
-            self.tool_definitions.lock().unwrap().clear();
-        }
-
-        let servers = self.servers.lock().unwrap();
-        for (name, server) in servers.iter() {
-            self.discover_tools_for_server(name, &server.client).await?;
-        }
-
-        Ok(())
-    }
 
     /// Discover tools for a specific server and add them to the manager's bookkeeping
     async fn discover_tools_for_server(
-        &self,
+        &mut self,
         server_name: &str,
         client: &RunningService<RoleClient, McpClient>,
     ) -> Result<()> {
@@ -233,22 +211,19 @@ impl McpManager {
             ))
         })?;
 
-        let mut tools = self.tools.lock().unwrap();
-        let mut tool_definitions = self.tool_definitions.lock().unwrap();
-
         for rmcp_tool in &tools_response.tools {
             let tool_name = rmcp_tool.name.to_string();
             let namespaced_tool_name = create_namespaced_tool_name(server_name, &tool_name);
             let tool = Tool::from(rmcp_tool);
 
-            tool_definitions.push(ToolDefinition {
+            self.tool_definitions.push(ToolDefinition {
                 name: namespaced_tool_name.clone(),
                 description: tool.description.clone(),
                 parameters: tool.parameters.to_string(),
                 server: Some(server_name.to_string()),
             });
 
-            tools.insert(namespaced_tool_name, tool);
+            self.tools.insert(namespaced_tool_name, tool);
         }
 
         Ok(())
@@ -258,26 +233,18 @@ impl McpManager {
         let span = span!(Level::DEBUG, "mcp_manager_execute_tool");
         let _guard = span.enter();
 
-        if !self
-            .tools
-            .lock()
-            .unwrap()
-            .contains_key(namespaced_tool_name)
-        {
+        if !self.tools.contains_key(namespaced_tool_name) {
             return Err(McpError::ToolNotFound(namespaced_tool_name.to_string()));
         }
 
         let (server_name, original_tool_name) = parse_namespaced_tool_name(namespaced_tool_name)
             .ok_or_else(|| McpError::InvalidToolNameFormat(namespaced_tool_name.to_string()))?;
 
-        let client = {
-            self.servers
-                .lock()
-                .unwrap()
-                .get(server_name)
-                .map(|server| server.client.clone())
-                .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?
-        };
+        let client = self
+            .servers
+            .get(server_name)
+            .map(|server| server.client.clone())
+            .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?;
 
         let arguments = args.as_object().cloned();
         let request = CallToolRequestParam {
@@ -318,13 +285,12 @@ impl McpManager {
     }
 
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.tool_definitions.lock().unwrap().clone()
+        self.tool_definitions.clone()
     }
 
     /// Shutdown all servers and wait for their tasks to complete
-    pub async fn shutdown(&self) {
-        let servers: Vec<(String, McpServerConnection)> =
-            { self.servers.lock().unwrap().drain().collect() };
+    pub async fn shutdown(&mut self) {
+        let servers: Vec<(String, McpServerConnection)> = self.servers.drain().collect();
 
         for (server_name, server) in servers {
             if let Some(handle) = server.server_task {
@@ -347,13 +313,13 @@ impl McpManager {
             }
         }
 
-        self.tools.lock().unwrap().clear();
-        self.tool_definitions.lock().unwrap().clear();
+        self.tools.clear();
+        self.tool_definitions.clear();
     }
 
     /// Shutdown a specific server by name
-    pub async fn shutdown_server(&self, server_name: &str) -> Result<()> {
-        let server = self.servers.lock().unwrap().remove(server_name);
+    pub async fn shutdown_server(&mut self, server_name: &str) -> Result<()> {
+        let server = self.servers.remove(server_name);
 
         if let Some(server) = server {
             if let Some(handle) = server.server_task {
@@ -377,13 +343,9 @@ impl McpManager {
 
             // Remove tools from this server
             self.tools
-                .lock()
-                .unwrap()
                 .retain(|tool_name, _| !tool_name.starts_with(server_name));
 
             self.tool_definitions
-                .lock()
-                .unwrap()
                 .retain(|tool_def| !tool_def.name.starts_with(server_name));
         }
 
@@ -394,8 +356,7 @@ impl McpManager {
 impl Drop for McpManager {
     fn drop(&mut self) {
         // Cancel all server tasks when the client is dropped
-        let servers: Vec<(String, McpServerConnection)> =
-            { self.servers.lock().unwrap().drain().collect() };
+        let servers: Vec<(String, McpServerConnection)> = self.servers.drain().collect();
 
         for (server_name, server) in servers {
             if let Some(handle) = server.server_task {
@@ -460,7 +421,7 @@ mod tests {
         let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
 
         // Create client and connect in-memory server directly
-        let client = McpManager::new(elicitation_tx);
+        let mut client = McpManager::new(elicitation_tx);
         let mcp_config = McpServerConfig::InMemory {
             name: "test_server".to_string(),
             server: dyn_service,

@@ -3,18 +3,14 @@ use std::sync::Arc;
 
 use crate::cli::SystemPrompt;
 use crate::cli::{Cli, ModelSpec};
-use aether::agent::{AgentMessage, UserMessage, agent};
+use aether::agent::{AgentHandle, agent};
 use mcp_lexicon::AgentBuilderExt;
 use tokio::sync::Mutex;
-use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::task::JoinHandle;
 
 pub struct AppState {
     pub model_specs: Vec<ModelSpec>,
     pub system_prompt: Option<SystemPrompt>,
-    pub agent_handle: JoinHandle<()>,
-    pub agent_tx: Sender<UserMessage>,
-    pub agent_rx: Arc<Mutex<Receiver<AgentMessage>>>,
+    pub agent: Arc<Mutex<AgentHandle>>,
 }
 
 impl AppState {
@@ -32,9 +28,7 @@ impl AppState {
         Ok(Self {
             model_specs,
             system_prompt,
-            agent_handle: agent.handle,
-            agent_tx: agent.user_message_tx,
-            agent_rx: Arc::new(Mutex::new(agent.agent_message_rx)),
+            agent: Arc::new(Mutex::new(agent)),
         })
     }
 }

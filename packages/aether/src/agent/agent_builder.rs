@@ -1,6 +1,7 @@
 use crate::agent::Result;
 use crate::agent::{Agent, AgentMessage, UserMessage};
 use crate::llm::ModelProvider;
+use crate::mcp::mcp_task::McpManagerTask;
 use crate::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
 use tokio::sync::mpsc;
@@ -8,7 +9,8 @@ use tokio::task::JoinHandle;
 
 /// Handle for communicating with a running Agent
 pub struct AgentHandle {
-    handle: JoinHandle<()>,
+    agent_handle: JoinHandle<()>,
+    mcp_task_handle: JoinHandle<()>,
     user_message_tx: mpsc::Sender<UserMessage>,
     agent_message_rx: mpsc::Receiver<AgentMessage>,
 }
@@ -25,6 +27,14 @@ impl AgentHandle {
     /// Receive a message from the agent
     pub async fn recv(&mut self) -> Option<AgentMessage> {
         self.agent_message_rx.recv().await
+    }
+
+    /// Wait for both agent and MCP tasks to complete
+    pub async fn join(self) -> std::result::Result<(), tokio::task::JoinError> {
+        let (agent_result, mcp_result) = tokio::join!(self.agent_handle, self.mcp_task_handle);
+        agent_result?;
+        mcp_result?;
+        Ok(())
     }
 }
 
@@ -70,20 +80,29 @@ impl<T: ModelProvider + 'static> AgentBuilder<T> {
         let (agent_message_tx, agent_message_rx) = mpsc::channel::<AgentMessage>(100);
         let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(100);
 
-        let mcp_manager = McpManager::new(elicitation_tx);
+        let mut mcp_manager = McpManager::new(elicitation_tx);
         mcp_manager.add_mcps(self.mcp_configs).await?;
+        let initial_tools = mcp_manager.tool_definitions();
+
+        let context = crate::llm::Context::new(messages, initial_tools);
+
+        let (mcp_task, mcp_event_stream) = McpManagerTask::new(mcp_manager);
+        let mcp_command_tx = mcp_task.command_tx.clone();
+        let mcp_task_handle = mcp_task.handle;
 
         let agent = Agent::new(
             self.llm,
-            mcp_manager,
-            messages,
+            context,
+            mcp_command_tx,
+            mcp_event_stream,
             user_message_rx,
             agent_message_tx,
         );
-        let handle = tokio::spawn(agent.run());
+        let agent_handle = tokio::spawn(agent.run());
 
         Ok(AgentHandle {
-            handle,
+            agent_handle,
+            mcp_task_handle,
             user_message_tx,
             agent_message_rx,
         })

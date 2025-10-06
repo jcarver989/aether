@@ -12,8 +12,8 @@ pub struct ScreenProps {}
 pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let mut system = hooks.use_context_mut::<SystemContext>();
     let state = hooks.use_context::<AppState>();
-    let tx = state.agent_tx.clone();
-    let rx = state.agent_rx.clone();
+    let agent = state.agent.clone();
+    let agent_for_send = state.agent.clone();
     let mut input_message = hooks.use_state(|| "".to_string());
     let mut should_exit = hooks.use_state(|| false);
     let mut should_submit = hooks.use_state(|| false);
@@ -22,7 +22,7 @@ pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'s
     let (width, height) = hooks.use_terminal_size();
 
     hooks.use_future(async move {
-        while let Some(message) = rx.lock().await.recv().await {
+        while let Some(message) = agent.lock().await.recv().await {
             let mut msgs = messages.write();
             match message {
                 AgentMessage::Text {
@@ -131,11 +131,13 @@ pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'s
 
     if should_submit.get() {
         let user_input = input_message.to_string().trim().to_string();
-        let tx_clone = tx.clone();
+        let agent_clone = agent_for_send.clone();
 
         // Spawn a tokio task to send the message
         tokio::spawn(async move {
-            if let Err(e) = tx_clone
+            if let Err(e) = agent_clone
+                .lock()
+                .await
                 .send(UserMessage::Text {
                     content: user_input,
                 })
