@@ -136,6 +136,11 @@ impl<T: ModelProvider + 'static> Agent<T> {
                         .await;
                     }
                 }
+
+                // Break if LLM is done and all pending tools are complete
+                if state.is_llm_done() && state.all_tools_complete() {
+                    break;
+                }
             }
 
             tracing::debug!("Event stream complete");
@@ -146,7 +151,7 @@ impl<T: ModelProvider + 'static> Agent<T> {
                     .agent_message_tx
                     .send(AgentMessage::Text {
                         message_id: id.to_string(),
-                        chunk: state.message_content().to_string(),
+                        chunk: String::new(),  // Empty chunk, just signaling completion
                         is_complete: true,
                         model_name: model_name.to_string(),
                     })
@@ -288,7 +293,8 @@ impl<T: ModelProvider + 'static> Agent<T> {
             }
 
             Done => {
-                // No-op: stream completion is handled after the event loop
+                // LLM stream complete - mark in state
+                state.mark_llm_done();
             }
 
             Error { message } => {

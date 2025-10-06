@@ -13,6 +13,8 @@ pub struct AgenticIterationState {
     pending_tools: HashSet<String>,
     /// Tool call results that have been completed
     completed_tools: Vec<ToolCallResult>,
+    /// Whether the LLM stream has completed
+    llm_done: bool,
 }
 
 impl AgenticIterationState {
@@ -22,6 +24,7 @@ impl AgenticIterationState {
             message_content: String::new(),
             pending_tools: HashSet::new(),
             completed_tools: Vec::new(),
+            llm_done: false,
         }
     }
 
@@ -39,11 +42,6 @@ impl AgenticIterationState {
     /// Get the current message ID
     pub fn current_message_id(&self) -> Option<&str> {
         self.current_message_id.as_deref()
-    }
-
-    /// Get the accumulated message content
-    pub fn message_content(&self) -> &str {
-        &self.message_content
     }
 
     /// Get final message content if we have a message
@@ -64,6 +62,21 @@ impl AgenticIterationState {
     pub fn mark_tool_complete(&mut self, result: ToolCallResult) {
         self.pending_tools.remove(&result.id);
         self.completed_tools.push(result);
+    }
+
+    /// Mark the LLM stream as done
+    pub fn mark_llm_done(&mut self) {
+        self.llm_done = true;
+    }
+
+    /// Check if the LLM stream is done
+    pub fn is_llm_done(&self) -> bool {
+        self.llm_done
+    }
+
+    /// Check if all pending tools are complete
+    pub fn all_tools_complete(&self) -> bool {
+        self.pending_tools.is_empty()
     }
 
     /// Check if this iteration produced any tool results

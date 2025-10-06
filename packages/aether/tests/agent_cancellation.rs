@@ -58,25 +58,29 @@ async fn test_cancel_message_variant() {
 
 #[tokio::test]
 async fn test_cancellation_with_cancel_message() {
-    let fake_llm = FakeLlmProvider::with_single_response(vec![
-        LlmResponse::Start {
-            message_id: "msg1".to_string(),
-        },
-        LlmResponse::Text {
-            chunk: "I'll use a tool to help.".to_string(),
-        },
-        LlmResponse::ToolRequestStart {
-            id: "tool1".to_string(),
-            name: "coding::write_file".to_string(),
-        },
-        LlmResponse::ToolRequestComplete {
-            tool_call: ToolCallRequest {
+    let fake_llm = FakeLlmProvider::new(vec![
+        vec![
+            LlmResponse::Start {
+                message_id: "msg1".to_string(),
+            },
+            LlmResponse::Text {
+                chunk: "I'll use a tool to help.".to_string(),
+            },
+            LlmResponse::ToolRequestStart {
                 id: "tool1".to_string(),
                 name: "coding::write_file".to_string(),
-                arguments: r#"{"path": "/test.txt", "content": "Hello"}"#.to_string(),
             },
-        },
-        LlmResponse::Done,
+            LlmResponse::ToolRequestComplete {
+                tool_call: ToolCallRequest {
+                    id: "tool1".to_string(),
+                    name: "coding::write_file".to_string(),
+                    arguments: r#"{"path": "/test.txt", "content": "Hello"}"#.to_string(),
+                },
+            },
+            LlmResponse::Done,
+        ],
+        // Second response after tool execution - just Done to end the loop
+        vec![LlmResponse::Done],
     ]);
 
     let mut agent = agent(fake_llm)
