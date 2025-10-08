@@ -17,14 +17,9 @@ impl McpConfigParser {
         Self { registry }
     }
 
-    /// Create a parser with an empty registry
-    pub fn default() -> Self {
-        Self::new(McpServerRegistry::new())
-    }
-
     /// Parse an MCP configuration file
-    pub async fn parse_file(&self, path: impl AsRef<Path>) -> Result<Vec<McpServerConfig>, ParseError> {
-        let content = tokio::fs::read_to_string(path).await?;
+    pub fn parse_file(&self, path: impl AsRef<Path>) -> Result<Vec<McpServerConfig>, ParseError> {
+        let content = std::fs::read_to_string(path)?;
         self.parse_string(&content)
     }
 

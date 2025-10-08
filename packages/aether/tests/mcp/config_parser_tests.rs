@@ -20,7 +20,7 @@ fn test_parse_stdio_config() {
     }
     "#;
 
-    let parser = McpConfigParser::default();
+    let parser = McpConfigParser::new(McpServerRegistry::new());
     let configs = parser.parse_string(json).unwrap();
 
     assert_eq!(configs.len(), 1);
@@ -62,7 +62,7 @@ fn test_parse_http_config() {
     }
     "#;
 
-    let parser = McpConfigParser::default();
+    let parser = McpConfigParser::new(McpServerRegistry::new());
     let configs = parser.parse_string(json).unwrap();
 
     assert_eq!(configs.len(), 1);
@@ -95,7 +95,7 @@ fn test_parse_sse_config() {
     }
     "#;
 
-    let parser = McpConfigParser::default();
+    let parser = McpConfigParser::new(McpServerRegistry::new());
     let configs = parser.parse_string(json).unwrap();
 
     assert_eq!(configs.len(), 1);
@@ -127,7 +127,7 @@ fn test_missing_env_var_error() {
     }
     "#;
 
-    let parser = McpConfigParser::default();
+    let parser = McpConfigParser::new(McpServerRegistry::new());
     let result = parser.parse_string(json);
 
     assert!(result.is_err());
@@ -150,7 +150,7 @@ fn test_factory_not_found_error() {
     }
     "#;
 
-    let parser = McpConfigParser::default();
+    let parser = McpConfigParser::new(McpServerRegistry::new());
     let result = parser.parse_string(json);
 
     assert!(result.is_err());
@@ -164,7 +164,7 @@ fn test_factory_not_found_error() {
 fn test_invalid_json() {
     let json = "{ invalid json }";
 
-    let parser = McpConfigParser::default();
+    let parser = McpConfigParser::new(McpServerRegistry::new());
     let result = parser.parse_string(json);
 
     assert!(result.is_err());
@@ -197,7 +197,7 @@ fn test_multiple_servers() {
     }
     "#;
 
-    let parser = McpConfigParser::default();
+    let parser = McpConfigParser::new(McpServerRegistry::new());
     let configs = parser.parse_string(json).unwrap();
 
     assert_eq!(configs.len(), 2);
@@ -223,7 +223,7 @@ fn test_env_var_in_url() {
     }
     "#;
 
-    let parser = McpConfigParser::default();
+    let parser = McpConfigParser::new(McpServerRegistry::new());
     let configs = parser.parse_string(json).unwrap();
 
     match &configs[0] {
