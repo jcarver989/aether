@@ -53,6 +53,30 @@ pub enum McpServerConfig {
     },
 }
 
+impl std::fmt::Debug for McpServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            McpServerConfig::Http { name, config } => f
+                .debug_struct("Http")
+                .field("name", name)
+                .field("config", config)
+                .finish(),
+            McpServerConfig::Stdio { name, command, args, env } => f
+                .debug_struct("Stdio")
+                .field("name", name)
+                .field("command", command)
+                .field("args", args)
+                .field("env", env)
+                .finish(),
+            McpServerConfig::InMemory { name, .. } => f
+                .debug_struct("InMemory")
+                .field("name", name)
+                .field("server", &"<DynService>")
+                .finish(),
+        }
+    }
+}
+
 /// Manages connections to multiple MCP servers and their tools
 pub struct McpManager {
     servers: HashMap<String, McpServerConnection>,
