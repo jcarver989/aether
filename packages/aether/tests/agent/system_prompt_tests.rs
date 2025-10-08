@@ -3,7 +3,11 @@ use aether::{
     testing::FakeLlmProvider,
 };
 use std::fs;
+use std::sync::Mutex;
 use tempfile::TempDir;
+
+// Mutex to serialize tests that change the current directory
+static DIR_LOCK: Mutex<()> = Mutex::new(());
 
 #[tokio::test]
 async fn test_system_prompt_text() {
@@ -48,6 +52,9 @@ async fn test_system_prompt_file_single() {
 
 #[tokio::test]
 async fn test_system_prompt_file_with_ancestors() {
+    // Acquire lock to prevent parallel tests from interfering with current_dir
+    let _lock = DIR_LOCK.lock().unwrap();
+
     // Create directory structure:
     // temp/
     //   AGENTS.md (root)
