@@ -4,6 +4,7 @@ mod agent {
     mod cancellation_tests;
     mod context_message_ordering_tests;
     mod convenience_methods_tests;
+    mod middleware_tests;
     mod parallel_tool_execution_tests;
     mod spawn_tests;
     mod system_prompt_tests;

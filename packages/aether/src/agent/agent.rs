@@ -1,3 +1,4 @@
+use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{AgentMessage, UserMessage};
 use crate::llm::StreamingModelProvider;
 use crate::llm::{Context, LlmError};
@@ -10,9 +11,9 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
-/// Unified event type for the agent event loop
+/// Internal event type for merging LLM and MCP streams
 #[derive(Debug)]
-enum AgentEvent {
+enum StreamEvent {
     Llm(Result<LlmResponse, LlmError>),
     Mcp(McpEvent),
 }
@@ -24,6 +25,7 @@ pub struct Agent<T: StreamingModelProvider> {
     mcp_event_stream: ReceiverStream<McpEvent>,
     user_message_rx: mpsc::Receiver<UserMessage>,
     agent_message_tx: mpsc::Sender<AgentMessage>,
+    middleware: Middleware,
 }
 
 impl<T: StreamingModelProvider + 'static> Agent<T> {
@@ -34,6 +36,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         mcp_event_rx: mpsc::Receiver<McpEvent>,
         user_message_rx: mpsc::Receiver<UserMessage>,
         agent_message_tx: mpsc::Sender<AgentMessage>,
+        middleware: Middleware,
     ) -> Self {
         Self {
             llm,
@@ -42,6 +45,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             mcp_event_stream: ReceiverStream::new(mcp_event_rx),
             user_message_rx,
             agent_message_tx,
+            middleware,
         }
     }
 
@@ -64,6 +68,24 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 UserMessage::Text { content } => {
                     if let Some(token) = current_cancellation.take() {
                         token.cancel();
+                    }
+
+                    let action = self
+                        .middleware
+                        .emit(AgentEvent::UserMessage {
+                            content: content.clone(),
+                        })
+                        .await;
+
+                    if action == MiddlewareAction::Block {
+                        tracing::debug!("User message blocked by middleware");
+                        let _ = self
+                            .agent_message_tx
+                            .send(AgentMessage::Error {
+                                message: "Message blocked by middleware".to_string(),
+                            })
+                            .await;
+                        continue;
                     }
 
                     let cancellation_token = CancellationToken::new();
@@ -93,8 +115,11 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             let mut completed_tools: Vec<ToolCallResult> = Vec::new();
             let mut llm_done = false;
             let mut stream = {
-                let llm_stream = self.llm.stream_response(&self.context).map(AgentEvent::Llm);
-                let mcp_stream = (&mut self.mcp_event_stream).map(AgentEvent::Mcp);
+                let llm_stream = self
+                    .llm
+                    .stream_response(&self.context)
+                    .map(StreamEvent::Llm);
+                let mcp_stream = (&mut self.mcp_event_stream).map(StreamEvent::Mcp);
                 pin!(llm_stream.merge(mcp_stream))
             };
 
@@ -105,7 +130,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 }
 
                 match event {
-                    AgentEvent::Llm(llm_event) => {
+                    StreamEvent::Llm(llm_event) => {
                         Self::on_llm_event(
                             llm_event,
                             &mut current_message_id,
@@ -115,11 +140,12 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                             &model_name,
                             &self.agent_message_tx,
                             &self.mcp_command_tx,
+                            &self.middleware,
                         )
                         .await;
                     }
 
-                    AgentEvent::Mcp(mcp_event) => {
+                    StreamEvent::Mcp(mcp_event) => {
                         Self::on_mcp_event(
                             mcp_event,
                             &mut pending_tools,
@@ -183,6 +209,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         model_name: &str,
         output_tx: &mpsc::Sender<AgentMessage>,
         mcp_command_tx: &mpsc::Sender<McpCommand>,
+        middleware: &Middleware,
     ) {
         use LlmResponse::*;
 
@@ -206,6 +233,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 
             Text { chunk } => {
                 message_content.push_str(&chunk);
+
                 if let Some(id) = current_message_id {
                     let _ = output_tx
                         .send(AgentMessage::Text {
@@ -245,6 +273,24 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             }
 
             ToolRequestComplete { tool_call } => {
+                let action = middleware
+                    .emit(AgentEvent::ToolCall {
+                        id: tool_call.id.clone(),
+                        name: tool_call.name.clone(),
+                        arguments: tool_call.arguments.clone(),
+                    })
+                    .await;
+
+                if action == MiddlewareAction::Block {
+                    tracing::debug!("Tool call '{}' blocked by middleware", tool_call.name);
+                    let _ = output_tx
+                        .send(AgentMessage::Error {
+                            message: format!("Tool '{}' blocked by middleware", tool_call.name),
+                        })
+                        .await;
+                    return;
+                }
+
                 pending_tools.insert(tool_call.id.clone());
                 let request = ToolCallRequest {
                     id: tool_call.id.clone(),

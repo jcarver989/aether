@@ -1,9 +1,11 @@
 use crate::agent::Result;
+use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{Agent, AgentMessage, UserMessage};
 use crate::llm::{Context, StreamingModelProvider};
 use crate::mcp::run_mcp_task::{McpCommand, McpEvent, run_mcp_task};
 use crate::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
+use std::future::Future;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -34,6 +36,7 @@ pub struct AgentBuilder<T: StreamingModelProvider> {
     llm: T,
     system_prompt: Option<String>,
     mcp_configs: Vec<McpServerConfig>,
+    middleware: Middleware,
 }
 
 impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
@@ -42,6 +45,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             llm,
             system_prompt: None,
             mcp_configs: Vec::new(),
+            middleware: Middleware::new(),
         }
     }
 
@@ -52,6 +56,37 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
 
     pub fn mcp(mut self, config: McpServerConfig) -> Self {
         self.mcp_configs.push(config);
+        self
+    }
+
+    /// Add an event handler for agent events
+    ///
+    /// Handlers receive all agent events and can pattern match to handle specific ones.
+    /// Multiple handlers can be registered and will execute in parallel.
+    /// If any handler returns Block, the action will be blocked.
+    ///
+    /// # Example
+    /// ```ignore
+    /// agent(llm)
+    ///     .on_event(|event| async move {
+    ///         match event {
+    ///             AgentEvent::ToolCall { name, .. } if name == "dangerous_tool" => {
+    ///                 MiddlewareAction::Block
+    ///             }
+    ///             AgentEvent::AgentDone => {
+    ///                 println!("Done!");
+    ///                 MiddlewareAction::Allow
+    ///             }
+    ///             _ => MiddlewareAction::Allow
+    ///         }
+    ///     })
+    /// ```
+    pub fn on_event<U, V>(mut self, handler: U) -> Self
+    where
+        U: Fn(AgentEvent) -> V + Send + Sync + 'static,
+        V: Future<Output = MiddlewareAction> + Send + 'static,
+    {
+        self.middleware.add_handler(handler);
         self
     }
 
@@ -84,6 +119,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             mcp_event_rx,
             user_message_rx,
             agent_message_tx,
+            self.middleware,
         );
 
         let mcp_handle = tokio::spawn(run_mcp_task(mcp_manager, mcp_command_rx, mcp_event_tx));
