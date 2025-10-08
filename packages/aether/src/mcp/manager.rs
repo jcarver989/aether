@@ -53,6 +53,16 @@ pub enum McpServerConfig {
     },
 }
 
+impl McpServerConfig {
+    pub fn name(&self) -> &str {
+        match self {
+            McpServerConfig::Http { name, .. } => name,
+            McpServerConfig::Stdio { name, .. } => name,
+            McpServerConfig::InMemory { name, .. } => name,
+        }
+    }
+}
+
 impl std::fmt::Debug for McpServerConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
