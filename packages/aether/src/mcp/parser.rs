@@ -1,20 +1,31 @@
+use rmcp::{RoleServer, service::DynService};
 use std::collections::HashMap;
 use std::path::Path;
 
 use super::config::*;
 use super::manager::McpServerConfig;
-use super::server_registry::{McpServerRegistry, RegistryError};
 use super::variables::{VarError, expand_env_vars};
+
+/// Factory function that creates an MCP server instance
+pub type ServerFactory = Box<dyn Fn() -> Box<dyn DynService<RoleServer>> + Send + Sync>;
 
 /// Parser for MCP JSON configuration files
 pub struct McpConfigParser {
-    registry: McpServerRegistry,
+    factories: HashMap<String, ServerFactory>,
 }
 
 impl McpConfigParser {
-    /// Create a new parser with a custom server registry
-    pub fn new(registry: McpServerRegistry) -> Self {
-        Self { registry }
+    /// Create a new parser
+    pub fn new() -> Self {
+        Self {
+            factories: HashMap::new(),
+        }
+    }
+
+    /// Register an InMemory server factory
+    pub fn register(&mut self, name: impl Into<String>, factory: ServerFactory) -> &mut Self {
+        self.factories.insert(name.into(), factory);
+        self
     }
 
     /// Parse an MCP configuration file
@@ -77,7 +88,11 @@ impl McpConfigParser {
             }
 
             ServerDefinition::InMemory { factory } => {
-                let server = self.registry.create(&factory)?;
+                let server_factory = self
+                    .factories
+                    .get(&factory)
+                    .ok_or_else(|| ParseError::FactoryNotFound(factory.clone()))?;
+                let server = server_factory();
                 Ok(McpServerConfig::InMemory { name, server })
             }
         }
@@ -89,7 +104,7 @@ pub enum ParseError {
     IoError(std::io::Error),
     JsonError(serde_json::Error),
     VarError(VarError),
-    RegistryError(RegistryError),
+    FactoryNotFound(String),
 }
 
 impl std::fmt::Display for ParseError {
@@ -98,7 +113,9 @@ impl std::fmt::Display for ParseError {
             ParseError::IoError(e) => write!(f, "Failed to read config file: {}", e),
             ParseError::JsonError(e) => write!(f, "Invalid JSON: {}", e),
             ParseError::VarError(e) => write!(f, "Variable expansion failed: {}", e),
-            ParseError::RegistryError(e) => write!(f, "Registry error: {}", e),
+            ParseError::FactoryNotFound(name) => {
+                write!(f, "InMemory server factory '{}' not registered", name)
+            }
         }
     }
 }
@@ -120,11 +137,5 @@ impl From<serde_json::Error> for ParseError {
 impl From<VarError> for ParseError {
     fn from(error: VarError) -> Self {
         ParseError::VarError(error)
-    }
-}
-
-impl From<RegistryError> for ParseError {
-    fn from(error: RegistryError) -> Self {
-        ParseError::RegistryError(error)
     }
 }
