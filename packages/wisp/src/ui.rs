@@ -1,4 +1,3 @@
-use crate::cli::ModelSpec;
 use regex::Regex;
 use std::io::{Write, stdout};
 
@@ -313,25 +312,12 @@ pub fn format_tool_result(result: &str) -> String {
         .replace("\\\\", "\\")
 }
 
-pub fn format_model_display_name(model_specs: &[ModelSpec]) -> String {
-    if model_specs.len() == 1 {
-        let spec = &model_specs[0];
-        if spec.model.is_empty() {
-            format!("{:?}", spec.provider)
-        } else {
-            format!("{:?} ({})", spec.provider, spec.model)
-        }
+pub fn format_model_display_name(model_string: &str) -> String {
+    let specs: Vec<&str> = model_string.split(',').map(|s| s.trim()).collect();
+
+    if specs.len() == 1 {
+        specs[0].to_string()
     } else {
-        let provider_names: Vec<String> = model_specs
-            .iter()
-            .map(|spec| {
-                if spec.model.is_empty() {
-                    format!("{:?}", spec.provider)
-                } else {
-                    format!("{:?} ({})", spec.provider, spec.model)
-                }
-            })
-            .collect();
-        format!("Alloyed [{}]", provider_names.join(", "))
+        format!("Alloyed [{}]", specs.join(", "))
     }
 }

@@ -1,7 +1,7 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
 use super::types::Request;
-use crate::llm::provider::{Context, LlmResponseStream, ModelProvider};
+use crate::llm::provider::{Context, LlmResponseStream, StreamingModelProvider};
 use crate::llm::{LlmError, Result};
 use async_stream;
 use futures::StreamExt;
@@ -157,7 +157,7 @@ impl AnthropicProvider {
     }
 }
 
-impl ModelProvider for AnthropicProvider {
+impl StreamingModelProvider for AnthropicProvider {
     fn stream_response<'a>(&self, context: &Context) -> LlmResponseStream {
         let provider = self.clone();
 

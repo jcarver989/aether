@@ -36,12 +36,12 @@ impl Context {
     }
 }
 
-pub trait ModelProvider: Send + Sync {
+pub trait StreamingModelProvider: Send + Sync {
     fn stream_response<'a>(&self, context: &Context) -> LlmResponseStream;
     fn display_name(&self) -> String;
 }
 
-impl ModelProvider for Box<dyn ModelProvider> {
+impl StreamingModelProvider for Box<dyn StreamingModelProvider> {
     fn stream_response<'a>(&self, context: &Context) -> LlmResponseStream {
         (**self).stream_response(context)
     }

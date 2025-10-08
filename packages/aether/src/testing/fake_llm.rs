@@ -1,4 +1,4 @@
-use crate::llm::provider::{Context, LlmResponseStream, ModelProvider};
+use crate::llm::provider::{Context, LlmResponseStream, StreamingModelProvider};
 use crate::types::LlmResponse;
 
 pub struct FakeLlmProvider {
@@ -23,7 +23,7 @@ impl FakeLlmProvider {
     }
 }
 
-impl ModelProvider for FakeLlmProvider {
+impl StreamingModelProvider for FakeLlmProvider {
     fn stream_response(&self, _context: &Context) -> LlmResponseStream {
         let current_call = self
             .call_count

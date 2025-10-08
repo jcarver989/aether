@@ -1,5 +1,5 @@
 use crate::llm::{
-    ModelProvider,
+    StreamingModelProvider,
     provider::{Context, LlmResponseStream},
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -7,19 +7,19 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// A ModelProvider that alternates models on every turn via a round-robin strategy.
 /// Alternating between models with different strengths and weaknesses can improve the agent's performance.
 pub struct AlloyedModelProvider {
-    providers: Vec<Box<dyn ModelProvider>>,
+    providers: Vec<Box<dyn StreamingModelProvider>>,
     current_provider_index: AtomicUsize,
 }
 
 impl AlloyedModelProvider {
-    pub fn new(providers: Vec<Box<dyn ModelProvider>>) -> Self {
+    pub fn new(providers: Vec<Box<dyn StreamingModelProvider>>) -> Self {
         Self {
             providers,
             current_provider_index: AtomicUsize::new(0),
         }
     }
 
-    fn get_current_provider(&self) -> Option<&Box<dyn ModelProvider>> {
+    fn get_current_provider(&self) -> Option<&Box<dyn StreamingModelProvider>> {
         if self.providers.is_empty() {
             return None;
         }
@@ -27,7 +27,7 @@ impl AlloyedModelProvider {
         Some(&self.providers[index])
     }
 
-    fn get_next_provider(&self) -> Option<&Box<dyn ModelProvider>> {
+    fn get_next_provider(&self) -> Option<&Box<dyn StreamingModelProvider>> {
         if self.providers.is_empty() {
             return None;
         }
@@ -37,7 +37,7 @@ impl AlloyedModelProvider {
     }
 }
 
-impl ModelProvider for AlloyedModelProvider {
+impl StreamingModelProvider for AlloyedModelProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
         match self.get_next_provider() {
             Some(provider) => provider.stream_response(context),

@@ -5,7 +5,7 @@ use tokio_stream::StreamExt;
 use tracing::{debug, error};
 
 use crate::llm::{
-    Context, LlmResponseStream, ModelProvider,
+    Context, LlmResponseStream, StreamingModelProvider,
     openai::{
         mappers::{map_messages, map_tools},
         streaming::process_completion_stream,
@@ -22,7 +22,7 @@ pub trait OpenAiChatProvider {
     fn provider_name(&self) -> &str;
 }
 
-impl<T: OpenAiChatProvider + Send + Sync> ModelProvider for T {
+impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
         let client = self.client().clone();
         let model = self.model().to_string();

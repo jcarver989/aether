@@ -1,5 +1,5 @@
 use crate::agent::{AgentMessage, UserMessage};
-use crate::llm::ModelProvider;
+use crate::llm::StreamingModelProvider;
 use crate::llm::{Context, LlmError};
 use crate::mcp::run_mcp_task::{McpCommand, McpEvent};
 use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest};
@@ -17,7 +17,7 @@ enum AgentEvent {
     Mcp(McpEvent),
 }
 
-pub struct Agent<T: ModelProvider> {
+pub struct Agent<T: StreamingModelProvider> {
     llm: T,
     context: Context,
     mcp_command_tx: mpsc::Sender<McpCommand>,
@@ -26,7 +26,7 @@ pub struct Agent<T: ModelProvider> {
     agent_message_tx: mpsc::Sender<AgentMessage>,
 }
 
-impl<T: ModelProvider + 'static> Agent<T> {
+impl<T: StreamingModelProvider + 'static> Agent<T> {
     pub fn new(
         llm: T,
         context: Context,

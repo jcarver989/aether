@@ -6,7 +6,7 @@ use tokio_stream::StreamExt;
 use crate::llm::openai::mappers::{map_messages, map_tools};
 use crate::llm::openai::process_completion_stream;
 use crate::llm::openrouter::CustomChatCompletionStreamResponse;
-use crate::llm::{Context, LlmError, LlmResponseStream, ModelProvider, Result};
+use crate::llm::{Context, LlmError, LlmResponseStream, StreamingModelProvider, Result};
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -40,7 +40,7 @@ impl OpenRouterProvider {
     }
 }
 
-impl ModelProvider for OpenRouterProvider {
+impl StreamingModelProvider for OpenRouterProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
         let client = self.client.clone();
         let model = self.model.clone();

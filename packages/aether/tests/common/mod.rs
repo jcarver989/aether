@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use aether::llm::{Context, LlmResponseStream, ModelProvider, Result};
+use aether::llm::{Context, LlmResponseStream, StreamingModelProvider, Result};
 use aether::mcp::{ElicitationRequest, McpManager};
 use aether::types::{LlmResponse, ToolCallRequest, ToolDefinition};
 use rmcp::model::Tool as RmcpTool;
@@ -121,7 +121,7 @@ impl FakeLlmProvider {
     }
 }
 
-impl ModelProvider for FakeLlmProvider {
+impl StreamingModelProvider for FakeLlmProvider {
     fn stream_response(&self, _context: &Context) -> LlmResponseStream {
         let chunks = self.chunks.clone();
         Box::pin(iter(chunks.into_iter().map(Ok)))

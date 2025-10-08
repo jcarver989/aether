@@ -1,7 +1,7 @@
 use aether::{
     agent::{AgentMessage::*, UserMessage, agent},
     llm::{
-        ModelProvider,
+        StreamingModelProvider,
         anthropic::AnthropicProvider,
         local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
         openrouter::OpenRouterProvider,
@@ -69,7 +69,7 @@ pub async fn main() {
     }
 }
 
-async fn run_agent<T: ModelProvider + 'static>(provider: T, cli: &Cli, prompt: &str) {
+async fn run_agent<T: StreamingModelProvider + 'static>(provider: T, cli: &Cli, prompt: &str) {
     let mut agent = agent(provider)
         .system_prompt(&cli.system.clone().unwrap_or_default())
         .spawn()

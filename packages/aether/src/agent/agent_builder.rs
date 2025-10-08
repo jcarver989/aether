@@ -1,6 +1,6 @@
 use crate::agent::Result;
 use crate::agent::{Agent, AgentMessage, UserMessage};
-use crate::llm::{Context, ModelProvider};
+use crate::llm::{Context, StreamingModelProvider};
 use crate::mcp::run_mcp_task::{McpCommand, McpEvent, run_mcp_task};
 use crate::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
@@ -30,13 +30,13 @@ impl AgentHandle {
     }
 }
 
-pub struct AgentBuilder<T: ModelProvider> {
+pub struct AgentBuilder<T: StreamingModelProvider> {
     llm: T,
     system_prompt: Option<String>,
     mcp_configs: Vec<McpServerConfig>,
 }
 
-impl<T: ModelProvider + 'static> AgentBuilder<T> {
+impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
     pub fn new(llm: T) -> Self {
         Self {
             llm,
