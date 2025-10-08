@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
+    agent::{AgentMessage, Prompt, UserMessage, agent},
     mcp::manager::McpServerConfig,
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
@@ -83,8 +83,11 @@ async fn test_simple_tool_execution() {
 
     let test_mcp = TestMcp::new();
 
+    let prompt = Prompt::text("You are a helpful assistant.")
+        .build()
+        .unwrap();
     let mut agent = agent(fake_llm)
-        .system(&[SystemPrompt::text("You are a helpful assistant.")])
+        .system(&prompt)
         .mcp(McpServerConfig::InMemory {
             name: "test_mcp".to_string(),
             server: test_mcp.into_dyn(),
@@ -233,10 +236,11 @@ async fn test_tool_execution_error_handling() {
 
     let test_mcp = TestMcp::new();
 
+    let prompt = Prompt::text("You are a helpful assistant.")
+        .build()
+        .unwrap();
     let mut agent = agent(fake_llm)
-        .system(&[SystemPrompt::Text("You ar
-            e a helpful assistant.".to_string())]),
-
+        .system(&prompt)
         .mcp(McpServerConfig::InMemory {
             name: "test_mcp".to_string(),
             server: test_mcp.into_dyn(),

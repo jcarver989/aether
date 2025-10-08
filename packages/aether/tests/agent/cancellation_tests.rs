@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
+    agent::{AgentMessage, Prompt, UserMessage, agent},
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };
@@ -18,9 +18,7 @@ async fn test_cancel_message_variant() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system(&[SystemPrompt::Text("You ar
-            e a helpful assistant.".to_string())]),
-
+        .system(&Prompt::text("You are a helpful assistant.").build().unwrap())
         .spawn()
         .await
         .unwrap();
@@ -86,9 +84,7 @@ async fn test_cancellation_with_cancel_message() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system(&[SystemPrompt::Text("You ar
-            e a helpful assistant.".to_string())]),
-
+        .system(&Prompt::text("You are a helpful assistant.").build().unwrap())
         .spawn()
         .await
         .unwrap();
@@ -153,9 +149,7 @@ async fn test_new_message_cancels_previous() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system(&[SystemPrompt::Text("You ar
-            e a helpful assistant.".to_string())]),
-
+        .system(&Prompt::text("You are a helpful assistant.").build().unwrap())
         .spawn()
         .await
         .unwrap();
@@ -231,9 +225,7 @@ async fn test_sequential_messages() {
     ]);
 
     let mut agent = agent(fake_llm)
-        .system(&[SystemPrompt::Text("You ar
-            e a helpful assistant.".to_string())]),
-
+        .system(&Prompt::text("You are a helpful assistant.").build().unwrap())
         .spawn()
         .await
         .unwrap();

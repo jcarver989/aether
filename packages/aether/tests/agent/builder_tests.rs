@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
+    agent::{AgentMessage, Prompt, UserMessage, agent},
     testing::FakeLlmProvider,
     types::LlmResponse,
 };
@@ -7,11 +7,8 @@ use aether::{
 #[tokio::test]
 async fn test_agent_builder_basic() {
     let llm = FakeLlmProvider::new(vec![]);
-    let _agent = agent(llm)
-        .system(&[SystemPrompt::Text("test prompt".to_string())])
-        .spawn()
-        .await
-        .unwrap();
+    let prompt = Prompt::text("test prompt").build().unwrap();
+    let _agent = agent(llm).system(&prompt).spawn().await.unwrap();
 
     // Agent created successfully - we can't access private fields but build() succeeded
 }
@@ -19,10 +16,8 @@ async fn test_agent_builder_basic() {
 #[tokio::test]
 async fn test_agent_builder_with_coding_tools() {
     let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm)
-        .system(&[SystemPrompt::Text("test prompt".to_string())])
-        .spawn()
-        .await;
+    let prompt = Prompt::text("test prompt").build().unwrap();
+    let result = agent(llm).system(&prompt).spawn().await;
 
     assert!(result.is_ok());
 }
@@ -31,10 +26,8 @@ async fn test_agent_builder_with_coding_tools() {
 async fn test_agent_builder_with_in_memory_mcp() {
     let llm = FakeLlmProvider::new(vec![]);
     // For now, skip this test since we need to add InMemory variant back
-    let result = agent(llm)
-        .system(&[SystemPrompt::Text("test prompt".to_string())])
-        .spawn()
-        .await;
+    let prompt = Prompt::text("test prompt").build().unwrap();
+    let result = agent(llm).system(&prompt).spawn().await;
 
     assert!(result.is_ok());
 }
@@ -51,11 +44,8 @@ async fn test_agent_builder_direct_send() {
         LlmResponse::Done,
     ]);
 
-    let mut agent = agent(llm)
-        .system(&[SystemPrompt::Text("you are a helpful agent".to_string())])
-        .spawn()
-        .await
-        .unwrap();
+    let prompt = Prompt::text("you are a helpful agent").build().unwrap();
+    let mut agent = agent(llm).system(&prompt).spawn().await.unwrap();
 
     // Send a message
     agent.send(UserMessage::text("What is 5+5?")).await.unwrap();
@@ -105,10 +95,8 @@ async fn test_agent_builder_direct_send() {
 async fn test_agent_builder_method_chaining() {
     let llm = FakeLlmProvider::new(vec![]);
 
-    let result = agent(llm)
-        .system(&[SystemPrompt::Text("test prompt".to_string())])
-        .spawn()
-        .await;
+    let prompt = Prompt::text("test prompt").build().unwrap();
+    let result = agent(llm).system(&prompt).spawn().await;
 
     assert!(result.is_ok());
 }
@@ -125,13 +113,10 @@ async fn test_agent_builder_direct_send_with_tools() {
         LlmResponse::Done,
     ]);
 
-    let mut agent = agent(llm)
-        .system(&[SystemPrompt::Text("you ar
-            e a helpful coding assistant".to_string())]),
-
-        .spawn()
-        .await
+    let prompt = Prompt::text("you are a helpful coding assistant")
+        .build()
         .unwrap();
+    let mut agent = agent(llm).system(&prompt).spawn().await.unwrap();
 
     // Send a message
     agent

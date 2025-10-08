@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
+    agent::{AgentMessage, Prompt, UserMessage, agent},
     testing::FakeLlmProvider,
     types::LlmResponse,
 };
@@ -22,10 +22,11 @@ async fn test_agent_spawn_basic_communication() {
     ]);
 
     // Spawn the agent
+    let prompt = Prompt::text("You are a helpful assistant")
+        .build()
+        .unwrap();
     let mut agent = agent(fake_llm)
-        .system(&[SystemPrompt::Text("You ar
-            e a helpful assistant".to_string())]),
-        
+        .system(&prompt)
         .spawn()
         .await
         .expect("Failed to spawn agent");

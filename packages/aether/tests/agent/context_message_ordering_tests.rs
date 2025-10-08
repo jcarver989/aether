@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
+    agent::{AgentMessage, Prompt, UserMessage, agent},
     mcp::manager::McpServerConfig,
     testing::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
@@ -85,7 +85,7 @@ async fn test_simple_tool_call_completes() {
     let test_mcp = SimpleMcp::new();
 
     let mut test_agent = agent(llm)
-        .system(&[SystemPrompt::Text("You are a test assistant".to_string())])
+        .system(&Prompt::text("You are a test assistant").build().unwrap())
         .mcp(McpServerConfig::InMemory {
             name: "simple_mcp".to_string(),
             server: test_mcp.into_dyn(),
@@ -181,7 +181,7 @@ async fn test_agent_control_flow_scenarios() {
     let test_mcp = SimpleMcp::new();
 
     let mut error_agent = agent(llm)
-        .system(&[SystemPrompt::Text("You are a test assistant".to_string())])
+        .system(&Prompt::text("You are a test assistant").build().unwrap())
         .mcp(McpServerConfig::InMemory {
             name: "simple_mcp".to_string(),
             server: test_mcp.into_dyn(),
@@ -239,7 +239,7 @@ async fn test_agent_control_flow_scenarios() {
         let test_mcp2 = SimpleMcp::new();
 
         let mut text_agent = agent(llm2)
-            .system(&[SystemPrompt::Text("You are a test assistant".to_string())])
+            .system(&Prompt::text("You are a test assistant").build().unwrap())
             .mcp(McpServerConfig::InMemory {
                 name: "simple_mcp".to_string(),
                 server: test_mcp2.into_dyn(),
@@ -342,7 +342,7 @@ async fn test_no_consecutive_assistant_messages() {
     let test_mcp = SimpleMcp::new();
 
     let mut test_agent = agent(llm)
-        .system(&[SystemPrompt::Text("You are a test assistant".to_string())])
+        .system(&Prompt::text("You are a test assistant").build().unwrap())
         .mcp(McpServerConfig::InMemory {
             name: "simple_mcp".to_string(),
             server: test_mcp.into_dyn(),

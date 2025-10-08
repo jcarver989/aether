@@ -1,5 +1,5 @@
 use aether::{
-    agent::{SystemPrompt, agent},
+    agent::{Prompt, agent},
     mcp::manager::McpServerConfig,
     testing::FakeLlmProvider,
 };
@@ -73,9 +73,9 @@ async fn test_agent_method_chaining() {
 
     // Test method chaining works
     let result = agent(llm)
-        .system(&[SystemPrompt::Text("test system prompt".to_string())]).spawn(
+        .system(&Prompt::text("test system prompt").build().unwrap())
         .spawn()
-        
+        .await;
 
     assert!(result.is_ok());
 }

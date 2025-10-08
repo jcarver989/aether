@@ -1,5 +1,5 @@
 use aether::{
-    agent::{SystemPrompt, agent},
+    agent::{Prompt, agent},
     testing::FakeLlmProvider,
 };
 use std::fs;
@@ -8,10 +8,8 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_system_prompt_text() {
     let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm)
-        .system(&[SystemPrompt::Text("Hello, world!".to_string())])
-        .spawn()
-        .await;
+    let prompt = Prompt::text("Hello, world!").build().unwrap();
+    let result = agent(llm).system(&prompt).spawn().await;
 
     assert!(result.is_ok());
 }
@@ -19,13 +17,9 @@ async fn test_system_prompt_text() {
 #[tokio::test]
 async fn test_system_prompt_multiple_text() {
     let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm)
-        .system(&[
-            SystemPrompt::Text("First prompt".to_string()),
-            SystemPrompt::Text("Second prompt".to_string()),
-        ])
-        .spawn()
-        .await;
+    let prompt = Prompt::build_all(&[Prompt::text("First prompt"), Prompt::text("Second prompt")])
+        .unwrap();
+    let result = agent(llm).system(&prompt).spawn().await;
 
     assert!(result.is_ok());
 }
@@ -40,17 +34,14 @@ async fn test_system_prompt_file_single() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm)
-        .system(&[SystemPrompt::File {
-            path: "test.md".to_string(),
-            ancestors: false,
-        }])
-        .spawn()
-        .await;
+    // Build the prompt while in the temp directory
+    let prompt = Prompt::file("test.md", false).build().unwrap();
 
-    // Restore original directory
+    // Restore original directory before spawning agent
     std::env::set_current_dir(original_dir).unwrap();
+
+    let llm = FakeLlmProvider::new(vec![]);
+    let result = agent(llm).system(&prompt).spawn().await;
 
     assert!(result.is_ok());
 }
@@ -75,17 +66,14 @@ async fn test_system_prompt_file_with_ancestors() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&subdir).unwrap();
 
-    let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm)
-        .system(&[SystemPrompt::File {
-            path: "AGENTS.md".to_string(),
-            ancestors: true,
-        }])
-        .spawn()
-        .await;
+    // Resolve the prompt while in the subdirectory
+    let prompt = Prompt::file("AGENTS.md", true).build().unwrap();
 
-    // Restore original directory before temp_dir is dropped
+    // Restore original directory before spawning agent
     std::env::set_current_dir(&original_dir).unwrap();
+
+    let llm = FakeLlmProvider::new(vec![]);
+    let result = agent(llm).system(&prompt).spawn().await;
 
     // Keep temp_dir alive until after the result check
     assert!(result.is_ok());
@@ -100,14 +88,7 @@ async fn test_system_prompt_file_missing_error() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm)
-        .system(&[SystemPrompt::File {
-            path: "nonexistent.md".to_string(),
-            ancestors: false,
-        }])
-        .spawn()
-        .await;
+    let result = Prompt::file("nonexistent.md", false).build();
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -123,17 +104,13 @@ async fn test_system_prompt_combined() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
+    let prompt = Prompt::build_all(&[
+        Prompt::file("context.md", false),
+        Prompt::text("Additional instructions"),
+    ])
+    .unwrap();
     let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm)
-        .system(&[
-            SystemPrompt::File {
-                path: "context.md".to_string(),
-                ancestors: false,
-            },
-            SystemPrompt::Text("Additional instructions".to_string()),
-        ])
-        .spawn()
-        .await;
+    let result = agent(llm).system(&prompt).spawn().await;
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -143,7 +120,8 @@ async fn test_system_prompt_combined() {
 #[tokio::test]
 async fn test_system_prompt_empty_slice() {
     let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm).system(&[]).spawn().await;
+    let prompt = Prompt::build_all(&[]).unwrap();
+    let result = agent(llm).system(&prompt).spawn().await;
 
     assert!(result.is_ok());
 }
