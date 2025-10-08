@@ -21,7 +21,7 @@ fn test_parse_stdio_config() {
     "#;
 
     let parser = McpConfigParser::new();
-    let configs = parser.parse_string(json).unwrap();
+    let configs = parser.parse_json(json).unwrap();
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
@@ -63,17 +63,14 @@ fn test_parse_http_config() {
     "#;
 
     let parser = McpConfigParser::new();
-    let configs = parser.parse_string(json).unwrap();
+    let configs = parser.parse_json(json).unwrap();
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
         aether::mcp::manager::McpServerConfig::Http { name, config } => {
             assert_eq!(name, "mcpMesh");
             assert_eq!(config.uri.to_string(), "http://localhost:3000/mcp");
-            assert_eq!(
-                config.auth_header.as_ref().unwrap(),
-                "Bearer secret_token"
-            );
+            assert_eq!(config.auth_header.as_ref().unwrap(), "Bearer secret_token");
         }
         _ => panic!("Expected Http config"),
     }
@@ -96,7 +93,7 @@ fn test_parse_sse_config() {
     "#;
 
     let parser = McpConfigParser::new();
-    let configs = parser.parse_string(json).unwrap();
+    let configs = parser.parse_json(json).unwrap();
 
     assert_eq!(configs.len(), 1);
     // SSE maps to HTTP internally
@@ -128,7 +125,7 @@ fn test_missing_env_var_error() {
     "#;
 
     let parser = McpConfigParser::new();
-    let result = parser.parse_string(json);
+    let result = parser.parse_json(json);
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -151,7 +148,7 @@ fn test_factory_not_found_error() {
     "#;
 
     let parser = McpConfigParser::new();
-    let result = parser.parse_string(json);
+    let result = parser.parse_json(json);
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -167,7 +164,7 @@ fn test_invalid_json() {
     let json = "{ invalid json }";
 
     let parser = McpConfigParser::new();
-    let result = parser.parse_string(json);
+    let result = parser.parse_json(json);
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -200,7 +197,7 @@ fn test_multiple_servers() {
     "#;
 
     let parser = McpConfigParser::new();
-    let configs = parser.parse_string(json).unwrap();
+    let configs = parser.parse_json(json).unwrap();
 
     assert_eq!(configs.len(), 2);
 
@@ -226,7 +223,7 @@ fn test_env_var_in_url() {
     "#;
 
     let parser = McpConfigParser::new();
-    let configs = parser.parse_string(json).unwrap();
+    let configs = parser.parse_json(json).unwrap();
 
     match &configs[0] {
         aether::mcp::manager::McpServerConfig::Http { config, .. } => {

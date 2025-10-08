@@ -17,15 +17,10 @@ async fn run_command(cmd: &str) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Set up the LLM provider
     let llm = OpenRouterProvider::default("anthropic/claude-3.5-sonnet")?;
-
-    // Create agent with middleware hooks
     let prompt = Prompt::text("You are a helpful assistant").build()?;
-
     let _agent = agent(llm)
         .system(&prompt)
-        // Middleware hook that handles events before they execute
         .on_event(|event| async move {
             match event {
                 AgentEvent::UserMessage { content } => {
@@ -42,7 +37,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ))
                     .await;
 
-                    // Example: Block dangerous tools
                     if name == "rm" || name == "delete" {
                         println!("❌ Blocked dangerous tool: {}", name);
                         return MiddlewareAction::Block;
