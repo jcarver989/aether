@@ -24,39 +24,49 @@ use std::env;
 /// # unsafe { std::env::remove_var("TEST_VAR") };
 /// ```
 pub fn expand_env_vars(template: &str) -> Result<String, VarError> {
-    // Match: $$ (escape) | ${VAR} (bracketed) | $VAR (simple)
-    let re = Regex::new(r"\$\$|\$\{([^}]+)\}|\$([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
+    let escape_re = Regex::new(r"\$\$").unwrap();
+    let bracketed_re = Regex::new(r"\$\{([^}]+)\}").unwrap();
+    let simple_re = Regex::new(r"\$([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
 
-    let mut result = String::with_capacity(template.len());
-    let mut last_match = 0;
+    const ESCAPE_PLACEHOLDER: &str = "\x00ESCAPED_DOLLAR\x00";
 
-    for caps in re.captures_iter(template) {
-        let m = caps.get(0).unwrap();
-        result.push_str(&template[last_match..m.start()]);
+    // Replace $$ with placeholder
+    let result = escape_re.replace_all(template, ESCAPE_PLACEHOLDER);
 
-        match (caps.get(1), caps.get(2)) {
-            // ${VAR} - bracketed variable
-            (Some(var), _) => {
-                let var_name = var.as_str();
-                let value = env::var(var_name)
-                    .map_err(|_| VarError::NotFound(var_name.to_string()))?;
-                result.push_str(&value);
+    // Replace ${VAR} with env var, tracking any missing vars
+    let mut missing_var = None;
+    let result = bracketed_re.replace_all(&result, |caps: &regex::Captures| {
+        let var_name = &caps[1];
+        match env::var(var_name) {
+            Ok(value) => value,
+            Err(_) => {
+                missing_var = Some(var_name.to_string());
+                caps[0].to_string() // Keep original if not found
             }
-            // $VAR - simple variable
-            (_, Some(var)) => {
-                let var_name = var.as_str();
-                let value = env::var(var_name)
-                    .map_err(|_| VarError::NotFound(var_name.to_string()))?;
-                result.push_str(&value);
-            }
-            // $$ - escape sequence
-            _ => result.push('$'),
         }
-
-        last_match = m.end();
+    });
+    if let Some(var) = missing_var {
+        return Err(VarError::NotFound(var));
     }
 
-    result.push_str(&template[last_match..]);
+    // Replace $VAR with env var
+    let result = simple_re.replace_all(&result, |caps: &regex::Captures| {
+        let var_name = &caps[1];
+        match env::var(var_name) {
+            Ok(value) => value,
+            Err(_) => {
+                missing_var = Some(var_name.to_string());
+                caps[0].to_string()
+            }
+        }
+    });
+    if let Some(var) = missing_var {
+        return Err(VarError::NotFound(var));
+    }
+
+    // Replace placeholder with $
+    let result = result.replace(ESCAPE_PLACEHOLDER, "$");
+
     Ok(result)
 }
 
