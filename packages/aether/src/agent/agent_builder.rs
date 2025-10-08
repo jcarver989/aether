@@ -59,6 +59,12 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         self
     }
 
+    /// Add multiple MCP server configurations at once
+    pub fn mcps(mut self, configs: Vec<McpServerConfig>) -> Self {
+        self.mcp_configs.extend(configs);
+        self
+    }
+
     /// Add an event handler for agent events
     ///
     /// Handlers receive all agent events and can pattern match to handle specific ones.
