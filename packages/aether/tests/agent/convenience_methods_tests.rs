@@ -1,4 +1,8 @@
-use aether::{agent::agent, mcp::manager::McpServerConfig, testing::FakeLlmProvider};
+use aether::{
+    agent::{SystemPrompt, agent},
+    mcp::manager::McpServerConfig,
+    testing::FakeLlmProvider,
+};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
 
@@ -68,7 +72,10 @@ async fn test_agent_method_chaining() {
     let llm = FakeLlmProvider::new(vec![]);
 
     // Test method chaining works
-    let result = agent(llm).system_prompt("test system prompt").spawn().await;
+    let result = agent(llm)
+        .system(&[SystemPrompt::Text("test system prompt".to_string())]).spawn(
+        .spawn()
+        
 
     assert!(result.is_ok());
 }

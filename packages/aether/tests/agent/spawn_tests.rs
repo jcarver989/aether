@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, UserMessage, agent},
+    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
     testing::FakeLlmProvider,
     types::LlmResponse,
 };
@@ -23,7 +23,9 @@ async fn test_agent_spawn_basic_communication() {
 
     // Spawn the agent
     let mut agent = agent(fake_llm)
-        .system_prompt("You are a helpful assistant")
+        .system(&[SystemPrompt::Text("You ar
+            e a helpful assistant".to_string())]),
+        
         .spawn()
         .await
         .expect("Failed to spawn agent");
@@ -111,7 +113,10 @@ async fn test_agent_spawn_multiple_messages() {
     let timeout_duration = Duration::from_secs(5);
 
     // Send first message
-    agent.send(UserMessage::text("First message")).await.unwrap();
+    agent
+        .send(UserMessage::text("First message"))
+        .await
+        .unwrap();
 
     // Collect first response
     let mut first_responses = Vec::new();
@@ -132,7 +137,10 @@ async fn test_agent_spawn_multiple_messages() {
     }
 
     // Send second message
-    agent.send(UserMessage::text("Second message")).await.unwrap();
+    agent
+        .send(UserMessage::text("Second message"))
+        .await
+        .unwrap();
 
     // Collect second response
     let mut second_responses = Vec::new();

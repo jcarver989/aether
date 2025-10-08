@@ -6,4 +6,5 @@ mod agent {
     mod convenience_methods_tests;
     mod parallel_tool_execution_tests;
     mod spawn_tests;
+    mod system_prompt_tests;
 }

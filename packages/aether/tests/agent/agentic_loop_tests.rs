@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, UserMessage, agent},
+    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
     mcp::manager::McpServerConfig,
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
@@ -84,7 +84,7 @@ async fn test_simple_tool_execution() {
     let test_mcp = TestMcp::new();
 
     let mut agent = agent(fake_llm)
-        .system_prompt("You are a helpful assistant.")
+        .system(&[SystemPrompt::text("You are a helpful assistant.")])
         .mcp(McpServerConfig::InMemory {
             name: "test_mcp".to_string(),
             server: test_mcp.into_dyn(),
@@ -93,7 +93,10 @@ async fn test_simple_tool_execution() {
         .await
         .unwrap();
 
-    agent.send(UserMessage::text("Write a test file")).await.unwrap();
+    agent
+        .send(UserMessage::text("Write a test file"))
+        .await
+        .unwrap();
 
     let mut events = Vec::new();
     let mut completed = false;
@@ -175,7 +178,8 @@ async fn test_simple_tool_execution() {
     // Check that we completed within reasonable time (no infinite loop)
     assert!(
         iterations < MAX_ITERATIONS,
-        "Test should complete without infinite loop, took {} iterations", iterations
+        "Test should complete without infinite loop, took {} iterations",
+        iterations
     );
 
     // Check that we have tool calls that start
@@ -230,7 +234,9 @@ async fn test_tool_execution_error_handling() {
     let test_mcp = TestMcp::new();
 
     let mut agent = agent(fake_llm)
-        .system_prompt("You are a helpful assistant.")
+        .system(&[SystemPrompt::Text("You ar
+            e a helpful assistant.".to_string())]),
+
         .mcp(McpServerConfig::InMemory {
             name: "test_mcp".to_string(),
             server: test_mcp.into_dyn(),
@@ -296,7 +302,8 @@ async fn test_tool_execution_error_handling() {
     // Check that we completed within reasonable time (no infinite loop)
     assert!(
         iterations < MAX_ITERATIONS,
-        "Test should complete without infinite loop, took {} iterations", iterations
+        "Test should complete without infinite loop, took {} iterations",
+        iterations
     );
 
     // Check that we have tool calls with invalid arguments

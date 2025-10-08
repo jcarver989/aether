@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, UserMessage, agent},
+    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
     testing::FakeLlmProvider,
     types::LlmResponse,
 };
@@ -8,7 +8,7 @@ use aether::{
 async fn test_agent_builder_basic() {
     let llm = FakeLlmProvider::new(vec![]);
     let _agent = agent(llm)
-        .system_prompt("test prompt")
+        .system(&[SystemPrompt::Text("test prompt".to_string())])
         .spawn()
         .await
         .unwrap();
@@ -19,7 +19,10 @@ async fn test_agent_builder_basic() {
 #[tokio::test]
 async fn test_agent_builder_with_coding_tools() {
     let llm = FakeLlmProvider::new(vec![]);
-    let result = agent(llm).system_prompt("test prompt").spawn().await;
+    let result = agent(llm)
+        .system(&[SystemPrompt::Text("test prompt".to_string())])
+        .spawn()
+        .await;
 
     assert!(result.is_ok());
 }
@@ -28,7 +31,10 @@ async fn test_agent_builder_with_coding_tools() {
 async fn test_agent_builder_with_in_memory_mcp() {
     let llm = FakeLlmProvider::new(vec![]);
     // For now, skip this test since we need to add InMemory variant back
-    let result = agent(llm).system_prompt("test prompt").spawn().await;
+    let result = agent(llm)
+        .system(&[SystemPrompt::Text("test prompt".to_string())])
+        .spawn()
+        .await;
 
     assert!(result.is_ok());
 }
@@ -46,7 +52,7 @@ async fn test_agent_builder_direct_send() {
     ]);
 
     let mut agent = agent(llm)
-        .system_prompt("you are a helpful agent")
+        .system(&[SystemPrompt::Text("you are a helpful agent".to_string())])
         .spawn()
         .await
         .unwrap();
@@ -82,7 +88,10 @@ async fn test_agent_builder_direct_send() {
             },
             Ok(None) => break,
             Err(_) => {
-                eprintln!("Timeout waiting for message. text_completed={}, done_received={}", text_completed, done_received);
+                eprintln!(
+                    "Timeout waiting for message. text_completed={}, done_received={}",
+                    text_completed, done_received
+                );
                 break;
             }
         }
@@ -96,7 +105,10 @@ async fn test_agent_builder_direct_send() {
 async fn test_agent_builder_method_chaining() {
     let llm = FakeLlmProvider::new(vec![]);
 
-    let result = agent(llm).system_prompt("test prompt").spawn().await;
+    let result = agent(llm)
+        .system(&[SystemPrompt::Text("test prompt".to_string())])
+        .spawn()
+        .await;
 
     assert!(result.is_ok());
 }
@@ -114,13 +126,18 @@ async fn test_agent_builder_direct_send_with_tools() {
     ]);
 
     let mut agent = agent(llm)
-        .system_prompt("you are a helpful coding assistant")
+        .system(&[SystemPrompt::Text("you ar
+            e a helpful coding assistant".to_string())]),
+
         .spawn()
         .await
         .unwrap();
 
     // Send a message
-    agent.send(UserMessage::text("Create a new file")).await.unwrap();
+    agent
+        .send(UserMessage::text("Create a new file"))
+        .await
+        .unwrap();
 
     // Receive response (just verify we get some response)
     let message = agent.recv().await;

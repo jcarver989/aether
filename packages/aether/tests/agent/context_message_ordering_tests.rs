@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, UserMessage, agent},
+    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
     mcp::manager::McpServerConfig,
     testing::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
@@ -85,7 +85,7 @@ async fn test_simple_tool_call_completes() {
     let test_mcp = SimpleMcp::new();
 
     let mut test_agent = agent(llm)
-        .system_prompt("You are a test assistant")
+        .system(&[SystemPrompt::Text("You are a test assistant".to_string())])
         .mcp(McpServerConfig::InMemory {
             name: "simple_mcp".to_string(),
             server: test_mcp.into_dyn(),
@@ -94,7 +94,10 @@ async fn test_simple_tool_call_completes() {
         .await
         .unwrap();
 
-    test_agent.send(UserMessage::text("Use the echo tool")).await.unwrap();
+    test_agent
+        .send(UserMessage::text("Use the echo tool"))
+        .await
+        .unwrap();
 
     // Collect messages until completion
     let mut messages = Vec::new();
@@ -178,7 +181,7 @@ async fn test_agent_control_flow_scenarios() {
     let test_mcp = SimpleMcp::new();
 
     let mut error_agent = agent(llm)
-        .system_prompt("You are a test assistant")
+        .system(&[SystemPrompt::Text("You are a test assistant".to_string())])
         .mcp(McpServerConfig::InMemory {
             name: "simple_mcp".to_string(),
             server: test_mcp.into_dyn(),
@@ -187,7 +190,10 @@ async fn test_agent_control_flow_scenarios() {
         .await
         .unwrap();
 
-    error_agent.send(UserMessage::text("This should error")).await.unwrap();
+    error_agent
+        .send(UserMessage::text("This should error"))
+        .await
+        .unwrap();
 
     // Collect messages - should get error and then terminate
     let mut messages = Vec::new();
@@ -233,7 +239,7 @@ async fn test_agent_control_flow_scenarios() {
         let test_mcp2 = SimpleMcp::new();
 
         let mut text_agent = agent(llm2)
-            .system_prompt("You are a test assistant")
+            .system(&[SystemPrompt::Text("You are a test assistant".to_string())])
             .mcp(McpServerConfig::InMemory {
                 name: "simple_mcp".to_string(),
                 server: test_mcp2.into_dyn(),
@@ -242,7 +248,10 @@ async fn test_agent_control_flow_scenarios() {
             .await
             .unwrap();
 
-        text_agent.send(UserMessage::text("Just respond with text")).await.unwrap();
+        text_agent
+            .send(UserMessage::text("Just respond with text"))
+            .await
+            .unwrap();
 
         let mut messages2 = Vec::new();
         let mut completed = false;
@@ -250,7 +259,9 @@ async fn test_agent_control_flow_scenarios() {
 
         while !completed && iterations2 < MAX_ITERATIONS {
             iterations2 += 1;
-            match tokio::time::timeout(std::time::Duration::from_millis(50), text_agent.recv()).await {
+            match tokio::time::timeout(std::time::Duration::from_millis(50), text_agent.recv())
+                .await
+            {
                 Ok(Some(msg)) => {
                     if let AgentMessage::Text {
                         is_complete: true, ..
@@ -331,7 +342,7 @@ async fn test_no_consecutive_assistant_messages() {
     let test_mcp = SimpleMcp::new();
 
     let mut test_agent = agent(llm)
-        .system_prompt("You are a test assistant")
+        .system(&[SystemPrompt::Text("You are a test assistant".to_string())])
         .mcp(McpServerConfig::InMemory {
             name: "simple_mcp".to_string(),
             server: test_mcp.into_dyn(),
@@ -340,7 +351,10 @@ async fn test_no_consecutive_assistant_messages() {
         .await
         .unwrap();
 
-    test_agent.send(UserMessage::text("Use the echo tool")).await.unwrap();
+    test_agent
+        .send(UserMessage::text("Use the echo tool"))
+        .await
+        .unwrap();
 
     // Collect all messages
     let mut messages = Vec::new();

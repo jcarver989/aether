@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, UserMessage, agent},
+    agent::{AgentMessage, SystemPrompt, UserMessage, agent},
     mcp::manager::McpServerConfig,
     testing::FakeLlmProvider,
     types::LlmResponse,
@@ -74,7 +74,7 @@ async fn test_basic_functionality_still_works() {
     let llm = FakeLlmProvider::with_single_response(responses);
 
     let mut agent = agent(llm)
-        .system_prompt("You are a test assistant")
+        .system(&[SystemPrompt::Text("You are a test assistant".to_string())])
         .mcp(McpServerConfig::InMemory {
             name: "test_mcp".to_string(),
             server: TestMcp::new().into_dyn(),

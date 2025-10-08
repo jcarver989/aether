@@ -70,11 +70,15 @@ pub async fn main() {
 }
 
 async fn run_agent<T: StreamingModelProvider + 'static>(provider: T, cli: &Cli, prompt: &str) {
-    let mut agent = agent(provider)
-        .system_prompt(&cli.system.clone().unwrap_or_default())
-        .spawn()
-        .await
-        .unwrap();
+    use aether::agent::SystemPrompt;
+
+    let mut agent_builder = agent(provider);
+
+    if let Some(system) = &cli.system {
+        agent_builder = agent_builder.system(&[SystemPrompt::Text(system.clone())]);
+    }
+
+    let mut agent = agent_builder.spawn().await.unwrap();
 
     // Send the prompt
     agent.send(UserMessage::text(prompt)).await.unwrap();

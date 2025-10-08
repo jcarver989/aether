@@ -8,6 +8,8 @@ pub enum AgentError {
     McpError(mcp::McpError),
     /// LLM provider error
     LlmError(llm::LlmError),
+    /// IO error (file operations, etc.)
+    IoError(String),
     /// Generic error for other cases
     Other(String),
 }
@@ -17,6 +19,7 @@ impl fmt::Display for AgentError {
         match self {
             AgentError::McpError(e) => write!(f, "MCP error: {}", e),
             AgentError::LlmError(e) => write!(f, "LLM error: {}", e),
+            AgentError::IoError(msg) => write!(f, "IO error: {}", msg),
             AgentError::Other(msg) => write!(f, "{}", msg),
         }
     }

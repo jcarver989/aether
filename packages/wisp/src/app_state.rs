@@ -1,8 +1,8 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use crate::cli::SystemPrompt;
 use crate::cli::Cli;
+use crate::cli::SystemPrompt;
 use aether::agent::{AgentHandle, agent};
 use mcp_lexicon::AgentBuilderExt;
 use tokio::sync::Mutex;
@@ -20,7 +20,7 @@ impl AppState {
 
         let mut agent_builder = agent(llm);
         if let Some(prompt) = &system_prompt {
-            agent_builder = agent_builder.system_prompt(prompt.as_str());
+            agent_builder = agent_builder.system(prompt.as_str());
         }
 
         let agent = agent_builder.coding_tools().spawn().await?;
