@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use aether::cli::ModelProviderParser;
+use aether::llm::parser::ModelProviderParser;
 use aether::llm::StreamingModelProvider;
 use clap::Parser;
 

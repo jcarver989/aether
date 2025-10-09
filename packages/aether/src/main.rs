@@ -1,12 +1,7 @@
 use aether::{
-    agent::{AgentMessage::*, UserMessage, agent},
-    llm::{
-        StreamingModelProvider,
-        anthropic::AnthropicProvider,
-        local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
-        openrouter::OpenRouterProvider,
-    },
-    types::LlmProvider,
+    agent::{AgentMessage::*, Prompt, UserMessage, agent},
+    llm::{StreamingModelProvider, parser::ModelProviderParser},
+    mcp::{McpConfigParser, McpServerConfig},
 };
 use clap::Parser;
 use rmcp::model::{CreateElicitationResult, ElicitationAction};
@@ -21,16 +16,34 @@ struct Cli {
     #[arg(short = 's', long = "system", help = "The LLM's system prompt")]
     system: Option<String>,
 
-    #[arg(short = 'm', long = "model", help = "Model name to use")]
+    #[arg(
+        short = 'm',
+        long = "model",
+        help = "Model spec (e.g., 'anthropic:claude-3.5-sonnet', 'ollama:llama3.2', or 'llamacpp')"
+    )]
     model: String,
-
-    #[arg(long = "provider", help = "LLM provider to use", value_enum)]
-    provider: Option<LlmProvider>,
 }
 
 #[tokio::main]
 pub async fn main() {
     let cli = Cli::parse();
+
+    let llm = match ModelProviderParser::default().parse(&cli.model) {
+        Ok(llm) => llm,
+        Err(e) => {
+            eprintln!("Error parsing model spec '{}': {}", cli.model, e);
+            std::process::exit(1);
+        }
+    };
+
+    let system_prompt = match cli.system.clone().or(Prompt::agents_md().build().ok()) {
+        Some(p) => p,
+        None => {
+            eprintln!("Error: AGENTS.md or --system is required");
+            std::process::exit(1);
+        }
+    };
+
     let prompt = match cli.prompt.clone() {
         Some(p) => p,
         None => {
@@ -39,48 +52,26 @@ pub async fn main() {
         }
     };
 
-    match cli.provider {
-        Some(LlmProvider::Anthropic) => {
-            let provider = AnthropicProvider::default().unwrap().with_model(&cli.model);
-            run_agent(provider, &cli, &prompt).await;
+    let mcp_configs = match McpConfigParser::new().parse_json_file("mcp.json") {
+        Ok(conifgs) => conifgs,
+        Err(_) => {
+            println!("No MCP servers loaded");
+            Vec::new()
         }
-        Some(LlmProvider::OpenRouter) => {
-            let model = if cli.model.is_empty() {
-                "anthropic/claude-3.5-sonnet"
-            } else {
-                &cli.model
-            };
-            let provider = OpenRouterProvider::default(model).unwrap();
-            run_agent(provider, &cli, &prompt).await;
-        }
-        Some(LlmProvider::Ollama) => {
-            let model = if cli.model.is_empty() {
-                "llama3.2"
-            } else {
-                &cli.model
-            };
-            let provider = OllamaProvider::default(model);
-            run_agent(provider, &cli, &prompt).await;
-        }
-        Some(LlmProvider::LlamaCpp) | None => {
-            let provider = LlamaCppProvider::default();
-            run_agent(provider, &cli, &prompt).await;
-        }
-    }
+    };
+
+    run_agent(llm, &system_prompt, &prompt, mcp_configs).await;
 }
 
-async fn run_agent<T: StreamingModelProvider + 'static>(provider: T, cli: &Cli, prompt: &str) {
-    let mut agent_builder = agent(provider);
+async fn run_agent(
+    llm: Box<dyn StreamingModelProvider>,
+    system: &str,
+    prompt: &str,
+    mcps: Vec<McpServerConfig>,
+) {
+    let mut agent = agent(llm).system(system).mcps(mcps).spawn().await.unwrap();
 
-    if let Some(system) = &cli.system {
-        agent_builder = agent_builder.system(system);
-    }
-
-    let mut agent = agent_builder.spawn().await.unwrap();
-
-    // Send the prompt
     agent.send(UserMessage::text(prompt)).await.unwrap();
-
     while let Some(event) = agent.recv().await {
         match event {
             Text {
