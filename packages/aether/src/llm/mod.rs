@@ -4,6 +4,7 @@ pub mod error;
 pub mod local;
 pub mod openai;
 pub mod openrouter;
+pub mod parser;
 pub mod provider;
 
 pub use error::{LlmError, Result};
