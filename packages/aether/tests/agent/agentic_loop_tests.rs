@@ -1,6 +1,6 @@
 use aether::{
     agent::{AgentMessage, Prompt, UserMessage, agent},
-    mcp::manager::McpServerConfig,
+    mcp::config::McpServerConfig,
     testing::fake_llm::FakeLlmProvider,
     types::{LlmResponse, ToolCallRequest},
 };

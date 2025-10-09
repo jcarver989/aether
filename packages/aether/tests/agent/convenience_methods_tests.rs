@@ -1,6 +1,6 @@
 use aether::{
     agent::{Prompt, agent},
-    mcp::manager::McpServerConfig,
+    mcp::config::McpServerConfig,
     testing::FakeLlmProvider,
 };
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;

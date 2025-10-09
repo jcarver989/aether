@@ -1,5 +1,5 @@
 use super::super::common::*;
-use aether::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
+use aether::mcp::{ElicitationRequest, McpManager, config::McpServerConfig};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
