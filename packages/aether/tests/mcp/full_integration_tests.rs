@@ -1,7 +1,5 @@
-use aether::{
-    testing::{FileServerMcp, InMemoryFileSystem, connect},
-    transport::create_in_memory_transport,
-};
+use super::super::common::mcp::{FileServerMcp, connect};
+use aether::{testing::InMemoryFileSystem, transport::create_in_memory_transport};
 use rmcp::model::{CallToolRequestParam, ClientInfo, Implementation};
 
 #[tokio::test]
