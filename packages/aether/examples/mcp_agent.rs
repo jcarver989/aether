@@ -1,18 +1,17 @@
 use aether::{
-    agent::{AgentMessage, Prompt, UserMessage, agent},
+    agent::{AgentMessage, UserMessage, agent},
     llm::openrouter::OpenRouterProvider,
-    mcp::parser::McpConfigParser,
 };
 use std::io::{self, Write};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
+
     let llm = OpenRouterProvider::default("z-ai/glm-4.5-air")?;
-    let mcp_configs = McpConfigParser::new().parse_json_file("examples/mcp.json")?;
     let mut agent = agent(llm)
         .system("You are a helpful assistant with access to web browsing tools via Playwright.")
-        .mcps(mcp_configs)
+        .mcp_json_file("examples/mcp.json")?
         .spawn()
         .await?;
 

@@ -2,12 +2,15 @@ use crate::agent::Result;
 use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{Agent, AgentMessage, UserMessage};
 use crate::llm::{Context, StreamingModelProvider};
+use crate::mcp::McpConfigParser;
 use crate::mcp::run_mcp_task::{McpCommand, McpEvent, run_mcp_task};
 use crate::mcp::{ElicitationRequest, McpManager, config::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
 use std::future::Future;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+
+use super::AgentError;
 
 /// Handle for communicating with a running Agent
 pub struct AgentHandle {
@@ -63,6 +66,15 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
     pub fn mcps(mut self, configs: Vec<McpServerConfig>) -> Self {
         self.mcp_configs.extend(configs);
         self
+    }
+
+    pub fn mcp_json_file(mut self, path: &str) -> Result<Self> {
+        let mcp_configs = McpConfigParser::new()
+            .parse_json_file(path)
+            .map_err(|e| AgentError::IoError(e.to_string()))?;
+
+        self.mcp_configs.extend(mcp_configs);
+        Ok(self)
     }
 
     /// Add an event handler for agent events
