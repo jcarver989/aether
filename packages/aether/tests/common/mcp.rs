@@ -1,4 +1,6 @@
-use crate::{testing::InMemoryFileSystem, transport::create_in_memory_transport};
+#![allow(dead_code)]
+
+use aether::{testing::InMemoryFileSystem, transport::create_in_memory_transport};
 use rmcp::{
     RoleClient, RoleServer, ServerHandler, Service,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
