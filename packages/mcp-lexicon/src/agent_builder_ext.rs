@@ -1,4 +1,4 @@
-use aether::{agent::AgentBuilder, llm::StreamingModelProvider, mcp::manager::McpServerConfig};
+use aether::{agent::AgentBuilder, llm::StreamingModelProvider, mcp::config::McpServerConfig};
 use rmcp::ServiceExt;
 
 use crate::CodingMcp;
