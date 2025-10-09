@@ -3,7 +3,7 @@ use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{Agent, AgentMessage, UserMessage};
 use crate::llm::{Context, StreamingModelProvider};
 use crate::mcp::run_mcp_task::{McpCommand, McpEvent, run_mcp_task};
-use crate::mcp::{ElicitationRequest, McpManager, manager::McpServerConfig};
+use crate::mcp::{ElicitationRequest, McpManager, config::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
 use std::future::Future;
 use tokio::sync::mpsc;

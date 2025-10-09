@@ -1,17 +1,14 @@
-use crate::mcp::{McpError, Result};
+use crate::mcp::{McpError, Result, config::McpServerConfig};
 use crate::types::ToolDefinition;
 use rmcp::{
-    RoleClient, RoleServer, ServiceExt,
+    RoleClient, ServiceExt,
     model::{
         ClientCapabilities, ClientInfo, CreateElicitationRequestParam, CreateElicitationResult,
         ElicitationAction, ElicitationCapability, Implementation, Tool as RmcpTool,
     },
     serve_client,
-    service::{DynService, RunningService},
-    transport::{
-        StreamableHttpClientTransport, TokioChildProcess,
-        streamable_http_client::StreamableHttpClientTransportConfig,
-    },
+    service::RunningService,
+    transport::{StreamableHttpClientTransport, TokioChildProcess},
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -32,59 +29,6 @@ pub struct ElicitationRequest {
 pub struct ElicitationResponse {
     pub action: ElicitationAction,
     pub content: Option<Value>,
-}
-
-pub enum McpServerConfig {
-    Http {
-        name: String,
-        config: StreamableHttpClientTransportConfig,
-    },
-
-    Stdio {
-        name: String,
-        command: String,
-        args: Vec<String>,
-        env: HashMap<String, String>,
-    },
-
-    InMemory {
-        name: String,
-        server: Box<dyn DynService<RoleServer>>,
-    },
-}
-
-impl McpServerConfig {
-    pub fn name(&self) -> &str {
-        match self {
-            McpServerConfig::Http { name, .. } => name,
-            McpServerConfig::Stdio { name, .. } => name,
-            McpServerConfig::InMemory { name, .. } => name,
-        }
-    }
-}
-
-impl std::fmt::Debug for McpServerConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            McpServerConfig::Http { name, config } => f
-                .debug_struct("Http")
-                .field("name", name)
-                .field("config", config)
-                .finish(),
-            McpServerConfig::Stdio { name, command, args, env } => f
-                .debug_struct("Stdio")
-                .field("name", name)
-                .field("command", command)
-                .field("args", args)
-                .field("env", env)
-                .finish(),
-            McpServerConfig::InMemory { name, .. } => f
-                .debug_struct("InMemory")
-                .field("name", name)
-                .field("server", &"<DynService>")
-                .finish(),
-        }
-    }
 }
 
 /// Manages connections to multiple MCP servers and their tools

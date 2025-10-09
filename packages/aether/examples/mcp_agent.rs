@@ -8,27 +8,13 @@ use std::io::{self, Write};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    let parser = McpConfigParser::new();
-    let mcp_configs = parser.parse_json_file("examples/mcp.json")?;
-
-    println!(
-        "📋 Loaded {} MCP server(s) from mcp.json",
-        mcp_configs.len()
-    );
-
-    for config in &mcp_configs {
-        println!("   - {}", config.name());
-    }
-
     let llm = OpenRouterProvider::default("z-ai/glm-4.5-air")?;
-
-    let prompt = Prompt::text(
-        "You are a helpful assistant with access to web browsing tools via Playwright. \
-         When asked to visit websites or interact with web pages, use the available tools.",
-    )
-    .build()?;
-
-    let mut agent = agent(llm).system(&prompt).mcps(mcp_configs).spawn().await?;
+    let mcp_configs = McpConfigParser::new().parse_json_file("examples/mcp.json")?;
+    let mut agent = agent(llm)
+        .system("You are a helpful assistant with access to web browsing tools via Playwright.")
+        .mcps(mcp_configs)
+        .spawn()
+        .await?;
 
     agent
         .send(UserMessage::text(

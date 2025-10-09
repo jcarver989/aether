@@ -1,3 +1,7 @@
+use rmcp::{
+    RoleServer, service::DynService,
+    transport::streamable_http_client::StreamableHttpClientTransportConfig,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -42,4 +46,62 @@ pub enum ServerDefinition {
         #[serde(rename = "factory")]
         server_name: String,
     },
+}
+
+pub enum McpServerConfig {
+    Http {
+        name: String,
+        config: StreamableHttpClientTransportConfig,
+    },
+
+    Stdio {
+        name: String,
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+    },
+
+    InMemory {
+        name: String,
+        server: Box<dyn DynService<RoleServer>>,
+    },
+}
+
+impl McpServerConfig {
+    pub fn name(&self) -> &str {
+        match self {
+            McpServerConfig::Http { name, .. } => name,
+            McpServerConfig::Stdio { name, .. } => name,
+            McpServerConfig::InMemory { name, .. } => name,
+        }
+    }
+}
+
+impl std::fmt::Debug for McpServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            McpServerConfig::Http { name, config } => f
+                .debug_struct("Http")
+                .field("name", name)
+                .field("config", config)
+                .finish(),
+            McpServerConfig::Stdio {
+                name,
+                command,
+                args,
+                env,
+            } => f
+                .debug_struct("Stdio")
+                .field("name", name)
+                .field("command", command)
+                .field("args", args)
+                .field("env", env)
+                .finish(),
+            McpServerConfig::InMemory { name, .. } => f
+                .debug_struct("InMemory")
+                .field("name", name)
+                .field("server", &"<DynService>")
+                .finish(),
+        }
+    }
 }

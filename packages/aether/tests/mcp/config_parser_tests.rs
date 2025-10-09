@@ -1,4 +1,4 @@
-use aether::mcp::{McpConfigParser, ParseError};
+use aether::mcp::{McpConfigParser, McpServerConfig, ParseError};
 use std::env;
 
 #[test]
@@ -25,7 +25,7 @@ fn test_parse_stdio_config() {
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
-        aether::mcp::manager::McpServerConfig::Stdio {
+        McpServerConfig::Stdio {
             name,
             command,
             args,
@@ -67,7 +67,7 @@ fn test_parse_http_config() {
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
-        aether::mcp::manager::McpServerConfig::Http { name, config } => {
+        McpServerConfig::Http { name, config } => {
             assert_eq!(name, "mcpMesh");
             assert_eq!(config.uri.to_string(), "http://localhost:3000/mcp");
             assert_eq!(config.auth_header.as_ref().unwrap(), "Bearer secret_token");
@@ -98,7 +98,7 @@ fn test_parse_sse_config() {
     assert_eq!(configs.len(), 1);
     // SSE maps to HTTP internally
     match &configs[0] {
-        aether::mcp::manager::McpServerConfig::Http { name, config } => {
+        McpServerConfig::Http { name, config } => {
             assert_eq!(name, "sseServer");
             assert_eq!(config.uri.to_string(), "http://localhost:4000/sse");
         }
@@ -226,7 +226,7 @@ fn test_env_var_in_url() {
     let configs = parser.parse_json(json).unwrap();
 
     match &configs[0] {
-        aether::mcp::manager::McpServerConfig::Http { config, .. } => {
+        McpServerConfig::Http { config, .. } => {
             assert_eq!(config.uri.to_string(), "http://localhost:8080/mcp");
         }
         _ => panic!("Expected Http config"),

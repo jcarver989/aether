@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::config::*;
-use super::manager::McpServerConfig;
 use super::variables::{VarError, expand_env_vars};
 
 impl McpConfigParser {

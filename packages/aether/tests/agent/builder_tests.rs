@@ -53,7 +53,6 @@ async fn test_agent_builder_direct_send() {
     // Receive response
     let mut received_text = String::new();
     let mut text_completed = false;
-    let mut done_received = false;
 
     loop {
         match tokio::time::timeout(std::time::Duration::from_secs(2), agent.recv()).await {
@@ -68,7 +67,6 @@ async fn test_agent_builder_direct_send() {
                     }
                 }
                 AgentMessage::Done => {
-                    done_received = true;
                     break;
                 }
                 AgentMessage::Error { .. } => {
@@ -79,8 +77,8 @@ async fn test_agent_builder_direct_send() {
             Ok(None) => break,
             Err(_) => {
                 eprintln!(
-                    "Timeout waiting for message. text_completed={}, done_received={}",
-                    text_completed, done_received
+                    "Timeout waiting for message. text_completed={}",
+                    text_completed
                 );
                 break;
             }
