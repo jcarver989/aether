@@ -1,6 +1,6 @@
 use rmcp::model::CreateElicitationRequestParam;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AgentMessage {
     Text {
         message_id: String,
@@ -38,6 +38,17 @@ pub enum AgentMessage {
 pub enum UserMessage {
     Text { content: String },
     Cancel,
+}
+
+impl AgentMessage {
+    pub fn text(message_id: &str, chunk: &str, is_complete: bool, model_name: &str) -> Self {
+        AgentMessage::Text {
+            message_id: message_id.to_string(),
+            chunk: chunk.to_string(),
+            is_complete,
+            model_name: model_name.to_string(),
+        }
+    }
 }
 
 impl UserMessage {

@@ -1,4 +1,5 @@
 mod agent {
+    mod agent_tests;
     mod agentic_loop_tests;
     mod builder_tests;
     mod cancellation_tests;

@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use chrono::{DateTime, TimeZone};
-use serde::{Deserialize, Serialize};
 use rmcp::model::CallToolRequestParam;
+use serde::{Deserialize, Serialize};
 
 use crate::mcp::manager::parse_namespaced_tool_name;
 
@@ -108,6 +108,44 @@ pub enum LlmResponse {
     ToolRequestComplete { tool_call: ToolCallRequest },
     Done,
     Error { message: String },
+}
+
+impl LlmResponse {
+    pub fn start(message_id: &str) -> Self {
+        Self::Start {
+            message_id: message_id.to_string(),
+        }
+    }
+
+    pub fn text(chunk: &str) -> Self {
+        Self::Text {
+            chunk: chunk.to_string(),
+        }
+    }
+
+    pub fn tool_request_start(id: &str, name: &str) -> Self {
+        Self::ToolRequestStart {
+            id: id.to_string(),
+            name: name.to_string(),
+        }
+    }
+
+    pub fn tool_request_arg(id: &str, chunk: &str) -> Self {
+        Self::ToolRequestArg {
+            id: id.to_string(),
+            chunk: chunk.to_string(),
+        }
+    }
+
+    pub fn tool_request_complete(id: &str, name: &str, arguments: &str) -> Self {
+        Self::ToolRequestComplete {
+            tool_call: ToolCallRequest {
+                id: id.to_string(),
+                name: name.to_string(),
+                arguments: arguments.to_string(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

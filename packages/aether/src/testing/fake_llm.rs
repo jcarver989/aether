@@ -1,6 +1,10 @@
 use crate::llm::provider::{Context, LlmResponseStream, StreamingModelProvider};
 use crate::types::LlmResponse;
 
+pub fn fake_llm(messages: &[Vec<LlmResponse>]) -> FakeLlmProvider {
+    FakeLlmProvider::new(Vec::from(messages))
+}
+
 pub struct FakeLlmProvider {
     responses: Vec<Vec<LlmResponse>>,
     call_count: std::sync::atomic::AtomicUsize,
