@@ -7,7 +7,7 @@ use crate::mcp::run_mcp_task::{McpCommand, McpEvent, run_mcp_task};
 use crate::mcp::{ElicitationRequest, McpManager, config::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
 use std::future::Future;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 
 use super::AgentError;
@@ -16,23 +16,6 @@ use super::AgentError;
 pub struct AgentHandle {
     _agent_handle: JoinHandle<()>,
     _mcp_handle: JoinHandle<()>,
-    user_message_tx: mpsc::Sender<UserMessage>,
-    agent_message_rx: mpsc::Receiver<AgentMessage>,
-}
-
-impl AgentHandle {
-    /// Send a message to the agent
-    pub async fn send(&mut self, message: UserMessage) -> Result<()> {
-        self.user_message_tx
-            .send(message)
-            .await
-            .map_err(|_| crate::agent::AgentError::Other("Agent channel closed".to_string()))
-    }
-
-    /// Receive a message from the agent
-    pub async fn recv(&mut self) -> Option<AgentMessage> {
-        self.agent_message_rx.recv().await
-    }
 }
 
 pub struct AgentBuilder<T: StreamingModelProvider> {
@@ -108,7 +91,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         self
     }
 
-    pub async fn spawn(self) -> Result<AgentHandle> {
+    pub async fn spawn(self) -> Result<(Sender<UserMessage>, Receiver<AgentMessage>, AgentHandle)> {
         let mut messages = Vec::new();
         if let Some(content) = self.system_prompt {
             messages.push(ChatMessage::System {
@@ -143,11 +126,13 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         let mcp_handle = tokio::spawn(run_mcp_task(mcp_manager, mcp_command_rx, mcp_event_tx));
         let agent_handle = tokio::spawn(agent.run());
 
-        Ok(AgentHandle {
-            _agent_handle: agent_handle,
-            _mcp_handle: mcp_handle,
+        Ok((
             user_message_tx,
             agent_message_rx,
-        })
+            AgentHandle {
+                _agent_handle: agent_handle,
+                _mcp_handle: mcp_handle,
+            },
+        ))
     }
 }

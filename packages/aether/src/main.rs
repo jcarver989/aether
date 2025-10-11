@@ -69,10 +69,10 @@ async fn run_agent(
     prompt: &str,
     mcps: Vec<McpServerConfig>,
 ) {
-    let mut agent = agent(llm).system(system).mcps(mcps).spawn().await.unwrap();
+    let (tx, mut rx, _handle) = agent(llm).system(system).mcps(mcps).spawn().await.unwrap();
 
-    agent.send(UserMessage::text(prompt)).await.unwrap();
-    while let Some(event) = agent.recv().await {
+    tx.send(UserMessage::text(prompt)).await.unwrap();
+    while let Some(event) = rx.recv().await {
         match event {
             Text {
                 chunk, is_complete, ..

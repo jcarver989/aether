@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentMessage, Prompt, UserMessage, agent},
+    agent::{AgentMessage, UserMessage, agent},
     llm::openrouter::OpenRouterProvider,
 };
 use std::io::{self, Write};
@@ -9,18 +9,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let llm = OpenRouterProvider::default("z-ai/glm-4.5-air")?;
+    let (tx, mut rx, _handle) = agent(llm)
+        .system("You are a helpful assistant.")
+        .spawn()
+        .await?;
 
-    let prompt =
-        Prompt::text("You are a helpful assistant. Keep your responses concise.").build()?;
-    let mut agent = agent(llm).system(&prompt).spawn().await?;
-
-    agent
-        .send(UserMessage::text("Write one paragraph about a unicorn"))
+    tx.send(UserMessage::text("Write one paragraph about a unicorn"))
         .await?;
 
     loop {
         use AgentMessage::*;
-        match agent.recv().await {
+        match rx.recv().await {
             Some(Text {
                 chunk, is_complete, ..
             }) => {
