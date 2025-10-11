@@ -1,7 +1,7 @@
 use rmcp::{
-    Json, RoleServer, ServerHandler,
+    ErrorData as McpError, Json, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{Implementation, ServerCapabilities, ServerInfo},
+    model::{CallToolResult, Content, Implementation, ServerCapabilities, ServerInfo},
     service::DynService,
     tool, tool_handler, tool_router,
 };
@@ -72,6 +72,37 @@ impl AddNumbersResult {
     }
 }
 
+#[derive(Serialize, Deserialize, JsonSchema)]
+pub struct DivideNumbersRequest {
+    pub a: i32,
+    pub b: i32,
+}
+
+impl DivideNumbersRequest {
+    pub fn new(a: i32, b: i32) -> Self {
+        Self { a, b }
+    }
+
+    pub fn json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+pub struct DivideNumbersResult {
+    pub quotient: i32,
+}
+
+impl DivideNumbersResult {
+    pub fn new(quotient: i32) -> Self {
+        Self { quotient }
+    }
+
+    pub fn json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+}
+
 #[tool_router]
 impl FakeMcpServer {
     pub fn new() -> Self {
@@ -84,12 +115,29 @@ impl FakeMcpServer {
         Box::new(self)
     }
 
-    #[tool(description = "Echoes back the input message")]
+    #[tool(description = "Adds two numbers together")]
     pub async fn add_numbers(
         &self,
         request: Parameters<AddNumbersRequest>,
     ) -> Json<AddNumbersResult> {
         let Parameters(AddNumbersRequest { a, b }) = request;
         Json(AddNumbersResult { sum: a + b })
+    }
+
+    #[tool(description = "Divides two numbers")]
+    pub async fn divide_numbers(
+        &self,
+        request: Parameters<DivideNumbersRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let Parameters(DivideNumbersRequest { a, b }) = request;
+
+        if b == 0 {
+            return Ok(CallToolResult::error(vec![Content::text("Division by zero")]));
+        }
+
+        let result = DivideNumbersResult { quotient: a / b };
+        let result_json = serde_json::to_string(&result).unwrap();
+
+        Ok(CallToolResult::success(vec![Content::text(result_json)]))
     }
 }
