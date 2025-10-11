@@ -1,14 +1,13 @@
 use std::error::Error;
 
 use aether::{
-    agent::{AgentMessage, UserMessage, agent},
+    agent::{AgentMessage, UserMessage},
     testing::{
-        FakeLlmProvider, FakeMcpServer,
         agent_message::agent_message,
-        fake_mcp::{AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, fake_mcp},
+        fake_mcp::{AddNumbersRequest, AddNumbersResult, DivideNumbersRequest},
         llm_response::llm_response,
+        utils::run_agent,
     },
-    types::LlmResponse,
 };
 
 #[tokio::test]
@@ -16,7 +15,12 @@ async fn test_text_message() -> Result<(), Box<dyn Error>> {
     let llm_responses = [llm_response("message_1").text(&["Hello", "user"]).build()];
     let mut expected_messages = agent_message("message_1").text(&["Hello", "user"]).build();
     expected_messages.push(AgentMessage::Done);
-    run_agent(&llm_responses, UserMessage::text("hi"), expected_messages).await
+    run_agent(
+        &llm_responses,
+        &[UserMessage::text("hi")],
+        expected_messages,
+    )
+    .await
 }
 
 #[tokio::test]
@@ -53,7 +57,7 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
 
     run_agent(
         &llm_responses,
-        UserMessage::text("3+5 = ?"),
+        &[UserMessage::text("3+5 = ?")],
         expected_messages,
     )
     .await
@@ -91,7 +95,7 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
                     "call_1",
                     "test__divide_numbers",
                     &tool_request,
-                    "Annotated { raw: Text(RawTextContent { text: \"Division by zero\", meta: None }), annotations: None }",
+                    "Division by zero",
                 )
                 .build(),
         );
@@ -120,40 +124,37 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
 
     run_agent(
         &llm_responses,
-        UserMessage::text("10 / 0 = ?"),
+        &[UserMessage::text("10 / 0 = ?")],
         expected_messages,
     )
     .await
 }
 
-async fn run_agent(
-    llm_responses: &[Vec<LlmResponse>],
-    user_message: UserMessage,
-    expected_agent_messages: Vec<AgentMessage>,
-) -> Result<(), Box<dyn Error>> {
-    let llm = FakeLlmProvider::new(Vec::from(llm_responses));
+#[tokio::test]
+async fn test_cancellation() -> Result<(), Box<dyn Error>> {
+    // Use many chunks to ensure Cancel arrives during processing
+    let llm_responses = [llm_response("message_1")
+        .text(&[
+            "This", " is", " a", " longer", " response", " with", " many", " chunks", " to",
+            " ensure", " cancellation", " happens", " during", " processing",
+        ])
+        .build()];
 
-    let mut handle = agent(llm)
-        .mcp(fake_mcp("test", FakeMcpServer::new()))
-        .spawn()
-        .await?;
+    let mut expected_messages = agent_message("message_1")
+        .text(&[
+            "This", " is", " a", " longer", " response", " with", " many", " chunks", " to",
+            " ensure", " cancellation", " happens", " during", " processing",
+        ])
+        .build();
 
-    let _ = handle.send(user_message.clone()).await?;
-    let mut messages = Vec::new();
+    expected_messages.push(AgentMessage::Cancelled {
+        message: "Processing cancelled".to_string(),
+    });
 
-    while let Some(message) = handle.recv().await {
-        match message {
-            AgentMessage::Done => {
-                messages.push(AgentMessage::Done);
-                break;
-            }
-
-            _ => {
-                messages.push(message);
-            }
-        }
-    }
-
-    assert_eq!(messages, expected_agent_messages);
-    Ok(())
+    run_agent(
+        &llm_responses,
+        &[UserMessage::text("hi"), UserMessage::Cancel],
+        expected_messages,
+    )
+    .await
 }

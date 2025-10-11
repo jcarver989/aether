@@ -9,21 +9,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let llm = OpenRouterProvider::default("z-ai/glm-4.5-air")?;
-    let mut agent = agent(llm)
+    let (tx, mut rx, _handle) = agent(llm)
         .system("You are a helpful assistant with access to web browsing tools via Playwright.")
         .mcp_json_file("examples/mcp.json")?
         .spawn()
         .await?;
 
-    agent
-        .send(UserMessage::text(
-            "Visit https://contextbridge.ai and tell me what you see",
-        ))
-        .await?;
+    tx.send(UserMessage::text(
+        "Visit https://contextbridge.ai and tell me what you see",
+    ))
+    .await?;
 
     loop {
         use AgentMessage::*;
-        match agent.recv().await {
+        match rx.recv().await {
             Some(Text {
                 chunk, is_complete, ..
             }) => {

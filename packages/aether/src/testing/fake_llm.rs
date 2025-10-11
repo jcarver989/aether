@@ -17,10 +17,6 @@ impl FakeLlmProvider {
     pub fn with_single_response(chunks: Vec<LlmResponse>) -> Self {
         Self::new(vec![chunks])
     }
-
-    pub fn call_count(&self) -> usize {
-        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
-    }
 }
 
 impl StreamingModelProvider for FakeLlmProvider {
@@ -31,9 +27,6 @@ impl StreamingModelProvider for FakeLlmProvider {
 
         let response = if current_call < self.responses.len() {
             self.responses[current_call].clone()
-        } else if !self.responses.is_empty() {
-            // Repeat the last response if we run out
-            self.responses.last().unwrap().clone()
         } else {
             vec![LlmResponse::Done]
         };

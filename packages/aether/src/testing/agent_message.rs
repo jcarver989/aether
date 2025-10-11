@@ -103,7 +103,10 @@ impl AgentMessageBuilder {
         let request_json = serde_json::to_string(request).expect("Failed to serialize request");
 
         // Format error like the MCP run task does
-        let error_result = format!("Tool execution error: {}", error_message);
+        let error_result = format!(
+            "Tool execution error: Annotated {{ raw: Text(RawTextContent {{ text: \"{}\", meta: None }}), annotations: None }}",
+            error_message
+        );
 
         // Tool call start
         self.chunks.push(AgentMessage::ToolCall {

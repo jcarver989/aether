@@ -1,5 +1,5 @@
 use super::super::common::*;
-use aether::mcp::{ElicitationRequest, McpManager, config::McpServerConfig};
+use aether::mcp::{ElicitationRequest, McpManager, McpServerConfig};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -17,7 +17,6 @@ async fn test_mcp_client_with_http_server() {
     let mut client = McpManager::new(elicitation_tx);
     let server_name = "test_server".to_string();
     let url = TEST_SERVER_URL.to_string();
-    let _headers: HashMap<String, String> = HashMap::new();
 
     // This would fail in a real test since there's no server, but it tests the API
     let config = StreamableHttpClientTransportConfig {
