@@ -39,6 +39,14 @@ impl LlmResponseBuilder {
         self
     }
 
+    pub fn tool_call_with_invalid_json(mut self, id: &str, name: &str) -> Self {
+        self.chunks.push(LlmResponse::tool_request_start(id, name));
+        self.chunks
+            .push(LlmResponse::tool_request_complete(id, name, "invalid json"));
+
+        self
+    }
+
     pub fn build(mut self) -> Vec<LlmResponse> {
         self.chunks.push(LlmResponse::Done);
         self.chunks

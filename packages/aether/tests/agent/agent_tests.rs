@@ -1,55 +1,37 @@
 use std::error::Error;
 
 use aether::{
-    agent::{AgentHandle, AgentMessage, UserMessage, agent},
+    agent::{AgentMessage, UserMessage, agent},
     testing::{
-        FakeMcpServer,
+        FakeLlmProvider, FakeMcpServer,
         agent_message::agent_message,
-        fake_llm::fake_llm,
-        fake_mcp::{AddNumbersRequest, AddNumbersResult, fake_mcp},
+        fake_mcp::{AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, fake_mcp},
         llm_response::llm_response,
     },
+    types::LlmResponse,
 };
 
 #[tokio::test]
 async fn test_text_message() -> Result<(), Box<dyn Error>> {
-    let llm = {
-        let message = llm_response("message_1").text(&["Hello", "user"]).build();
-        fake_llm(&[message])
-    };
-
-    let handle = agent(llm).spawn().await?;
-    let agent_messages = run_agent(handle, UserMessage::text("hello")).await?;
+    let llm_responses = [llm_response("message_1").text(&["Hello", "user"]).build()];
     let mut expected_messages = agent_message("message_1").text(&["Hello", "user"]).build();
     expected_messages.push(AgentMessage::Done);
-    assert_eq!(agent_messages, expected_messages);
-    Ok(())
+    run_agent(&llm_responses, UserMessage::text("hi"), expected_messages).await
 }
 
 #[tokio::test]
 async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
-    let mcp = fake_mcp("test", FakeMcpServer::new());
     let tool_request = AddNumbersRequest::new(3, 5);
     let tool_result = AddNumbersResult::new(8);
 
-    let llm = {
-        let first_response = llm_response("message_1")
-            .tool_call(
-                "call_1",
-                &format!("{}__add_numbers", mcp.name()),
-                &[&tool_request.json()?],
-            )
-            .build();
-
-        let second_response = llm_response("message_2")
+    let llm_responses = [
+        llm_response("message_1")
+            .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
+            .build(),
+        llm_response("message_2")
             .text(&["The", " sum", " is", " 8"])
-            .build();
-
-        fake_llm(&[first_response, second_response])
-    };
-
-    let handle = agent(llm).mcp(mcp).spawn().await?;
-    let agent_messages = run_agent(handle, UserMessage::text("3+5 = ?")).await?;
+            .build(),
+    ];
 
     let expected_messages = {
         let mut messages = Vec::new();
@@ -68,17 +50,97 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
         messages.push(AgentMessage::Done);
         messages
     };
-    assert_eq!(agent_messages, expected_messages);
-    Ok(())
+
+    run_agent(
+        &llm_responses,
+        UserMessage::text("3+5 = ?"),
+        expected_messages,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
+    let tool_request = DivideNumbersRequest::new(10, 0);
+    let llm_responses = [
+        llm_response("message_1")
+            .tool_call("call_1", "test__divide_numbers", &[&tool_request.json()?])
+            .build(),
+        llm_response("message_2")
+            .text(&[
+                "I",
+                " apologize",
+                ",",
+                " but",
+                " division",
+                " by",
+                " zero",
+                " is",
+                " not",
+                " allowed",
+                ".",
+            ])
+            .build(),
+    ];
+
+    let expected_messages = {
+        let mut messages = Vec::new();
+        messages.extend(
+            agent_message("message_1")
+                .tool_call_with_error(
+                    "call_1",
+                    "test__divide_numbers",
+                    &tool_request,
+                    "Annotated { raw: Text(RawTextContent { text: \"Division by zero\", meta: None }), annotations: None }",
+                )
+                .build(),
+        );
+
+        messages.extend(
+            agent_message("message_2")
+                .text(&[
+                    "I",
+                    " apologize",
+                    ",",
+                    " but",
+                    " division",
+                    " by",
+                    " zero",
+                    " is",
+                    " not",
+                    " allowed",
+                    ".",
+                ])
+                .build(),
+        );
+
+        messages.push(AgentMessage::Done);
+        messages
+    };
+
+    run_agent(
+        &llm_responses,
+        UserMessage::text("10 / 0 = ?"),
+        expected_messages,
+    )
+    .await
 }
 
 async fn run_agent(
-    mut handle: AgentHandle,
+    llm_responses: &[Vec<LlmResponse>],
     user_message: UserMessage,
-) -> Result<Vec<AgentMessage>, Box<dyn Error>> {
-    let _ = handle.send(user_message).await?;
+    expected_agent_messages: Vec<AgentMessage>,
+) -> Result<(), Box<dyn Error>> {
+    let llm = FakeLlmProvider::new(Vec::from(llm_responses));
 
+    let mut handle = agent(llm)
+        .mcp(fake_mcp("test", FakeMcpServer::new()))
+        .spawn()
+        .await?;
+
+    let _ = handle.send(user_message.clone()).await?;
     let mut messages = Vec::new();
+
     while let Some(message) = handle.recv().await {
         match message {
             AgentMessage::Done => {
@@ -92,5 +154,6 @@ async fn run_agent(
         }
     }
 
-    Ok(messages)
+    assert_eq!(messages, expected_agent_messages);
+    Ok(())
 }

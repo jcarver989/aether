@@ -93,6 +93,61 @@ impl AgentMessageBuilder {
         self
     }
 
+    pub fn tool_call_with_error<T: Serialize>(
+        mut self,
+        tool_call_id: &str,
+        name: &str,
+        request: &T,
+        error_message: &str,
+    ) -> Self {
+        let request_json = serde_json::to_string(request).expect("Failed to serialize request");
+
+        // Format error like the MCP run task does
+        let error_result = format!("Tool execution error: {}", error_message);
+
+        // Tool call start
+        self.chunks.push(AgentMessage::ToolCall {
+            tool_call_id: tool_call_id.to_string(),
+            name: name.to_string(),
+            arguments: None,
+            result: None,
+            is_complete: false,
+            model_name: self.model_name.clone(),
+        });
+
+        // Tool call streaming arguments
+        self.chunks.push(AgentMessage::ToolCall {
+            tool_call_id: tool_call_id.to_string(),
+            name: String::new(),
+            arguments: Some(request_json.clone()),
+            result: None,
+            is_complete: false,
+            model_name: self.model_name.clone(),
+        });
+
+        // Tool call streaming arguments finished
+        self.chunks.push(AgentMessage::ToolCall {
+            tool_call_id: tool_call_id.to_string(),
+            name: name.to_string(),
+            arguments: Some(request_json.clone()),
+            result: None,
+            is_complete: false,
+            model_name: self.model_name.clone(),
+        });
+
+        // Tool result received with error
+        self.chunks.push(AgentMessage::ToolCall {
+            tool_call_id: tool_call_id.to_string(),
+            name: name.to_string(),
+            arguments: Some(request_json),
+            result: Some(error_result),
+            is_complete: true,
+            model_name: self.model_name.clone(),
+        });
+
+        self
+    }
+
     pub fn build(mut self) -> Vec<AgentMessage> {
         self.chunks.push(AgentMessage::text(
             &self.message_id,
