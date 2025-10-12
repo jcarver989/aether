@@ -142,9 +142,12 @@ async fn test_cancellation() -> Result<(), Box<dyn Error>> {
         ])
         .build()];
 
-    let expected_messages = vec![AgentMessage::Cancelled {
-        message: "Processing cancelled".to_string(),
-    }];
+    let expected_messages = vec![
+        AgentMessage::Cancelled {
+            message: "Processing cancelled".to_string(),
+        },
+        AgentMessage::Done,
+    ];
 
     run_agent(
         &llm_responses,
