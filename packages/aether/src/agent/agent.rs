@@ -111,7 +111,10 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 }
             }
 
-            if llm_done && let Some(ref id) = current_message_id {
+            if llm_done
+                && pending_tool_calls.is_empty()
+                && let Some(ref id) = current_message_id
+            {
                 self.update_context(&message_content, &completed_tool_calls);
                 let _ = self
                     .agent_message_tx
@@ -123,20 +126,33 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     })
                     .await;
 
-                if pending_tool_calls.is_empty() && !completed_tool_calls.is_empty() {
-                    pending_tool_calls.clear();
+                message_content.clear();
+                llm_done = false;
+                current_message_id = None;
+
+                if !completed_tool_calls.is_empty() {
                     completed_tool_calls.clear();
-                    llm_done = false;
-                    current_message_id = None;
                     self.start_llm_stream();
+                } else {
+                    if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
+                        tracing::warn!("Failed to send Done message: {:?}", e);
+                    }
                 }
             }
         }
 
         tracing::debug!("Agent task shutting down - input channel closed");
-        if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
-            tracing::warn!("Failed to send Done message: {:?}", e);
-        }
+    }
+
+    async fn on_user_cancel(&mut self) {
+        self.streams.remove("llm");
+        let _ = self
+            .agent_message_tx
+            .send(AgentMessage::Cancelled {
+                message: "Processing cancelled".to_string(),
+            })
+            .await;
+        let _ = self.agent_message_tx.send(AgentMessage::Done).await;
     }
 
     async fn on_user_text(&mut self, content: String) {
@@ -164,16 +180,6 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         });
 
         self.start_llm_stream();
-    }
-
-    async fn on_user_cancel(&mut self) {
-        self.streams.remove("llm");
-        let _ = self
-            .agent_message_tx
-            .send(AgentMessage::Cancelled {
-                message: "Processing cancelled".to_string(),
-            })
-            .await;
     }
 
     fn start_llm_stream(&mut self) {
