@@ -3,7 +3,7 @@ use crate::mcp::McpManager;
 use crate::types::{ToolCallRequest, ToolDefinition};
 use rmcp::{RoleClient, model::CallToolRequestParam};
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
 const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
@@ -11,26 +11,24 @@ const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 /// Commands that can be sent to the MCP manager task
 #[derive(Debug)]
 pub enum McpCommand {
-    ExecuteTool(ToolCallRequest),
+    ExecuteTool {
+        request: ToolCallRequest,
+        tx: oneshot::Sender<ToolCallResult>,
+    },
 }
 
 /// Events emitted by the MCP manager task
 #[derive(Debug, Clone)]
 pub enum McpEvent {
-    ToolResult(ToolCallResult),
     ToolsChanged(Vec<ToolDefinition>),
 }
 
-pub async fn run_mcp_task(
-    mut mcp: McpManager,
-    mut command_rx: mpsc::Receiver<McpCommand>,
-    event_tx: mpsc::Sender<McpEvent>,
-) {
+pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<McpCommand>) {
     while let Some(command) = command_rx.recv().await {
         match command {
-            McpCommand::ExecuteTool(request) => match mcp.get_client_for_tool(&request.name) {
+            McpCommand::ExecuteTool { request, tx } => match mcp.get_client_for_tool(&request.name)
+            {
                 Ok(client) => {
-                    let event_tx = event_tx.clone();
                     tokio::spawn(async move {
                         let result_str = match try_execute_tool(client, &request).await {
                             Ok(result) => result,
@@ -45,9 +43,10 @@ pub async fn run_mcp_task(
                             request,
                         };
 
-                        let _ = event_tx.send(McpEvent::ToolResult(result)).await;
+                        let _ = tx.send(result);
                     });
                 }
+
                 Err(e) => {
                     tracing::error!("Failed to get client for tool {}: {}", request.name, e);
                     let error_result = ToolCallResult {
@@ -57,7 +56,7 @@ pub async fn run_mcp_task(
                         result: format!("Failed to get client: {}", e),
                         request,
                     };
-                    let _ = event_tx.send(McpEvent::ToolResult(error_result)).await;
+                    let _ = tx.send(error_result);
                 }
             },
         }
