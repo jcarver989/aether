@@ -12,8 +12,9 @@ use aether::{
 
 #[tokio::test]
 async fn test_text_message() -> Result<(), Box<dyn Error>> {
-    let llm_responses = [llm_response("message_1").text(&["Hello", "user"]).build()];
-    let mut expected_messages = agent_message("message_1").text(&["Hello", "user"]).build();
+    let (id, chunks) = ("message_1", ["Hello", "user"]);
+    let llm_responses = [llm_response(&id).text(&chunks).build()];
+    let mut expected_messages = agent_message(&id).text(&chunks).build();
     expected_messages.push(AgentMessage::Done);
 
     let messages = run_agent(&llm_responses, &[UserMessage::text("hi")]).await?;
@@ -25,30 +26,25 @@ async fn test_text_message() -> Result<(), Box<dyn Error>> {
 async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
     let tool_request = AddNumbersRequest::new(3, 5);
     let tool_result = AddNumbersResult::new(8);
+    let (m1_id, t1_id, t1_name) = ("message_1", "call_1", "test__add_numbers");
+    let (m2_id, chunks) = ("message-2", ["The", " sum", " is", " 8"]);
 
     let llm_responses = [
-        llm_response("message_1")
-            .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
+        llm_response(m1_id)
+            .tool_call(t1_id, t1_name, &[&tool_request.json()?])
             .build(),
-        llm_response("message_2")
-            .text(&["The", " sum", " is", " 8"])
-            .build(),
+        llm_response(m2_id).text(&chunks).build(),
     ];
 
     let expected_messages = {
         let mut messages = Vec::new();
         messages.extend(
-            agent_message("message_1")
-                .tool_call("call_1", "test__add_numbers", &tool_request, &tool_result)
+            agent_message(m1_id)
+                .tool_call(t1_id, t1_name, &tool_request, &tool_result)
                 .build(),
         );
 
-        messages.extend(
-            agent_message("message_2")
-                .text(&["The", " sum", " is", " 8"])
-                .build(),
-        );
-
+        messages.extend(agent_message(m2_id).text(&chunks).build());
         messages.push(AgentMessage::Done);
         messages
     };
