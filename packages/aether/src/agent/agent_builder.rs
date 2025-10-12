@@ -3,7 +3,7 @@ use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{Agent, AgentMessage, UserMessage};
 use crate::llm::{Context, StreamingModelProvider};
 use crate::mcp::McpConfigParser;
-use crate::mcp::run_mcp_task::{McpCommand, McpEvent, run_mcp_task};
+use crate::mcp::run_mcp_task::{McpCommand, run_mcp_task};
 use crate::mcp::{ElicitationRequest, McpManager, config::McpServerConfig};
 use crate::types::{ChatMessage, IsoString};
 use std::future::Future;
@@ -104,7 +104,6 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         let (user_message_tx, user_message_rx) = mpsc::channel::<UserMessage>(queue_size);
         let (agent_message_tx, agent_message_rx) = mpsc::channel::<AgentMessage>(queue_size);
         let (mcp_command_tx, mcp_command_rx) = mpsc::channel::<McpCommand>(queue_size);
-        let (mcp_event_tx, mcp_event_rx) = mpsc::channel::<McpEvent>(queue_size);
         let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(queue_size);
 
         let mut mcp_manager = McpManager::new(elicitation_tx);
@@ -117,13 +116,12 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             self.llm,
             context,
             mcp_command_tx,
-            mcp_event_rx,
             user_message_rx,
             agent_message_tx,
             self.middleware,
         );
 
-        let mcp_handle = tokio::spawn(run_mcp_task(mcp_manager, mcp_command_rx, mcp_event_tx));
+        let mcp_handle = tokio::spawn(run_mcp_task(mcp_manager, mcp_command_rx));
         let agent_handle = tokio::spawn(agent.run());
 
         Ok((

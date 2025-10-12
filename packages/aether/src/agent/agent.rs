@@ -2,21 +2,21 @@ use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{AgentMessage, UserMessage};
 use crate::llm::StreamingModelProvider;
 use crate::llm::{Context, LlmError};
-use crate::mcp::run_mcp_task::{McpCommand, McpEvent};
+use crate::mcp::run_mcp_task::McpCommand;
 use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest};
-use futures::Stream;
+use futures::{Stream, stream};
 use std::collections::HashMap;
 use std::pin::Pin;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use tokio_stream::StreamMap;
 use tokio_stream::wrappers::ReceiverStream;
 
-/// Internal event type for merging LLM and MCP streams
+/// Internal event type for merging LLM and tool result streams
 #[derive(Debug)]
 enum StreamEvent {
     Llm(Result<LlmResponse, LlmError>),
-    Mcp(McpEvent),
+    ToolResult(Result<ToolCallResult, oneshot::error::RecvError>),
     UserMessage(UserMessage),
 }
 
@@ -36,7 +36,6 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         llm: T,
         context: Context,
         mcp_command_tx: mpsc::Sender<McpCommand>,
-        mcp_event_rx: mpsc::Receiver<McpEvent>,
         user_message_rx: mpsc::Receiver<UserMessage>,
         agent_message_tx: mpsc::Sender<AgentMessage>,
         middleware: Middleware,
@@ -45,11 +44,6 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         streams.insert(
             "user".to_string(),
             Box::pin(ReceiverStream::new(user_message_rx).map(StreamEvent::UserMessage)),
-        );
-
-        streams.insert(
-            "mcp".to_string(),
-            Box::pin(ReceiverStream::new(mcp_event_rx).map(StreamEvent::Mcp)),
         );
 
         Self {
@@ -87,9 +81,19 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     }
                 }
 
-                StreamEvent::Mcp(mcp_event) => {
+                StreamEvent::ToolResult(result) => {
                     if !state.cancelled {
-                        self.on_mcp_event(mcp_event, &mut state).await;
+                        match result {
+                            Ok(tool_result) => {
+                                self.on_tool_result(tool_result, &mut state).await;
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed to receive tool result from oneshot channel: {:?}",
+                                    e
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -284,7 +288,14 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     model_name: self.llm.display_name(),
                 });
 
-                let mcp_future = self.mcp_command_tx.send(McpCommand::ExecuteTool(request));
+                let (tx, rx) = oneshot::channel();
+                let stream = stream::once(rx).map(StreamEvent::ToolResult);
+                self.streams.insert(tool_call.id.clone(), Box::pin(stream));
+
+                let mcp_future = self
+                    .mcp_command_tx
+                    .send(McpCommand::ExecuteTool { request, tx });
+
                 let (_, mcp_result) = tokio::join!(msg_future, mcp_future);
 
                 if let Err(e) = mcp_result {
@@ -305,47 +316,38 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         }
     }
 
-    async fn on_mcp_event(&mut self, event: McpEvent, state: &mut IterationState) {
-        match event {
-            McpEvent::ToolResult(result) => {
-                tracing::debug!(
-                    "Tool result received: {} -> {}",
-                    result.name,
-                    result.result.len()
-                );
-                tracing::trace!("Processing tool result for tool_call_id: {}", result.id);
+    async fn on_tool_result(&mut self, result: ToolCallResult, state: &mut IterationState) {
+        tracing::debug!(
+            "Tool result received: {} -> {}",
+            result.name,
+            result.result.len()
+        );
+        tracing::trace!("Processing tool result for tool_call_id: {}", result.id);
 
-                // Only process results for active tool requests
-                if let Some(request) = state.pending_tool_calls.remove(&result.id) {
-                    state.completed_tool_calls.push(ToolCallResult {
-                        id: result.id.clone(),
-                        name: result.name.clone(),
-                        arguments: result.arguments.clone(),
-                        result: result.result.clone(),
-                        request,
-                    });
+        // Only process results for active tool requests
+        if let Some(request) = state.pending_tool_calls.remove(&result.id) {
+            state.completed_tool_calls.push(ToolCallResult {
+                id: result.id.clone(),
+                name: result.name.clone(),
+                arguments: result.arguments.clone(),
+                result: result.result.clone(),
+                request,
+            });
 
-                    let msg = AgentMessage::ToolCall {
-                        tool_call_id: result.id.clone(),
-                        name: result.name.clone(),
-                        arguments: Some(result.arguments.clone()),
-                        result: Some(result.result.clone()),
-                        is_complete: true,
-                        model_name: self.llm.display_name(),
-                    };
+            let msg = AgentMessage::ToolCall {
+                tool_call_id: result.id.clone(),
+                name: result.name.clone(),
+                arguments: Some(result.arguments.clone()),
+                result: Some(result.result.clone()),
+                is_complete: true,
+                model_name: self.llm.display_name(),
+            };
 
-                    if let Err(e) = self.agent_message_tx.send(msg).await {
-                        tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
-                    }
-                } else {
-                    tracing::debug!("Ignoring stale tool result for id: {}", result.id);
-                }
+            if let Err(e) = self.agent_message_tx.send(msg).await {
+                tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
             }
-
-            McpEvent::ToolsChanged(_tools) => {
-                // TODO: Update context with new tools when needed
-                tracing::debug!("MCP tools changed - dynamic updates not yet implemented");
-            }
+        } else {
+            tracing::debug!("Ignoring stale tool result for id: {}", result.id);
         }
     }
 
