@@ -85,27 +85,21 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 }
 
                 StreamEvent::Llm(llm_event) => {
-                    Self::on_llm_event(
+                    self.on_llm_event(
                         llm_event,
                         &mut current_message_id,
                         &mut message_content,
                         &mut pending_tool_calls,
                         &mut llm_done,
-                        &model_name,
-                        &self.agent_message_tx,
-                        &self.mcp_command_tx,
-                        &self.middleware,
                     )
                     .await;
                 }
 
                 StreamEvent::Mcp(mcp_event) => {
-                    Self::on_mcp_event(
+                    self.on_mcp_event(
                         mcp_event,
                         &mut pending_tool_calls,
                         &mut completed_tool_calls,
-                        &model_name,
-                        &self.agent_message_tx,
                     )
                     .await;
                 }
@@ -194,22 +188,20 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
     }
 
     async fn on_llm_event(
+        &mut self,
         result: Result<LlmResponse, LlmError>,
         current_message_id: &mut Option<String>,
         message_content: &mut String,
         active_tools: &mut HashMap<String, ToolCallRequest>,
         llm_done: &mut bool,
-        model_name: &str,
-        output_tx: &mpsc::Sender<AgentMessage>,
-        mcp_command_tx: &mpsc::Sender<McpCommand>,
-        middleware: &Middleware,
     ) {
         use LlmResponse::*;
 
         let response = match result {
             Ok(response) => response,
             Err(e) => {
-                let _ = output_tx
+                let _ = self
+                    .agent_message_tx
                     .send(AgentMessage::Error {
                         message: e.to_string(),
                     })
@@ -228,45 +220,49 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 message_content.push_str(&chunk);
 
                 if let Some(id) = current_message_id {
-                    let _ = output_tx
+                    let _ = self
+                        .agent_message_tx
                         .send(AgentMessage::Text {
                             message_id: id.clone(),
                             chunk,
                             is_complete: false,
-                            model_name: model_name.to_string(),
+                            model_name: self.llm.display_name(),
                         })
                         .await;
                 }
             }
 
             ToolRequestStart { id, name } => {
-                let _ = output_tx
+                let _ = self
+                    .agent_message_tx
                     .send(AgentMessage::ToolCall {
                         tool_call_id: id,
                         name,
                         arguments: None,
                         result: None,
                         is_complete: false,
-                        model_name: model_name.to_string(),
+                        model_name: self.llm.display_name(),
                     })
                     .await;
             }
 
             ToolRequestArg { id, chunk } => {
-                let _ = output_tx
+                let _ = self
+                    .agent_message_tx
                     .send(AgentMessage::ToolCall {
                         tool_call_id: id,
                         name: String::new(),
                         arguments: Some(chunk.to_string()),
                         result: None,
                         is_complete: false,
-                        model_name: model_name.to_string(),
+                        model_name: self.llm.display_name(),
                     })
                     .await;
             }
 
             ToolRequestComplete { tool_call } => {
-                let action = middleware
+                let action = self
+                    .middleware
                     .emit(AgentEvent::ToolCall {
                         id: tool_call.id.clone(),
                         name: tool_call.name.clone(),
@@ -276,7 +272,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 
                 if action == MiddlewareAction::Block {
                     tracing::debug!("Tool call '{}' blocked by middleware", tool_call.name);
-                    let _ = output_tx
+                    let _ = self
+                        .agent_message_tx
                         .send(AgentMessage::Error {
                             message: format!("Tool '{}' blocked by middleware", tool_call.name),
                         })
@@ -292,16 +289,16 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 
                 active_tools.insert(tool_call.id.clone(), request.clone());
 
-                let msg_future = output_tx.send(AgentMessage::ToolCall {
+                let msg_future = self.agent_message_tx.send(AgentMessage::ToolCall {
                     tool_call_id: tool_call.id.clone(),
                     name: tool_call.name.clone(),
                     arguments: Some(tool_call.arguments.clone()),
                     result: None,
                     is_complete: false,
-                    model_name: model_name.to_string(),
+                    model_name: self.llm.display_name(),
                 });
 
-                let mcp_future = mcp_command_tx.send(McpCommand::ExecuteTool(request));
+                let mcp_future = self.mcp_command_tx.send(McpCommand::ExecuteTool(request));
                 let (_, mcp_result) = tokio::join!(msg_future, mcp_future);
 
                 if let Err(e) = mcp_result {
@@ -314,17 +311,19 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             }
 
             Error { message } => {
-                let _ = output_tx.send(AgentMessage::Error { message }).await;
+                let _ = self
+                    .agent_message_tx
+                    .send(AgentMessage::Error { message })
+                    .await;
             }
         }
     }
 
     async fn on_mcp_event(
+        &mut self,
         event: McpEvent,
         pending_tool_calls: &mut HashMap<String, ToolCallRequest>,
         completed_tools: &mut Vec<ToolCallResult>,
-        model_name: &str,
-        output_tx: &mpsc::Sender<AgentMessage>,
     ) {
         match event {
             McpEvent::ToolResult(result) => {
@@ -351,10 +350,10 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                         arguments: Some(result.arguments.clone()),
                         result: Some(result.result.clone()),
                         is_complete: true,
-                        model_name: model_name.to_string(),
+                        model_name: self.llm.display_name(),
                     };
 
-                    if let Err(e) = output_tx.send(msg).await {
+                    if let Err(e) = self.agent_message_tx.send(msg).await {
                         tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
                     }
                 } else {
