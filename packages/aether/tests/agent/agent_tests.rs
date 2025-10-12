@@ -4,7 +4,6 @@ use aether::{
     agent::{AgentMessage, UserMessage},
     testing::{
         agent_message::agent_message,
-        collect_agent_messages,
         fake_mcp::{AddNumbersRequest, AddNumbersResult, DivideNumbersRequest},
         llm_response::llm_response,
         utils::run_agent,
@@ -16,12 +15,10 @@ async fn test_text_message() -> Result<(), Box<dyn Error>> {
     let llm_responses = [llm_response("message_1").text(&["Hello", "user"]).build()];
     let mut expected_messages = agent_message("message_1").text(&["Hello", "user"]).build();
     expected_messages.push(AgentMessage::Done);
-    run_agent(
-        &llm_responses,
-        &[UserMessage::text("hi")],
-        expected_messages,
-    )
-    .await
+
+    let messages = run_agent(&llm_responses, &[UserMessage::text("hi")]).await?;
+    assert_eq!(messages, expected_messages);
+    Ok(())
 }
 
 #[tokio::test]
@@ -56,12 +53,9 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
         messages
     };
 
-    run_agent(
-        &llm_responses,
-        &[UserMessage::text("3+5 = ?")],
-        expected_messages,
-    )
-    .await
+    let messages = run_agent(&llm_responses, &[UserMessage::text("3+5 = ?")]).await?;
+    assert_eq!(messages, expected_messages);
+    Ok(())
 }
 
 #[tokio::test]
@@ -106,12 +100,9 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
         messages
     };
 
-    run_agent(
-        &llm_responses,
-        &[UserMessage::text("10 / 0 = ?")],
-        expected_messages,
-    )
-    .await
+    let messages = run_agent(&llm_responses, &[UserMessage::text("10 / 0 = ?")]).await?;
+    assert_eq!(messages, expected_messages);
+    Ok(())
 }
 
 #[tokio::test]
@@ -131,7 +122,7 @@ async fn test_cancellation() -> Result<(), Box<dyn Error>> {
     ];
 
     let llm_responses = [llm_response("message_1").text(&chunks).build()];
-    let messages = collect_agent_messages(
+    let messages = run_agent(
         &llm_responses,
         &[UserMessage::text("hi"), UserMessage::Cancel],
     )
