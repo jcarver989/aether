@@ -4,27 +4,30 @@ use crate::llm::StreamingModelProvider;
 use crate::llm::{Context, LlmError};
 use crate::mcp::run_mcp_task::{McpCommand, McpEvent};
 use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest};
-use std::collections::HashSet;
-use std::pin::pin;
+use futures::Stream;
+use std::collections::HashMap;
+use std::pin::Pin;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
+use tokio_stream::StreamMap;
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_util::sync::CancellationToken;
 
 /// Internal event type for merging LLM and MCP streams
 #[derive(Debug)]
 enum StreamEvent {
     Llm(Result<LlmResponse, LlmError>),
     Mcp(McpEvent),
+    UserMessage(UserMessage),
 }
+
+type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
 
 pub struct Agent<T: StreamingModelProvider> {
     llm: T,
     context: Context,
     mcp_command_tx: mpsc::Sender<McpCommand>,
-    mcp_event_stream: ReceiverStream<McpEvent>,
-    user_message_rx: mpsc::Receiver<UserMessage>,
     agent_message_tx: mpsc::Sender<AgentMessage>,
+    streams: StreamMap<String, EventStream>,
     middleware: Middleware,
 }
 
@@ -38,13 +41,23 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         agent_message_tx: mpsc::Sender<AgentMessage>,
         middleware: Middleware,
     ) -> Self {
+        let mut streams: StreamMap<String, EventStream> = StreamMap::new();
+        streams.insert(
+            "user".to_string(),
+            Box::pin(ReceiverStream::new(user_message_rx).map(StreamEvent::UserMessage)),
+        );
+
+        streams.insert(
+            "mcp".to_string(),
+            Box::pin(ReceiverStream::new(mcp_event_rx).map(StreamEvent::Mcp)),
+        );
+
         Self {
             llm,
             context,
             mcp_command_tx,
-            mcp_event_stream: ReceiverStream::new(mcp_event_rx),
-            user_message_rx,
             agent_message_tx,
+            streams,
             middleware,
         }
     }
@@ -54,115 +67,52 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
     }
 
     pub async fn run(mut self) {
-        let mut current_cancellation: Option<CancellationToken> = None;
-
-        while let Some(message) = self.user_message_rx.recv().await {
-            match message {
-                UserMessage::Cancel => {
-                    if let Some(token) = current_cancellation.take() {
-                        token.cancel();
-                        self.on_cancel_event().await;
-                    }
-                }
-
-                UserMessage::Text { content } => {
-                    if let Some(token) = current_cancellation.take() {
-                        token.cancel();
-                    }
-
-                    let action = self
-                        .middleware
-                        .emit(AgentEvent::UserMessage {
-                            content: content.clone(),
-                        })
-                        .await;
-
-                    if action == MiddlewareAction::Block {
-                        tracing::debug!("User message blocked by middleware");
-                        let _ = self
-                            .agent_message_tx
-                            .send(AgentMessage::Error {
-                                message: "Message blocked by middleware".to_string(),
-                            })
-                            .await;
-                        continue;
-                    }
-
-                    let cancellation_token = CancellationToken::new();
-                    current_cancellation = Some(cancellation_token.clone());
-
-                    self.context.add_message(ChatMessage::User {
-                        content,
-                        timestamp: IsoString::now(),
-                    });
-
-                    self.run_agentic_loop(cancellation_token).await;
-                }
-            }
-        }
-
-        tracing::debug!("Agent task shutting down - input channel closed");
-    }
-
-    async fn run_agentic_loop(&mut self, cancellation_token: CancellationToken) {
-        tracing::debug!("Starting agent task main loop");
+        let mut current_message_id: Option<String> = None;
+        let mut message_content = String::new();
+        let mut pending_tool_calls: HashMap<String, ToolCallRequest> = HashMap::new();
+        let mut completed_tool_calls: Vec<ToolCallResult> = Vec::new();
+        let mut llm_done = false;
         let model_name = self.llm.display_name();
 
-        loop {
-            let mut current_message_id: Option<String> = None;
-            let mut message_content = String::new();
-            let mut pending_tools: HashSet<String> = HashSet::new();
-            let mut completed_tools: Vec<ToolCallResult> = Vec::new();
-            let mut llm_done = false;
-            let mut stream = {
-                let llm_stream = self
-                    .llm
-                    .stream_response(&self.context)
-                    .map(StreamEvent::Llm);
-                let mcp_stream = (&mut self.mcp_event_stream).map(StreamEvent::Mcp);
-                pin!(llm_stream.merge(mcp_stream))
-            };
-
-            while let Some(event) = stream.next().await {
-                if cancellation_token.is_cancelled() {
-                    self.on_cancel_event().await;
-                    return;
+        while let Some((_, event)) = self.streams.next().await {
+            match event {
+                StreamEvent::UserMessage(UserMessage::Cancel) => {
+                    self.on_user_cancel().await;
                 }
 
-                match event {
-                    StreamEvent::Llm(llm_event) => {
-                        Self::on_llm_event(
-                            llm_event,
-                            &mut current_message_id,
-                            &mut message_content,
-                            &mut pending_tools,
-                            &mut llm_done,
-                            &model_name,
-                            &self.agent_message_tx,
-                            &self.mcp_command_tx,
-                            &self.middleware,
-                        )
-                        .await;
-                    }
-
-                    StreamEvent::Mcp(mcp_event) => {
-                        Self::on_mcp_event(
-                            mcp_event,
-                            &mut pending_tools,
-                            &mut completed_tools,
-                            &model_name,
-                            &self.agent_message_tx,
-                        )
-                        .await;
-                    }
+                StreamEvent::UserMessage(UserMessage::Text { content }) => {
+                    self.on_user_text(content).await;
                 }
 
-                if llm_done && pending_tools.is_empty() {
-                    break;
+                StreamEvent::Llm(llm_event) => {
+                    Self::on_llm_event(
+                        llm_event,
+                        &mut current_message_id,
+                        &mut message_content,
+                        &mut pending_tool_calls,
+                        &mut llm_done,
+                        &model_name,
+                        &self.agent_message_tx,
+                        &self.mcp_command_tx,
+                        &self.middleware,
+                    )
+                    .await;
+                }
+
+                StreamEvent::Mcp(mcp_event) => {
+                    Self::on_mcp_event(
+                        mcp_event,
+                        &mut pending_tool_calls,
+                        &mut completed_tool_calls,
+                        &model_name,
+                        &self.agent_message_tx,
+                    )
+                    .await;
                 }
             }
 
-            if let Some(ref id) = current_message_id {
+            if llm_done && let Some(ref id) = current_message_id {
+                self.update_context(&message_content, &completed_tool_calls);
                 let _ = self
                     .agent_message_tx
                     .send(AgentMessage::Text {
@@ -172,26 +122,52 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                         model_name: model_name.to_string(),
                     })
                     .await;
-            }
 
-            if current_message_id.is_some() {
-                self.update_context(&message_content, &completed_tools);
-            } else {
-                break;
-            }
-
-            if completed_tools.is_empty() {
-                break;
+                if pending_tool_calls.is_empty() && !completed_tool_calls.is_empty() {
+                    pending_tool_calls.clear();
+                    completed_tool_calls.clear();
+                    llm_done = false;
+                    current_message_id = None;
+                    self.start_llm_stream();
+                }
             }
         }
 
-        tracing::debug!("Agent task main loop exited, task ending");
+        tracing::debug!("Agent task shutting down - input channel closed");
         if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
             tracing::warn!("Failed to send Done message: {:?}", e);
         }
     }
 
-    async fn on_cancel_event(&self) {
+    async fn on_user_text(&mut self, content: String) {
+        let action = self
+            .middleware
+            .emit(AgentEvent::UserMessage {
+                content: content.clone(),
+            })
+            .await;
+
+        if action == MiddlewareAction::Block {
+            tracing::debug!("User message blocked by middleware");
+            let _ = self
+                .agent_message_tx
+                .send(AgentMessage::Error {
+                    message: "Message blocked by middleware".to_string(),
+                })
+                .await;
+            return;
+        }
+
+        self.context.add_message(ChatMessage::User {
+            content,
+            timestamp: IsoString::now(),
+        });
+
+        self.start_llm_stream();
+    }
+
+    async fn on_user_cancel(&mut self) {
+        self.streams.remove("llm");
         let _ = self
             .agent_message_tx
             .send(AgentMessage::Cancelled {
@@ -200,11 +176,22 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             .await;
     }
 
+    fn start_llm_stream(&mut self) {
+        self.streams.remove("llm");
+
+        let llm_stream = self
+            .llm
+            .stream_response(&self.context)
+            .map(StreamEvent::Llm);
+
+        self.streams.insert("llm".to_string(), Box::pin(llm_stream));
+    }
+
     async fn on_llm_event(
         result: Result<LlmResponse, LlmError>,
         current_message_id: &mut Option<String>,
         message_content: &mut String,
-        pending_tools: &mut HashSet<String>,
+        active_tools: &mut HashMap<String, ToolCallRequest>,
         llm_done: &mut bool,
         model_name: &str,
         output_tx: &mpsc::Sender<AgentMessage>,
@@ -291,12 +278,13 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     return;
                 }
 
-                pending_tools.insert(tool_call.id.clone());
                 let request = ToolCallRequest {
                     id: tool_call.id.clone(),
                     name: tool_call.name.clone(),
                     arguments: tool_call.arguments.clone(),
                 };
+
+                active_tools.insert(tool_call.id.clone(), request.clone());
 
                 let msg_future = output_tx.send(AgentMessage::ToolCall {
                     tool_call_id: tool_call.id.clone(),
@@ -327,7 +315,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 
     async fn on_mcp_event(
         event: McpEvent,
-        pending_tools: &mut HashSet<String>,
+        pending_tool_calls: &mut HashMap<String, ToolCallRequest>,
         completed_tools: &mut Vec<ToolCallResult>,
         model_name: &str,
         output_tx: &mpsc::Sender<AgentMessage>,
@@ -340,20 +328,31 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     result.result.len()
                 );
                 tracing::trace!("Processing tool result for tool_call_id: {}", result.id);
-                pending_tools.remove(&result.id);
-                completed_tools.push(result.clone());
 
-                let msg = AgentMessage::ToolCall {
-                    tool_call_id: result.id.clone(),
-                    name: result.name.clone(),
-                    arguments: Some(result.arguments.clone()),
-                    result: Some(result.result.clone()),
-                    is_complete: true,
-                    model_name: model_name.to_string(),
-                };
+                // Only process results for active tool requests
+                if let Some(request) = pending_tool_calls.remove(&result.id) {
+                    completed_tools.push(ToolCallResult {
+                        id: result.id.clone(),
+                        name: result.name.clone(),
+                        arguments: result.arguments.clone(),
+                        result: result.result.clone(),
+                        request,
+                    });
 
-                if let Err(e) = output_tx.send(msg).await {
-                    tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
+                    let msg = AgentMessage::ToolCall {
+                        tool_call_id: result.id.clone(),
+                        name: result.name.clone(),
+                        arguments: Some(result.arguments.clone()),
+                        result: Some(result.result.clone()),
+                        is_complete: true,
+                        model_name: model_name.to_string(),
+                    };
+
+                    if let Err(e) = output_tx.send(msg).await {
+                        tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
+                    }
+                } else {
+                    tracing::debug!("Ignoring stale tool result for id: {}", result.id);
                 }
             }
 
