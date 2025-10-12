@@ -71,21 +71,26 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         let model_name = self.llm.display_name();
 
         while let Some((_, event)) = self.streams.next().await {
+            use UserMessage::*;
             match event {
-                StreamEvent::UserMessage(UserMessage::Cancel) => {
-                    self.on_user_cancel().await;
+                StreamEvent::UserMessage(Cancel) => {
+                    self.on_user_cancel(&mut state).await;
                 }
 
-                StreamEvent::UserMessage(UserMessage::Text { content }) => {
+                StreamEvent::UserMessage(Text { content }) => {
                     self.on_user_text(content).await;
                 }
 
                 StreamEvent::Llm(llm_event) => {
-                    self.on_llm_event(llm_event, &mut state).await;
+                    if !state.cancelled {
+                        self.on_llm_event(llm_event, &mut state).await;
+                    }
                 }
 
                 StreamEvent::Mcp(mcp_event) => {
-                    self.on_mcp_event(mcp_event, &mut state).await;
+                    if !state.cancelled {
+                        self.on_mcp_event(mcp_event, &mut state).await;
+                    }
                 }
             }
 
@@ -119,7 +124,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         tracing::debug!("Agent task shutting down - input channel closed");
     }
 
-    async fn on_user_cancel(&mut self) {
+    async fn on_user_cancel(&mut self, state: &mut IterationState) {
+        state.cancelled = true;
         self.streams.remove("llm");
         let _ = self
             .agent_message_tx
@@ -372,6 +378,7 @@ struct IterationState {
     pub pending_tool_calls: HashMap<String, ToolCallRequest>,
     pub completed_tool_calls: Vec<ToolCallResult>,
     pub llm_done: bool,
+    pub cancelled: bool,
 }
 
 impl IterationState {
@@ -382,6 +389,7 @@ impl IterationState {
             pending_tool_calls: HashMap::new(),
             completed_tool_calls: Vec::new(),
             llm_done: false,
+            cancelled: false,
         }
     }
 
