@@ -67,11 +67,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
     }
 
     pub async fn run(mut self) {
-        let mut current_message_id: Option<String> = None;
-        let mut message_content = String::new();
-        let mut pending_tool_calls: HashMap<String, ToolCallRequest> = HashMap::new();
-        let mut completed_tool_calls: Vec<ToolCallResult> = Vec::new();
-        let mut llm_done = false;
+        let mut state = IterationState::new();
         let model_name = self.llm.display_name();
 
         while let Some((_, event)) = self.streams.next().await {
@@ -85,31 +81,18 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 }
 
                 StreamEvent::Llm(llm_event) => {
-                    self.on_llm_event(
-                        llm_event,
-                        &mut current_message_id,
-                        &mut message_content,
-                        &mut pending_tool_calls,
-                        &mut llm_done,
-                    )
-                    .await;
+                    self.on_llm_event(llm_event, &mut state).await;
                 }
 
                 StreamEvent::Mcp(mcp_event) => {
-                    self.on_mcp_event(
-                        mcp_event,
-                        &mut pending_tool_calls,
-                        &mut completed_tool_calls,
-                    )
-                    .await;
+                    self.on_mcp_event(mcp_event, &mut state).await;
                 }
             }
 
-            if llm_done
-                && pending_tool_calls.is_empty()
-                && let Some(ref id) = current_message_id
+            if state.is_complete()
+                && let Some(ref id) = state.current_message_id
             {
-                self.update_context(&message_content, &completed_tool_calls);
+                self.update_context(&state.message_content, &state.completed_tool_calls);
                 let _ = self
                     .agent_message_tx
                     .send(AgentMessage::Text {
@@ -120,12 +103,10 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     })
                     .await;
 
-                message_content.clear();
-                llm_done = false;
-                current_message_id = None;
+                let should_continue = state.has_tool_calls();
+                state = IterationState::new();
 
-                if !completed_tool_calls.is_empty() {
-                    completed_tool_calls.clear();
+                if should_continue {
                     self.start_llm_stream();
                 } else {
                     if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
@@ -190,10 +171,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
     async fn on_llm_event(
         &mut self,
         result: Result<LlmResponse, LlmError>,
-        current_message_id: &mut Option<String>,
-        message_content: &mut String,
-        active_tools: &mut HashMap<String, ToolCallRequest>,
-        llm_done: &mut bool,
+        state: &mut IterationState,
     ) {
         use LlmResponse::*;
 
@@ -212,14 +190,14 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 
         match response {
             Start { message_id } => {
-                *current_message_id = Some(message_id);
-                message_content.clear();
+                state.current_message_id = Some(message_id);
+                state.message_content.clear();
             }
 
             Text { chunk } => {
-                message_content.push_str(&chunk);
+                state.message_content.push_str(&chunk);
 
-                if let Some(id) = current_message_id {
+                if let Some(id) = &state.current_message_id {
                     let _ = self
                         .agent_message_tx
                         .send(AgentMessage::Text {
@@ -287,7 +265,9 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     arguments: tool_call.arguments.clone(),
                 };
 
-                active_tools.insert(tool_call.id.clone(), request.clone());
+                state
+                    .pending_tool_calls
+                    .insert(tool_call.id.clone(), request.clone());
 
                 let msg_future = self.agent_message_tx.send(AgentMessage::ToolCall {
                     tool_call_id: tool_call.id.clone(),
@@ -307,7 +287,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             }
 
             Done => {
-                *llm_done = true;
+                state.llm_done = true;
             }
 
             Error { message } => {
@@ -319,12 +299,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         }
     }
 
-    async fn on_mcp_event(
-        &mut self,
-        event: McpEvent,
-        pending_tool_calls: &mut HashMap<String, ToolCallRequest>,
-        completed_tools: &mut Vec<ToolCallResult>,
-    ) {
+    async fn on_mcp_event(&mut self, event: McpEvent, state: &mut IterationState) {
         match event {
             McpEvent::ToolResult(result) => {
                 tracing::debug!(
@@ -335,8 +310,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 tracing::trace!("Processing tool result for tool_call_id: {}", result.id);
 
                 // Only process results for active tool requests
-                if let Some(request) = pending_tool_calls.remove(&result.id) {
-                    completed_tools.push(ToolCallResult {
+                if let Some(request) = state.pending_tool_calls.remove(&result.id) {
+                    state.completed_tool_calls.push(ToolCallResult {
                         id: result.id.clone(),
                         name: result.name.clone(),
                         arguments: result.arguments.clone(),
@@ -387,6 +362,35 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 timestamp: IsoString::now(),
             });
         }
+    }
+}
+
+#[derive(Debug)]
+struct IterationState {
+    pub current_message_id: Option<String>,
+    pub message_content: String,
+    pub pending_tool_calls: HashMap<String, ToolCallRequest>,
+    pub completed_tool_calls: Vec<ToolCallResult>,
+    pub llm_done: bool,
+}
+
+impl IterationState {
+    pub fn new() -> Self {
+        Self {
+            current_message_id: None,
+            message_content: String::new(),
+            pending_tool_calls: HashMap::new(),
+            completed_tool_calls: Vec::new(),
+            llm_done: false,
+        }
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.llm_done && self.pending_tool_calls.is_empty()
+    }
+
+    pub fn has_tool_calls(&self) -> bool {
+        !self.completed_tool_calls.is_empty()
     }
 }
 
