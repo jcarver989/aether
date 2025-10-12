@@ -4,6 +4,7 @@ use aether::{
     agent::{AgentMessage, UserMessage},
     testing::{
         agent_message::agent_message,
+        collect_agent_messages,
         fake_mcp::{AddNumbersRequest, AddNumbersResult, DivideNumbersRequest},
         llm_response::llm_response,
         utils::run_agent,
@@ -66,25 +67,25 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
 #[tokio::test]
 async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
     let tool_request = DivideNumbersRequest::new(10, 0);
+    let chunks = [
+        "I",
+        " apologize",
+        ",",
+        " but",
+        " division",
+        " by",
+        " zero",
+        " is",
+        " not",
+        " allowed",
+        ".",
+    ];
+
     let llm_responses = [
         llm_response("message_1")
             .tool_call("call_1", "test__divide_numbers", &[&tool_request.json()?])
             .build(),
-        llm_response("message_2")
-            .text(&[
-                "I",
-                " apologize",
-                ",",
-                " but",
-                " division",
-                " by",
-                " zero",
-                " is",
-                " not",
-                " allowed",
-                ".",
-            ])
-            .build(),
+        llm_response("message_2").text(&chunks).build(),
     ];
 
     let expected_messages = {
@@ -100,24 +101,7 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
                 .build(),
         );
 
-        messages.extend(
-            agent_message("message_2")
-                .text(&[
-                    "I",
-                    " apologize",
-                    ",",
-                    " but",
-                    " division",
-                    " by",
-                    " zero",
-                    " is",
-                    " not",
-                    " allowed",
-                    ".",
-                ])
-                .build(),
-        );
-
+        messages.extend(agent_message("message_2").text(&chunks).build());
         messages.push(AgentMessage::Done);
         messages
     };
@@ -132,27 +116,47 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn test_cancellation() -> Result<(), Box<dyn Error>> {
-    // With the new streaming architecture, Cancel messages are processed immediately
-    // in the merged stream. When sent concurrently with a text message, the cancel
-    // may arrive before any LLM chunks are emitted.
-    let llm_responses = [llm_response("message_1")
-        .text(&[
-            "This", " is", " a", " longer", " response", " with", " many", " chunks", " to",
-            " ensure", " cancellation", " happens", " during", " processing",
-        ])
-        .build()];
-
-    let expected_messages = vec![
-        AgentMessage::Cancelled {
-            message: "Processing cancelled".to_string(),
-        },
-        AgentMessage::Done,
+    let chunks = [
+        "This",
+        " is",
+        " a",
+        " long",
+        " response",
+        " to",
+        " ensure",
+        " cancellation",
+        " happens",
+        " during",
+        " processing",
     ];
 
-    run_agent(
+    let llm_responses = [llm_response("message_1").text(&chunks).build()];
+    let messages = collect_agent_messages(
         &llm_responses,
         &[UserMessage::text("hi"), UserMessage::Cancel],
-        expected_messages,
     )
-    .await
+    .await?;
+
+    let text_chunks_received = messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::Text { .. }))
+        .count();
+
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, AgentMessage::Cancelled { .. })),
+        "Expected to receive a Cancelled message"
+    );
+
+    // Due to Agent's merging of N async streams, it's hard to control
+    // exact ordering, so we use a coarse grained aseertion here
+    assert!(
+        text_chunks_received < chunks.len(),
+        "Expected cancellation to stop processing before all {} chunks were sent, but received {}",
+        chunks.len(),
+        text_chunks_received
+    );
+
+    Ok(())
 }

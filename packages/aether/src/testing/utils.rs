@@ -15,6 +15,15 @@ pub async fn run_agent(
     user_messages: &[UserMessage],
     expected_agent_messages: Vec<AgentMessage>,
 ) -> Result<(), Box<dyn Error>> {
+    let messages = collect_agent_messages(llm_responses, user_messages).await?;
+    assert_eq!(messages, expected_agent_messages);
+    Ok(())
+}
+
+pub async fn collect_agent_messages(
+    llm_responses: &[Vec<LlmResponse>],
+    user_messages: &[UserMessage],
+) -> Result<Vec<AgentMessage>, Box<dyn Error>> {
     let llm = FakeLlmProvider::new(Vec::from(llm_responses));
 
     let (tx, mut rx, _handle) = agent(llm)
@@ -34,6 +43,5 @@ pub async fn run_agent(
         }
     }
 
-    assert_eq!(messages, expected_agent_messages);
-    Ok(())
+    Ok(messages)
 }
