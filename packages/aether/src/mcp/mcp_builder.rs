@@ -1,8 +1,10 @@
 use super::{
-    ElicitationRequest, McpConfigParser, McpError, McpManager, McpServerConfig, ParseError,
+    ElicitationRequest, McpError, McpManager, McpServerConfig, ParseError, RawMcpConfig,
+    ServerFactory,
     run_mcp_task::{McpCommand, run_mcp_task},
 };
 use crate::types::ToolDefinition;
+use std::collections::HashMap;
 use tokio::{
     sync::mpsc::{self, Sender},
     task::JoinHandle,
@@ -14,12 +16,14 @@ pub fn mcp() -> McpBuilder {
 
 pub struct McpBuilder {
     mcp_configs: Vec<McpServerConfig>,
+    factories: HashMap<String, ServerFactory>,
 }
 
 impl McpBuilder {
     pub fn new() -> Self {
         Self {
             mcp_configs: Vec::new(),
+            factories: HashMap::new(),
         }
     }
 
@@ -28,8 +32,18 @@ impl McpBuilder {
         self
     }
 
+    pub fn register_in_memory_server(
+        mut self,
+        name: impl Into<String>,
+        factory: ServerFactory,
+    ) -> Self {
+        self.factories.insert(name.into(), factory);
+        self
+    }
+
     pub fn mcp_json_file(mut self, path: &str) -> Result<Self, ParseError> {
-        let mcp_configs = McpConfigParser::new().parse_json_file(path)?;
+        let raw_config = RawMcpConfig::from_json_file(path)?;
+        let mcp_configs = raw_config.into_configs(&self.factories)?;
         self.mcp_configs.extend(mcp_configs);
         Ok(self)
     }

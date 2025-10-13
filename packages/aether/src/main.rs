@@ -1,7 +1,7 @@
 use aether::{
     agent::{AgentMessage::*, Prompt, UserMessage, agent},
     llm::{StreamingModelProvider, parser::ModelProviderParser},
-    mcp::{McpConfigParser, McpError, McpServerConfig, mcp_builder::mcp},
+    mcp::{McpError, McpServerConfig, RawMcpConfig, mcp},
 };
 use clap::Parser;
 use rmcp::model::{CreateElicitationResult, ElicitationAction};
@@ -52,8 +52,14 @@ pub async fn main() {
         }
     };
 
-    let mcp_configs = match McpConfigParser::new().parse_json_file("mcp.json") {
-        Ok(conifgs) => conifgs,
+    let mcp_configs = match RawMcpConfig::from_json_file("mcp.json") {
+        Ok(raw_config) => match raw_config.into_configs(&Default::default()) {
+            Ok(configs) => configs,
+            Err(_) => {
+                println!("No MCP servers loaded");
+                Vec::new()
+            }
+        },
         Err(_) => {
             println!("No MCP servers loaded");
             Vec::new()

@@ -1,7 +1,7 @@
 use aether::{
     agent::{AgentMessage, UserMessage, agent},
     llm::openrouter::OpenRouterProvider,
-    mcp::mcp_builder::mcp,
+    mcp::mcp,
 };
 use std::io::{self, Write};
 
