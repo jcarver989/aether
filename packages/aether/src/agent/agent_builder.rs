@@ -19,6 +19,7 @@ pub struct AgentBuilder<T: StreamingModelProvider> {
     middleware: Middleware,
     tool_definitions: Vec<ToolDefinition>,
     mcp_tx: Option<Sender<McpCommand>>,
+    channel_capacity: usize,
 }
 
 impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
@@ -29,6 +30,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             middleware: Middleware::new(),
             tool_definitions: Vec::new(),
             mcp_tx: None,
+            channel_capacity: 1000,
         }
     }
 
@@ -83,9 +85,12 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             });
         }
 
-        let queue_size = 100;
-        let (user_message_tx, user_message_rx) = mpsc::channel::<UserMessage>(queue_size);
-        let (agent_message_tx, agent_message_rx) = mpsc::channel::<AgentMessage>(queue_size);
+        let (user_message_tx, user_message_rx) =
+            mpsc::channel::<UserMessage>(self.channel_capacity);
+
+        let (agent_message_tx, agent_message_rx) =
+            mpsc::channel::<AgentMessage>(self.channel_capacity);
+
         let context = Context::new(messages, self.tool_definitions);
 
         let agent = Agent::new(
