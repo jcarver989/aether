@@ -1,5 +1,3 @@
-use rmcp::model::CreateElicitationRequestParam;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentMessage {
     Text {
@@ -24,11 +22,6 @@ pub enum AgentMessage {
 
     Cancelled {
         message: String,
-    },
-
-    ElicitationRequest {
-        request_id: String,
-        request: CreateElicitationRequestParam,
     },
 
     Done,

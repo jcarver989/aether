@@ -48,9 +48,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("⚠️  Processing cancelled");
                 break;
             }
-            Some(ElicitationRequest { .. }) => {
-                // Ignore elicitation requests in this simple example
-            }
             None => {
                 println!("Channel closed");
                 break;
