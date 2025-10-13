@@ -17,6 +17,7 @@ pub fn mcp() -> McpBuilder {
 pub struct McpBuilder {
     mcp_configs: Vec<McpServerConfig>,
     factories: HashMap<String, ServerFactory>,
+    mcp_channel_capacity: usize,
 }
 
 impl McpBuilder {
@@ -24,6 +25,7 @@ impl McpBuilder {
         Self {
             mcp_configs: Vec::new(),
             factories: HashMap::new(),
+            mcp_channel_capacity: 1000,
         }
     }
 
@@ -51,8 +53,10 @@ impl McpBuilder {
     pub async fn spawn(
         self,
     ) -> Result<(Vec<ToolDefinition>, Sender<McpCommand>, JoinHandle<()>), McpError> {
-        let (mcp_command_tx, mcp_command_rx) = mpsc::channel::<McpCommand>(100);
-        let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(100);
+        let (mcp_command_tx, mcp_command_rx) =
+            mpsc::channel::<McpCommand>(self.mcp_channel_capacity);
+        let (elicitation_tx, _elicitation_rx) =
+            mpsc::channel::<ElicitationRequest>(self.mcp_channel_capacity);
 
         let mut mcp_manager = McpManager::new(elicitation_tx);
         mcp_manager.add_mcps(self.mcp_configs).await?;
