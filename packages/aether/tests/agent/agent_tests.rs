@@ -180,23 +180,17 @@ async fn test_tool_timeout() -> Result<(), Box<dyn Error>> {
         .run()
         .await?;
 
-    let tool_call_messages: Vec<_> = messages
-        .iter()
-        .filter(|m| matches!(m, AgentMessage::ToolCall { .. }))
-        .collect();
-
-    let final_tool_message = tool_call_messages.last().unwrap();
-    assert!(
+    let has_tool_error = messages.iter().any(|m| {
         matches!(
-            final_tool_message,
-            AgentMessage::ToolCall {
-                result: Some(result),
-                is_complete: true,
-                ..
-            } if result.contains("timed out")
-        ),
-        "Expected a completed ToolCall with timeout error, got: {:?}",
-        final_tool_message
+            m,
+            AgentMessage::ToolError { error, .. } if error.error.contains("timed out")
+        )
+    });
+
+    assert!(
+        has_tool_error,
+        "Expected a ToolError with timeout message, got: {:?}",
+        messages
     );
 
     Ok(())

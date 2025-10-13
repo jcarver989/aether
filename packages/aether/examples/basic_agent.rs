@@ -30,11 +30,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("\n\n✓ Message complete");
                 }
             }
-            Some(ToolCall { name, result, .. }) => {
-                if let Some(res) = result {
-                    println!("🔧 Tool '{}' completed", name);
-                    println!("   Result: {}", res);
-                }
+            Some(ToolCall { request, .. }) => {
+                println!("🔧 Tool '{}' in progress", request.name);
+            }
+            Some(ToolResult { result, .. }) => {
+                println!("🔧 Tool '{}' completed", result.name);
+                println!("   Result: {}", result.result);
+            }
+            Some(ToolError { error, .. }) => {
+                eprintln!("🔧 Tool '{}' failed: {}", error.name, error.error);
             }
             Some(Done) => {
                 println!("✓ Agent finished processing");

@@ -3,7 +3,9 @@ use crate::agent::{AgentMessage, UserMessage};
 use crate::llm::StreamingModelProvider;
 use crate::llm::{Context, LlmError};
 use crate::mcp::run_mcp_task::McpCommand;
-use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest};
+use crate::types::{
+    ChatMessage, IsoString, LlmResponse, ToolCallError, ToolCallRequest, ToolCallResult,
+};
 use futures::{Stream, stream};
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -26,6 +28,7 @@ enum StreamEvent {
 enum ToolResultError {
     ChannelClosed,
     Timeout { tool_id: String, tool_name: String },
+    McpError(ToolCallError),
 }
 
 type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
@@ -99,7 +102,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                                 self.on_tool_result(tool_result, &mut state).await;
                             }
                             Err(e) => {
-                                self.on_tool_error(e, &mut state).await;
+                                self.on_tool_result_error(e, &mut state).await;
                             }
                         }
                     }
@@ -232,11 +235,11 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 let _ = self
                     .agent_message_tx
                     .send(AgentMessage::ToolCall {
-                        tool_call_id: id,
-                        name,
-                        arguments: None,
-                        result: None,
-                        is_complete: false,
+                        request: ToolCallRequest {
+                            id,
+                            name,
+                            arguments: String::new(),
+                        },
                         model_name: self.llm.display_name(),
                     })
                     .await;
@@ -246,11 +249,11 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 let _ = self
                     .agent_message_tx
                     .send(AgentMessage::ToolCall {
-                        tool_call_id: id,
-                        name: String::new(),
-                        arguments: Some(chunk.to_string()),
-                        result: None,
-                        is_complete: false,
+                        request: ToolCallRequest {
+                            id,
+                            name: String::new(),
+                            arguments: chunk.to_string(),
+                        },
                         model_name: self.llm.display_name(),
                     })
                     .await;
@@ -288,11 +291,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     .insert(tool_call.id.clone(), request.clone());
 
                 let msg_future = self.agent_message_tx.send(AgentMessage::ToolCall {
-                    tool_call_id: tool_call.id.clone(),
-                    name: tool_call.name.clone(),
-                    arguments: Some(tool_call.arguments.clone()),
-                    result: None,
-                    is_complete: false,
+                    request: request.clone(),
                     model_name: self.llm.display_name(),
                 });
 
@@ -302,11 +301,13 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 let tool_name = tool_call.name.clone();
 
                 let stream = stream::once(async move {
-                    match tokio::time::timeout(timeout, rx).await {
-                        Ok(Ok(result)) => Ok(result),
-                        Ok(Err(_)) => Err(ToolResultError::ChannelClosed),
-                        Err(_) => Err(ToolResultError::Timeout { tool_id, tool_name }),
-                    }
+                    tokio::time::timeout(timeout, rx)
+                        .await
+                        .map_err(|_| ToolResultError::Timeout { tool_id, tool_name })
+                        .and_then(|result| result.map_err(|_| ToolResultError::ChannelClosed))
+                        .and_then(|result: Result<ToolCallResult, ToolCallError>| {
+                            result.map_err(ToolResultError::McpError)
+                        })
                 })
                 .map(StreamEvent::ToolResult);
 
@@ -343,21 +344,11 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         tracing::trace!("Processing tool result for tool_call_id: {}", result.id);
 
         // Only process results for active tool requests
-        if let Some(request) = state.pending_tool_calls.remove(&result.id) {
-            state.completed_tool_calls.push(ToolCallResult {
-                id: result.id.clone(),
-                name: result.name.clone(),
-                arguments: result.arguments.clone(),
-                result: result.result.clone(),
-                request,
-            });
+        if let Some(_request) = state.pending_tool_calls.remove(&result.id) {
+            state.completed_tool_calls.push(Ok(result.clone()));
 
-            let msg = AgentMessage::ToolCall {
-                tool_call_id: result.id.clone(),
-                name: result.name.clone(),
-                arguments: Some(result.arguments.clone()),
-                result: Some(result.result.clone()),
-                is_complete: true,
+            let msg = AgentMessage::ToolResult {
+                result,
                 model_name: self.llm.display_name(),
             };
 
@@ -369,29 +360,39 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         }
     }
 
-    async fn on_tool_error(&mut self, error: ToolResultError, state: &mut IterationState) {
+    async fn on_tool_result_error(&mut self, error: ToolResultError, state: &mut IterationState) {
         match error {
+            ToolResultError::McpError(tool_error) => {
+                if let Some(_request) = state.pending_tool_calls.remove(&tool_error.id) {
+                    state.completed_tool_calls.push(Err(tool_error.clone()));
+
+                    let _ = self
+                        .agent_message_tx
+                        .send(AgentMessage::ToolError {
+                            error: tool_error,
+                            model_name: self.llm.display_name(),
+                        })
+                        .await;
+                }
+            }
             ToolResultError::Timeout { tool_id, tool_name } => {
                 if let Some(request) = state.pending_tool_calls.remove(&tool_id) {
                     let error_message =
                         format!("Tool execution timed out after {:?}", self.tool_timeout);
 
-                    state.completed_tool_calls.push(ToolCallResult {
-                        id: tool_id.clone(),
-                        name: tool_name.clone(),
-                        arguments: request.arguments.clone(),
-                        result: error_message.clone(),
-                        request,
-                    });
+                    let tool_error = ToolCallError {
+                        id: tool_id,
+                        name: tool_name,
+                        arguments: Some(request.arguments),
+                        error: error_message,
+                    };
+
+                    state.completed_tool_calls.push(Err(tool_error.clone()));
 
                     let _ = self
                         .agent_message_tx
-                        .send(AgentMessage::ToolCall {
-                            tool_call_id: tool_id,
-                            name: tool_name,
-                            arguments: None,
-                            result: Some(error_message),
-                            is_complete: true,
+                        .send(AgentMessage::ToolError {
+                            error: tool_error,
                             model_name: self.llm.display_name(),
                         })
                         .await;
@@ -403,10 +404,25 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         }
     }
 
-    fn update_context(&mut self, message_content: &str, completed_tools: &[ToolCallResult]) {
+    fn update_context(
+        &mut self,
+        message_content: &str,
+        completed_tools: &[Result<ToolCallResult, ToolCallError>],
+    ) {
         let tool_requests: Vec<_> = completed_tools
             .iter()
-            .map(|result| result.request.clone())
+            .map(|result| match result {
+                Ok(result) => ToolCallRequest {
+                    id: result.id.clone(),
+                    name: result.name.clone(),
+                    arguments: result.arguments.clone(),
+                },
+                Err(error) => ToolCallRequest {
+                    id: error.id.clone(),
+                    name: error.name.clone(),
+                    arguments: error.arguments.clone().unwrap_or_default(),
+                },
+            })
             .collect();
 
         self.context.add_message(ChatMessage::Assistant {
@@ -416,11 +432,22 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         });
 
         for result in completed_tools {
-            self.context.add_message(ChatMessage::ToolCallResult {
-                tool_call_id: result.id.clone(),
-                content: result.result.clone(),
-                timestamp: IsoString::now(),
-            });
+            match result {
+                Ok(result) => {
+                    self.context.add_message(ChatMessage::ToolCallResult {
+                        tool_call_id: result.id.clone(),
+                        content: result.result.clone(),
+                        timestamp: IsoString::now(),
+                    });
+                }
+                Err(error) => {
+                    self.context.add_message(ChatMessage::ToolCallResult {
+                        tool_call_id: error.id.clone(),
+                        content: error.error.clone(),
+                        timestamp: IsoString::now(),
+                    });
+                }
+            }
         }
     }
 }
@@ -430,7 +457,7 @@ struct IterationState {
     pub current_message_id: Option<String>,
     pub message_content: String,
     pub pending_tool_calls: HashMap<String, ToolCallRequest>,
-    pub completed_tool_calls: Vec<ToolCallResult>,
+    pub completed_tool_calls: Vec<Result<ToolCallResult, ToolCallError>>,
     pub llm_done: bool,
     pub cancelled: bool,
 }
@@ -454,13 +481,4 @@ impl IterationState {
     pub fn has_tool_calls(&self) -> bool {
         !self.completed_tool_calls.is_empty()
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct ToolCallResult {
-    pub id: String,
-    pub name: String,
-    pub arguments: String,
-    pub result: String,
-    pub request: ToolCallRequest,
 }

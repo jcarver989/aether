@@ -50,43 +50,46 @@ impl AgentMessageBuilder {
         })
         .to_string();
 
+        use crate::types::{ToolCallRequest, ToolCallResult};
+
         // Tool call start
         self.chunks.push(AgentMessage::ToolCall {
-            tool_call_id: tool_call_id.to_string(),
-            name: name.to_string(),
-            arguments: None,
-            result: None,
-            is_complete: false,
+            request: ToolCallRequest {
+                id: tool_call_id.to_string(),
+                name: name.to_string(),
+                arguments: String::new(),
+            },
             model_name: self.model_name.clone(),
         });
 
         // Tool call streaming arguments
         self.chunks.push(AgentMessage::ToolCall {
-            tool_call_id: tool_call_id.to_string(),
-            name: String::new(),
-            arguments: Some(request_json.clone()),
-            result: None,
-            is_complete: false,
+            request: ToolCallRequest {
+                id: tool_call_id.to_string(),
+                name: String::new(),
+                arguments: request_json.clone(),
+            },
             model_name: self.model_name.clone(),
         });
 
         // Tool call streaming arguments finished
         self.chunks.push(AgentMessage::ToolCall {
-            tool_call_id: tool_call_id.to_string(),
-            name: name.to_string(),
-            arguments: Some(request_json.clone()),
-            result: None,
-            is_complete: false,
+            request: ToolCallRequest {
+                id: tool_call_id.to_string(),
+                name: name.to_string(),
+                arguments: request_json.clone(),
+            },
             model_name: self.model_name.clone(),
         });
 
         // Tool result received
-        self.chunks.push(AgentMessage::ToolCall {
-            tool_call_id: tool_call_id.to_string(),
-            name: name.to_string(),
-            arguments: Some(request_json),
-            result: Some(result_json),
-            is_complete: true,
+        self.chunks.push(AgentMessage::ToolResult {
+            result: ToolCallResult {
+                id: tool_call_id.to_string(),
+                name: name.to_string(),
+                arguments: request_json,
+                result: result_json,
+            },
             model_name: self.model_name.clone(),
         });
 
@@ -108,43 +111,45 @@ impl AgentMessageBuilder {
             error_message
         );
 
+        use crate::types::{ToolCallError, ToolCallRequest};
+
         // Tool call start
         self.chunks.push(AgentMessage::ToolCall {
-            tool_call_id: tool_call_id.to_string(),
-            name: name.to_string(),
-            arguments: None,
-            result: None,
-            is_complete: false,
+            request: ToolCallRequest {
+                id: tool_call_id.to_string(),
+                name: name.to_string(),
+                arguments: String::new(),
+            },
             model_name: self.model_name.clone(),
         });
 
         // Tool call streaming arguments
         self.chunks.push(AgentMessage::ToolCall {
-            tool_call_id: tool_call_id.to_string(),
-            name: String::new(),
-            arguments: Some(request_json.clone()),
-            result: None,
-            is_complete: false,
+            request: ToolCallRequest {
+                id: tool_call_id.to_string(),
+                name: String::new(),
+                arguments: request_json.clone(),
+            },
             model_name: self.model_name.clone(),
         });
 
         // Tool call streaming arguments finished
         self.chunks.push(AgentMessage::ToolCall {
-            tool_call_id: tool_call_id.to_string(),
-            name: name.to_string(),
-            arguments: Some(request_json.clone()),
-            result: None,
-            is_complete: false,
+            request: ToolCallRequest {
+                id: tool_call_id.to_string(),
+                name: name.to_string(),
+                arguments: request_json.clone(),
+            },
             model_name: self.model_name.clone(),
         });
 
-        // Tool result received with error
-        self.chunks.push(AgentMessage::ToolCall {
-            tool_call_id: tool_call_id.to_string(),
-            name: name.to_string(),
-            arguments: Some(request_json),
-            result: Some(error_result),
-            is_complete: true,
+        self.chunks.push(AgentMessage::ToolError {
+            error: ToolCallError {
+                id: tool_call_id.to_string(),
+                name: name.to_string(),
+                arguments: Some(request_json),
+                error: error_result,
+            },
             model_name: self.model_name.clone(),
         });
 
