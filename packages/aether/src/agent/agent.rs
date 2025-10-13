@@ -25,7 +25,7 @@ type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
 pub struct Agent<T: StreamingModelProvider> {
     llm: T,
     context: Context,
-    mcp_command_tx: mpsc::Sender<McpCommand>,
+    mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
     agent_message_tx: mpsc::Sender<AgentMessage>,
     streams: StreamMap<String, EventStream>,
     middleware: Middleware,
@@ -35,7 +35,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
     pub fn new(
         llm: T,
         context: Context,
-        mcp_command_tx: mpsc::Sender<McpCommand>,
+        mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
         user_message_rx: mpsc::Receiver<UserMessage>,
         agent_message_tx: mpsc::Sender<AgentMessage>,
         middleware: Middleware,
@@ -292,14 +292,12 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 let stream = stream::once(rx).map(StreamEvent::ToolResult);
                 self.streams.insert(tool_call.id.clone(), Box::pin(stream));
 
-                let mcp_future = self
-                    .mcp_command_tx
-                    .send(McpCommand::ExecuteTool { request, tx });
-
-                let (_, mcp_result) = tokio::join!(msg_future, mcp_future);
-
-                if let Err(e) = mcp_result {
-                    tracing::warn!("Failed to send tool request to MCP task: {:?}", e);
+                if let Some(ref mcp_command_tx) = self.mcp_command_tx {
+                    let mcp_future = mcp_command_tx.send(McpCommand::ExecuteTool { request, tx });
+                    let (_, mcp_result) = tokio::join!(msg_future, mcp_future);
+                    if let Err(e) = mcp_result {
+                        tracing::warn!("Failed to send tool request to MCP task: {:?}", e);
+                    }
                 }
             }
 

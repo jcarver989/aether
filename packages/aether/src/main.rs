@@ -1,7 +1,7 @@
 use aether::{
     agent::{AgentMessage::*, Prompt, UserMessage, agent},
     llm::{StreamingModelProvider, parser::ModelProviderParser},
-    mcp::{McpConfigParser, McpServerConfig},
+    mcp::{McpConfigParser, McpError, McpServerConfig, mcp_builder::mcp},
 };
 use clap::Parser;
 use rmcp::model::{CreateElicitationResult, ElicitationAction};
@@ -60,16 +60,26 @@ pub async fn main() {
         }
     };
 
-    run_agent(llm, &system_prompt, &prompt, mcp_configs).await;
+    match run_agent(llm, &system_prompt, &prompt, mcp_configs).await {
+        Ok(_) => println!("Done!"),
+        Err(e) => println!("Error: {}", e),
+    };
 }
 
 async fn run_agent(
     llm: Box<dyn StreamingModelProvider>,
     system: &str,
     prompt: &str,
-    mcps: Vec<McpServerConfig>,
-) {
-    let (tx, mut rx, _handle) = agent(llm).system(system).mcps(mcps).spawn().await.unwrap();
+    mcp_configs: Vec<McpServerConfig>,
+) -> Result<(), McpError> {
+    let (tools, mcp_tx, _mcp_handle) = mcp().add(mcp_configs).spawn().await?;
+
+    let (tx, mut rx, _handle) = agent(llm)
+        .system(system)
+        .mcp_tools(mcp_tx, tools)
+        .spawn()
+        .await
+        .unwrap();
 
     tx.send(UserMessage::text(prompt)).await.unwrap();
     while let Some(event) = rx.recv().await {
@@ -121,4 +131,6 @@ async fn run_agent(
             }
         }
     }
+
+    Ok(())
 }

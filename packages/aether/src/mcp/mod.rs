@@ -2,6 +2,7 @@ mod client;
 pub mod config;
 pub mod error;
 pub mod manager;
+pub mod mcp_builder;
 pub mod parser;
 pub mod run_mcp_task;
 pub mod variables;
