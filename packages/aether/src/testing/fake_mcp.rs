@@ -103,6 +103,36 @@ impl DivideNumbersResult {
     }
 }
 
+#[derive(Serialize, Deserialize, JsonSchema)]
+pub struct SlowToolRequest {
+    pub sleep_ms: u64,
+}
+
+impl SlowToolRequest {
+    pub fn new(sleep_ms: u64) -> Self {
+        Self { sleep_ms }
+    }
+
+    pub fn json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+pub struct SlowToolResult {
+    pub message: String,
+}
+
+impl SlowToolResult {
+    pub fn new(message: String) -> Self {
+        Self { message }
+    }
+
+    pub fn json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+}
+
 #[tool_router]
 impl FakeMcpServer {
     pub fn new() -> Self {
@@ -139,5 +169,17 @@ impl FakeMcpServer {
         let result_json = serde_json::to_string(&result).unwrap();
 
         Ok(CallToolResult::success(vec![Content::text(result_json)]))
+    }
+
+    #[tool(description = "A tool that sleeps for a specified duration (for testing timeouts)")]
+    pub async fn slow_tool(
+        &self,
+        request: Parameters<SlowToolRequest>,
+    ) -> Json<SlowToolResult> {
+        let Parameters(SlowToolRequest { sleep_ms }) = request;
+        tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
+        Json(SlowToolResult {
+            message: format!("Slept for {}ms", sleep_ms),
+        })
     }
 }

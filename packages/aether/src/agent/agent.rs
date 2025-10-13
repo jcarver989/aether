@@ -7,6 +7,7 @@ use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest};
 use futures::{Stream, stream};
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use tokio_stream::StreamMap;
@@ -16,8 +17,15 @@ use tokio_stream::wrappers::ReceiverStream;
 #[derive(Debug)]
 enum StreamEvent {
     Llm(Result<LlmResponse, LlmError>),
-    ToolResult(Result<ToolCallResult, oneshot::error::RecvError>),
+    ToolResult(Result<ToolCallResult, ToolResultError>),
     UserMessage(UserMessage),
+}
+
+/// Error type for tool result reception
+#[derive(Debug)]
+enum ToolResultError {
+    ChannelClosed,
+    Timeout { tool_id: String, tool_name: String },
 }
 
 type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
@@ -29,6 +37,7 @@ pub struct Agent<T: StreamingModelProvider> {
     agent_message_tx: mpsc::Sender<AgentMessage>,
     streams: StreamMap<String, EventStream>,
     middleware: Middleware,
+    tool_timeout: Duration,
 }
 
 impl<T: StreamingModelProvider + 'static> Agent<T> {
@@ -39,6 +48,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         user_message_rx: mpsc::Receiver<UserMessage>,
         agent_message_tx: mpsc::Sender<AgentMessage>,
         middleware: Middleware,
+        tool_timeout: Duration,
     ) -> Self {
         let mut streams: StreamMap<String, EventStream> = StreamMap::new();
         streams.insert(
@@ -53,6 +63,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             agent_message_tx,
             streams,
             middleware,
+            tool_timeout,
         }
     }
 
@@ -88,10 +99,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                                 self.on_tool_result(tool_result, &mut state).await;
                             }
                             Err(e) => {
-                                tracing::error!(
-                                    "Failed to receive tool result from oneshot channel: {:?}",
-                                    e
-                                );
+                                self.on_tool_error(e, &mut state).await;
                             }
                         }
                     }
@@ -289,7 +297,19 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 });
 
                 let (tx, rx) = oneshot::channel();
-                let stream = stream::once(rx).map(StreamEvent::ToolResult);
+                let timeout = self.tool_timeout;
+                let tool_id = tool_call.id.clone();
+                let tool_name = tool_call.name.clone();
+
+                let stream = stream::once(async move {
+                    match tokio::time::timeout(timeout, rx).await {
+                        Ok(Ok(result)) => Ok(result),
+                        Ok(Err(_)) => Err(ToolResultError::ChannelClosed),
+                        Err(_) => Err(ToolResultError::Timeout { tool_id, tool_name }),
+                    }
+                })
+                .map(StreamEvent::ToolResult);
+
                 self.streams.insert(tool_call.id.clone(), Box::pin(stream));
 
                 if let Some(ref mcp_command_tx) = self.mcp_command_tx {
@@ -346,6 +366,40 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             }
         } else {
             tracing::debug!("Ignoring stale tool result for id: {}", result.id);
+        }
+    }
+
+    async fn on_tool_error(&mut self, error: ToolResultError, state: &mut IterationState) {
+        match error {
+            ToolResultError::Timeout { tool_id, tool_name } => {
+                if let Some(request) = state.pending_tool_calls.remove(&tool_id) {
+                    let error_message =
+                        format!("Tool execution timed out after {:?}", self.tool_timeout);
+
+                    state.completed_tool_calls.push(ToolCallResult {
+                        id: tool_id.clone(),
+                        name: tool_name.clone(),
+                        arguments: request.arguments.clone(),
+                        result: error_message.clone(),
+                        request,
+                    });
+
+                    let _ = self
+                        .agent_message_tx
+                        .send(AgentMessage::ToolCall {
+                            tool_call_id: tool_id,
+                            name: tool_name,
+                            arguments: None,
+                            result: Some(error_message),
+                            is_complete: true,
+                            model_name: self.llm.display_name(),
+                        })
+                        .await;
+                }
+            }
+            ToolResultError::ChannelClosed => {
+                tracing::error!("Tool result channel closed unexpectedly");
+            }
         }
     }
 
