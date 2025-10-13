@@ -1,6 +1,5 @@
-use crate::agent::ToolCallResult;
 use crate::mcp::McpManager;
-use crate::types::{ToolCallRequest, ToolDefinition};
+use crate::types::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use rmcp::{RoleClient, model::CallToolRequestParam};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
@@ -13,7 +12,7 @@ const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 pub enum McpCommand {
     ExecuteTool {
         request: ToolCallRequest,
-        tx: oneshot::Sender<ToolCallResult>,
+        tx: oneshot::Sender<Result<ToolCallResult, ToolCallError>>,
     },
 }
 
@@ -30,33 +29,20 @@ pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<Mc
             {
                 Ok(client) => {
                     tokio::spawn(async move {
-                        let result_str = match try_execute_tool(client, &request).await {
-                            Ok(result) => result,
-                            Err(e) => e,
-                        };
-
-                        let result = ToolCallResult {
-                            id: request.id.clone(),
-                            name: request.name.clone(),
-                            arguments: request.arguments.clone(),
-                            result: result_str,
-                            request,
-                        };
-
+                        let result = try_execute_tool(client, &request).await;
                         let _ = tx.send(result);
                     });
                 }
 
                 Err(e) => {
                     tracing::error!("Failed to get client for tool {}: {}", request.name, e);
-                    let error_result = ToolCallResult {
+                    let error = ToolCallError {
                         id: request.id.clone(),
                         name: request.name.clone(),
-                        arguments: request.arguments.clone(),
-                        result: format!("Failed to get client: {}", e),
-                        request,
+                        arguments: Some(request.arguments.clone()),
+                        error: format!("Failed to get client: {}", e),
                     };
-                    let _ = tx.send(error_result);
+                    let _ = tx.send(Err(error));
                 }
             },
         }
@@ -69,40 +55,31 @@ pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<Mc
 async fn try_execute_tool(
     client: rmcp::Peer<RoleClient>,
     request: &ToolCallRequest,
-) -> Result<String, String> {
-    let tool_request = CallToolRequestParam::try_from(request).map_err(|e| e.to_string())?;
+) -> Result<ToolCallResult, ToolCallError> {
+    let tool_request = CallToolRequestParam::try_from(request).map_err(|e| ToolCallError {
+        id: request.id.clone(),
+        name: request.name.clone(),
+        arguments: Some(request.arguments.clone()),
+        error: e,
+    })?;
 
-    let result = timeout(TOOL_EXECUTION_TIMEOUT, client.call_tool(tool_request))
+    let mcp_result = timeout(TOOL_EXECUTION_TIMEOUT, client.call_tool(tool_request))
         .await
-        .map_err(|_| {
-            format!(
+        .map_err(|_| ToolCallError {
+            id: request.id.clone(),
+            name: request.name.clone(),
+            arguments: Some(request.arguments.clone()),
+            error: format!(
                 "Tool execution timed out after {:?}",
                 TOOL_EXECUTION_TIMEOUT
-            )
+            ),
         })?
-        .map_err(|e| format!("Tool execution failed: {}", e))?;
+        .map_err(|e| ToolCallError {
+            id: request.id.clone(),
+            name: request.name.clone(),
+            arguments: Some(request.arguments.clone()),
+            error: format!("Tool execution failed: {}", e),
+        })?;
 
-    Ok(format_tool_result(result))
-}
-
-/// Format the tool result from MCP response
-fn format_tool_result(result: rmcp::model::CallToolResult) -> String {
-    if result.is_error.unwrap_or(false) {
-        let error_msg = result
-            .content
-            .first()
-            .map(|content| format!("{content:?}"))
-            .unwrap_or_else(|| "Unknown error".to_string());
-        format!("Tool execution error: {}", error_msg)
-    } else {
-        let result_value = result
-            .content
-            .first()
-            .map(|content| {
-                serde_json::to_value(content)
-                    .unwrap_or(serde_json::Value::String("Serialization error".to_string()))
-            })
-            .unwrap_or_else(|| serde_json::Value::String("No result".to_string()));
-        result_value.to_string()
-    }
+    ToolCallResult::try_from((request, mcp_result))
 }

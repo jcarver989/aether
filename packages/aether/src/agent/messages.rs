@@ -1,3 +1,5 @@
+use crate::types::{ToolCallError, ToolCallRequest, ToolCallResult};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentMessage {
     Text {
@@ -8,11 +10,17 @@ pub enum AgentMessage {
     },
 
     ToolCall {
-        tool_call_id: String,
-        name: String,
-        arguments: Option<String>,
-        result: Option<String>,
-        is_complete: bool,
+        request: ToolCallRequest,
+        model_name: String,
+    },
+
+    ToolResult {
+        result: ToolCallResult,
+        model_name: String,
+    },
+
+    ToolError {
+        error: ToolCallError,
         model_name: String,
     },
 

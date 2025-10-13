@@ -100,14 +100,16 @@ async fn run_agent(
                 }
             }
 
-            ToolCall {
-                name, is_complete, ..
-            } => {
-                if is_complete {
-                    println!("Tool call '{}' completed", name);
-                } else {
-                    println!("Tool call '{}' started", name);
-                }
+            ToolCall { request, .. } => {
+                println!("Tool call '{}' in progress", request.name);
+            }
+
+            ToolResult { result, .. } => {
+                println!("Tool call '{}' completed successfully", result.name);
+            }
+
+            ToolError { error, .. } => {
+                eprintln!("Tool call '{}' failed: {}", error.name, error.error);
             }
 
             Error { message } => {
