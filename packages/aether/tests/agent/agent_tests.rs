@@ -1,12 +1,13 @@
 use std::error::Error;
+use std::time::Duration;
 
 use aether::{
     agent::{AgentMessage, UserMessage},
     testing::{
         agent_message::agent_message,
-        fake_mcp::{AddNumbersRequest, AddNumbersResult, DivideNumbersRequest},
+        fake_mcp::{AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, SlowToolRequest},
         llm_response::llm_response,
-        utils::run_agent,
+        utils::test_agent,
     },
 };
 
@@ -17,7 +18,11 @@ async fn test_text_message() -> Result<(), Box<dyn Error>> {
     let mut expected_messages = agent_message(&id).text(&chunks).build();
     expected_messages.push(AgentMessage::Done);
 
-    let messages = run_agent(&llm_responses, &[UserMessage::text("hi")]).await?;
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("hi")])
+        .run()
+        .await?;
     assert_eq!(messages, expected_messages);
     Ok(())
 }
@@ -49,7 +54,11 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
         messages
     };
 
-    let messages = run_agent(&llm_responses, &[UserMessage::text("3+5 = ?")]).await?;
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("3+5 = ?")])
+        .run()
+        .await?;
     assert_eq!(messages, expected_messages);
     Ok(())
 }
@@ -96,7 +105,11 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
         messages
     };
 
-    let messages = run_agent(&llm_responses, &[UserMessage::text("10 / 0 = ?")]).await?;
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("10 / 0 = ?")])
+        .run()
+        .await?;
     assert_eq!(messages, expected_messages);
     Ok(())
 }
@@ -118,11 +131,11 @@ async fn test_cancellation() -> Result<(), Box<dyn Error>> {
     ];
 
     let llm_responses = [llm_response("message_1").text(&chunks).build()];
-    let messages = run_agent(
-        &llm_responses,
-        &[UserMessage::text("hi"), UserMessage::Cancel],
-    )
-    .await?;
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("hi"), UserMessage::Cancel])
+        .run()
+        .await?;
 
     let text_chunks_received = messages
         .iter()
@@ -143,6 +156,47 @@ async fn test_cancellation() -> Result<(), Box<dyn Error>> {
         "Expected cancellation to stop processing before all {} chunks were sent, but received {}",
         chunks.len(),
         text_chunks_received
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_tool_timeout() -> Result<(), Box<dyn Error>> {
+    let tool_duration = 2000;
+    let tool_timeout = 500;
+
+    let tool_request = SlowToolRequest::new(tool_duration);
+    let (m1_id, t1_id, t1_name) = ("message_1", "call_1", "test__slow_tool");
+
+    let llm_responses = [llm_response(m1_id)
+        .tool_call(t1_id, t1_name, &[&tool_request.json()?])
+        .build()];
+
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("run slow tool")])
+        .tool_timeout(Duration::from_millis(tool_timeout))
+        .run()
+        .await?;
+
+    let tool_call_messages: Vec<_> = messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::ToolCall { .. }))
+        .collect();
+
+    let final_tool_message = tool_call_messages.last().unwrap();
+    assert!(
+        matches!(
+            final_tool_message,
+            AgentMessage::ToolCall {
+                result: Some(result),
+                is_complete: true,
+                ..
+            } if result.contains("timed out")
+        ),
+        "Expected a completed ToolCall with timeout error, got: {:?}",
+        final_tool_message
     );
 
     Ok(())

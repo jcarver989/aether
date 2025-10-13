@@ -5,6 +5,7 @@ use crate::llm::{Context, StreamingModelProvider};
 use crate::mcp::run_mcp_task::McpCommand;
 use crate::types::{ChatMessage, IsoString, ToolDefinition};
 use std::future::Future;
+use std::time::Duration;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 
@@ -20,6 +21,7 @@ pub struct AgentBuilder<T: StreamingModelProvider> {
     tool_definitions: Vec<ToolDefinition>,
     mcp_tx: Option<Sender<McpCommand>>,
     channel_capacity: usize,
+    tool_timeout: Duration,
 }
 
 impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
@@ -31,6 +33,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             tool_definitions: Vec::new(),
             mcp_tx: None,
             channel_capacity: 1000,
+            tool_timeout: Duration::from_secs(60 * 10),
         }
     }
 
@@ -76,6 +79,17 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         self
     }
 
+    /// Set the timeout for tool execution
+    ///
+    /// If a tool does not return a result within this duration, it will be marked as failed
+    /// and the agent will continue processing.
+    ///
+    /// Default: 10 minutes
+    pub fn tool_timeout(mut self, timeout: Duration) -> Self {
+        self.tool_timeout = timeout;
+        self
+    }
+
     pub async fn spawn(self) -> Result<(Sender<UserMessage>, Receiver<AgentMessage>, AgentHandle)> {
         let mut messages = Vec::new();
         if let Some(content) = self.system_prompt {
@@ -100,6 +114,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             user_message_rx,
             agent_message_tx,
             self.middleware,
+            self.tool_timeout,
         );
 
         let agent_handle = tokio::spawn(agent.run());
