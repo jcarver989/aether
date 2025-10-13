@@ -4,7 +4,6 @@ use aether::{
     mcp::{McpError, McpServerConfig, RawMcpConfig, mcp},
 };
 use clap::Parser;
-use rmcp::model::{CreateElicitationResult, ElicitationAction};
 
 #[derive(Parser)]
 #[command(name = "aether-cli")]
@@ -117,18 +116,6 @@ async fn run_agent(
 
             Cancelled { message } => {
                 eprintln!("Cancelled: {}", message);
-            }
-
-            ElicitationRequest {
-                request_id,
-                request,
-            } => {
-                println!("Elicitation request ({}): {}", request_id, request.message);
-
-                let _result = CreateElicitationResult {
-                    action: ElicitationAction::Decline,
-                    content: None,
-                };
             }
 
             Done => {
