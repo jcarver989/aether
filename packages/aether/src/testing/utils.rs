@@ -3,7 +3,7 @@ use std::error::Error;
 use futures::future::join_all;
 
 use crate::agent::{AgentMessage, UserMessage, agent};
-use crate::mcp::mcp_builder::mcp;
+use crate::mcp::mcp;
 use crate::testing::FakeMcpServer;
 use crate::testing::fake_mcp::fake_mcp;
 use crate::types::LlmResponse;

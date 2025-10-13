@@ -1,4 +1,5 @@
-use aether::mcp::{McpConfigParser, McpServerConfig, ParseError};
+use aether::mcp::{McpServerConfig, ParseError, RawMcpConfig};
+use std::collections::HashMap;
 use std::env;
 
 #[test]
@@ -20,8 +21,8 @@ fn test_parse_stdio_config() {
     }
     "#;
 
-    let parser = McpConfigParser::new();
-    let configs = parser.parse_json(json).unwrap();
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
@@ -62,8 +63,8 @@ fn test_parse_http_config() {
     }
     "#;
 
-    let parser = McpConfigParser::new();
-    let configs = parser.parse_json(json).unwrap();
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
@@ -92,8 +93,8 @@ fn test_parse_sse_config() {
     }
     "#;
 
-    let parser = McpConfigParser::new();
-    let configs = parser.parse_json(json).unwrap();
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
 
     assert_eq!(configs.len(), 1);
     // SSE maps to HTTP internally
@@ -124,8 +125,8 @@ fn test_missing_env_var_error() {
     }
     "#;
 
-    let parser = McpConfigParser::new();
-    let result = parser.parse_json(json);
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let result = raw_config.into_configs(&HashMap::new());
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -147,8 +148,8 @@ fn test_factory_not_found_error() {
     }
     "#;
 
-    let parser = McpConfigParser::new();
-    let result = parser.parse_json(json);
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let result = raw_config.into_configs(&HashMap::new());
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -163,8 +164,7 @@ fn test_factory_not_found_error() {
 fn test_invalid_json() {
     let json = "{ invalid json }";
 
-    let parser = McpConfigParser::new();
-    let result = parser.parse_json(json);
+    let result = RawMcpConfig::from_json(json);
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -196,8 +196,8 @@ fn test_multiple_servers() {
     }
     "#;
 
-    let parser = McpConfigParser::new();
-    let configs = parser.parse_json(json).unwrap();
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
 
     assert_eq!(configs.len(), 2);
 
@@ -222,8 +222,8 @@ fn test_env_var_in_url() {
     }
     "#;
 
-    let parser = McpConfigParser::new();
-    let configs = parser.parse_json(json).unwrap();
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
 
     match &configs[0] {
         McpServerConfig::Http { config, .. } => {
