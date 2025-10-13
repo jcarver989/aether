@@ -3,6 +3,7 @@ use std::error::Error;
 use futures::future::join_all;
 
 use crate::agent::{AgentMessage, UserMessage, agent};
+use crate::mcp::mcp_builder::mcp;
 use crate::testing::FakeMcpServer;
 use crate::testing::fake_mcp::fake_mcp;
 use crate::types::LlmResponse;
@@ -15,8 +16,13 @@ pub async fn run_agent(
 ) -> Result<Vec<AgentMessage>, Box<dyn Error>> {
     let llm = FakeLlmProvider::new(Vec::from(llm_responses));
 
+    let (tool_definitions, mcp_tx, _mcp_handle) = mcp()
+        .add(vec![fake_mcp("test", FakeMcpServer::new())])
+        .spawn()
+        .await?;
+
     let (tx, mut rx, _handle) = agent(llm)
-        .mcp(fake_mcp("test", FakeMcpServer::new()))
+        .mcp_tools(mcp_tx, tool_definitions)
         .spawn()
         .await?;
 

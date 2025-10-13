@@ -2,27 +2,23 @@ use crate::agent::Result;
 use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{Agent, AgentMessage, UserMessage};
 use crate::llm::{Context, StreamingModelProvider};
-use crate::mcp::McpConfigParser;
-use crate::mcp::run_mcp_task::{McpCommand, run_mcp_task};
-use crate::mcp::{ElicitationRequest, McpManager, config::McpServerConfig};
-use crate::types::{ChatMessage, IsoString};
+use crate::mcp::run_mcp_task::McpCommand;
+use crate::types::{ChatMessage, IsoString, ToolDefinition};
 use std::future::Future;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 
-use super::AgentError;
-
 /// Handle for communicating with a running Agent
 pub struct AgentHandle {
     _agent_handle: JoinHandle<()>,
-    _mcp_handle: JoinHandle<()>,
 }
 
 pub struct AgentBuilder<T: StreamingModelProvider> {
     llm: T,
     system_prompt: Option<String>,
-    mcp_configs: Vec<McpServerConfig>,
     middleware: Middleware,
+    tool_definitions: Vec<ToolDefinition>,
+    mcp_tx: Option<Sender<McpCommand>>,
 }
 
 impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
@@ -30,34 +26,15 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         Self {
             llm,
             system_prompt: None,
-            mcp_configs: Vec::new(),
             middleware: Middleware::new(),
+            tool_definitions: Vec::new(),
+            mcp_tx: None,
         }
     }
 
     pub fn system(mut self, prompt: &str) -> Self {
         self.system_prompt = Some(prompt.to_string());
         self
-    }
-
-    pub fn mcp(mut self, config: McpServerConfig) -> Self {
-        self.mcp_configs.push(config);
-        self
-    }
-
-    /// Add multiple MCP server configurations at once
-    pub fn mcps(mut self, configs: Vec<McpServerConfig>) -> Self {
-        self.mcp_configs.extend(configs);
-        self
-    }
-
-    pub fn mcp_json_file(mut self, path: &str) -> Result<Self> {
-        let mcp_configs = McpConfigParser::new()
-            .parse_json_file(path)
-            .map_err(|e| AgentError::IoError(e.to_string()))?;
-
-        self.mcp_configs.extend(mcp_configs);
-        Ok(self)
     }
 
     /// Add an event handler for agent events
@@ -91,6 +68,12 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         self
     }
 
+    pub fn mcp_tools(mut self, tx: Sender<McpCommand>, tools: Vec<ToolDefinition>) -> Self {
+        self.tool_definitions = tools;
+        self.mcp_tx = Some(tx);
+        self
+    }
+
     pub async fn spawn(self) -> Result<(Sender<UserMessage>, Receiver<AgentMessage>, AgentHandle)> {
         let mut messages = Vec::new();
         if let Some(content) = self.system_prompt {
@@ -103,25 +86,17 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         let queue_size = 100;
         let (user_message_tx, user_message_rx) = mpsc::channel::<UserMessage>(queue_size);
         let (agent_message_tx, agent_message_rx) = mpsc::channel::<AgentMessage>(queue_size);
-        let (mcp_command_tx, mcp_command_rx) = mpsc::channel::<McpCommand>(queue_size);
-        let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(queue_size);
-
-        let mut mcp_manager = McpManager::new(elicitation_tx);
-        mcp_manager.add_mcps(self.mcp_configs).await?;
-
-        let tool_definitions = mcp_manager.tool_definitions();
-        let context = Context::new(messages, tool_definitions);
+        let context = Context::new(messages, self.tool_definitions);
 
         let agent = Agent::new(
             self.llm,
             context,
-            mcp_command_tx,
+            self.mcp_tx,
             user_message_rx,
             agent_message_tx,
             self.middleware,
         );
 
-        let mcp_handle = tokio::spawn(run_mcp_task(mcp_manager, mcp_command_rx));
         let agent_handle = tokio::spawn(agent.run());
 
         Ok((
@@ -129,7 +104,6 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             agent_message_rx,
             AgentHandle {
                 _agent_handle: agent_handle,
-                _mcp_handle: mcp_handle,
             },
         ))
     }
