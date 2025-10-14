@@ -46,15 +46,7 @@ pub enum ChatMessage {
         timestamp: IsoString,
         tool_calls: Vec<ToolCallRequest>,
     },
-    AssistantStreaming {
-        content: String,
-        timestamp: IsoString,
-    },
-    ToolCallResult {
-        tool_call_id: String,
-        content: String,
-        timestamp: IsoString,
-    },
+    ToolCallResult(Result<ToolCallResult, ToolCallError>),
     Error {
         message: String,
         timestamp: IsoString,
@@ -143,14 +135,6 @@ impl TryFrom<(&ToolCallRequest, rmcp::model::CallToolResult)> for ToolCallResult
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ToolCallState {
-    Pending,
-    Running,
-    Completed,
-    Failed,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum LlmResponse {
@@ -199,14 +183,6 @@ impl LlmResponse {
             },
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum ToolDiscoveryEvent {
-    Discovered { tool: ToolDefinition },
-    Complete { count: u32 },
-    Error { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
