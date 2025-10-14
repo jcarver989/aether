@@ -4,10 +4,10 @@ use std::time::Duration;
 use futures::future::join_all;
 
 use crate::agent::{AgentMessage, UserMessage, agent};
+use crate::llm::LlmResponse;
 use crate::mcp::mcp;
 use crate::testing::FakeMcpServer;
 use crate::testing::fake_mcp::fake_mcp;
-use crate::llm::LlmResponse;
 
 use super::FakeLlmProvider;
 
@@ -59,7 +59,7 @@ impl TestAgentBuilder {
             .spawn()
             .await?;
 
-        let mut builder = agent(llm).mcp_tools(mcp_tx, tool_definitions);
+        let mut builder = agent(llm).tools(mcp_tx, tool_definitions);
         if let Some(timeout) = self.timeout {
             builder = builder.tool_timeout(timeout);
         }

@@ -1,13 +1,13 @@
-mod core;
 mod agent_builder;
-pub mod error;
+mod core;
+mod error;
 mod messages;
 pub mod middleware;
 mod prompt;
 
-pub use core::*;
 pub use agent_builder::*;
-pub use error::{AgentError, Result};
+pub use core::*;
+pub use error::*;
 pub use messages::*;
 pub use middleware::{AgentEvent, Middleware, MiddlewareAction};
 pub use prompt::*;
