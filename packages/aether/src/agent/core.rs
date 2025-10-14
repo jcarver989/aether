@@ -128,10 +128,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 
                 if should_continue {
                     self.start_llm_stream();
-                } else {
-                    if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
-                        tracing::warn!("Failed to send Done message: {:?}", e);
-                    }
+                } else if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
+                    tracing::warn!("Failed to send Done message: {:?}", e);
                 }
             }
         }
