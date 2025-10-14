@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
 
-use crate::llm::{LlmError, Result};
-use crate::types::{LlmResponse, ToolCallRequest};
+use crate::llm::{LlmError, LlmResponse, Result, ToolCallRequest};
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard async_openai CreateChatCompletionStreamResponse types.

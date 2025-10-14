@@ -1,5 +1,4 @@
-use crate::llm::provider::{Context, LlmResponseStream, StreamingModelProvider};
-use crate::types::LlmResponse;
+use crate::llm::{Context, LlmResponse, LlmResponseStream, StreamingModelProvider};
 
 pub struct FakeLlmProvider {
     responses: Vec<Vec<LlmResponse>>,

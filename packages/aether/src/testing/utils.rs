@@ -7,7 +7,7 @@ use crate::agent::{AgentMessage, UserMessage, agent};
 use crate::mcp::mcp;
 use crate::testing::FakeMcpServer;
 use crate::testing::fake_mcp::fake_mcp;
-use crate::types::LlmResponse;
+use crate::llm::LlmResponse;
 
 use super::FakeLlmProvider;
 

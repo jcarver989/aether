@@ -1,4 +1,4 @@
-use crate::types::{ToolCallError, ToolCallRequest, ToolCallResult};
+use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentMessage {

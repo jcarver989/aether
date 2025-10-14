@@ -1,4 +1,4 @@
-use crate::types::LlmResponse;
+use crate::llm::LlmResponse;
 
 pub fn llm_response(message_id: &str) -> LlmResponseBuilder {
     LlmResponseBuilder::new(message_id)

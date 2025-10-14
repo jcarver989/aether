@@ -50,7 +50,7 @@ impl AgentMessageBuilder {
         })
         .to_string();
 
-        use crate::types::{ToolCallRequest, ToolCallResult};
+        use crate::llm::{ToolCallRequest, ToolCallResult};
 
         // Tool call start
         self.chunks.push(AgentMessage::ToolCall {
@@ -111,7 +111,7 @@ impl AgentMessageBuilder {
             error_message
         );
 
-        use crate::types::{ToolCallError, ToolCallRequest};
+        use crate::llm::{ToolCallError, ToolCallRequest};
 
         // Tool call start
         self.chunks.push(AgentMessage::ToolCall {

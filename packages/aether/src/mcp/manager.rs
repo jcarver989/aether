@@ -1,5 +1,7 @@
-use crate::mcp::{McpError, Result, config::McpServerConfig};
-use crate::types::ToolDefinition;
+use crate::{
+    llm::ToolDefinition,
+    mcp::{McpError, Result, config::McpServerConfig},
+};
 use rmcp::{
     RoleClient, ServiceExt,
     model::{

@@ -6,7 +6,7 @@ use async_openai::types::{
     ChatCompletionToolType, FunctionCall, FunctionObject,
 };
 
-use crate::types::{ChatMessage, ToolDefinition};
+use crate::llm::{ChatMessage, ToolDefinition};
 
 impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
     fn from(msg: ChatMessage) -> Self {
