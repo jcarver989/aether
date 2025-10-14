@@ -2,7 +2,7 @@ use super::types::{Content, ContentBlock, Message, Role, Tool};
 use crate::llm::{LlmError, Result};
 use crate::types::{ChatMessage, ToolDefinition};
 
-pub fn map_messages(messages: &Vec<ChatMessage>) -> Result<(Option<String>, Vec<Message>)> {
+pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Message>)> {
     let mut system_prompt = None;
     let mut anthropic_messages = Vec::new();
 
@@ -94,10 +94,10 @@ pub fn map_messages(messages: &Vec<ChatMessage>) -> Result<(Option<String>, Vec<
     Ok((system_prompt, anthropic_messages))
 }
 
-pub fn map_tools(tools: &Vec<ToolDefinition>) -> Result<Vec<Tool>> {
+pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
     let mut anthropic_tools = Vec::new();
 
-    for tool in tools.into_iter() {
+    for tool in tools {
         let input_schema: serde_json::Value =
             serde_json::from_str(&tool.parameters).map_err(|e| LlmError::ToolParameterParsing {
                 tool_name: tool.name.clone(),

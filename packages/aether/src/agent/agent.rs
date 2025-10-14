@@ -119,7 +119,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                         message_id: id.clone(),
                         chunk: String::new(), // Empty chunk for completion signal
                         is_complete: true,
-                        model_name: model_name.to_string(),
+                        model_name: model_name.clone(),
                     })
                     .await;
 
@@ -252,7 +252,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                         request: ToolCallRequest {
                             id,
                             name: String::new(),
-                            arguments: chunk.to_string(),
+                            arguments: chunk,
                         },
                         model_name: self.llm.display_name(),
                     })
@@ -280,18 +280,12 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     return;
                 }
 
-                let request = ToolCallRequest {
-                    id: tool_call.id.clone(),
-                    name: tool_call.name.clone(),
-                    arguments: tool_call.arguments.clone(),
-                };
-
                 state
                     .pending_tool_calls
-                    .insert(tool_call.id.clone(), request.clone());
+                    .insert(tool_call.id.clone(), tool_call.clone());
 
                 let msg_future = self.agent_message_tx.send(AgentMessage::ToolCall {
-                    request: request.clone(),
+                    request: tool_call.clone(),
                     model_name: self.llm.display_name(),
                 });
 
@@ -311,10 +305,11 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 })
                 .map(StreamEvent::ToolResult);
 
-                self.streams.insert(tool_call.id.clone(), Box::pin(stream));
+                let stream_key = tool_call.id.clone();
+                self.streams.insert(stream_key, Box::pin(stream));
 
                 if let Some(ref mcp_command_tx) = self.mcp_command_tx {
-                    let mcp_future = mcp_command_tx.send(McpCommand::ExecuteTool { request, tx });
+                    let mcp_future = mcp_command_tx.send(McpCommand::ExecuteTool { request: tool_call, tx });
                     let (_, mcp_result) = tokio::join!(msg_future, mcp_future);
                     if let Err(e) = mcp_result {
                         tracing::warn!("Failed to send tool request to MCP task: {:?}", e);
