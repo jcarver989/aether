@@ -17,10 +17,10 @@ pub enum AgentError {
 impl fmt::Display for AgentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AgentError::McpError(e) => write!(f, "MCP error: {}", e),
-            AgentError::LlmError(e) => write!(f, "LLM error: {}", e),
-            AgentError::IoError(msg) => write!(f, "IO error: {}", msg),
-            AgentError::Other(msg) => write!(f, "{}", msg),
+            AgentError::McpError(e) => write!(f, "MCP error: {e}"),
+            AgentError::LlmError(e) => write!(f, "LLM error: {e}"),
+            AgentError::IoError(msg) => write!(f, "IO error: {msg}"),
+            AgentError::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

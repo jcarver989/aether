@@ -11,16 +11,18 @@ pub struct TruncateSummarizer {
     max_lines: usize,
 }
 
+impl Default for TruncateSummarizer {
+    fn default() -> Self {
+        Self::new(2000, 2000) // 2000 chars per line, 2000 lines max
+    }
+}
+
 impl TruncateSummarizer {
     pub fn new(max_line_length_in_chars: usize, max_lines: usize) -> Self {
         Self {
             max_line_length_in_chars,
             max_lines,
         }
-    }
-
-    pub fn default() -> Self {
-        Self::new(2000, 2000) // 2000 chars per line, 2000 lines max
     }
 }
 impl Summarizer for TruncateSummarizer {

@@ -47,7 +47,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
 
                         if let Some(finish_reason) = choice.finish_reason {
                             let finish_reason_str = format!("{finish_reason:?}");
-                            debug!("Received finish reason: {}", finish_reason_str);
+                            debug!("Received finish reason: {finish_reason_str}");
 
                             for tool_call in tool_collector.complete_all_tool_calls() {
                                 yield Ok(LlmResponse::ToolRequestComplete { tool_call });
@@ -97,7 +97,7 @@ impl ToolCallCollector {
             if let Some(name) = function.name {
                 let id = tool_call
                     .id
-                    .unwrap_or_else(|| format!("tool_call_{}", index));
+                    .unwrap_or_else(|| format!("tool_call_{index}"));
                 self.start_tool_call(index, id.clone(), name.clone());
                 responses.push(LlmResponse::ToolRequestStart { id, name });
             }
@@ -118,15 +118,14 @@ impl ToolCallCollector {
     }
 
     pub fn complete_all_tool_calls(&mut self) -> Vec<ToolCallRequest> {
-        let mut completed = Vec::new();
-        for (_, (id, name, arguments)) in self.active_tool_calls.drain() {
-            completed.push(ToolCallRequest {
+        self.active_tool_calls
+            .drain()
+            .map(|(_, (id, name, arguments))| ToolCallRequest {
                 id,
                 name,
                 arguments,
-            });
-        }
-        completed
+            })
+            .collect()
     }
 
     fn start_tool_call(&mut self, index: u32, id: String, name: String) {

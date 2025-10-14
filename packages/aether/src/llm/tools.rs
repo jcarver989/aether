@@ -45,7 +45,7 @@ impl TryFrom<&ToolCallRequest> for CallToolRequestParam {
 
         // Parse arguments from JSON string
         let arguments = serde_json::from_str::<serde_json::Value>(&request.arguments)
-            .map_err(|e| format!("Invalid tool arguments: {}", e))?
+            .map_err(|e| format!("Invalid tool arguments: {e}"))?
             .as_object()
             .cloned();
 
@@ -72,7 +72,7 @@ impl TryFrom<(&ToolCallRequest, rmcp::model::CallToolResult)> for ToolCallResult
                 id: request.id.clone(),
                 name: request.name.clone(),
                 arguments: Some(request.arguments.clone()),
-                error: format!("Tool execution error: {}", error_msg),
+                error: format!("Tool execution error: {error_msg}"),
             })
         } else {
             let result_value = mcp_result

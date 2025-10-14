@@ -136,10 +136,19 @@ impl SlowToolResult {
 #[tool_router]
 impl FakeMcpServer {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for FakeMcpServer {
+    fn default() -> Self {
         Self {
             tool_router: Self::tool_router(),
         }
     }
+}
+
+impl FakeMcpServer {
 
     pub fn as_dyn(self) -> Box<dyn DynService<RoleServer>> {
         Box::new(self)
@@ -178,7 +187,7 @@ impl FakeMcpServer {
         let Parameters(SlowToolRequest { sleep_ms }) = request;
         tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
         Json(SlowToolResult {
-            message: format!("Slept for {}ms", sleep_ms),
+            message: format!("Slept for {sleep_ms}ms"),
         })
     }
 }

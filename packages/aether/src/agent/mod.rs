@@ -1,11 +1,11 @@
-mod agent;
+mod core;
 mod agent_builder;
 pub mod error;
 mod messages;
 pub mod middleware;
 mod prompt;
 
-pub use agent::*;
+pub use core::*;
 pub use agent_builder::*;
 pub use error::{AgentError, Result};
 pub use messages::*;

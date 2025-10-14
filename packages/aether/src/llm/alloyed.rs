@@ -18,21 +18,21 @@ impl AlloyedModelProvider {
         }
     }
 
-    fn get_current_provider(&self) -> Option<&Box<dyn StreamingModelProvider>> {
+    fn get_current_provider(&self) -> Option<&dyn StreamingModelProvider> {
         if self.providers.is_empty() {
             return None;
         }
         let index = self.current_provider_index.load(Ordering::Relaxed) % self.providers.len();
-        Some(&self.providers[index])
+        Some(self.providers[index].as_ref())
     }
 
-    fn get_next_provider(&self) -> Option<&Box<dyn StreamingModelProvider>> {
+    fn get_next_provider(&self) -> Option<&dyn StreamingModelProvider> {
         if self.providers.is_empty() {
             return None;
         }
         let index =
             self.current_provider_index.fetch_add(1, Ordering::Relaxed) % self.providers.len();
-        Some(&self.providers[index])
+        Some(self.providers[index].as_ref())
     }
 }
 

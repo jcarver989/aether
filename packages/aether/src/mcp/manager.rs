@@ -139,7 +139,7 @@ impl McpManager {
                             std::future::pending::<()>().await;
                         }
                         Err(e) => {
-                            eprintln!("MCP server error: {}", e);
+                            eprintln!("MCP server error: {e}");
                         }
                     }
                 });
@@ -175,8 +175,7 @@ impl McpManager {
     ) -> Result<()> {
         let tools_response = client.list_tools(None).await.map_err(|e| {
             McpError::ToolDiscoveryFailed(format!(
-                "Failed to list tools for {}: {}",
-                server_name, e
+                "Failed to list tools for {server_name}: {e}"
             ))
         })?;
 
@@ -235,13 +234,13 @@ impl McpManager {
                 // Wait for the server task to complete (with a timeout)
                 match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
                     Ok(Ok(())) => {
-                        println!("Server '{}' shut down gracefully", server_name);
+                        println!("Server '{server_name}' shut down gracefully");
                     }
                     Ok(Err(e)) => {
-                        eprintln!("Server '{}' task panicked: {:?}", server_name, e);
+                        eprintln!("Server '{server_name}' task panicked: {e:?}");
                     }
                     Err(_) => {
-                        eprintln!("Server '{}' shutdown timed out", server_name);
+                        eprintln!("Server '{server_name}' shutdown timed out");
                         // Task will be cancelled when the handle is dropped
                     }
                 }
@@ -264,13 +263,13 @@ impl McpManager {
                 // Wait for the server task to complete (with a timeout)
                 match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
                     Ok(Ok(())) => {
-                        println!("Server '{}' shut down gracefully", server_name);
+                        println!("Server '{server_name}' shut down gracefully");
                     }
                     Ok(Err(e)) => {
-                        eprintln!("Server '{}' task panicked: {:?}", server_name, e);
+                        eprintln!("Server '{server_name}' task panicked: {e:?}");
                     }
                     Err(_) => {
-                        eprintln!("Server '{}' shutdown timed out", server_name);
+                        eprintln!("Server '{server_name}' shutdown timed out");
                         // Task will be cancelled when the handle is dropped
                     }
                 }
@@ -294,7 +293,7 @@ impl Drop for McpManager {
         for (server_name, server) in servers {
             if let Some(handle) = server.server_task {
                 handle.abort();
-                eprintln!("Server '{}' task aborted during cleanup", server_name);
+                eprintln!("Server '{server_name}' task aborted during cleanup");
             }
         }
     }

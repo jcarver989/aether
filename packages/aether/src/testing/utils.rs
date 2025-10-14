@@ -21,6 +21,12 @@ pub struct TestAgentBuilder {
     timeout: Option<Duration>,
 }
 
+impl Default for TestAgentBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestAgentBuilder {
     pub fn new() -> Self {
         Self {
@@ -49,7 +55,7 @@ impl TestAgentBuilder {
         let llm = FakeLlmProvider::new(self.responses);
 
         let (tool_definitions, mcp_tx, _mcp_handle) = mcp()
-            .add(vec![fake_mcp("test", FakeMcpServer::new())])
+            .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
             .spawn()
             .await?;
 

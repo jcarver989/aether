@@ -78,7 +78,7 @@ pub enum VarError {
 impl std::fmt::Display for VarError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VarError::NotFound(name) => write!(f, "Environment variable '{}' not found", name),
+            VarError::NotFound(name) => write!(f, "Environment variable '{name}' not found"),
         }
     }
 }

@@ -50,14 +50,14 @@ impl Prompt {
 
     fn resolve_file(path: &Path) -> Result<String> {
         fs::read_to_string(path).map_err(|e| {
-            AgentError::IoError(format!("Failed to read file '{}': {}", path.display(), e))
+            AgentError::IoError(format!("Failed to read file '{}': {e}", path.display()))
         })
     }
 
     fn resolve_file_with_ancestors(filename: &str) -> Result<String> {
         let mut prompt = Vec::new();
         let mut current_dir = env::current_dir()
-            .map_err(|e| AgentError::IoError(format!("Failed to get current directory: {}", e)))?;
+            .map_err(|e| AgentError::IoError(format!("Failed to get current directory: {e}")))?;
 
         loop {
             let file_path = current_dir.join(filename);
@@ -80,8 +80,7 @@ impl Prompt {
 
         if prompt.is_empty() {
             return Err(AgentError::IoError(format!(
-                "No '{}' files found in directory tree",
-                filename
+                "No '{filename}' files found in directory tree"
             )));
         }
 

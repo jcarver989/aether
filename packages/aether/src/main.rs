@@ -77,7 +77,7 @@ async fn run_agent(
     prompt: &str,
     mcp_configs: Vec<McpServerConfig>,
 ) -> Result<(), McpError> {
-    let (tools, mcp_tx, _mcp_handle) = mcp().add(mcp_configs).spawn().await?;
+    let (tools, mcp_tx, _mcp_handle) = mcp().with_servers(mcp_configs).spawn().await?;
 
     let (tx, mut rx, _handle) = agent(llm)
         .system(system)

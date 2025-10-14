@@ -29,14 +29,14 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
                         cache_control: None,
                     });
                 } else {
-                    let mut blocks = Vec::new();
-
-                    if !content.is_empty() {
-                        blocks.push(ContentBlock::Text {
+                    let mut blocks = if !content.is_empty() {
+                        vec![ContentBlock::Text {
                             text: content.clone(),
                             cache_control: None,
-                        });
-                    }
+                        }]
+                    } else {
+                        Vec::new()
+                    };
 
                     for tool_call in tool_calls {
                         let input: serde_json::Value = serde_json::from_str(&tool_call.arguments)
@@ -83,7 +83,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
             ChatMessage::Error { message, .. } => {
                 anthropic_messages.push(Message {
                     role: Role::User,
-                    content: Content::Text(format!("Error: {}", message)),
+                    content: Content::Text(format!("Error: {message}")),
                     cache_control: None,
                 });
             }

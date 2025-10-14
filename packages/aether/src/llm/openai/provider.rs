@@ -35,7 +35,7 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
         };
 
         Box::pin(async_stream::stream! {
-            debug!("Starting chat completion stream for model: {}", model);
+            debug!("Starting chat completion stream for model: {model}");
 
             let req = CreateChatCompletionRequest {
                 model: model.clone(),
@@ -46,8 +46,7 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
             };
 
             debug!(
-                "Making request to Ollama API with model: {} and {} messages",
-                model, message_count
+                "Making request to Ollama API with model: {model} and {message_count} messages"
             );
 
             let stream = match client.chat().create_stream(req).await {
@@ -63,10 +62,10 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
                         e.source().and_then(|s| s.downcast_ref::<reqwest::Error>())
                     {
                         if let Some(url) = reqwest_err.url() {
-                            error!("Request URL was: {}", url);
+                            error!("Request URL was: {url}");
                         }
                         if let Some(status) = reqwest_err.status() {
-                            error!("HTTP status: {}", status);
+                            error!("HTTP status: {status}");
                         }
                     }
 
@@ -87,7 +86,7 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
         if model.is_empty() {
             self.provider_name().to_string()
         } else {
-            format!("{} ({})", self.provider_name(), model)
+            format!("{} ({model})", self.provider_name())
         }
     }
 }
