@@ -2,9 +2,8 @@
 
 pub mod mcp;
 
-use aether::llm::{Context, LlmResponseStream, Result, StreamingModelProvider};
+use aether::llm::{Context, LlmResponse, LlmResponseStream, Result, StreamingModelProvider, ToolCallRequest, ToolDefinition};
 use aether::mcp::{ElicitationRequest, McpManager};
-use aether::types::{LlmResponse, ToolCallRequest, ToolDefinition};
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;

@@ -1,11 +1,11 @@
 use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{AgentMessage, UserMessage};
-use crate::llm::StreamingModelProvider;
-use crate::llm::{Context, LlmError};
-use crate::mcp::run_mcp_task::McpCommand;
-use crate::types::{
-    ChatMessage, IsoString, LlmResponse, ToolCallError, ToolCallRequest, ToolCallResult,
+use crate::llm::{
+    ChatMessage, StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult,
 };
+use crate::llm::{Context, LlmError, LlmResponse};
+use crate::mcp::run_mcp_task::McpCommand;
+use crate::types::IsoString;
 use futures::{Stream, stream};
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -309,7 +309,10 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 self.streams.insert(stream_key, Box::pin(stream));
 
                 if let Some(ref mcp_command_tx) = self.mcp_command_tx {
-                    let mcp_future = mcp_command_tx.send(McpCommand::ExecuteTool { request: tool_call, tx });
+                    let mcp_future = mcp_command_tx.send(McpCommand::ExecuteTool {
+                        request: tool_call,
+                        tx,
+                    });
                     let (_, mcp_result) = tokio::join!(msg_future, mcp_future);
                     if let Err(e) = mcp_result {
                         tracing::warn!("Failed to send tool request to MCP task: {:?}", e);

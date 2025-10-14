@@ -1,8 +1,7 @@
-use crate::llm::{
-    StreamingModelProvider,
-    provider::{Context, LlmResponseStream},
-};
+use crate::llm::{StreamingModelProvider, provider::LlmResponseStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use super::Context;
 
 /// A ModelProvider that alternates models on every turn via a round-robin strategy.
 /// Alternating between models with different strengths and weaknesses can improve the agent's performance.
@@ -56,8 +55,8 @@ impl StreamingModelProvider for AlloyedModelProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::LlmResponse;
     use crate::testing::FakeLlmProvider;
-    use crate::types::LlmResponse;
 
     #[test]
     fn test_alloyed_provider_display_name_empty() {

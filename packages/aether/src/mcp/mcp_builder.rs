@@ -1,9 +1,10 @@
+use crate::llm::ToolDefinition;
+
 use super::{
     ElicitationRequest, McpError, McpManager, McpServerConfig, ParseError, RawMcpConfig,
     ServerFactory,
     run_mcp_task::{McpCommand, run_mcp_task},
 };
-use crate::types::ToolDefinition;
 use std::collections::HashMap;
 use tokio::{
     sync::mpsc::{self, Sender},

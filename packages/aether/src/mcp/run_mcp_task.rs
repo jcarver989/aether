@@ -1,5 +1,5 @@
+use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use crate::mcp::McpManager;
-use crate::types::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use rmcp::{RoleClient, model::CallToolRequestParam};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};

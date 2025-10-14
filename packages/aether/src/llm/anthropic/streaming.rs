@@ -1,6 +1,5 @@
 use super::types::{ContentBlockDeltaData, ContentBlockStartData, StreamEvent};
-use crate::llm::{LlmError, Result};
-use crate::types::{LlmResponse, ToolCallRequest};
+use crate::llm::{LlmError, LlmResponse, Result, ToolCallRequest};
 use async_stream;
 use futures::Stream;
 use std::collections::HashMap;

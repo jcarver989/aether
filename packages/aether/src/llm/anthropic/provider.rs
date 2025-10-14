@@ -1,8 +1,8 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
 use super::types::Request;
-use crate::llm::provider::{Context, LlmResponseStream, StreamingModelProvider};
-use crate::llm::{LlmError, Result};
+use crate::llm::provider::{LlmResponseStream, StreamingModelProvider};
+use crate::llm::{Context, LlmError, Result};
 use async_stream;
 use futures::StreamExt;
 use reqwest::header::{CONTENT_TYPE, HeaderValue};
@@ -194,8 +194,10 @@ impl StreamingModelProvider for AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::ChatMessage;
     use crate::llm::anthropic::types::{SystemContent, SystemContentBlock};
-    use crate::types::{ChatMessage, IsoString, ToolDefinition};
+    use crate::llm::tools::ToolDefinition;
+    use crate::types::IsoString;
 
     fn create_test_provider() -> AnthropicProvider {
         AnthropicProvider::new("test-api-key".to_string())
