@@ -67,7 +67,7 @@ pub async fn main() {
 
     match run_agent(llm, &system_prompt, &prompt, mcp_configs).await {
         Ok(_) => println!("Done!"),
-        Err(e) => println!("Error: {}", e),
+        Err(e) => println!("Error: {e}"),
     };
 }
 
@@ -95,7 +95,7 @@ async fn run_agent(
                 if is_complete {
                     println!(); // New line when message is complete
                 } else {
-                    print!("{}", chunk);
+                    print!("{chunk}");
                     std::io::Write::flush(&mut std::io::stdout()).unwrap();
                 }
             }
@@ -113,11 +113,11 @@ async fn run_agent(
             }
 
             Error { message } => {
-                eprintln!("Error: {}", message);
+                eprintln!("Error: {message}");
             }
 
             Cancelled { message } => {
-                eprintln!("Cancelled: {}", message);
+                eprintln!("Cancelled: {message}");
             }
 
             Done => {

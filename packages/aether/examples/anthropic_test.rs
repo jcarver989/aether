@@ -124,15 +124,15 @@ async fn main() -> Result<()> {
     while let Some(result) = stream.next().await {
         match result? {
             LlmResponse::Start { message_id } => {
-                println!("\n✅ Started (ID: {})", message_id);
+                println!("\n✅ Started (ID: {message_id})");
             }
             LlmResponse::Text { chunk } => {
-                print!("{}", chunk);
+                print!("{chunk}");
                 io::stdout().flush().unwrap();
                 response_text.push_str(&chunk);
             }
             LlmResponse::ToolRequestStart { id, name } => {
-                println!("\n🔧 Tool call started: {} ({})", name, id);
+                println!("\n🔧 Tool call started: {name} ({id})");
                 current_tool_call = Some((id.clone(), name, String::new()));
             }
             LlmResponse::ToolRequestArg { id, chunk } => {
@@ -159,7 +159,7 @@ async fn main() -> Result<()> {
                     _ => "Tool executed successfully",
                 };
 
-                println!("🔧 Tool result: {}", tool_result);
+                println!("🔧 Tool result: {tool_result}");
                 current_tool_call = None;
             }
             LlmResponse::Done => {
@@ -167,7 +167,7 @@ async fn main() -> Result<()> {
                 break;
             }
             LlmResponse::Error { message } => {
-                println!("\n❌ Error: {}", message);
+                println!("\n❌ Error: {message}");
                 break;
             }
         }

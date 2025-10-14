@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 chunk, is_complete, ..
             }) => {
                 if !is_complete {
-                    print!("{}", chunk);
+                    print!("{chunk}");
                     io::stdout().flush().unwrap();
                 } else {
                     println!("\n\n✓ Message complete");
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
             Some(Error { message }) => {
-                eprintln!("❌ Error: {}", message);
+                eprintln!("❌ Error: {message}");
                 break;
             }
             Some(Cancelled { .. }) => {

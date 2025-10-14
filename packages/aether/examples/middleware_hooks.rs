@@ -24,21 +24,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .on_event(|event| async move {
             match event {
                 AgentEvent::UserMessage { content } => {
-                    run_command(&format!("echo '[USER] {}' >> conversation.log", content)).await;
+                    run_command(&format!("echo '[USER] {content}' >> conversation.log")).await;
                 }
                 AgentEvent::ToolCall {
                     name, arguments, ..
                 } => {
-                    println!("🔧 Tool called: {}", name);
-                    println!("   Arguments: {}", arguments);
+                    println!("🔧 Tool called: {name}");
+                    println!("   Arguments: {arguments}");
                     run_command(&format!(
-                        "echo '[TOOL] {} with args {}' >> conversation.log",
-                        name, arguments
+                        "echo '[TOOL] {name} with args {arguments}' >> conversation.log"
                     ))
                     .await;
 
                     if name == "rm" || name == "delete" {
-                        println!("❌ Blocked dangerous tool: {}", name);
+                        println!("❌ Blocked dangerous tool: {name}");
                         return MiddlewareAction::Block;
                     }
                 }

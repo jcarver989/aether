@@ -38,8 +38,8 @@ async fn test_tool_namespacing_desired_behavior() {
     let tool_name = "list_files";
 
     // Verify that the namespacing format is correct
-    let expected_tool_a_name = format!("{}::{}", server_a_name, tool_name);
-    let expected_tool_b_name = format!("{}::{}", server_b_name, tool_name);
+    let expected_tool_a_name = format!("{server_a_name}::{tool_name}");
+    let expected_tool_b_name = format!("{server_b_name}::{tool_name}");
 
     assert_eq!(expected_tool_a_name, "server_a::list_files");
     assert_eq!(expected_tool_b_name, "server_b::list_files");
