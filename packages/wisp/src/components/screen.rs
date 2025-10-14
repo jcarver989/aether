@@ -121,7 +121,7 @@ pub fn Screen(_props: &ScreenProps, mut hooks: Hooks) -> impl Into<AnyElement<'s
                 scroll_offset.set(scroll_offset.get() + 3);
             }
             _ => {}
-        }
+        },
         _ => {}
     });
 

@@ -6,7 +6,7 @@ use tokio_stream::StreamExt;
 use crate::llm::openai::mappers::{map_messages, map_tools};
 use crate::llm::openai::process_completion_stream;
 use crate::llm::openrouter::CustomChatCompletionStreamResponse;
-use crate::llm::{Context, LlmError, LlmResponseStream, StreamingModelProvider, Result};
+use crate::llm::{Context, LlmError, LlmResponseStream, Result, StreamingModelProvider};
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,

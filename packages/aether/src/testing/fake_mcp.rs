@@ -162,7 +162,9 @@ impl FakeMcpServer {
         let Parameters(DivideNumbersRequest { a, b }) = request;
 
         if b == 0 {
-            return Ok(CallToolResult::error(vec![Content::text("Division by zero")]));
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Division by zero",
+            )]));
         }
 
         let result = DivideNumbersResult { quotient: a / b };
@@ -172,10 +174,7 @@ impl FakeMcpServer {
     }
 
     #[tool(description = "A tool that sleeps for a specified duration (for testing timeouts)")]
-    pub async fn slow_tool(
-        &self,
-        request: Parameters<SlowToolRequest>,
-    ) -> Json<SlowToolResult> {
+    pub async fn slow_tool(&self, request: Parameters<SlowToolRequest>) -> Json<SlowToolResult> {
         let Parameters(SlowToolRequest { sleep_ms }) = request;
         tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
         Json(SlowToolResult {
