@@ -133,13 +133,6 @@ impl SlowToolResult {
     }
 }
 
-#[tool_router]
-impl FakeMcpServer {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
 impl Default for FakeMcpServer {
     fn default() -> Self {
         Self {
@@ -148,7 +141,11 @@ impl Default for FakeMcpServer {
     }
 }
 
+#[tool_router]
 impl FakeMcpServer {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn as_dyn(self) -> Box<dyn DynService<RoleServer>> {
         Box::new(self)
