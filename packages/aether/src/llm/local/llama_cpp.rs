@@ -11,8 +11,10 @@ impl LlamaCppProvider {
             client: Client::with_config(get_local_config(base_url)),
         }
     }
+}
 
-    pub fn default() -> Self {
+impl Default for LlamaCppProvider {
+    fn default() -> Self {
         Self {
             client: Client::with_config(get_local_config("http://localhost:8080/v1")),
         }

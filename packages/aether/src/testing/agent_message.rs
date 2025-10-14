@@ -107,8 +107,7 @@ impl AgentMessageBuilder {
 
         // Format error like the MCP run task does
         let error_result = format!(
-            "Tool execution error: Annotated {{ raw: Text(RawTextContent {{ text: \"{}\", meta: None }}), annotations: None }}",
-            error_message
+            "Tool execution error: Annotated {{ raw: Text(RawTextContent {{ text: \"{error_message}\", meta: None }}), annotations: None }}"
         );
 
         use crate::llm::{ToolCallError, ToolCallRequest};

@@ -123,11 +123,11 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::IoError(e) => write!(f, "Failed to read config file: {}", e),
-            ParseError::JsonError(e) => write!(f, "Invalid JSON: {}", e),
-            ParseError::VarError(e) => write!(f, "Variable expansion failed: {}", e),
+            ParseError::IoError(e) => write!(f, "Failed to read config file: {e}"),
+            ParseError::JsonError(e) => write!(f, "Invalid JSON: {e}"),
+            ParseError::VarError(e) => write!(f, "Variable expansion failed: {e}"),
             ParseError::FactoryNotFound(name) => {
-                write!(f, "InMemory server factory '{}' not registered", name)
+                write!(f, "InMemory server factory '{name}' not registered")
             }
         }
     }

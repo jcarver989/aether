@@ -35,12 +35,12 @@ pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<Mc
                 }
 
                 Err(e) => {
-                    tracing::error!("Failed to get client for tool {}: {}", request.name, e);
+                    tracing::error!("Failed to get client for tool {}: {e}", request.name);
                     let error = ToolCallError {
                         id: request.id.clone(),
                         name: request.name.clone(),
                         arguments: Some(request.arguments.clone()),
-                        error: format!("Failed to get client: {}", e),
+                        error: format!("Failed to get client: {e}"),
                     };
                     let _ = tx.send(Err(error));
                 }
@@ -69,16 +69,13 @@ async fn try_execute_tool(
             id: request.id.clone(),
             name: request.name.clone(),
             arguments: Some(request.arguments.clone()),
-            error: format!(
-                "Tool execution timed out after {:?}",
-                TOOL_EXECUTION_TIMEOUT
-            ),
+            error: format!("Tool execution timed out after {TOOL_EXECUTION_TIMEOUT:?}"),
         })?
         .map_err(|e| ToolCallError {
             id: request.id.clone(),
             name: request.name.clone(),
             arguments: Some(request.arguments.clone()),
-            error: format!("Tool execution failed: {}", e),
+            error: format!("Tool execution failed: {e}"),
         })?;
 
     ToolCallResult::try_from((request, mcp_result))

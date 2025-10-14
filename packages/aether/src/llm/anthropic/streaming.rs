@@ -24,11 +24,7 @@ pub fn process_anthropic_stream<T: Stream<Item = Result<String>> + Send + Sync +
                         continue;
                     }
 
-                    let data_line = if line.starts_with("data: ") {
-                        &line[6..]
-                    } else {
-                        &line
-                    };
+                    let data_line = line.strip_prefix("data: ").unwrap_or(&line);
 
                     if data_line.trim() == "[DONE]" {
                         break;

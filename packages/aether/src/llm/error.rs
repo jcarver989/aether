@@ -25,21 +25,17 @@ pub enum LlmError {
 impl fmt::Display for LlmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LlmError::MissingApiKey(var) => write!(f, "{} environment variable not set", var),
-            LlmError::InvalidApiKey(msg) => write!(f, "Invalid API key: {}", msg),
-            LlmError::HttpClientCreation(msg) => write!(f, "Failed to create HTTP client: {}", msg),
-            LlmError::ApiRequest(msg) => write!(f, "API request failed: {}", msg),
-            LlmError::ApiError(msg) => write!(f, "API error: {}", msg),
-            LlmError::IoError(msg) => write!(f, "IO error reading stream: {}", msg),
-            LlmError::JsonParsing(msg) => write!(f, "JSON parsing error: {}", msg),
+            LlmError::MissingApiKey(var) => write!(f, "{var} environment variable not set"),
+            LlmError::InvalidApiKey(msg) => write!(f, "Invalid API key: {msg}"),
+            LlmError::HttpClientCreation(msg) => write!(f, "Failed to create HTTP client: {msg}"),
+            LlmError::ApiRequest(msg) => write!(f, "API request failed: {msg}"),
+            LlmError::ApiError(msg) => write!(f, "API error: {msg}"),
+            LlmError::IoError(msg) => write!(f, "IO error reading stream: {msg}"),
+            LlmError::JsonParsing(msg) => write!(f, "JSON parsing error: {msg}"),
             LlmError::ToolParameterParsing { tool_name, error } => {
-                write!(
-                    f,
-                    "Failed to parse tool parameters for {}: {}",
-                    tool_name, error
-                )
+                write!(f, "Failed to parse tool parameters for {tool_name}: {error}")
             }
-            LlmError::Other(msg) => write!(f, "{}", msg),
+            LlmError::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

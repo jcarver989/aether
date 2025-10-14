@@ -15,10 +15,10 @@ pub enum ToolError {
 impl fmt::Display for ToolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ToolError::ExecutionFailed(msg) => write!(f, "Tool execution failed: {}", msg),
-            ToolError::ConfigurationError(msg) => write!(f, "Tool configuration error: {}", msg),
-            ToolError::IoError(msg) => write!(f, "IO error: {}", msg),
-            ToolError::Other(msg) => write!(f, "{}", msg),
+            ToolError::ExecutionFailed(msg) => write!(f, "Tool execution failed: {msg}"),
+            ToolError::ConfigurationError(msg) => write!(f, "Tool configuration error: {msg}"),
+            ToolError::IoError(msg) => write!(f, "IO error: {msg}"),
+            ToolError::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

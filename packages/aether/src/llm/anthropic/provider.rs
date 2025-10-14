@@ -47,7 +47,7 @@ impl AnthropicProvider {
         })
     }
 
-    pub fn default() -> Result<Self> {
+    pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("ANTHROPIC_API_KEY")
             .map_err(|_| LlmError::MissingApiKey("ANTHROPIC_API_KEY".to_string()))?;
         Self::new(api_key)
@@ -118,9 +118,9 @@ impl AnthropicProvider {
             .base_url
             .as_deref()
             .unwrap_or("https://api.anthropic.com");
-        let url = format!("{}/v1/messages", base_url);
+        let url = format!("{base_url}/v1/messages");
 
-        debug!("Sending request to Anthropic API: {}", url);
+        debug!("Sending request to Anthropic API: {url}");
 
         let response = self
             .client
@@ -137,15 +137,14 @@ impl AnthropicProvider {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(LlmError::ApiError(format!(
-                "Anthropic API request failed with status {}: {}",
-                status, error_text
+                "Anthropic API request failed with status {status}: {error_text}"
             )));
         }
 
         let stream = response.bytes_stream();
         let stream_reader =
             StreamReader::new(stream.map(|result| {
-                result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                result.map_err(std::io::Error::other)
             }));
 
         let lines_stream = LinesStream::new(tokio::io::BufReader::new(stream_reader).lines());

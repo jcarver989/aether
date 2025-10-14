@@ -9,12 +9,12 @@ use super::{Context, LlmResponse};
 pub type LlmResponseStream = Pin<Box<dyn Stream<Item = Result<LlmResponse>> + Send>>;
 
 pub trait StreamingModelProvider: Send + Sync {
-    fn stream_response<'a>(&self, context: &Context) -> LlmResponseStream;
+    fn stream_response(&self, context: &Context) -> LlmResponseStream;
     fn display_name(&self) -> String;
 }
 
 impl StreamingModelProvider for Box<dyn StreamingModelProvider> {
-    fn stream_response<'a>(&self, context: &Context) -> LlmResponseStream {
+    fn stream_response(&self, context: &Context) -> LlmResponseStream {
         (**self).stream_response(context)
     }
 

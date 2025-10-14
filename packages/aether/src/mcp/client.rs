@@ -7,7 +7,6 @@ use rmcp::{
     },
     service::RequestContext,
 };
-use std::future::Future;
 use std::result::Result;
 use tokio::sync::{mpsc, oneshot};
 
@@ -35,32 +34,30 @@ impl ClientHandler for McpClient {
         self.client_info.clone()
     }
 
-    fn create_elicitation(
+    async fn create_elicitation(
         &self,
         request: CreateElicitationRequestParam,
         _context: RequestContext<RoleClient>,
-    ) -> impl Future<Output = Result<CreateElicitationResult, ErrorData>> + Send + '_ {
-        async move {
-            let (response_tx, response_rx) = oneshot::channel();
-            let elicitation_request = ElicitationRequest {
-                request,
-                response_sender: response_tx,
-            };
+    ) -> Result<CreateElicitationResult, ErrorData> {
+        let (response_tx, response_rx) = oneshot::channel();
+        let elicitation_request = ElicitationRequest {
+            request,
+            response_sender: response_tx,
+        };
 
-            match self.elicitation_sender.send(elicitation_request).await {
-                Ok(_) => match response_rx.await {
-                    Ok(result) => Ok(result),
-                    Err(_) => Ok(CreateElicitationResult {
-                        action: ElicitationAction::Decline,
-                        content: None,
-                    }),
-                },
-
+        match self.elicitation_sender.send(elicitation_request).await {
+            Ok(_) => match response_rx.await {
+                Ok(result) => Ok(result),
                 Err(_) => Ok(CreateElicitationResult {
                     action: ElicitationAction::Decline,
                     content: None,
                 }),
-            }
+            },
+
+            Err(_) => Ok(CreateElicitationResult {
+                action: ElicitationAction::Decline,
+                content: None,
+            }),
         }
     }
 }

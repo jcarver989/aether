@@ -33,29 +33,25 @@ pub enum McpError {
 impl fmt::Display for McpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            McpError::ToolNotFound(tool) => write!(f, "Tool not found: {}", tool),
+            McpError::ToolNotFound(tool) => write!(f, "Tool not found: {tool}"),
             McpError::InvalidToolNameFormat(name) => {
-                write!(f, "Invalid tool name format: {}", name)
+                write!(f, "Invalid tool name format: {name}")
             }
-            McpError::ServerNotFound(server) => write!(f, "Server not found: {}", server),
+            McpError::ServerNotFound(server) => write!(f, "Server not found: {server}"),
             McpError::ToolExecutionFailed {
                 tool_name,
                 server_name,
                 error,
             } => {
-                write!(
-                    f,
-                    "Failed to execute tool {} on server {}: {}",
-                    tool_name, server_name, error
-                )
+                write!(f, "Failed to execute tool {tool_name} on server {server_name}: {error}")
             }
-            McpError::ToolExecutionError(msg) => write!(f, "Tool execution failed: {}", msg),
-            McpError::ToolDiscoveryFailed(msg) => write!(f, "Tool discovery failed: {}", msg),
-            McpError::ConnectionFailed(msg) => write!(f, "Connection failed: {}", msg),
-            McpError::ServerStartupFailed(msg) => write!(f, "Server startup failed: {}", msg),
-            McpError::TransportError(msg) => write!(f, "Transport error: {}", msg),
-            McpError::JsonError(msg) => write!(f, "JSON error: {}", msg),
-            McpError::Other(msg) => write!(f, "{}", msg),
+            McpError::ToolExecutionError(msg) => write!(f, "Tool execution failed: {msg}"),
+            McpError::ToolDiscoveryFailed(msg) => write!(f, "Tool discovery failed: {msg}"),
+            McpError::ConnectionFailed(msg) => write!(f, "Connection failed: {msg}"),
+            McpError::ServerStartupFailed(msg) => write!(f, "Server startup failed: {msg}"),
+            McpError::TransportError(msg) => write!(f, "Transport error: {msg}"),
+            McpError::JsonError(msg) => write!(f, "JSON error: {msg}"),
+            McpError::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

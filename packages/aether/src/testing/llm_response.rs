@@ -10,9 +10,9 @@ pub struct LlmResponseBuilder {
 
 impl LlmResponseBuilder {
     pub fn new(message_id: &str) -> Self {
-        let mut chunks = Vec::new();
-        chunks.push(LlmResponse::start(message_id));
-        Self { chunks }
+        Self {
+            chunks: vec![LlmResponse::start(message_id)],
+        }
     }
 
     pub fn text(mut self, chunks: &[&str]) -> Self {

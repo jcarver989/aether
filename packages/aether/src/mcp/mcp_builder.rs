@@ -21,16 +21,22 @@ pub struct McpBuilder {
     mcp_channel_capacity: usize,
 }
 
-impl McpBuilder {
-    pub fn new() -> Self {
+impl Default for McpBuilder {
+    fn default() -> Self {
         Self {
             mcp_configs: Vec::new(),
             factories: HashMap::new(),
             mcp_channel_capacity: 1000,
         }
     }
+}
 
-    pub fn add(mut self, configs: Vec<McpServerConfig>) -> Self {
+impl McpBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_servers(mut self, configs: Vec<McpServerConfig>) -> Self {
         self.mcp_configs.extend(configs);
         self
     }

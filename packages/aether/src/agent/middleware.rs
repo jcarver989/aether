@@ -66,10 +66,7 @@ impl Middleware {
         let results = join_all(futures).await;
 
         // Any Block wins
-        if results
-            .iter()
-            .any(|action| *action == MiddlewareAction::Block)
-        {
+        if results.contains(&MiddlewareAction::Block) {
             MiddlewareAction::Block
         } else {
             MiddlewareAction::Allow

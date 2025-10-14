@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::str::FromStr;
 
 use chrono::{DateTime, TimeZone};
 use serde::{Deserialize, Serialize};
@@ -35,16 +36,17 @@ pub enum LlmProvider {
     LlamaCpp,
 }
 
-impl LlmProvider {
-    pub fn from_str(provider: &str) -> Result<LlmProvider, String> {
+impl FromStr for LlmProvider {
+    type Err = String;
+
+    fn from_str(provider: &str) -> Result<LlmProvider, Self::Err> {
         match provider {
             "anthropic" => Ok(LlmProvider::Anthropic),
             "openrouter" => Ok(LlmProvider::OpenRouter),
             "ollama" => Ok(LlmProvider::Ollama),
             "llamacpp" => Ok(LlmProvider::LlamaCpp),
             _ => Err(format!(
-                "Unknown provider: {}. Supported providers: anthropic, openrouter, ollama, llamacpp",
-                provider
+                "Unknown provider: {provider}. Supported providers: anthropic, openrouter, ollama, llamacpp"
             )),
         }
     }

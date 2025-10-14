@@ -20,9 +20,11 @@ impl ModelProviderParser {
     pub fn new(factories: HashMap<String, CreateProviderFn>) -> Self {
         Self { factories }
     }
+}
 
+impl Default for ModelProviderParser {
     /// Create a parser with all built-in providers registered
-    pub fn default() -> Self {
+    fn default() -> Self {
         Self::new(HashMap::new())
             .with_provider::<AnthropicProvider>("anthropic")
             .with_provider::<OpenRouterProvider>("openrouter")
@@ -32,6 +34,9 @@ impl ModelProviderParser {
                 Box::new(|_model| Ok(Box::new(LlamaCppProvider::default()))),
             )
     }
+}
+
+impl ModelProviderParser {
 
     pub fn with_provider<P: ModelProviderFactory<P> + StreamingModelProvider + 'static>(
         mut self,
@@ -76,15 +81,14 @@ impl ModelProviderParser {
 
             let (provider_name, model) = pair.split_once(':').ok_or_else(|| {
                 format!(
-                    "Invalid model spec '{}'. Expected format 'provider:model' or 'llamacpp'",
-                    pair
+                    "Invalid model spec '{pair}'. Expected format 'provider:model' or 'llamacpp'"
                 )
             })?;
 
             let factory = self
                 .factories
                 .get(provider_name)
-                .ok_or_else(|| format!("Unknown provider: {}", provider_name))?;
+                .ok_or_else(|| format!("Unknown provider: {provider_name}"))?;
 
             providers.push(factory(model)?);
         }
@@ -123,7 +127,7 @@ pub type CreateProviderFn = Box<
 
 impl ModelProviderFactory<AnthropicProvider> for AnthropicProvider {
     fn create(model: &str) -> std::result::Result<AnthropicProvider, Box<dyn std::error::Error>> {
-        Ok(AnthropicProvider::default()
+        Ok(AnthropicProvider::from_env()
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?
             .with_model(model))
     }
