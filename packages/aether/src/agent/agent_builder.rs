@@ -73,7 +73,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         self
     }
 
-    pub fn mcp_tools(mut self, tx: Sender<McpCommand>, tools: Vec<ToolDefinition>) -> Self {
+    pub fn tools(mut self, tx: Sender<McpCommand>, tools: Vec<ToolDefinition>) -> Self {
         self.tool_definitions = tools;
         self.mcp_tx = Some(tx);
         self

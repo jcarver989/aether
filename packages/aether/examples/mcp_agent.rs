@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tools, mcp_tx, _mcp_handle) = mcp().from_json_file("examples/mcp.json")?.spawn().await?;
     let (tx, mut rx, _handle) = agent(llm)
         .system("You are a helpful assistant with access to web browsing tools via Playwright.")
-        .mcp_tools(mcp_tx, tools)
+        .tools(mcp_tx, tools)
         .spawn()
         .await?;
 

@@ -81,7 +81,7 @@ async fn run_agent(
 
     let (tx, mut rx, _handle) = agent(llm)
         .system(system)
-        .mcp_tools(mcp_tx, tools)
+        .tools(mcp_tx, tools)
         .spawn()
         .await
         .unwrap();
