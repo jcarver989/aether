@@ -57,32 +57,30 @@ pub fn map_messages(messages: &Vec<ChatMessage>) -> Result<(Option<String>, Vec<
                     });
                 }
             }
-            ChatMessage::ToolCallResult(result) => {
-                match result {
-                    Ok(tool_result) => {
-                        anthropic_messages.push(Message {
-                            role: Role::User,
-                            content: Content::Blocks(vec![ContentBlock::ToolResult {
-                                tool_use_id: tool_result.id.clone(),
-                                content: tool_result.result.clone(),
-                                is_error: Some(false),
-                            }]),
-                            cache_control: None,
-                        });
-                    }
-                    Err(tool_error) => {
-                        anthropic_messages.push(Message {
-                            role: Role::User,
-                            content: Content::Blocks(vec![ContentBlock::ToolResult {
-                                tool_use_id: tool_error.id.clone(),
-                                content: tool_error.error.clone(),
-                                is_error: Some(true),
-                            }]),
-                            cache_control: None,
-                        });
-                    }
+            ChatMessage::ToolCallResult(result) => match result {
+                Ok(tool_result) => {
+                    anthropic_messages.push(Message {
+                        role: Role::User,
+                        content: Content::Blocks(vec![ContentBlock::ToolResult {
+                            tool_use_id: tool_result.id.clone(),
+                            content: tool_result.result.clone(),
+                            is_error: Some(false),
+                        }]),
+                        cache_control: None,
+                    });
                 }
-            }
+                Err(tool_error) => {
+                    anthropic_messages.push(Message {
+                        role: Role::User,
+                        content: Content::Blocks(vec![ContentBlock::ToolResult {
+                            tool_use_id: tool_error.id.clone(),
+                            content: tool_error.error.clone(),
+                            is_error: Some(true),
+                        }]),
+                        cache_control: None,
+                    });
+                }
+            },
             ChatMessage::Error { message, .. } => {
                 anthropic_messages.push(Message {
                     role: Role::User,

@@ -2,7 +2,7 @@
 
 pub mod mcp;
 
-use aether::llm::{Context, LlmResponseStream, StreamingModelProvider, Result};
+use aether::llm::{Context, LlmResponseStream, Result, StreamingModelProvider};
 use aether::mcp::{ElicitationRequest, McpManager};
 use aether::types::{LlmResponse, ToolCallRequest, ToolDefinition};
 use rmcp::model::Tool as RmcpTool;

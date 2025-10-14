@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
-use aether::llm::parser::ModelProviderParser;
 use aether::llm::StreamingModelProvider;
+use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
 
 #[derive(Parser, Clone)]
