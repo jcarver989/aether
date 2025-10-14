@@ -16,28 +16,28 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
 ) -> impl Stream<Item = Result<LlmResponse>> + Send {
     async_stream::stream! {
         let message_id = uuid::Uuid::new_v4().to_string();
-        yield Ok(LlmResponse::Start { message_id: message_id.clone() });
+        yield Ok(LlmResponse::Start { message_id });
 
         let mut tool_collector = ToolCallCollector::new();
 
         while let Some(result) = stream.next().await {
             match result {
-                Ok(response) => {
-                    if let Some(choice) = response.choices.first() {
-                        let delta = &choice.delta;
+                Ok(mut response) => {
+                    if let Some(choice) = response.choices.pop() {
+                        let delta = choice.delta;
 
-                        if let Some(content) = &delta.content {
+                        if let Some(content) = delta.content {
                             if !content.is_empty() {
                                 // If we have pending tool calls and now we're getting content,
                                 // complete all tool calls first
                                 for tool_call in tool_collector.complete_all_tool_calls() {
                                     yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                                 }
-                                yield Ok(LlmResponse::Text { chunk: content.clone() });
+                                yield Ok(LlmResponse::Text { chunk: content });
                             }
                         }
 
-                        if let Some(tool_calls) = &delta.tool_calls {
+                        if let Some(tool_calls) = delta.tool_calls {
                             for tool_call in tool_calls {
                                 let responses = tool_collector.handle_tool_call_delta(tool_call);
                                 for response in responses {
@@ -46,7 +46,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                             }
                         }
 
-                        if let Some(finish_reason) = &choice.finish_reason {
+                        if let Some(finish_reason) = choice.finish_reason {
                             let finish_reason_str = format!("{finish_reason:?}");
                             debug!("Received finish reason: {}", finish_reason_str);
 
@@ -89,30 +89,26 @@ impl ToolCallCollector {
 
     pub fn handle_tool_call_delta(
         &mut self,
-        tool_call: &ChatCompletionMessageToolCallChunk,
+        tool_call: ChatCompletionMessageToolCallChunk,
     ) -> Vec<LlmResponse> {
         let mut responses = Vec::new();
         let index = tool_call.index;
 
-        if let Some(function) = &tool_call.function {
-            if let Some(name) = &function.name {
+        if let Some(function) = tool_call.function {
+            if let Some(name) = function.name {
                 let id = tool_call
                     .id
-                    .clone()
                     .unwrap_or_else(|| format!("tool_call_{}", index));
                 self.start_tool_call(index, id.clone(), name.clone());
-                responses.push(LlmResponse::ToolRequestStart {
-                    id,
-                    name: name.clone(),
-                });
+                responses.push(LlmResponse::ToolRequestStart { id, name });
             }
 
-            if let Some(arguments) = &function.arguments {
+            if let Some(arguments) = function.arguments {
                 if !arguments.is_empty() {
-                    if let Some(id) = self.add_arguments(index, arguments) {
+                    if let Some(id) = self.add_arguments(index, &arguments) {
                         responses.push(LlmResponse::ToolRequestArg {
                             id,
-                            chunk: arguments.clone(),
+                            chunk: arguments,
                         });
                     }
                 }

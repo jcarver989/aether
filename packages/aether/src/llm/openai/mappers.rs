@@ -31,11 +31,11 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
                 let openai_tool_calls: Vec<_> = tool_calls
                     .into_iter()
                     .map(|call| ChatCompletionMessageToolCall {
-                        id: call.id.clone(),
+                        id: call.id,
                         r#type: ChatCompletionToolType::Function,
                         function: FunctionCall {
-                            name: call.name.clone(),
-                            arguments: call.arguments.to_string(),
+                            name: call.name,
+                            arguments: call.arguments,
                         },
                     })
                     .collect();
@@ -61,18 +61,14 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
             ChatMessage::ToolCallResult(result) => match result {
                 Ok(tool_result) => Some(ChatCompletionRequestMessage::Tool(
                     ChatCompletionRequestToolMessage {
-                        content: ChatCompletionRequestToolMessageContent::Text(
-                            tool_result.result.clone(),
-                        ),
-                        tool_call_id: tool_result.id.clone(),
+                        content: ChatCompletionRequestToolMessageContent::Text(tool_result.result),
+                        tool_call_id: tool_result.id,
                     },
                 )),
                 Err(tool_error) => Some(ChatCompletionRequestMessage::Tool(
                     ChatCompletionRequestToolMessage {
-                        content: ChatCompletionRequestToolMessageContent::Text(
-                            tool_error.error.clone(),
-                        ),
-                        tool_call_id: tool_error.id.clone(),
+                        content: ChatCompletionRequestToolMessageContent::Text(tool_error.error),
+                        tool_call_id: tool_error.id,
                     },
                 )),
             },
@@ -108,10 +104,10 @@ impl From<&ToolDefinition> for ChatCompletionTool {
     }
 }
 
-pub fn map_messages(messages: &Vec<ChatMessage>) -> Vec<ChatCompletionRequestMessage> {
-    messages.into_iter().filter_map(Into::into).collect()
+pub fn map_messages(messages: &[ChatMessage]) -> Vec<ChatCompletionRequestMessage> {
+    messages.iter().filter_map(Into::into).collect()
 }
 
-pub fn map_tools(tools: &Vec<ToolDefinition>) -> Vec<ChatCompletionTool> {
-    tools.into_iter().map(Into::into).collect()
+pub fn map_tools(tools: &[ToolDefinition]) -> Vec<ChatCompletionTool> {
+    tools.iter().map(Into::into).collect()
 }

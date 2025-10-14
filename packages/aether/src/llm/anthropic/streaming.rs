@@ -12,7 +12,7 @@ pub fn process_anthropic_stream<T: Stream<Item = Result<String>> + Send + Sync +
 ) -> impl Stream<Item = Result<LlmResponse>> + Send {
     async_stream::stream! {
         let message_id = uuid::Uuid::new_v4().to_string();
-        yield Ok(LlmResponse::Start { message_id: message_id.clone() });
+        yield Ok(LlmResponse::Start { message_id });
 
         let mut active_tool_calls: HashMap<String, (String, String)> = HashMap::new();
         let mut index_to_id: HashMap<u32, String> = HashMap::new();
