@@ -14,8 +14,8 @@ use aether::{
 #[tokio::test]
 async fn test_text_message() -> Result<(), Box<dyn Error>> {
     let (id, chunks) = ("message_1", ["Hello", "user"]);
-    let llm_responses = [llm_response(&id).text(&chunks).build()];
-    let mut expected_messages = agent_message(&id).text(&chunks).build();
+    let llm_responses = [llm_response(id).text(&chunks).build()];
+    let mut expected_messages = agent_message(id).text(&chunks).build();
     expected_messages.push(AgentMessage::Done);
 
     let messages = test_agent()
@@ -189,8 +189,7 @@ async fn test_tool_timeout() -> Result<(), Box<dyn Error>> {
 
     assert!(
         has_tool_error,
-        "Expected a ToolError with timeout message, got: {:?}",
-        messages
+        "Expected a ToolError with timeout message, got: {messages:?}"
     );
 
     Ok(())

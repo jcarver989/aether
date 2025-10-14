@@ -26,7 +26,7 @@ async fn test_truncate_summarizer_long_lines() {
 async fn test_truncate_summarizer_many_lines() {
     let summarizer = TruncateSummarizer::new(100, 5);
     let many_lines = (0..20)
-        .map(|i| format!("Line {}", i))
+        .map(|i| format!("Line {i}"))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -62,7 +62,7 @@ async fn test_default_summarizer_large_content() {
 
     // Create content larger than the default limits (2000 chars per line, 2000 lines)
     let large_content = (0..3000)
-        .map(|i| format!("Line {} with some content", i))
+        .map(|i| format!("Line {i} with some content"))
         .collect::<Vec<_>>()
         .join("\n");
 
