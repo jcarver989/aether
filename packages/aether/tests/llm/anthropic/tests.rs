@@ -96,11 +96,12 @@ mod integration_tests {
                         arguments: r#"{"location": "San Francisco, CA"}"#.to_string(),
                     }],
                 },
-                ChatMessage::ToolCallResult {
-                    tool_call_id: "call_123".to_string(),
-                    content: "Sunny, 72°F".to_string(),
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::ToolCallResult(Ok(crate::types::ToolCallResult {
+                    id: "call_123".to_string(),
+                    name: "get_weather".to_string(),
+                    arguments: r#"{"location": "San Francisco, CA"}"#.to_string(),
+                    result: "Sunny, 72°F".to_string(),
+                })),
             ],
             tools: vec![],
         };

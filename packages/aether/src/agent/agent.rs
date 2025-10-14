@@ -432,22 +432,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         });
 
         for result in completed_tools {
-            match result {
-                Ok(result) => {
-                    self.context.add_message(ChatMessage::ToolCallResult {
-                        tool_call_id: result.id.clone(),
-                        content: result.result.clone(),
-                        timestamp: IsoString::now(),
-                    });
-                }
-                Err(error) => {
-                    self.context.add_message(ChatMessage::ToolCallResult {
-                        tool_call_id: error.id.clone(),
-                        content: error.error.clone(),
-                        timestamp: IsoString::now(),
-                    });
-                }
-            }
+            self.context
+                .add_message(ChatMessage::ToolCallResult(result.clone()));
         }
     }
 }

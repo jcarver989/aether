@@ -58,18 +58,26 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
                     },
                 ))
             }
-            ChatMessage::ToolCallResult {
-                tool_call_id,
-                content,
-                ..
-            } => Some(ChatCompletionRequestMessage::Tool(
-                ChatCompletionRequestToolMessage {
-                    content: ChatCompletionRequestToolMessageContent::Text(content),
-                    tool_call_id,
-                },
-            )),
+            ChatMessage::ToolCallResult(result) => match result {
+                Ok(tool_result) => Some(ChatCompletionRequestMessage::Tool(
+                    ChatCompletionRequestToolMessage {
+                        content: ChatCompletionRequestToolMessageContent::Text(
+                            tool_result.result.clone(),
+                        ),
+                        tool_call_id: tool_result.id.clone(),
+                    },
+                )),
+                Err(tool_error) => Some(ChatCompletionRequestMessage::Tool(
+                    ChatCompletionRequestToolMessage {
+                        content: ChatCompletionRequestToolMessageContent::Text(
+                            tool_error.error.clone(),
+                        ),
+                        tool_call_id: tool_error.id.clone(),
+                    },
+                )),
+            },
 
-            ChatMessage::AssistantStreaming { .. } | ChatMessage::Error { .. } => None,
+            ChatMessage::Error { .. } => None,
         }
     }
 }
