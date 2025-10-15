@@ -10,7 +10,7 @@ use clap::Parser;
 use crossterm::cursor::{MoveTo, position};
 use crossterm::event::{Event, KeyEventKind, poll, read};
 use crossterm::queue;
-use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode};
+use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode, size};
 use render_context::RenderContext;
 use renderer::LoopAction;
 use std::time::Duration;
@@ -45,7 +45,7 @@ async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Erro
     queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
 
     let input_prompt = InputPrompt {};
-    let context = RenderContext::new(position()?);
+    let context = RenderContext::new(position()?, size()?);
     stdout.flush_commands(&input_prompt.render((), &context))?;
 
     let user_msg_tx = state.agent_tx;

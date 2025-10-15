@@ -1,15 +1,28 @@
 use super::commands::TerminalCommand;
 use crate::render_context::{Component, RenderContext};
+use color_eyre::owo_colors::colors::xterm::Cyan;
 use crossterm::style::{Color, Stylize};
 
 pub struct InputPrompt {}
 
 impl Component<()> for InputPrompt {
-    fn render(&self, _props: (), _context: &RenderContext) -> Vec<TerminalCommand> {
+    fn render(&self, _props: (), context: &RenderContext) -> Vec<TerminalCommand> {
+        let width = context.size.0 as usize;
+        let color = Color::Cyan;
+        let border = "─".repeat(width).with(color);
         vec![
             TerminalCommand::Print("\r\n".to_string()),
             TerminalCommand::MoveToColumn(0),
-            TerminalCommand::PrintStyled("> ".to_string().with(Color::Cyan)),
+            TerminalCommand::PrintStyled(border.clone()),
+            //
+            TerminalCommand::Print("\r\n".to_string()),
+            TerminalCommand::PrintStyled("> ".to_string().with(color)),
+            TerminalCommand::SavePosition,
+            TerminalCommand::Print("\r\n".to_string()),
+            //
+            TerminalCommand::PrintStyled(border),
+            TerminalCommand::Print("\r\n".to_string()),
+            TerminalCommand::RestorePosition,
         ]
     }
 }
@@ -21,7 +34,7 @@ mod tests {
     #[test]
     fn test_input_prompt_implements_component() {
         let input_prompt = InputPrompt {};
-        let render_context = RenderContext::new((0, 0));
+        let render_context = RenderContext::new((0, 0), (0, 0));
         let commands = input_prompt.render((), &render_context);
 
         // Verify we get the expected commands
@@ -52,8 +65,8 @@ mod tests {
     #[test]
     fn test_input_prompt_renders_consistently() {
         let input_prompt = InputPrompt {};
-        let render_context1 = RenderContext::new((0, 0));
-        let render_context2 = RenderContext::new((0, 0));
+        let render_context1 = RenderContext::new((0, 0), (0, 0));
+        let render_context2 = RenderContext::new((0, 0), (0, 0));
         let commands1 = input_prompt.render((), &render_context1);
         let commands2 = input_prompt.render((), &render_context2);
 

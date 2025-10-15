@@ -4,6 +4,7 @@ use aether::agent::{AgentMessage, UserMessage};
 use crossterm::{
     cursor::position,
     event::{self, KeyCode, KeyEvent},
+    terminal::size,
 };
 use tokio::sync::mpsc;
 
@@ -37,7 +38,7 @@ impl Renderer {
             tool_call_statuses: ToolCallStatuses::new(),
             current_assistant_message_id: None,
             input_buffer: String::new(),
-            context: RenderContext::new((0, 0)),
+            context: RenderContext::new((0, 0), (0, 0)),
         }
     }
 
@@ -171,6 +172,14 @@ impl Renderer {
             }
         };
 
-        self.context = RenderContext::new(position);
+        let size = match size() {
+            Ok(s) => s,
+            Err(e) => {
+                println!("Failed to get size: {}", e);
+                (1, 1)
+            }
+        };
+
+        self.context = RenderContext::new(position, size);
     }
 }
