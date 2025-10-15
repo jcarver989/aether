@@ -1,7 +1,7 @@
 use crossterm::{
     Command, QueueableCommand,
     cursor::{MoveLeft, MoveRight, MoveTo, MoveToColumn, RestorePosition, SavePosition},
-    style::{Color, PrintStyledContent, StyledContent, Stylize},
+    style::{PrintStyledContent, StyledContent},
     terminal::{Clear, ClearType},
 };
 use std::io::{Result, Write};

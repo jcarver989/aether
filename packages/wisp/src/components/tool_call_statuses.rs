@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_start_tool_creates_commands() {
         let mut progress_bars = ToolCallStatuses::new();
-        let context = RenderContext::new((0, 0));
+        let context = RenderContext::new((0, 0), (0, 0));
         let request = ToolCallRequest {
             id: "tool-1".to_string(),
             name: "Read".to_string(),
@@ -192,7 +192,7 @@ mod tests {
     #[test]
     fn test_duplicate_tool_start_returns_empty() {
         let mut progress_bars = ToolCallStatuses::new();
-        let context = RenderContext::new((0, 0));
+        let context = RenderContext::new((0, 0), (0, 0));
         let request = ToolCallRequest {
             id: "tool-1".to_string(),
             name: "Read".to_string(),
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn test_update_with_result_uses_saved_position() {
         let mut progress_bars = ToolCallStatuses::new();
-        let context = RenderContext::new((0, 0));
+        let context = RenderContext::new((0, 0), (0, 0));
         let request = ToolCallRequest {
             id: "tool-1".to_string(),
             name: "Read".to_string(),
@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn test_finish_unknown_tool_returns_empty() {
         let mut progress_bars = ToolCallStatuses::new();
-        let context = RenderContext::new((0, 0));
+        let context = RenderContext::new((0, 0), (0, 0));
         let result = ToolCallResult {
             id: "unknown".to_string(),
             name: "Read".to_string(),
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn test_multiple_tools_tracked_independently() {
         let mut progress_bars = ToolCallStatuses::new();
-        let context = RenderContext::new((0, 0));
+        let context = RenderContext::new((0, 0), (0, 0));
         let request1 = ToolCallRequest {
             id: "tool-1".to_string(),
             name: "Read".to_string(),
@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn test_view_renders_request() {
         let view = ToolCallStatusView {};
-        let context = RenderContext::new((0, 0));
+        let context = RenderContext::new((0, 0), (0, 0));
         let request = ToolCallRequest {
             id: "test-1".to_string(),
             name: "TestTool".to_string(),
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn test_view_renders_success() {
         let view = ToolCallStatusView {};
-        let context = RenderContext::new((0, 0));
+        let context = RenderContext::new((0, 0), (0, 0));
         let result = ToolCallResult {
             id: "test-1".to_string(),
             name: "TestTool".to_string(),
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn test_view_renders_error() {
         let view = ToolCallStatusView {};
-        let context = RenderContext::new((0, 0));
+        let context = RenderContext::new((0, 0), (0, 0));
         let error = ToolCallError {
             id: "test-1".to_string(),
             name: "TestTool".to_string(),
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn test_view_renders_error_without_arguments() {
         let view = ToolCallStatusView {};
-        let context = RenderContext::new((0, 0));
+        let context = RenderContext::new((0, 0), (0, 0));
         let error = ToolCallError {
             id: "test-1".to_string(),
             name: "TestTool".to_string(),

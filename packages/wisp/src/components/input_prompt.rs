@@ -1,6 +1,5 @@
 use super::commands::TerminalCommand;
 use crate::render_context::{Component, RenderContext};
-use color_eyre::owo_colors::colors::xterm::Cyan;
 use crossterm::style::{Color, Stylize};
 
 pub struct InputPrompt {}
