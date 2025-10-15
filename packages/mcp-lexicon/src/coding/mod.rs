@@ -18,7 +18,7 @@ pub use find::{FindArgs, find_files_by_name};
 pub use grep::{GrepArgs, perform_grep};
 pub use list_files::{ListFilesArgs, list_files};
 pub use read_file::{ReadFileArgs, read_file_contents};
-pub use write_file::{WriteFileArgs, write_file_contents};
+pub use write_file::{WriteFileProps, write_file_contents};
 
 #[derive(Debug, Clone)]
 pub struct CodingMcp {
@@ -95,7 +95,7 @@ impl CodingMcp {
     #[tool(
         description = "Write content to a file using operations. Supports 'overwrite' (replace entire file) and 'line_range' (replace/insert/append specific lines using 1-indexed line numbers from read_file). Operations are applied sequentially."
     )]
-    pub async fn write_file(&self, request: Parameters<WriteFileArgs>) -> String {
+    pub async fn write_file(&self, request: Parameters<WriteFileProps>) -> String {
         let Parameters(args) = request;
 
         match write_file_contents(args).await {

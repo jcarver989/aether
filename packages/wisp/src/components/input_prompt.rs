@@ -6,22 +6,11 @@ pub struct InputPrompt {}
 
 impl Component<()> for InputPrompt {
     fn render(&self, _props: (), context: &RenderContext) -> Vec<TerminalCommand> {
-        let width = context.size.0 as usize;
         let color = Color::Cyan;
-        let border = "─".repeat(width).with(color);
         vec![
             TerminalCommand::Print("\r\n".to_string()),
             TerminalCommand::MoveToColumn(0),
-            TerminalCommand::PrintStyled(border.clone()),
-            //
-            TerminalCommand::Print("\r\n".to_string()),
             TerminalCommand::PrintStyled("> ".to_string().with(color)),
-            TerminalCommand::SavePosition,
-            TerminalCommand::Print("\r\n".to_string()),
-            //
-            TerminalCommand::PrintStyled(border),
-            TerminalCommand::Print("\r\n".to_string()),
-            TerminalCommand::RestorePosition,
         ]
     }
 }
