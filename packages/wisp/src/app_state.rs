@@ -1,16 +1,27 @@
 use std::error::Error;
-use std::sync::Arc;
 
 use crate::cli::Cli;
 use crate::cli::SystemPrompt;
-use aether::agent::{AgentHandle, agent};
-use mcp_lexicon::AgentBuilderExt;
-use tokio::sync::Mutex;
+use aether::mcp::McpServerConfig;
+use aether::{
+    agent::{AgentHandle, AgentMessage, UserMessage, agent},
+    mcp::mcp,
+};
+use mcp_lexicon::CodingMcp;
+use mcp_lexicon::ServiceExt;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::task::JoinHandle;
 
 pub struct AppState {
     pub model_string: String,
     pub system_prompt: Option<SystemPrompt>,
-    pub agent: Arc<Mutex<AgentHandle>>,
+    pub agent_tx: Sender<UserMessage>,
+    pub agent_rx: Receiver<AgentMessage>,
+    #[allow(dead_code)]
+    agent_handle: AgentHandle,
+
+    #[allow(dead_code)]
+    mcp_handle: JoinHandle<()>,
 }
 
 impl AppState {
@@ -23,31 +34,23 @@ impl AppState {
             agent_builder = agent_builder.system(prompt.as_str());
         }
 
-        let agent = agent_builder.coding_tools().spawn().await?;
+        let (tools, tx, mcp_handle) = mcp()
+            .with_servers(vec![McpServerConfig::InMemory {
+                name: "coding".to_string(),
+                server: CodingMcp::new().into_dyn(),
+            }])
+            .spawn()
+            .await?;
+
+        let (agent_tx, agent_rx, agent_handle) = agent_builder.tools(tx, tools).spawn().await?;
 
         Ok(Self {
             model_string: cli.model.clone(),
             system_prompt,
-            agent: Arc::new(Mutex::new(agent)),
+            agent_tx,
+            agent_rx,
+            agent_handle,
+            mcp_handle,
         })
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum ChatMessage {
-    Assistant {
-        message_id: String,
-        text: String,
-    },
-    ToolCall {
-        id: String,
-        name: String,
-        arguments: Option<String>,
-        result: Option<String>,
-        model_name: String,
-        is_complete: bool,
-    },
-    User {
-        text: String,
-    },
 }

@@ -3,5 +3,5 @@
     "editor.inlayHints.enabled": "offUnlessPressed",
     "rust-analyzer.linkedProjects": [
         "Cargo.toml",
-    ]
+    ],
 }

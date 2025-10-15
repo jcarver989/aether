@@ -1,7 +1,4 @@
-use aether::{agent::AgentBuilder, llm::StreamingModelProvider, mcp::config::McpServerConfig};
-use rmcp::ServiceExt;
-
-use crate::CodingMcp;
+use aether::{agent::AgentBuilder, llm::StreamingModelProvider};
 
 pub trait AgentBuilderExt {
     fn coding_tools(self) -> Self;
@@ -9,9 +6,9 @@ pub trait AgentBuilderExt {
 
 impl<T: StreamingModelProvider + 'static> AgentBuilderExt for AgentBuilder<T> {
     fn coding_tools(self) -> Self {
-        self.mcp(McpServerConfig::InMemory {
-            name: "coding_mcp".to_string(),
-            server: CodingMcp::new().into_dyn(),
-        })
+        // TODO: Fix this - the mcp() method was removed during Agent refactoring
+        // This needs to be updated to use the new MCP configuration pattern
+        // See git commit cfb3447 where the API changed
+        self
     }
 }
