@@ -8,7 +8,7 @@ use std::fs;
 #[tokio::test]
 async fn test_read_file_tool() {
     // Create server and client
-    let server_service = CodingMcp::with_std_fs();
+    let server_service = CodingMcp::new();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -73,7 +73,7 @@ async fn test_read_file_tool() {
 #[tokio::test]
 async fn test_write_file_tool() {
     // Create server and client
-    let server_service = CodingMcp::with_std_fs();
+    let server_service = CodingMcp::new();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -138,7 +138,7 @@ async fn test_write_file_tool() {
 #[tokio::test]
 async fn test_bash_tool() {
     // Create server and client
-    let server_service = CodingMcp::with_std_fs();
+    let server_service = CodingMcp::new();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -176,15 +176,14 @@ async fn test_bash_tool() {
         if let Some(text_content) = content.as_text() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
-            assert_eq!(parsed["status"], "success");
-            assert_eq!(parsed["exit_code"], 0);
+            assert_eq!(parsed["exitCode"], 0);
             assert!(
-                parsed["stdout"]
+                parsed["output"]
                     .as_str()
                     .unwrap()
                     .contains("Hello from bash")
             );
-            assert_eq!(parsed["success"], true);
+            assert_eq!(parsed["killed"], false);
         } else {
             panic!("Expected text content");
         }
@@ -196,7 +195,7 @@ async fn test_bash_tool() {
 #[tokio::test]
 async fn test_edit_file_tool() {
     // Create server and client
-    let server_service = CodingMcp::with_std_fs();
+    let server_service = CodingMcp::new();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -219,6 +218,22 @@ async fn test_edit_file_tool() {
     tokio::fs::write(test_path, initial_content)
         .await
         .expect("Failed to create test file");
+
+    // First, read the file (required by safety check)
+    client
+        .call_tool(CallToolRequestParam {
+            name: "read_file".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "file_path": test_path
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to read file before edit");
 
     // Test edit_file tool - replace single occurrence
     let result = client
@@ -264,6 +279,22 @@ async fn test_edit_file_tool() {
         .await
         .expect("Failed to write test file");
 
+    // Read the file again before editing
+    client
+        .call_tool(CallToolRequestParam {
+            name: "read_file".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "file_path": test_path
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to read file before second edit");
+
     let result = client
         .call_tool(CallToolRequestParam {
             name: "edit_file".into(),
@@ -302,7 +333,7 @@ async fn test_edit_file_tool() {
 #[tokio::test]
 async fn test_list_files_tool() {
     // Create server and client
-    let server_service = CodingMcp::with_std_fs();
+    let server_service = CodingMcp::new();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),

@@ -1,4 +1,3 @@
-use aether::fs::{Fs, StdFileSystem};
 use rmcp::{
     ServerHandler,
     handler::server::{
@@ -9,7 +8,7 @@ use rmcp::{
     tool, tool_handler, tool_router,
 };
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 pub mod bash;
 pub mod common;
@@ -34,18 +33,16 @@ pub use todo_write::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, proc
 pub use write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
 #[derive(Debug)]
-pub struct CodingMcp<F: Fs + Send + Sync> {
+pub struct CodingMcp {
     tool_router: ToolRouter<Self>,
     background_processes: Mutex<HashMap<String, BackgroundProcessHandle>>,
     todos: Mutex<Vec<TodoItem>>,
     /// Track files that have been read to enforce read-before-edit safety
     files_read: Mutex<HashSet<String>>,
-    /// Filesystem implementation
-    fs: Arc<F>,
 }
 
 #[tool_handler(router = self.tool_router)]
-impl<F: Fs + Send + Sync + 'static> ServerHandler for CodingMcp<F> {
+impl ServerHandler for CodingMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             server_info: Implementation {
@@ -65,14 +62,13 @@ impl<F: Fs + Send + Sync + 'static> ServerHandler for CodingMcp<F> {
 }
 
 #[tool_router]
-impl<F: Fs + Send + Sync + 'static> CodingMcp<F> {
-    pub fn new(fs: Arc<F>) -> Self {
+impl CodingMcp {
+    pub fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
             background_processes: Mutex::new(HashMap::new()),
             todos: Mutex::new(Vec::new()),
             files_read: Mutex::new(HashSet::new()),
-            fs,
         }
     }
 
@@ -140,7 +136,7 @@ IMPORTANT - Safety Tracking:
         let Parameters(args) = request;
         let file_path = args.file_path.clone();
 
-        match read_file_contents(self.fs.as_ref(), args).await {
+        match read_file_contents(args).await {
             Ok(result) => {
                 // Track that this file has been read
                 self.files_read.lock().unwrap().insert(file_path);
@@ -174,7 +170,7 @@ IMPORTANT - Safety Requirements:
         let Parameters(args) = request;
 
         // Safety check: if file exists, ensure it has been read first
-        if self.fs.file_exists(&args.file_path).await {
+        if std::path::Path::new(&args.file_path).exists() {
             let files_read = self.files_read.lock().unwrap();
             if !files_read.contains(&args.file_path) {
                 return Err(format!(
@@ -184,7 +180,7 @@ IMPORTANT - Safety Requirements:
             }
         }
 
-        match write_file_contents(self.fs.as_ref(), args).await {
+        match write_file_contents(args).await {
             Ok(result) => Ok(Json(result)),
             Err(e) => Err(format!("Write file error: {e}")),
         }
@@ -222,7 +218,7 @@ IMPORTANT - Safety Requirements:
             }
         }
 
-        match edit_file_contents(self.fs.as_ref(), args).await {
+        match edit_file_contents(args).await {
             Ok(result) => Ok(Json(result)),
             Err(e) => Err(format!("Edit file error: {e}")),
         }
@@ -241,7 +237,7 @@ Usage:
         request: Parameters<ListFilesArgs>,
     ) -> Result<Json<ListFilesResult>, String> {
         let Parameters(args) = request;
-        match list_files(self.fs.as_ref(), args).await {
+        match list_files(args).await {
             Ok(result) => Ok(Json(result)),
             Err(e) => Err(format!("List files error: {e}")),
         }
@@ -405,15 +401,8 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
     }
 }
 
-impl Default for CodingMcp<StdFileSystem> {
+impl Default for CodingMcp {
     fn default() -> Self {
-        Self::new(Arc::new(StdFileSystem::new()))
-    }
-}
-
-impl CodingMcp<StdFileSystem> {
-    /// Create a new CodingMcp with the standard filesystem
-    pub fn with_std_fs() -> Self {
-        Self::new(Arc::new(StdFileSystem::new()))
+        Self::new()
     }
 }
