@@ -19,6 +19,15 @@ ignore = "0.4"
 regex = "1.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 aether = { path = "../aether" }
+tracing = "0.1.41"
+crucible = { path = "../crucible" }
+clap = { version = "4.5", features = ["derive", "env"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3.0"
+async-trait = "0.1"
+
+[[bin]]
+name = "mcp-lexicon"
+path = "src/main.rs"
