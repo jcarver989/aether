@@ -123,7 +123,7 @@ You are Mr. BotBot, a kickass coding agent equipped with SOTA filesystem and web
 
 And bring Mr. BotBot to life!
 
-```rust
+```rust,no_run
 use aether::{
     agent::{AgentMessage, UserMessage, agent, Prompt},
     llm::openrouter::OpenRouterProvider,
@@ -180,6 +180,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Some(Error { message }) => {
                 eprintln!("Error: {message}");
+                break;
+            }
+            Some(Cancelled { .. }) => {
+                eprintln!("Agent cancelled");
                 break;
             }
             None => break,
