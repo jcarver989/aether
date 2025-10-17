@@ -68,9 +68,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("\n");
                 }
             }
+            Some(ToolCall { .. }) => {
+                // Tool calls not used in this minimal example
+            }
+            Some(ToolResult { .. }) => {
+                // Tool results not used in this minimal example
+            }
+            Some(ToolError { .. }) => {
+                // Tool errors not used in this minimal example
+            }
             Some(Done) => break,
             Some(Error { message }) => {
                 eprintln!("Error: {message}");
+                break;
+            }
+            Some(Cancelled { .. }) => {
+                eprintln!("Agent cancelled");
                 break;
             }
             None => break,
@@ -130,7 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Create Agent
     let (tx, mut rx, _handle) = agent(llm)
-        .system_prompts(&[Prompt::agents_md()])? // <-- Load system prompt from AGENTS.md (recursively searches parent directories)
+        .system(&Prompt::agents_md().build()?) // <-- Load system prompt from AGENTS.md (recursively searches parent directories)
         .tools(mcp_tx, tools) // <-- Give the agent MCP tools
         .spawn()
         .await?;
