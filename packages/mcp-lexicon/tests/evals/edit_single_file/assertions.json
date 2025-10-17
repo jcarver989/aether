@@ -1,0 +1,9 @@
+[
+  {
+    "type": "FileMatches",
+    "data": {
+      "path": "main.rs",
+      "content": "Hello, World!"
+    }
+  }
+]
