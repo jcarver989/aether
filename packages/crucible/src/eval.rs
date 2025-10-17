@@ -9,9 +9,20 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use futures::StreamExt;
+
+/// Accumulated message types for eval logging and judging
+#[derive(Debug, Clone)]
+enum EvalMessage {
+    AgentText(String),
+    ToolCall { name: String, arguments: String },
+    ToolResult { name: String, result: String },
+    ToolError(String),
+    Error(String),
+    Done,
+}
 
 #[derive(Debug, Clone)]
 pub struct Eval {
@@ -135,7 +146,7 @@ impl Eval {
                 agent_builder = agent_builder.system(&prompt);
             }
 
-            let (tx, mut rx, _handle) = agent_builder.spawn().await?;
+            let (tx, rx, _handle) = agent_builder.spawn().await?;
 
             tx.send(UserMessage::Text {
                 content: [
@@ -143,77 +154,7 @@ impl Eval {
                     format!("CRITICAL INSTRUCTIONS: when working on this task, you MUST only operate within this directory: {}", self.working_dir.display())].join("\n"),
             })
             .await?;
-
-            drop(tx);
-
-            let mut messages = Vec::new();
-            let mut accumulated_text = String::new();
-            let mut accumulated_tool_calls: HashMap<String, aether::llm::ToolCallRequest> =
-                HashMap::new();
-
-            while let Some(message) = rx.recv().await {
-                let is_done = matches!(message, AgentMessage::Done);
-
-                // Accumulate text chunks and tool calls, only log when complete
-                match &message {
-                    AgentMessage::Text {
-                        chunk, is_complete, ..
-                    } => {
-                        accumulated_text.push_str(chunk);
-                        if *is_complete {
-                            tracing::info!("Agent response: {}", accumulated_text);
-                            accumulated_text.clear();
-                        }
-                    }
-                    AgentMessage::ToolCall { request, .. } => {
-                        let entry = accumulated_tool_calls
-                            .entry(request.id.clone())
-                            .or_insert_with(|| aether::llm::ToolCallRequest {
-                                id: request.id.clone(),
-                                name: String::new(),
-                                arguments: String::new(),
-                            });
-
-                        // Accumulate tool call data
-                        if !request.name.is_empty() {
-                            entry.name.push_str(&request.name);
-                        }
-                        entry.arguments.push_str(&request.arguments);
-
-                        // Check if this is a complete tool call (has closing brace for JSON)
-                        if !entry.name.is_empty() && entry.arguments.ends_with('}') {
-                            tracing::info!(
-                                "Tool call: {} with args: {}",
-                                entry.name,
-                                entry.arguments
-                            );
-                            accumulated_tool_calls.remove(&request.id);
-                        }
-                    }
-                    AgentMessage::ToolResult { result, .. } => {
-                        tracing::info!("Tool result for {}: {}", result.name, result.result);
-                    }
-                    AgentMessage::ToolError { error, .. } => {
-                        tracing::info!("Tool error: {:?}", error);
-                    }
-                    AgentMessage::Error { message: msg } => {
-                        tracing::info!("Agent error: {}", msg);
-                    }
-                    AgentMessage::Cancelled { message: msg } => {
-                        tracing::info!("Agent cancelled: {}", msg);
-                    }
-                    AgentMessage::Done => {
-                        tracing::info!("Agent done");
-                    }
-                }
-
-                messages.push(message);
-                if is_done {
-                    break;
-                }
-            }
-
-            messages
+            accumulate_agent_messages(rx).await
         };
 
         let mut results = Vec::new();
@@ -263,11 +204,33 @@ impl Eval {
                 }
                 EvalAssertion::LLMJudge { prompt } => {
                     tracing::info!("Running LLM judge for assertion");
-                    let messages_summary = messages
-                        .iter()
-                        .map(|m| format!("{:?}", m))
-                        .collect::<Vec<_>>()
-                        .join("\n");
+
+                    // Build a clean summary from EvalMessages
+                    let mut messages_summary = String::new();
+                    for msg in &messages {
+                        match msg {
+                            EvalMessage::AgentText(text) => {
+                                messages_summary.push_str("Agent: ");
+                                messages_summary.push_str(text);
+                                messages_summary.push('\n');
+                            }
+                            EvalMessage::ToolCall { name, arguments } => {
+                                messages_summary
+                                    .push_str(&format!("Tool call: {} ({})\n", name, arguments));
+                            }
+                            EvalMessage::ToolResult { name, result } => {
+                                messages_summary
+                                    .push_str(&format!("Tool result ({}): {}\n", name, result));
+                            }
+                            EvalMessage::ToolError(error) => {
+                                messages_summary.push_str(&format!("Tool error: {}\n", error));
+                            }
+                            EvalMessage::Error(error) => {
+                                messages_summary.push_str(&format!("Error: {}\n", error));
+                            }
+                            EvalMessage::Done => {}
+                        }
+                    }
 
                     let judge_prompt_text = format!(
                         "You are evaluating an AI agent's performance on a coding task.\n\n\
@@ -331,12 +294,97 @@ impl Eval {
     }
 }
 
+/// Accumulate agent messages from a receiver, yielding complete messages
+async fn accumulate_agent_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage> {
+    let mut eval_messages = Vec::new();
+    let mut accumulated_text = String::new();
+    let mut accumulated_tool_calls: HashMap<String, aether::llm::ToolCallRequest> = HashMap::new();
+
+    while let Some(message) = rx.recv().await {
+        match &message {
+            AgentMessage::Text {
+                chunk, is_complete, ..
+            } => {
+                accumulated_text.push_str(chunk);
+                if *is_complete {
+                    if !accumulated_text.is_empty() {
+                        // Log each line separately to make grep work better
+                        for line in accumulated_text.lines() {
+                            tracing::info!("Agent response: {}", line);
+                        }
+                        eval_messages.push(EvalMessage::AgentText(accumulated_text.clone()));
+                        accumulated_text.clear();
+                    }
+                }
+            }
+            AgentMessage::ToolCall { request, .. } => {
+                let entry = accumulated_tool_calls
+                    .entry(request.id.clone())
+                    .or_insert_with(|| aether::llm::ToolCallRequest {
+                        id: request.id.clone(),
+                        name: String::new(),
+                        arguments: String::new(),
+                    });
+
+                // Accumulate tool call data
+                if !request.name.is_empty() {
+                    entry.name.push_str(&request.name);
+                }
+                entry.arguments.push_str(&request.arguments);
+
+                // Check if this is a complete tool call
+                if !entry.name.is_empty() && entry.arguments.ends_with('}') {
+                    tracing::info!("Tool call: {} with args: {}", entry.name, entry.arguments);
+                    eval_messages.push(EvalMessage::ToolCall {
+                        name: entry.name.clone(),
+                        arguments: entry.arguments.clone(),
+                    });
+                    accumulated_tool_calls.remove(&request.id);
+                }
+            }
+            AgentMessage::ToolResult { result, .. } => {
+                tracing::info!("Tool result for {}: {}", result.name, result.result);
+                eval_messages.push(EvalMessage::ToolResult {
+                    name: result.name.clone(),
+                    result: result.result.clone(),
+                });
+            }
+            AgentMessage::ToolError { error, .. } => {
+                tracing::info!("Tool error: {:?}", error);
+                eval_messages.push(EvalMessage::ToolError(format!("{:?}", error)));
+            }
+            AgentMessage::Error { message: msg } => {
+                tracing::info!("Agent error: {}", msg);
+                eval_messages.push(EvalMessage::Error(msg.clone()));
+            }
+            AgentMessage::Cancelled { message: msg } => {
+                tracing::info!("Agent cancelled: {}", msg);
+                eval_messages.push(EvalMessage::Error(format!("Cancelled: {}", msg)));
+            }
+            AgentMessage::Done => {
+                // Log any remaining accumulated text before finishing
+                if !accumulated_text.is_empty() {
+                    for line in accumulated_text.lines() {
+                        tracing::info!("Agent response: {}", line);
+                    }
+                    eval_messages.push(EvalMessage::AgentText(accumulated_text.clone()));
+                    accumulated_text.clear();
+                }
+                tracing::info!("Agent done");
+                eval_messages.push(EvalMessage::Done);
+                break;
+            }
+        }
+    }
+
+    eval_messages
+}
+
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
-    // Use cp -r to copy directory contents (note the /. to copy contents, not the dir itself)
-    let src_with_glob = format!("{}/.  ", src.display());
+    // Keep the directory structure (e.g., src/ -> dst/src/)
     let status = std::process::Command::new("cp")
         .arg("-r")
-        .arg(src_with_glob.trim())
+        .arg(src)
         .arg(dst)
         .status()?;
 
@@ -400,7 +448,6 @@ impl EvalAssertionResult {
         }
     }
 
-    /// Print the assertion result with the associated assertion
     pub fn print(&self, assertion: &EvalAssertion) {
         use owo_colors::OwoColorize;
 

@@ -4,8 +4,9 @@ use color_eyre::Result;
 use color_eyre::eyre::eyre;
 use crucible::{Crucible, EvalsConfig};
 use mcp_lexicon::CodingMcp;
+use std::fs::{self, File};
 use std::path::PathBuf;
-use tracing_subscriber;
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser)]
 #[command(name = "mcp-lexicon")]
@@ -36,7 +37,6 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-    tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
 
@@ -46,7 +46,32 @@ async fn main() -> Result<()> {
             judge_model,
             output_dir,
         } => {
+            let log_path = output_dir
+                .as_ref()
+                .map(|p| p.join("evals.log"))
+                .unwrap_or_else(|| PathBuf::from("evals.log"));
+
+            if let Some(parent) = log_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+
+            let file = File::create(&log_path)?;
+            let file_layer = tracing_subscriber::fmt::layer()
+                .with_writer(file)
+                .with_ansi(false);
+
+            let stdout_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
+            let env_filter =
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(file_layer)
+                .with(stdout_layer)
+                .init();
+
             tracing::info!("Starting evaluations...");
+            tracing::info!("Logging to file: {}", log_path.display());
             tracing::info!("Agent model: {}", agent_model);
             tracing::info!("Judge model: {}", judge_model);
 
