@@ -22,3 +22,13 @@ impl StreamingModelProvider for Box<dyn StreamingModelProvider> {
         (**self).display_name()
     }
 }
+
+impl<T: StreamingModelProvider> StreamingModelProvider for std::sync::Arc<T> {
+    fn stream_response(&self, context: &Context) -> LlmResponseStream {
+        (**self).stream_response(context)
+    }
+
+    fn display_name(&self) -> String {
+        (**self).display_name()
+    }
+}
