@@ -1,0 +1,22 @@
+[
+  {
+    "type": "FileExists",
+    "data": {
+      "path": "config.rs"
+    }
+  },
+  {
+    "type": "FileMatches",
+    "data": {
+      "path": "config.rs",
+      "content": "struct Config"
+    }
+  },
+  {
+    "type": "FileMatches",
+    "data": {
+      "path": "config.rs",
+      "content": "name"
+    }
+  }
+]
