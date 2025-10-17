@@ -1,3 +1,4 @@
+use aether::fs::Fs;
 use aether::{testing::InMemoryFileSystem, transport::create_in_memory_transport};
 use rmcp::transport::Transport;
 
