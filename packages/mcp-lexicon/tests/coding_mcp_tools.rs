@@ -8,7 +8,7 @@ use std::fs;
 #[tokio::test]
 async fn test_read_file_tool() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -73,7 +73,7 @@ async fn test_read_file_tool() {
 #[tokio::test]
 async fn test_write_file_tool() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -138,7 +138,7 @@ async fn test_write_file_tool() {
 #[tokio::test]
 async fn test_bash_tool() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -196,7 +196,7 @@ async fn test_bash_tool() {
 #[tokio::test]
 async fn test_edit_file_tool() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -302,7 +302,7 @@ async fn test_edit_file_tool() {
 #[tokio::test]
 async fn test_list_files_tool() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),

@@ -78,7 +78,7 @@ async fn test_file_type_filtering() {
 #[tokio::test]
 async fn test_multiple_file_types() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -139,7 +139,7 @@ async fn test_multiple_file_types() {
 #[tokio::test]
 async fn test_max_results_limit() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -194,7 +194,7 @@ async fn test_max_results_limit() {
 #[tokio::test]
 async fn test_word_boundary_matching() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -260,7 +260,7 @@ async fn test_word_boundary_matching() {
 #[tokio::test]
 async fn test_invert_match() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -316,7 +316,7 @@ async fn test_invert_match() {
 #[tokio::test]
 async fn test_context_lines() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -370,7 +370,7 @@ async fn test_context_lines() {
 #[tokio::test]
 async fn test_context_before_after() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),

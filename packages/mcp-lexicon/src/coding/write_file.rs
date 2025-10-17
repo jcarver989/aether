@@ -1,7 +1,7 @@
+use aether::fs::Fs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use tokio::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WriteFileArgs {
@@ -21,21 +21,26 @@ pub struct WriteFileResponse {
     pub file_path: String,
 }
 
-pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileResponse, String> {
+pub async fn write_file_contents(
+    fs: &impl Fs,
+    args: WriteFileArgs,
+) -> Result<WriteFileResponse, String> {
     let file_path = Path::new(&args.file_path);
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent() {
-        if let Err(e) = fs::create_dir_all(parent).await {
-            return Err(format!(
-                "Failed to create directories for {}: {}",
-                args.file_path, e
-            ));
+        if let Some(parent_str) = parent.to_str() {
+            if let Err(e) = fs.create_dir_all(parent_str).await {
+                return Err(format!(
+                    "Failed to create directories for {}: {}",
+                    args.file_path, e
+                ));
+            }
         }
     }
 
     // Write content to file
-    if let Err(e) = fs::write(file_path, &args.content).await {
+    if let Err(e) = fs.write_file(&args.file_path, &args.content).await {
         return Err(format!("Failed to write to file {}: {}", args.file_path, e));
     }
 
