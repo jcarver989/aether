@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-pub mod mcp;
-
 use aether::llm::{Context, LlmResponse, LlmResponseStream, Result, StreamingModelProvider, ToolCallRequest, ToolDefinition};
 use aether::mcp::{ElicitationRequest, McpManager};
 use rmcp::model::Tool as RmcpTool;
