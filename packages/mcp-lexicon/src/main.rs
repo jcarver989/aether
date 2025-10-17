@@ -5,7 +5,7 @@ use color_eyre::eyre::eyre;
 use crucible::{Crucible, EvalsConfig};
 use mcp_lexicon::CodingMcp;
 use std::path::PathBuf;
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing_subscriber;
 
 #[derive(Parser)]
 #[command(name = "mcp-lexicon")]
@@ -36,12 +36,7 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-
-    fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
+    tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
 
@@ -64,19 +59,14 @@ async fn main() -> Result<()> {
                 .parse(&judge_model)
                 .map_err(|e| eyre!("Failed to parse judge model '{}': {}", judge_model, e))?;
 
-            let package_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            let evals_base = package_root.join("tests");
-
-            tracing::info!("Looking for evals in: {:?}", evals_base);
-
-            let mut crucible = Crucible::new(evals_base)
-                .with_server_factory("coding", Box::new(|| Box::new(CodingMcp::new())));
+            let mut crucible =
+                Crucible::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests"))
+                    .with_server_factory("coding", Box::new(|| Box::new(CodingMcp::new())));
 
             if let Some(output) = output_dir {
                 crucible = crucible.with_output_dir(output);
             }
 
-            // Run evaluations
             let config = EvalsConfig::new(agent_llm, judge_llm);
             let summary = crucible
                 .run_evals(config)

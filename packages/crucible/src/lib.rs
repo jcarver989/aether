@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
+use tracing::Instrument;
 
 pub struct EvalsConfig<T, U> {
     llm: T,
@@ -96,6 +97,14 @@ impl Crucible {
         if path.exists() { Some(path) } else { None }
     }
 
+    /// Load evals from the base directory
+    ///
+    /// # Returns
+    /// Vector of loaded evals
+    pub fn load_evals(&self) -> Result<Vec<Eval>, Box<dyn std::error::Error>> {
+        Eval::load_all(&self.base_dir)
+    }
+
     /// Run the evaluations
     ///
     /// # Arguments
@@ -112,7 +121,7 @@ impl Crucible {
         T: StreamingModelProvider + 'static,
         U: StreamingModelProvider + 'static,
     {
-        let evals = Eval::load_all(&self.base_dir)?;
+        let evals = self.load_evals()?;
         let agents_prompt = self.load_agents_prompt();
         let mcp_json_path = self.mcp_json_path();
 
@@ -148,22 +157,26 @@ impl Crucible {
                 let mcp_tx_clone = mcp_tx.clone();
                 let llm_clone = llm.clone();
                 let judge_llm_clone = judge_llm.clone();
+                let eval_name = eval.name.clone();
 
-                tokio::spawn(async move {
-                    let start = Instant::now();
+                tokio::spawn(
+                    async move {
+                        let start = Instant::now();
 
-                    let result = eval
-                        .run(
-                            llm_clone,
-                            judge_llm_clone,
-                            tool_definitions_clone,
-                            mcp_tx_clone,
-                            agents_prompt_clone,
-                        )
-                        .await;
-                    let duration = start.elapsed();
-                    (eval, result, duration)
-                })
+                        let result = eval
+                            .run(
+                                llm_clone,
+                                judge_llm_clone,
+                                tool_definitions_clone,
+                                mcp_tx_clone,
+                                agents_prompt_clone,
+                            )
+                            .await;
+                        let duration = start.elapsed();
+                        (eval, result, duration)
+                    }
+                    .instrument(tracing::info_span!("eval_task", eval_name = %eval_name)),
+                )
             })
             .collect();
 
