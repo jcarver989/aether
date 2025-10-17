@@ -85,7 +85,7 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
 
 impl ToolCallStatusView {
     fn format_tool_arguments(arguments: &str) -> StyledContent<String> {
-        let mut formatted = format!(" {}", arguments);
+        let mut formatted = format!(" {arguments}");
         formatted.truncate(MAX_TOOL_ARG_LENGTH);
         formatted.with(TOOL_COLOR)
     }
@@ -110,7 +110,15 @@ impl ToolCallStatuses {
             view: ToolCallStatusView {},
         }
     }
+}
 
+impl Default for ToolCallStatuses {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ToolCallStatuses {
     pub fn on_tool_request(
         &mut self,
         request: &ToolCallRequest,

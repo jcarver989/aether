@@ -1,3 +1,4 @@
+// Mr. BotBot - SOTA coding agent
 mod cli;
 mod components;
 mod output_formatters;
@@ -14,7 +15,6 @@ use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode, s
 use render_context::RenderContext;
 use renderer::LoopAction;
 use std::time::Duration;
-use tracing_subscriber;
 mod app_state;
 
 use crate::app_state::AppState;
@@ -57,7 +57,7 @@ async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Erro
         tokio::select! {
             Some(message) = agent_msg_rx.recv() => {
                 if let Err(e) = renderer.on_agent_message(message).await {
-                    eprintln!("Error handling agent message: {}", e);
+                    eprintln!("Error handling agent message: {e}");
                 }
             }
 
@@ -72,13 +72,13 @@ async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Erro
                                     }
                                     Ok(LoopAction::Continue) => {}
                                     Err(e) => {
-                                        eprintln!("Error handling key event: {}", e);
+                                        eprintln!("Error handling key event: {e}");
                                     }
                                 }
                             }
                         }
                         Err(e) => {
-                            eprintln!("Event read error: {}", e);
+                            eprintln!("Event read error: {e}");
                         }
                         _ => {}
                     }

@@ -1,3 +1,4 @@
+use globset::{Glob, GlobSetBuilder};
 use grep::{
     regex::RegexMatcherBuilder,
     searcher::{BinaryDetection, SearcherBuilder},
@@ -7,36 +8,78 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use super::common::{HasMatchSink, MatchCollectorSink, OutputMode};
+use super::common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GrepArgs {
-    /// The regex pattern to search for in file contents
+pub struct GrepContentOutput {
+    /// Matching lines with context
+    pub matches: Vec<MatchData>,
+    /// Total number of matches
+    pub total_matches: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GrepFilesOutput {
+    /// Files containing matches
+    pub files: Vec<String>,
+    /// Number of files with matches
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GrepFileCount {
+    pub file: String,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GrepCountOutput {
+    /// Match counts per file
+    pub counts: Vec<GrepFileCount>,
+    /// Total matches across all files
+    pub total: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum GrepOutput {
+    Content(GrepContentOutput),
+    Files(GrepFilesOutput),
+    Count(GrepCountOutput),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GrepInput {
+    /// The regular expression pattern to search for
     pub pattern: String,
-    /// Directory path to search recursively (defaults to current directory if not specified)
+    /// File or directory to search in (defaults to cwd)
     pub path: Option<String>,
-    /// Specific file path to search (overrides path if provided)
-    pub file_path: Option<String>,
-    /// Output format: 'matches' returns matching lines with context, 'files_only' returns just file paths
+    /// Glob pattern to filter files (e.g. "*.js")
+    pub glob: Option<String>,
+    /// File type to search (e.g. "js", "py", "rust")
+    #[serde(rename = "type")]
+    pub file_type: Option<String>,
+    /// Output mode: "content", "files_with_matches", or "count"
     pub output_mode: Option<OutputMode>,
-    /// Whether to perform case-insensitive matching (defaults to false)
+    /// Case insensitive search
+    #[serde(rename = "-i")]
     pub case_insensitive: Option<bool>,
-    /// Whether to include line numbers in output (defaults to true)
+    /// Show line numbers (for content mode)
+    #[serde(rename = "-n")]
     pub line_numbers: Option<bool>,
-    /// Number of context lines to show after matches (-A flag)
-    pub context_after: Option<u32>,
-    /// Number of context lines to show before matches (-B flag)
+    /// Lines to show before each match
+    #[serde(rename = "-B")]
     pub context_before: Option<u32>,
-    /// Number of context lines to show around matches (-C flag, overrides context_after/before)
+    /// Lines to show after each match
+    #[serde(rename = "-A")]
+    pub context_after: Option<u32>,
+    /// Lines to show before and after each match
+    #[serde(rename = "-C")]
     pub context_around: Option<u32>,
-    /// Filter files by type (e.g., 'rust', 'python', 'javascript')
-    pub file_types: Option<Vec<String>>,
-    /// Maximum number of results to return
-    pub max_results: Option<usize>,
-    /// Invert match - show lines that do NOT match the pattern
-    pub invert_match: Option<bool>,
-    /// Match only whole words (word boundary matching)
-    pub word_boundary: Option<bool>,
+    /// Limit output to first N lines/entries
+    pub head_limit: Option<usize>,
+    /// Enable multiline mode
+    pub multiline: Option<bool>,
 }
 
 // File type mappings for common languages
@@ -69,36 +112,54 @@ fn get_file_extensions_for_type(file_type: &str) -> Vec<&'static str> {
     }
 }
 
-fn should_include_file(path: &Path, file_types: &Option<Vec<String>>) -> bool {
-    if let Some(types) = file_types {
+fn should_include_file(
+    path: &Path,
+    file_type: &Option<String>,
+    glob_pattern: &Option<globset::GlobSet>,
+) -> bool {
+    // Check glob pattern first (more specific)
+    if let Some(glob_set) = glob_pattern {
+        return glob_set.is_match(path);
+    }
+
+    // Check file type filter
+    if let Some(ftype) = file_type {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            for file_type in types {
-                let extensions = get_file_extensions_for_type(file_type);
-                if extensions.contains(&ext) {
-                    return true;
-                }
-            }
-            return false;
+            let extensions = get_file_extensions_for_type(ftype);
+            return extensions.contains(&ext);
         }
         return false;
     }
+
     true
 }
 
-pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
-    // Build the regex pattern with optional word boundary
-    let pattern = if args.word_boundary.unwrap_or(false) {
-        format!(r"\b{}\b", regex::escape(&args.pattern))
+pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, String> {
+    // Build glob set if glob pattern is provided
+    let glob_set = if let Some(glob_pattern) = &args.glob {
+        let mut builder = GlobSetBuilder::new();
+        builder.add(
+            Glob::new(glob_pattern)
+                .map_err(|e| format!("Invalid glob pattern '{}': {}", glob_pattern, e))?,
+        );
+        Some(builder.build().map_err(|e| format!("Failed to build glob set: {}", e))?)
     } else {
-        args.pattern.clone()
+        None
     };
 
-    // Create the matcher with case sensitivity
-    let matcher = RegexMatcherBuilder::new()
-        .case_insensitive(args.case_insensitive.unwrap_or(false))
-        .build(&pattern)
+    // Create the matcher with case sensitivity and multiline support
+    let mut matcher_builder = RegexMatcherBuilder::new();
+    matcher_builder.case_insensitive(args.case_insensitive.unwrap_or(false));
+
+    if args.multiline.unwrap_or(false) {
+        matcher_builder.multi_line(true).dot_matches_new_line(true);
+    }
+
+    let matcher = matcher_builder
+        .build(&args.pattern)
         .map_err(|e| format!("Invalid regex pattern: {}", e))?;
-    let output_mode = args.output_mode.unwrap_or(OutputMode::Matches);
+
+    let output_mode = args.output_mode.unwrap_or(OutputMode::Content);
 
     // Determine context lines
     let (context_before, context_after) = if let Some(around) = args.context_around {
@@ -117,106 +178,136 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
         .before_context(context_before as usize)
         .after_context(context_after as usize);
 
-    if args.invert_match.unwrap_or(false) {
-        searcher_builder.invert_match(true);
+    // Enable multiline in searcher if multiline pattern matching is requested
+    if args.multiline.unwrap_or(false) {
+        searcher_builder.multi_line(true);
     }
 
     let mut searcher = searcher_builder.build();
 
     let mut all_matches = Vec::new();
     let mut files_with_matches = Vec::new();
+    let mut file_counts = Vec::new();
 
-    // Handle single file search
-    if let Some(file_path) = &args.file_path {
-        let path = Path::new(file_path);
-        if !path.exists() {
-            return Err(format!("File does not exist: {}", file_path));
+    // Directory search
+    let search_path = args.path.as_deref().unwrap_or(".");
+    let path_obj = Path::new(search_path);
+
+    // Determine if searching a single file or directory
+    let is_single_file = path_obj.is_file();
+
+    if is_single_file {
+        // Single file search
+        if !should_include_file(path_obj, &args.file_type, &glob_set) {
+            // Return empty results if file doesn't match filters
+            return match output_mode {
+                OutputMode::Content => Ok(GrepOutput::Content(GrepContentOutput {
+                    matches: vec![],
+                    total_matches: 0,
+                })),
+                OutputMode::FilesWithMatches => Ok(GrepOutput::Files(GrepFilesOutput {
+                    files: vec![],
+                    count: 0,
+                })),
+                OutputMode::Count => Ok(GrepOutput::Count(GrepCountOutput {
+                    counts: vec![],
+                    total: 0,
+                })),
+            };
         }
 
-        // Check file type filtering
-        if !should_include_file(path, &args.file_types) {
-            return Ok(serde_json::json!({
-                "status": "success",
-                "pattern": args.pattern,
-                "path": file_path,
-                "matches": [],
-                "match_count": 0,
-                "message": "File type not included in filter"
-            }));
-        }
-
+        // Search the single file
         match output_mode {
-            OutputMode::Matches => {
+            OutputMode::Content => {
                 let mut sink = MatchCollectorSink::with_max_results(
-                    path,
+                    path_obj,
                     args.line_numbers.unwrap_or(true),
-                    args.max_results,
+                    args.head_limit,
                 );
                 searcher
-                    .search_path(&matcher, path, &mut sink)
+                    .search_path(&matcher, path_obj, &mut sink)
                     .map_err(|e| format!("Search error: {}", e))?;
                 all_matches = sink.matches;
             }
-            OutputMode::FilesOnly => {
+            OutputMode::FilesWithMatches => {
                 let mut sink = HasMatchSink::new();
                 searcher
-                    .search_path(&matcher, path, &mut sink)
+                    .search_path(&matcher, path_obj, &mut sink)
                     .map_err(|e| format!("Search error: {}", e))?;
                 if sink.has_match {
-                    files_with_matches.push(file_path.clone());
+                    files_with_matches.push(search_path.to_string());
+                }
+            }
+            OutputMode::Count => {
+                let mut sink = CountSink::new();
+                searcher
+                    .search_path(&matcher, path_obj, &mut sink)
+                    .map_err(|e| format!("Search error: {}", e))?;
+                if sink.count > 0 {
+                    file_counts.push(GrepFileCount {
+                        file: search_path.to_string(),
+                        count: sink.count,
+                    });
                 }
             }
         }
     } else {
         // Directory search
-        let search_path = args.path.as_deref().unwrap_or(".");
         let walker = WalkBuilder::new(search_path)
             .hidden(false)
             .git_ignore(true)
             .build();
 
-        let mut total_matches = 0;
-        let max_results = args.max_results.unwrap_or(usize::MAX);
+        let mut total_items = 0;
+        let max_items = args.head_limit.unwrap_or(usize::MAX);
 
         for result in walker {
-            // Check if we've reached the global max results limit
-            if total_matches >= max_results {
+            // Check if we've reached the limit
+            if total_items >= max_items {
                 break;
             }
 
             match result {
                 Ok(entry) => {
-                    if entry.file_type().map_or(false, |ft| ft.is_file()) {
-                        // Check file type filtering
-                        if !should_include_file(entry.path(), &args.file_types) {
+                    if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                        // Check file filtering
+                        if !should_include_file(entry.path(), &args.file_type, &glob_set) {
                             continue;
                         }
 
                         match output_mode {
-                            OutputMode::Matches => {
-                                let remaining_results = max_results.saturating_sub(total_matches);
+                            OutputMode::Content => {
+                                let remaining = max_items.saturating_sub(total_items);
                                 let mut sink = MatchCollectorSink::with_max_results(
                                     entry.path(),
                                     args.line_numbers.unwrap_or(true),
-                                    Some(remaining_results),
+                                    Some(remaining),
                                 );
-                                if let Ok(_) =
-                                    searcher.search_path(&matcher, entry.path(), &mut sink)
-                                {
-                                    total_matches += sink.matches.len();
+                                if searcher.search_path(&matcher, entry.path(), &mut sink).is_ok() {
+                                    total_items += sink.matches.len();
                                     all_matches.extend(sink.matches);
                                 }
                             }
-                            OutputMode::FilesOnly => {
+                            OutputMode::FilesWithMatches => {
                                 let mut sink = HasMatchSink::new();
-                                if let Ok(_) =
-                                    searcher.search_path(&matcher, entry.path(), &mut sink)
+                                if searcher.search_path(&matcher, entry.path(), &mut sink).is_ok()
+                                    && sink.has_match
                                 {
-                                    if sink.has_match {
-                                        files_with_matches
-                                            .push(entry.path().to_string_lossy().to_string());
-                                        total_matches += 1;
-                                    }
+                                    files_with_matches
+                                        .push(entry.path().to_string_lossy().to_string());
+                                    total_items += 1;
+                                }
+                            }
+                            OutputMode::Count => {
+                                let mut sink = CountSink::new();
+                                if searcher.search_path(&matcher, entry.path(), &mut sink).is_ok()
+                                    && sink.count > 0
+                                {
+                                    file_counts.push(GrepFileCount {
+                                        file: entry.path().to_string_lossy().to_string(),
+                                        count: sink.count,
+                                    });
+                                    total_items += 1;
                                 }
                             }
                         }
@@ -228,87 +319,288 @@ pub async fn perform_grep(args: GrepArgs) -> Result<serde_json::Value, String> {
     }
 
     match output_mode {
-        OutputMode::Matches => {
-            let search_location = args
-                .file_path
-                .as_deref()
-                .or(args.path.as_deref())
-                .unwrap_or(".");
-            let mut response = serde_json::json!({
-                "status": "success",
-                "pattern": args.pattern,
-                "path": search_location,
-                "matches": all_matches,
-                "match_count": all_matches.len()
-            });
-
-            // Add metadata about search configuration
-            if let Some(max_results) = args.max_results {
-                response["max_results"] = serde_json::Value::Number(max_results.into());
-                if all_matches.len() >= max_results {
-                    response["truncated"] = serde_json::Value::Bool(true);
-                }
-            }
-            if let Some(file_types) = &args.file_types {
-                response["file_types"] = serde_json::Value::Array(
-                    file_types
-                        .iter()
-                        .map(|t| serde_json::Value::String(t.clone()))
-                        .collect(),
-                );
-            }
-            if args.invert_match.unwrap_or(false) {
-                response["invert_match"] = serde_json::Value::Bool(true);
-            }
-            if args.word_boundary.unwrap_or(false) {
-                response["word_boundary"] = serde_json::Value::Bool(true);
-            }
-            if args.context_around.is_some()
-                || args.context_before.is_some()
-                || args.context_after.is_some()
-            {
-                response["context_lines"] = serde_json::json!({
-                    "before": args.context_before.unwrap_or(args.context_around.unwrap_or(0)),
-                    "after": args.context_after.unwrap_or(args.context_around.unwrap_or(0))
-                });
-            }
-
-            Ok(response)
+        OutputMode::Content => {
+            let total_matches = all_matches.len();
+            Ok(GrepOutput::Content(GrepContentOutput {
+                matches: all_matches,
+                total_matches,
+            }))
         }
-        OutputMode::FilesOnly => {
-            let search_location = args
-                .file_path
-                .as_deref()
-                .or(args.path.as_deref())
-                .unwrap_or(".");
-            let mut response = serde_json::json!({
-                "status": "success",
-                "pattern": args.pattern,
-                "path": search_location,
-                "files": files_with_matches,
-                "file_count": files_with_matches.len()
-            });
+        OutputMode::FilesWithMatches => {
+            let count = files_with_matches.len();
+            Ok(GrepOutput::Files(GrepFilesOutput {
+                files: files_with_matches,
+                count,
+            }))
+        }
+        OutputMode::Count => {
+            let total: usize = file_counts.iter().map(|fc| fc.count).sum();
+            Ok(GrepOutput::Count(GrepCountOutput {
+                counts: file_counts,
+                total,
+            }))
+        }
+    }
+}
 
-            // Add metadata about search configuration
-            if let Some(max_results) = args.max_results {
-                response["max_results"] = serde_json::Value::Number(max_results.into());
-                if files_with_matches.len() >= max_results {
-                    response["truncated"] = serde_json::Value::Bool(true);
-                }
-            }
-            if let Some(file_types) = &args.file_types {
-                response["file_types"] = serde_json::Value::Array(
-                    file_types
-                        .iter()
-                        .map(|t| serde_json::Value::String(t.clone()))
-                        .collect(),
-                );
-            }
-            if args.invert_match.unwrap_or(false) {
-                response["invert_match"] = serde_json::Value::Bool(true);
-            }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
-            Ok(response)
+    fn create_test_dir() -> TempDir {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let test_dir = temp_dir.path();
+
+        fs::write(
+            test_dir.join("test.rs"),
+            "fn main() {\n    println!(\"Hello, world!\");\n    let x = 42;\n}",
+        )
+        .unwrap();
+        fs::write(
+            test_dir.join("script.py"),
+            "def hello():\n    print(\"Hello, world!\")\n    x = 42\n",
+        )
+        .unwrap();
+        fs::write(
+            test_dir.join("app.js"),
+            "function hello() {\n    console.log(\"Hello, world!\");\n    const x = 42;\n}",
+        )
+        .unwrap();
+
+        temp_dir
+    }
+
+    #[tokio::test]
+    async fn test_file_type_filtering() {
+        let temp_dir = create_test_dir();
+        let test_path = temp_dir.path().to_str().unwrap();
+
+        let args = GrepInput {
+            pattern: "hello".to_string(),
+            path: Some(test_path.to_string()),
+            glob: None,
+            file_type: Some("rust".to_string()),
+            output_mode: Some(OutputMode::Content),
+            case_insensitive: Some(true),
+            line_numbers: Some(true),
+            context_before: None,
+            context_after: None,
+            context_around: None,
+            head_limit: None,
+            multiline: None,
+        };
+
+        let result = perform_grep(args).await.expect("Failed to perform grep");
+
+        match result {
+            GrepOutput::Content(content) => {
+                assert!(content.total_matches > 0);
+                // Should only find matches in .rs files
+                assert!(content.matches.iter().all(|m| m.file.contains("test.rs")));
+            }
+            _ => panic!("Expected Content output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_glob_filtering() {
+        let temp_dir = create_test_dir();
+        let test_path = temp_dir.path().to_str().unwrap();
+
+        let args = GrepInput {
+            pattern: "hello".to_string(),
+            path: Some(test_path.to_string()),
+            glob: Some("*.py".to_string()),
+            file_type: None,
+            output_mode: Some(OutputMode::Content),
+            case_insensitive: Some(true),
+            line_numbers: Some(true),
+            context_before: None,
+            context_after: None,
+            context_around: None,
+            head_limit: None,
+            multiline: None,
+        };
+
+        let result = perform_grep(args).await.expect("Failed to perform grep");
+
+        match result {
+            GrepOutput::Content(content) => {
+                assert!(content.total_matches > 0);
+                // Should only find matches in .py files
+                assert!(content.matches.iter().all(|m| m.file.contains("script.py")));
+            }
+            _ => panic!("Expected Content output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_files_with_matches_output() {
+        let temp_dir = create_test_dir();
+        let test_path = temp_dir.path().to_str().unwrap();
+
+        let args = GrepInput {
+            pattern: "hello".to_string(),
+            path: Some(test_path.to_string()),
+            glob: None,
+            file_type: None,
+            output_mode: Some(OutputMode::FilesWithMatches),
+            case_insensitive: Some(true),
+            line_numbers: None,
+            context_before: None,
+            context_after: None,
+            context_around: None,
+            head_limit: None,
+            multiline: None,
+        };
+
+        let result = perform_grep(args).await.expect("Failed to perform grep");
+
+        match result {
+            GrepOutput::Files(files) => {
+                assert!(files.count >= 2); // At least python and js files
+                assert!(files.files.iter().any(|f| f.contains(".py")));
+                assert!(files.files.iter().any(|f| f.contains(".js")));
+            }
+            _ => panic!("Expected Files output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_count_output() {
+        let temp_dir = create_test_dir();
+        let test_path = temp_dir.path().to_str().unwrap();
+
+        let args = GrepInput {
+            pattern: "hello".to_string(),
+            path: Some(test_path.to_string()),
+            glob: None,
+            file_type: None,
+            output_mode: Some(OutputMode::Count),
+            case_insensitive: Some(true),
+            line_numbers: None,
+            context_before: None,
+            context_after: None,
+            context_around: None,
+            head_limit: None,
+            multiline: None,
+        };
+
+        let result = perform_grep(args).await.expect("Failed to perform grep");
+
+        match result {
+            GrepOutput::Count(count) => {
+                assert!(count.counts.len() >= 2);
+                assert!(count.total >= 2);
+                assert!(count.counts.iter().all(|fc| fc.count > 0));
+            }
+            _ => panic!("Expected Count output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_head_limit() {
+        let temp_dir = create_test_dir();
+        let test_path = temp_dir.path().to_str().unwrap();
+
+        let args = GrepInput {
+            pattern: "hello".to_string(),
+            path: Some(test_path.to_string()),
+            glob: None,
+            file_type: None,
+            output_mode: Some(OutputMode::Content),
+            case_insensitive: Some(true),
+            line_numbers: Some(true),
+            context_before: None,
+            context_after: None,
+            context_around: None,
+            head_limit: Some(1),
+            multiline: None,
+        };
+
+        let result = perform_grep(args).await.expect("Failed to perform grep");
+
+        match result {
+            GrepOutput::Content(content) => {
+                assert!(content.total_matches <= 1);
+            }
+            _ => panic!("Expected Content output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multiline_mode() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let test_path = temp_dir.path().join("multiline.txt");
+
+        // Create a file with content that spans multiple lines
+        fs::write(&test_path, "start\nmiddle content\nend").unwrap();
+
+        // Test multiline pattern that matches across lines
+        let args = GrepInput {
+            pattern: r"start.*end".to_string(),
+            path: Some(test_path.to_str().unwrap().to_string()),
+            glob: None,
+            file_type: None,
+            output_mode: Some(OutputMode::Content),
+            case_insensitive: None,
+            line_numbers: Some(true),
+            context_before: None,
+            context_after: None,
+            context_around: None,
+            head_limit: None,
+            multiline: Some(true),
+        };
+
+        let result = perform_grep(args).await.expect("Failed to perform grep");
+
+        match result {
+            GrepOutput::Content(content) => {
+                // With multiline mode, it should match the pattern spanning multiple lines
+                assert!(content.total_matches > 0);
+            }
+            _ => panic!("Expected Content output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_context_lines() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let test_path = temp_dir.path().join("context.txt");
+
+        fs::write(&test_path, "line 1\nline 2\ntarget\nline 4\nline 5").unwrap();
+
+        let args = GrepInput {
+            pattern: "target".to_string(),
+            path: Some(test_path.to_str().unwrap().to_string()),
+            glob: None,
+            file_type: None,
+            output_mode: Some(OutputMode::Content),
+            case_insensitive: None,
+            line_numbers: Some(true),
+            context_before: Some(1),
+            context_after: Some(1),
+            context_around: None,
+            head_limit: None,
+            multiline: None,
+        };
+
+        let result = perform_grep(args).await.expect("Failed to perform grep");
+
+        match result {
+            GrepOutput::Content(content) => {
+                assert!(content.total_matches > 0);
+                // Check that context is present
+                assert!(content.matches[0].before_context.is_some());
+                assert!(content.matches[0].after_context.is_some());
+                let before = content.matches[0].before_context.as_ref().unwrap();
+                let after = content.matches[0].after_context.as_ref().unwrap();
+                assert_eq!(before.len(), 1);
+                assert_eq!(after.len(), 1);
+            }
+            _ => panic!("Expected Content output"),
         }
     }
 }

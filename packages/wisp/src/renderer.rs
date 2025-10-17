@@ -88,7 +88,7 @@ impl Renderer {
                         })
                         .await
                     {
-                        eprintln!("Failed to send message: {}", e);
+                        eprintln!("Failed to send message: {e}");
                     }
 
                     self.input_buffer.clear();
@@ -163,11 +163,11 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn update_render_context(&mut self) -> () {
+    pub fn update_render_context(&mut self) {
         let position = match position() {
             Ok(p) => p,
             Err(e) => {
-                println!("Failed to get position: {}", e);
+                println!("Failed to get position: {e}");
                 (0, 1)
             }
         };
@@ -175,7 +175,7 @@ impl Renderer {
         let size = match size() {
             Ok(s) => s,
             Err(e) => {
-                println!("Failed to get size: {}", e);
+                println!("Failed to get size: {e}");
                 (1, 1)
             }
         };

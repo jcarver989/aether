@@ -123,7 +123,7 @@ async fn test_read_file_line_range() {
         }
     }
 
-    // Test 4: Read from offset to end (no limit)
+    // Test 4: Read from offset with default limit
     let result = client
         .call_tool(CallToolRequestParam {
             name: "read_file".into(),
@@ -138,7 +138,7 @@ async fn test_read_file_line_range() {
             ),
         })
         .await
-        .expect("Failed to read from offset to end");
+        .expect("Failed to read from offset with default limit");
 
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
@@ -146,7 +146,7 @@ async fn test_read_file_line_range() {
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["lines_shown"], 3); // Lines 4, 5, 6
             assert_eq!(parsed["offset"], 4);
-            assert_eq!(parsed["limit"], serde_json::Value::Null);
+            assert_eq!(parsed["limit"], 2000); // Default limit applied
             let expected_content = "    4\tline 4\n    5\tline 5\n    6\tline 6";
             assert_eq!(parsed["content"], expected_content);
         }
