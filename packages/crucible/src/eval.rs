@@ -123,6 +123,9 @@ impl Eval {
         system_prompt: Option<String>,
     ) -> Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>
     {
+        let span = tracing::info_span!("eval", eval_name = %self.name);
+        let _enter = span.enter();
+
         tracing::info!("Running eval: {}", self.name);
 
         let messages = {
@@ -133,14 +136,11 @@ impl Eval {
             }
 
             let (tx, mut rx, _handle) = agent_builder.spawn().await?;
-            let full_prompt = format!(
-                "You are working in directory: {}\n\n{}",
-                self.working_dir.display(),
-                self.prompt
-            );
 
             tx.send(UserMessage::Text {
-                content: full_prompt,
+                content: [
+                    self.prompt.to_string(),
+                    format!("CRITICAL INSTRUCTIONS: when working on this task, you MUST only operate within this directory: {}", self.working_dir.display())].join("\n"),
             })
             .await?;
 
