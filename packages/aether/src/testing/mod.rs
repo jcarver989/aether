@@ -9,6 +9,3 @@ pub use fake_llm::*;
 pub use fake_mcp::*;
 pub use llm_response::*;
 pub use utils::*;
-
-// Re-export InMemoryFileSystem from fs module for convenience
-pub use crate::fs::InMemoryFileSystem;
