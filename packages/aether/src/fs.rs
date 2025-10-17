@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -7,9 +8,9 @@ use tokio::sync::Mutex;
 /// Trait for file system operations.
 /// Allows swapping in fakes for testing
 pub trait Fs {
-    fn write_file(&self, path: &str, content: &str) -> impl Future<Output = Result<(), String>>;
-    fn read_file(&self, path: &str) -> impl Future<Output = Result<String, String>>;
-    fn list_files(&self) -> impl Future<Output = Result<Vec<String>, String>>;
+    fn write_file(&self, path: &str, content: &str) -> impl Future<Output = io::Result<()>>;
+    fn read_file(&self, path: &str) -> impl Future<Output = io::Result<String>>;
+    fn list_files(&self) -> impl Future<Output = io::Result<Vec<String>>>;
     fn file_exists(&self, path: &str) -> impl Future<Output = bool>;
 }
 
@@ -24,21 +25,20 @@ impl StdFileSystem {
 }
 
 impl Fs for StdFileSystem {
-    async fn write_file(&self, path: &str, content: &str) -> Result<(), String> {
-        fs::write(path, content).map_err(|e| format!("Failed to write file {}: {}", path, e))
+    async fn write_file(&self, path: &str, content: &str) -> io::Result<()> {
+        fs::write(path, content)
     }
 
-    async fn read_file(&self, path: &str) -> Result<String, String> {
-        fs::read_to_string(path).map_err(|e| format!("Failed to read file {}: {}", path, e))
+    async fn read_file(&self, path: &str) -> io::Result<String> {
+        fs::read_to_string(path)
     }
 
-    async fn list_files(&self) -> Result<Vec<String>, String> {
-        let entries = fs::read_dir(".")
-            .map_err(|e| format!("Failed to read directory: {}", e))?;
+    async fn list_files(&self) -> io::Result<Vec<String>> {
+        let entries = fs::read_dir(".")?;
 
         let mut files = Vec::new();
         for entry in entries {
-            let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+            let entry = entry?;
             let path = entry.path();
             if path.is_file() {
                 if let Some(path_str) = path.to_str() {
@@ -69,21 +69,20 @@ impl InMemoryFileSystem {
 }
 
 impl Fs for InMemoryFileSystem {
-    async fn write_file(&self, path: &str, content: &str) -> Result<(), String> {
+    async fn write_file(&self, path: &str, content: &str) -> io::Result<()> {
         let mut files = self.files.lock().await;
         files.insert(path.to_string(), content.to_string());
         Ok(())
     }
 
-    async fn read_file(&self, path: &str) -> Result<String, String> {
+    async fn read_file(&self, path: &str) -> io::Result<String> {
         let files = self.files.lock().await;
-        files
-            .get(path)
-            .cloned()
-            .ok_or_else(|| format!("File not found: {path}"))
+        files.get(path).cloned().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, format!("File not found: {path}"))
+        })
     }
 
-    async fn list_files(&self) -> Result<Vec<String>, String> {
+    async fn list_files(&self) -> io::Result<Vec<String>> {
         let files = self.files.lock().await;
         Ok(files.keys().cloned().collect())
     }

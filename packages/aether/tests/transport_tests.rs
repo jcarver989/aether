@@ -120,7 +120,10 @@ async fn mock_write_file_tool(
     path: &str,
     content: &str,
 ) -> Result<String, String> {
-    filesystem.write_file(path, content).await?;
+    filesystem
+        .write_file(path, content)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(format!(
         "Successfully wrote {} bytes to {}",
         content.len(),
