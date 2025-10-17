@@ -6,18 +6,31 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub enum OutputMode {
     /// Return matching lines with file paths and line numbers
-    #[serde(rename = "matches")]
-    Matches,
+    #[serde(rename = "content")]
+    Content,
     /// Return only file paths that contain matches
-    #[serde(rename = "files_only")]
-    FilesOnly,
+    #[serde(rename = "files_with_matches")]
+    FilesWithMatches,
+    /// Return match counts per file
+    #[serde(rename = "count")]
+    Count,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MatchData {
+    pub file: String,
+    pub line_number: Option<usize>,
+    pub line: String,
+    pub before_context: Option<Vec<String>>,
+    pub after_context: Option<Vec<String>>,
 }
 
 pub struct MatchCollectorSink {
     file_path: std::path::PathBuf,
     line_numbers: bool,
     max_results: Option<usize>,
-    pub matches: Vec<String>,
+    pub matches: Vec<MatchData>,
+    context_before: Vec<String>,
 }
 
 impl MatchCollectorSink {
@@ -27,6 +40,7 @@ impl MatchCollectorSink {
             line_numbers,
             max_results: None,
             matches: Vec::new(),
+            context_before: Vec::new(),
         }
     }
 
@@ -40,6 +54,7 @@ impl MatchCollectorSink {
             line_numbers,
             max_results,
             matches: Vec::new(),
+            context_before: Vec::new(),
         }
     }
 }
@@ -60,17 +75,55 @@ impl Sink for MatchCollectorSink {
         }
 
         let line_str = std::str::from_utf8(mat.bytes()).unwrap_or("<invalid utf8>");
-        let match_str = if self.line_numbers {
-            format!(
-                "{}:{}:{}",
-                self.file_path.display(),
-                mat.line_number().unwrap_or(0),
-                line_str
-            )
+
+        let before_context = if !self.context_before.is_empty() {
+            Some(self.context_before.clone())
         } else {
-            format!("{}:{}", self.file_path.display(), line_str)
+            None
         };
-        self.matches.push(match_str);
+
+        let match_data = MatchData {
+            file: self.file_path.display().to_string(),
+            line_number: if self.line_numbers {
+                mat.line_number().map(|n| n as usize)
+            } else {
+                None
+            },
+            line: line_str.to_string(),
+            before_context,
+            after_context: None, // Will be filled by context method
+        };
+
+        self.matches.push(match_data);
+        self.context_before.clear();
+        Ok(true)
+    }
+
+    fn context(
+        &mut self,
+        _searcher: &grep::searcher::Searcher,
+        ctx: &grep::searcher::SinkContext<'_>,
+    ) -> Result<bool, Self::Error> {
+        let line_str = std::str::from_utf8(ctx.bytes()).unwrap_or("<invalid utf8>");
+
+        match ctx.kind() {
+            grep::searcher::SinkContextKind::Before => {
+                self.context_before.push(line_str.to_string());
+            }
+            grep::searcher::SinkContextKind::After => {
+                // Add after context to the last match
+                if let Some(last_match) = self.matches.last_mut() {
+                    if last_match.after_context.is_none() {
+                        last_match.after_context = Some(Vec::new());
+                    }
+                    if let Some(ref mut after) = last_match.after_context {
+                        after.push(line_str.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+
         Ok(true)
     }
 }
@@ -85,6 +138,12 @@ impl HasMatchSink {
     }
 }
 
+impl Default for HasMatchSink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Sink for HasMatchSink {
     type Error = std::io::Error;
 
@@ -95,5 +154,34 @@ impl Sink for HasMatchSink {
     ) -> Result<bool, Self::Error> {
         self.has_match = true;
         Ok(false)
+    }
+}
+
+pub struct CountSink {
+    pub count: usize,
+}
+
+impl CountSink {
+    pub fn new() -> Self {
+        Self { count: 0 }
+    }
+}
+
+impl Default for CountSink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Sink for CountSink {
+    type Error = std::io::Error;
+
+    fn matched(
+        &mut self,
+        _searcher: &grep::searcher::Searcher,
+        _mat: &SinkMatch<'_>,
+    ) -> Result<bool, Self::Error> {
+        self.count += 1;
+        Ok(true)
     }
 }

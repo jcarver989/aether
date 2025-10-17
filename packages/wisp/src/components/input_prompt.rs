@@ -5,7 +5,7 @@ use crossterm::style::{Color, Stylize};
 pub struct InputPrompt {}
 
 impl Component<()> for InputPrompt {
-    fn render(&self, _props: (), context: &RenderContext) -> Vec<TerminalCommand> {
+    fn render(&self, _props: (), _context: &RenderContext) -> Vec<TerminalCommand> {
         let color = Color::Cyan;
         vec![
             TerminalCommand::Print("\r\n".to_string()),

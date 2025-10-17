@@ -20,7 +20,7 @@ pub enum FileType {
     Symlink,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FileInfo {
     pub name: String,
     pub path: String,
@@ -30,7 +30,7 @@ pub struct FileInfo {
     pub modified: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ListFilesResult {
     pub status: String,
     pub directory: String,
@@ -45,19 +45,19 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> 
     let path = Path::new(target_path);
 
     if !path.exists() {
-        return Err(format!("Path does not exist: {}", target_path));
+        return Err(format!("Path does not exist: {target_path}"));
     }
 
     if !path.is_dir() {
-        return Err(format!("Path is not a directory: {}", target_path));
+        return Err(format!("Path is not a directory: {target_path}"));
     }
 
-    let entries = fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
+    let entries = fs::read_dir(path).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     let mut files = Vec::new();
 
     for entry in entries {
-        let entry = entry.map_err(|e| format!("Error reading entry: {}", e))?;
+        let entry = entry.map_err(|e| format!("Error reading entry: {e}"))?;
         let file_path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
 
@@ -68,7 +68,7 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> 
 
         let metadata = entry
             .metadata()
-            .map_err(|e| format!("Failed to read metadata for {}: {}", file_name, e))?;
+            .map_err(|e| format!("Failed to read metadata for {file_name}: {e}"))?;
 
         let file_type = if metadata.is_dir() {
             FileType::Directory
