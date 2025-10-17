@@ -2,7 +2,7 @@
   {
     "type": "LLMJudge",
     "data": {
-      "prompt": "Did the agent successfully identify which files contain 'TODO'? The correct files are: lib.rs and utils.rs"
+      "prompt": "Did the agent successfully identify which files contain 'TODO'? The correct files are: lib.rs and main.rs"
     }
   }
 ]
