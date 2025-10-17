@@ -1,7 +1,6 @@
+use aether::fs::Fs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
-use tokio::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EditFileArgs {
@@ -27,16 +26,17 @@ pub struct EditFileResponse {
     pub replacements_made: usize,
 }
 
-pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, String> {
-    let file_path = Path::new(&args.file_path);
-
+pub async fn edit_file_contents(
+    fs: &impl Fs,
+    args: EditFileArgs,
+) -> Result<EditFileResponse, String> {
     // File must exist for editing
-    if !file_path.exists() {
+    if !fs.file_exists(&args.file_path).await {
         return Err(format!("File does not exist: {}", args.file_path));
     }
 
     // Read current file content
-    let current_content = match fs::read_to_string(file_path).await {
+    let current_content = match fs.read_file(&args.file_path).await {
         Ok(content) => content,
         Err(e) => {
             return Err(format!(
@@ -67,7 +67,7 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     }
 
     // Write back to file
-    if let Err(e) = fs::write(file_path, &updated_content).await {
+    if let Err(e) = fs.write_file(&args.file_path, &updated_content).await {
         return Err(format!("Failed to write to file {}: {}", args.file_path, e));
     }
 

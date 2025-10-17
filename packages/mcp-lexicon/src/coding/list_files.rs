@@ -1,9 +1,6 @@
+use aether::fs::{FileInfo as FsFileInfo, FileType as FsFileType, Fs};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ListFilesArgs {
@@ -18,6 +15,16 @@ pub enum FileType {
     File,
     Directory,
     Symlink,
+}
+
+impl From<FsFileType> for FileType {
+    fn from(fs_type: FsFileType) -> Self {
+        match fs_type {
+            FsFileType::File => FileType::File,
+            FsFileType::Directory => FileType::Directory,
+            FsFileType::Symlink => FileType::Symlink,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -38,65 +45,41 @@ pub struct ListFilesResult {
     pub total_count: usize,
 }
 
-pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> {
+pub async fn list_files(
+    fs_impl: &impl Fs,
+    args: ListFilesArgs,
+) -> Result<ListFilesResult, String> {
     let target_path = args.path.as_deref().unwrap_or(".");
     let include_hidden = args.include_hidden.unwrap_or(false);
 
-    let path = Path::new(target_path);
-
-    if !path.exists() {
-        return Err(format!("Path does not exist: {target_path}"));
-    }
-
-    if !path.is_dir() {
-        return Err(format!("Path is not a directory: {target_path}"));
-    }
-
-    let entries = fs::read_dir(path).map_err(|e| format!("Failed to read directory: {e}"))?;
+    // Get file listing from the Fs implementation
+    let fs_files = fs_impl
+        .list_files_detailed(target_path)
+        .await
+        .map_err(|e| format!("Failed to read directory: {e}"))?;
 
     let mut files = Vec::new();
 
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Error reading entry: {e}"))?;
-        let file_path = entry.path();
-        let file_name = entry.file_name().to_string_lossy().to_string();
-
+    for fs_file in fs_files {
         // Skip hidden files unless requested
-        if !include_hidden && file_name.starts_with('.') {
+        if !include_hidden && fs_file.name.starts_with('.') {
             continue;
         }
 
-        let metadata = entry
-            .metadata()
-            .map_err(|e| format!("Failed to read metadata for {file_name}: {e}"))?;
-
-        let file_type = if metadata.is_dir() {
-            FileType::Directory
-        } else if metadata.is_symlink() {
-            FileType::Symlink
-        } else {
-            FileType::File
-        };
-
-        let permissions = format!("{:o}", metadata.permissions().mode() & 0o777);
-
-        let modified = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
-            .map(|duration| {
-                let secs = duration.as_secs();
-                chrono::DateTime::from_timestamp(secs as i64, 0)
+        // Convert timestamp to formatted date if available
+        let modified = fs_file.modified.and_then(|timestamp_str| {
+            timestamp_str.parse::<i64>().ok().and_then(|secs| {
+                chrono::DateTime::from_timestamp(secs, 0)
                     .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                    .unwrap_or_else(|| "unknown".to_string())
-            });
+            })
+        });
 
         files.push(FileInfo {
-            name: file_name,
-            path: file_path.to_string_lossy().to_string(),
-            file_type,
-            size: metadata.len(),
-            permissions,
+            name: fs_file.name,
+            path: fs_file.path,
+            file_type: fs_file.file_type.into(),
+            size: fs_file.size,
+            permissions: fs_file.permissions,
             modified,
         });
     }
@@ -105,15 +88,10 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> 
     files.sort_by(|a, b| a.name.cmp(&b.name));
 
     let total_count = files.len();
-    let canonical_path = path
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(target_path))
-        .to_string_lossy()
-        .to_string();
 
     Ok(ListFilesResult {
         status: "success".to_string(),
-        directory: canonical_path,
+        directory: target_path.to_string(),
         files,
         total_count,
     })

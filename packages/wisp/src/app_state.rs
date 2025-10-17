@@ -37,7 +37,7 @@ impl AppState {
         let (tools, tx, mcp_handle) = mcp()
             .with_servers(vec![McpServerConfig::InMemory {
                 name: "coding".to_string(),
-                server: CodingMcp::new().into_dyn(),
+                server: CodingMcp::with_std_fs().into_dyn(),
             }])
             .spawn()
             .await?;

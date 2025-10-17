@@ -5,7 +5,7 @@ use rmcp::model::{CallToolRequestParam, ClientInfo, Implementation};
 #[tokio::test]
 async fn test_read_file_line_range() {
     // Create server and client
-    let server_service = CodingMcp::new();
+    let server_service = CodingMcp::with_std_fs();
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),

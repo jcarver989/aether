@@ -1,7 +1,6 @@
+use aether::fs::Fs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
-use tokio::fs;
 
 const MAX_LINE_LENGTH: usize = 2000;
 const DEFAULT_LINE_LIMIT: usize = 2000;
@@ -29,18 +28,17 @@ pub struct ReadFileResult {
     pub size: usize,
 }
 
-pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, String> {
-    let file_path = Path::new(&args.file_path);
-
-    if !file_path.exists() {
+pub async fn read_file_contents(
+    fs: &impl Fs,
+    args: ReadFileArgs,
+) -> Result<ReadFileResult, String> {
+    // Check if file exists
+    if !fs.file_exists(&args.file_path).await {
         return Err(format!("File does not exist: {}", args.file_path));
     }
 
-    if !file_path.is_file() {
-        return Err(format!("Path is not a file: {}", args.file_path));
-    }
-
-    match fs::read_to_string(file_path).await {
+    // Read file contents
+    match fs.read_file(&args.file_path).await {
         Ok(content) => {
             let all_lines: Vec<&str> = content.lines().collect();
             let total_lines = all_lines.len();
@@ -102,14 +100,44 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether::fs::{Fs, InMemoryFileSystem, StdFileSystem};
+    use tokio::fs as tokio_fs;
+
+    #[tokio::test]
+    async fn test_read_file_with_in_memory_fs() {
+        let fs = InMemoryFileSystem::new();
+        let test_content = "line 1\nline 2\nline 3";
+        let test_path = "test_file.txt";
+
+        // Setup: write file to in-memory fs
+        fs.write_file(test_path, test_content).await.unwrap();
+
+        let result = read_file_contents(&fs, ReadFileArgs {
+            file_path: test_path.to_string(),
+            offset: None,
+            limit: None,
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(result.status, "success");
+        assert_eq!(result.total_lines, 3);
+        assert_eq!(result.lines_shown, 3);
+        assert_eq!(result.offset, 1);
+        assert_eq!(result.limit, Some(DEFAULT_LINE_LIMIT));
+        assert!(result.content.contains("    1\tline 1"));
+        assert!(result.content.contains("    2\tline 2"));
+        assert!(result.content.contains("    3\tline 3"));
+    }
 
     #[tokio::test]
     async fn test_read_file_with_defaults() {
         let test_content = "line 1\nline 2\nline 3";
         let test_path = "/tmp/test_read_defaults.txt";
-        fs::write(test_path, test_content).await.unwrap();
+        tokio_fs::write(test_path, test_content).await.unwrap();
 
-        let result = read_file_contents(ReadFileArgs {
+        let fs = StdFileSystem::new();
+        let result = read_file_contents(&fs, ReadFileArgs {
             file_path: test_path.to_string(),
             offset: None,
             limit: None,
@@ -126,16 +154,17 @@ mod tests {
         assert!(result.content.contains("    2\tline 2"));
         assert!(result.content.contains("    3\tline 3"));
 
-        let _ = fs::remove_file(test_path).await;
+        let _ = tokio_fs::remove_file(test_path).await;
     }
 
     #[tokio::test]
     async fn test_read_file_with_offset_and_limit() {
+        let fs = InMemoryFileSystem::new();
         let test_content = "line 1\nline 2\nline 3\nline 4\nline 5";
-        let test_path = "/tmp/test_read_offset_limit.txt";
-        fs::write(test_path, test_content).await.unwrap();
+        let test_path = "test_offset_limit.txt";
+        fs.write_file(test_path, test_content).await.unwrap();
 
-        let result = read_file_contents(ReadFileArgs {
+        let result = read_file_contents(&fs, ReadFileArgs {
             file_path: test_path.to_string(),
             offset: Some(2),
             limit: Some(2),
@@ -148,19 +177,18 @@ mod tests {
         assert_eq!(result.offset, 2);
         assert_eq!(result.limit, Some(2));
         assert_eq!(result.content, "    2\tline 2\n    3\tline 3");
-
-        let _ = fs::remove_file(test_path).await;
     }
 
     #[tokio::test]
     async fn test_read_file_line_truncation() {
+        let fs = InMemoryFileSystem::new();
         let short_line = "short";
         let long_line = "x".repeat(2500);
         let test_content = format!("{}\n{}", short_line, long_line);
-        let test_path = "/tmp/test_read_truncation.txt";
-        fs::write(test_path, &test_content).await.unwrap();
+        let test_path = "test_truncation.txt";
+        fs.write_file(test_path, &test_content).await.unwrap();
 
-        let result = read_file_contents(ReadFileArgs {
+        let result = read_file_contents(&fs, ReadFileArgs {
             file_path: test_path.to_string(),
             offset: None,
             limit: None,
@@ -174,22 +202,21 @@ mod tests {
         assert!(!lines[0].contains("truncated"));
         assert!(lines[1].contains("truncated"));
         assert!(lines[1].contains("2500 chars total"));
-
-        let _ = fs::remove_file(test_path).await;
     }
 
     #[tokio::test]
     async fn test_read_file_default_limit() {
+        let fs = InMemoryFileSystem::new();
         // Create file with more than DEFAULT_LINE_LIMIT lines
         let mut lines = Vec::new();
         for i in 1..=2500 {
             lines.push(format!("Line {}", i));
         }
         let test_content = lines.join("\n");
-        let test_path = "/tmp/test_read_default_limit.txt";
-        fs::write(test_path, &test_content).await.unwrap();
+        let test_path = "test_default_limit.txt";
+        fs.write_file(test_path, &test_content).await.unwrap();
 
-        let result = read_file_contents(ReadFileArgs {
+        let result = read_file_contents(&fs, ReadFileArgs {
             file_path: test_path.to_string(),
             offset: None,
             limit: None,
@@ -203,17 +230,16 @@ mod tests {
         assert!(result.content.contains("    1\tLine 1"));
         assert!(result.content.contains(" 2000\tLine 2000"));
         assert!(!result.content.contains("Line 2001"));
-
-        let _ = fs::remove_file(test_path).await;
     }
 
     #[tokio::test]
     async fn test_read_file_invalid_offset() {
+        let fs = InMemoryFileSystem::new();
         let test_content = "line 1";
-        let test_path = "/tmp/test_read_invalid_offset.txt";
-        fs::write(test_path, test_content).await.unwrap();
+        let test_path = "test_invalid_offset.txt";
+        fs.write_file(test_path, test_content).await.unwrap();
 
-        let result = read_file_contents(ReadFileArgs {
+        let result = read_file_contents(&fs, ReadFileArgs {
             file_path: test_path.to_string(),
             offset: Some(0),
             limit: None,
@@ -222,14 +248,13 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("offset must be 1-indexed"));
-
-        let _ = fs::remove_file(test_path).await;
     }
 
     #[tokio::test]
     async fn test_read_file_nonexistent() {
-        let result = read_file_contents(ReadFileArgs {
-            file_path: "/tmp/nonexistent_file_xyz123.txt".to_string(),
+        let fs = InMemoryFileSystem::new();
+        let result = read_file_contents(&fs, ReadFileArgs {
+            file_path: "nonexistent_file_xyz123.txt".to_string(),
             offset: None,
             limit: None,
         })

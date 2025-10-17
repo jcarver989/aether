@@ -10,7 +10,7 @@ async fn test_edit_file_without_read_fails() {
     let test_file = temp_dir.path().join("test.txt");
     fs::write(&test_file, "original content").unwrap();
 
-    let mcp = CodingMcp::new();
+    let mcp = CodingMcp::with_std_fs();
 
     // Try to edit without reading first
     let edit_args = EditFileArgs {
@@ -36,7 +36,7 @@ async fn test_edit_file_after_read_succeeds() {
     let test_file = temp_dir.path().join("test.txt");
     fs::write(&test_file, "original content").unwrap();
 
-    let mcp = CodingMcp::new();
+    let mcp = CodingMcp::with_std_fs();
 
     // First read the file
     let read_args = ReadFileArgs {
@@ -70,7 +70,7 @@ async fn test_write_existing_file_without_read_fails() {
     let test_file = temp_dir.path().join("test.txt");
     fs::write(&test_file, "original content").unwrap();
 
-    let mcp = CodingMcp::new();
+    let mcp = CodingMcp::with_std_fs();
 
     // Try to write without reading first
     let write_args = WriteFileArgs {
@@ -94,7 +94,7 @@ async fn test_write_existing_file_after_read_succeeds() {
     let test_file = temp_dir.path().join("test.txt");
     fs::write(&test_file, "original content").unwrap();
 
-    let mcp = CodingMcp::new();
+    let mcp = CodingMcp::with_std_fs();
 
     // First read the file
     let read_args = ReadFileArgs {
@@ -125,7 +125,7 @@ async fn test_write_new_file_without_read_succeeds() {
     let temp_dir = TempDir::new().unwrap();
     let test_file = temp_dir.path().join("new_file.txt");
 
-    let mcp = CodingMcp::new();
+    let mcp = CodingMcp::with_std_fs();
 
     // Write to a file that doesn't exist - should succeed
     let write_args = WriteFileArgs {
@@ -151,7 +151,7 @@ async fn test_multiple_files_tracked_independently() {
     fs::write(&file1, "content 1").unwrap();
     fs::write(&file2, "content 2").unwrap();
 
-    let mcp = CodingMcp::new();
+    let mcp = CodingMcp::with_std_fs();
 
     // Read file1
     let read_args = ReadFileArgs {
@@ -186,7 +186,7 @@ async fn test_failed_read_doesnt_track_file() {
     let temp_dir = TempDir::new().unwrap();
     let nonexistent_file = temp_dir.path().join("doesnt_exist.txt");
 
-    let mcp = CodingMcp::new();
+    let mcp = CodingMcp::with_std_fs();
 
     // Try to read a file that doesn't exist
     let read_args = ReadFileArgs {
