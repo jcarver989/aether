@@ -233,12 +233,15 @@ impl Eval {
                     }
 
                     let judge_prompt_text = format!(
-                        "You are evaluating an AI agent's performance on a coding task.\n\n\
+                        "You are evaluating an AI agent's performance on a coding task. The agent was asked to perform all work in this directory: {}\n\n\
                          Original Task: {}\n\n\
                          Agent Messages:\n{}\n\n\
                          Evaluation Question: {}\n\n\
                          Respond with either 'SUCCESS: <reason>' or 'FAILURE: <reason>'",
-                        self.prompt, messages_summary, prompt
+                        self.working_dir.display(),
+                        self.prompt,
+                        messages_summary,
+                        prompt
                     );
 
                     let context = Context::new(
