@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum TodoStatus {
     Pending,
     InProgress,
@@ -21,12 +21,14 @@ pub struct TodoItem {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct TodoWriteInput {
     /// The updated todo list
     pub todos: Vec<TodoItem>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct TodoStats {
     pub total: usize,
     pub pending: usize,
@@ -35,6 +37,7 @@ pub struct TodoStats {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct TodoWriteOutput {
     /// Success message
     pub message: String,
@@ -47,9 +50,18 @@ pub fn process_todo_write(input: TodoWriteInput) -> TodoWriteOutput {
     let todos = &input.todos;
 
     let total = todos.len();
-    let pending = todos.iter().filter(|t| matches!(t.status, TodoStatus::Pending)).count();
-    let in_progress = todos.iter().filter(|t| matches!(t.status, TodoStatus::InProgress)).count();
-    let completed = todos.iter().filter(|t| matches!(t.status, TodoStatus::Completed)).count();
+    let pending = todos
+        .iter()
+        .filter(|t| matches!(t.status, TodoStatus::Pending))
+        .count();
+    let in_progress = todos
+        .iter()
+        .filter(|t| matches!(t.status, TodoStatus::InProgress))
+        .count();
+    let completed = todos
+        .iter()
+        .filter(|t| matches!(t.status, TodoStatus::Completed))
+        .count();
 
     TodoWriteOutput {
         message: format!("Todo list updated with {} task(s)", total),

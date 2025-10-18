@@ -1,4 +1,5 @@
 use mcp_lexicon::coding::{TodoItem, TodoStatus, TodoWriteInput, process_todo_write};
+use serde_json;
 
 #[test]
 fn test_todo_write_empty_list() {
@@ -163,4 +164,53 @@ fn test_todo_write_progress_workflow() {
     assert_eq!(output3.stats.pending, 0);
     assert_eq!(output3.stats.in_progress, 0);
     assert_eq!(output3.stats.completed, 1);
+}
+
+#[test]
+fn test_serde_casing_consistency() {
+    // Test serialization of TodoItem (which has active_form field)
+    let todo_item = TodoItem {
+        content: "Test task".to_string(),
+        status: TodoStatus::InProgress,
+        active_form: "Testing task".to_string(),
+    };
+    
+    let todo_json = serde_json::to_string(&todo_item).unwrap();
+    println!("TodoItem JSON: {}", todo_json);
+    
+    // Verify that TodoItem uses camelCase
+    assert!(todo_json.contains("activeForm"));
+    assert!(todo_json.contains("inProgress")); // status should be camelCase
+
+    let input = TodoWriteInput {
+        todos: vec![todo_item],
+    };
+
+    let output = process_todo_write(input);
+    
+    // Test JSON serialization uses consistent camelCase
+    let json = serde_json::to_string(&output).unwrap();
+    println!("Output JSON: {}", json);
+    
+    // Verify that output uses camelCase for stats
+    assert!(json.contains("inProgress")); // stats.inProgress should be camelCase
+    
+    // Test deserialization also works with camelCase
+    let json_input = r#"
+    {
+        "todos": [
+            {
+                "content": "Test task",
+                "status": "inProgress",
+                "activeForm": "Testing task"
+            }
+        ]
+    }
+    "#;
+    
+    let parsed: TodoWriteInput = serde_json::from_str(json_input).unwrap();
+    assert_eq!(parsed.todos.len(), 1);
+    assert_eq!(parsed.todos[0].content, "Test task");
+    assert!(matches!(parsed.todos[0].status, TodoStatus::InProgress));
+    assert_eq!(parsed.todos[0].active_form, "Testing task");
 }
