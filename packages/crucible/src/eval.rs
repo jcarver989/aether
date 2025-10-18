@@ -1,28 +1,15 @@
 use aether::{
-    agent::{AgentMessage, UserMessage, agent},
+    agent::{UserMessage, agent},
     llm::{ChatMessage, Context, StreamingModelProvider, ToolDefinition},
     mcp::run_mcp_task::McpCommand,
     types::IsoString,
 };
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
-use tokio::sync::mpsc::{Receiver, Sender};
+use std::path::{Path, PathBuf};
+use tokio::sync::mpsc::Sender;
 
+use crate::eval_assertion::{EvalAssertion, EvalAssertionResult};
+use crate::eval_messages::{EvalMessage, to_eval_messages};
 use futures::StreamExt;
-
-/// Accumulated message types for eval logging and judging
-#[derive(Debug, Clone)]
-enum EvalMessage {
-    AgentText(String),
-    ToolCall { name: String, arguments: String },
-    ToolResult { name: String, result: String },
-    ToolError(String),
-    Error(String),
-    Done,
-}
 
 #[derive(Debug, Clone)]
 pub struct Eval {
@@ -286,7 +273,6 @@ impl Eval {
     ) -> EvalAssertionResult {
         tracing::info!("Running LLM judge for assertion");
 
-        // Build a clean summary from EvalMessages
         let mut messages_summary = String::new();
         for msg in messages {
             match msg {
@@ -331,10 +317,9 @@ impl Eval {
             vec![],
         );
 
-        // Call judge LLM directly
         let mut response_stream = judge_llm.stream_response(&context);
-
         let mut judge_response = String::new();
+
         while let Some(result) = response_stream.next().await {
             match result {
                 Ok(llm_response) => {
@@ -366,92 +351,6 @@ impl Eval {
     }
 }
 
-/// Accumulate agent messages from a receiver, yielding complete messages
-async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage> {
-    let mut eval_messages = Vec::new();
-    let mut accumulated_text = String::new();
-    let mut accumulated_tool_calls: HashMap<String, aether::llm::ToolCallRequest> = HashMap::new();
-
-    while let Some(message) = rx.recv().await {
-        match &message {
-            AgentMessage::Text {
-                chunk, is_complete, ..
-            } => {
-                accumulated_text.push_str(chunk);
-                if *is_complete {
-                    if !accumulated_text.is_empty() {
-                        // Log each line separately to make grep work better
-                        for line in accumulated_text.lines() {
-                            tracing::info!("Agent response: {}", line);
-                        }
-                        eval_messages.push(EvalMessage::AgentText(accumulated_text.clone()));
-                        accumulated_text.clear();
-                    }
-                }
-            }
-            AgentMessage::ToolCall { request, .. } => {
-                let entry = accumulated_tool_calls
-                    .entry(request.id.clone())
-                    .or_insert_with(|| aether::llm::ToolCallRequest {
-                        id: request.id.clone(),
-                        name: String::new(),
-                        arguments: String::new(),
-                    });
-
-                // Accumulate tool call data
-                if !request.name.is_empty() {
-                    entry.name.push_str(&request.name);
-                }
-                entry.arguments.push_str(&request.arguments);
-
-                // Check if this is a complete tool call
-                if !entry.name.is_empty() && entry.arguments.ends_with('}') {
-                    tracing::info!("Tool call: {} with args: {}", entry.name, entry.arguments);
-                    eval_messages.push(EvalMessage::ToolCall {
-                        name: entry.name.clone(),
-                        arguments: entry.arguments.clone(),
-                    });
-                    accumulated_tool_calls.remove(&request.id);
-                }
-            }
-            AgentMessage::ToolResult { result, .. } => {
-                tracing::info!("Tool result for {}: {}", result.name, result.result);
-                eval_messages.push(EvalMessage::ToolResult {
-                    name: result.name.clone(),
-                    result: result.result.clone(),
-                });
-            }
-            AgentMessage::ToolError { error, .. } => {
-                tracing::info!("Tool error: {:?}", error);
-                eval_messages.push(EvalMessage::ToolError(format!("{:?}", error)));
-            }
-            AgentMessage::Error { message: msg } => {
-                tracing::info!("Agent error: {}", msg);
-                eval_messages.push(EvalMessage::Error(msg.clone()));
-            }
-            AgentMessage::Cancelled { message: msg } => {
-                tracing::info!("Agent cancelled: {}", msg);
-                eval_messages.push(EvalMessage::Error(format!("Cancelled: {}", msg)));
-            }
-            AgentMessage::Done => {
-                // Log any remaining accumulated text before finishing
-                if !accumulated_text.is_empty() {
-                    for line in accumulated_text.lines() {
-                        tracing::info!("Agent response: {}", line);
-                    }
-                    eval_messages.push(EvalMessage::AgentText(accumulated_text.clone()));
-                    accumulated_text.clear();
-                }
-                tracing::info!("Agent done");
-                eval_messages.push(EvalMessage::Done);
-                break;
-            }
-        }
-    }
-
-    eval_messages
-}
-
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
     // Keep the directory structure (e.g., src/ -> dst/src/)
     let status = std::process::Command::new("cp")
@@ -467,95 +366,5 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
             "Failed to copy directory from {:?} to {:?}",
             src, dst
         )))
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
-pub enum EvalAssertion {
-    FileExists { path: String },
-    FileMatches { path: String, content: String },
-    LLMJudge { prompt: String },
-    CommandExitCode { command: String, expected_code: i32 },
-}
-
-impl std::fmt::Display for EvalAssertion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EvalAssertion::FileExists { path } => write!(f, "FileExists({})", path),
-            EvalAssertion::FileMatches { path, content } => {
-                let truncated = if content.len() > 30 {
-                    format!("{}...", &content[..30])
-                } else {
-                    content.clone()
-                };
-                write!(f, "FileMatches({}, \"{}\")", path, truncated)
-            }
-            EvalAssertion::LLMJudge { prompt } => {
-                let truncated = if prompt.len() > 40 {
-                    format!("{}...", &prompt[..40])
-                } else {
-                    prompt.clone()
-                };
-                write!(f, "LLMJudge(\"{}\")", truncated)
-            }
-            EvalAssertion::CommandExitCode {
-                command,
-                expected_code,
-            } => {
-                let truncated = if command.len() > 40 {
-                    format!("{}...", &command[..40])
-                } else {
-                    command.clone()
-                };
-                write!(
-                    f,
-                    "CommandExitCode(\"{}\", code={})",
-                    truncated, expected_code
-                )
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum EvalAssertionResult {
-    Success { message: String },
-    Failure { message: String },
-}
-
-impl EvalAssertionResult {
-    pub fn is_success(&self) -> bool {
-        matches!(self, EvalAssertionResult::Success { .. })
-    }
-
-    pub fn message(&self) -> &str {
-        match self {
-            EvalAssertionResult::Success { message } => message,
-            EvalAssertionResult::Failure { message } => message,
-        }
-    }
-
-    pub fn print(&self, assertion: &EvalAssertion) {
-        use owo_colors::OwoColorize;
-
-        match self {
-            EvalAssertionResult::Success { message } => {
-                println!(
-                    "{} {}: {}",
-                    "✓".green().bold(),
-                    assertion.to_string().dimmed(),
-                    message.green()
-                );
-            }
-            EvalAssertionResult::Failure { message } => {
-                println!(
-                    "{} {}: {}",
-                    "✗".red().bold(),
-                    assertion.to_string().dimmed(),
-                    message.red()
-                );
-            }
-        }
     }
 }

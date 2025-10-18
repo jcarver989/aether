@@ -1,4 +1,5 @@
-use crate::eval::{Eval, EvalAssertion, EvalAssertionResult};
+use crate::eval::Eval;
+use crate::eval_assertion::{EvalAssertion, EvalAssertionResult};
 use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
