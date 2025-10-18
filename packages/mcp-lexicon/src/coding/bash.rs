@@ -8,6 +8,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct BashInput {
     /// The command to execute
     pub command: String,
@@ -20,16 +21,15 @@ pub struct BashInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct BashOutput {
     /// Combined stdout and stderr output
     pub output: String,
     /// Exit code of the command
-    #[serde(rename = "exitCode")]
     pub exit_code: i32,
     /// Whether the command was killed due to timeout
     pub killed: Option<bool>,
     /// Shell ID for background processes
-    #[serde(rename = "shellId")]
     pub shell_id: Option<String>,
 }
 
@@ -48,6 +48,7 @@ pub enum BashResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadBackgroundBashInput {
     /// The ID of the background shell to retrieve output from
     pub bash_id: String,
@@ -56,13 +57,13 @@ pub struct ReadBackgroundBashInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadBackgroundBashOutput {
     /// New output since last check
     pub output: String,
     /// Current shell status
     pub status: String, // "running" | "completed" | "failed"
     /// Exit code (when completed)
-    #[serde(rename = "exitCode", skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
 }
 

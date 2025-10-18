@@ -36,7 +36,7 @@ async fn test_read_file_tool() {
             name: "read_file".into(),
             arguments: Some(
                 serde_json::json!({
-                    "file_path": "/tmp/test_read_file.txt"
+                    "filePath": "/tmp/test_read_file.txt"
                 })
                 .as_object()
                 .unwrap()
@@ -57,8 +57,8 @@ async fn test_read_file_tool() {
             // Verify line-numbered content format (should read full file by default)
             let expected_formatted = "    1\tHello, World!\n    2\tThis is a test file.";
             assert_eq!(parsed["content"], expected_formatted);
-            assert_eq!(parsed["total_lines"], 2);
-            assert_eq!(parsed["lines_shown"], 2);
+            assert_eq!(parsed["totalLines"], 2);
+            assert_eq!(parsed["linesShown"], 2);
         } else {
             panic!("Expected text content");
         }
@@ -98,7 +98,7 @@ async fn test_write_file_tool() {
             name: "write_file".into(),
             arguments: Some(
                 serde_json::json!({
-                    "file_path": test_path,
+                    "filePath": test_path,
                     "content": test_content
                 })
                 .as_object()
@@ -116,8 +116,8 @@ async fn test_write_file_tool() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert!(parsed["message"].as_str().unwrap().contains("Successfully wrote"));
-            assert_eq!(parsed["bytes_written"], test_content.len());
-            assert_eq!(parsed["file_path"], test_path);
+            assert_eq!(parsed["bytesWritten"], test_content.len());
+            assert_eq!(parsed["filePath"], test_path);
         } else {
             panic!("Expected text content");
         }
@@ -225,7 +225,7 @@ async fn test_edit_file_tool() {
             name: "read_file".into(),
             arguments: Some(
                 serde_json::json!({
-                    "file_path": test_path
+                    "filePath": test_path
                 })
                 .as_object()
                 .unwrap()
@@ -241,9 +241,9 @@ async fn test_edit_file_tool() {
             name: "edit_file".into(),
             arguments: Some(
                 serde_json::json!({
-                    "file_path": test_path,
-                    "old_string": "World",
-                    "new_string": "Rust"
+                    "filePath": test_path,
+                    "oldString": "World",
+                    "newString": "Rust"
                 })
                 .as_object()
                 .unwrap()
@@ -260,7 +260,7 @@ async fn test_edit_file_tool() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["status"], "success");
-            assert_eq!(parsed["replacements_made"], 1);
+            assert_eq!(parsed["replacementsMade"], 1);
         } else {
             panic!("Expected text content");
         }
@@ -285,7 +285,7 @@ async fn test_edit_file_tool() {
             name: "read_file".into(),
             arguments: Some(
                 serde_json::json!({
-                    "file_path": test_path
+                    "filePath": test_path
                 })
                 .as_object()
                 .unwrap()
@@ -300,10 +300,10 @@ async fn test_edit_file_tool() {
             name: "edit_file".into(),
             arguments: Some(
                 serde_json::json!({
-                    "file_path": test_path,
-                    "old_string": "test",
-                    "new_string": "TEST",
-                    "replace_all": true
+                    "filePath": test_path,
+                    "oldString": "test",
+                    "newString": "TEST",
+                    "replaceAll": true
                 })
                 .as_object()
                 .unwrap()
@@ -317,7 +317,7 @@ async fn test_edit_file_tool() {
         if let Some(text_content) = content.as_text() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
-            assert_eq!(parsed["replacements_made"], 3);
+            assert_eq!(parsed["replacementsMade"], 3);
         }
     }
 
@@ -385,7 +385,7 @@ async fn test_list_files_tool() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["status"], "success");
-            assert_eq!(parsed["total_count"], 3); // Should not include hidden file by default
+            assert_eq!(parsed["totalCount"], 3); // Should not include hidden file by default
 
             let files = parsed["files"]
                 .as_array()
@@ -413,7 +413,7 @@ async fn test_list_files_tool() {
             arguments: Some(
                 serde_json::json!({
                     "path": test_dir,
-                    "include_hidden": true
+                    "includeHidden": true
                 })
                 .as_object()
                 .unwrap()
@@ -427,7 +427,7 @@ async fn test_list_files_tool() {
         if let Some(text_content) = content.as_text() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
-            assert_eq!(parsed["total_count"], 4); // Should include hidden file now
+            assert_eq!(parsed["totalCount"], 4); // Should include hidden file now
         }
     }
 

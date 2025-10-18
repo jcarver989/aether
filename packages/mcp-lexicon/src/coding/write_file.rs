@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct WriteFileArgs {
     /// The absolute path to the file to write
     pub file_path: String,
@@ -11,6 +12,7 @@ pub struct WriteFileArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct WriteFileResponse {
     /// Success message
     pub message: String,

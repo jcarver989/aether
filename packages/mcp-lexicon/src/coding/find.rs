@@ -13,6 +13,7 @@ pub struct FindInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct FindOutput {
     /// Array of matching file paths
     pub matches: Vec<String>,
