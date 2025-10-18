@@ -29,7 +29,7 @@ pub use find::{FindInput, FindOutput, find_files_by_name};
 pub use grep::{GrepInput, GrepOutput, perform_grep};
 pub use list_files::{ListFilesArgs, ListFilesResult, list_files};
 pub use read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
-pub use todo_write::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, process_todo_write};
+pub use todo_write::{TodoItem, TodoState, TodoWriteInput, TodoWriteOutput, process_todo_write};
 pub use write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
 #[derive(Debug)]
@@ -186,8 +186,7 @@ IMPORTANT - Safety Requirements:
         }
     }
 
-    #[tool(
-        description = "Performs exact string replacements in files.
+    #[tool(description = "Performs exact string replacements in files.
 
 Usage:
 - You must use read_file on this file at least once in the session before editing. This tool will error if you attempt an edit without reading the file
@@ -197,8 +196,7 @@ Usage:
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked
 - The edit will FAIL if `old_string` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance of `old_string`
-- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance"
-    )]
+- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance")]
     pub async fn edit_file(
         &self,
         request: Parameters<EditFileArgs>,
@@ -222,14 +220,16 @@ Usage:
         }
     }
 
-    #[tool(description = "List files and directories in a specified path with detailed metadata.
+    #[tool(
+        description = "List files and directories in a specified path with detailed metadata.
 
 Usage:
 - Returns file information including name, path, type (file/directory/symlink), size, permissions, and modification time
 - By default, hidden files (starting with '.') are excluded unless include_hidden is set to true
 - Results are sorted alphabetically by name
 - Use this tool to explore directory contents before performing other operations
-- File paths returned are absolute paths that can be used directly with other tools")]
+- File paths returned are absolute paths that can be used directly with other tools"
+    )]
     pub async fn list_files(
         &self,
         request: Parameters<ListFilesArgs>,
@@ -241,7 +241,8 @@ Usage:
         }
     }
 
-    #[tool(description = "Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
+    #[tool(
+        description = "Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
 
 IMPORTANT: This tool is for terminal operations like git, npm, docker, cargo, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
 
@@ -261,7 +262,8 @@ Usage:
   - If the commands are independent and can run in parallel, make multiple bash tool calls in a single message. For example, if you need to run \"git status\" and \"git diff\", send a single message with two bash tool calls in parallel
   - If the commands depend on each other and must run sequentially, use a single bash call with '&&' to chain them together (e.g., `git add . && git commit -m \"message\" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp, write_file before bash for git operations, or git add before git commit), run these operations sequentially instead
   - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail
-  - DO NOT use newlines to separate commands (newlines are ok in quoted strings)")]
+  - DO NOT use newlines to separate commands (newlines are ok in quoted strings)"
+    )]
     pub async fn bash(&self, request: Parameters<BashInput>) -> Result<Json<BashOutput>, String> {
         let Parameters(args) = request;
         match execute_command(args).await {
