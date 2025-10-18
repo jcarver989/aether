@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ListFilesArgs {
     /// Directory path to list (defaults to current directory if not provided)
     pub path: Option<String>,
@@ -18,6 +19,7 @@ pub enum FileType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct FileInfo {
     pub name: String,
     pub path: String,
@@ -28,6 +30,7 @@ pub struct FileInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ListFilesResult {
     pub status: String,
     pub directory: String,

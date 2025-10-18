@@ -11,6 +11,7 @@ use std::path::Path;
 use super::common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct GrepContentOutput {
     /// Matching lines with context
     pub matches: Vec<MatchData>,
@@ -19,6 +20,7 @@ pub struct GrepContentOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct GrepFilesOutput {
     /// Files containing matches
     pub files: Vec<String>,
@@ -27,12 +29,14 @@ pub struct GrepFilesOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct GrepFileCount {
     pub file: String,
     pub count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct GrepCountOutput {
     /// Match counts per file
     pub counts: Vec<GrepFileCount>,
@@ -49,6 +53,7 @@ pub enum GrepOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct GrepInput {
     /// The regular expression pattern to search for
     pub pattern: String,

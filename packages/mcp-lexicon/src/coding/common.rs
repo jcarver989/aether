@@ -4,19 +4,18 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub enum OutputMode {
     /// Return matching lines with file paths and line numbers
-    #[serde(rename = "content")]
     Content,
     /// Return only file paths that contain matches
-    #[serde(rename = "files_with_matches")]
     FilesWithMatches,
     /// Return match counts per file
-    #[serde(rename = "count")]
     Count,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct MatchData {
     pub file: String,
     pub line_number: Option<usize>,

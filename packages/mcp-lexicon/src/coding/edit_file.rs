@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct EditFileArgs {
     /// Path to the file to edit
     pub file_path: String,
@@ -16,6 +17,7 @@ pub struct EditFileArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct EditFileResponse {
     pub status: String,
     /// Path of the file that was edited

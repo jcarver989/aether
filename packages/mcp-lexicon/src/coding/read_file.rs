@@ -6,6 +6,7 @@ const MAX_LINE_LENGTH: usize = 2000;
 const DEFAULT_LINE_LIMIT: usize = 2000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadFileArgs {
     /// Path to the file to read (must be an existing file)
     pub file_path: String,
@@ -16,6 +17,7 @@ pub struct ReadFileArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadFileResult {
     pub status: String,
     pub file_path: String,

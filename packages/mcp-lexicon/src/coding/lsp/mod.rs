@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LspDiagnosticsArgs {
     /// Workspace root directory (defaults to current directory)
     pub workspace_root: Option<String>,
@@ -15,7 +16,8 @@ pub struct LspDiagnosticsArgs {
     pub severity_filter: Option<String>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DiagnosticResult {
     pub file: String,
     pub line: u32,
@@ -25,7 +27,8 @@ pub struct DiagnosticResult {
     pub code: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LspDiagnosticsResponse {
     pub status: String,
     pub diagnostics: Vec<DiagnosticResult>,
