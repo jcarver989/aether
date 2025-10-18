@@ -190,16 +190,14 @@ IMPORTANT - Safety Requirements:
         description = "Performs exact string replacements in files.
 
 Usage:
-- When editing text from read_file output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string
+- You must use read_file on this file at least once in the session before editing. This tool will error if you attempt an edit without reading the file
+- When editing text from read_file output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix
+- The line number prefix format is: spaces + line number + tab character ('\\t'). Everything after that tab is the actual file content to match
+- Never include any part of the line number prefix in the old_string or new_string
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked
 - The edit will FAIL if `old_string` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance of `old_string`
-- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance
-
-IMPORTANT - Safety Requirements:
-- You MUST use read_file on a file before you can edit it
-- This tool will return an error if you attempt to edit without reading the file first
-- This safety check ensures you understand the current file contents before making changes and prevents blind edits that could break code"
+- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance"
     )]
     pub async fn edit_file(
         &self,
