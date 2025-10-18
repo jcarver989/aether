@@ -10,6 +10,7 @@ pub mod openrouter;
 pub mod parser;
 pub mod provider;
 mod tools;
+pub mod z_ai;
 
 pub use chat_message::ChatMessage;
 pub use context::Context;
