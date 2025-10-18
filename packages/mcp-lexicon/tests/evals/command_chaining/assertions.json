@@ -1,0 +1,27 @@
+[
+  {
+    "type": "FileExists",
+    "data": {
+      "path": "build"
+    }
+  },
+  {
+    "type": "FileExists",
+    "data": {
+      "path": "build/output.txt"
+    }
+  },
+  {
+    "type": "FileMatches",
+    "data": {
+      "path": "build/output.txt",
+      "content": "Build successful"
+    }
+  },
+  {
+    "type": "LLMJudge",
+    "data": {
+      "prompt": "Did the agent successfully use chained commands with && to create the build directory, create output.txt with 'Build successful', and list the directory contents?"
+    }
+  }
+]
