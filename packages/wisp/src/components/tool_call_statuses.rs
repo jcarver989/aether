@@ -76,6 +76,7 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
                     TerminalCommand::ClearLine,
                     TerminalCommand::PrintStyled(message),
                     TerminalCommand::PrintStyled(args),
+                    TerminalCommand::PrintStyled(error.error.with(ERROR_COLOR)),
                     TerminalCommand::RestorePosition,
                 ]
             }
