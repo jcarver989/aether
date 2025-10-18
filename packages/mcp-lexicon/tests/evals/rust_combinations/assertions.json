@@ -1,0 +1,42 @@
+[
+  {
+    "type": "LLMJudge",
+    "data": {
+      "prompt": "Did the agent successfully write a Rust program that computes all combinations of a set of characters? The program should generate combinations of different lengths (1-char, 2-char, etc.) and compile successfully."
+    }
+  },
+  {
+    "type": "FileMatches",
+    "data": {
+      "path": "src/main.rs",
+      "content": "fn main"
+    }
+  },
+  {
+    "type": "FileMatches",
+    "data": {
+      "path": "src/main.rs",
+      "content": "combinations"
+    }
+  },
+  {
+    "type": "LLMJudge",
+    "data": {
+      "prompt": "Does the code implement logic to generate combinations (not permutations)? Look for iteration or recursion that generates subsets of different sizes."
+    }
+  },
+  {
+    "type": "CommandExitCode",
+    "data": {
+      "command": "cargo check",
+      "expected_code": 0
+    }
+  },
+  {
+    "type": "CommandExitCode",
+    "data": {
+      "command": "cargo build",
+      "expected_code": 0
+    }
+  }
+]
