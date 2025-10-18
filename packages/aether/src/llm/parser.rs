@@ -6,6 +6,7 @@ use crate::llm::{
     anthropic::AnthropicProvider,
     local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
     openrouter::OpenRouterProvider,
+    z_ai::ZAiProvider,
 };
 
 /// Parser that turns a provider:model string (e.g. anthropic:claude-sonnet-4.5) into
@@ -29,6 +30,7 @@ impl Default for ModelProviderParser {
             .with_provider::<AnthropicProvider>("anthropic")
             .with_provider::<OpenRouterProvider>("openrouter")
             .with_provider::<OllamaProvider>("ollama")
+            .with_provider::<ZAiProvider>("zai")
             .with_provider_fn(
                 "llamacpp",
                 Box::new(|_model| Ok(Box::new(LlamaCppProvider::default()))),
@@ -37,7 +39,6 @@ impl Default for ModelProviderParser {
 }
 
 impl ModelProviderParser {
-
     pub fn with_provider<P: ModelProviderFactory<P> + StreamingModelProvider + 'static>(
         mut self,
         name: impl Into<String>,
@@ -142,6 +143,14 @@ impl ModelProviderFactory<OpenRouterProvider> for OpenRouterProvider {
 impl ModelProviderFactory<OllamaProvider> for OllamaProvider {
     fn create(model: &str) -> std::result::Result<OllamaProvider, Box<dyn std::error::Error>> {
         Ok(OllamaProvider::default(model))
+    }
+}
+
+impl ModelProviderFactory<ZAiProvider> for ZAiProvider {
+    fn create(model: &str) -> std::result::Result<ZAiProvider, Box<dyn std::error::Error>> {
+        Ok(ZAiProvider::from_env()
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?
+            .with_model(model))
     }
 }
 
