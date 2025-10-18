@@ -1,7 +1,11 @@
 pub mod eval;
+pub mod eval_assertion;
+pub mod eval_messages;
 pub mod report;
 
-pub use eval::{Eval, EvalAssertion, EvalAssertionResult};
+pub use eval::Eval;
+pub use eval_assertion::{EvalAssertion, EvalAssertionResult};
+pub use eval_messages::EvalMessage;
 pub use report::{AssertionReport, EvalReport, SummaryReport, create_eval_report};
 
 use aether::llm::StreamingModelProvider;
