@@ -2,11 +2,13 @@ use crate::agent::{AgentError, Result};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[derive(Debug, Clone)]
 pub enum Prompt {
     Text(String),
     File { path: String, ancestors: bool },
+    SystemEnv,
 }
 
 impl Prompt {
@@ -28,6 +30,10 @@ impl Prompt {
         }
     }
 
+    pub fn system_env() -> Self {
+        Self::SystemEnv
+    }
+
     /// Resolve this SystemPrompt to a String
     pub fn build(&self) -> Result<String> {
         match self {
@@ -39,6 +45,7 @@ impl Prompt {
                     Self::resolve_file(&PathBuf::from(path))
                 }
             }
+            Prompt::SystemEnv => Self::resolve_system_env(),
         }
     }
 
@@ -87,5 +94,43 @@ impl Prompt {
         // Want root -> CWD (i.e. general --> specific prompt)
         prompt.reverse();
         Ok(prompt.join("\n\n"))
+    }
+
+    fn resolve_system_env() -> Result<String> {
+        let cwd = env::current_dir()
+            .map_err(|e| AgentError::IoError(format!("Failed to get current directory: {e}")))?;
+
+        let os_version = Command::new("uname")
+            .arg("-a")
+            .output()
+            .ok()
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .and_then(|version| {
+                let version = version.trim();
+                if !version.is_empty() {
+                    Some(format!("OS Version: {}", version))
+                } else {
+                    None
+                }
+            });
+
+        let is_git_repo = if cwd.join(".git").exists() {
+            "Yes"
+        } else {
+            "No"
+        };
+
+        let mut lines = vec![
+            format!("Working directory: {}", cwd.display()),
+            format!("Platform: {}", env::consts::OS),
+            format!("Today's date: {}", chrono::Local::now().format("%Y-%m-%d")),
+            format!("Is directory a git repo: {}", is_git_repo),
+        ];
+
+        if let Some(os) = os_version {
+            lines.push(os);
+        }
+
+        Ok(format!("<env>\n{}\n</env>", lines.join("\n")))
     }
 }
