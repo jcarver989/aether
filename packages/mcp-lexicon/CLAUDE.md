@@ -63,6 +63,17 @@ tests/evals/<eval_name>/
      }
      ```
 
+   - **CommandExitCode**: Runs a command and checks its exit code
+     ```json
+     {
+       "type": "CommandExitCode",
+       "data": {
+         "command": "cargo check",
+         "expected_code": 0
+       }
+     }
+     ```
+
 4. **Create test files in `src/`** (if needed):
    - Add any files the eval needs to operate on
    - For example: files to search through, edit, or read

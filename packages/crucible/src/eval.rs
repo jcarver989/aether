@@ -154,139 +154,23 @@ impl Eval {
                     format!("CRITICAL INSTRUCTIONS: when working on this task, you MUST only operate within this directory: {}", self.working_dir.display())].join("\n"),
             })
             .await?;
-            accumulate_agent_messages(rx).await
+            to_eval_messages(rx).await
         };
 
         let mut results = Vec::new();
 
         for assertion in &self.assertions {
             let result = match assertion {
-                EvalAssertion::FileExists { path } => {
-                    let file_path = self.working_dir.join(path);
-                    if file_path.exists() {
-                        tracing::info!("✓ FileExists assertion passed: {}", path);
-                        EvalAssertionResult::Success {
-                            message: format!("File '{}' exists", path),
-                        }
-                    } else {
-                        tracing::error!("✗ FileExists assertion failed: {}", path);
-                        EvalAssertionResult::Failure {
-                            message: format!("File '{}' does not exist", path),
-                        }
-                    }
-                }
+                EvalAssertion::FileExists { path } => self.assert_file_exists(path),
                 EvalAssertion::FileMatches { path, content } => {
-                    let file_path = self.working_dir.join(path);
-                    match std::fs::read_to_string(&file_path) {
-                        Ok(file_content) => {
-                            if file_content.contains(content) {
-                                tracing::info!("✓ FileMatches assertion passed: {}", path);
-                                EvalAssertionResult::Success {
-                                    message: format!("File '{}' contains '{}'", path, content),
-                                }
-                            } else {
-                                tracing::error!("✗ FileMatches assertion failed: {}", path);
-                                EvalAssertionResult::Failure {
-                                    message: format!(
-                                        "File '{}' does not contain '{}'",
-                                        path, content
-                                    ),
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("✗ FileMatches assertion failed: {} ({})", path, e);
-                            EvalAssertionResult::Failure {
-                                message: format!("Failed to read file '{}': {}", path, e),
-                            }
-                        }
-                    }
+                    self.assert_file_matches(path, content)
                 }
+                EvalAssertion::CommandExitCode {
+                    command,
+                    expected_code,
+                } => self.assert_command_exit_code(command, *expected_code).await,
                 EvalAssertion::LLMJudge { prompt } => {
-                    tracing::info!("Running LLM judge for assertion");
-
-                    // Build a clean summary from EvalMessages
-                    let mut messages_summary = String::new();
-                    for msg in &messages {
-                        match msg {
-                            EvalMessage::AgentText(text) => {
-                                messages_summary.push_str("Agent: ");
-                                messages_summary.push_str(text);
-                                messages_summary.push('\n');
-                            }
-                            EvalMessage::ToolCall { name, arguments } => {
-                                messages_summary
-                                    .push_str(&format!("Tool call: {} ({})\n", name, arguments));
-                            }
-                            EvalMessage::ToolResult { name, result } => {
-                                messages_summary
-                                    .push_str(&format!("Tool result ({}): {}\n", name, result));
-                            }
-                            EvalMessage::ToolError(error) => {
-                                messages_summary.push_str(&format!("Tool error: {}\n", error));
-                            }
-                            EvalMessage::Error(error) => {
-                                messages_summary.push_str(&format!("Error: {}\n", error));
-                            }
-                            EvalMessage::Done => {}
-                        }
-                    }
-
-                    let judge_prompt_text = format!(
-                        "You are evaluating an AI agent's performance on a coding task. The agent was asked to perform all work in this directory: {}\n\n\
-                         Original Task: {}\n\n\
-                         Agent Messages:\n{}\n\n\
-                         Evaluation Question: {}\n\n\
-                         Respond with either 'SUCCESS: <reason>' or 'FAILURE: <reason>'",
-                        self.working_dir.display(),
-                        self.prompt,
-                        messages_summary,
-                        prompt
-                    );
-
-                    let context = Context::new(
-                        vec![ChatMessage::User {
-                            content: judge_prompt_text,
-                            timestamp: IsoString::now(),
-                        }],
-                        vec![],
-                    );
-
-                    // Call judge LLM directly
-                    let mut response_stream = judge_llm.stream_response(&context);
-
-                    let mut judge_response = String::new();
-                    while let Some(result) = response_stream.next().await {
-                        match result {
-                            Ok(llm_response) => {
-                                if let aether::llm::LlmResponse::Text { chunk } = llm_response {
-                                    judge_response.push_str(&chunk);
-                                }
-                            }
-                            Err(e) => {
-                                tracing::error!("✗ LLM judge error: {}", e);
-                                return Ok(vec![(
-                                    assertion.clone(),
-                                    EvalAssertionResult::Failure {
-                                        message: format!("Judge LLM error: {}", e),
-                                    },
-                                )]);
-                            }
-                        }
-                    }
-
-                    // Parse the judge's response
-                    if judge_response.to_uppercase().starts_with("SUCCESS") {
-                        tracing::info!("✓ LLM judge assertion passed");
-                        EvalAssertionResult::Success {
-                            message: judge_response,
-                        }
-                    } else {
-                        tracing::error!("✗ LLM judge assertion failed");
-                        EvalAssertionResult::Failure {
-                            message: judge_response,
-                        }
-                    }
+                    self.assert_llm_judge(&messages, prompt, &judge_llm).await
                 }
             };
 
@@ -295,10 +179,195 @@ impl Eval {
 
         Ok(results)
     }
+
+    /// Check if a file exists at the specified path
+    fn assert_file_exists(&self, path: &str) -> EvalAssertionResult {
+        let file_path = self.working_dir.join(path);
+        if file_path.exists() {
+            tracing::info!("✓ FileExists assertion passed: {}", path);
+            EvalAssertionResult::Success {
+                message: format!("File '{}' exists", path),
+            }
+        } else {
+            tracing::error!("✗ FileExists assertion failed: {}", path);
+            EvalAssertionResult::Failure {
+                message: format!("File '{}' does not exist", path),
+            }
+        }
+    }
+
+    /// Check if a file contains specific content
+    fn assert_file_matches(&self, path: &str, content: &str) -> EvalAssertionResult {
+        let file_path = self.working_dir.join(path);
+        match std::fs::read_to_string(&file_path) {
+            Ok(file_content) => {
+                if file_content.contains(content) {
+                    tracing::info!("✓ FileMatches assertion passed: {}", path);
+                    EvalAssertionResult::Success {
+                        message: format!("File '{}' contains '{}'", path, content),
+                    }
+                } else {
+                    tracing::error!("✗ FileMatches assertion failed: {}", path);
+                    EvalAssertionResult::Failure {
+                        message: format!("File '{}' does not contain '{}'", path, content),
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("✗ FileMatches assertion failed: {} ({})", path, e);
+                EvalAssertionResult::Failure {
+                    message: format!("Failed to read file '{}': {}", path, e),
+                }
+            }
+        }
+    }
+
+    /// Check if a command exits with the expected code
+    async fn assert_command_exit_code(
+        &self,
+        command: &str,
+        expected_code: i32,
+    ) -> EvalAssertionResult {
+        tracing::info!("Running command: {}", command);
+
+        let output = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .current_dir(&self.working_dir)
+            .output()
+            .await;
+
+        match output {
+            Ok(output) => {
+                let actual_code = output.status.code().unwrap_or(-1);
+                if actual_code == expected_code {
+                    tracing::info!(
+                        "✓ CommandExitCode assertion passed: {} (exit code: {})",
+                        command,
+                        actual_code
+                    );
+                    EvalAssertionResult::Success {
+                        message: format!(
+                            "Command '{}' exited with code {} as expected",
+                            command, actual_code
+                        ),
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    tracing::error!(
+                        "✗ CommandExitCode assertion failed: {} (expected: {}, got: {})",
+                        command,
+                        expected_code,
+                        actual_code
+                    );
+                    EvalAssertionResult::Failure {
+                        message: format!(
+                            "Command '{}' exited with code {} (expected {})\nstderr: {}",
+                            command, actual_code, expected_code, stderr
+                        ),
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("✗ CommandExitCode assertion failed: {} ({})", command, e);
+                EvalAssertionResult::Failure {
+                    message: format!("Failed to execute command '{}': {}", command, e),
+                }
+            }
+        }
+    }
+
+    /// Check an assertion using the LLM judge
+    async fn assert_llm_judge<U: StreamingModelProvider>(
+        &self,
+        messages: &[EvalMessage],
+        prompt: &str,
+        judge_llm: &U,
+    ) -> EvalAssertionResult {
+        tracing::info!("Running LLM judge for assertion");
+
+        // Build a clean summary from EvalMessages
+        let mut messages_summary = String::new();
+        for msg in messages {
+            match msg {
+                EvalMessage::AgentText(text) => {
+                    messages_summary.push_str("Agent: ");
+                    messages_summary.push_str(text);
+                    messages_summary.push('\n');
+                }
+                EvalMessage::ToolCall { name, arguments } => {
+                    messages_summary.push_str(&format!("Tool call: {} ({})\n", name, arguments));
+                }
+                EvalMessage::ToolResult { name, result } => {
+                    messages_summary.push_str(&format!("Tool result ({}): {}\n", name, result));
+                }
+                EvalMessage::ToolError(error) => {
+                    messages_summary.push_str(&format!("Tool error: {}\n", error));
+                }
+                EvalMessage::Error(error) => {
+                    messages_summary.push_str(&format!("Error: {}\n", error));
+                }
+                EvalMessage::Done => {}
+            }
+        }
+
+        let judge_prompt_text = format!(
+            "You are evaluating an AI agent's performance on a coding task. The agent was asked to perform all work in this directory: {}\n\n\
+             Original Task: {}\n\n\
+             Agent Messages:\n{}\n\n\
+             Evaluation Question: {}\n\n\
+             Respond with either 'SUCCESS: <reason>' or 'FAILURE: <reason>'",
+            self.working_dir.display(),
+            self.prompt,
+            messages_summary,
+            prompt
+        );
+
+        let context = Context::new(
+            vec![ChatMessage::User {
+                content: judge_prompt_text,
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+
+        // Call judge LLM directly
+        let mut response_stream = judge_llm.stream_response(&context);
+
+        let mut judge_response = String::new();
+        while let Some(result) = response_stream.next().await {
+            match result {
+                Ok(llm_response) => {
+                    if let aether::llm::LlmResponse::Text { chunk } = llm_response {
+                        judge_response.push_str(&chunk);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("✗ LLM judge error: {}", e);
+                    return EvalAssertionResult::Failure {
+                        message: format!("Judge LLM error: {}", e),
+                    };
+                }
+            }
+        }
+
+        // Parse the judge's response
+        if judge_response.to_uppercase().starts_with("SUCCESS") {
+            tracing::info!("✓ LLM judge assertion passed");
+            EvalAssertionResult::Success {
+                message: judge_response,
+            }
+        } else {
+            tracing::error!("✗ LLM judge assertion failed");
+            EvalAssertionResult::Failure {
+                message: judge_response,
+            }
+        }
+    }
 }
 
 /// Accumulate agent messages from a receiver, yielding complete messages
-async fn accumulate_agent_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage> {
+async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage> {
     let mut eval_messages = Vec::new();
     let mut accumulated_text = String::new();
     let mut accumulated_tool_calls: HashMap<String, aether::llm::ToolCallRequest> = HashMap::new();
@@ -407,6 +476,7 @@ pub enum EvalAssertion {
     FileExists { path: String },
     FileMatches { path: String, content: String },
     LLMJudge { prompt: String },
+    CommandExitCode { command: String, expected_code: i32 },
 }
 
 impl std::fmt::Display for EvalAssertion {
@@ -428,6 +498,21 @@ impl std::fmt::Display for EvalAssertion {
                     prompt.clone()
                 };
                 write!(f, "LLMJudge(\"{}\")", truncated)
+            }
+            EvalAssertion::CommandExitCode {
+                command,
+                expected_code,
+            } => {
+                let truncated = if command.len() > 40 {
+                    format!("{}...", &command[..40])
+                } else {
+                    command.clone()
+                };
+                write!(
+                    f,
+                    "CommandExitCode(\"{}\", code={})",
+                    truncated, expected_code
+                )
             }
         }
     }

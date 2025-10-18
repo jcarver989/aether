@@ -132,6 +132,7 @@ pub fn create_eval_report(
                 EvalAssertion::FileExists { .. } => "FileExists".to_string(),
                 EvalAssertion::FileMatches { .. } => "FileMatches".to_string(),
                 EvalAssertion::LLMJudge { .. } => "LLMJudge".to_string(),
+                EvalAssertion::CommandExitCode { .. } => "CommandExitCode".to_string(),
             },
             passed: result.is_success(),
             message: result.message().to_string(),
