@@ -1,10 +1,9 @@
 use std::error::Error;
 
 use crate::cli::Cli;
-use crate::cli::SystemPrompt;
 use aether::mcp::McpServerConfig;
 use aether::{
-    agent::{AgentHandle, AgentMessage, UserMessage, agent},
+    agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent},
     mcp::mcp,
 };
 use mcp_lexicon::CodingMcp;
@@ -14,7 +13,6 @@ use tokio::task::JoinHandle;
 
 pub struct AppState {
     pub model_string: String,
-    pub system_prompt: Option<SystemPrompt>,
     pub agent_tx: Sender<UserMessage>,
     pub agent_rx: Receiver<AgentMessage>,
     #[allow(dead_code)]
@@ -27,17 +25,22 @@ pub struct AppState {
 impl AppState {
     pub async fn from_cli(cli: &Cli) -> Result<Self, Box<dyn Error>> {
         let llm = cli.load_model_provider()?;
-        let system_prompt = cli.load_system_prompt();
 
-        let mut agent_builder = agent(llm);
-        if let Some(prompt) = &system_prompt {
-            agent_builder = agent_builder.system(prompt.as_str());
-        }
+        let system_prompt = {
+            let mut parts = Vec::new();
+            if let Some(prompt) = &cli.load_system_prompt() {
+                parts.push(Prompt::text(prompt.as_str()));
+            }
+            parts.push(Prompt::system_env());
+            Prompt::build_all(&parts)?
+        };
+
+        let agent_builder = agent(llm).system(&system_prompt);
 
         let (tools, tx, mcp_handle) = mcp()
             .with_servers(vec![McpServerConfig::InMemory {
                 name: "coding".to_string(),
-                server: CodingMcp::with_std_fs().into_dyn(),
+                server: CodingMcp::new().into_dyn(),
             }])
             .spawn()
             .await?;
@@ -46,7 +49,6 @@ impl AppState {
 
         Ok(Self {
             model_string: cli.model.clone(),
-            system_prompt,
             agent_tx,
             agent_rx,
             agent_handle,
