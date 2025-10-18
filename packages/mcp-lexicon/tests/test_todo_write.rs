@@ -1,4 +1,4 @@
-use mcp_lexicon::coding::{TodoItem, TodoStatus, TodoWriteInput, process_todo_write};
+use mcp_lexicon::coding::{TodoItem, TodoState, TodoWriteInput, process_todo_write};
 use serde_json;
 
 #[test]
@@ -18,7 +18,7 @@ fn test_todo_write_single_pending_task() {
     let input = TodoWriteInput {
         todos: vec![TodoItem {
             content: "Write unit tests".to_string(),
-            status: TodoStatus::Pending,
+            state: TodoState::Pending,
             active_form: "Writing unit tests".to_string(),
         }],
     };
@@ -38,22 +38,22 @@ fn test_todo_write_mixed_statuses() {
         todos: vec![
             TodoItem {
                 content: "Design API".to_string(),
-                status: TodoStatus::Completed,
+                state: TodoState::Completed,
                 active_form: "Designing API".to_string(),
             },
             TodoItem {
                 content: "Implement feature".to_string(),
-                status: TodoStatus::InProgress,
+                state: TodoState::InProgress,
                 active_form: "Implementing feature".to_string(),
             },
             TodoItem {
                 content: "Write documentation".to_string(),
-                status: TodoStatus::Pending,
+                state: TodoState::Pending,
                 active_form: "Writing documentation".to_string(),
             },
             TodoItem {
                 content: "Review code".to_string(),
-                status: TodoStatus::Pending,
+                state: TodoState::Pending,
                 active_form: "Reviewing code".to_string(),
             },
         ],
@@ -74,12 +74,12 @@ fn test_todo_write_all_in_progress() {
         todos: vec![
             TodoItem {
                 content: "Task 1".to_string(),
-                status: TodoStatus::InProgress,
+                state: TodoState::InProgress,
                 active_form: "Working on task 1".to_string(),
             },
             TodoItem {
                 content: "Task 2".to_string(),
-                status: TodoStatus::InProgress,
+                state: TodoState::InProgress,
                 active_form: "Working on task 2".to_string(),
             },
         ],
@@ -99,17 +99,17 @@ fn test_todo_write_all_completed() {
         todos: vec![
             TodoItem {
                 content: "Task 1".to_string(),
-                status: TodoStatus::Completed,
+                state: TodoState::Completed,
                 active_form: "Working on task 1".to_string(),
             },
             TodoItem {
                 content: "Task 2".to_string(),
-                status: TodoStatus::Completed,
+                state: TodoState::Completed,
                 active_form: "Working on task 2".to_string(),
             },
             TodoItem {
                 content: "Task 3".to_string(),
-                status: TodoStatus::Completed,
+                state: TodoState::Completed,
                 active_form: "Working on task 3".to_string(),
             },
         ],
@@ -129,7 +129,7 @@ fn test_todo_write_progress_workflow() {
     let input1 = TodoWriteInput {
         todos: vec![TodoItem {
             content: "Implement feature X".to_string(),
-            status: TodoStatus::Pending,
+            state: TodoState::Pending,
             active_form: "Implementing feature X".to_string(),
         }],
     };
@@ -142,7 +142,7 @@ fn test_todo_write_progress_workflow() {
     let input2 = TodoWriteInput {
         todos: vec![TodoItem {
             content: "Implement feature X".to_string(),
-            status: TodoStatus::InProgress,
+            state: TodoState::InProgress,
             active_form: "Implementing feature X".to_string(),
         }],
     };
@@ -155,7 +155,7 @@ fn test_todo_write_progress_workflow() {
     let input3 = TodoWriteInput {
         todos: vec![TodoItem {
             content: "Implement feature X".to_string(),
-            status: TodoStatus::Completed,
+            state: TodoState::Completed,
             active_form: "Implementing feature X".to_string(),
         }],
     };
@@ -171,13 +171,13 @@ fn test_serde_casing_consistency() {
     // Test serialization of TodoItem (which has active_form field)
     let todo_item = TodoItem {
         content: "Test task".to_string(),
-        status: TodoStatus::InProgress,
+        state: TodoState::InProgress,
         active_form: "Testing task".to_string(),
     };
-    
+
     let todo_json = serde_json::to_string(&todo_item).unwrap();
     println!("TodoItem JSON: {}", todo_json);
-    
+
     // Verify that TodoItem uses camelCase
     assert!(todo_json.contains("activeForm"));
     assert!(todo_json.contains("inProgress")); // status should be camelCase
@@ -187,14 +187,14 @@ fn test_serde_casing_consistency() {
     };
 
     let output = process_todo_write(input);
-    
+
     // Test JSON serialization uses consistent camelCase
     let json = serde_json::to_string(&output).unwrap();
     println!("Output JSON: {}", json);
-    
+
     // Verify that output uses camelCase for stats
     assert!(json.contains("inProgress")); // stats.inProgress should be camelCase
-    
+
     // Test deserialization also works with camelCase
     let json_input = r#"
     {
@@ -207,10 +207,10 @@ fn test_serde_casing_consistency() {
         ]
     }
     "#;
-    
+
     let parsed: TodoWriteInput = serde_json::from_str(json_input).unwrap();
     assert_eq!(parsed.todos.len(), 1);
     assert_eq!(parsed.todos[0].content, "Test task");
-    assert!(matches!(parsed.todos[0].status, TodoStatus::InProgress));
+    assert!(matches!(parsed.todos[0].state, TodoState::InProgress));
     assert_eq!(parsed.todos[0].active_form, "Testing task");
 }
