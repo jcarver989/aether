@@ -3,7 +3,7 @@ use async_openai::{Client, config::OpenAIConfig};
 
 use crate::llm::openai::mappers::{map_messages, map_tools};
 use crate::llm::openai_compatible::create_custom_stream;
-use crate::llm::{Context, LlmError, LlmResponseStream, Result, StreamingModelProvider};
+use crate::llm::{Context, LlmError, LlmResponseStream, Result, StreamingModelProvider, ProviderFactory};
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -34,6 +34,29 @@ impl OpenRouterProvider {
             client,
             model: model.to_string(),
         })
+    }
+}
+
+impl ProviderFactory for OpenRouterProvider {
+    fn from_env() -> std::result::Result<Self, Box<dyn std::error::Error>> {
+        let api_key = std::env::var("OPENROUTER_API_KEY")
+            .map_err(|_| LlmError::MissingApiKey("OPENROUTER_API_KEY".to_string()))?;
+
+        let config = OpenAIConfig::new()
+            .with_api_key(api_key)
+            .with_api_base("https://openrouter.ai/api/v1");
+
+        let client = Client::with_config(config);
+
+        Ok(Self {
+            client,
+            model: String::new(),
+        })
+    }
+
+    fn with_model(mut self, model: &str) -> Self {
+        self.model = model.to_string();
+        self
     }
 }
 

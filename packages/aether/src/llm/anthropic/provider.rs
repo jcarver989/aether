@@ -1,7 +1,7 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
 use super::types::Request;
-use crate::llm::provider::{LlmResponseStream, StreamingModelProvider};
+use crate::llm::provider::{LlmResponseStream, StreamingModelProvider, ProviderFactory};
 use crate::llm::{Context, LlmError, Result};
 use async_stream;
 use futures::StreamExt;
@@ -45,12 +45,6 @@ impl AnthropicProvider {
             max_tokens: 16_384,
             enable_prompt_caching: true,
         })
-    }
-
-    pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY")
-            .map_err(|_| LlmError::MissingApiKey("ANTHROPIC_API_KEY".to_string()))?;
-        Self::new(api_key)
     }
 
     pub fn with_model(mut self, model: &str) -> Self {
@@ -153,6 +147,18 @@ impl AnthropicProvider {
             lines_stream.map(|result| result.map_err(|e| LlmError::IoError(e.to_string())));
 
         Ok(processed_stream)
+    }
+}
+
+impl ProviderFactory for AnthropicProvider {
+    fn from_env() -> std::result::Result<Self, Box<dyn std::error::Error>> {
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .map_err(|_| LlmError::MissingApiKey("ANTHROPIC_API_KEY".to_string()))?;
+        Self::new(api_key).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    }
+
+    fn with_model(self, model: &str) -> Self {
+        self.with_model(model)
     }
 }
 
