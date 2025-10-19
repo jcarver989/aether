@@ -1,10 +1,12 @@
-use std::error::Error;
 use aether::llm::anthropic::*;
-use aether::llm::{ChatMessage, Context, LlmResponse, StreamingModelProvider, ProviderFactory, ToolDefinition};
+use aether::llm::{
+    ChatMessage, Context, LlmResponse, ProviderFactory, StreamingModelProvider, ToolDefinition,
+};
 use aether::types::IsoString;
 use clap::Parser;
 use futures::StreamExt;
 use serde_json::json;
+use std::error::Error;
 use std::io::{self, Write};
 
 #[derive(Parser)]
