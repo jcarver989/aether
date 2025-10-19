@@ -1,13 +1,10 @@
 use crate::components::commands::TerminalCommand;
 use crate::render_context::{Component, RenderContext};
 use aether::llm::{ToolCallError, ToolCallRequest, ToolCallResult};
-use crossterm::style::{Color, StyledContent, Stylize};
+use crossterm::style::{StyledContent, Stylize};
 use std::collections::HashMap;
 
 const MAX_TOOL_ARG_LENGTH: usize = 200;
-const TOOL_COLOR: Color = Color::Yellow;
-const SUCCESS_COLOR: Color = Color::Green;
-const ERROR_COLOR: Color = Color::Red;
 
 /// Props for rendering different tool call status views
 pub enum ToolCallStatusViewProps {
@@ -30,12 +27,12 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
     fn render(
         &self,
         props: ToolCallStatusViewProps,
-        _context: &RenderContext,
+        context: &RenderContext,
     ) -> Vec<TerminalCommand> {
         match props {
             ToolCallStatusViewProps::Request(request) => {
-                let message = format!("● {} running...", request.name).with(TOOL_COLOR);
-                let args = Self::format_tool_arguments(&request.arguments);
+                let message = format!("● {} running...", request.name).with(context.theme.info);
+                let args = Self::format_tool_arguments(&request.arguments, context);
 
                 vec![
                     TerminalCommand::PrintStyled(message),
@@ -46,8 +43,8 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
                 result,
                 line_position,
             } => {
-                let message = format!("● {} ✓", result.name).with(SUCCESS_COLOR);
-                let args = Self::format_tool_arguments(&result.arguments);
+                let message = format!("● {} ✓", result.name).with(context.theme.success);
+                let args = Self::format_tool_arguments(&result.arguments, context);
 
                 vec![
                     TerminalCommand::SavePosition,
@@ -63,12 +60,12 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
                 error,
                 line_position,
             } => {
-                let message = format!("● {} X", error.name).with(ERROR_COLOR);
+                let message = format!("● {} X", error.name).with(context.theme.error);
                 let args = error
                     .arguments
                     .as_ref()
-                    .map(|a| Self::format_tool_arguments(a))
-                    .unwrap_or_else(|| "".to_string().with(TOOL_COLOR));
+                    .map(|a| Self::format_tool_arguments(a, context))
+                    .unwrap_or_else(|| "".to_string().with(context.theme.info));
 
                 vec![
                     TerminalCommand::SavePosition,
@@ -76,7 +73,7 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
                     TerminalCommand::ClearLine,
                     TerminalCommand::PrintStyled(message),
                     TerminalCommand::PrintStyled(args),
-                    TerminalCommand::PrintStyled(error.error.with(ERROR_COLOR)),
+                    TerminalCommand::PrintStyled(error.error.with(context.theme.error)),
                     TerminalCommand::Print("\r\n".to_string()),
                     TerminalCommand::RestorePosition,
                 ]
@@ -86,10 +83,10 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
 }
 
 impl ToolCallStatusView {
-    fn format_tool_arguments(arguments: &str) -> StyledContent<String> {
+    fn format_tool_arguments(arguments: &str, context: &RenderContext) -> StyledContent<String> {
         let mut formatted = format!(" {arguments}");
         formatted.truncate(MAX_TOOL_ARG_LENGTH);
-        formatted.with(TOOL_COLOR)
+        formatted.with(context.theme.info)
     }
 }
 

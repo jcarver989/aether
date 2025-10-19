@@ -1,5 +1,6 @@
 // Mr. BotBot - SOTA coding agent
 mod cli;
+mod colors;
 mod components;
 mod output_formatters;
 mod render_context;

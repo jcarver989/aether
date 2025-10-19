@@ -112,7 +112,6 @@ impl Renderer {
             } => {
                 let mut commands = vec![];
                 if self.current_assistant_message_id.as_ref() != Some(&message_id) && !is_complete {
-                    commands.extend(AgentTextMessage::render());
                     self.current_assistant_message_id = Some(message_id.clone());
                 }
 
