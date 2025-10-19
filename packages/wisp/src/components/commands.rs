@@ -45,6 +45,10 @@ pub trait ExecuteCommands {
 
 impl<T: Write> ExecuteCommands for T {
     fn flush_commands(&mut self, commands: &[TerminalCommand]) -> Result<()> {
+        if commands.len() == 0 {
+            return Ok(());
+        }
+
         for command in commands {
             self.queue(command.clone())?;
         }

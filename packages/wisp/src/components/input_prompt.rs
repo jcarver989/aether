@@ -1,16 +1,15 @@
 use super::commands::TerminalCommand;
 use crate::render_context::{Component, RenderContext};
-use crossterm::style::{Color, Stylize};
+use crossterm::style::Stylize;
 
 pub struct InputPrompt {}
 
 impl Component<()> for InputPrompt {
-    fn render(&self, _props: (), _context: &RenderContext) -> Vec<TerminalCommand> {
-        let color = Color::Cyan;
+    fn render(&self, _props: (), context: &RenderContext) -> Vec<TerminalCommand> {
         vec![
             TerminalCommand::Print("\r\n".to_string()),
             TerminalCommand::MoveToColumn(0),
-            TerminalCommand::PrintStyled("> ".to_string().with(color)),
+            TerminalCommand::PrintStyled("> ".to_string().with(context.theme.primary)),
         ]
     }
 }
