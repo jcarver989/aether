@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::llm::{
-    StreamingModelProvider,
+    ProviderFactory, StreamingModelProvider,
     alloyed::AlloyedModelProvider,
     anthropic::AnthropicProvider,
     local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
@@ -39,13 +39,13 @@ impl Default for ModelProviderParser {
 }
 
 impl ModelProviderParser {
-    pub fn with_provider<P: ModelProviderFactory<P> + StreamingModelProvider + 'static>(
+    pub fn with_provider<P: ProviderFactory + StreamingModelProvider + 'static>(
         mut self,
         name: impl Into<String>,
     ) -> Self {
         self.factories.insert(
             name.into(),
-            Box::new(|model| Ok(Box::new(P::create(model)?))),
+            Box::new(|model| Ok(Box::new(P::from_env()?.with_model(model)))),
         );
         self
     }
@@ -70,21 +70,12 @@ impl ModelProviderParser {
 
         let mut providers = Vec::new();
         for pair in provider_model_pairs {
-            // llamacpp doesn't use model name
-            if pair == "llamacpp" {
-                let factory = self
-                    .factories
-                    .get("llamacpp")
-                    .ok_or("LlamaCpp provider not registered")?;
-                providers.push(factory("")?);
-                continue;
-            }
-
-            let (provider_name, model) = pair.split_once(':').ok_or_else(|| {
-                format!(
-                    "Invalid model spec '{pair}'. Expected format 'provider:model' or 'llamacpp'"
-                )
-            })?;
+            let (provider_name, model) = if let Some((name, model)) = pair.split_once(':') {
+                (name, model)
+            } else {
+                // Handle providers without model specification (e.g., "llamacpp")
+                (pair, "")
+            };
 
             let factory = self
                 .factories
@@ -109,14 +100,6 @@ impl ModelProviderParser {
     }
 }
 
-/// Trait for types that can be constructed from a model name string
-///
-/// Implement this trait on your provider to enable ergonomic registration
-/// with `with_provider::<YourProvider>("name")` syntax.
-pub trait ModelProviderFactory<T> {
-    fn create(model: &str) -> Result<T, Box<dyn std::error::Error>>;
-}
-
 /// Factory function type for creating model providers
 ///
 /// Takes a model name and returns a boxed StreamingModelProvider
@@ -125,34 +108,6 @@ pub type CreateProviderFn = Box<
         + Send
         + Sync,
 >;
-
-impl ModelProviderFactory<AnthropicProvider> for AnthropicProvider {
-    fn create(model: &str) -> std::result::Result<AnthropicProvider, Box<dyn std::error::Error>> {
-        Ok(AnthropicProvider::from_env()
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?
-            .with_model(model))
-    }
-}
-
-impl ModelProviderFactory<OpenRouterProvider> for OpenRouterProvider {
-    fn create(model: &str) -> std::result::Result<OpenRouterProvider, Box<dyn std::error::Error>> {
-        OpenRouterProvider::default(model).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
-    }
-}
-
-impl ModelProviderFactory<OllamaProvider> for OllamaProvider {
-    fn create(model: &str) -> std::result::Result<OllamaProvider, Box<dyn std::error::Error>> {
-        Ok(OllamaProvider::default(model))
-    }
-}
-
-impl ModelProviderFactory<ZAiProvider> for ZAiProvider {
-    fn create(model: &str) -> std::result::Result<ZAiProvider, Box<dyn std::error::Error>> {
-        Ok(ZAiProvider::from_env()
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?
-            .with_model(model))
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -201,12 +156,16 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_invalid_no_colon() {
+    fn test_parse_provider_without_model() {
         let parser = ModelProviderParser::default();
         let result = parser.parse("anthropic");
-        assert!(result.is_err());
+        // Will fail because ANTHROPIC_API_KEY is not set, but should parse successfully
         if let Err(e) = result {
-            assert!(e.to_string().contains("Invalid model spec"));
+            let err = e.to_string();
+            assert!(
+                err.contains("API") || err.contains("ANTHROPIC"),
+                "Should fail on API key, not parsing. Got: {err}"
+            );
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::llm::{local::util::get_local_config, openai::OpenAiChatProvider};
+use crate::llm::{local::util::get_local_config, openai::OpenAiChatProvider, ProviderFactory};
 use async_openai::{Client, config::OpenAIConfig};
 
 pub struct LlamaCppProvider {
@@ -18,6 +18,17 @@ impl Default for LlamaCppProvider {
         Self {
             client: Client::with_config(get_local_config("http://localhost:8080/v1")),
         }
+    }
+}
+
+impl ProviderFactory for LlamaCppProvider {
+    fn from_env() -> std::result::Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self::default())
+    }
+
+    fn with_model(self, _model: &str) -> Self {
+        // LlamaCpp doesn't support model selection - it serves a single model
+        self
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::llm::{LlmError, Result, Context, LlmResponseStream, StreamingModelProvider};
+use crate::llm::{LlmError, Context, LlmResponseStream, StreamingModelProvider, ProviderFactory};
 use crate::llm::openai::mappers::{map_messages, map_tools};
 use crate::llm::openai_compatible::create_custom_stream;
 use async_openai::{Client, config::OpenAIConfig, types::CreateChatCompletionRequest};
@@ -20,15 +20,21 @@ impl ZAiProvider {
         }
     }
 
-    pub fn from_env() -> Result<Self> {
+    pub fn with_model(mut self, model: &str) -> Self {
+        self.model = model.to_string();
+        self
+    }
+}
+
+impl ProviderFactory for ZAiProvider {
+    fn from_env() -> std::result::Result<Self, Box<dyn std::error::Error>> {
         let api_key = std::env::var("ZAI_API_KEY")
             .map_err(|_| LlmError::MissingApiKey("ZAI_API_KEY".to_string()))?;
         Ok(Self::new(api_key))
     }
 
-    pub fn with_model(mut self, model: &str) -> Self {
-        self.model = model.to_string();
-        self
+    fn with_model(self, model: &str) -> Self {
+        self.with_model(model)
     }
 }
 
