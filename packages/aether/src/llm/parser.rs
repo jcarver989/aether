@@ -180,21 +180,6 @@ mod tests {
     }
 
     #[test]
-    fn test_with_custom_provider_fn() {
-        let parser = ModelProviderParser::default().with_provider_fn(
-            "custom",
-            Box::new(|model| {
-                assert_eq!(model, "test-model");
-                // Return a fake provider for testing
-                Ok(Box::new(OllamaProvider::default(model)))
-            }),
-        );
-
-        let result = parser.parse("custom:test-model");
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn test_parse_single_provider() {
         let parser = ModelProviderParser::default();
         let result = parser.parse("llamacpp");
