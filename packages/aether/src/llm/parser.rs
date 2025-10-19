@@ -31,10 +31,7 @@ impl Default for ModelProviderParser {
             .with_provider::<OpenRouterProvider>("openrouter")
             .with_provider::<OllamaProvider>("ollama")
             .with_provider::<ZAiProvider>("zai")
-            .with_provider_fn(
-                "llamacpp",
-                Box::new(|_model| Ok(Box::new(LlamaCppProvider::default()))),
-            )
+            .with_provider::<LlamaCppProvider>("llamacpp")
     }
 }
 
@@ -92,11 +89,6 @@ impl ModelProviderParser {
         };
 
         Ok(provider)
-    }
-
-    fn with_provider_fn(mut self, name: impl Into<String>, factory: CreateProviderFn) -> Self {
-        self.factories.insert(name.into(), factory);
-        self
     }
 }
 

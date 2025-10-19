@@ -108,7 +108,7 @@ impl Prompt {
             .and_then(|version| {
                 let version = version.trim();
                 if !version.is_empty() {
-                    Some(format!("OS Version: {}", version))
+                    Some(format!("OS Version: {version}"))
                 } else {
                     None
                 }
