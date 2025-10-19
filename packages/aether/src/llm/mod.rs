@@ -6,6 +6,7 @@ pub mod error;
 mod llm_response;
 pub mod local;
 pub mod openai;
+pub mod openai_compatible;
 pub mod openrouter;
 pub mod parser;
 pub mod provider;

@@ -1,10 +1,7 @@
 use crate::llm::{LlmError, Result, Context, LlmResponseStream, StreamingModelProvider};
 use crate::llm::openai::mappers::{map_messages, map_tools};
-use crate::llm::openai::process_completion_stream;
-use crate::llm::z_ai::CustomChatCompletionStreamResponse;
+use crate::llm::openai_compatible::create_custom_stream;
 use async_openai::{Client, config::OpenAIConfig, types::CreateChatCompletionRequest};
-use async_stream;
-use tokio_stream::StreamExt;
 
 pub struct ZAiProvider {
     client: Client<OpenAIConfig>,
@@ -37,8 +34,6 @@ impl ZAiProvider {
 
 impl StreamingModelProvider for ZAiProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        let client = self.client.clone();
-        let model = self.model.clone();
         let messages = map_messages(context.messages());
         let tools = if context.tools().is_empty() {
             None
@@ -46,38 +41,15 @@ impl StreamingModelProvider for ZAiProvider {
             Some(map_tools(context.tools()))
         };
 
-        Box::pin(async_stream::stream! {
-            let req = CreateChatCompletionRequest {
-                model: model.clone(),
-                messages,
-                stream: Some(true),
-                tools,
-                ..Default::default()
-            };
+        let request = CreateChatCompletionRequest {
+            model: self.model.clone(),
+            messages,
+            stream: Some(true),
+            tools,
+            ..Default::default()
+        };
 
-            let stream = match client
-                .chat()
-                .create_stream_byot::<CreateChatCompletionRequest, CustomChatCompletionStreamResponse>(req)
-                .await {
-                Ok(stream) => stream,
-                Err(e) => {
-                    yield Err(LlmError::ApiRequest(e.to_string()));
-                    return;
-                }
-            };
-
-            // Convert custom responses to standard async_openai types and handle errors
-            let standard_stream = stream.map(|result| {
-                result
-                    .map(|custom| custom.into())
-                    .map_err(|e| LlmError::ApiError(e.to_string()))
-            });
-
-            let mut shared_stream = Box::pin(process_completion_stream(standard_stream));
-            while let Some(result) = shared_stream.next().await {
-                yield result;
-            }
-        })
+        create_custom_stream(&self.client, request)
     }
 
     fn display_name(&self) -> String {

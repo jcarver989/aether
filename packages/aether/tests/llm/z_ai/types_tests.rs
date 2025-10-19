@@ -1,3 +1,4 @@
+use aether::llm::openai_compatible::ChatCompletionStreamResponse;
 use serde_json;
 
 /// Test that we can deserialize the actual Z.ai response format
@@ -21,8 +22,7 @@ fn test_deserialize_zai_response_missing_object_field() {
     }"#;
 
     // This should not panic and should deserialize successfully
-    let result: Result<aether::llm::z_ai::CustomChatCompletionStreamResponse, _> =
-        serde_json::from_str(json);
+    let result: Result<ChatCompletionStreamResponse, _> = serde_json::from_str(json);
 
     assert!(
         result.is_ok(),
@@ -62,8 +62,7 @@ fn test_deserialize_zai_response_with_finish_reason() {
         }]
     }"#;
 
-    let result: Result<aether::llm::z_ai::CustomChatCompletionStreamResponse, _> =
-        serde_json::from_str(json);
+    let result: Result<ChatCompletionStreamResponse, _> = serde_json::from_str(json);
 
     assert!(result.is_ok());
     let response = result.unwrap();
@@ -87,12 +86,11 @@ fn test_convert_to_openai_type() {
         }]
     }"#;
 
-    let custom_response: aether::llm::z_ai::CustomChatCompletionStreamResponse =
-        serde_json::from_str(json).unwrap();
+    let response: ChatCompletionStreamResponse = serde_json::from_str(json).unwrap();
 
     // Convert to standard OpenAI type
     let openai_response: async_openai::types::CreateChatCompletionStreamResponse =
-        custom_response.into();
+        response.into();
 
     assert_eq!(openai_response.id, "test123");
     assert_eq!(openai_response.model, "glm-4.6");
@@ -123,8 +121,7 @@ fn test_deserialize_zai_response_with_tool_calls() {
         }]
     }"#;
 
-    let result: Result<aether::llm::z_ai::CustomChatCompletionStreamResponse, _> =
-        serde_json::from_str(json);
+    let result: Result<ChatCompletionStreamResponse, _> = serde_json::from_str(json);
 
     assert!(result.is_ok(), "Failed to deserialize: {:?}", result.err());
     let response = result.unwrap();
