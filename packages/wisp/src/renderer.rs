@@ -1,4 +1,4 @@
-use std::io::{Stdout, Write};
+use std::io::Write;
 
 use aether::agent::{AgentMessage, UserMessage};
 use crossterm::{
@@ -22,18 +22,18 @@ pub enum LoopAction {
     Exit,
 }
 
-pub struct Renderer {
-    stdout: Stdout,
+pub struct Renderer<W: Write> {
+    writer: W,
     tool_call_statuses: ToolCallStatuses,
     current_assistant_message_id: Option<String>,
     input_buffer: String,
     context: RenderContext,
 }
 
-impl Renderer {
-    pub fn new(stdout: Stdout) -> Self {
+impl<W: Write> Renderer<W> {
+    pub fn new(writer: W) -> Self {
         Self {
-            stdout,
+            writer,
             tool_call_statuses: ToolCallStatuses::new(),
             current_assistant_message_id: None,
             input_buffer: String::new(),
@@ -54,18 +54,18 @@ impl Renderer {
             KeyCode::Char(c) => {
                 self.input_buffer.push(c);
                 print!("{c}");
-                self.stdout.flush()?;
+                self.writer.flush()?;
             }
 
             KeyCode::Backspace => {
                 if !self.input_buffer.is_empty() {
                     self.input_buffer.pop();
-                    self.stdout.flush_commands(&[
+                    self.writer.flush_commands(&[
                         TerminalCommand::MoveLeft,
                         TerminalCommand::Print(" ".to_string()),
                         TerminalCommand::MoveLeft,
                     ])?;
-                    self.stdout.flush()?;
+                    self.writer.flush()?;
                 }
             }
 
@@ -73,7 +73,7 @@ impl Renderer {
                 if self.input_buffer.trim().is_empty() {
                     let input_prompt = InputPrompt {};
                     let commands = input_prompt.render((), &self.context);
-                    self.stdout.flush_commands(&commands)?;
+                    self.writer.flush_commands(&commands)?;
                 } else {
                     let user_input = self.input_buffer.trim().to_string();
 
@@ -98,8 +98,9 @@ impl Renderer {
         &mut self,
         message: AgentMessage,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut commands = vec![];
-        let mut should_rerender_prompt = false;
+        // The last line should be the input prompt
+        // which we need to clear, print the agent message and re-render the prompt at the bottom of the screen
+        let mut commands = vec![TerminalCommand::ClearLine];
 
         match message {
             AgentMessage::Text {
@@ -121,7 +122,6 @@ impl Renderer {
                     // Message complete - just add newline and rerender prompt
                     commands.push(TerminalCommand::Print("\r\n".to_string()));
                     self.current_assistant_message_id = None;
-                    should_rerender_prompt = true;
                 }
             }
 
@@ -132,7 +132,6 @@ impl Renderer {
                     self.tool_call_statuses
                         .on_tool_request(&request, &self.context),
                 );
-                should_rerender_prompt = true;
             }
 
             AgentMessage::ToolResult { result, .. } => {
@@ -151,12 +150,10 @@ impl Renderer {
             }
         }
 
-        if should_rerender_prompt {
-            let input_prompt = InputPrompt {};
-            commands.extend(input_prompt.render((), &self.context));
-        }
+        let input_prompt = InputPrompt {};
+        commands.extend(input_prompt.render((), &self.context));
 
-        self.stdout.flush_commands(&commands)?;
+        self.writer.flush_commands(&commands)?;
         Ok(())
     }
 
