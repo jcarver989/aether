@@ -1505,7 +1505,6 @@ name = "mcp_lexicon"
 version = "0.1.0"
 dependencies = [
  "aether",
- "async-trait",
  "chrono",
  "clap",
  "color-eyre",
