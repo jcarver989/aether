@@ -7,7 +7,7 @@ use aether::{
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::Sender;
 
-use crate::eval_assertion::{EvalAssertion, EvalAssertionResult};
+use crate::eval_assertion::{EvalAssertion, EvalAssertionResult, ToolCallCount};
 use crate::eval_messages::{EvalMessage, to_eval_messages};
 use futures::StreamExt;
 
@@ -159,6 +159,14 @@ impl Eval {
                 EvalAssertion::LLMJudge { prompt } => {
                     self.assert_llm_judge(&messages, prompt, &judge_llm).await
                 }
+                EvalAssertion::ToolCall {
+                    name,
+                    arguments,
+                    count,
+                } => {
+                    self.assert_tool_call(name, arguments.as_ref(), count, &messages)
+                        .await
+                }
             };
 
             results.push((assertion.clone(), result));
@@ -302,7 +310,10 @@ impl Eval {
              Original Task: {}\n\n\
              Agent Messages:\n{}\n\n\
              Evaluation Question: {}\n\n\
-             Respond with either 'SUCCESS: <reason>' or 'FAILURE: <reason>'",
+             Respond with valid JSON in this exact format:\n\
+             {{\"success\": true, \"reason\": \"explanation\"}} for success\n\
+             {{\"success\": false, \"reason\": \"explanation\"}} for failure\n\n\
+             Only output the JSON, nothing else.",
             self.working_dir.display(),
             self.prompt,
             messages_summary,
@@ -336,16 +347,111 @@ impl Eval {
             }
         }
 
-        // Parse the judge's response
-        if judge_response.to_uppercase().starts_with("SUCCESS") {
-            tracing::info!("✓ LLM judge assertion passed");
-            EvalAssertionResult::Success {
-                message: judge_response,
+        // Parse the judge's response as JSON
+        #[derive(serde::Deserialize)]
+        struct JudgeResponse {
+            success: bool,
+            reason: String,
+        }
+
+        let trimmed_response = judge_response.trim();
+        match serde_json::from_str::<JudgeResponse>(trimmed_response) {
+            Ok(parsed) => {
+                if parsed.success {
+                    tracing::info!("✓ LLM judge assertion passed");
+                    EvalAssertionResult::Success {
+                        message: parsed.reason,
+                    }
+                } else {
+                    tracing::error!("✗ LLM judge assertion failed");
+                    EvalAssertionResult::Failure {
+                        message: parsed.reason,
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("✗ LLM judge returned invalid JSON: {}", e);
+                tracing::error!("Raw response: {}", judge_response);
+                EvalAssertionResult::Failure {
+                    message: format!(
+                        "Judge returned invalid JSON: {}\nRaw response: {}",
+                        e, judge_response
+                    ),
+                }
+            }
+        }
+    }
+
+    /// Check if a tool was called with matching arguments
+    async fn assert_tool_call(
+        &self,
+        name: &str,
+        expected_args: Option<&serde_json::Value>,
+        count: &Option<ToolCallCount>,
+        messages: &[EvalMessage],
+    ) -> EvalAssertionResult {
+        let matching_calls: Vec<_> = messages
+            .iter()
+            .filter_map(|msg| {
+                if let EvalMessage::ToolCall {
+                    name: call_name,
+                    arguments,
+                } = msg
+                {
+                    if call_name != name {
+                        return None;
+                    }
+
+                    let actual_args = match serde_json::from_str::<serde_json::Value>(arguments) {
+                        Ok(args) => args,
+                        Err(_) => return None, // Invalid JSON
+                    };
+
+                    match expected_args {
+                        Some(expected) if actual_args == *expected => Some(actual_args),
+                        None => Some(actual_args), // No arg matching required
+                        _ => None,                 // Args don't match
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let actual_count = matching_calls.len();
+
+        if let Some(count_req) = count {
+            let count_valid = match count_req {
+                ToolCallCount::Exact(expected) => actual_count == *expected,
+                ToolCallCount::AtLeast(min) => actual_count >= *min,
+                ToolCallCount::AtMost(max) => actual_count <= *max,
+            };
+
+            if !count_valid {
+                return EvalAssertionResult::Failure {
+                    message: format!(
+                        "Tool '{}' was called {} times, but expected {:?}",
+                        name, actual_count, count_req
+                    ),
+                };
+            }
+        }
+
+        if matching_calls.is_empty() {
+            EvalAssertionResult::Failure {
+                message: format!("Tool '{}' was not called with matching arguments", name),
             }
         } else {
-            tracing::error!("✗ LLM judge assertion failed");
-            EvalAssertionResult::Failure {
-                message: judge_response,
+            tracing::info!(
+                "✓ ToolCall assertion passed: {} (matched {} time(s))",
+                name,
+                actual_count
+            );
+            EvalAssertionResult::Success {
+                message: format!(
+                    "Tool '{}' was called {} time(s) successfully",
+                    name, actual_count
+                ),
             }
         }
     }
