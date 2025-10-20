@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "coding": {
+      "type": "inmemory",
+      "factory": "coding"
+    }
+  }
+}
