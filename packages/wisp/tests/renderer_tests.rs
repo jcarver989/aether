@@ -44,13 +44,12 @@ async fn test_agent_message_tool_result() {
     .await;
 
     // The tool result should have overwritten the tool call on the same line
-    // So we should only see the success message, not both the initial and success
+    // So we should only see the success message with a single prompt
     assert_buffer_eq(
         renderer.writer(),
         &[
             "● test_tool ✓ {\"arg1\": \"value1\"}",
             ">",
-            ">",  // Final prompt after tool result
         ],
     );
 }
@@ -66,15 +65,69 @@ async fn test_multiple_messages_sequence() {
     ])
     .await;
 
-    // The tool result should have overwritten the tool call on the same line
-    // So we should only see the success message, not both the initial and success
+    // The tool call clears the previous prompt line, and the tool result
+    // updates the tool call line in place without adding a new prompt
     assert_buffer_eq(
         renderer.writer(),
         &[
             "Processing your request",
             "● search ✓ {\"query\": \"test\"}",
-            ">",
             "  Found results",  // Has leading spaces from clear line position
+            ">",
+        ],
+    );
+}
+
+#[tokio::test]
+async fn test_streaming_tool_call_arguments() {
+    let args1 = r#"{"file":"#;
+    let args2 = r#"{"file": "test.rs"#;
+    let args_complete = r#"{"file": "test.rs"}"#;
+
+    let (renderer, _theme) = render(vec![
+        // Simulate streaming arguments - same tool ID, arguments build up
+        tool_call_with_id("Read", "call_1", args1),
+        tool_call_with_id("Read", "call_1", args2),
+        tool_call_with_id("Read", "call_1", args_complete),
+        tool_result_with_id("Read", "call_1", args_complete, "file contents"),
+    ])
+    .await;
+
+    // Should only render one line for the tool call, updated as arguments stream in
+    // The duplicate tool call detection should prevent multiple lines
+    assert_buffer_eq(
+        renderer.writer(),
+        &[
+            "● Read ✓ {\"file\": \"test.rs\"}",
+            ">",
+        ],
+    );
+}
+
+#[tokio::test]
+async fn test_multiple_parallel_tool_calls() {
+    let args1 = r#"{"file": "test.rs"}"#;
+    let args2 = r#"{"pattern": "foo"}"#;
+    let args3 = r#"{"path": "src/"}"#;
+
+    let (renderer, _theme) = render(vec![
+        tool_call("Read", args1),
+        tool_call("Grep", args2),
+        tool_call("Glob", args3),
+        tool_result("Read", args1, "file contents"),
+        tool_result("Grep", args2, "matches"),
+        tool_result("Glob", args3, "files"),
+    ])
+    .await;
+
+    // Each tool call should render on its own line with the last one adding a prompt
+    // Tool results should update their respective lines in-place without adding new prompts
+    assert_buffer_eq(
+        renderer.writer(),
+        &[
+            "● Read ✓ {\"file\": \"test.rs\"}",
+            "● Grep ✓ {\"pattern\": \"foo\"}",
+            "● Glob ✓ {\"path\": \"src/\"}",
             ">",
         ],
     );
@@ -114,9 +167,13 @@ fn text_complete(text: &str) -> AgentMessage {
 }
 
 fn tool_call(name: &str, args: &str) -> AgentMessage {
+    tool_call_with_id(name, &format!("call_{}", name), args)
+}
+
+fn tool_call_with_id(name: &str, id: &str, args: &str) -> AgentMessage {
     AgentMessage::ToolCall {
         request: ToolCallRequest {
-            id: "test_call".to_string(),
+            id: id.to_string(),
             name: name.to_string(),
             arguments: args.to_string(),
         },
@@ -125,9 +182,13 @@ fn tool_call(name: &str, args: &str) -> AgentMessage {
 }
 
 fn tool_result(name: &str, args: &str, result: &str) -> AgentMessage {
+    tool_result_with_id(name, &format!("call_{}", name), args, result)
+}
+
+fn tool_result_with_id(name: &str, id: &str, args: &str, result: &str) -> AgentMessage {
     AgentMessage::ToolResult {
         result: ToolCallResult {
-            id: "test_call".to_string(),
+            id: id.to_string(),
             name: name.to_string(),
             arguments: args.to_string(),
             result: result.to_string(),
