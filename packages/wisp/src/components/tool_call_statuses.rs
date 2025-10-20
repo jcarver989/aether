@@ -31,7 +31,7 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
     ) -> Vec<TerminalCommand> {
         match props {
             ToolCallStatusViewProps::Request(request) => {
-                let message = format!("● {} running...", request.name).with(context.theme.info);
+                let message = format!("● {}", request.name).with(context.theme.info);
                 let args = Self::format_tool_arguments(&request.arguments, context);
 
                 vec![
@@ -48,7 +48,7 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
 
                 vec![
                     TerminalCommand::SavePosition,
-                    TerminalCommand::MoveTo(1, line_position),
+                    TerminalCommand::MoveTo(0, line_position),
                     TerminalCommand::ClearLine,
                     TerminalCommand::PrintStyled(message),
                     TerminalCommand::PrintStyled(args),

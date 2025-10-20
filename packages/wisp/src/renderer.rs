@@ -10,7 +10,6 @@ use tokio::sync::mpsc;
 
 use crate::{
     components::{
-        agent_text_message::AgentTextMessage,
         commands::{ExecuteCommands, TerminalCommand},
         input_prompt::InputPrompt,
         tool_call_statuses::ToolCallStatuses,
@@ -77,10 +76,6 @@ impl Renderer {
                     self.stdout.flush_commands(&commands)?;
                 } else {
                     let user_input = self.input_buffer.trim().to_string();
-                    self.stdout.flush_commands(&[
-                        TerminalCommand::Print("\r\n\r\n".to_string()),
-                        TerminalCommand::MoveToColumn(1),
-                    ])?;
 
                     if let Err(e) = tx
                         .send(UserMessage::Text {
@@ -103,6 +98,9 @@ impl Renderer {
         &mut self,
         message: AgentMessage,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut commands = vec![];
+        let mut should_rerender_prompt = false;
+
         match message {
             AgentMessage::Text {
                 message_id,
@@ -110,55 +108,55 @@ impl Renderer {
                 is_complete,
                 ..
             } => {
-                let mut commands = vec![];
                 if self.current_assistant_message_id.as_ref() != Some(&message_id) && !is_complete {
                     self.current_assistant_message_id = Some(message_id.clone());
                 }
 
                 if !is_complete {
-                    for (i, line) in chunk.split('\n').enumerate() {
-                        if i > 0 {
-                            commands.push(TerminalCommand::Print("\r\n".to_string()));
-                            commands.push(TerminalCommand::MoveToColumn(1));
-                        }
-                        if !line.is_empty() {
-                            commands.push(TerminalCommand::Print(line.to_string()));
-                        }
-                    }
-                }
-
-                if is_complete {
+                    // Stream chunks immediately as they arrive
+                    // Replace \n with \r\n for terminal
+                    let terminal_chunk = chunk.replace('\n', "\r\n");
+                    commands.push(TerminalCommand::Print(terminal_chunk));
+                } else {
+                    // Message complete - just add newline and rerender prompt
                     commands.push(TerminalCommand::Print("\r\n".to_string()));
-                    let input_prompt = InputPrompt {};
-                    commands.extend(input_prompt.render((), &self.context));
                     self.current_assistant_message_id = None;
+                    should_rerender_prompt = true;
                 }
-
-                self.stdout.flush_commands(&commands)?;
             }
 
             AgentMessage::ToolCall { request, .. } => {
-                let commands = self
-                    .tool_call_statuses
-                    .on_tool_request(&request, &self.context);
-                self.stdout.flush_commands(&commands)?;
+                commands.push(TerminalCommand::MoveToColumn(0));
+                commands.push(TerminalCommand::ClearLine);
+                commands.extend(
+                    self.tool_call_statuses
+                        .on_tool_request(&request, &self.context),
+                );
+                should_rerender_prompt = true;
             }
 
             AgentMessage::ToolResult { result, .. } => {
-                let commands = self
-                    .tool_call_statuses
-                    .on_tool_result(&result, &self.context);
-                self.stdout.flush_commands(&commands)?;
+                commands.extend(
+                    self.tool_call_statuses
+                        .on_tool_result(&result, &self.context),
+                );
             }
 
             AgentMessage::ToolError { error, .. } => {
-                let commands = self.tool_call_statuses.on_tool_error(&error, &self.context);
-                self.stdout.flush_commands(&commands)?;
+                commands.extend(self.tool_call_statuses.on_tool_error(&error, &self.context));
             }
 
-            _ => {}
+            _ => {
+                return Ok(());
+            }
         }
 
+        if should_rerender_prompt {
+            let input_prompt = InputPrompt {};
+            commands.extend(input_prompt.render((), &self.context));
+        }
+
+        self.stdout.flush_commands(&commands)?;
         Ok(())
     }
 
