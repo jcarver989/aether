@@ -113,6 +113,7 @@ impl<W: Write> Renderer<W> {
         // The last line should be the input prompt
         // which we need to clear, print the agent message and re-render the prompt at the bottom of the screen
         let mut commands = vec![];
+        let mut should_render_prompt = false;
 
         match message {
             AgentMessage::Text {
@@ -136,27 +137,38 @@ impl<W: Write> Renderer<W> {
                     commands.push(TerminalCommand::Print(terminal_text));
                     self.current_message_buffer.clear();
                     self.current_assistant_message_id = None;
+                    should_render_prompt = true;
                 }
             }
 
             AgentMessage::ToolCall { request, .. } => {
-                commands.push(TerminalCommand::MoveToColumn(0));
-                commands.push(TerminalCommand::ClearLine);
-                commands.extend(
-                    self.tool_call_statuses
-                        .on_tool_request(&request, &self.context),
-                );
+                let tool_commands = self.tool_call_statuses
+                    .on_tool_request(&request, &self.context);
+
+                // Only clear line and render prompt if this is a new tool call
+                if !tool_commands.is_empty() {
+                    commands.push(TerminalCommand::MoveToColumn(0));
+                    commands.push(TerminalCommand::ClearLine);
+                    commands.extend(tool_commands);
+                    should_render_prompt = true;
+                }
             }
 
             AgentMessage::ToolResult { result, .. } => {
+                // Tool results use SavePosition/RestorePosition to update in place
+                // so we don't need to render a new prompt
                 commands.extend(
                     self.tool_call_statuses
                         .on_tool_result(&result, &self.context),
                 );
+                should_render_prompt = false;
             }
 
             AgentMessage::ToolError { error, .. } => {
+                // Tool errors use SavePosition/RestorePosition to update in place
+                // so we don't need to render a new prompt
                 commands.extend(self.tool_call_statuses.on_tool_error(&error, &self.context));
+                should_render_prompt = false;
             }
 
             _ => {
@@ -164,10 +176,12 @@ impl<W: Write> Renderer<W> {
             }
         }
 
-        // Only render prompt if we have commands to execute
+        // Only render prompt if we have commands to execute and should render prompt
         if commands.len() > 0 {
-            let input_prompt = InputPrompt {};
-            commands.extend(input_prompt.render((), &self.context));
+            if should_render_prompt {
+                let input_prompt = InputPrompt {};
+                commands.extend(input_prompt.render((), &self.context));
+            }
             self.writer.flush_commands(&commands)?;
         }
 
