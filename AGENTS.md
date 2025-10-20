@@ -62,13 +62,30 @@ Agent: [Tries to create AND edit in parallel]  # Edit depends on create!
 
 ## Guidelines
 
+### Code Organization - **FUNDAMENTAL RULE**
+
+**Public API at TOP, private helpers at BOTTOM - ALWAYS**
+
+**Why:** Improves readability and follows Rust idioms
+
+**File Structure:**
+1. Imports, public types, docs
+2. Public impl blocks (important methods first)  
+3. Private helper functions
+4. Tests in separate module at very bottom
+
+**Within impl blocks:**
+1. `new()` constructors
+2. Core public methods
+3. Secondary public methods
+4. Private helpers (last)
+
 ### Code Quality
-- Always follow Rust idioms and best practices
-- Prefer `Result<T, E>` for error handling over panicking
-- Use appropriate lifetimes and ownership patterns
-- Write self-documenting code with clear variable names
-- Add comments only when the code's intent isn't obvious
-- Place private helper methods at the end of files/impls so public API appears first
+- Follow Rust idioms and best practices
+- Prefer `Result<T, E>` for error handling
+- Use clear variable names, minimal comments
+- **Public API top, private helpers bottom**
+- **NEVER add comments that just restate what the code does** (e.g., "// Parse as milliseconds" before parsing milliseconds)
 
 ### Safety & Performance
 - Leverage Rust's ownership system for memory safety
