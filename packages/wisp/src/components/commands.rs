@@ -1,6 +1,6 @@
 use crossterm::{
     Command, QueueableCommand,
-    cursor::{MoveLeft, MoveRight, MoveTo, MoveToColumn, RestorePosition, SavePosition},
+    cursor::{MoveLeft, MoveRight, MoveTo, MoveToColumn, MoveUp, RestorePosition, SavePosition},
     style::{PrintStyledContent, StyledContent},
     terminal::{Clear, ClearType},
 };
@@ -12,6 +12,7 @@ pub enum TerminalCommand {
     MoveToColumn(u16),
     MoveLeft,
     MoveRight,
+    MoveUp(u16),
     MoveTo(u16, u16),
     SavePosition,
     RestorePosition,
@@ -27,6 +28,7 @@ impl Command for TerminalCommand {
             TerminalCommand::MoveToColumn(col) => MoveToColumn(*col).write_ansi(f),
             TerminalCommand::MoveLeft => MoveLeft(1).write_ansi(f),
             TerminalCommand::MoveRight => MoveRight(1).write_ansi(f),
+            TerminalCommand::MoveUp(n) => MoveUp(*n).write_ansi(f),
             TerminalCommand::MoveTo(col, row) => MoveTo(*col, *row).write_ansi(f),
             TerminalCommand::SavePosition => SavePosition.write_ansi(f),
             TerminalCommand::RestorePosition => RestorePosition.write_ansi(f),

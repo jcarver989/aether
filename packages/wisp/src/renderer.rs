@@ -26,6 +26,7 @@ pub struct Renderer<W: Write> {
     writer: W,
     tool_call_statuses: ToolCallStatuses,
     current_assistant_message_id: Option<String>,
+    current_message_buffer: String,
     input_buffer: String,
     context: RenderContext,
 }
@@ -36,6 +37,7 @@ impl<W: Write> Renderer<W> {
             writer,
             tool_call_statuses: ToolCallStatuses::new(),
             current_assistant_message_id: None,
+            current_message_buffer: String::new(),
             input_buffer: String::new(),
             context: RenderContext::new((0, 0), (0, 0)),
         }
@@ -110,7 +112,7 @@ impl<W: Write> Renderer<W> {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // The last line should be the input prompt
         // which we need to clear, print the agent message and re-render the prompt at the bottom of the screen
-        let mut commands = vec![TerminalCommand::ClearLine];
+        let mut commands = vec![];
 
         match message {
             AgentMessage::Text {
@@ -119,18 +121,20 @@ impl<W: Write> Renderer<W> {
                 is_complete,
                 ..
             } => {
-                if self.current_assistant_message_id.as_ref() != Some(&message_id) && !is_complete {
+                if self.current_assistant_message_id.as_ref() != Some(&message_id) {
+                    self.current_message_buffer.clear();
                     self.current_assistant_message_id = Some(message_id.clone());
                 }
 
-                if !is_complete {
-                    // Stream chunks immediately as they arrive
-                    // Replace \n with \r\n for terminal
-                    let terminal_chunk = chunk.replace('\n', "\r\n");
-                    commands.push(TerminalCommand::Print(terminal_chunk));
-                } else {
-                    // Message complete - just add newline and rerender prompt
-                    commands.push(TerminalCommand::Print("\r\n".to_string()));
+                self.current_message_buffer.push_str(&chunk);
+
+                if is_complete {
+                    // Message complete - clear prompt line, print buffered message
+                    // Note: InputPrompt adds a newline, so we don't add one here
+                    let terminal_text = self.current_message_buffer.replace('\n', "\r\n");
+                    commands.push(TerminalCommand::ClearLine);
+                    commands.push(TerminalCommand::Print(terminal_text));
+                    self.current_message_buffer.clear();
                     self.current_assistant_message_id = None;
                 }
             }
@@ -160,10 +164,13 @@ impl<W: Write> Renderer<W> {
             }
         }
 
-        let input_prompt = InputPrompt {};
-        commands.extend(input_prompt.render((), &self.context));
+        // Only render prompt if we have commands to execute
+        if commands.len() > 0 {
+            let input_prompt = InputPrompt {};
+            commands.extend(input_prompt.render((), &self.context));
+            self.writer.flush_commands(&commands)?;
+        }
 
-        self.writer.flush_commands(&commands)?;
         Ok(())
     }
 
