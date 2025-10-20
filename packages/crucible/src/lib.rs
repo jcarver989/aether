@@ -7,11 +7,13 @@ pub use eval::Eval;
 pub use eval_assertion::{EvalAssertion, EvalAssertionResult};
 pub use eval_messages::EvalMessage;
 pub use report::{
-    AssertionReport, EvalReport, SummaryReport, copy_report_templates, create_eval_report,
+    AssertionReport, EvalReport, ReportData, SummaryReport, copy_report_templates,
+    create_eval_report, serve_report, update_report_data,
 };
 
 use aether::llm::StreamingModelProvider;
 use aether::mcp::{ServerFactory, mcp};
+use owo_colors::OwoColorize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,6 +25,7 @@ pub struct EvalsConfig<T, U> {
     judge_llm: U,
     batch_size: Option<usize>,
     batch_delay: Option<Duration>,
+    serve: bool,
 }
 
 impl<T, U> EvalsConfig<T, U> {
@@ -32,6 +35,7 @@ impl<T, U> EvalsConfig<T, U> {
             judge_llm,
             batch_size: None,
             batch_delay: None,
+            serve: false,
         }
     }
 
@@ -74,6 +78,25 @@ impl<T, U> EvalsConfig<T, U> {
     /// ```
     pub fn with_batch_delay(mut self, delay: Duration) -> Self {
         self.batch_delay = Some(delay);
+        self
+    }
+
+    /// Enable serving the HTML report on localhost:3000 after evals complete
+    ///
+    /// When enabled, after all evaluations finish, a web server will start on
+    /// localhost:3000 to serve the interactive HTML report. The server will run
+    /// until interrupted with Ctrl+C.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use crucible::EvalsConfig;
+    /// // let llm = ...; // Your LLM provider
+    /// // let judge_llm = ...; // Your judge LLM provider
+    /// // let config = EvalsConfig::new(llm, judge_llm)
+    /// //     .with_serve(true);  // Start web server after evals
+    /// ```
+    pub fn with_serve(mut self, serve: bool) -> Self {
+        self.serve = serve;
         self
     }
 }
@@ -185,6 +208,28 @@ impl Crucible {
 
         std::fs::create_dir_all(&output_dir)?;
         std::fs::create_dir_all(output_dir.join("results"))?;
+        std::fs::create_dir_all(output_dir.join("report"))?;
+
+        // Start web server in background if requested
+        let _server_handle = if config.serve {
+            // Create initial empty report data
+            let empty_report = report::ReportData {
+                summary: SummaryReport::new(),
+                eval_traces: HashMap::new(),
+            };
+            let empty_json = serde_json::to_string_pretty(&empty_report)?;
+            std::fs::write(output_dir.join("report").join("report-data.json"), empty_json)?;
+
+            // Spawn server in background task
+            let output_dir_clone = output_dir.clone();
+            Some(tokio::spawn(async move {
+                if let Err(e) = serve_report(&output_dir_clone) {
+                    tracing::error!("Server error: {}", e);
+                }
+            }))
+        } else {
+            None
+        };
 
         let mut mcp_builder = mcp();
         for (name, factory) in self.factories {
@@ -202,6 +247,7 @@ impl Crucible {
         let judge_llm = Arc::new(config.judge_llm);
 
         let mut summary = SummaryReport::new();
+        let traces_file = output_dir.join("traces.jsonl");
 
         // Determine batch size (default to all evals if not specified)
         let batch_size = config.batch_size.unwrap_or(evals.len());
@@ -276,6 +322,13 @@ impl Crucible {
                 }
             }
 
+            // Update report data after each batch if serving
+            if config.serve && traces_file.exists() {
+                if let Err(e) = update_report_data(&output_dir, &summary, &traces_file) {
+                    tracing::warn!("Failed to update report data: {}", e);
+                }
+            }
+
             // Add delay between batches to prevent rate limiting
             if !batch_delay.is_zero() && batch_end < evals.len() {
                 tracing::info!("Waiting {:?} before next batch...", batch_delay);
@@ -285,6 +338,18 @@ impl Crucible {
 
         let summary_file = output_dir.join("summary.json");
         summary.write_to_file(&summary_file)?;
+
+        // Final update of report data
+        if config.serve && traces_file.exists() {
+            if let Err(e) = update_report_data(&output_dir, &summary, &traces_file) {
+                tracing::warn!("Failed to update final report data: {}", e);
+            }
+
+            // Keep the server running (it's in a background task)
+            println!("\n{}", "Server is still running. Press Ctrl+C to exit.".bold().green());
+            // Wait indefinitely - user must Ctrl+C to exit
+            tokio::signal::ctrl_c().await?;
+        }
 
         Ok(summary)
     }

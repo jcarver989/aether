@@ -32,6 +32,9 @@ chrono = { workspace = true }
 # File system
 tempfile = { workspace = true }
 
+# HTTP server
+tiny_http = "0.12"
+
 # Internal dependencies
 aether = { path = "../aether" }
 

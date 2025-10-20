@@ -158,21 +158,21 @@ pub fn create_eval_report(
 // HTML Report Generation
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct TraceEvent {
-    timestamp: String,
-    level: String,
-    message: String,
-    target: String,
+pub struct TraceEvent {
+    pub timestamp: String,
+    pub level: String,
+    pub message: String,
+    pub target: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    eval_name: Option<String>,
+    pub eval_name: Option<String>,
     #[serde(flatten)]
-    extra: HashMap<String, Value>,
+    pub extra: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct ReportData {
-    summary: SummaryReport,
-    eval_traces: HashMap<String, Vec<TraceEvent>>,
+pub struct ReportData {
+    pub summary: SummaryReport,
+    pub eval_traces: HashMap<String, Vec<TraceEvent>>,
 }
 
 /// Copy HTML report static files (HTML, CSS, JS) so users can view the report before it's complete
@@ -331,6 +331,82 @@ fn parse_and_group_traces(
     Ok(grouped)
 }
 
+/// Serve the HTML report on localhost:3000
+///
+/// This starts a simple HTTP server to serve the report. The HTML, CSS, and JS templates
+/// are served directly from memory (embedded at compile time), while report-data.json is
+/// read from disk. This avoids CORS issues that occur when opening HTML files directly.
+///
+/// # Arguments
+/// * `output_dir` - The output directory containing report-data.json
+///
+/// # Returns
+/// Never returns - runs until interrupted with Ctrl+C
+pub fn serve_report(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let report_data_path = output_dir.join("report").join("report-data.json");
+
+    if !report_data_path.exists() {
+        return Err(format!("Report data not found: {:?}", report_data_path).into());
+    }
+
+    // Embedded templates (served from memory)
+    let index_html = include_str!("../templates/index.html");
+    let styles_css = include_str!("../templates/styles.css");
+    let script_js = include_str!("../templates/script.js");
+
+    let server = tiny_http::Server::http("127.0.0.1:3000")
+        .map_err(|e| format!("Failed to start server: {}", e))?;
+
+    println!("\n{}", "=== Eval Report Server ===".bold().green());
+    println!("Report available at: {}", "http://localhost:3000".bold().cyan());
+    println!("Press {} to stop the server\n", "Ctrl+C".bold());
+
+    for request in server.incoming_requests() {
+        let url_path = request.url();
+
+        // Route requests to either embedded templates or report-data.json
+        let (content, content_type): (Vec<u8>, &str) = match url_path {
+            "/" | "" | "/index.html" => {
+                (index_html.as_bytes().to_vec(), "text/html; charset=utf-8")
+            }
+            "/styles.css" => {
+                (styles_css.as_bytes().to_vec(), "text/css; charset=utf-8")
+            }
+            "/script.js" => {
+                (script_js.as_bytes().to_vec(), "application/javascript; charset=utf-8")
+            }
+            "/report-data.json" => {
+                // Read report-data.json from disk
+                match fs::read(&report_data_path) {
+                    Ok(data) => (data, "application/json; charset=utf-8"),
+                    Err(_) => {
+                        let response = tiny_http::Response::from_string("404 Not Found")
+                            .with_status_code(404);
+                        let _ = request.respond(response);
+                        continue;
+                    }
+                }
+            }
+            _ => {
+                // 404 for any other path
+                let response = tiny_http::Response::from_string("404 Not Found")
+                    .with_status_code(404);
+                let _ = request.respond(response);
+                continue;
+            }
+        };
+
+        let response = tiny_http::Response::from_data(content)
+            .with_header(
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
+                    .unwrap(),
+            );
+        let _ = request.respond(response);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -456,5 +532,16 @@ mod tests {
 
         assert_eq!(grouped["eval_one"][0].message, "Eval 1");
         assert_eq!(grouped["eval_two"][0].message, "Eval 2");
+    }
+
+    #[test]
+    fn test_serve_report_validates_report_data() {
+        let temp_dir = TempDir::new().unwrap();
+        let nonexistent_path = temp_dir.path().join("nonexistent");
+
+        // Should fail when report-data.json doesn't exist
+        let result = serve_report(&nonexistent_path);
+        assert!(result.is_err(), "Should fail when report-data.json doesn't exist");
+        assert!(result.unwrap_err().to_string().contains("Report data not found"));
     }
 }
