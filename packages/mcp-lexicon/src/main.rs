@@ -6,6 +6,7 @@ use crucible::{Crucible, EvalsConfig};
 use mcp_lexicon::CodingMcp;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser)]
@@ -31,6 +32,14 @@ enum Commands {
         /// Output directory for logs and results
         #[arg(short, long)]
         output_dir: Option<PathBuf>,
+
+        /// Number of evaluations to run concurrently in each batch (default: run all concurrently)
+        #[arg(long)]
+        batch_size: Option<usize>,
+
+        /// Delay between batches to prevent rate limiting (e.g., "2s", "1.5s", "500ms", "1m")
+        #[arg(long, value_parser = parse_duration)]
+        batch_delay: Option<Duration>,
     },
 }
 
@@ -45,15 +54,14 @@ async fn main() -> Result<()> {
             agent_model,
             judge_model,
             output_dir,
+            batch_size,
+            batch_delay,
         } => {
             // Create output directory structure
-            let output_dir_path = output_dir
-                .as_ref()
-                .map(|p| p.clone())
-                .unwrap_or_else(|| {
-                    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-                    PathBuf::from(format!("crucible_output_{}", timestamp))
-                });
+            let output_dir_path = output_dir.clone().unwrap_or_else(|| {
+                let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                PathBuf::from(format!("crucible_output_{}", timestamp))
+            });
 
             fs::create_dir_all(&output_dir_path)?;
 
@@ -61,7 +69,10 @@ async fn main() -> Result<()> {
             if let Err(e) = crucible::copy_report_templates(&output_dir_path) {
                 eprintln!("Warning: Failed to copy report templates: {}", e);
             } else {
-                println!("HTML report templates ready at {}/report/index.html", output_dir_path.display());
+                println!(
+                    "HTML report templates ready at {}/report/index.html",
+                    output_dir_path.display()
+                );
                 println!("You can open this now and refresh to see traces as they appear");
             }
 
@@ -94,6 +105,13 @@ async fn main() -> Result<()> {
             tracing::info!("Agent model: {}", agent_model);
             tracing::info!("Judge model: {}", judge_model);
 
+            if let Some(batch_size) = batch_size {
+                tracing::info!("Batch size: {}", batch_size);
+            }
+            if let Some(batch_delay) = batch_delay {
+                tracing::info!("Batch delay: {:?}", batch_delay);
+            }
+
             let parser = ModelProviderParser::default();
             let agent_llm = parser
                 .parse(&agent_model)
@@ -107,7 +125,16 @@ async fn main() -> Result<()> {
                 .with_server_factory("coding", Box::new(|| Box::new(CodingMcp::new())))
                 .with_output_dir(output_dir_path.clone());
 
-            let config = EvalsConfig::new(agent_llm, judge_llm);
+            let mut config = EvalsConfig::new(agent_llm, judge_llm);
+
+            // Apply batch configuration if provided
+            if let Some(batch_size) = batch_size {
+                config = config.with_batch_size(batch_size);
+            }
+            if let Some(batch_delay) = batch_delay {
+                config = config.with_batch_delay(batch_delay);
+            }
+
             let summary = crucible
                 .run_evals(config)
                 .await
@@ -122,9 +149,16 @@ async fn main() -> Result<()> {
             // Generate HTML report after traces are flushed
             let traces_file = output_dir_path.join("traces.jsonl");
             if traces_file.exists() {
-                match crucible::report::generate_html_report(&output_dir_path, &summary, &traces_file) {
+                match crucible::report::generate_html_report(
+                    &output_dir_path,
+                    &summary,
+                    &traces_file,
+                ) {
                     Ok(_) => {
-                        println!("HTML report generated at {}/report/index.html", output_dir_path.display());
+                        println!(
+                            "HTML report generated at {}/report/index.html",
+                            output_dir_path.display()
+                        );
                     }
                     Err(e) => {
                         eprintln!("Failed to generate HTML report: {}", e);
@@ -138,5 +172,35 @@ async fn main() -> Result<()> {
 
             Ok(())
         }
+    }
+}
+
+/// Parse human-readable duration strings (e.g., "2s", "1.5s", "500ms", "1m")
+fn parse_duration(s: &str) -> Result<Duration, String> {
+    if let Some(seconds) = s.strip_suffix('s') {
+        if let Some(ms) = seconds.strip_suffix("ms") {
+            ms.parse::<u64>()
+                .map(Duration::from_millis)
+                .map_err(|_| format!("Invalid milliseconds: {}", s))
+        } else {
+            seconds
+                .parse::<f64>()
+                .map(Duration::from_secs_f64)
+                .map_err(|_| format!("Invalid seconds: {}", s))
+        }
+    } else if let Some(minutes) = s.strip_suffix('m') {
+        minutes
+            .parse::<u64>()
+            .map(Duration::from_secs)
+            .map(|secs| secs * 60)
+            .map_err(|_| format!("Invalid minutes: {}", s))
+    } else if let Some(hours) = s.strip_suffix('h') {
+        hours
+            .parse::<u64>()
+            .map(Duration::from_secs)
+            .map(|secs| secs * 3600)
+            .map_err(|_| format!("Invalid hours: {}", s))
+    } else {
+        Err("Duration must end with 's', 'ms', 'm', or 'h' (e.g., '2s', '500ms', '1m')".to_string())
     }
 }

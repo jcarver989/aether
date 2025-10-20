@@ -180,9 +180,18 @@ pub fn copy_report_templates(output_dir: &Path) -> Result<(), Box<dyn std::error
     fs::create_dir_all(&report_dir)?;
 
     // Write HTML, CSS, and JS files
-    fs::write(report_dir.join("index.html"), include_str!("../templates/index.html"))?;
-    fs::write(report_dir.join("styles.css"), include_str!("../templates/styles.css"))?;
-    fs::write(report_dir.join("script.js"), include_str!("../templates/script.js"))?;
+    fs::write(
+        report_dir.join("index.html"),
+        include_str!("../templates/index.html"),
+    )?;
+    fs::write(
+        report_dir.join("styles.css"),
+        include_str!("../templates/styles.css"),
+    )?;
+    fs::write(
+        report_dir.join("script.js"),
+        include_str!("../templates/script.js"),
+    )?;
 
     // Create an initial empty report-data.json so the page loads without errors
     let empty_report = ReportData {
@@ -248,25 +257,30 @@ fn parse_and_group_traces(
         match serde_json::from_str::<Value>(&line) {
             Ok(json) => {
                 let trace = TraceEvent {
-                    timestamp: json.get("timestamp")
+                    timestamp: json
+                        .get("timestamp")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    level: json.get("level")
+                    level: json
+                        .get("level")
                         .and_then(|v| v.as_str())
                         .unwrap_or("INFO")
                         .to_string(),
-                    message: json.get("fields")
+                    message: json
+                        .get("fields")
                         .and_then(|f| f.get("message"))
                         .and_then(|v| v.as_str())
                         .or_else(|| json.get("message").and_then(|v| v.as_str()))
                         .unwrap_or("")
                         .to_string(),
-                    target: json.get("target")
+                    target: json
+                        .get("target")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    eval_name: json.get("span")
+                    eval_name: json
+                        .get("span")
                         .and_then(|s| s.get("eval_name"))
                         .and_then(|v| v.as_str())
                         .or_else(|| {
@@ -279,10 +293,21 @@ fn parse_and_group_traces(
                                 })
                         })
                         .map(|s| s.to_string()),
-                    extra: json.as_object()
+                    extra: json
+                        .as_object()
                         .map(|obj| {
                             obj.iter()
-                                .filter(|(k, _)| !matches!(k.as_str(), "timestamp" | "level" | "message" | "target" | "span" | "spans"))
+                                .filter(|(k, _)| {
+                                    !matches!(
+                                        k.as_str(),
+                                        "timestamp"
+                                            | "level"
+                                            | "message"
+                                            | "target"
+                                            | "span"
+                                            | "spans"
+                                    )
+                                })
                                 .map(|(k, v)| (k.clone(), v.clone()))
                                 .collect()
                         })
@@ -291,9 +316,7 @@ fn parse_and_group_traces(
 
                 // Group by eval_name if present
                 if let Some(eval_name) = &trace.eval_name {
-                    grouped.entry(eval_name.clone())
-                        .or_insert_with(Vec::new)
-                        .push(trace);
+                    grouped.entry(eval_name.clone()).or_default().push(trace);
                 } else {
                     grouped.get_mut("_ungrouped").unwrap().push(trace);
                 }
@@ -348,20 +371,42 @@ mod tests {
 
         // Generate HTML report
         let result = generate_html_report(temp_path, &summary, &traces_file);
-        assert!(result.is_ok(), "HTML report generation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "HTML report generation failed: {:?}",
+            result.err()
+        );
 
         // Verify report files were created
         let report_dir = temp_path.join("report");
         assert!(report_dir.exists(), "Report directory was not created");
-        assert!(report_dir.join("index.html").exists(), "index.html was not created");
-        assert!(report_dir.join("styles.css").exists(), "styles.css was not created");
-        assert!(report_dir.join("script.js").exists(), "script.js was not created");
-        assert!(report_dir.join("report-data.json").exists(), "report-data.json was not created");
+        assert!(
+            report_dir.join("index.html").exists(),
+            "index.html was not created"
+        );
+        assert!(
+            report_dir.join("styles.css").exists(),
+            "styles.css was not created"
+        );
+        assert!(
+            report_dir.join("script.js").exists(),
+            "script.js was not created"
+        );
+        assert!(
+            report_dir.join("report-data.json").exists(),
+            "report-data.json was not created"
+        );
 
         // Verify report-data.json contains expected data
         let data_content = std::fs::read_to_string(report_dir.join("report-data.json")).unwrap();
-        assert!(data_content.contains("test_eval"), "report-data.json should contain eval name");
-        assert!(data_content.contains("Starting eval"), "report-data.json should contain trace message");
+        assert!(
+            data_content.contains("test_eval"),
+            "report-data.json should contain eval name"
+        );
+        assert!(
+            data_content.contains("Starting eval"),
+            "report-data.json should contain trace message"
+        );
     }
 
     #[test]
@@ -382,17 +427,31 @@ mod tests {
         writeln!(
             file,
             r#"{{"timestamp":"2024-01-01T12:00:02Z","level":"INFO","message":"Ungrouped"}}"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let grouped = parse_and_group_traces(&traces_file).unwrap();
 
-        assert!(grouped.contains_key("eval_one"), "Should have eval_one group");
-        assert!(grouped.contains_key("eval_two"), "Should have eval_two group");
-        assert!(grouped.contains_key("_ungrouped"), "Should have _ungrouped group");
+        assert!(
+            grouped.contains_key("eval_one"),
+            "Should have eval_one group"
+        );
+        assert!(
+            grouped.contains_key("eval_two"),
+            "Should have eval_two group"
+        );
+        assert!(
+            grouped.contains_key("_ungrouped"),
+            "Should have _ungrouped group"
+        );
 
         assert_eq!(grouped["eval_one"].len(), 1, "eval_one should have 1 trace");
         assert_eq!(grouped["eval_two"].len(), 1, "eval_two should have 1 trace");
-        assert_eq!(grouped["_ungrouped"].len(), 1, "_ungrouped should have 1 trace");
+        assert_eq!(
+            grouped["_ungrouped"].len(),
+            1,
+            "_ungrouped should have 1 trace"
+        );
 
         assert_eq!(grouped["eval_one"][0].message, "Eval 1");
         assert_eq!(grouped["eval_two"][0].message, "Eval 2");
