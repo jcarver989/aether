@@ -1,0 +1,7 @@
+[package]
+name = "aether-acp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+agent-client-protocol = "0.5.0"
