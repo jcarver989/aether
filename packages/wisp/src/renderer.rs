@@ -193,4 +193,9 @@ impl<W: Write> Renderer<W> {
 
         self.context = RenderContext::new(position, size);
     }
+
+    /// Update render context with provided position and size (useful for testing)
+    pub fn update_render_context_with(&mut self, position: (u16, u16), size: (u16, u16)) {
+        self.context = RenderContext::new(position, size);
+    }
 }

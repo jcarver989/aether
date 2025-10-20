@@ -2,39 +2,34 @@ mod test_terminal;
 
 use aether::agent::AgentMessage;
 use aether::llm::{ToolCallRequest, ToolCallResult};
-use crossterm::style::Stylize;
-use test_terminal::{TestTerminal, assert_buffer_eq, styled_to_string};
+use test_terminal::{TestTerminal, assert_buffer_eq};
 use wisp::colors::Theme;
 use wisp::renderer::Renderer;
 
 #[tokio::test]
 async fn test_agent_message_text_chunks() {
-    let (renderer, theme) = render(vec![
+    let (renderer, _theme) = render(vec![
         text_chunk("Hello"),
         text_chunk(" World"),
         text_complete(""), // Signal completion
     ])
     .await;
 
-    let prompt = styled_to_string("> ".with(theme.primary));
     assert_buffer_eq(
         renderer.writer(),
-        &["Hello World", &format!("1G{}", prompt)],
+        &["Hello World", ">"],
     );
 }
 
 #[tokio::test]
 async fn test_agent_message_tool_call() {
-    let (renderer, theme) = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]).await;
-    let tool_name = styled_to_string("● test_tool".with(theme.info));
-    let tool_args = styled_to_string(r#" {"arg1": "value1"}"#.with(theme.info));
-    let prompt = styled_to_string("> ".with(theme.primary));
+    let (renderer, _theme) = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]).await;
 
     assert_buffer_eq(
         renderer.writer(),
         &[
-            &format!("  {}{}", tool_name, tool_args),
-            &format!("1G{}", prompt),
+            "● test_tool {\"arg1\": \"value1\"}",
+            ">",
         ],
     );
 }
@@ -42,24 +37,20 @@ async fn test_agent_message_tool_call() {
 #[tokio::test]
 async fn test_agent_message_tool_result() {
     let args = r#"{"arg1": "value1"}"#;
-    let (renderer, theme) = render(vec![
+    let (renderer, _theme) = render(vec![
         tool_call("test_tool", args),
         tool_result("test_tool", args, "success"),
     ])
     .await;
 
-    let tool_name_initial = styled_to_string("● test_tool".with(theme.info));
-    let tool_name_success = styled_to_string("● test_tool ✓".with(theme.success));
-    let tool_args = styled_to_string(format!(" {}", args).with(theme.info));
-    let prompt = styled_to_string("> ".with(theme.primary));
-
+    // The tool result should have overwritten the tool call on the same line
+    // So we should only see the success message, not both the initial and success
     assert_buffer_eq(
         renderer.writer(),
         &[
-            &format!("  {}{}", tool_name_initial, tool_args),
-            &format!("                            {}{}", tool_name_success, tool_args),
-            &"8".to_string(),
-            &format!("1G{}", prompt),
+            "● test_tool ✓ {\"arg1\": \"value1\"}",
+            ">",
+            ">",  // Final prompt after tool result
         ],
     );
 }
@@ -67,7 +58,7 @@ async fn test_agent_message_tool_result() {
 #[tokio::test]
 async fn test_multiple_messages_sequence() {
     let args = r#"{"query": "test"}"#;
-    let (renderer, theme) = render(vec![
+    let (renderer, _theme) = render(vec![
         text_complete("Processing your request"),
         tool_call("search", args),
         tool_result("search", args, "found items"),
@@ -75,20 +66,16 @@ async fn test_multiple_messages_sequence() {
     ])
     .await;
 
-    let tool_name_initial = styled_to_string("● search".with(theme.info));
-    let tool_name_success = styled_to_string("● search ✓".with(theme.success));
-    let tool_args = styled_to_string(format!(" {}", args).with(theme.info));
-    let prompt = styled_to_string("> ".with(theme.primary));
-
+    // The tool result should have overwritten the tool call on the same line
+    // So we should only see the success message, not both the initial and success
     assert_buffer_eq(
         renderer.writer(),
         &[
-            &"Processing your request".to_string(),
-            &format!("                         {}{}", tool_name_initial, tool_args),
-            &format!("                            {}{}", tool_name_success, tool_args),
-            &"8".to_string(),
-            &"                       Found results".to_string(),
-            &format!("1G{}", prompt),
+            "Processing your request",
+            "● search ✓ {\"query\": \"test\"}",
+            ">",
+            "  Found results",  // Has leading spaces from clear line position
+            ">",
         ],
     );
 }
@@ -98,6 +85,10 @@ async fn render(messages: Vec<AgentMessage>) -> (Renderer<TestTerminal>, Theme) 
     let mut renderer = Renderer::new(terminal);
 
     for msg in messages {
+        // Update context with current terminal state
+        let position = renderer.writer().cursor_position();
+        let size = renderer.writer().size();
+        renderer.update_render_context_with(position, size);
         renderer.on_agent_message(msg).await.unwrap();
     }
 

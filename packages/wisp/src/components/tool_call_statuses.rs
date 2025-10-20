@@ -52,7 +52,6 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
                     TerminalCommand::ClearLine,
                     TerminalCommand::PrintStyled(message),
                     TerminalCommand::PrintStyled(args),
-                    TerminalCommand::Print("\r\n".to_string()),
                     TerminalCommand::RestorePosition,
                 ]
             }
@@ -69,12 +68,11 @@ impl Component<ToolCallStatusViewProps> for ToolCallStatusView {
 
                 vec![
                     TerminalCommand::SavePosition,
-                    TerminalCommand::MoveTo(1, line_position),
+                    TerminalCommand::MoveTo(0, line_position),
                     TerminalCommand::ClearLine,
                     TerminalCommand::PrintStyled(message),
                     TerminalCommand::PrintStyled(args),
                     TerminalCommand::PrintStyled(error.error.with(context.theme.error)),
-                    TerminalCommand::Print("\r\n".to_string()),
                     TerminalCommand::RestorePosition,
                 ]
             }
@@ -226,14 +224,13 @@ mod tests {
         };
         let commands = progress_bars.on_tool_result(&result, &context);
 
-        assert_eq!(commands.len(), 7);
+        assert_eq!(commands.len(), 6);
         assert!(matches!(commands[0], TerminalCommand::SavePosition));
-        assert!(matches!(commands[1], TerminalCommand::MoveTo(1, _)));
+        assert!(matches!(commands[1], TerminalCommand::MoveTo(0, _)));
         assert!(matches!(commands[2], TerminalCommand::ClearLine));
         assert!(matches!(commands[3], TerminalCommand::PrintStyled(_)));
         assert!(matches!(commands[4], TerminalCommand::PrintStyled(_)));
-        assert!(matches!(commands[5], TerminalCommand::Print(ref s) if s == "\r\n"));
-        assert!(matches!(commands[6], TerminalCommand::RestorePosition));
+        assert!(matches!(commands[5], TerminalCommand::RestorePosition));
     }
 
     #[test]
@@ -286,7 +283,7 @@ mod tests {
             result: "".to_string(),
         };
         let commands1 = progress_bars.on_tool_result(&result1, &context);
-        assert!(matches!(commands1[1], TerminalCommand::MoveTo(1, y) if y == first_tool_line));
+        assert!(matches!(commands1[1], TerminalCommand::MoveTo(0, y) if y == first_tool_line));
 
         let result2 = ToolCallResult {
             id: "tool-2".to_string(),
@@ -295,7 +292,7 @@ mod tests {
             result: "".to_string(),
         };
         let commands2 = progress_bars.on_tool_result(&result2, &context);
-        assert!(matches!(commands2[1], TerminalCommand::MoveTo(1, y) if y == second_tool_line));
+        assert!(matches!(commands2[1], TerminalCommand::MoveTo(0, y) if y == second_tool_line));
     }
 
     #[test]
@@ -331,14 +328,13 @@ mod tests {
         };
         let commands = view.render(props, &context);
 
-        assert_eq!(commands.len(), 7);
+        assert_eq!(commands.len(), 6);
         assert!(matches!(commands[0], TerminalCommand::SavePosition));
-        assert!(matches!(commands[1], TerminalCommand::MoveTo(1, 10)));
+        assert!(matches!(commands[1], TerminalCommand::MoveTo(0, 10)));
         assert!(matches!(commands[2], TerminalCommand::ClearLine));
         assert!(matches!(commands[3], TerminalCommand::PrintStyled(_)));
         assert!(matches!(commands[4], TerminalCommand::PrintStyled(_)));
-        assert!(matches!(commands[5], TerminalCommand::Print(ref s) if s == "\r\n"));
-        assert!(matches!(commands[6], TerminalCommand::RestorePosition));
+        assert!(matches!(commands[5], TerminalCommand::RestorePosition));
     }
 
     #[test]
@@ -357,15 +353,14 @@ mod tests {
         };
         let commands = view.render(props, &context);
 
-        assert_eq!(commands.len(), 8);
+        assert_eq!(commands.len(), 7);
         assert!(matches!(commands[0], TerminalCommand::SavePosition));
-        assert!(matches!(commands[1], TerminalCommand::MoveTo(1, 15)));
+        assert!(matches!(commands[1], TerminalCommand::MoveTo(0, 15)));
         assert!(matches!(commands[2], TerminalCommand::ClearLine));
         assert!(matches!(commands[3], TerminalCommand::PrintStyled(_)));
         assert!(matches!(commands[4], TerminalCommand::PrintStyled(_)));
         assert!(matches!(commands[5], TerminalCommand::PrintStyled(_)));
-        assert!(matches!(commands[6], TerminalCommand::Print(ref s) if s == "\r\n"));
-        assert!(matches!(commands[7], TerminalCommand::RestorePosition));
+        assert!(matches!(commands[6], TerminalCommand::RestorePosition));
     }
 
     #[test]
@@ -384,14 +379,13 @@ mod tests {
         };
         let commands = view.render(props, &context);
 
-        assert_eq!(commands.len(), 8);
+        assert_eq!(commands.len(), 7);
         assert!(matches!(commands[0], TerminalCommand::SavePosition));
-        assert!(matches!(commands[1], TerminalCommand::MoveTo(1, 20)));
+        assert!(matches!(commands[1], TerminalCommand::MoveTo(0, 20)));
         assert!(matches!(commands[2], TerminalCommand::ClearLine));
         assert!(matches!(commands[3], TerminalCommand::PrintStyled(_)));
         assert!(matches!(commands[4], TerminalCommand::PrintStyled(_)));
         assert!(matches!(commands[5], TerminalCommand::PrintStyled(_)));
-        assert!(matches!(commands[6], TerminalCommand::Print(ref s) if s == "\r\n"));
-        assert!(matches!(commands[7], TerminalCommand::RestorePosition));
+        assert!(matches!(commands[6], TerminalCommand::RestorePosition));
     }
 }
