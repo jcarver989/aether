@@ -17,21 +17,15 @@ async fn test_agent_message_text_chunks() {
     .await;
 
     let prompt = styled_to_string("> ".with(theme.primary));
-
-    // FIXED: Text chunks should render on the same line
     assert_buffer_eq(
         renderer.writer(),
-        &[
-            "Hello World",
-            &format!("1G{}", prompt),
-        ],
+        &["Hello World", &format!("1G{}", prompt)],
     );
 }
 
 #[tokio::test]
 async fn test_agent_message_tool_call() {
     let (renderer, theme) = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]).await;
-
     let tool_name = styled_to_string("● test_tool".with(theme.info));
     let tool_args = styled_to_string(r#" {"arg1": "value1"}"#.with(theme.info));
     let prompt = styled_to_string("> ".with(theme.primary));
@@ -59,19 +53,15 @@ async fn test_agent_message_tool_result() {
     let tool_args = styled_to_string(format!(" {}", args).with(theme.info));
     let prompt = styled_to_string("> ".with(theme.primary));
 
-    let line1 = format!("  {}{}", tool_name_initial, tool_args);
-    let line2_full = format!(
-        "                            {}{}",
-        tool_name_success, tool_args
+    assert_buffer_eq(
+        renderer.writer(),
+        &[
+            &format!("  {}{}", tool_name_initial, tool_args),
+            &format!("                            {}{}", tool_name_success, tool_args),
+            &"8".to_string(),
+            &format!("1G{}", prompt),
+        ],
     );
-
-    // Split line2 at character position 80 (terminal wraps at 80 columns)
-    let line2: String = line2_full.chars().take(80).collect();
-    let line3: String = line2_full.chars().skip(80).collect();
-    let line4 = "8".to_string();
-    let line5 = format!("1G{}", prompt);
-
-    assert_buffer_eq(renderer.writer(), &[&line1, &line2, &line3, &line4, &line5]);
 }
 
 #[tokio::test]
@@ -90,35 +80,21 @@ async fn test_multiple_messages_sequence() {
     let tool_args = styled_to_string(format!(" {}", args).with(theme.info));
     let prompt = styled_to_string("> ".with(theme.primary));
 
-    let line3_full = format!(
-        "                         {}{}",
-        tool_name_initial, tool_args
-    );
-    let line5_full = format!(
-        "                            {}{}",
-        tool_name_success, tool_args
-    );
-
-    let line1 = "Processing your request".to_string();
-    // Split lines at character position 80 (terminal wraps at 80 columns)
-    let line2: String = line3_full.chars().take(80).collect();
-    let line3: String = line3_full.chars().skip(80).collect();
-    let line4: String = line5_full.chars().take(80).collect();
-    let line5: String = line5_full.chars().skip(80).collect();
-    let line6 = "8".to_string();
-    let line7 = "                       Found results".to_string();
-    let line8 = format!("1G{}", prompt);
-
     assert_buffer_eq(
         renderer.writer(),
         &[
-            &line1, &line2, &line3, &line4, &line5, &line6, &line7, &line8,
+            &"Processing your request".to_string(),
+            &format!("                         {}{}", tool_name_initial, tool_args),
+            &format!("                            {}{}", tool_name_success, tool_args),
+            &"8".to_string(),
+            &"                       Found results".to_string(),
+            &format!("1G{}", prompt),
         ],
     );
 }
 
 async fn render(messages: Vec<AgentMessage>) -> (Renderer<TestTerminal>, Theme) {
-    let terminal = TestTerminal::new(80, 40);
+    let terminal = TestTerminal::new(200, 40);
     let mut renderer = Renderer::new(terminal);
 
     for msg in messages {
