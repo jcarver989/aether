@@ -6,29 +6,78 @@ pub mod report;
 pub use eval::Eval;
 pub use eval_assertion::{EvalAssertion, EvalAssertionResult};
 pub use eval_messages::EvalMessage;
-pub use report::{AssertionReport, EvalReport, SummaryReport, create_eval_report, copy_report_templates};
+pub use report::{
+    AssertionReport, EvalReport, SummaryReport, copy_report_templates, create_eval_report,
+};
 
 use aether::llm::StreamingModelProvider;
 use aether::mcp::{ServerFactory, mcp};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::Instrument;
 
 pub struct EvalsConfig<T, U> {
     llm: T,
     judge_llm: U,
+    batch_size: Option<usize>,
+    batch_delay: Option<Duration>,
 }
 
 impl<T, U> EvalsConfig<T, U> {
     pub fn new(llm: T, judge_llm: U) -> Self {
-        Self { llm, judge_llm }
+        Self {
+            llm,
+            judge_llm,
+            batch_size: None,
+            batch_delay: None,
+        }
+    }
+
+    /// Set the batch size for concurrent evaluation execution
+    ///
+    /// When running many evaluations, you may want to limit the number of concurrent
+    /// evaluations to avoid rate limiting with LLM providers. This setting controls
+    /// how many evals are run concurrently in each batch.
+    ///
+    /// # Arguments
+    /// * `batch_size` - Number of evals to run concurrently in each batch
+    ///
+    /// # Example
+    /// ```no_run
+    /// use crucible::EvalsConfig;
+    /// use std::time::Duration;
+    /// // let llm = ...; // Your LLM provider
+    /// // let judge_llm = ...; // Your judge LLM provider
+    /// // let config = EvalsConfig::new(llm, judge_llm)
+    /// //     .with_batch_size(3)  // Run 3 evals at a time
+    /// //     .with_batch_delay(Duration::from_secs(2));  // Wait 2 seconds between batches
+    /// ```
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = Some(batch_size);
+        self
+    }
+
+    /// Set the delay between batches
+    ///
+    /// This adds a delay between processing batches to further prevent rate limiting.
+    /// The delay is only applied between batches, not within a batch.
+    ///
+    /// # Arguments
+    /// * `delay` - Delay between batches to prevent rate limiting
+    ///
+    /// # Example
+    /// ```
+    /// use std::time::Duration;
+    /// let delay = Duration::from_millis(2000);
+    /// ```
+    pub fn with_batch_delay(mut self, delay: Duration) -> Self {
+        self.batch_delay = Some(delay);
+        self
     }
 }
 
-/// Crucible evaluation runner
-///
 /// Configure and run AI agent evaluations with custom MCP servers
 pub struct Crucible {
     base_dir: PathBuf,
@@ -153,60 +202,84 @@ impl Crucible {
         let judge_llm = Arc::new(config.judge_llm);
 
         let mut summary = SummaryReport::new();
-        let tasks: Vec<_> = evals
-            .into_iter()
-            .map(|eval| {
-                let agents_prompt_clone = agents_prompt.clone();
-                let tool_definitions_clone = tool_definitions.clone();
-                let mcp_tx_clone = mcp_tx.clone();
-                let llm_clone = llm.clone();
-                let judge_llm_clone = judge_llm.clone();
-                let eval_name = eval.name.clone();
 
-                tokio::spawn(
-                    async move {
-                        let start = Instant::now();
+        // Determine batch size (default to all evals if not specified)
+        let batch_size = config.batch_size.unwrap_or(evals.len());
+        let batch_delay = config.batch_delay.unwrap_or(Duration::ZERO);
 
-                        let result = eval
-                            .run(
-                                llm_clone,
-                                judge_llm_clone,
-                                tool_definitions_clone,
-                                mcp_tx_clone,
-                                agents_prompt_clone,
-                            )
-                            .await;
-                        let duration = start.elapsed();
-                        (eval, result, duration)
+        // Process evals in batches
+        for batch_start in (0..evals.len()).step_by(batch_size) {
+            let batch_end = std::cmp::min(batch_start + batch_size, evals.len());
+            let batch: Vec<Eval> = evals[batch_start..batch_end].to_vec();
+
+            tracing::info!(
+                "Processing batch {}/{} ({} evals)",
+                (batch_start / batch_size) + 1,
+                evals.len().div_ceil(batch_size),
+                batch.len()
+            );
+
+            let tasks: Vec<_> = batch
+                .into_iter()
+                .map(|eval| {
+                    let agents_prompt_clone = agents_prompt.clone();
+                    let tool_definitions_clone = tool_definitions.clone();
+                    let mcp_tx_clone = mcp_tx.clone();
+                    let llm_clone = llm.clone();
+                    let judge_llm_clone = judge_llm.clone();
+                    let eval_name = eval.name.clone();
+
+                    tokio::spawn(
+                        async move {
+                            let start = Instant::now();
+
+                            let result = eval
+                                .run(
+                                    llm_clone,
+                                    judge_llm_clone,
+                                    tool_definitions_clone,
+                                    mcp_tx_clone,
+                                    agents_prompt_clone,
+                                )
+                                .await;
+                            let duration = start.elapsed();
+                            (eval, result, duration)
+                        }
+                        .instrument(tracing::info_span!("eval_task", eval_name = %eval_name)),
+                    )
+                })
+                .collect();
+
+            // Await all tasks in this batch concurrently
+            let results = futures::future::join_all(tasks).await;
+
+            for result in results {
+                match result {
+                    Ok((eval, Ok(eval_results), duration)) => {
+                        let report = create_eval_report(&eval, &eval_results, Some(duration));
+
+                        let result_file = output_dir
+                            .join("results")
+                            .join(format!("{}.json", eval.name));
+                        if let Err(e) = report.write_to_file(&result_file) {
+                            tracing::warn!("Failed to write result file for {}: {}", eval.name, e);
+                        }
+
+                        summary.add_eval(report);
                     }
-                    .instrument(tracing::info_span!("eval_task", eval_name = %eval_name)),
-                )
-            })
-            .collect();
-
-        // Await all tasks concurrently
-        let results = futures::future::join_all(tasks).await;
-
-        for result in results {
-            match result {
-                Ok((eval, Ok(eval_results), duration)) => {
-                    let report = create_eval_report(&eval, &eval_results, Some(duration));
-
-                    let result_file = output_dir
-                        .join("results")
-                        .join(format!("{}.json", eval.name));
-                    if let Err(e) = report.write_to_file(&result_file) {
-                        tracing::warn!("Failed to write result file for {}: {}", eval.name, e);
+                    Ok((eval, Err(e), _duration)) => {
+                        tracing::error!("Eval '{}' failed with error: {}", eval.name, e);
                     }
+                    Err(e) => {
+                        tracing::error!("Task panicked: {}", e);
+                    }
+                }
+            }
 
-                    summary.add_eval(report);
-                }
-                Ok((eval, Err(e), _duration)) => {
-                    tracing::error!("Eval '{}' failed with error: {}", eval.name, e);
-                }
-                Err(e) => {
-                    tracing::error!("Task panicked: {}", e);
-                }
+            // Add delay between batches to prevent rate limiting
+            if !batch_delay.is_zero() && batch_end < evals.len() {
+                tracing::info!("Waiting {:?} before next batch...", batch_delay);
+                tokio::time::sleep(batch_delay).await;
             }
         }
 
@@ -214,5 +287,48 @@ impl Crucible {
         summary.write_to_file(&summary_file)?;
 
         Ok(summary)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    // Mock LLM provider for testing
+    struct MockLLM;
+
+    impl aether::llm::StreamingModelProvider for MockLLM {
+        fn stream_response(
+            &self,
+            _context: &aether::llm::Context,
+        ) -> aether::llm::LlmResponseStream {
+            Box::pin(futures::stream::empty())
+        }
+
+        fn display_name(&self) -> String {
+            "MockLLM".to_string()
+        }
+    }
+
+    #[test]
+    fn test_evals_config_batch_configuration() {
+        let llm = MockLLM;
+        let judge_llm = MockLLM;
+
+        // Test default configuration
+        let config = EvalsConfig::new(llm, judge_llm);
+        assert!(config.batch_size.is_none());
+        assert!(config.batch_delay.is_none());
+
+        // Test with batch size
+        let llm = MockLLM;
+        let judge_llm = MockLLM;
+        let config = EvalsConfig::new(llm, judge_llm)
+            .with_batch_size(5)
+            .with_batch_delay(Duration::from_millis(1000));
+
+        assert_eq!(config.batch_size, Some(5));
+        assert_eq!(config.batch_delay, Some(Duration::from_millis(1000)));
     }
 }
