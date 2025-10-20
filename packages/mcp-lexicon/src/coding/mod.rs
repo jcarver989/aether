@@ -12,37 +12,42 @@ use std::sync::Mutex;
 
 pub mod bash;
 pub mod common;
+pub mod default_tools;
 pub mod edit_file;
 pub mod find;
 pub mod grep;
 pub mod list_files;
 pub mod read_file;
 pub mod todo_write;
+pub mod tools_trait;
 pub mod write_file;
 
 pub use bash::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,
     ReadBackgroundBashOutput, execute_command, read_background_bash,
 };
+pub use default_tools::DefaultCodingTools;
 pub use edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
 pub use find::{FindInput, FindOutput, find_files_by_name};
 pub use grep::{GrepInput, GrepOutput, perform_grep};
 pub use list_files::{ListFilesArgs, ListFilesResult, list_files};
 pub use read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 pub use todo_write::{TodoItem, TodoState, TodoWriteInput, TodoWriteOutput, process_todo_write};
+pub use tools_trait::CodingTools;
 pub use write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
 #[derive(Debug)]
-pub struct CodingMcp {
+pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     tool_router: ToolRouter<Self>,
     background_processes: Mutex<HashMap<String, BackgroundProcessHandle>>,
     todos: Mutex<Vec<TodoItem>>,
     /// Track files that have been read to enforce read-before-edit safety
     files_read: Mutex<HashSet<String>>,
+    tools: T,
 }
 
 #[tool_handler(router = self.tool_router)]
-impl ServerHandler for CodingMcp {
+impl<T: CodingTools + 'static> ServerHandler for CodingMcp<T> {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             server_info: Implementation {
@@ -61,14 +66,29 @@ impl ServerHandler for CodingMcp {
     }
 }
 
-#[tool_router]
-impl CodingMcp {
+impl CodingMcp<DefaultCodingTools> {
+    /// Create a new CodingMcp with default (local filesystem) tools
     pub fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
             background_processes: Mutex::new(HashMap::new()),
             todos: Mutex::new(Vec::new()),
             files_read: Mutex::new(HashSet::new()),
+            tools: DefaultCodingTools,
+        }
+    }
+}
+
+#[tool_router]
+impl<T: CodingTools + 'static> CodingMcp<T> {
+    /// Create a CodingMcp with custom tool implementation
+    pub fn with_tools(tools: T) -> Self {
+        Self {
+            tool_router: Self::tool_router(),
+            background_processes: Mutex::new(HashMap::new()),
+            todos: Mutex::new(Vec::new()),
+            files_read: Mutex::new(HashSet::new()),
+            tools,
         }
     }
 
@@ -136,14 +156,12 @@ IMPORTANT - Safety Tracking:
         let Parameters(args) = request;
         let file_path = args.file_path.clone();
 
-        match read_file_contents(args).await {
-            Ok(result) => {
-                // Track that this file has been read
-                self.files_read.lock().unwrap().insert(file_path);
-                Ok(Json(result))
-            }
-            Err(e) => Err(format!("Read file error: {e}")),
-        }
+        // Delegate to the tools implementation
+        let result = self.tools.read_file(args).await?;
+
+        // Track that this file has been read (safety check)
+        self.files_read.lock().unwrap().insert(file_path);
+        Ok(Json(result))
     }
 
     #[tool(
@@ -180,10 +198,8 @@ IMPORTANT - Safety Requirements:
             }
         }
 
-        match write_file_contents(args).await {
-            Ok(result) => Ok(Json(result)),
-            Err(e) => Err(format!("Write file error: {e}")),
-        }
+        // Delegate to the tools implementation
+        self.tools.write_file(args).await.map(Json)
     }
 
     #[tool(description = "Performs exact string replacements in files.
@@ -214,10 +230,8 @@ Usage:
             }
         }
 
-        match edit_file_contents(args).await {
-            Ok(result) => Ok(Json(result)),
-            Err(e) => Err(format!("Edit file error: {e}")),
-        }
+        // Delegate to the tools implementation
+        self.tools.edit_file(args).await.map(Json)
     }
 
     #[tool(
@@ -235,10 +249,7 @@ Usage:
         request: Parameters<ListFilesArgs>,
     ) -> Result<Json<ListFilesResult>, String> {
         let Parameters(args) = request;
-        match list_files(args).await {
-            Ok(result) => Ok(Json(result)),
-            Err(e) => Err(format!("List files error: {e}")),
-        }
+        self.tools.list_files(args).await.map(Json)
     }
 
     #[tool(
@@ -266,9 +277,9 @@ Usage:
     )]
     pub async fn bash(&self, request: Parameters<BashInput>) -> Result<Json<BashOutput>, String> {
         let Parameters(args) = request;
-        match execute_command(args).await {
-            Ok(BashResult::Completed(output)) => Ok(Json(output)),
-            Ok(BashResult::Background(handle)) => {
+        match self.tools.bash(args).await? {
+            BashResult::Completed(output) => Ok(Json(output)),
+            BashResult::Background(handle) => {
                 let shell_id = handle.shell_id.clone();
 
                 // Store the background process
@@ -285,7 +296,6 @@ Usage:
                     shell_id: Some(shell_id),
                 }))
             }
-            Err(e) => Err(format!("Bash command error: {e}")),
         }
     }
 
@@ -313,19 +323,19 @@ Usage:
             .remove(&args.bash_id)
             .ok_or_else(|| format!("Shell ID not found: {}", args.bash_id))?;
 
-        match read_background_bash(handle, args.filter).await {
-            Ok((result, handle_opt)) => {
-                // Put handle back if still running
-                if let Some(handle) = handle_opt {
-                    self.background_processes
-                        .lock()
-                        .unwrap()
-                        .insert(args.bash_id, handle);
-                }
-                Ok(Json(result))
-            }
-            Err(e) => Err(format!("Failed to get output: {e}")),
+        let (result, handle_opt) = self.tools
+            .read_background_bash(handle, args.filter)
+            .await?;
+
+        // Put handle back if still running
+        if let Some(handle) = handle_opt {
+            self.background_processes
+                .lock()
+                .unwrap()
+                .insert(args.bash_id, handle);
         }
+
+        Ok(Json(result))
     }
 
     #[tool(
@@ -401,7 +411,7 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
     }
 }
 
-impl Default for CodingMcp {
+impl Default for CodingMcp<DefaultCodingTools> {
     fn default() -> Self {
         Self::new()
     }
