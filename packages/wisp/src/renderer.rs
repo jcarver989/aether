@@ -41,6 +41,16 @@ impl<W: Write> Renderer<W> {
         }
     }
 
+    /// Get a reference to the writer (useful for testing)
+    pub fn writer(&self) -> &W {
+        &self.writer
+    }
+
+    /// Get a mutable reference to the writer (useful for testing)
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
+
     pub async fn on_key_event(
         &mut self,
         key_event: KeyEvent,
