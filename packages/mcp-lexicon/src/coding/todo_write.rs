@@ -1,8 +1,13 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+// NOTE: We use snake_case instead of camelCase for all JSON fields because:
+// 1. LLMs/agents consistently prefer "in_progress" over "inProgress" for todo status
+// 2. Snake_case matches Rust conventions and is more natural for agents to write
+// 3. Reduces friction and errors when agents generate JSON for this tool
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub enum TodoState {
     Pending,
     InProgress,
@@ -10,25 +15,25 @@ pub enum TodoState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct TodoItem {
     /// The task description
     pub content: String,
     /// The task state
     pub state: TodoState,
-    /// Active form of the task description
+    /// Active form of the task description (e.g., "Fixing bug" while working on "Fix bug")
     pub active_form: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct TodoWriteInput {
     /// The updated todo list
     pub todos: Vec<TodoItem>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct TodoStats {
     pub total: usize,
     pub pending: usize,
@@ -37,7 +42,7 @@ pub struct TodoStats {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct TodoWriteOutput {
     /// Success message
     pub message: String,

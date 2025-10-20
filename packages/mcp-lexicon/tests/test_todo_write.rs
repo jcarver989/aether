@@ -178,9 +178,9 @@ fn test_serde_casing_consistency() {
     let todo_json = serde_json::to_string(&todo_item).unwrap();
     println!("TodoItem JSON: {}", todo_json);
 
-    // Verify that TodoItem uses camelCase
-    assert!(todo_json.contains("activeForm"));
-    assert!(todo_json.contains("inProgress")); // status should be camelCase
+    // Verify that TodoItem uses snake_case
+    assert!(todo_json.contains("active_form"));
+    assert!(todo_json.contains("in_progress")); // status should be snake_case
 
     let input = TodoWriteInput {
         todos: vec![todo_item],
@@ -192,8 +192,8 @@ fn test_serde_casing_consistency() {
     let json = serde_json::to_string(&output).unwrap();
     println!("Output JSON: {}", json);
 
-    // Verify that output uses camelCase for stats
-    assert!(json.contains("inProgress")); // stats.inProgress should be camelCase
+    // Verify that output uses snake_case for stats
+    assert!(json.contains("in_progress")); // stats.in_progress should be snake_case
 
     // Test deserialization also works with camelCase
     let json_input = r#"
@@ -201,8 +201,8 @@ fn test_serde_casing_consistency() {
         "todos": [
             {
                 "content": "Test task",
-                "status": "inProgress",
-                "activeForm": "Testing task"
+                "state": "in_progress",
+                "active_form": "Testing task"
             }
         ]
     }

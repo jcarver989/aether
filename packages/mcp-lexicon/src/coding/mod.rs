@@ -323,9 +323,7 @@ Usage:
             .remove(&args.bash_id)
             .ok_or_else(|| format!("Shell ID not found: {}", args.bash_id))?;
 
-        let (result, handle_opt) = self.tools
-            .read_background_bash(handle, args.filter)
-            .await?;
+        let (result, handle_opt) = self.tools.read_background_bash(handle, args.filter).await?;
 
         // Put handle back if still running
         if let Some(handle) = handle_opt {
@@ -366,7 +364,7 @@ Skip using this tool when:
 
    IMPORTANT: Task descriptions must have two forms:
    - content: The imperative form describing what needs to be done (e.g., 'Run tests', 'Build the project')
-   - activeForm: The present continuous form shown during execution (e.g., 'Running tests', 'Building the project')
+   - active_form: The present continuous form shown during execution (e.g., 'Running tests', 'Building the project')
 
 2. Task Management:
    - Update task status in real-time as you work
@@ -391,7 +389,7 @@ Skip using this tool when:
    - Use clear, descriptive task names
    - Always provide both forms:
      - content: 'Fix authentication bug'
-     - activeForm: 'Fixing authentication bug'
+     - active_form: 'Fixing authentication bug'
 
 When in doubt, use this tool. Being proactive with task management demonstrates attentiveness and ensures you complete all requirements successfully."
     )]
