@@ -12,6 +12,8 @@ pub struct TestTerminal {
     saved_cursor: Option<(u16, u16)>,
     /// Terminal size (columns, rows)
     size: (u16, u16),
+    /// Buffer for incomplete escape sequences
+    escape_buffer: Vec<u8>,
 }
 
 impl TestTerminal {
@@ -23,6 +25,7 @@ impl TestTerminal {
             cursor: (0, 0),
             saved_cursor: None,
             size: (columns, rows),
+            escape_buffer: Vec::new(),
         }
     }
 
@@ -32,6 +35,16 @@ impl TestTerminal {
             .iter()
             .map(|chars| chars.iter().collect::<String>().trim_end().to_string())
             .collect()
+    }
+
+    /// Get the current cursor position (column, row)
+    pub fn cursor_position(&self) -> (u16, u16) {
+        self.cursor
+    }
+
+    /// Get the terminal size (columns, rows)
+    pub fn size(&self) -> (u16, u16) {
+        self.size
     }
 
     /// Clear the entire buffer
@@ -125,6 +138,16 @@ impl TestTerminal {
                 if chars.peek() == Some(&'[') {
                     chars.next(); // consume '['
                     self.process_csi_sequence(&mut chars);
+                } else if chars.peek() == Some(&'7') {
+                    // DEC Save Cursor (ESC 7)
+                    chars.next(); // consume '7'
+                    self.saved_cursor = Some(self.cursor);
+                } else if chars.peek() == Some(&'8') {
+                    // DEC Restore Cursor (ESC 8)
+                    chars.next(); // consume '8'
+                    if let Some(saved) = self.saved_cursor {
+                        self.cursor = saved;
+                    }
                 }
             } else {
                 self.write_char(ch);
@@ -150,12 +173,12 @@ impl TestTerminal {
         if let Some(cmd) = chars.next() {
             match cmd {
                 'H' | 'f' => {
-                    // Cursor Position
+                    // Cursor Position (ANSI format is row;column, 1-indexed)
                     let parts: Vec<u16> =
                         params.split(';').filter_map(|s| s.parse().ok()).collect();
                     let row = parts.first().copied().unwrap_or(1).saturating_sub(1);
                     let col = parts.get(1).copied().unwrap_or(1).saturating_sub(1);
-                    self.move_to(col, row);
+                    self.move_to(col, row);  // move_to takes (col, row)
                 }
                 'A' => {
                     // Cursor Up
@@ -251,12 +274,17 @@ impl TestTerminal {
 
 impl Write for TestTerminal {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.process_bytes(buf);
+        // Accumulate all bytes in buffer
+        self.escape_buffer.extend_from_slice(buf);
         Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        // No-op for test terminal
+        // Process all accumulated bytes when flushed
+        if !self.escape_buffer.is_empty() {
+            let bytes = std::mem::take(&mut self.escape_buffer);
+            self.process_bytes(&bytes);
+        }
         Ok(())
     }
 }
@@ -315,6 +343,7 @@ mod tests {
     fn test_basic_write() {
         let mut term = TestTerminal::new(80, 24);
         write!(term, "Hello").unwrap();
+        term.flush().unwrap();
         let lines = term.get_lines();
         assert_eq!(lines[0], "Hello");
     }
@@ -323,6 +352,7 @@ mod tests {
     fn test_newline() {
         let mut term = TestTerminal::new(80, 24);
         write!(term, "Line 1\nLine 2").unwrap();
+        term.flush().unwrap();
         assert_buffer_eq(&term, &["Line 1", "Line 2"]);
     }
 
@@ -330,6 +360,7 @@ mod tests {
     fn test_carriage_return() {
         let mut term = TestTerminal::new(80, 24);
         write!(term, "Hello\rWorld").unwrap();
+        term.flush().unwrap();
         let lines = term.get_lines();
         assert_eq!(lines[0], "World");
     }
@@ -339,6 +370,7 @@ mod tests {
         let mut term = TestTerminal::new(80, 24);
         // CSI sequence for moving to row 3, column 5 (1-indexed)
         write!(term, "\x1b[3;5HX").unwrap();
+        term.flush().unwrap();
         let lines = term.get_lines();
         assert_eq!(&lines[2][4..5], "X");
     }
@@ -349,6 +381,7 @@ mod tests {
         write!(term, "Hello World").unwrap();
         // CSI K - clear from cursor to end of line
         write!(term, "\x1b[1G\x1b[K").unwrap();
+        term.flush().unwrap();
         let lines = term.get_lines();
         assert_eq!(lines[0], "");
     }
@@ -357,6 +390,7 @@ mod tests {
     fn test_assert_buffer_eq() {
         let mut term = TestTerminal::new(80, 24);
         write!(term, "Line 1\nLine 2\nLine 3").unwrap();
+        term.flush().unwrap();
 
         assert_buffer_eq(&term, &["Line 1", "Line 2", "Line 3"]);
     }
@@ -366,6 +400,7 @@ mod tests {
     fn test_assert_buffer_eq_fails() {
         let mut term = TestTerminal::new(80, 24);
         write!(term, "Wrong").unwrap();
+        term.flush().unwrap();
 
         assert_buffer_eq(&term, &["Expected"]);
     }
@@ -378,13 +413,15 @@ mod tests {
         write!(term, "\x1b[6;11HFirst").unwrap();
 
         // Save cursor position (should save col 15, row 5)
-        write!(term, "\x1b[s").unwrap();
+        write!(term, "\x1b7").unwrap();  // DEC save cursor
 
         // Move somewhere else and write
         write!(term, "\x1b[1;1HSecond").unwrap();
 
         // Restore cursor position (back to col 15, row 5) and write
-        write!(term, "\x1b[uThird").unwrap();
+        write!(term, "\x1b8Third").unwrap();  // DEC restore cursor
+
+        term.flush().unwrap();
 
         let lines = term.get_lines();
         assert_eq!(lines[0], "Second");
