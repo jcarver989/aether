@@ -89,6 +89,13 @@ impl<W: Write> Renderer<W> {
                 } else {
                     let user_input = self.input_buffer.trim().to_string();
 
+                    // Clear the current line and print the user's message
+                    self.writer.flush_commands(&[
+                        TerminalCommand::MoveToColumn(0),
+                        TerminalCommand::ClearLine,
+                        TerminalCommand::Print(format!("{}\r\n", user_input)),
+                    ])?;
+
                     if let Err(e) = tx
                         .send(UserMessage::Text {
                             content: user_input,
@@ -99,6 +106,11 @@ impl<W: Write> Renderer<W> {
                     }
 
                     self.input_buffer.clear();
+
+                    // Render a new prompt
+                    let input_prompt = InputPrompt {};
+                    let commands = input_prompt.render((), &self.context);
+                    self.writer.flush_commands(&commands)?;
                 }
             }
             _ => {}
