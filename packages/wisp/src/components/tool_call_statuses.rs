@@ -84,7 +84,7 @@ impl ToolCallStatusView {
     fn format_tool_arguments(arguments: &str, context: &RenderContext) -> StyledContent<String> {
         let mut formatted = format!(" {arguments}");
         formatted.truncate(MAX_TOOL_ARG_LENGTH);
-        formatted.with(context.theme.info)
+        formatted.with(context.theme.muted)
     }
 }
 

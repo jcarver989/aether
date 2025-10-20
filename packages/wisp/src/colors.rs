@@ -11,6 +11,7 @@ pub struct Theme {
     pub warning: Color,
     pub error: Color,
     pub info: Color,
+    pub muted: Color,
 }
 
 impl Default for Theme {
@@ -61,6 +62,11 @@ impl Default for Theme {
                 g: 205,
                 b: 196,
             }, // Turquoise #4ECDC4
+            muted: Color::Rgb {
+                r: 128,
+                g: 128,
+                b: 128,
+            }, // Gray #808080
         }
     }
 }
