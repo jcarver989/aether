@@ -148,6 +148,35 @@ async fn render(messages: Vec<AgentMessage>) -> (Renderer<TestTerminal>, Theme) 
     (renderer, Theme::default())
 }
 
+#[tokio::test]
+async fn test_user_message_submission() {
+    use tokio::sync::mpsc;
+
+    let terminal = TestTerminal::new(200, 40);
+    let mut renderer = Renderer::new(terminal);
+    let (tx, _rx) = mpsc::channel(10);
+
+    // Update context with current terminal state
+    let position = renderer.writer().cursor_position();
+    let size = renderer.writer().size();
+    renderer.update_render_context_with(position, size);
+
+    // Simulate typing "Hello world" and pressing Enter
+    type_string(&mut renderer, "Hello world", &tx).await;
+    press_enter(&mut renderer, &tx).await;
+
+    // Verify the terminal output shows the user's message followed by a new prompt
+    // Note: InputPrompt adds a blank line (\r\n) before the prompt
+    assert_buffer_eq(
+        renderer.writer(),
+        &[
+            "Hello world",
+            "",  // Blank line from InputPrompt's \r\n
+            ">",
+        ],
+    );
+}
+
 fn text_chunk(chunk: &str) -> AgentMessage {
     AgentMessage::Text {
         message_id: "test_msg".to_string(),
@@ -195,4 +224,37 @@ fn tool_result_with_id(name: &str, id: &str, args: &str, result: &str) -> AgentM
         },
         model_name: "test".to_string(),
     }
+}
+
+async fn type_string<W: std::io::Write>(
+    renderer: &mut Renderer<W>,
+    text: &str,
+    tx: &tokio::sync::mpsc::Sender<aether::agent::UserMessage>,
+) {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    for ch in text.chars() {
+        let key_event = KeyEvent {
+            code: KeyCode::Char(ch),
+            modifiers: KeyModifiers::empty(),
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::empty(),
+        };
+        renderer.on_key_event(key_event, tx).await.unwrap();
+    }
+}
+
+async fn press_enter<W: std::io::Write>(
+    renderer: &mut Renderer<W>,
+    tx: &tokio::sync::mpsc::Sender<aether::agent::UserMessage>,
+) {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let enter_event = KeyEvent {
+        code: KeyCode::Enter,
+        modifiers: KeyModifiers::empty(),
+        kind: crossterm::event::KeyEventKind::Press,
+        state: crossterm::event::KeyEventState::empty(),
+    };
+    renderer.on_key_event(enter_event, tx).await.unwrap();
 }
