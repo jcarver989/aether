@@ -3,10 +3,32 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum EvalAssertion {
-    FileExists { path: String },
-    FileMatches { path: String, content: String },
-    LLMJudge { prompt: String },
-    CommandExitCode { command: String, expected_code: i32 },
+    FileExists {
+        path: String,
+    },
+    FileMatches {
+        path: String,
+        content: String,
+    },
+    LLMJudge {
+        prompt: String,
+    },
+    CommandExitCode {
+        command: String,
+        expected_code: i32,
+    },
+    ToolCall {
+        name: String,
+        arguments: Option<serde_json::Value>,
+        count: Option<ToolCallCount>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ToolCallCount {
+    Exact(usize),
+    AtLeast(usize),
+    AtMost(usize),
 }
 
 impl std::fmt::Display for EvalAssertion {
@@ -43,6 +65,30 @@ impl std::fmt::Display for EvalAssertion {
                     "CommandExitCode(\"{}\", code={})",
                     truncated, expected_code
                 )
+            }
+            EvalAssertion::ToolCall {
+                name,
+                arguments,
+                count,
+            } => {
+                let args_str = if let Some(args) = arguments {
+                    let args_json = serde_json::to_string(args).unwrap_or_default();
+                    if args_json.len() > 30 {
+                        format!("{}...", &args_json[..30])
+                    } else {
+                        args_json
+                    }
+                } else {
+                    "any".to_string()
+                };
+
+                let count_str = if let Some(cnt) = count {
+                    format!(" {:?}", cnt)
+                } else {
+                    "".to_string()
+                };
+
+                write!(f, "ToolCall({}, args={}{})", name, args_str, count_str)
             }
         }
     }
