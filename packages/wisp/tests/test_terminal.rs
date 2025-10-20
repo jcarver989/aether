@@ -1,0 +1,371 @@
+use std::io::{self, Write};
+
+/// A virtual terminal buffer for testing terminal output.
+/// Captures all writes, tracks cursor position, and parses ANSI escape sequences.
+#[derive(Debug, Clone)]
+pub struct TestTerminal {
+    /// 2D buffer of characters (row, column)
+    buffer: Vec<Vec<char>>,
+    /// Current cursor position (column, row)
+    cursor: (u16, u16),
+    /// Saved cursor position (for save/restore)
+    saved_cursor: Option<(u16, u16)>,
+    /// Terminal size (columns, rows)
+    size: (u16, u16),
+}
+
+impl TestTerminal {
+    /// Create a new test terminal with given size
+    pub fn new(columns: u16, rows: u16) -> Self {
+        let buffer = vec![vec![' '; columns as usize]; rows as usize];
+        Self {
+            buffer,
+            cursor: (0, 0),
+            saved_cursor: None,
+            size: (columns, rows),
+        }
+    }
+
+    /// Get all lines as a vector of strings (trailing whitespace trimmed)
+    pub fn get_lines(&self) -> Vec<String> {
+        self.buffer
+            .iter()
+            .map(|chars| chars.iter().collect::<String>().trim_end().to_string())
+            .collect()
+    }
+
+    /// Clear the entire buffer
+    pub fn clear(&mut self) {
+        for row in &mut self.buffer {
+            for ch in row {
+                *ch = ' ';
+            }
+        }
+    }
+
+    /// Clear the current line
+    pub fn clear_line(&mut self) {
+        if let Some(row) = self.buffer.get_mut(self.cursor.1 as usize) {
+            for ch in row {
+                *ch = ' ';
+            }
+        }
+    }
+
+    /// Move cursor to absolute position
+    pub fn move_to(&mut self, col: u16, row: u16) {
+        self.cursor = (
+            col.min(self.size.0.saturating_sub(1)),
+            row.min(self.size.1.saturating_sub(1)),
+        );
+    }
+
+    /// Move cursor to column (keep same row)
+    pub fn move_to_column(&mut self, col: u16) {
+        self.cursor.0 = col.min(self.size.0.saturating_sub(1));
+    }
+
+    /// Move cursor left by n positions
+    pub fn move_left(&mut self, n: u16) {
+        self.cursor.0 = self.cursor.0.saturating_sub(n);
+    }
+
+    /// Move cursor right by n positions
+    pub fn move_right(&mut self, n: u16) {
+        self.cursor.0 = (self.cursor.0 + n).min(self.size.0.saturating_sub(1));
+    }
+
+    /// Write a single character at current cursor position and advance cursor
+    fn write_char(&mut self, ch: char) {
+        match ch {
+            '\n' => {
+                // Move to next line, column 0
+                self.cursor.1 = (self.cursor.1 + 1).min(self.size.1.saturating_sub(1));
+                self.cursor.0 = 0;
+            }
+            '\r' => {
+                // Move to column 0
+                self.cursor.0 = 0;
+            }
+            '\t' => {
+                // Tab = 4 spaces
+                for _ in 0..4 {
+                    self.write_char_at_cursor(' ');
+                }
+            }
+            _ => {
+                self.write_char_at_cursor(ch);
+            }
+        }
+    }
+
+    /// Write a character at the current cursor position
+    fn write_char_at_cursor(&mut self, ch: char) {
+        if let Some(row) = self.buffer.get_mut(self.cursor.1 as usize) {
+            if let Some(cell) = row.get_mut(self.cursor.0 as usize) {
+                *cell = ch;
+                // Advance cursor
+                self.cursor.0 += 1;
+                if self.cursor.0 >= self.size.0 {
+                    self.cursor.0 = 0;
+                    self.cursor.1 = (self.cursor.1 + 1).min(self.size.1.saturating_sub(1));
+                }
+            }
+        }
+    }
+
+    /// Process a byte slice, handling ANSI escape sequences
+    fn process_bytes(&mut self, buf: &[u8]) {
+        let s = String::from_utf8_lossy(buf);
+        let mut chars = s.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' {
+                // Start of ANSI escape sequence
+                if chars.peek() == Some(&'[') {
+                    chars.next(); // consume '['
+                    self.process_csi_sequence(&mut chars);
+                }
+            } else {
+                self.write_char(ch);
+            }
+        }
+    }
+
+    /// Process a CSI (Control Sequence Introducer) escape sequence
+    fn process_csi_sequence(&mut self, chars: &mut std::iter::Peekable<std::str::Chars>) {
+        let mut params = String::new();
+
+        // Collect parameters (numbers and semicolons)
+        while let Some(&ch) = chars.peek() {
+            if ch.is_ascii_digit() || ch == ';' {
+                params.push(ch);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+
+        // Get the command character
+        if let Some(cmd) = chars.next() {
+            match cmd {
+                'H' | 'f' => {
+                    // Cursor Position
+                    let parts: Vec<u16> = params
+                        .split(';')
+                        .filter_map(|s| s.parse().ok())
+                        .collect();
+                    let row = parts.first().copied().unwrap_or(1).saturating_sub(1);
+                    let col = parts.get(1).copied().unwrap_or(1).saturating_sub(1);
+                    self.move_to(col, row);
+                }
+                'A' => {
+                    // Cursor Up
+                    let n = params.parse().unwrap_or(1);
+                    self.cursor.1 = self.cursor.1.saturating_sub(n);
+                }
+                'B' => {
+                    // Cursor Down
+                    let n = params.parse().unwrap_or(1);
+                    self.cursor.1 = (self.cursor.1 + n).min(self.size.1.saturating_sub(1));
+                }
+                'C' => {
+                    // Cursor Forward (Right)
+                    let n = params.parse().unwrap_or(1);
+                    self.move_right(n);
+                }
+                'D' => {
+                    // Cursor Back (Left)
+                    let n = params.parse().unwrap_or(1);
+                    self.move_left(n);
+                }
+                'G' => {
+                    // Cursor to Column
+                    let col = params.parse::<u16>().unwrap_or(1).saturating_sub(1);
+                    self.move_to_column(col);
+                }
+                'J' => {
+                    // Erase in Display
+                    let n = params.parse().unwrap_or(0);
+                    match n {
+                        0 => {
+                            // Clear from cursor to end of screen
+                            for row in self.cursor.1..self.size.1 {
+                                if let Some(r) = self.buffer.get_mut(row as usize) {
+                                    let start = if row == self.cursor.1 {
+                                        self.cursor.0 as usize
+                                    } else {
+                                        0
+                                    };
+                                    for ch in r.iter_mut().skip(start) {
+                                        *ch = ' ';
+                                    }
+                                }
+                            }
+                        }
+                        2 => {
+                            // Clear entire screen
+                            self.clear();
+                        }
+                        _ => {}
+                    }
+                }
+                'K' => {
+                    // Erase in Line
+                    let n = params.parse().unwrap_or(0);
+                    match n {
+                        0 => {
+                            // Clear from cursor to end of line
+                            if let Some(row) = self.buffer.get_mut(self.cursor.1 as usize) {
+                                for ch in row.iter_mut().skip(self.cursor.0 as usize) {
+                                    *ch = ' ';
+                                }
+                            }
+                        }
+                        2 => {
+                            // Clear entire line
+                            self.clear_line();
+                        }
+                        _ => {}
+                    }
+                }
+                's' => {
+                    // Save cursor position
+                    self.saved_cursor = Some(self.cursor);
+                }
+                'u' => {
+                    // Restore cursor position
+                    if let Some(saved) = self.saved_cursor {
+                        self.cursor = saved;
+                    }
+                }
+                'm' => {
+                    // SGR - Select Graphic Rendition (colors, styles)
+                    // We ignore styling for now as we're just testing content
+                }
+                _ => {
+                    // Unknown sequence, ignore
+                }
+            }
+        }
+    }
+}
+
+impl Write for TestTerminal {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.process_bytes(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        // No-op for test terminal
+        Ok(())
+    }
+}
+
+// === Assertion Helpers ===
+
+/// Assert that the terminal buffer matches the expected output exactly.
+/// Expected is a vector of lines where each element represents a row.
+/// Trailing whitespace is ignored on each line.
+pub fn assert_buffer_eq<S: AsRef<str>>(terminal: &TestTerminal, expected: &[S]) {
+    let actual_lines = terminal.get_lines();
+    let max_lines = expected.len().max(actual_lines.len());
+
+    for i in 0..max_lines {
+        let expected_line = expected.get(i).map(|s| s.as_ref()).unwrap_or("");
+        let actual_line = actual_lines.get(i).map(|s| s.as_str()).unwrap_or("");
+
+        assert_eq!(
+            actual_line, expected_line,
+            "Line {} mismatch:\n  Expected: '{}'\n  Got:      '{}'\n\nFull buffer:\n{}",
+            i, expected_line, actual_line, actual_lines.join("\n")
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_write() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "Hello").unwrap();
+        let lines = term.get_lines();
+        assert_eq!(lines[0], "Hello");
+    }
+
+    #[test]
+    fn test_newline() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "Line 1\nLine 2").unwrap();
+        assert_buffer_eq(&term, &["Line 1", "Line 2"]);
+    }
+
+    #[test]
+    fn test_carriage_return() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "Hello\rWorld").unwrap();
+        let lines = term.get_lines();
+        assert_eq!(lines[0], "World");
+    }
+
+    #[test]
+    fn test_ansi_cursor_position() {
+        let mut term = TestTerminal::new(80, 24);
+        // CSI sequence for moving to row 3, column 5 (1-indexed)
+        write!(term, "\x1b[3;5HX").unwrap();
+        let lines = term.get_lines();
+        assert_eq!(&lines[2][4..5], "X");
+    }
+
+    #[test]
+    fn test_ansi_clear_line() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "Hello World").unwrap();
+        // CSI K - clear from cursor to end of line
+        write!(term, "\x1b[1G\x1b[K").unwrap();
+        let lines = term.get_lines();
+        assert_eq!(lines[0], "");
+    }
+
+    #[test]
+    fn test_assert_buffer_eq() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "Line 1\nLine 2\nLine 3").unwrap();
+
+        assert_buffer_eq(&term, &["Line 1", "Line 2", "Line 3"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Line 0 mismatch")]
+    fn test_assert_buffer_eq_fails() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "Wrong").unwrap();
+
+        assert_buffer_eq(&term, &["Expected"]);
+    }
+
+    #[test]
+    fn test_cursor_save_restore() {
+        let mut term = TestTerminal::new(80, 24);
+
+        // Move to (10, 5) and write "First" (cursor ends at col 15)
+        write!(term, "\x1b[6;11HFirst").unwrap();
+
+        // Save cursor position (should save col 15, row 5)
+        write!(term, "\x1b[s").unwrap();
+
+        // Move somewhere else and write
+        write!(term, "\x1b[1;1HSecond").unwrap();
+
+        // Restore cursor position (back to col 15, row 5) and write
+        write!(term, "\x1b[uThird").unwrap();
+
+        let lines = term.get_lines();
+        assert_eq!(lines[0], "Second");
+        // "First" starts at column 10, cursor saved at 15, "Third" written at 15
+        assert_eq!(lines[5], "          FirstThird");
+    }
+}
