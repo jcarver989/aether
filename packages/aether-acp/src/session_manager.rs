@@ -1,0 +1,275 @@
+use aether::agent::AgentMessage;
+use aether::llm::parser::ModelProviderParser;
+use agent_client_protocol as acp;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc, oneshot};
+use tracing::{debug, error, info};
+
+use crate::mappers::{
+    map_agent_message_to_session_notification, map_agent_message_to_stop_reason,
+    map_content_blocks_to_text,
+};
+use crate::session::Session;
+
+/// Managers ACP sessions, each session has its own agent and state
+pub struct SessionManager {
+    model_provider: String,
+    system_prompt: Option<String>,
+    sessions: Arc<Mutex<HashMap<String, Session>>>,
+    mcp_config_path: PathBuf,
+    next_session_id: Arc<Mutex<u64>>,
+    notification_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+}
+
+impl SessionManager {
+    pub fn new(
+        model_provider: String,
+        system_prompt: Option<String>,
+        mcp_config_path: PathBuf,
+        notification_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Self {
+        info!(
+            "Creating AetherAgent with model: {}, MCP config: {:?}",
+            model_provider, mcp_config_path
+        );
+        Self {
+            model_provider,
+            system_prompt,
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            mcp_config_path,
+            next_session_id: Arc::new(Mutex::new(0)),
+            notification_tx,
+        }
+    }
+
+    async fn generate_session_id(&self) -> String {
+        let mut id = self.next_session_id.lock().await;
+        let session_id = format!("session-{}", *id);
+        *id += 1;
+        session_id
+    }
+
+    async fn send_notification(
+        &self,
+        notification: acp::SessionNotification,
+    ) -> Result<(), acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.notification_tx
+            .send((notification, tx))
+            .map_err(|_| acp::Error::internal_error())?;
+        rx.await.map_err(|_| acp::Error::internal_error())?;
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl acp::Agent for SessionManager {
+    async fn initialize(
+        &self,
+        args: acp::InitializeRequest,
+    ) -> Result<acp::InitializeResponse, acp::Error> {
+        info!("Received initialize request: {:?}", args);
+        Ok(acp::InitializeResponse {
+            protocol_version: acp::V1,
+            agent_capabilities: acp::AgentCapabilities {
+                // We don't support loading sessions initially
+                load_session: false,
+                // Default prompt and MCP capabilities
+                prompt_capabilities: Default::default(),
+                mcp_capabilities: Default::default(),
+                meta: None,
+            },
+            auth_methods: Vec::new(),
+            meta: None,
+        })
+    }
+
+    async fn authenticate(
+        &self,
+        args: acp::AuthenticateRequest,
+    ) -> Result<acp::AuthenticateResponse, acp::Error> {
+        info!("Received authenticate request: {:?}", args);
+        // No authentication required
+        Ok(acp::AuthenticateResponse::default())
+    }
+
+    async fn new_session(
+        &self,
+        args: acp::NewSessionRequest,
+    ) -> Result<acp::NewSessionResponse, acp::Error> {
+        info!("Creating new session with cwd: {:?}", args.cwd);
+
+        let session_id = self.generate_session_id().await;
+
+        // Parse the model provider
+        let parser = ModelProviderParser::default();
+        let llm = parser.parse(&self.model_provider).map_err(|e| {
+            error!(
+                "Failed to parse model provider '{}': {}",
+                self.model_provider, e
+            );
+            acp::Error::internal_error()
+        })?;
+
+        // Create the session
+        let session = Session::new(
+            session_id.clone(),
+            llm,
+            self.system_prompt.clone(),
+            self.mcp_config_path.clone(),
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to create session: {}", e);
+            acp::Error::internal_error()
+        })?;
+
+        let mut sessions = self.sessions.lock().await;
+        sessions.insert(session_id.clone(), session);
+
+        info!("Session {} created successfully", session_id);
+
+        Ok(acp::NewSessionResponse {
+            session_id: acp::SessionId(session_id.into()),
+            modes: None,
+            #[cfg(feature = "unstable")]
+            models: None,
+            meta: None,
+        })
+    }
+
+    async fn load_session(
+        &self,
+        args: acp::LoadSessionRequest,
+    ) -> Result<acp::LoadSessionResponse, acp::Error> {
+        info!("Received load_session request: {:?}", args);
+        // Not supported yet
+        Err(acp::Error::method_not_found())
+    }
+
+    async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
+        info!("Received prompt for session: {:?}", args.session_id);
+
+        let session_id_str = args.session_id.0.to_string();
+        let session_id = args.session_id.clone();
+
+        // Get the session
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions.get_mut(&session_id_str).ok_or_else(|| {
+            error!("Session not found: {}", session_id_str);
+            acp::Error::invalid_params()
+        })?;
+
+        // Convert prompt to text
+        let prompt_text = map_content_blocks_to_text(args.prompt);
+        debug!("Prompt text: {}", prompt_text);
+
+        // Send the prompt to the agent
+        session.send_prompt(prompt_text).await.map_err(|e| {
+            error!("Failed to send prompt: {}", e);
+            acp::Error::internal_error()
+        })?;
+
+        // Stream agent messages back as session updates
+        let mut final_stop_reason = acp::StopReason::EndTurn;
+
+        loop {
+            match session.recv().await {
+                Some(msg) => {
+                    info!("Received agent message: {:?}", &msg);
+
+                    // Send session update for non-terminal messages
+                    if let Some(notification) =
+                        map_agent_message_to_session_notification(session_id.clone(), &msg)
+                    {
+                        info!("Sending session notification");
+                        self.send_notification(notification).await?;
+                    } else {
+                        info!("No notification generated for this message");
+                    }
+
+                    // Check if this is a terminal message
+                    match &msg {
+                        AgentMessage::Done
+                        | AgentMessage::Cancelled { .. }
+                        | AgentMessage::Error { .. } => {
+                            final_stop_reason = map_agent_message_to_stop_reason(&msg);
+                            info!("Terminal message received, stop reason: {:?}", final_stop_reason);
+                            break;
+                        }
+                        _ => {
+                            // Continue processing messages
+                        }
+                    }
+                }
+                None => {
+                    error!("Agent channel closed unexpectedly");
+                    return Err(acp::Error::internal_error());
+                }
+            }
+        }
+
+        info!("Prompt completed with stop reason: {:?}", final_stop_reason);
+
+        Ok(acp::PromptResponse {
+            stop_reason: final_stop_reason,
+            meta: None,
+        })
+    }
+
+    async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
+        info!("Received cancel for session: {:?}", args.session_id);
+
+        let session_id_str = args.session_id.0.to_string();
+
+        let sessions = self.sessions.lock().await;
+        let session = sessions.get(&session_id_str).ok_or_else(|| {
+            error!("Session not found for cancel: {}", session_id_str);
+            acp::Error::invalid_params()
+        })?;
+
+        session.cancel().await.map_err(|e| {
+            error!("Failed to cancel session: {}", e);
+            acp::Error::internal_error()
+        })?;
+
+        Ok(())
+    }
+
+    async fn set_session_mode(
+        &self,
+        args: acp::SetSessionModeRequest,
+    ) -> Result<acp::SetSessionModeResponse, acp::Error> {
+        info!("Received set_session_mode request: {:?}", args);
+        // Not supported yet
+        Err(acp::Error::method_not_found())
+    }
+
+    #[cfg(feature = "unstable")]
+    async fn set_session_model(
+        &self,
+        args: acp::SetSessionModelRequest,
+    ) -> Result<acp::SetSessionModelResponse, acp::Error> {
+        info!("Received set_session_model request: {:?}", args);
+        // Not supported yet
+        Err(acp::Error::method_not_found())
+    }
+
+    async fn ext_method(&self, args: acp::ExtRequest) -> Result<acp::ExtResponse, acp::Error> {
+        info!(
+            "Received extension method: {}, params: {:?}",
+            args.method, args.params
+        );
+        Ok(serde_json::value::RawValue::NULL.to_owned().into())
+    }
+
+    async fn ext_notification(&self, args: acp::ExtNotification) -> Result<(), acp::Error> {
+        info!(
+            "Received extension notification: {}, params: {:?}",
+            args.method, args.params
+        );
+        Ok(())
+    }
+}
