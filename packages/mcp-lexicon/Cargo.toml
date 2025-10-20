@@ -27,7 +27,6 @@ tracing-appender = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-async-trait = { workspace = true }
 
 [[bin]]
 name = "mcp-lexicon"
