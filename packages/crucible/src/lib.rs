@@ -6,7 +6,7 @@ pub mod report;
 pub use eval::Eval;
 pub use eval_assertion::{EvalAssertion, EvalAssertionResult};
 pub use eval_messages::EvalMessage;
-pub use report::{AssertionReport, EvalReport, SummaryReport, create_eval_report};
+pub use report::{AssertionReport, EvalReport, SummaryReport, create_eval_report, copy_report_templates};
 
 use aether::llm::StreamingModelProvider;
 use aether::mcp::{ServerFactory, mcp};
@@ -184,10 +184,13 @@ impl Crucible {
             })
             .collect();
 
-        for task in tasks {
-            match task.await {
-                Ok((eval, Ok(results), duration)) => {
-                    let report = create_eval_report(&eval, &results, Some(duration));
+        // Await all tasks concurrently
+        let results = futures::future::join_all(tasks).await;
+
+        for result in results {
+            match result {
+                Ok((eval, Ok(eval_results), duration)) => {
+                    let report = create_eval_report(&eval, &eval_results, Some(duration));
 
                     let result_file = output_dir
                         .join("results")

@@ -76,10 +76,14 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
             AgentMessage::Error { message: msg } => {
                 tracing::info!("Agent error: {}", msg);
                 eval_messages.push(EvalMessage::Error(msg.clone()));
+                // Agent errors are terminal - agent won't send Done, so break out
+                break;
             }
             AgentMessage::Cancelled { message: msg } => {
                 tracing::info!("Agent cancelled: {}", msg);
                 eval_messages.push(EvalMessage::Error(format!("Cancelled: {}", msg)));
+                // Cancellation is terminal - break out
+                break;
             }
             AgentMessage::Done => {
                 // Log any remaining accumulated text before finishing

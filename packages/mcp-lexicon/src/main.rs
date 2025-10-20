@@ -4,7 +4,7 @@ use color_eyre::Result;
 use color_eyre::eyre::eyre;
 use crucible::{Crucible, EvalsConfig};
 use mcp_lexicon::CodingMcp;
-use std::fs::{self, File};
+use std::fs;
 use std::path::PathBuf;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -46,32 +46,51 @@ async fn main() -> Result<()> {
             judge_model,
             output_dir,
         } => {
-            let log_path = output_dir
+            // Create output directory structure
+            let output_dir_path = output_dir
                 .as_ref()
-                .map(|p| p.join("evals.log"))
-                .unwrap_or_else(|| PathBuf::from("evals.log"));
+                .map(|p| p.clone())
+                .unwrap_or_else(|| {
+                    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                    PathBuf::from(format!("crucible_output_{}", timestamp))
+                });
 
-            if let Some(parent) = log_path.parent() {
-                fs::create_dir_all(parent)?;
+            fs::create_dir_all(&output_dir_path)?;
+
+            // Copy HTML report templates immediately so users can open and refresh the report
+            if let Err(e) = crucible::copy_report_templates(&output_dir_path) {
+                eprintln!("Warning: Failed to copy report templates: {}", e);
+            } else {
+                println!("HTML report templates ready at {}/report/index.html", output_dir_path.display());
+                println!("You can open this now and refresh to see traces as they appear");
             }
 
-            let file = File::create(&log_path)?;
-            let file_layer = tracing_subscriber::fmt::layer()
-                .with_writer(file)
+            // JSON traces for HTML report using tracing-appender for non-blocking writes
+            let traces_file = tracing_appender::rolling::never(&output_dir_path, "traces.jsonl");
+            let (non_blocking, guard) = tracing_appender::non_blocking(traces_file);
+
+            let json_layer = tracing_subscriber::fmt::layer()
+                .json()
+                .with_writer(non_blocking)
                 .with_ansi(false);
 
-            let stdout_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
+            // Human-readable stdout
+            let stdout_layer = tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_ansi(true);
+
             let env_filter =
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
             tracing_subscriber::registry()
                 .with(env_filter)
-                .with(file_layer)
+                .with(json_layer)
                 .with(stdout_layer)
                 .init();
 
             tracing::info!("Starting evaluations...");
-            tracing::info!("Logging to file: {}", log_path.display());
+            tracing::info!("Output directory: {}", output_dir_path.display());
+            tracing::info!("JSON traces: {}/traces.jsonl", output_dir_path.display());
             tracing::info!("Agent model: {}", agent_model);
             tracing::info!("Judge model: {}", judge_model);
 
@@ -84,13 +103,9 @@ async fn main() -> Result<()> {
                 .parse(&judge_model)
                 .map_err(|e| eyre!("Failed to parse judge model '{}': {}", judge_model, e))?;
 
-            let mut crucible =
-                Crucible::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests"))
-                    .with_server_factory("coding", Box::new(|| Box::new(CodingMcp::new())));
-
-            if let Some(output) = output_dir {
-                crucible = crucible.with_output_dir(output);
-            }
+            let crucible = Crucible::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests"))
+                .with_server_factory("coding", Box::new(|| Box::new(CodingMcp::new())))
+                .with_output_dir(output_dir_path.clone());
 
             let config = EvalsConfig::new(agent_llm, judge_llm);
             let summary = crucible
@@ -99,6 +114,23 @@ async fn main() -> Result<()> {
                 .map_err(|e| color_eyre::eyre::eyre!("Failed to run evals: {}", e))?;
 
             summary.print();
+
+            // Flush all traces before generating HTML report
+            drop(guard);
+            println!("Flushed all traces");
+
+            // Generate HTML report after traces are flushed
+            let traces_file = output_dir_path.join("traces.jsonl");
+            if traces_file.exists() {
+                match crucible::report::generate_html_report(&output_dir_path, &summary, &traces_file) {
+                    Ok(_) => {
+                        println!("HTML report generated at {}/report/index.html", output_dir_path.display());
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to generate HTML report: {}", e);
+                    }
+                }
+            }
 
             if summary.failed_evals > 0 {
                 std::process::exit(1);
