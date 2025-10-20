@@ -151,10 +151,8 @@ impl TestTerminal {
             match cmd {
                 'H' | 'f' => {
                     // Cursor Position
-                    let parts: Vec<u16> = params
-                        .split(';')
-                        .filter_map(|s| s.parse().ok())
-                        .collect();
+                    let parts: Vec<u16> =
+                        params.split(';').filter_map(|s| s.parse().ok()).collect();
                     let row = parts.first().copied().unwrap_or(1).saturating_sub(1);
                     let col = parts.get(1).copied().unwrap_or(1).saturating_sub(1);
                     self.move_to(col, row);
@@ -263,10 +261,8 @@ impl Write for TestTerminal {
     }
 }
 
-// === Assertion Helpers ===
-
-/// Assert that the terminal buffer matches the expected output exactly.
-/// Expected is a vector of lines where each element represents a row.
+/// Asserts a test terminal buffer matches the expected output.
+/// Each element of the expected vector represents a row.
 /// Trailing whitespace is ignored on each line.
 pub fn assert_buffer_eq<S: AsRef<str>>(terminal: &TestTerminal, expected: &[S]) {
     let actual_lines = terminal.get_lines();
@@ -277,11 +273,38 @@ pub fn assert_buffer_eq<S: AsRef<str>>(terminal: &TestTerminal, expected: &[S]) 
         let actual_line = actual_lines.get(i).map(|s| s.as_str()).unwrap_or("");
 
         assert_eq!(
-            actual_line, expected_line,
+            actual_line,
+            expected_line,
             "Line {} mismatch:\n  Expected: '{}'\n  Got:      '{}'\n\nFull buffer:\n{}",
-            i, expected_line, actual_line, actual_lines.join("\n")
+            i,
+            expected_line,
+            actual_line,
+            actual_lines.join("\n")
         );
     }
+}
+
+/// Convert a StyledContent to a string matching what TestTerminal captures.
+/// TestTerminal strips `\x1b[` prefixes from escape sequences, so this helper does the same.
+///
+/// # Example
+/// ```
+/// use crossterm::style::Stylize;
+/// let styled = "Hello".red();
+/// let terminal_string = styled_to_string(styled);
+/// // terminal_string will be "38;2;255;0;0mHello39m" (without \x1b[ prefix)
+/// ```
+pub fn styled_to_string<T: std::fmt::Display + Clone>(
+    styled: crossterm::style::StyledContent<T>,
+) -> String {
+    use crossterm::Command;
+    use crossterm::style::PrintStyledContent;
+
+    let mut buffer = String::new();
+    PrintStyledContent(styled).write_ansi(&mut buffer).unwrap();
+
+    // Strip \x1b[ from escape sequences to match what TestTerminal captures
+    buffer.replace("\x1b[", "")
 }
 
 #[cfg(test)]
