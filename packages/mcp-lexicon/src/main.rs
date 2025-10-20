@@ -40,6 +40,10 @@ enum Commands {
         /// Delay between batches to prevent rate limiting (e.g., "2s", "1.5s", "500ms", "1m")
         #[arg(long, value_parser = parse_duration)]
         batch_delay: Option<Duration>,
+
+        /// Serve the HTML report on localhost:3000 after evals complete
+        #[arg(long, default_value = "false")]
+        serve: bool,
     },
 }
 
@@ -56,6 +60,7 @@ async fn main() -> Result<()> {
             output_dir,
             batch_size,
             batch_delay,
+            serve,
         } => {
             // Create output directory structure
             let output_dir_path = output_dir.clone().unwrap_or_else(|| {
@@ -133,6 +138,9 @@ async fn main() -> Result<()> {
             }
             if let Some(batch_delay) = batch_delay {
                 config = config.with_batch_delay(batch_delay);
+            }
+            if serve {
+                config = config.with_serve(true);
             }
 
             let summary = crucible
