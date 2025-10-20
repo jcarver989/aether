@@ -1,14 +1,22 @@
-use aether_acp::SessionManager;
 use agent_client_protocol as acp;
-use agent_client_protocol::Client;
 use clap::Parser;
 use std::path::PathBuf;
-use std::rc::Rc;
 use tokio::sync::mpsc;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-use tracing::{error, info};
-use tracing_subscriber;
+use tracing::info;
 use tracing_appender;
+use tracing_subscriber;
+
+use crate::{
+    acp_actor::{AcpActor, AcpActorHandle},
+    session_manager::SessionManager,
+};
+
+mod acp_actor;
+mod acp_coding_tools;
+mod mappers;
+mod session;
+mod session_manager;
 
 #[derive(Parser, Debug)]
 #[clap(name = "aether-acp", about = "Aether Agent Client Protocol Server")]
@@ -62,32 +70,25 @@ async fn main() -> acp::Result<()> {
     let local_set = tokio::task::LocalSet::new();
     local_set
         .run_until(async move {
-            let (notification_tx, mut notification_rx) = mpsc::unbounded_channel();
+            // Create channel for ACP actor
+            let (actor_request_tx, actor_request_rx) = mpsc::unbounded_channel();
+            let actor_handle = AcpActorHandle::new(actor_request_tx);
 
             let agent = SessionManager::new(
                 args.model,
                 args.system_prompt,
                 args.mcp_config,
-                notification_tx,
+                actor_handle.clone(),
             );
 
             let (conn, handle_io) = acp::AgentSideConnection::new(agent, stdout, stdin, |fut| {
                 tokio::task::spawn_local(fut);
             });
 
-            // Wrap connection in Rc for sharing
-            let conn = Rc::new(conn);
-
-            let conn_clone = Rc::clone(&conn);
+            // Spawn the ACP actor with owned connection
+            let actor = AcpActor::new(conn, actor_request_rx);
             tokio::task::spawn_local(async move {
-                while let Some((session_notification, tx)) = notification_rx.recv().await {
-                    let result = conn_clone.session_notification(session_notification).await;
-                    if let Err(e) = result {
-                        error!("Failed to send session notification: {}", e);
-                        break;
-                    }
-                    tx.send(()).ok();
-                }
+                actor.run().await;
             });
 
             // Run until stdin/stdout are closed

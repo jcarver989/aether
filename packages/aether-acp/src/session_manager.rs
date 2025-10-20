@@ -1,12 +1,14 @@
 use aether::agent::AgentMessage;
 use aether::llm::parser::ModelProviderParser;
 use agent_client_protocol as acp;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
+use crate::acp_actor::AcpActorHandle;
 use crate::mappers::{
     map_agent_message_to_session_notification, map_agent_message_to_stop_reason,
     map_content_blocks_to_text,
@@ -20,7 +22,7 @@ pub struct SessionManager {
     sessions: Arc<Mutex<HashMap<String, Session>>>,
     mcp_config_path: PathBuf,
     next_session_id: Arc<Mutex<u64>>,
-    notification_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    actor_handle: AcpActorHandle,
 }
 
 impl SessionManager {
@@ -28,7 +30,7 @@ impl SessionManager {
         model_provider: String,
         system_prompt: Option<String>,
         mcp_config_path: PathBuf,
-        notification_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+        actor_handle: AcpActorHandle,
     ) -> Self {
         info!(
             "Creating AetherAgent with model: {}, MCP config: {:?}",
@@ -40,7 +42,7 @@ impl SessionManager {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             mcp_config_path,
             next_session_id: Arc::new(Mutex::new(0)),
-            notification_tx,
+            actor_handle,
         }
     }
 
@@ -55,11 +57,10 @@ impl SessionManager {
         &self,
         notification: acp::SessionNotification,
     ) -> Result<(), acp::Error> {
-        let (tx, rx) = oneshot::channel();
-        self.notification_tx
-            .send((notification, tx))
+        self.actor_handle
+            .send_session_notification(notification)
+            .await
             .map_err(|_| acp::Error::internal_error())?;
-        rx.await.map_err(|_| acp::Error::internal_error())?;
         Ok(())
     }
 }
@@ -102,6 +103,7 @@ impl acp::Agent for SessionManager {
         info!("Creating new session with cwd: {:?}", args.cwd);
 
         let session_id = self.generate_session_id().await;
+        let acp_session_id = acp::SessionId(session_id.clone().into());
 
         // Parse the model provider
         let parser = ModelProviderParser::default();
@@ -113,12 +115,13 @@ impl acp::Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
-        // Create the session
+        // Create the session with ACP connection info
         let session = Session::new(
             session_id.clone(),
             llm,
             self.system_prompt.clone(),
             self.mcp_config_path.clone(),
+            Some((self.actor_handle.clone(), acp_session_id.clone())),
         )
         .await
         .map_err(|e| {
@@ -132,10 +135,8 @@ impl acp::Agent for SessionManager {
         info!("Session {} created successfully", session_id);
 
         Ok(acp::NewSessionResponse {
-            session_id: acp::SessionId(session_id.into()),
+            session_id: acp_session_id,
             modes: None,
-            #[cfg(feature = "unstable")]
-            models: None,
             meta: None,
         })
     }
@@ -196,7 +197,10 @@ impl acp::Agent for SessionManager {
                         | AgentMessage::Cancelled { .. }
                         | AgentMessage::Error { .. } => {
                             final_stop_reason = map_agent_message_to_stop_reason(&msg);
-                            info!("Terminal message received, stop reason: {:?}", final_stop_reason);
+                            info!(
+                                "Terminal message received, stop reason: {:?}",
+                                final_stop_reason
+                            );
                             break;
                         }
                         _ => {
@@ -243,16 +247,6 @@ impl acp::Agent for SessionManager {
         args: acp::SetSessionModeRequest,
     ) -> Result<acp::SetSessionModeResponse, acp::Error> {
         info!("Received set_session_mode request: {:?}", args);
-        // Not supported yet
-        Err(acp::Error::method_not_found())
-    }
-
-    #[cfg(feature = "unstable")]
-    async fn set_session_model(
-        &self,
-        args: acp::SetSessionModelRequest,
-    ) -> Result<acp::SetSessionModelResponse, acp::Error> {
-        info!("Received set_session_model request: {:?}", args);
         // Not supported yet
         Err(acp::Error::method_not_found())
     }
