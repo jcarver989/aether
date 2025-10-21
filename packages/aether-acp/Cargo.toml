@@ -3,6 +3,10 @@ name = "aether-acp"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "aether_acp"
+path = "src/lib.rs"
+
 [[bin]]
 name = "aether-acp"
 path = "src/main.rs"
@@ -11,6 +15,7 @@ path = "src/main.rs"
 aether = { path = "../aether" }
 mcp_lexicon = { path = "../mcp-lexicon" }
 agent-client-protocol = "0.5.0"
+rmcp = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["compat"] }
 serde = { workspace = true }
@@ -21,3 +26,4 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
 futures = { workspace = true }
+dirs = "5.0"
