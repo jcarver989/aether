@@ -18,6 +18,12 @@ pub enum McpError {
     ToolExecutionError(String),
     /// Tool discovery failed
     ToolDiscoveryFailed(String),
+    /// Prompt not found in the registry
+    PromptNotFound(String),
+    /// Prompt listing failed
+    PromptListFailed(String),
+    /// Prompt retrieval failed
+    PromptGetFailed(String),
     /// Server connection failed
     ConnectionFailed(String),
     /// Server startup failed
@@ -47,6 +53,9 @@ impl fmt::Display for McpError {
             }
             McpError::ToolExecutionError(msg) => write!(f, "Tool execution failed: {msg}"),
             McpError::ToolDiscoveryFailed(msg) => write!(f, "Tool discovery failed: {msg}"),
+            McpError::PromptNotFound(prompt) => write!(f, "Prompt not found: {prompt}"),
+            McpError::PromptListFailed(msg) => write!(f, "Prompt listing failed: {msg}"),
+            McpError::PromptGetFailed(msg) => write!(f, "Prompt retrieval failed: {msg}"),
             McpError::ConnectionFailed(msg) => write!(f, "Connection failed: {msg}"),
             McpError::ServerStartupFailed(msg) => write!(f, "Server startup failed: {msg}"),
             McpError::TransportError(msg) => write!(f, "Transport error: {msg}"),

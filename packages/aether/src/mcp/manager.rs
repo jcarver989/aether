@@ -19,7 +19,7 @@ use crate::{mcp::client::McpClient, transport::create_in_memory_transport};
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 
-const TOOL_NAMESPACE_DELIMITER: &str = "__";
+const SERVERNAME_DELIMITER: &str = "__";
 
 #[derive(Debug)]
 pub struct ElicitationRequest {
@@ -92,6 +92,7 @@ impl McpManager {
                 })?;
 
                 self.discover_tools_for_server(&name, &client).await?;
+
                 let server_connection = McpServerConnection {
                     _name: name.clone(),
                     client,
@@ -118,6 +119,7 @@ impl McpManager {
                 let mcp_client = self.create_mcp_client();
                 let client = mcp_client.serve(TokioChildProcess::new(cmd)?).await?;
                 self.discover_tools_for_server(&name, &client).await?;
+
                 self.servers.insert(
                     name.clone(),
                     McpServerConnection {
@@ -154,6 +156,7 @@ impl McpManager {
                     })?;
 
                 self.discover_tools_for_server(&name, &client).await?;
+
                 let server_connection = McpServerConnection {
                     _name: name.clone(),
                     client,
@@ -174,9 +177,7 @@ impl McpManager {
         client: &RunningService<RoleClient, McpClient>,
     ) -> Result<()> {
         let tools_response = client.list_tools(None).await.map_err(|e| {
-            McpError::ToolDiscoveryFailed(format!(
-                "Failed to list tools for {server_name}: {e}"
-            ))
+            McpError::ToolDiscoveryFailed(format!("Failed to list tools for {server_name}: {e}"))
         })?;
 
         for rmcp_tool in &tools_response.tools {
@@ -206,7 +207,7 @@ impl McpManager {
             return Err(McpError::ToolNotFound(namespaced_tool_name.to_string()));
         }
 
-        let (server_name, _) = parse_namespaced_tool_name(namespaced_tool_name)
+        let (server_name, _) = split_on_server_name(namespaced_tool_name)
             .ok_or_else(|| McpError::InvalidToolNameFormat(namespaced_tool_name.to_string()))?;
 
         let client = self
@@ -220,6 +221,86 @@ impl McpManager {
 
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tool_definitions.clone()
+    }
+
+    /// List all prompts from all connected MCP servers with namespacing
+    pub async fn list_prompts(&self) -> Result<Vec<rmcp::model::Prompt>> {
+        use futures::future::join_all;
+
+        let futures: Vec<_> = self
+            .servers
+            .iter()
+            .filter(|(_, server_conn)| {
+                server_conn
+                    .client
+                    .peer_info()
+                    .and_then(|info| info.capabilities.prompts.as_ref())
+                    .is_some()
+            })
+            .map(|(server_name, server_conn)| {
+                let server_name = server_name.clone();
+                let client = server_conn.client.clone();
+                async move {
+                    let prompts_response = client.list_prompts(None).await.map_err(|e| {
+                        McpError::PromptListFailed(format!(
+                            "Failed to list prompts for {server_name}: {e}"
+                        ))
+                    })?;
+
+                    let namespaced_prompts: Vec<rmcp::model::Prompt> = prompts_response
+                        .prompts
+                        .into_iter()
+                        .map(|prompt| {
+                            let namespaced_name =
+                                create_namespaced_tool_name(&server_name, &prompt.name);
+                            rmcp::model::Prompt {
+                                name: namespaced_name.into(),
+                                description: prompt.description,
+                                arguments: prompt.arguments,
+                                title: prompt.title,
+                                icons: prompt.icons,
+                            }
+                        })
+                        .collect();
+
+                    Ok::<_, McpError>(namespaced_prompts)
+                }
+            })
+            .collect();
+
+        let results = join_all(futures).await;
+        let mut all_prompts = Vec::new();
+        for result in results {
+            all_prompts.extend(result?);
+        }
+
+        Ok(all_prompts)
+    }
+
+    /// Get a specific prompt by namespaced name
+    pub async fn get_prompt(
+        &self,
+        namespaced_prompt_name: &str,
+        arguments: Option<serde_json::Map<String, serde_json::Value>>,
+    ) -> Result<rmcp::model::GetPromptResult> {
+        let (server_name, prompt_name) = split_on_server_name(namespaced_prompt_name)
+            .ok_or_else(|| McpError::InvalidToolNameFormat(namespaced_prompt_name.to_string()))?;
+
+        let server_conn = self
+            .servers
+            .get(server_name)
+            .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?;
+
+        let request = rmcp::model::GetPromptRequestParam {
+            name: prompt_name.into(),
+            arguments,
+        };
+
+        server_conn.client.get_prompt(request).await.map_err(|e| {
+            McpError::PromptGetFailed(format!(
+                "Failed to get prompt '{prompt_name}' from {server_name}: {e}"
+            ))
+        })
     }
 
     /// Shutdown all servers and wait for their tasks to complete
@@ -330,9 +411,9 @@ impl From<&RmcpTool> for Tool {
 }
 
 fn create_namespaced_tool_name(server_name: &str, tool_name: &str) -> String {
-    format!("{server_name}{TOOL_NAMESPACE_DELIMITER}{tool_name}")
+    format!("{server_name}{SERVERNAME_DELIMITER}{tool_name}")
 }
 
-pub fn parse_namespaced_tool_name(namespaced_name: &str) -> Option<(&str, &str)> {
-    namespaced_name.split_once(TOOL_NAMESPACE_DELIMITER)
+pub fn split_on_server_name(namespaced_name: &str) -> Option<(&str, &str)> {
+    namespaced_name.split_once(SERVERNAME_DELIMITER)
 }

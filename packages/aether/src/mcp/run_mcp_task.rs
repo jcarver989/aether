@@ -1,5 +1,6 @@
 use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use crate::mcp::McpManager;
+use rmcp::model::{GetPromptResult, Prompt};
 use rmcp::{RoleClient, model::CallToolRequestParam};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
@@ -13,6 +14,14 @@ pub enum McpCommand {
     ExecuteTool {
         request: ToolCallRequest,
         tx: oneshot::Sender<Result<ToolCallResult, ToolCallError>>,
+    },
+    ListPrompts {
+        tx: oneshot::Sender<Result<Vec<Prompt>, String>>,
+    },
+    GetPrompt {
+        name: String,
+        arguments: Option<serde_json::Map<String, serde_json::Value>>,
+        tx: oneshot::Sender<Result<GetPromptResult, String>>,
     },
 }
 
@@ -45,6 +54,26 @@ pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<Mc
                     let _ = tx.send(Err(error));
                 }
             },
+
+            McpCommand::ListPrompts { tx } => {
+                let result = mcp
+                    .list_prompts()
+                    .await
+                    .map_err(|e| format!("Failed to list prompts: {e}"));
+                let _ = tx.send(result);
+            }
+
+            McpCommand::GetPrompt {
+                name: namespaced_name,
+                arguments,
+                tx,
+            } => {
+                let result = mcp
+                    .get_prompt(&namespaced_name, arguments)
+                    .await
+                    .map_err(|e| format!("Failed to get prompt: {e}"));
+                let _ = tx.send(result);
+            }
         }
     }
 

@@ -1,7 +1,7 @@
 use rmcp::model::CallToolRequestParam;
 use serde::{Deserialize, Serialize};
 
-use crate::mcp::manager::parse_namespaced_tool_name;
+use crate::mcp::manager::split_on_server_name;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCallRequest {
@@ -39,7 +39,7 @@ impl TryFrom<&ToolCallRequest> for CallToolRequestParam {
 
     fn try_from(request: &ToolCallRequest) -> Result<Self, Self::Error> {
         // Parse the tool name to remove namespace prefix if present
-        let tool_name = parse_namespaced_tool_name(&request.name)
+        let tool_name = split_on_server_name(&request.name)
             .map(|(_, tool_name)| tool_name.to_string())
             .unwrap_or_else(|| request.name.clone());
 
