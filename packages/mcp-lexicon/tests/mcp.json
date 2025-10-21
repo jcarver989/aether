@@ -1,8 +1,7 @@
 {
   "servers": {
     "coding": {
-      "type": "inmemory",
-      "factory": "coding"
+      "type": "in-memory"
     }
   }
 }
