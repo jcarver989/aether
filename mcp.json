@@ -3,6 +3,10 @@
     "coding": {
       "type": "inmemory",
       "factory": "coding"
+    },
+    "slash-commands": {
+      "type": "inmemory",
+      "factory": "slash-commands"
     }
   }
 }

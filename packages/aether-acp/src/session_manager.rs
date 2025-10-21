@@ -128,16 +128,49 @@ impl acp::Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
+        // Get available commands from the session before inserting it
+        let available_commands = session.list_available_commands().await.map_err(|e| {
+            error!("Failed to list available commands: {}", e);
+            acp::Error::internal_error()
+        })?;
+
         let mut sessions = self.sessions.lock().await;
         sessions.insert(session_id.clone(), session);
 
         info!("Session {} created successfully", session_id);
 
-        Ok(acp::NewSessionResponse {
-            session_id: acp_session_id,
+        // Prepare the response to return first
+        let response = acp::NewSessionResponse {
+            session_id: acp_session_id.clone(),
             modes: None,
             meta: None,
-        })
+        };
+
+        // Send available commands update notification asynchronously (don't await)
+        // This allows the response to be sent first, then the notification follows
+        if !available_commands.is_empty() {
+            let command_count = available_commands.len();
+            let notification = acp::SessionNotification {
+                session_id: acp_session_id,
+                update: acp::SessionUpdate::AvailableCommandsUpdate {
+                    available_commands,
+                },
+                meta: None,
+            };
+
+            // Spawn task to send notification after response is returned
+            let actor_handle = self.actor_handle.clone();
+            let session_id_log = session_id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = actor_handle.send_session_notification(notification).await {
+                    error!("Failed to send available commands notification: {:?}", e);
+                } else {
+                    info!("Sent available commands update for session {} ({} commands)", session_id_log, command_count);
+                }
+            });
+        }
+
+        Ok(response)
     }
 
     async fn load_session(
@@ -163,10 +196,36 @@ impl acp::Agent for SessionManager {
         })?;
 
         // Convert prompt to text
-        let prompt_text = map_content_blocks_to_text(args.prompt);
+        let mut prompt_text = map_content_blocks_to_text(args.prompt);
         debug!("Prompt text: {}", prompt_text);
 
-        // Send the prompt to the agent
+        // Check if this is a slash command and expand it if so
+        if let Some(slash_command_text) = prompt_text.strip_prefix('/') {
+            info!("Detected slash command in prompt");
+
+            // Parse command name and arguments
+            let (command_name, args_text) = if let Some(space_idx) = slash_command_text.find(char::is_whitespace) {
+                let (cmd, args) = slash_command_text.split_at(space_idx);
+                (cmd, args.trim())
+            } else {
+                (slash_command_text, "")
+            };
+
+            // Expand the slash command
+            match session.expand_slash_command(command_name, args_text).await {
+                Ok(expanded_prompt) => {
+                    info!("Expanded slash command '{}' -> {} chars", command_name, expanded_prompt.len());
+                    prompt_text = expanded_prompt;
+                }
+                Err(e) => {
+                    error!("Failed to expand slash command '{}': {}", command_name, e);
+                    // Continue with original prompt text rather than failing
+                    // This allows graceful degradation if command expansion fails
+                }
+            }
+        }
+
+        // Send the prompt to the agent (either expanded or original)
         session.send_prompt(prompt_text).await.map_err(|e| {
             error!("Failed to send prompt: {}", e);
             acp::Error::internal_error()
