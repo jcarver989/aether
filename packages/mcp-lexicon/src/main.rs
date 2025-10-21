@@ -1,7 +1,5 @@
 use aether::llm::parser::ModelProviderParser;
 use clap::{Parser, Subcommand};
-use color_eyre::Result;
-use color_eyre::eyre::eyre;
 use crucible::{Crucible, EvalsConfig};
 use mcp_lexicon::CodingMcp;
 use std::fs;
@@ -48,9 +46,7 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    color_eyre::install()?;
-
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -120,11 +116,11 @@ async fn main() -> Result<()> {
             let parser = ModelProviderParser::default();
             let agent_llm = parser
                 .parse(&agent_model)
-                .map_err(|e| eyre!("Failed to parse agent model '{}': {}", agent_model, e))?;
+                .map_err(|e| format!("Failed to parse agent model '{}': {}", agent_model, e))?;
 
             let judge_llm = parser
                 .parse(&judge_model)
-                .map_err(|e| eyre!("Failed to parse judge model '{}': {}", judge_model, e))?;
+                .map_err(|e| format!("Failed to parse judge model '{}': {}", judge_model, e))?;
 
             let crucible = Crucible::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests"))
                 .with_server_factory("coding", Box::new(|| Box::new(CodingMcp::new())))
@@ -146,7 +142,7 @@ async fn main() -> Result<()> {
             let summary = crucible
                 .run_evals(config)
                 .await
-                .map_err(|e| color_eyre::eyre::eyre!("Failed to run evals: {}", e))?;
+                .map_err(|e| format!("Failed to run evals: {}", e))?;
 
             summary.print();
 
