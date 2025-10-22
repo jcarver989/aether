@@ -141,7 +141,7 @@ fn test_factory_not_found_error() {
     {
         "servers": {
             "test": {
-                "type": "inmemory",
+                "type": "in-memory",
                 "factory": "nonexistent"
             }
         }
