@@ -141,8 +141,7 @@ fn test_factory_not_found_error() {
     {
         "servers": {
             "test": {
-                "type": "in-memory",
-                "factory": "nonexistent"
+                "type": "in-memory"
             }
         }
     }
@@ -154,7 +153,7 @@ fn test_factory_not_found_error() {
     assert!(result.is_err());
     match result.unwrap_err() {
         ParseError::FactoryNotFound(name) => {
-            assert_eq!(name, "nonexistent");
+            assert_eq!(name, "test");
         }
         _ => panic!("Expected FactoryNotFound"),
     }
