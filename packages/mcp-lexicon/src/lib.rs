@@ -1,6 +1,8 @@
 pub mod coding;
-pub mod slash_commands;
+pub mod markdown_file;
+pub mod plugins;
 
 pub use coding::CodingMcp;
+pub use markdown_file::MarkdownFile;
+pub use plugins::PluginsMcp;
 pub use rmcp::ServiceExt;
-pub use slash_commands::SlashCommandMcp;
