@@ -3,7 +3,7 @@ use aether::llm::provider::StreamingModelProvider;
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
-use mcp_lexicon::{CodingMcp, ServiceExt, SlashCommandMcp};
+use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -60,9 +60,7 @@ impl Session {
                 )
                 .register_in_memory_server(
                     "slash-commands",
-                    Box::new(move || {
-                        SlashCommandMcp::new(prompts_dir.clone()).into_dyn()
-                    }),
+                    Box::new(move || PluginsMcp::new(prompts_dir.clone()).into_dyn()),
                 )
                 .from_json_file(config_str)?
                 .spawn()
@@ -74,9 +72,7 @@ impl Session {
                 .register_in_memory_server("coding", Box::new(|| CodingMcp::new().into_dyn()))
                 .register_in_memory_server(
                     "slash-commands",
-                    Box::new(move || {
-                        SlashCommandMcp::new(prompts_dir.clone()).into_dyn()
-                    }),
+                    Box::new(move || PluginsMcp::new(prompts_dir.clone()).into_dyn()),
                 )
                 .from_json_file(config_str)?
                 .spawn()
@@ -92,7 +88,9 @@ impl Session {
         let system_prompt_text = Prompt::build_all(&prompts)
             .map_err(|e| format!("Failed to build system prompt: {}", e))?;
 
-        let builder = agent(llm).system(&system_prompt_text).tools(mcp_tx.clone(), tools);
+        let builder = agent(llm)
+            .system(&system_prompt_text)
+            .tools(mcp_tx.clone(), tools);
 
         let (agent_tx, agent_rx, agent_handle) = builder.spawn().await?;
 
@@ -136,7 +134,9 @@ impl Session {
     }
 
     /// Lists available slash commands by querying MCP prompts
-    pub async fn list_available_commands(&self) -> Result<Vec<acp::AvailableCommand>, Box<dyn std::error::Error>> {
+    pub async fn list_available_commands(
+        &self,
+    ) -> Result<Vec<acp::AvailableCommand>, Box<dyn std::error::Error>> {
         let (tx, rx) = oneshot::channel();
 
         self.mcp_tx
