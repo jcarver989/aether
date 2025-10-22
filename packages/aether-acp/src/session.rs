@@ -59,7 +59,7 @@ impl Session {
                     }),
                 )
                 .register_in_memory_server(
-                    "slash-commands",
+                    "plugins",
                     Box::new(move || PluginsMcp::new(prompts_dir.clone()).into_dyn()),
                 )
                 .from_json_file(config_str)?

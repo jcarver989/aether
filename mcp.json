@@ -1,12 +1,10 @@
 {
   "servers": {
     "coding": {
-      "type": "inmemory",
-      "factory": "coding"
+      "type": "in-memory"
     },
-    "slash-commands": {
-      "type": "inmemory",
-      "factory": "slash-commands"
+    "plugins": {
+      "type": "in-memory"
     }
   }
 }
