@@ -269,16 +269,26 @@ impl ToolHandler {
 
 ### Front-Matter Parsing
 
-Use `gray_matter` crate for YAML front-matter extraction:
+Reuse the existing front-matter parsing from `mcp-lexicon` slash commands server:
 
 ```rust
-use gray_matter::{Matter, engine::YAML};
+// See packages/mcp-lexicon/src/slash_commands/prompt_file.rs
+// The implementation:
+// 1. Checks if content starts with "---"
+// 2. Finds the closing "---" delimiter
+// 3. Parses YAML between delimiters using serde_yaml
+// 4. Returns the remaining content as the template/skill body
 
-let matter = Matter::<YAML>::new();
-let result = matter.parse(&content);
-let metadata: SkillMetadata = serde_yaml::from_str(&result.data)?;
-let content = result.content;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillFrontmatter {
+    pub description: String,
+}
+
+// Same parsing logic as PromptFile::parse()
+// Can potentially extract into a shared utility
 ```
+
+This avoids adding a new dependency and reuses proven code.
 
 ## Integration with Aether
 
