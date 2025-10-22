@@ -8,12 +8,23 @@ use std::{
 /// Represents a parsed markdown file with optional frontmatter
 #[derive(Debug, Clone)]
 pub struct MarkdownFile<T: DeserializeOwned> {
-    /// Name of the file (derived from filename without extension)
-    pub name: String,
     /// Parsed frontmatter (if present)
     pub frontmatter: Option<T>,
     /// The content after frontmatter
     pub content: String,
+}
+
+/// Parse a markdown file from a path
+fn parse_markdown_file<T: DeserializeOwned>(
+    path: impl AsRef<Path>,
+) -> Result<MarkdownFile<T>, ParseError> {
+    let raw_content = fs::read_to_string(path)?;
+    let (frontmatter, content) = split_frontmatter::<T>(&raw_content);
+
+    Ok(MarkdownFile {
+        frontmatter,
+        content,
+    })
 }
 
 impl<T: DeserializeOwned + Send + 'static> MarkdownFile<T> {
@@ -40,50 +51,31 @@ impl<T: DeserializeOwned + Send + 'static> MarkdownFile<T> {
             )));
         }
 
-        let name = path
-            .file_stem()
-            .ok_or(ParseError::InvalidFilename)?
-            .to_string_lossy()
-            .to_string();
-
-        let content = fs::read_to_string(path)?;
-        let (frontmatter, content) = split_frontmatter::<T>(&content);
-
-        Ok(MarkdownFile {
-            name,
-            frontmatter,
-            content,
-        })
+        parse_markdown_file(path)
     }
 
     /// Load all markdown files from a directory
-    pub async fn from_dir(dir: &PathBuf) -> Result<Vec<Self>, io::Error> {
+    pub async fn from_dir(dir: &PathBuf) -> Result<Vec<(PathBuf, Self)>, io::Error> {
         if !dir.exists() {
-            tracing::warn!("Directory does not exist: {}", dir.display());
-            return Ok(Vec::new());
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Directory not found: {}", dir.display()),
+            ));
+        }
+
+        if !dir.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotADirectory,
+                format!("Not a directory: {}", dir.display()),
+            ));
         }
 
         let parse_tasks: Vec<_> = Self::list(dir)?
             .into_iter()
             .map(|path| {
                 tokio::spawn(async move {
-                    let result = (|| -> Result<Self, ParseError> {
-                        let name = path
-                            .file_stem()
-                            .ok_or(ParseError::InvalidFilename)?
-                            .to_string_lossy()
-                            .to_string();
-
-                        let content = fs::read_to_string(&path)?;
-                        let (frontmatter, content) = split_frontmatter::<T>(&content);
-
-                        Ok(MarkdownFile {
-                            name,
-                            frontmatter,
-                            content,
-                        })
-                    })();
-                    (path, result)
+                    let path_clone = path.clone();
+                    parse_markdown_file(path).map(|f| (path_clone, f))
                 })
             })
             .collect();
@@ -92,9 +84,9 @@ impl<T: DeserializeOwned + Send + 'static> MarkdownFile<T> {
         let items = results
             .into_iter()
             .filter_map(|result| match result {
-                Ok((_, Ok(item))) => Some(item),
-                Ok((path, Err(e))) => {
-                    tracing::warn!("Failed to parse {}: {}", path.display(), e);
+                Ok(Ok(item)) => Some(item),
+                Ok(Err(e)) => {
+                    tracing::warn!("Failed to parse file: {}", e);
                     None
                 }
                 Err(_) => None,
@@ -103,6 +95,81 @@ impl<T: DeserializeOwned + Send + 'static> MarkdownFile<T> {
 
         Ok(items)
     }
+
+    /// Load all markdown files from nested subdirectories, where each subdirectory
+    /// contains a file with the specified filename.
+    ///
+    /// Flat files in the parent directory are ignored. Only subdirectories containing
+    /// the specified filename are processed.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Load from:
+    /// //   skills/skill-1/SKILL.md
+    /// //   skills/skill-2/SKILL.md
+    /// //   skills/flat-file.md      -> ignored (not in a subdirectory)
+    /// let skills = MarkdownFile::from_nested_dirs(Path::new("skills"), "SKILL.md").await?;
+    /// ```
+    pub async fn from_nested_dirs(
+        parent_dir: impl AsRef<Path>,
+        filename: &str,
+    ) -> Result<Vec<(PathBuf, Self)>, io::Error> {
+        let parent_dir = parent_dir.as_ref();
+
+        if !parent_dir.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Directory not found: {}", parent_dir.display()),
+            ));
+        }
+
+        if !parent_dir.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotADirectory,
+                format!("Not a directory: {}", parent_dir.display()),
+            ));
+        }
+
+        let subdirs = list_subdirs(parent_dir)?;
+        let filename = filename.to_string();
+        let parse_tasks: Vec<_> = subdirs
+            .into_iter()
+            .map(|dir| {
+                let filename = filename.clone();
+                tokio::spawn(async move {
+                    let file_path = dir.join(&filename);
+                    parse_markdown_file(&file_path).map(|f| (dir, f))
+                })
+            })
+            .collect();
+
+        let results = join_all(parse_tasks).await;
+        let items = results
+            .into_iter()
+            .filter_map(|result| match result {
+                Ok(Ok(item)) => Some(item),
+                Ok(Err(e)) => {
+                    tracing::debug!("Skipping directory: {}", e);
+                    None
+                }
+                Err(_) => None,
+            })
+            .collect();
+
+        Ok(items)
+    }
+}
+
+/// List all subdirectories in a directory
+fn list_subdirs(dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, io::Error> {
+    let paths: Vec<_> = fs::read_dir(dir)?
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            path.is_dir().then_some(path)
+        })
+        .collect();
+
+    Ok(paths)
 }
 
 /// Split YAML frontmatter from markdown content
