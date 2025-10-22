@@ -43,12 +43,9 @@ pub enum RawMcpServerConfig {
     },
 
     /// In-memory transport (Aether extension) - requires a registered factory
+    /// The factory is looked up using the server name from the mcp.json key
     #[serde(rename = "in-memory")]
-    InMemory {
-        /// Registry key for the server factory
-        #[serde(rename = "factory")]
-        server_name: String,
-    },
+    InMemory,
 }
 
 pub enum McpServerConfig {
@@ -216,10 +213,10 @@ impl RawMcpServerConfig {
                 })
             }
 
-            RawMcpServerConfig::InMemory { server_name } => {
+            RawMcpServerConfig::InMemory => {
                 let server_factory = factories
-                    .get(&server_name)
-                    .ok_or_else(|| ParseError::FactoryNotFound(server_name.clone()))?;
+                    .get(&name)
+                    .ok_or_else(|| ParseError::FactoryNotFound(name.clone()))?;
                 let server = server_factory();
                 Ok(McpServerConfig::InMemory { name, server })
             }
