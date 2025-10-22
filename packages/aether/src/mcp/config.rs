@@ -43,7 +43,7 @@ pub enum RawMcpServerConfig {
     },
 
     /// In-memory transport (Aether extension) - requires a registered factory
-    #[serde(rename = "inmemory")]
+    #[serde(rename = "in-memory")]
     InMemory {
         /// Registry key for the server factory
         #[serde(rename = "factory")]
