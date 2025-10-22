@@ -12,9 +12,16 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::mcp::ElicitationRequest;
 
+/// MCP client handler for Aether
+///
+/// This client handles incoming requests from MCP servers, including:
+/// - Elicitation requests (prompting the user for input)
+/// - Progress notifications (TODO: when rmcp supports notification handlers)
 pub struct McpClient {
     client_info: ClientInfo,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
+    // TODO: Add progress notification handler when rmcp supports it
+    // progress_handler: Option<mpsc::Sender<ProgressNotification>>,
 }
 
 impl McpClient {

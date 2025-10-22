@@ -26,6 +26,37 @@ pub struct ToolCallError {
     pub error: String,
 }
 
+/// Progress information for a tool call
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ToolCallProgress {
+    pub progress: f64,
+    pub total: Option<f64>,
+    pub message: Option<String>,
+}
+
+/// Status updates for tool execution
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ToolCallStatus {
+    /// Tool execution has started
+    Started {
+        id: String,
+        name: String,
+    },
+    /// Tool execution is in progress
+    InProgress {
+        id: String,
+        progress: ToolCallProgress,
+    },
+    /// Tool execution completed successfully
+    Complete {
+        result: ToolCallResult,
+    },
+    /// Tool execution failed
+    Error {
+        error: ToolCallError,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolDefinition {
     pub name: String,
@@ -90,5 +121,132 @@ impl TryFrom<(&ToolCallRequest, rmcp::model::CallToolResult)> for ToolCallResult
                 result: result_value.to_string(),
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tool_call_status_started_serialization() {
+        let status = ToolCallStatus::Started {
+            id: "test-id".to_string(),
+            name: "test-tool".to_string(),
+        };
+
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["Started"]["id"], "test-id");
+        assert_eq!(json["Started"]["name"], "test-tool");
+
+        let deserialized: ToolCallStatus = serde_json::from_value(json).unwrap();
+        assert_eq!(status, deserialized);
+    }
+
+    #[test]
+    fn test_tool_call_status_in_progress_serialization() {
+        let progress = ToolCallProgress {
+            progress: 50.0,
+            total: Some(100.0),
+            message: Some("Processing items...".to_string()),
+        };
+
+        let status = ToolCallStatus::InProgress {
+            id: "test-id".to_string(),
+            progress: progress.clone(),
+        };
+
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["InProgress"]["id"], "test-id");
+        assert_eq!(json["InProgress"]["progress"]["progress"], 50.0);
+        assert_eq!(json["InProgress"]["progress"]["total"], 100.0);
+        assert_eq!(json["InProgress"]["progress"]["message"], "Processing items...");
+
+        let deserialized: ToolCallStatus = serde_json::from_value(json).unwrap();
+        assert_eq!(status, deserialized);
+    }
+
+    #[test]
+    fn test_tool_call_status_complete_serialization() {
+        let result = ToolCallResult {
+            id: "test-id".to_string(),
+            name: "test-tool".to_string(),
+            arguments: "{}".to_string(),
+            result: "{\"status\":\"ok\"}".to_string(),
+        };
+
+        let status = ToolCallStatus::Complete {
+            result: result.clone(),
+        };
+
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["Complete"]["result"]["id"], "test-id");
+
+        let deserialized: ToolCallStatus = serde_json::from_value(json).unwrap();
+        if let ToolCallStatus::Complete { result: r } = deserialized {
+            assert_eq!(r.id, result.id);
+            assert_eq!(r.name, result.name);
+        } else {
+            panic!("Expected Complete variant");
+        }
+    }
+
+    #[test]
+    fn test_tool_call_status_error_serialization() {
+        let error = ToolCallError {
+            id: "test-id".to_string(),
+            name: "test-tool".to_string(),
+            arguments: Some("{}".to_string()),
+            error: "Something went wrong".to_string(),
+        };
+
+        let status = ToolCallStatus::Error {
+            error: error.clone(),
+        };
+
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["Error"]["error"]["id"], "test-id");
+        assert_eq!(json["Error"]["error"]["error"], "Something went wrong");
+
+        let deserialized: ToolCallStatus = serde_json::from_value(json).unwrap();
+        if let ToolCallStatus::Error { error: e } = deserialized {
+            assert_eq!(e.id, error.id);
+            assert_eq!(e.error, error.error);
+        } else {
+            panic!("Expected Error variant");
+        }
+    }
+
+    #[test]
+    fn test_tool_call_progress_without_total() {
+        let progress = ToolCallProgress {
+            progress: 42.5,
+            total: None,
+            message: Some("Unknown total".to_string()),
+        };
+
+        let json = serde_json::to_value(&progress).unwrap();
+        assert_eq!(json["progress"], 42.5);
+        assert_eq!(json["total"], serde_json::Value::Null);
+        assert_eq!(json["message"], "Unknown total");
+
+        let deserialized: ToolCallProgress = serde_json::from_value(json).unwrap();
+        assert_eq!(deserialized.progress, 42.5);
+        assert_eq!(deserialized.total, None);
+    }
+
+    #[test]
+    fn test_tool_call_progress_with_floating_point() {
+        let progress = ToolCallProgress {
+            progress: 33.33,
+            total: Some(99.99),
+            message: None,
+        };
+
+        let json = serde_json::to_value(&progress).unwrap();
+        let deserialized: ToolCallProgress = serde_json::from_value(json).unwrap();
+
+        assert!((deserialized.progress - 33.33).abs() < 0.001);
+        assert_eq!(deserialized.total, Some(99.99));
     }
 }

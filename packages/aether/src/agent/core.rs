@@ -2,6 +2,7 @@ use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{AgentMessage, UserMessage};
 use crate::llm::{
     ChatMessage, StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult,
+    ToolCallStatus,
 };
 use crate::llm::{Context, LlmError, LlmResponse};
 use crate::mcp::run_mcp_task::McpCommand;
@@ -287,21 +288,65 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     model_name: self.llm.display_name(),
                 });
 
-                let (tx, rx) = oneshot::channel();
+                // Create mpsc channel for streaming tool call status updates
+                let (tx, rx) = mpsc::channel::<ToolCallStatus>(10);
                 let timeout = self.tool_timeout;
                 let tool_id = tool_call.id.clone();
                 let tool_name = tool_call.name.clone();
 
-                let stream = stream::once(async move {
-                    tokio::time::timeout(timeout, rx)
-                        .await
-                        .map_err(|_| ToolResultError::Timeout { tool_id, tool_name })
-                        .and_then(|result| result.map_err(|_| ToolResultError::ChannelClosed))
-                        .and_then(|result: Result<ToolCallResult, ToolCallError>| {
-                            result.map_err(ToolResultError::McpError)
-                        })
-                })
-                .map(StreamEvent::ToolResult);
+                // Create stream that processes status updates and produces final result
+                let status_stream = ReceiverStream::new(rx);
+                let stream = status_stream
+                    .scan(
+                        None,
+                        |last_status: &mut Option<Result<ToolCallResult, ToolCallError>>, status| {
+                            async move {
+                                match status {
+                                    ToolCallStatus::Started { .. } => {
+                                        // Just track that we started, don't emit anything yet
+                                        None
+                                    }
+                                    ToolCallStatus::InProgress { .. } => {
+                                        // Track progress but don't emit a result yet
+                                        None
+                                    }
+                                    ToolCallStatus::Complete { result } => {
+                                        // Store final result and emit it
+                                        *last_status = Some(Ok(result.clone()));
+                                        Some(Ok(result))
+                                    }
+                                    ToolCallStatus::Error { error } => {
+                                        // Store error and emit it
+                                        *last_status = Some(Err(error.clone()));
+                                        Some(Err(error))
+                                    }
+                                }
+                            }
+                        },
+                    )
+                    .filter_map(|result| async move { result })
+                    .map(|result| match result {
+                        Ok(result) => StreamEvent::ToolResult(Ok(result)),
+                        Err(error) => StreamEvent::ToolResult(Err(ToolResultError::McpError(error))),
+                    });
+
+                // Wrap in timeout
+                let timeout_stream = tokio::time::timeout(timeout, stream.collect::<Vec<_>>())
+                    .map(move |result| match result {
+                        Ok(events) => {
+                            if events.is_empty() {
+                                StreamEvent::ToolResult(Err(ToolResultError::ChannelClosed))
+                            } else {
+                                events.into_iter().next().unwrap()
+                            }
+                        }
+                        Err(_) => StreamEvent::ToolResult(Err(ToolResultError::Timeout {
+                            tool_id,
+                            tool_name,
+                        })),
+                    });
+
+                let stream = stream::once(timeout_stream);
 
                 let stream_key = tool_call.id.clone();
                 self.streams.insert(stream_key, Box::pin(stream));
