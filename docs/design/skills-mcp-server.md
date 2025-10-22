@@ -129,52 +129,80 @@ Skills are loaded fresh from disk on every `resources/list` call (no caching).
 
 ### Tools
 
-The server provides a `load_skill` tool that allows the LLM to dynamically load skills into its context:
+The server provides a `load_skills` tool that allows the LLM to dynamically load one or more skills into its context:
 
 **Tool Definition:**
 ```json
 {
-  "name": "load_skill",
-  "description": "Load a skill into the agent's context to gain specialized knowledge or expertise",
+  "name": "load_skills",
+  "description": "Load one or more skills into context to gain specialized knowledge or expertise",
   "inputSchema": {
     "type": "object",
     "properties": {
-      "uri": {
-        "type": "string",
-        "description": "The skill URI (e.g., 'skill://rust-expert')"
+      "uris": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Array of skill URIs to load (e.g., ['skill://rust-expert', 'skill://async-patterns'])"
       }
     },
-    "required": ["uri"]
+    "required": ["uris"]
   }
 }
 ```
 
-**Tool Call:**
+**Tool Call (single skill):**
 ```json
 {
   "method": "tools/call",
   "params": {
-    "name": "load_skill",
+    "name": "load_skills",
     "arguments": {
-      "uri": "skill://rust-expert"
+      "uris": ["skill://rust-expert"]
     }
   }
 }
 ```
 
-**Tool Result:**
+**Tool Call (multiple skills):**
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "load_skills",
+    "arguments": {
+      "uris": ["skill://rust-expert", "skill://async-patterns", "skill://tui-dev"]
+    }
+  }
+}
+```
+
+**Tool Result (structured):**
 ```json
 {
   "content": [
     {
-      "type": "text",
-      "text": "You are an expert Rust engineer specializing in:\n- Systems programming and memory safety\n- async/await patterns with tokio\n- TUI development with ratatui\n..."
+      "type": "resource",
+      "resource": {
+        "uri": "skill://rust-expert",
+        "name": "rust-expert",
+        "mimeType": "text/markdown",
+        "text": "You are an expert Rust engineer specializing in:\n- Systems programming and memory safety\n- async/await patterns with tokio\n- TUI development with ratatui\n..."
+      }
+    },
+    {
+      "type": "resource",
+      "resource": {
+        "uri": "skill://async-patterns",
+        "name": "async-patterns",
+        "mimeType": "text/markdown",
+        "text": "Expert in Rust async programming patterns:\n- tokio runtime and task spawning\n- async trait patterns\n..."
+      }
     }
   ]
 }
 ```
 
-The tool returns the skill content as text, which the LLM can incorporate into its context.
+The tool returns structured content with each skill as a separate resource, which the LLM can incorporate into its context.
 
 ## Rust Implementation
 
@@ -188,7 +216,7 @@ aether-skills/
     ├── lib.rs               # Library exports
     ├── skill.rs             # Skill struct and parsing
     ├── resource_handler.rs  # MCP resource operations
-    └── tool_handler.rs      # MCP tool operations (load_skill)
+    └── tool_handler.rs      # MCP tool operations (load_skills)
 ```
 
 ### Key Types
@@ -234,8 +262,8 @@ pub struct ToolHandler {
 }
 
 impl ToolHandler {
-    /// Execute the load_skill tool
-    pub fn load_skill(&self, uri: &str) -> Result<CallToolResult>;
+    /// Execute the load_skills tool
+    pub fn load_skills(&self, uris: &[String]) -> Result<CallToolResult>;
 }
 ```
 
@@ -260,24 +288,24 @@ The LLM can dynamically discover and load skills as needed:
 
 1. **Discovery**: The MCP client exposes available skills via `resources/list`
 2. **Selection**: The LLM sees skill descriptions and decides which to load
-3. **Loading**: The LLM calls the `load_skill` tool with the desired skill URI
-4. **Context**: The tool returns the skill content, which becomes part of the conversation context
+3. **Loading**: The LLM calls the `load_skills` tool with one or more skill URIs
+4. **Context**: The tool returns structured skill content, which becomes part of the conversation context
 
 **Example Flow:**
 
 ```
-User: "I need help optimizing this Rust code for performance"
+User: "I need help building an async Rust TUI app"
 
-LLM (internal): I should check if there's a Rust expert skill available
-  → Sees skill://rust-expert in resources
-  → Calls load_skill tool with uri="skill://rust-expert"
-  → Receives skill content as tool result
-  → Now has Rust expertise in context
+LLM (internal): I should load relevant skills
+  → Sees skill://rust-expert, skill://async-patterns, skill://tui-dev in resources
+  → Calls load_skills tool with uris=["skill://rust-expert", "skill://async-patterns", "skill://tui-dev"]
+  → Receives structured content for all three skills
+  → Now has combined expertise in context
 
-LLM: "Looking at your code, I can help optimize it. [provides expert advice]"
+LLM: "I'll help you build that. Let's start with the TUI structure... [provides expert advice]"
 ```
 
-The LLM decides when to load skills based on the user's needs, making expertise available on-demand.
+The LLM decides when to load skills based on the user's needs, making expertise available on-demand. It can load single or multiple related skills in one tool call.
 
 ### CLI Commands
 
@@ -343,7 +371,7 @@ In `mcp.json`:
 - [ ] Skill file parsing (front-matter + markdown)
 - [ ] `resources/list` handler (loads skills fresh each call)
 - [ ] `resources/read` handler
-- [ ] `load_skill` tool implementation
+- [ ] `load_skills` tool implementation (supports array of URIs)
 
 ### Phase 2: Aether Integration
 - [ ] MCP client support for skills server
