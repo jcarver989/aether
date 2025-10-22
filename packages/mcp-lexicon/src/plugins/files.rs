@@ -1,4 +1,4 @@
-use rmcp::model::{Prompt, RawResource, Resource};
+use rmcp::model::Prompt;
 use serde::{Deserialize, Serialize};
 
 use crate::MarkdownFile;
@@ -16,27 +16,14 @@ pub struct SkillsFrontmatter {
     pub description: Option<String>,
 }
 
-impl From<&PromptFile> for Prompt {
-    fn from(file: &PromptFile) -> Self {
+impl PromptFile {
+    pub fn to_prompt(&self, name: impl Into<String>) -> Prompt {
         Prompt::new(
-            file.name.clone(),
-            file.frontmatter
+            name.into(),
+            self.frontmatter
                 .as_ref()
                 .and_then(|f| f.description.clone()),
             None,
         )
-    }
-}
-
-impl From<&SkillsFile> for Resource {
-    fn from(file: &SkillsFile) -> Self {
-        let mut resource = RawResource::new(format!("skill://{}", &file.name), file.name.clone());
-        resource.mime_type = Some("text/markdown".to_string());
-        resource.description = file
-            .frontmatter
-            .as_ref()
-            .and_then(|f| f.description.clone());
-
-        Resource::new(resource, None)
     }
 }

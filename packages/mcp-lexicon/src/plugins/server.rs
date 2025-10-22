@@ -1,13 +1,18 @@
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
+    handler::server::{
+        router::tool::ToolRouter,
+        wrapper::{Json, Parameters},
+    },
     model::{
         GetPromptRequestParam, GetPromptResult, Implementation, ListPromptsResult,
-        ListResourcesResult, PaginatedRequestParam, PromptMessage, PromptMessageRole,
-        ReadResourceRequestParam, ReadResourceResult, ResourceContents, ServerCapabilities,
-        ServerInfo,
+        PaginatedRequestParam, PromptMessage, PromptMessageRole, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
+    tool, tool_handler, tool_router,
 };
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::{
@@ -15,11 +20,45 @@ use super::{
     substitute_parameters,
 };
 
-/// MCP server that dynamically loads prompts from markdown files
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadSkillsInput {
+    /// Array of skill names to load, e.g. "kungfu"
+    pub skills: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Skill {
+    pub name: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadSkillsOutput {
+    pub skills: Vec<Skill>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInfo {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSkillsOutput {
+    pub skills: Vec<SkillInfo>,
+}
+
+/// MCP server that dynamically loads slash-commands and skills from markdown files
 #[derive(Clone)]
 pub struct PluginsMcp {
     commands_dir: PathBuf,
     skills_dir: PathBuf,
+    tool_router: ToolRouter<Self>,
 }
 
 impl PluginsMcp {
@@ -27,10 +66,12 @@ impl PluginsMcp {
         Self {
             commands_dir: base_dir.join("commands"),
             skills_dir: base_dir.join("skills"),
+            tool_router: Self::tool_router(),
         }
     }
 }
 
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for PluginsMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
@@ -44,54 +85,10 @@ impl ServerHandler for PluginsMcp {
             instructions: None,
             capabilities: ServerCapabilities::builder()
                 .enable_prompts()
-                .enable_resources()
+                .enable_tools()
                 .build(),
             ..Default::default()
         }
-    }
-
-    fn list_resources(
-        &self,
-        _request: Option<PaginatedRequestParam>,
-        _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
-        async move {
-            let skills_files = SkillsFile::from_dir(&self.skills_dir).await.map_err(|e| {
-                McpError::internal_error(format!("Failed to load skills: {}", e), None)
-            })?;
-
-            let skills = skills_files.iter().map(|s| s.into()).collect();
-
-            Ok(ListResourcesResult {
-                resources: skills,
-                next_cursor: None,
-            })
-        }
-    }
-
-    async fn read_resource(
-        &self,
-        request: ReadResourceRequestParam,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
-        let skill_name = request.uri.strip_prefix("skill://").ok_or_else(|| {
-            McpError::invalid_params(
-                format!(
-                    "Invalid URI format: {}. Expected 'skill://<name>'",
-                    request.uri
-                ),
-                None,
-            )
-        })?;
-
-        let skill_path = self.skills_dir.join(format!("{}.md", skill_name));
-        let skill = SkillsFile::from_file(&skill_path).map_err(|e| {
-            McpError::invalid_params(format!("Skill '{}' not found: {}", skill_name, e), None)
-        })?;
-
-        Ok(ReadResourceResult {
-            contents: vec![ResourceContents::text(skill.content, request.uri)],
-        })
     }
 
     fn list_prompts(
@@ -100,13 +97,20 @@ impl ServerHandler for PluginsMcp {
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListPromptsResult, McpError>> + Send {
         async move {
-            let command_files = PromptFile::from_dir(&self.commands_dir)
-                .await
-                .map_err(|e| {
-                    McpError::internal_error(format!("Failed to load commands: {}", e), None)
-                })?;
+            let command_files_with_paths =
+                PromptFile::from_dir(&self.commands_dir)
+                    .await
+                    .map_err(|e| {
+                        McpError::internal_error(format!("Failed to load commands: {}", e), None)
+                    })?;
 
-            let commands = command_files.iter().map(|p| p.into()).collect();
+            let commands = command_files_with_paths
+                .iter()
+                .filter_map(|(path, file)| {
+                    let name = path.file_stem()?.to_string_lossy().to_string();
+                    Some(file.to_prompt(name))
+                })
+                .collect();
             Ok(ListPromptsResult {
                 prompts: commands,
                 next_cursor: None,
@@ -139,5 +143,63 @@ impl ServerHandler for PluginsMcp {
                 messages,
             })
         }
+    }
+}
+
+#[tool_router]
+impl PluginsMcp {
+    #[tool(description = "List all available skills with their names and descriptions.
+
+Returns an array of skills, each with:
+- name: identifier for the skill
+- description: summary of what the skill does
+
+Use this to discover available skills before loading their full content with get_skills.")]
+    pub async fn list_skills(&self) -> Result<Json<ListSkillsOutput>, String> {
+        let skills_with_dirs = SkillsFile::from_nested_dirs(&self.skills_dir, "SKILL.md")
+            .await
+            .map_err(|e| format!("Failed to load skills: {}", e))?;
+
+        let skills = skills_with_dirs
+            .iter()
+            .filter_map(|(dir, file)| {
+                let name = dir.file_name()?.to_string_lossy().to_string();
+                let description = file
+                    .frontmatter
+                    .as_ref()
+                    .and_then(|f| f.description.clone())
+                    .unwrap_or_default();
+                Some(SkillInfo { name, description })
+            })
+            .collect();
+
+        Ok(Json(ListSkillsOutput { skills }))
+    }
+
+    #[tool(description = "Load the full content of one or more skills by name.
+
+Takes an array of skill names and loads them into your context.
+Skills that don't exist are silently skipped.
+
+Use list_skills first to discover available skills.")]
+    pub async fn get_skills(
+        &self,
+        request: Parameters<LoadSkillsInput>,
+    ) -> Result<Json<LoadSkillsOutput>, String> {
+        let Parameters(args) = request;
+
+        let mut skills = Vec::new();
+        for skill_name in args.skills {
+            let skill_path = self.skills_dir.join(&skill_name).join("SKILL.md");
+
+            if let Ok(skill_file) = SkillsFile::from_file(&skill_path) {
+                skills.push(Skill {
+                    name: skill_name,
+                    content: skill_file.content,
+                });
+            }
+        }
+
+        Ok(Json(LoadSkillsOutput { skills }))
     }
 }
