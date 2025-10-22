@@ -1,5 +1,5 @@
 use super::super::common::*;
-use aether::mcp::{ElicitationRequest, McpManager, McpServerConfig};
+use aether::mcp::{ElicitationRequest, McpManager, McpServerConfig, manager::ProgressNotification};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -14,7 +14,8 @@ async fn test_mcp_client_creation() {
 #[tokio::test]
 async fn test_mcp_client_with_http_server() {
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut client = McpManager::new(elicitation_tx);
+    let (progress_tx, _progress_rx) = mpsc::channel::<ProgressNotification>(50);
+    let mut client = McpManager::new(elicitation_tx, progress_tx);
     let server_name = "test_server".to_string();
     let url = TEST_SERVER_URL.to_string();
 
@@ -37,7 +38,8 @@ async fn test_mcp_client_with_http_server() {
 #[tokio::test]
 async fn test_mcp_client_with_headers() {
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut client = McpManager::new(elicitation_tx);
+    let (progress_tx, _progress_rx) = mpsc::channel::<ProgressNotification>(50);
+    let mut client = McpManager::new(elicitation_tx, progress_tx);
     let server_name = "test_server_with_headers".to_string();
     let url = "https://api.example.com/mcp".to_string();
 

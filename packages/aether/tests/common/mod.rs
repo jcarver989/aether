@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use aether::llm::{Context, LlmResponse, LlmResponseStream, Result, StreamingModelProvider, ToolCallRequest, ToolDefinition};
-use aether::mcp::{ElicitationRequest, McpManager};
+use aether::mcp::{ElicitationRequest, McpManager, manager::ProgressNotification};
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -17,7 +17,8 @@ pub const TEST_TOOL_ID: &str = "call_123";
 
 pub fn create_test_mcp_client() -> McpManager {
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    McpManager::new(elicitation_tx)
+    let (progress_tx, _progress_rx) = mpsc::channel::<ProgressNotification>(50);
+    McpManager::new(elicitation_tx, progress_tx)
 }
 
 // Tool Registry Test Helpers

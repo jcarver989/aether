@@ -1,7 +1,8 @@
 use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolCallStatus, ToolDefinition};
-use crate::mcp::McpManager;
+use crate::mcp::{manager::ProgressNotification, McpManager};
 use rmcp::model::{GetPromptResult, Prompt};
 use rmcp::{RoleClient, model::CallToolRequestParam};
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
@@ -31,73 +32,116 @@ pub enum McpEvent {
     ToolsChanged(Vec<ToolDefinition>),
 }
 
-pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<McpCommand>) {
-    while let Some(command) = command_rx.recv().await {
-        match command {
-            McpCommand::ExecuteTool { request, tx } => match mcp.get_client_for_tool(&request.name)
-            {
-                Ok(client) => {
-                    let progress_token = request.id.clone();
-                    let progress_channels = mcp.progress_channels.clone();
+pub async fn run_mcp_task(
+    mut mcp: McpManager,
+    mut command_rx: mpsc::Receiver<McpCommand>,
+    mut progress_rx: mpsc::Receiver<ProgressNotification>,
+) {
+    // Local registry of progress tokens to their tool execution channels
+    let mut progress_channels: HashMap<String, mpsc::Sender<ToolCallStatus>> = HashMap::new();
 
-                    // Register the progress channel
-                    mcp.register_progress_channel(progress_token.clone(), tx.clone())
-                        .await;
+    loop {
+        tokio::select! {
+            // Handle incoming commands
+            Some(command) = command_rx.recv() => {
+                match command {
+                    McpCommand::ExecuteTool { request, tx } => match mcp.get_client_for_tool(&request.name)
+                    {
+                        Ok(client) => {
+                            let progress_token = request.id.clone();
 
-                    tokio::spawn(async move {
-                        // Send Started status
-                        let _ = tx
-                            .send(ToolCallStatus::Started {
+                            // Register the progress channel locally
+                            progress_channels.insert(progress_token.clone(), tx.clone());
+
+                            tokio::spawn(async move {
+                                // Send Started status
+                                let _ = tx
+                                    .send(ToolCallStatus::Started {
+                                        id: request.id.clone(),
+                                        name: request.name.clone(),
+                                    })
+                                    .await;
+
+                                // Execute tool with progress token
+                                let result = try_execute_tool(client, &request, &progress_token).await;
+
+                                // Send Complete or Error status
+                                let status = match result {
+                                    Ok(result) => ToolCallStatus::Complete { result },
+                                    Err(error) => ToolCallStatus::Error { error },
+                                };
+                                let _ = tx.send(status).await;
+                            });
+                        }
+
+                        Err(e) => {
+                            tracing::error!("Failed to get client for tool {}: {e}", request.name);
+                            let error = ToolCallError {
                                 id: request.id.clone(),
                                 name: request.name.clone(),
-                            })
-                            .await;
+                                arguments: Some(request.arguments.clone()),
+                                error: format!("Failed to get client: {e}"),
+                            };
+                            let _ = tx.send(ToolCallStatus::Error { error }).await;
+                        }
+                    },
 
-                        // Execute tool with progress token
-                        let result = try_execute_tool(client, &request, &progress_token).await;
+                    McpCommand::ListPrompts { tx } => {
+                        let result = mcp
+                            .list_prompts()
+                            .await
+                            .map_err(|e| format!("Failed to list prompts: {e}"));
+                        let _ = tx.send(result);
+                    }
 
-                        // Send Complete or Error status
-                        let status = match result {
-                            Ok(result) => ToolCallStatus::Complete { result },
-                            Err(error) => ToolCallStatus::Error { error },
-                        };
-                        let _ = tx.send(status).await;
-
-                        // Clean up progress channel registration
-                        progress_channels.lock().await.remove(&progress_token);
-                    });
+                    McpCommand::GetPrompt {
+                        name: namespaced_name,
+                        arguments,
+                        tx,
+                    } => {
+                        let result = mcp
+                            .get_prompt(&namespaced_name, arguments)
+                            .await
+                            .map_err(|e| format!("Failed to get prompt: {e}"));
+                        let _ = tx.send(result);
+                    }
                 }
-
-                Err(e) => {
-                    tracing::error!("Failed to get client for tool {}: {e}", request.name);
-                    let error = ToolCallError {
-                        id: request.id.clone(),
-                        name: request.name.clone(),
-                        arguments: Some(request.arguments.clone()),
-                        error: format!("Failed to get client: {e}"),
-                    };
-                    let _ = tx.send(ToolCallStatus::Error { error }).await;
-                }
-            },
-
-            McpCommand::ListPrompts { tx } => {
-                let result = mcp
-                    .list_prompts()
-                    .await
-                    .map_err(|e| format!("Failed to list prompts: {e}"));
-                let _ = tx.send(result);
             }
 
-            McpCommand::GetPrompt {
-                name: namespaced_name,
-                arguments,
-                tx,
-            } => {
-                let result = mcp
-                    .get_prompt(&namespaced_name, arguments)
-                    .await
-                    .map_err(|e| format!("Failed to get prompt: {e}"));
-                let _ = tx.send(result);
+            // Handle incoming progress notifications from MCP clients
+            Some(notification) = progress_rx.recv() => {
+                tracing::debug!(
+                    "Routing progress notification for token: {}",
+                    notification.progress_token
+                );
+
+                if let Some(tx) = progress_channels.get(&notification.progress_token) {
+                    let status = ToolCallStatus::InProgress {
+                        id: notification.progress_token.clone(),
+                        progress: notification.progress,
+                    };
+
+                    if let Err(e) = tx.send(status).await {
+                        tracing::warn!(
+                            "Failed to send progress for token {}: {}",
+                            notification.progress_token,
+                            e
+                        );
+                        // Channel closed, clean up
+                        progress_channels.remove(&notification.progress_token);
+                    }
+                } else {
+                    tracing::debug!(
+                        "No active tool for progress token: {}",
+                        notification.progress_token
+                    );
+                }
+            }
+
+            // Both channels closed, exit
+            else => {
+                tracing::debug!("MCP manager channels closed, shutting down");
+                break;
             }
         }
     }

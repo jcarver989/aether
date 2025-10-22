@@ -3,6 +3,7 @@ use crate::llm::ToolDefinition;
 use super::{
     ElicitationRequest, McpError, McpManager, McpServerConfig, ParseError, RawMcpConfig,
     ServerFactory,
+    manager::ProgressNotification,
     run_mcp_task::{McpCommand, run_mcp_task},
 };
 use std::collections::HashMap;
@@ -64,11 +65,13 @@ impl McpBuilder {
             mpsc::channel::<McpCommand>(self.mcp_channel_capacity);
         let (elicitation_tx, _elicitation_rx) =
             mpsc::channel::<ElicitationRequest>(self.mcp_channel_capacity);
+        let (progress_tx, progress_rx) =
+            mpsc::channel::<ProgressNotification>(self.mcp_channel_capacity);
 
-        let mut mcp_manager = McpManager::new(elicitation_tx);
+        let mut mcp_manager = McpManager::new(elicitation_tx, progress_tx);
         mcp_manager.add_mcps(self.mcp_configs).await?;
         let tool_definitions = mcp_manager.tool_definitions();
-        let mcp_handle = tokio::spawn(run_mcp_task(mcp_manager, mcp_command_rx));
+        let mcp_handle = tokio::spawn(run_mcp_task(mcp_manager, mcp_command_rx, progress_rx));
 
         Ok((tool_definitions, mcp_command_tx, mcp_handle))
     }
