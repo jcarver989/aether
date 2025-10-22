@@ -3,35 +3,37 @@ use rmcp::{
     ClientHandler, RoleClient,
     model::{
         ClientInfo, CreateElicitationRequestParam, CreateElicitationResult, ElicitationAction,
-        ErrorData,
+        ErrorData, ProgressNotificationParam,
     },
-    service::RequestContext,
+    service::{NotificationContext, RequestContext},
 };
 use std::result::Result;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::mcp::ElicitationRequest;
+use crate::llm::{ToolCallProgress, ToolCallStatus};
+use crate::mcp::{manager::ProgressChannelMap, ElicitationRequest};
 
 /// MCP client handler for Aether
 ///
-/// This client handles incoming requests from MCP servers, including:
+/// This client handles incoming requests and notifications from MCP servers, including:
 /// - Elicitation requests (prompting the user for input)
-/// - Progress notifications (TODO: when rmcp supports notification handlers)
+/// - Progress notifications from long-running tool executions
 pub struct McpClient {
     client_info: ClientInfo,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
-    // TODO: Add progress notification handler when rmcp supports it
-    // progress_handler: Option<mpsc::Sender<ProgressNotification>>,
+    progress_channels: ProgressChannelMap,
 }
 
 impl McpClient {
     pub fn new(
         client_info: ClientInfo,
         elicitation_sender: mpsc::Sender<ElicitationRequest>,
+        progress_channels: ProgressChannelMap,
     ) -> Self {
         Self {
             client_info,
             elicitation_sender,
+            progress_channels,
         }
     }
 }
@@ -65,6 +67,45 @@ impl ClientHandler for McpClient {
                 action: ElicitationAction::Decline,
                 content: None,
             }),
+        }
+    }
+
+    async fn on_progress(
+        &self,
+        params: ProgressNotificationParam,
+        _context: NotificationContext<RoleClient>,
+    ) {
+        // Look up the channel for this progress token
+        let progress_token = params.progress_token.to_string();
+        tracing::debug!("Received progress notification for token: {}", progress_token);
+
+        let channel = {
+            let channels = self.progress_channels.lock().await;
+            channels.get(&progress_token).cloned()
+        };
+
+        if let Some(tx) = channel {
+            let status = ToolCallStatus::InProgress {
+                id: progress_token.clone(),
+                progress: ToolCallProgress {
+                    progress: params.progress,
+                    total: params.total,
+                    message: params.message.map(|s| s.to_string()),
+                },
+            };
+
+            if let Err(e) = tx.send(status).await {
+                tracing::warn!(
+                    "Failed to send progress update for token {}: {}",
+                    progress_token,
+                    e
+                );
+            }
+        } else {
+            tracing::debug!(
+                "No channel registered for progress token: {}",
+                progress_token
+            );
         }
     }
 }

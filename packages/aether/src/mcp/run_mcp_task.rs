@@ -38,6 +38,12 @@ pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<Mc
             {
                 Ok(client) => {
                     let progress_token = request.id.clone();
+                    let progress_channels = mcp.progress_channels.clone();
+
+                    // Register the progress channel
+                    mcp.register_progress_channel(progress_token.clone(), tx.clone())
+                        .await;
+
                     tokio::spawn(async move {
                         // Send Started status
                         let _ = tx
@@ -56,6 +62,9 @@ pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<Mc
                             Err(error) => ToolCallStatus::Error { error },
                         };
                         let _ = tx.send(status).await;
+
+                        // Clean up progress channel registration
+                        progress_channels.lock().await.remove(&progress_token);
                     });
                 }
 

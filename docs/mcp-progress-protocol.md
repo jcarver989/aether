@@ -35,54 +35,64 @@ This document describes Aether's implementation of the Model Context Protocol (M
 ### ✅ Completed
 
 1. **Data Structures**
-   - `ToolCallStatus` enum with all states
+   - `ToolCallStatus` enum with all states (Started, InProgress, Complete, Error)
    - `ToolCallProgress` struct for progress information (progress, total, message)
+   - Comprehensive unit tests for all variants
 
 2. **Channel Infrastructure**
    - `McpCommand::ExecuteTool` now uses `mpsc::Sender<ToolCallStatus>`
    - Agent creates `ReceiverStream` to process status updates
    - Proper timeout handling maintained
+   - Progress channel registration and cleanup
 
-3. **Status Flow**
+3. **Progress Notification Routing**
+   - `ProgressChannelMap` shared across MCP manager and clients
+   - `McpClient::on_progress()` method implemented
+   - Notifications routed by progress token to correct tool execution
+   - Automatic cleanup when tool execution completes
+
+4. **Status Flow**
    - MCP manager sends `Started` status when tool execution begins
+   - Progress notifications from MCP servers → `InProgress` status
    - MCP manager sends `Complete` or `Error` status when tool finishes
    - Agent processes these statuses and converts to tool results
 
 ### 🚧 In Progress / TODO
 
-1. **Progress Token Injection**
-   - **Status**: Infrastructure ready, injection pending
+1. **Progress Token Injection into MCP Requests**
+   - **Status**: Infrastructure ready, need rmcp API support
    - **Location**: `packages/aether/src/mcp/run_mcp_task.rs:112-130`
    - **What's needed**:
      ```rust
      // Need to inject into MCP request metadata:
+     // According to MCP spec, this goes in the JSON-RPC params._meta field
      {
-       "_meta": {
-         "progressToken": tool_call_id
+       "jsonrpc": "2.0",
+       "method": "tools/call",
+       "params": {
+         "_meta": {
+           "progressToken": tool_call_id
+         },
+         ...tool_params
        }
      }
      ```
-   - **Blockers**:
-     - `rmcp::Peer::call_tool()` doesn't currently expose metadata injection
-     - Need to either:
-       - Extend rmcp to support `call_tool_with_meta()`
-       - Use lower-level rmcp API for request building
-       - Wait for rmcp to add progress token support
+   - **Current approach**:
+     - Progress token is generated (tool call ID)
+     - Progress channel is registered before execution
+     - Token is passed to `try_execute_tool()`
+     - TODO: Inject into actual MCP request
 
-2. **Progress Notification Handler**
-   - **Status**: Placeholder added
-   - **Location**: `packages/aether/src/mcp/client.rs:23-24`
-   - **What's needed**:
-     - Handle incoming `notifications/progress` from MCP servers
-     - Route notifications to correct tool execution task
-     - Requires rmcp to expose notification handler trait method
+   - **Potential solutions**:
+     - Use rmcp's lower-level request building API
+     - Extend `CallToolRequestParam` with extensions/meta
+     - Use rmcp's `GetMeta` trait if available on requests
+     - Contribute to rmcp to add `call_tool_with_progress()` method
 
-3. **InProgress Status Emission**
-   - **Status**: Enum variant exists, not yet emitted
-   - **What's needed**:
-     - Receive progress notifications from MCP server
-     - Convert to `ToolCallStatus::InProgress`
-     - Send via status channel
+2. **Testing with Real MCP Servers**
+   - Create integration tests with mock MCP server that sends progress
+   - Verify end-to-end flow works correctly
+   - Test edge cases (late notifications, multiple tools, etc.)
 
 ## Data Flow
 

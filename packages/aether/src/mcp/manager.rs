@@ -1,5 +1,5 @@
 use crate::{
-    llm::ToolDefinition,
+    llm::{ToolCallStatus, ToolDefinition},
     mcp::{McpError, Result, config::McpServerConfig},
 };
 use rmcp::{
@@ -13,13 +13,16 @@ use rmcp::{
     transport::{StreamableHttpClientTransport, TokioChildProcess},
 };
 use serde_json::Value;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{mcp::client::McpClient, transport::create_in_memory_transport};
 use tokio::process::Command;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 const SERVERNAME_DELIMITER: &str = "__";
+
+/// Maps progress tokens to their corresponding status channels
+pub type ProgressChannelMap = Arc<Mutex<HashMap<String, mpsc::Sender<ToolCallStatus>>>>;
 
 #[derive(Debug)]
 pub struct ElicitationRequest {
@@ -40,6 +43,7 @@ pub struct McpManager {
     tool_definitions: Vec<ToolDefinition>,
     client_info: ClientInfo,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
+    pub(crate) progress_channels: ProgressChannelMap,
 }
 
 impl McpManager {
@@ -65,11 +69,33 @@ impl McpManager {
                 },
             },
             elicitation_sender,
+            progress_channels: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     fn create_mcp_client(&self) -> McpClient {
-        McpClient::new(self.client_info.clone(), self.elicitation_sender.clone())
+        McpClient::new(
+            self.client_info.clone(),
+            self.elicitation_sender.clone(),
+            self.progress_channels.clone(),
+        )
+    }
+
+    /// Register a progress token with its status channel
+    pub async fn register_progress_channel(
+        &self,
+        progress_token: String,
+        channel: mpsc::Sender<ToolCallStatus>,
+    ) {
+        self.progress_channels
+            .lock()
+            .await
+            .insert(progress_token, channel);
+    }
+
+    /// Unregister a progress token when tool execution completes
+    pub async fn unregister_progress_channel(&self, progress_token: &str) {
+        self.progress_channels.lock().await.remove(progress_token);
     }
 
     pub async fn add_mcps(&mut self, configs: Vec<McpServerConfig>) -> Result<()> {
