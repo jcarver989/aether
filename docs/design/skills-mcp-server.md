@@ -20,14 +20,11 @@ skills/
 
 ### Skill File Format
 
-Each `skill.md` file contains YAML front-matter with metadata and markdown content:
+Each `skill.md` file contains YAML front-matter with a description and markdown content:
 
 ```markdown
 ---
-name: rust-expert
 description: Expert Rust engineer for systems programming, TUI apps, and async patterns
-audience: ["assistant"]
-priority: 0.9
 ---
 
 You are an expert Rust engineer specializing in:
@@ -39,11 +36,11 @@ You are an expert Rust engineer specializing in:
 
 #### Front-Matter Fields
 
-- `name`: (required) Unique identifier for the skill
 - `description`: (required) Short description shown in resource listings
-- `audience`: (optional) Array of `["user", "assistant"]` - defaults to `["assistant"]`
-- `priority`: (optional) 0.0-1.0 indicating importance - defaults to 0.5
-- `tags`: (optional) Array of tags for categorization
+
+#### Derived Fields
+
+- `name`: Inferred from the folder name (e.g., `rust-expert/` → `"rust-expert"`)
 
 ## MCP Server Implementation
 
@@ -52,13 +49,15 @@ You are an expert Rust engineer specializing in:
 ```json
 {
   "capabilities": {
-    "resources": {
-      "subscribe": true,
-      "listChanged": true
-    }
+    "resources": {},
+    "tools": {}
   }
 }
 ```
+
+The server provides:
+- **Resources**: For discovering available skills
+- **Tools**: For dynamically loading skills into agent context
 
 ### Resource URIs
 
@@ -71,6 +70,8 @@ skill://data-analysis
 ```
 
 ### Resources List
+
+Skills are loaded fresh from disk on every `resources/list` call (no caching).
 
 **Request:**
 ```json
@@ -86,26 +87,14 @@ skill://data-analysis
     {
       "uri": "skill://rust-expert",
       "name": "rust-expert",
-      "title": "Rust Expert",
       "description": "Expert Rust engineer for systems programming, TUI apps, and async patterns",
-      "mimeType": "text/markdown",
-      "annotations": {
-        "audience": ["assistant"],
-        "priority": 0.9,
-        "lastModified": "2025-10-22T10:30:00Z"
-      }
+      "mimeType": "text/markdown"
     },
     {
       "uri": "skill://web-scraping",
       "name": "web-scraping",
-      "title": "Web Scraping",
       "description": "Extract data from websites using modern scraping techniques",
-      "mimeType": "text/markdown",
-      "annotations": {
-        "audience": ["assistant"],
-        "priority": 0.7,
-        "lastModified": "2025-10-21T15:00:00Z"
-      }
+      "mimeType": "text/markdown"
     }
   ]
 }
@@ -138,12 +127,54 @@ skill://data-analysis
 }
 ```
 
-### File System Watching
+### Tools
 
-The server monitors the skills directory for changes and sends `notifications/resources/list_changed` when:
-- New skill directories are added
-- Skill files are modified
-- Skills are removed
+The server provides a `load_skill` tool that allows the LLM to dynamically load skills into its context:
+
+**Tool Definition:**
+```json
+{
+  "name": "load_skill",
+  "description": "Load a skill into the agent's context to gain specialized knowledge or expertise",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "uri": {
+        "type": "string",
+        "description": "The skill URI (e.g., 'skill://rust-expert')"
+      }
+    },
+    "required": ["uri"]
+  }
+}
+```
+
+**Tool Call:**
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "load_skill",
+    "arguments": {
+      "uri": "skill://rust-expert"
+    }
+  }
+}
+```
+
+**Tool Result:**
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "You are an expert Rust engineer specializing in:\n- Systems programming and memory safety\n- async/await patterns with tokio\n- TUI development with ratatui\n..."
+    }
+  ]
+}
+```
+
+The tool returns the skill content as text, which the LLM can incorporate into its context.
 
 ## Rust Implementation
 
@@ -157,7 +188,7 @@ aether-skills/
     ├── lib.rs               # Library exports
     ├── skill.rs             # Skill struct and parsing
     ├── resource_handler.rs  # MCP resource operations
-    └── watcher.rs           # File system watching
+    └── tool_handler.rs      # MCP tool operations (load_skill)
 ```
 
 ### Key Types
@@ -165,46 +196,46 @@ aether-skills/
 ```rust
 // skill.rs
 pub struct Skill {
-    pub name: String,
-    pub description: String,
-    pub content: String,
-    pub audience: Vec<Audience>,
-    pub priority: f64,
-    pub tags: Vec<String>,
-    pub modified: DateTime<Utc>,
-}
-
-pub enum Audience {
-    User,
-    Assistant,
+    pub name: String,        // Derived from folder name
+    pub description: String, // From front-matter
+    pub content: String,     // Skill instructions (without front-matter)
 }
 
 impl Skill {
-    pub fn from_file(path: PathBuf) -> Result<Self>;
+    /// Load skill from directory (reads skill.md and parses front-matter)
+    pub fn from_dir(dir_path: PathBuf) -> Result<Self>;
+
+    /// Convert to MCP resource for listing
     pub fn to_resource(&self) -> Resource;
+
+    /// Convert to MCP resource contents for reading
     pub fn to_resource_contents(&self) -> ResourceContents;
 }
 
 // resource_handler.rs
 pub struct ResourceHandler {
     skills_dir: PathBuf,
-    skills: Arc<RwLock<HashMap<String, Skill>>>,
 }
 
 impl ResourceHandler {
-    pub async fn list_resources(&self, cursor: Option<String>) -> Result<ListResourcesResult>;
-    pub async fn read_resource(&self, uri: &str) -> Result<ReadResourceResult>;
-    pub async fn reload_skills(&self) -> Result<()>;
+    /// List all skills by scanning directory (no caching)
+    pub fn list_resources(&self) -> Result<ListResourcesResult>;
+
+    /// Read a specific skill by URI
+    pub fn read_resource(&self, uri: &str) -> Result<ReadResourceResult>;
+
+    /// Load all skills from disk
+    fn load_skills(&self) -> Result<Vec<Skill>>;
 }
 
-// watcher.rs
-pub struct SkillWatcher {
-    handler: Arc<ResourceHandler>,
-    notifier: mpsc::Sender<Notification>,
+// tool_handler.rs
+pub struct ToolHandler {
+    skills_dir: PathBuf,
 }
 
-impl SkillWatcher {
-    pub async fn start(&self) -> Result<()>;
+impl ToolHandler {
+    /// Execute the load_skill tool
+    pub fn load_skill(&self, uri: &str) -> Result<CallToolResult>;
 }
 ```
 
@@ -223,28 +254,30 @@ let content = result.content;
 
 ## Integration with Aether
 
-### Loading Skills into Agent Context
+### How the LLM Discovers and Loads Skills
 
-Skills are loaded explicitly by the user or agent:
+The LLM can dynamically discover and load skills as needed:
 
-```rust
-// In aether agent
-async fn load_skill(&mut self, skill_uri: &str) -> Result<()> {
-    let mcp_client = self.mcp_client("skills")?;
-    let response = mcp_client.read_resource(skill_uri).await?;
+1. **Discovery**: The MCP client exposes available skills via `resources/list`
+2. **Selection**: The LLM sees skill descriptions and decides which to load
+3. **Loading**: The LLM calls the `load_skill` tool with the desired skill URI
+4. **Context**: The tool returns the skill content, which becomes part of the conversation context
 
-    let content = response.contents.first()
-        .ok_or_else(|| anyhow!("No content"))?;
+**Example Flow:**
 
-    // Add to agent context using existing Prompt::text
-    self.context.push(Prompt::text(
-        "system",
-        &content.text,
-    ));
-
-    Ok(())
-}
 ```
+User: "I need help optimizing this Rust code for performance"
+
+LLM (internal): I should check if there's a Rust expert skill available
+  → Sees skill://rust-expert in resources
+  → Calls load_skill tool with uri="skill://rust-expert"
+  → Receives skill content as tool result
+  → Now has Rust expertise in context
+
+LLM: "Looking at your code, I can help optimize it. [provides expert advice]"
+```
+
+The LLM decides when to load skills based on the user's needs, making expertise available on-demand.
 
 ### CLI Commands
 
@@ -281,12 +314,12 @@ In `mcp.json`:
 
 | Feature | Slash Commands | Skills |
 |---------|---------------|--------|
-| MCP Type | Prompts | Resources |
+| MCP Type | Prompts | Resources + Tools |
 | Purpose | Execute specific commands | Provide contextual knowledge |
-| Invocation | `/command args` | Explicit load or auto-discovery |
+| Invocation | `/command args` | LLM calls `load_skill` tool |
 | Content | One-time execution | Persistent context |
 | Discovery | `prompts/list` | `resources/list` |
-| Updates | Not applicable | `resources/updated` notifications |
+| Loading | Automatic via prompt | LLM-driven via tool call |
 
 ## Use Cases
 
@@ -306,22 +339,21 @@ In `mcp.json`:
 ## Implementation Phases
 
 ### Phase 1: Core Server
-- [ ] Basic MCP server with resources capability
+- [ ] Basic MCP server with resources and tools capabilities
 - [ ] Skill file parsing (front-matter + markdown)
-- [ ] resources/list and resources/read handlers
-- [ ] File system watching and list_changed notifications
+- [ ] `resources/list` handler (loads skills fresh each call)
+- [ ] `resources/read` handler
+- [ ] `load_skill` tool implementation
 
 ### Phase 2: Aether Integration
-- [ ] MCP client integration in aether
-- [ ] Prompt::text usage for skill content
-- [ ] CLI commands (list, load, show)
-- [ ] Configuration support
+- [ ] MCP client support for skills server
+- [ ] CLI commands (list, show)
+- [ ] Configuration support in mcp.json
 
 ### Phase 3: Advanced Features
-- [ ] Skill subscriptions
-- [ ] Auto-loading based on context
-- [ ] Skill templates
-- [ ] Web UI for skill management
+- [ ] Skill templates with parameters
+- [ ] Skill composition (loading multiple skills)
+- [ ] Caching with file watching for performance
 
 ## Security Considerations
 
