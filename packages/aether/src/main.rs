@@ -112,6 +112,25 @@ async fn run_agent(
                 eprintln!("Tool call '{}' failed: {}", error.name, error.error);
             }
 
+            ToolProgress {
+                request,
+                progress,
+                total,
+                message,
+            } => {
+                let progress_msg = message
+                    .as_ref()
+                    .map(|m| format!("{} ", m))
+                    .unwrap_or_default();
+                let total_str = total
+                    .map(|t| format!("/{}", t))
+                    .unwrap_or_else(|| "".to_string());
+                println!(
+                    "Tool call '{}' progress: {}{}{}",
+                    request.name, progress_msg, progress, total_str
+                );
+            }
+
             Error { message } => {
                 eprintln!("Error: {message}");
             }

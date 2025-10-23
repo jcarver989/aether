@@ -150,6 +150,48 @@ pub fn map_agent_message_to_session_notification(
             meta: None,
         }),
 
+        AgentMessage::ToolProgress {
+            request,
+            progress,
+            total,
+            message,
+        } => {
+            let progress_text = if let Some(msg) = message {
+                format!(
+                    "{} ({}/{})",
+                    msg,
+                    progress,
+                    total.map(|t| t.to_string()).unwrap_or_else(|| "?".to_string())
+                )
+            } else {
+                format!(
+                    "Progress: {}/{}",
+                    progress,
+                    total.map(|t| t.to_string()).unwrap_or_else(|| "?".to_string())
+                )
+            };
+
+            Some(acp::SessionNotification {
+                session_id,
+                update: acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate {
+                    id: request.id.clone().into(),
+                    fields: acp::ToolCallUpdateFields {
+                        status: Some(acp::ToolCallStatus::InProgress),
+                        content: Some(vec![acp::ToolCallContent::Content {
+                            content: acp::ContentBlock::Text(acp::TextContent {
+                                annotations: None,
+                                text: progress_text.into(),
+                                meta: None,
+                            }),
+                        }]),
+                        ..Default::default()
+                    },
+                    meta: None,
+                }),
+                meta: None,
+            })
+        }
+
         AgentMessage::Error { .. } | AgentMessage::Cancelled { .. } | AgentMessage::Done => {
             // These are terminal events that affect the prompt response, not session updates
             None

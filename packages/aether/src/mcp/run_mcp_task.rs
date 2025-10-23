@@ -2,7 +2,7 @@ use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition}
 use crate::mcp::McpManager;
 use futures::future::Either;
 use futures::stream::{self, StreamExt};
-use rmcp::model::{GetPromptResult, Prompt};
+use rmcp::model::{GetPromptResult, ProgressNotificationParam, Prompt};
 use rmcp::service::RunningService;
 use rmcp::{RoleClient, model::CallToolRequestParam};
 use std::sync::Arc;
@@ -23,9 +23,10 @@ pub enum ToolExecutionEvent {
     },
     Progress {
         tool_id: String,
-        progress: rmcp::model::ProgressNotificationParam,
+        progress: ProgressNotificationParam,
     },
     Complete {
+        tool_id: String,
         result: Result<ToolCallResult, ToolCallError>,
     },
 }
@@ -80,7 +81,9 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
                     tokio::spawn(async move {
                         let result =
                             try_execute_tool(client, &request, tool_id.clone(), tx.clone()).await;
-                        let _ = tx.send(ToolExecutionEvent::Complete { result }).await;
+                        let _ = tx
+                            .send(ToolExecutionEvent::Complete { tool_id, result })
+                            .await;
                     });
                 }
                 Err(e) => {
@@ -92,7 +95,10 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
                         error: format!("Failed to get client: {e}"),
                     };
                     let _ = tx
-                        .send(ToolExecutionEvent::Complete { result: Err(error) })
+                        .send(ToolExecutionEvent::Complete {
+                            tool_id,
+                            result: Err(error),
+                        })
                         .await;
                 }
             }

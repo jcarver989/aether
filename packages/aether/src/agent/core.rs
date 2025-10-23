@@ -319,9 +319,21 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     progress.progress,
                     progress.total.unwrap_or(0.0)
                 );
+
+                if let Some(request) = state.pending_tool_calls.get(&tool_id) {
+                    let _ = self
+                        .agent_message_tx
+                        .send(AgentMessage::ToolProgress {
+                            request: request.clone(),
+                            progress: progress.progress,
+                            total: progress.total,
+                            message: progress.message.clone(),
+                        })
+                        .await;
+                }
             }
 
-            ToolExecutionEvent::Complete { result } => match result {
+            ToolExecutionEvent::Complete { tool_id: _, result } => match result {
                 Ok(tool_result) => {
                     tracing::debug!(
                         "Tool result received: {} -> {}",
