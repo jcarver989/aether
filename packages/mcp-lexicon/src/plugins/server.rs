@@ -1,3 +1,8 @@
+use aether::{
+    agent::{agent, AgentMessage, UserMessage},
+    llm::parser::ModelProviderParser,
+    mcp::{mcp, RawMcpConfig},
+};
 use clap::Parser;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
@@ -15,9 +20,6 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 
 use super::{
     files::{AgentFile, PromptFile, SkillsFile},
@@ -280,7 +282,7 @@ Returns an array of agents, each with:
 Use this to discover available agents before spawning them with spawn_agent."
     )]
     pub async fn list_agents(&self) -> Result<Json<ListAgentsOutput>, String> {
-        let agents_with_dirs = AgentFile::from_nested_dirs(&self.agents_dir, "AGENT.md")
+        let agents_with_dirs = AgentFile::from_nested_dirs(&self.agents_dir, "AGENTS.md")
             .await
             .map_err(|e| format!("Failed to load agents: {e}"))?;
 
@@ -308,7 +310,7 @@ Takes:
 - prompt: the task for the agent to perform
 - model: optional model override (e.g., 'anthropic:claude-3.5-sonnet')
 
-The agent will be spawned with its system prompt from AGENT.md and the provided task.
+The agent will be spawned in-process with its system prompt from AGENTS.md and the provided task.
 Progress updates will be streamed as the agent works.
 
 Returns the agent's final output and success status."
@@ -325,12 +327,12 @@ Returns the agent's final output and success status."
             return Err(format!("Agent '{}' not found", args.agent_name));
         }
 
-        let agent_file_path = agent_dir.join("AGENT.md");
+        let agent_file_path = agent_dir.join("AGENTS.md");
         let agent_file = AgentFile::from_file(&agent_file_path)
             .map_err(|e| format!("Failed to load agent file: {e}"))?;
 
         // Determine which model to use
-        let model = args
+        let model_spec = args
             .model
             .or_else(|| {
                 agent_file
@@ -340,72 +342,99 @@ Returns the agent's final output and success status."
             })
             .ok_or_else(|| {
                 format!(
-                    "No model specified. Provide --model parameter or set 'model' in {}/AGENT.md frontmatter",
+                    "No model specified. Provide model parameter or set 'model' in {}/AGENTS.md frontmatter",
                     args.agent_name
                 )
             })?;
 
-        // Build command to spawn aether
-        let mut cmd = Command::new("aether");
-        cmd.arg("--model")
-            .arg(&model)
-            .arg("--system")
-            .arg(&agent_file.content)
-            .arg("--prompt")
-            .arg(&args.prompt)
-            .current_dir(&agent_dir) // Set working directory to agent dir (for mcp.json)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        // Parse the model spec to get LLM provider
+        let llm = ModelProviderParser::default()
+            .parse(&model_spec)
+            .map_err(|e| format!("Failed to parse model spec '{}': {}", model_spec, e))?;
 
-        // Spawn the process
-        let mut child = cmd
+        // Load MCP configuration from agent directory
+        let mcp_config_path = agent_dir.join("mcp.json");
+        let mcp_configs = if mcp_config_path.exists() {
+            RawMcpConfig::from_json_file(&mcp_config_path)
+                .and_then(|raw| raw.into_configs(&Default::default()))
+                .map_err(|e| format!("Failed to load mcp.json: {}", e))?
+        } else {
+            Vec::new()
+        };
+
+        // Spawn MCP manager with agent's configuration
+        let (tools, mcp_tx, _mcp_handle) = mcp()
+            .with_servers(mcp_configs)
             .spawn()
-            .map_err(|e| format!("Failed to spawn aether process: {e}"))?;
+            .await
+            .map_err(|e| format!("Failed to spawn MCP manager: {}", e))?;
 
-        // Capture stdout and stderr
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "Failed to capture stdout".to_string())?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| "Failed to capture stderr".to_string())?;
+        // Build and spawn the agent
+        let (user_tx, mut agent_rx, _agent_handle) = agent(llm)
+            .system(&agent_file.content)
+            .tools(mcp_tx, tools)
+            .spawn()
+            .await
+            .map_err(|e| format!("Failed to spawn agent: {}", e))?;
 
-        let mut stdout_reader = BufReader::new(stdout).lines();
-        let mut stderr_reader = BufReader::new(stderr).lines();
+        // Send the user's prompt to the agent
+        user_tx
+            .send(UserMessage::text(&args.prompt))
+            .await
+            .map_err(|e| format!("Failed to send message to agent: {}", e))?;
 
+        // Collect agent output
         let mut output_buffer = String::new();
+        let mut success = true;
+        let mut error_message = None;
 
-        // Read output line by line
-        // Note: In a real implementation with MCP progress support, we would send
-        // progress notifications here. For now, we just collect the output.
-        loop {
-            tokio::select! {
-                Ok(Some(line)) = stdout_reader.next_line() => {
-                    output_buffer.push_str(&line);
-                    output_buffer.push('\n');
-                    // TODO: Send progress notification with line
+        while let Some(message) = agent_rx.recv().await {
+            match message {
+                AgentMessage::Text { chunk, .. } => {
+                    output_buffer.push_str(&chunk);
+                    // TODO: Stream as MCP progress notification
                 }
-                Ok(Some(line)) = stderr_reader.next_line() => {
-                    output_buffer.push_str("[stderr] ");
-                    output_buffer.push_str(&line);
-                    output_buffer.push('\n');
-                    // TODO: Send progress notification with line
+                AgentMessage::ToolCall { request, .. } => {
+                    let msg = format!("[Tool Call: {}]\n", request.name);
+                    output_buffer.push_str(&msg);
+                    // TODO: Stream as MCP progress notification
                 }
-                else => break,
+                AgentMessage::ToolResult { result, .. } => {
+                    let msg = format!("[Tool Result: {}]\n", result.name);
+                    output_buffer.push_str(&msg);
+                    // TODO: Stream as MCP progress notification
+                }
+                AgentMessage::ToolError { error, .. } => {
+                    let msg = format!("[Tool Error: {}] {}\n", error.name, error.error);
+                    output_buffer.push_str(&msg);
+                    // TODO: Stream as MCP progress notification
+                }
+                AgentMessage::Error { message } => {
+                    success = false;
+                    error_message = Some(message.clone());
+                    output_buffer.push_str(&format!("[Error: {}]\n", message));
+                }
+                AgentMessage::Cancelled { message } => {
+                    success = false;
+                    output_buffer.push_str(&format!("[Cancelled: {}]\n", message));
+                }
+                AgentMessage::Done => {
+                    break;
+                }
+                AgentMessage::ToolProgress { .. } => {
+                    // Already handled via MCP progress notifications in the agent
+                }
             }
         }
 
-        // Wait for process to complete
-        let status = child
-            .wait()
-            .await
-            .map_err(|e| format!("Failed to wait for process: {e}"))?;
+        // If there was an error, include it in the output
+        if let Some(err) = error_message {
+            return Err(err);
+        }
 
         Ok(Json(SpawnAgentOutput {
             output: output_buffer,
-            success: status.success(),
+            success,
         }))
     }
 }
