@@ -152,9 +152,7 @@ impl acp::Agent for SessionManager {
             let command_count = available_commands.len();
             let notification = acp::SessionNotification {
                 session_id: acp_session_id,
-                update: acp::SessionUpdate::AvailableCommandsUpdate {
-                    available_commands,
-                },
+                update: acp::SessionUpdate::AvailableCommandsUpdate { available_commands },
                 meta: None,
             };
 
@@ -165,7 +163,10 @@ impl acp::Agent for SessionManager {
                 if let Err(e) = actor_handle.send_session_notification(notification).await {
                     error!("Failed to send available commands notification: {:?}", e);
                 } else {
-                    info!("Sent available commands update for session {} ({} commands)", session_id_log, command_count);
+                    info!(
+                        "Sent available commands update for session {} ({} commands)",
+                        session_id_log, command_count
+                    );
                 }
             });
         }
@@ -204,17 +205,22 @@ impl acp::Agent for SessionManager {
             info!("Detected slash command in prompt");
 
             // Parse command name and arguments
-            let (command_name, args_text) = if let Some(space_idx) = slash_command_text.find(char::is_whitespace) {
-                let (cmd, args) = slash_command_text.split_at(space_idx);
-                (cmd, args.trim())
-            } else {
-                (slash_command_text, "")
-            };
+            let (command_name, args_text) =
+                if let Some(space_idx) = slash_command_text.find(char::is_whitespace) {
+                    let (cmd, args) = slash_command_text.split_at(space_idx);
+                    (cmd, args.trim())
+                } else {
+                    (slash_command_text, "")
+                };
 
             // Expand the slash command
             match session.expand_slash_command(command_name, args_text).await {
                 Ok(expanded_prompt) => {
-                    info!("Expanded slash command '{}' -> {} chars", command_name, expanded_prompt.len());
+                    info!(
+                        "Expanded slash command '{}' -> {} chars",
+                        command_name,
+                        expanded_prompt.len()
+                    );
                     prompt_text = expanded_prompt;
                 }
                 Err(e) => {

@@ -99,8 +99,8 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_read_file_with_defaults() {

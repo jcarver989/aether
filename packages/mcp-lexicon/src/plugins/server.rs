@@ -1,3 +1,4 @@
+use clap::Parser;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{
@@ -14,7 +15,6 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use clap::Parser;
 
 use super::{
     files::{PromptFile, SkillsFile},
@@ -178,13 +178,15 @@ impl ServerHandler for PluginsMcp {
 
 #[tool_router]
 impl PluginsMcp {
-    #[tool(description = "List all available skills with their names and descriptions.
+    #[tool(
+        description = "List all available skills with their names and descriptions.
 
 Returns an array of skills, each with:
 - name: identifier for the skill
 - description: summary of what the skill does
 
-Use this to discover available skills before loading their full content with get_skills.")]
+Use this to discover available skills before loading their full content with get_skills."
+    )]
     pub async fn list_skills(&self) -> Result<Json<ListSkillsOutput>, String> {
         let skills_with_dirs = SkillsFile::from_nested_dirs(&self.skills_dir, "SKILL.md")
             .await

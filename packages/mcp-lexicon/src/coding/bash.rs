@@ -169,7 +169,10 @@ async fn run_command_with_timeout(
             });
         }
 
-        let status = child.wait().await.map_err(|e| format!("Wait failed: {}", e))?;
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| format!("Wait failed: {}", e))?;
         Ok::<_, String>((status.code().unwrap_or(-1), false))
     };
 
@@ -255,7 +258,10 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, String> {
                     shell_id: None,
                 }))
             }
-            Ok(Err(e)) => Err(format!("Failed to execute command '{}': {}", args.command, e)),
+            Ok(Err(e)) => Err(format!(
+                "Failed to execute command '{}': {}",
+                args.command, e
+            )),
             Err(_) => {
                 // Timeout occurred
                 let timeout_ms = timeout.map(|d| d.as_millis()).unwrap_or(120000);

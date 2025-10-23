@@ -115,7 +115,12 @@ async fn test_write_file_tool() {
         if let Some(text_content) = content.as_text() {
             let parsed: serde_json::Value =
                 serde_json::from_str(&text_content.text).expect("Invalid JSON response");
-            assert!(parsed["message"].as_str().unwrap().contains("Successfully wrote"));
+            assert!(
+                parsed["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Successfully wrote")
+            );
             assert_eq!(parsed["bytesWritten"], test_content.len());
             assert_eq!(parsed["filePath"], test_path);
         } else {
@@ -434,4 +439,3 @@ async fn test_list_files_tool() {
     // Clean up
     let _ = fs::remove_dir_all(test_dir);
 }
-

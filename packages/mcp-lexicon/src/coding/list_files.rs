@@ -47,13 +47,15 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> 
     let mut files = Vec::new();
 
     // Read directory entries
-    let entries = std::fs::read_dir(target_path)
-        .map_err(|e| format!("Failed to read directory: {e}"))?;
+    let entries =
+        std::fs::read_dir(target_path).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     for entry in entries {
         let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
         let path = entry.path();
-        let metadata = entry.metadata().map_err(|e| format!("Failed to read metadata: {e}"))?;
+        let metadata = entry
+            .metadata()
+            .map_err(|e| format!("Failed to read metadata: {e}"))?;
 
         let name = entry.file_name().to_string_lossy().to_string();
 

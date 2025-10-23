@@ -1,7 +1,4 @@
-use aether::{
-    agent::{AgentMessage},
-    llm::ToolCallRequest,
-};
+use aether::{agent::AgentMessage, llm::ToolCallRequest};
 use std::collections::HashMap;
 use tokio::sync::mpsc::Receiver;
 
@@ -73,10 +70,24 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
                 tracing::info!("Tool error: {:?}", error);
                 eval_messages.push(EvalMessage::ToolError(format!("{:?}", error)));
             }
-            AgentMessage::ToolProgress { request, progress, total, message } => {
-                let msg = message.as_ref().map(|m| format!("{} ", m)).unwrap_or_default();
+            AgentMessage::ToolProgress {
+                request,
+                progress,
+                total,
+                message,
+            } => {
+                let msg = message
+                    .as_ref()
+                    .map(|m| format!("{} ", m))
+                    .unwrap_or_default();
                 let total_str = total.map(|t| format!("/{}", t)).unwrap_or_default();
-                tracing::info!("Tool progress for {}: {}{}{}", request.name, msg, progress, total_str);
+                tracing::info!(
+                    "Tool progress for {}: {}{}{}",
+                    request.name,
+                    msg,
+                    progress,
+                    total_str
+                );
                 // Progress events don't need to be captured in eval messages
             }
             AgentMessage::Error { message: msg } => {

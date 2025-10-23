@@ -18,7 +18,11 @@ fn create_test_prompt(name: &str, description: Option<&str>, args: Vec<&str>) ->
         )
     };
 
-    Prompt::new(name.to_string(), description.map(|s| s.to_string()), arguments)
+    Prompt::new(
+        name.to_string(),
+        description.map(|s| s.to_string()),
+        arguments,
+    )
 }
 
 #[test]
@@ -45,7 +49,11 @@ fn test_map_prompt_to_command_without_namespace() {
 
 #[test]
 fn test_map_prompt_to_command_with_arguments() {
-    let prompt = create_test_prompt("mcp-lexicon__search", Some("Search code"), vec!["query", "pattern"]);
+    let prompt = create_test_prompt(
+        "mcp-lexicon__search",
+        Some("Search code"),
+        vec!["query", "pattern"],
+    );
 
     let command = aether_acp::mappers::map_mcp_prompt_to_available_command(&prompt);
 

@@ -13,7 +13,10 @@ use super::{
 pub struct DefaultCodingTools;
 
 impl CodingTools for DefaultCodingTools {
-    fn read_file(&self, args: ReadFileArgs) -> impl Future<Output = Result<ReadFileResult, String>> + Send {
+    fn read_file(
+        &self,
+        args: ReadFileArgs,
+    ) -> impl Future<Output = Result<ReadFileResult, String>> + Send {
         async move {
             read_file_contents(args)
                 .await
@@ -21,7 +24,10 @@ impl CodingTools for DefaultCodingTools {
         }
     }
 
-    fn write_file(&self, args: WriteFileArgs) -> impl Future<Output = Result<WriteFileResponse, String>> + Send {
+    fn write_file(
+        &self,
+        args: WriteFileArgs,
+    ) -> impl Future<Output = Result<WriteFileResponse, String>> + Send {
         async move {
             write_file_contents(args)
                 .await
@@ -29,7 +35,10 @@ impl CodingTools for DefaultCodingTools {
         }
     }
 
-    fn edit_file(&self, args: EditFileArgs) -> impl Future<Output = Result<EditFileResponse, String>> + Send {
+    fn edit_file(
+        &self,
+        args: EditFileArgs,
+    ) -> impl Future<Output = Result<EditFileResponse, String>> + Send {
         async move {
             edit_file_contents(args)
                 .await
@@ -37,7 +46,10 @@ impl CodingTools for DefaultCodingTools {
         }
     }
 
-    fn list_files(&self, args: ListFilesArgs) -> impl Future<Output = Result<ListFilesResult, String>> + Send {
+    fn list_files(
+        &self,
+        args: ListFilesArgs,
+    ) -> impl Future<Output = Result<ListFilesResult, String>> + Send {
         async move {
             list_files(args)
                 .await
@@ -57,7 +69,9 @@ impl CodingTools for DefaultCodingTools {
         &self,
         handle: BackgroundProcessHandle,
         filter: Option<String>,
-    ) -> impl Future<Output = Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String>> + Send {
+    ) -> impl Future<
+        Output = Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String>,
+    > + Send {
         async move {
             read_background_bash(handle, filter)
                 .await

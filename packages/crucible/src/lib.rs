@@ -218,7 +218,10 @@ impl Crucible {
                 eval_traces: HashMap::new(),
             };
             let empty_json = serde_json::to_string_pretty(&empty_report)?;
-            std::fs::write(output_dir.join("report").join("report-data.json"), empty_json)?;
+            std::fs::write(
+                output_dir.join("report").join("report-data.json"),
+                empty_json,
+            )?;
 
             // Spawn server in background task
             let output_dir_clone = output_dir.clone();
@@ -346,7 +349,12 @@ impl Crucible {
             }
 
             // Keep the server running (it's in a background task)
-            println!("\n{}", "Server is still running. Press Ctrl+C to exit.".bold().green());
+            println!(
+                "\n{}",
+                "Server is still running. Press Ctrl+C to exit."
+                    .bold()
+                    .green()
+            );
             // Wait indefinitely - user must Ctrl+C to exit
             tokio::signal::ctrl_c().await?;
         }

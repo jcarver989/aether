@@ -38,20 +38,23 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     let current_content = match std::fs::read_to_string(&args.file_path) {
         Ok(content) => content,
         Err(e) => {
-            return Err(format!(
-                "Failed to read file {}: {}",
-                args.file_path, e
-            ));
+            return Err(format!("Failed to read file {}: {}", args.file_path, e));
         }
     };
 
     // Perform string replacement
     let (updated_content, replacements_made) = if args.replace_all {
         let count = current_content.matches(&args.old_string).count();
-        (current_content.replace(&args.old_string, &args.new_string), count)
+        (
+            current_content.replace(&args.old_string, &args.new_string),
+            count,
+        )
     } else {
         if current_content.contains(&args.old_string) {
-            (current_content.replacen(&args.old_string, &args.new_string, 1), 1)
+            (
+                current_content.replacen(&args.old_string, &args.new_string, 1),
+                1,
+            )
         } else {
             (current_content.clone(), 0)
         }

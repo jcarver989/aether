@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use aether::llm::{Context, LlmResponse, LlmResponseStream, Result, StreamingModelProvider, ToolCallRequest, ToolDefinition};
+use aether::llm::{
+    Context, LlmResponse, LlmResponseStream, Result, StreamingModelProvider, ToolCallRequest,
+    ToolDefinition,
+};
 use aether::mcp::{ElicitationRequest, McpManager};
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};

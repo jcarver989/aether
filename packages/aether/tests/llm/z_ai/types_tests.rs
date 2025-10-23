@@ -67,7 +67,10 @@ fn test_deserialize_zai_response_with_finish_reason() {
     assert!(result.is_ok());
     let response = result.unwrap();
 
-    assert_eq!(response.choices[0].delta.content, Some("Hello world".to_string()));
+    assert_eq!(
+        response.choices[0].delta.content,
+        Some("Hello world".to_string())
+    );
     assert!(response.choices[0].finish_reason.is_some());
 }
 
@@ -89,8 +92,7 @@ fn test_convert_to_openai_type() {
     let response: ChatCompletionStreamResponse = serde_json::from_str(json).unwrap();
 
     // Convert to standard OpenAI type
-    let openai_response: async_openai::types::CreateChatCompletionStreamResponse =
-        response.into();
+    let openai_response: async_openai::types::CreateChatCompletionStreamResponse = response.into();
 
     assert_eq!(openai_response.id, "test123");
     assert_eq!(openai_response.model, "glm-4.6");

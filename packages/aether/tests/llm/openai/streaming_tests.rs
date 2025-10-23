@@ -4,8 +4,8 @@ use async_openai::types::{
 };
 use tokio_stream::StreamExt;
 
-use aether::llm::openai::streaming::process_completion_stream;
 use aether::llm::LlmResponse;
+use aether::llm::openai::streaming::process_completion_stream;
 
 #[tokio::test]
 async fn test_parallel_tool_calls() {
