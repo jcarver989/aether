@@ -181,7 +181,7 @@ async fn test_tool_timeout() -> Result<(), Box<dyn Error>> {
     let has_tool_error = messages.iter().any(|m| {
         matches!(
             m,
-            AgentMessage::ToolError { error, .. } if error.error.contains("timed out")
+            AgentMessage::ToolError { error, .. } if error.error.contains("timeout")
         )
     });
 
