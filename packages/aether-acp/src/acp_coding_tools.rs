@@ -38,10 +38,7 @@ impl AcpCodingTools {
 }
 
 impl CodingTools for AcpCodingTools {
-    async fn read_file(
-        &self,
-        args: ReadFileArgs,
-    ) -> Result<ReadFileResult, String> {
+    async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, String> {
         debug!("ACP read_file: {}", args.file_path);
 
         let response = self
@@ -86,10 +83,7 @@ impl CodingTools for AcpCodingTools {
         })
     }
 
-    async fn write_file(
-        &self,
-        args: WriteFileArgs,
-    ) -> Result<WriteFileResponse, String> {
+    async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, String> {
         debug!("ACP write_file: {}", args.file_path);
 
         let bytes_written = args.content.len();
@@ -110,10 +104,7 @@ impl CodingTools for AcpCodingTools {
         })
     }
 
-    async fn edit_file(
-        &self,
-        args: EditFileArgs,
-    ) -> Result<EditFileResponse, String> {
+    async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, String> {
         debug!("ACP edit_file: {} (via read+write)", args.file_path);
 
         // ACP doesn't have a native "edit" operation, so we:
@@ -171,10 +162,7 @@ impl CodingTools for AcpCodingTools {
         })
     }
 
-    async fn list_files(
-        &self,
-        args: ListFilesArgs,
-    ) -> Result<ListFilesResult, String> {
+    async fn list_files(&self, args: ListFilesArgs) -> Result<ListFilesResult, String> {
         debug!("ACP list_files: {:?}", args.path);
 
         // ACP doesn't have a list_files method, so fall back to local filesystem

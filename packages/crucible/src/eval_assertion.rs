@@ -60,10 +60,7 @@ impl std::fmt::Display for EvalAssertion {
                 } else {
                     command.clone()
                 };
-                write!(
-                    f,
-                    "CommandExitCode(\"{truncated}\", code={expected_code})"
-                )
+                write!(f, "CommandExitCode(\"{truncated}\", code={expected_code})")
             }
             EvalAssertion::ToolCall {
                 name,

@@ -21,7 +21,8 @@ fn create_test_files(files: &[(&str, &str)]) -> TempDir {
     for (path, content) in files {
         let full_path = temp_dir.path().join(path);
         if let Some(parent) = full_path.parent() {
-            fs::create_dir_all(parent).unwrap_or_else(|_| panic!("Failed to create directory for {path}"));
+            fs::create_dir_all(parent)
+                .unwrap_or_else(|_| panic!("Failed to create directory for {path}"));
         }
         fs::write(&full_path, content).unwrap_or_else(|_| panic!("Failed to write file {path}"));
     }

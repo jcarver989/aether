@@ -444,9 +444,7 @@ impl Eval {
                 actual_count
             );
             EvalAssertionResult::Success {
-                message: format!(
-                    "Tool '{name}' was called {actual_count} time(s) successfully"
-                ),
+                message: format!("Tool '{name}' was called {actual_count} time(s) successfully"),
             }
         }
     }

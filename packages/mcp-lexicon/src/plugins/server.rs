@@ -126,12 +126,9 @@ impl ServerHandler for PluginsMcp {
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, McpError> {
-        let command_files_with_paths =
-            PromptFile::from_dir(&self.commands_dir)
-                .await
-                .map_err(|e| {
-                    McpError::internal_error(format!("Failed to load commands: {e}"), None)
-                })?;
+        let command_files_with_paths = PromptFile::from_dir(&self.commands_dir)
+            .await
+            .map_err(|e| McpError::internal_error(format!("Failed to load commands: {e}"), None))?;
 
         let commands = command_files_with_paths
             .iter()
@@ -153,10 +150,7 @@ impl ServerHandler for PluginsMcp {
     ) -> Result<GetPromptResult, McpError> {
         let prompt_path = self.commands_dir.join(format!("{}.md", request.name));
         let command_file = PromptFile::from_file(&prompt_path).map_err(|e| {
-            McpError::invalid_params(
-                format!("Prompt '{}' not found: {}", request.name, e),
-                None,
-            )
+            McpError::invalid_params(format!("Prompt '{}' not found: {}", request.name, e), None)
         })?;
 
         let content = substitute_parameters(&command_file.content, &request.arguments);
