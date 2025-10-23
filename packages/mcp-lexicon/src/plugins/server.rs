@@ -19,7 +19,11 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use super::{
     files::{AgentFile, PromptFile, SkillsFile},
@@ -107,10 +111,32 @@ pub struct SpawnAgentInput {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnAgentOutput {
-    /// The agent's final output
+    /// The task ID for the spawned agent (like a PID)
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetAgentOutputInput {
+    /// The task ID of the agent to get output from
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetAgentOutputOutput {
+    /// The agent's output so far
     pub output: String,
-    /// Whether the agent completed successfully
-    pub success: bool,
+    /// Whether the agent is still running
+    pub running: bool,
+    /// Whether the agent completed successfully (only set when running=false)
+    pub success: Option<bool>,
+}
+
+/// Handle to a spawned agent task
+struct SpawnedAgent {
+    task_handle: JoinHandle<(String, bool, Option<String>)>,
+    message_rx: mpsc::Receiver<AgentMessage>,
 }
 
 /// MCP server that dynamically loads slash-commands and skills from markdown files
@@ -120,6 +146,8 @@ pub struct PluginsMcp {
     skills_dir: PathBuf,
     agents_dir: PathBuf,
     tool_router: ToolRouter<Self>,
+    /// Track spawned agent tasks (like background processes)
+    agent_tasks: Arc<Mutex<HashMap<String, SpawnedAgent>>>,
 }
 
 impl PluginsMcp {
@@ -130,6 +158,7 @@ impl PluginsMcp {
             skills_dir: base_dir.join("skills"),
             agents_dir: base_dir.join("sub-agents"),
             tool_router: Self::tool_router(),
+            agent_tasks: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -303,17 +332,17 @@ Use this to discover available agents before spawning them with spawn_agent."
     }
 
     #[tool(
-        description = "Spawn a sub-agent to perform a specific task.
+        description = "Spawn a sub-agent to perform a specific task in the background.
 
 Takes:
 - agent_name: name of the agent from the sub-agents directory
 - prompt: the task for the agent to perform
 - model: optional model override (e.g., 'anthropic:claude-3.5-sonnet')
 
-The agent will be spawned in-process as a separate tokio task with its system prompt from AGENTS.md.
-Multiple agents can run concurrently without blocking each other.
+The agent will be spawned as a background task (like a process with a PID).
+Returns immediately with a task_id that can be used to stream agent output.
 
-Returns the agent's final output and success status."
+Use get_agent_output with the task_id to stream the agent's messages."
     )]
     pub async fn spawn_agent(
         &self,
@@ -383,8 +412,10 @@ Returns the agent's final output and success status."
             .await
             .map_err(|e| format!("Failed to send message to agent: {}", e))?;
 
-        // Spawn a task to run the agent and collect output
-        // This prevents blocking and allows multiple agents to run concurrently
+        // Create a channel for forwarding agent messages
+        let (message_tx, message_rx) = mpsc::channel::<AgentMessage>(1000);
+
+        // Spawn a task to run the agent and forward messages
         let agent_task = tokio::spawn(async move {
             let mut output_buffer = String::new();
             let mut success = true;
@@ -392,25 +423,25 @@ Returns the agent's final output and success status."
             let mut agent_rx = agent_rx;
 
             while let Some(message) = agent_rx.recv().await {
+                // Forward message to consumer
+                let _ = message_tx.send(message.clone()).await;
+
+                // Also collect output for final result
                 match message {
                     AgentMessage::Text { chunk, .. } => {
                         output_buffer.push_str(&chunk);
-                        // TODO: Stream as MCP progress notification
                     }
                     AgentMessage::ToolCall { request, .. } => {
                         let msg = format!("[Tool Call: {}]\n", request.name);
                         output_buffer.push_str(&msg);
-                        // TODO: Stream as MCP progress notification
                     }
                     AgentMessage::ToolResult { result, .. } => {
                         let msg = format!("[Tool Result: {}]\n", result.name);
                         output_buffer.push_str(&msg);
-                        // TODO: Stream as MCP progress notification
                     }
                     AgentMessage::ToolError { error, .. } => {
                         let msg = format!("[Tool Error: {}] {}\n", error.name, error.error);
                         output_buffer.push_str(&msg);
-                        // TODO: Stream as MCP progress notification
                     }
                     AgentMessage::Error { message } => {
                         success = false;
@@ -425,7 +456,7 @@ Returns the agent's final output and success status."
                         break;
                     }
                     AgentMessage::ToolProgress { .. } => {
-                        // Already handled via MCP progress notifications in the agent
+                        // Forwarded to consumer
                     }
                 }
             }
@@ -433,18 +464,135 @@ Returns the agent's final output and success status."
             (output_buffer, success, error_message)
         });
 
-        // Await the agent task to get the result
-        let (output_buffer, success, error_message) = agent_task
-            .await
-            .map_err(|e| format!("Agent task panicked: {}", e))?;
+        // Generate a unique task ID
+        let task_id = format!("agent-{}", uuid::Uuid::new_v4());
 
-        // If there was an error, include it in the output
-        if let Some(err) = error_message {
-            return Err(err);
+        // Store the spawned agent
+        let spawned_agent = SpawnedAgent {
+            task_handle: agent_task,
+            message_rx,
+        };
+
+        {
+            let mut agent_tasks = self
+                .agent_tasks
+                .lock()
+                .map_err(|e| format!("Failed to lock agent_tasks: {}", e))?;
+            agent_tasks.insert(task_id.clone(), spawned_agent);
         }
 
-        Ok(Json(SpawnAgentOutput {
+        // Return task_id immediately
+        Ok(Json(SpawnAgentOutput { task_id }))
+    }
+
+    #[tool(
+        description = "Get output from a spawned sub-agent task.
+
+Takes:
+- task_id: the task ID returned from spawn_agent
+
+Streams the agent's messages as MCP progress notifications.
+Returns the current output, whether the agent is still running, and success status (if complete).
+
+Call this repeatedly to stream all agent messages."
+    )]
+    pub async fn get_agent_output(
+        &self,
+        request: Parameters<GetAgentOutputInput>,
+    ) -> Result<Json<GetAgentOutputOutput>, String> {
+        let Parameters(args) = request;
+
+        // Look up the agent task
+        let mut agent_tasks = self
+            .agent_tasks
+            .lock()
+            .map_err(|e| format!("Failed to lock agent_tasks: {}", e))?;
+
+        let spawned_agent = agent_tasks
+            .get_mut(&args.task_id)
+            .ok_or_else(|| format!("Agent task '{}' not found", args.task_id))?;
+
+        // Collect messages that are currently available
+        let mut output_buffer = String::new();
+        let mut running = true;
+
+        // Try to receive all available messages without blocking
+        loop {
+            match spawned_agent.message_rx.try_recv() {
+                Ok(message) => {
+                    // Format message for output
+                    match &message {
+                        AgentMessage::Text { chunk, .. } => {
+                            output_buffer.push_str(chunk);
+                        }
+                        AgentMessage::ToolCall { request, .. } => {
+                            let msg = format!("[Tool Call: {}]\n", request.name);
+                            output_buffer.push_str(&msg);
+                        }
+                        AgentMessage::ToolResult { result, .. } => {
+                            let msg = format!("[Tool Result: {}]\n", result.name);
+                            output_buffer.push_str(&msg);
+                        }
+                        AgentMessage::ToolError { error, .. } => {
+                            let msg = format!("[Tool Error: {}] {}\n", error.name, error.error);
+                            output_buffer.push_str(&msg);
+                        }
+                        AgentMessage::Error { message } => {
+                            output_buffer.push_str(&format!("[Error: {}]\n", message));
+                        }
+                        AgentMessage::Cancelled { message } => {
+                            output_buffer.push_str(&format!("[Cancelled: {}]\n", message));
+                        }
+                        AgentMessage::Done => {
+                            running = false;
+                        }
+                        AgentMessage::ToolProgress { .. } => {
+                            // Could forward this as nested progress
+                        }
+                    }
+
+                    // TODO: Send as MCP progress notification
+                }
+                Err(mpsc::error::TryRecvError::Empty) => {
+                    // No more messages currently available
+                    break;
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    // Channel closed, agent is done
+                    running = false;
+                    break;
+                }
+            }
+        }
+
+        // Check if task is finished
+        let success = if !running {
+            // Task is done, get final result
+            let task_id = args.task_id.clone();
+            let spawned_agent = agent_tasks
+                .remove(&task_id)
+                .ok_or_else(|| format!("Agent task '{}' disappeared", task_id))?;
+
+            match spawned_agent.task_handle.await {
+                Ok((final_output, success, _error)) => {
+                    if !output_buffer.is_empty() {
+                        output_buffer.push_str("\n");
+                    }
+                    output_buffer.push_str(&final_output);
+                    Some(success)
+                }
+                Err(e) => {
+                    output_buffer.push_str(&format!("\n[Task panicked: {}]", e));
+                    Some(false)
+                }
+            }
+        } else {
+            None
+        };
+
+        Ok(Json(GetAgentOutputOutput {
             output: output_buffer,
+            running,
             success,
         }))
     }

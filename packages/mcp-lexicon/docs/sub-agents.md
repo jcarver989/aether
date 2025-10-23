@@ -93,7 +93,7 @@ Returns:
 
 ### spawn_agent
 
-Spawns a sub-agent to perform a specific task.
+Spawns a sub-agent to run as a background task (like spawning a process).
 
 ```json
 {
@@ -106,18 +106,41 @@ Spawns a sub-agent to perform a specific task.
 }
 ```
 
-Returns:
+Returns immediately with a task ID:
 ```json
 {
-  "output": "Agent's full output...",
-  "success": true
+  "task_id": "agent-550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
 Parameters:
 - `agent_name`: Name of the agent (subdirectory name in `sub-agents/`)
 - `prompt`: Task for the agent to perform
-- `model` (optional): Override the model specified in AGENT.md
+- `model` (optional): Override the model specified in AGENTS.md
+
+### get_agent_output
+
+Gets output from a running or completed agent task.
+
+```json
+{
+  "name": "get_agent_output",
+  "arguments": {
+    "task_id": "agent-550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+```
+
+Returns:
+```json
+{
+  "output": "Agent's output so far...",
+  "running": true,
+  "success": null  // Set when running=false
+}
+```
+
+Call this repeatedly to stream agent messages. When `running` becomes `false`, the agent has completed and `success` indicates whether it succeeded.
 
 ## Example Use Cases
 
@@ -157,7 +180,14 @@ Create well-structured docs with examples and best practices.
 
 ## How It Works
 
-When `spawn_agent` is called:
+### Background Job Architecture
+
+Sub-agents use a **job-based API** similar to background processes with PIDs:
+
+1. **spawn_agent** - Starts an agent and returns a task_id (like a PID)
+2. **get_agent_output** - Streams agent messages using the task_id
+
+### When `spawn_agent` is called:
 
 1. The plugin server loads the agent's `AGENTS.md` file
 2. The agent's system prompt (content) is extracted
@@ -166,36 +196,73 @@ When `spawn_agent` is called:
 5. The agent's `mcp.json` is loaded (if present) for tool configuration
 6. An MCP manager is spawned with the agent's tools
 7. An agent is built with the system prompt and tools
-8. **A tokio task is spawned** to run the agent independently
+8. **A tokio task is spawned** to run the agent in the background
 9. The user's prompt is sent to the agent
-10. Agent messages are collected in the task
-11. The task is awaited for final output and success status
+10. Agent messages are forwarded to a channel
+11. **The task_id is returned immediately** (non-blocking)
+12. The agent task is stored in a HashMap for later retrieval
+
+### When `get_agent_output` is called:
+
+1. Look up the agent task by task_id in the HashMap
+2. Read available messages from the agent's channel (non-blocking)
+3. Format and return the messages
+4. Check if the agent is still running
+5. If complete, remove from HashMap and return final status
 
 ### Execution Model
 
-The agent runs in a **separate tokio task** within the same process:
-
 ```rust
-// Spawn task to run agent independently
-let agent_task = tokio::spawn(async move {
-    // Collect agent output without blocking
-    while let Some(message) = agent_rx.recv().await {
-        // Process messages...
-    }
-    (output, success, error)
+// spawn_agent: Returns immediately with task_id
+let task_id = "agent-uuid...";
+agent_tasks.insert(task_id, SpawnedAgent {
+    task_handle: tokio::spawn(async { /* agent runs here */ }),
+    message_rx: channel_receiver,
 });
 
-// Await result
-let (output, success, error) = agent_task.await?;
+// get_agent_output: Stream messages without blocking
+while let Ok(message) = agent.message_rx.try_recv() {
+    // Forward message to caller
+    // Can send as MCP progress notification
+}
 ```
 
-This design provides:
-- **No external dependencies** - Uses the aether library directly
-- **Non-blocking execution** - Agent runs in separate tokio task
-- **Better integration** - Proper MCP progress notification support
-- **Concurrent agents** - Multiple spawn_agent calls run in parallel
+### Benefits
+
+- **Non-blocking** - spawn_agent returns immediately with task_id
+- **True concurrency** - Multiple agents run in parallel
+- **Streamable output** - get_agent_output can be called repeatedly
+- **Like background processes** - Familiar PID-based model
+- **No external dependencies** - Uses aether library directly
+- **Better integration** - Can send MCP progress notifications
 - **Isolated agent contexts** - Each agent has its own MCP configuration
 - **Specialized system prompts** - Custom prompts per agent type
 - **Per-agent MCP tool access** - Configure tools via mcp.json
-- **Efficient execution** - In-process tokio tasks vs subprocess overhead
+- **Efficient execution** - In-process tokio tasks
 - **Modular agent development** - Easy to add/modify agents
+
+### Usage Pattern
+
+```rust
+// Main agent spawns a sub-agent
+let result = call_tool("spawn_agent", {
+    "agent_name": "debugger",
+    "prompt": "Fix the bug in main.rs"
+});
+let task_id = result.task_id;
+
+// Stream agent output
+loop {
+    let output = call_tool("get_agent_output", { "task_id": task_id });
+
+    // Display output...
+
+    if !output.running {
+        // Agent is done
+        println!("Success: {}", output.success);
+        break;
+    }
+
+    // Wait before polling again
+    sleep(1000);
+}
