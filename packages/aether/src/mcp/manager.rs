@@ -6,7 +6,8 @@ use rmcp::{
     RoleClient, ServiceExt,
     model::{
         ClientCapabilities, ClientInfo, CreateElicitationRequestParam, CreateElicitationResult,
-        ElicitationAction, ElicitationCapability, Implementation, Tool as RmcpTool,
+        ElicitationAction, ElicitationCapability, Implementation, ProgressNotificationParam,
+        Tool as RmcpTool,
     },
     serve_client,
     service::RunningService,
@@ -39,11 +40,14 @@ pub struct McpManager {
     tools: HashMap<String, Tool>,
     tool_definitions: Vec<ToolDefinition>,
     client_info: ClientInfo,
+    progress_tx: mpsc::Sender<ProgressNotificationParam>,
+    progress_rx: mpsc::Receiver<ProgressNotificationParam>,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
 }
 
 impl McpManager {
     pub fn new(elicitation_sender: mpsc::Sender<ElicitationRequest>) -> Self {
+        let (progress_tx, progress_rx) = mpsc::channel(100);
         Self {
             servers: HashMap::new(),
             tools: HashMap::new(),
@@ -64,12 +68,22 @@ impl McpManager {
                     website_url: None,
                 },
             },
+            progress_tx,
+            progress_rx,
             elicitation_sender,
         }
     }
 
+    async fn recv_progress(&mut self) -> Option<ProgressNotificationParam> {
+        self.progress_rx.recv().await
+    }
+
     fn create_mcp_client(&self) -> McpClient {
-        McpClient::new(self.client_info.clone(), self.elicitation_sender.clone())
+        McpClient::new(
+            self.client_info.clone(),
+            self.progress_tx.clone(),
+            self.elicitation_sender.clone(),
+        )
     }
 
     pub async fn add_mcps(&mut self, configs: Vec<McpServerConfig>) -> Result<()> {
