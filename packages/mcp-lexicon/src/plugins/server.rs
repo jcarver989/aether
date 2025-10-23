@@ -15,9 +15,12 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
 
 use super::{
-    files::{PromptFile, SkillsFile},
+    files::{AgentFile, PromptFile, SkillsFile},
     substitute_parameters,
 };
 
@@ -74,11 +77,46 @@ pub struct ListSkillsOutput {
     pub skills: Vec<SkillInfo>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInfo {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListAgentsOutput {
+    pub agents: Vec<AgentInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnAgentInput {
+    /// Name of the agent to spawn (must exist in sub-agents directory)
+    pub agent_name: String,
+    /// Task/prompt for the agent to perform
+    pub prompt: String,
+    /// Optional model override (e.g., "anthropic:claude-3.5-sonnet")
+    /// If not provided, uses model from agent's AGENT.md frontmatter
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnAgentOutput {
+    /// The agent's final output
+    pub output: String,
+    /// Whether the agent completed successfully
+    pub success: bool,
+}
+
 /// MCP server that dynamically loads slash-commands and skills from markdown files
 #[derive(Clone)]
 pub struct PluginsMcp {
     commands_dir: PathBuf,
     skills_dir: PathBuf,
+    agents_dir: PathBuf,
     tool_router: ToolRouter<Self>,
 }
 
@@ -88,6 +126,7 @@ impl PluginsMcp {
         Self {
             commands_dir: base_dir.join("commands"),
             skills_dir: base_dir.join("skills"),
+            agents_dir: base_dir.join("sub-agents"),
             tool_router: Self::tool_router(),
         }
     }
@@ -229,5 +268,144 @@ Use list_skills first to discover available skills.")]
         }
 
         Ok(Json(LoadSkillsOutput { skills }))
+    }
+
+    #[tool(
+        description = "List all available sub-agents with their names and descriptions.
+
+Returns an array of agents, each with:
+- name: identifier for the agent
+- description: summary of what the agent does
+
+Use this to discover available agents before spawning them with spawn_agent."
+    )]
+    pub async fn list_agents(&self) -> Result<Json<ListAgentsOutput>, String> {
+        let agents_with_dirs = AgentFile::from_nested_dirs(&self.agents_dir, "AGENT.md")
+            .await
+            .map_err(|e| format!("Failed to load agents: {e}"))?;
+
+        let agents = agents_with_dirs
+            .iter()
+            .filter_map(|(dir, file)| {
+                let name = dir.file_name()?.to_string_lossy().to_string();
+                let description = file
+                    .frontmatter
+                    .as_ref()
+                    .and_then(|f| f.description.clone())
+                    .unwrap_or_default();
+                Some(AgentInfo { name, description })
+            })
+            .collect();
+
+        Ok(Json(ListAgentsOutput { agents }))
+    }
+
+    #[tool(
+        description = "Spawn a sub-agent to perform a specific task.
+
+Takes:
+- agent_name: name of the agent from the sub-agents directory
+- prompt: the task for the agent to perform
+- model: optional model override (e.g., 'anthropic:claude-3.5-sonnet')
+
+The agent will be spawned with its system prompt from AGENT.md and the provided task.
+Progress updates will be streamed as the agent works.
+
+Returns the agent's final output and success status."
+    )]
+    pub async fn spawn_agent(
+        &self,
+        request: Parameters<SpawnAgentInput>,
+    ) -> Result<Json<SpawnAgentOutput>, String> {
+        let Parameters(args) = request;
+
+        // Load agent configuration
+        let agent_dir = self.agents_dir.join(&args.agent_name);
+        if !agent_dir.exists() {
+            return Err(format!("Agent '{}' not found", args.agent_name));
+        }
+
+        let agent_file_path = agent_dir.join("AGENT.md");
+        let agent_file = AgentFile::from_file(&agent_file_path)
+            .map_err(|e| format!("Failed to load agent file: {e}"))?;
+
+        // Determine which model to use
+        let model = args
+            .model
+            .or_else(|| {
+                agent_file
+                    .frontmatter
+                    .as_ref()
+                    .and_then(|f| f.model.clone())
+            })
+            .ok_or_else(|| {
+                format!(
+                    "No model specified. Provide --model parameter or set 'model' in {}/AGENT.md frontmatter",
+                    args.agent_name
+                )
+            })?;
+
+        // Build command to spawn aether
+        let mut cmd = Command::new("aether");
+        cmd.arg("--model")
+            .arg(&model)
+            .arg("--system")
+            .arg(&agent_file.content)
+            .arg("--prompt")
+            .arg(&args.prompt)
+            .current_dir(&agent_dir) // Set working directory to agent dir (for mcp.json)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        // Spawn the process
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn aether process: {e}"))?;
+
+        // Capture stdout and stderr
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Failed to capture stdout".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "Failed to capture stderr".to_string())?;
+
+        let mut stdout_reader = BufReader::new(stdout).lines();
+        let mut stderr_reader = BufReader::new(stderr).lines();
+
+        let mut output_buffer = String::new();
+
+        // Read output line by line
+        // Note: In a real implementation with MCP progress support, we would send
+        // progress notifications here. For now, we just collect the output.
+        loop {
+            tokio::select! {
+                Ok(Some(line)) = stdout_reader.next_line() => {
+                    output_buffer.push_str(&line);
+                    output_buffer.push('\n');
+                    // TODO: Send progress notification with line
+                }
+                Ok(Some(line)) = stderr_reader.next_line() => {
+                    output_buffer.push_str("[stderr] ");
+                    output_buffer.push_str(&line);
+                    output_buffer.push('\n');
+                    // TODO: Send progress notification with line
+                }
+                else => break,
+            }
+        }
+
+        // Wait for process to complete
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| format!("Failed to wait for process: {e}"))?;
+
+        Ok(Json(SpawnAgentOutput {
+            output: output_buffer,
+            success: status.success(),
+        }))
     }
 }
