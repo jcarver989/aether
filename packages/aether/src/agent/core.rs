@@ -280,6 +280,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 if let Some(ref mcp_command_tx) = self.mcp_command_tx {
                     let mcp_future = mcp_command_tx.send(McpCommand::ExecuteTool {
                         request: tool_call,
+                        timeout: self.tool_timeout,
                         tx,
                     });
                     let (_, mcp_result) = tokio::join!(msg_future, mcp_future);

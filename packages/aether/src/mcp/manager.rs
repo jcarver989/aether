@@ -6,8 +6,7 @@ use rmcp::{
     RoleClient, ServiceExt,
     model::{
         ClientCapabilities, ClientInfo, CreateElicitationRequestParam, CreateElicitationResult,
-        ElicitationAction, ElicitationCapability, Implementation, ProgressNotificationParam,
-        Tool as RmcpTool,
+        ElicitationAction, ElicitationCapability, Implementation, Tool as RmcpTool,
     },
     serve_client,
     service::RunningService,

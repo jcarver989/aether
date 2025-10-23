@@ -12,8 +12,6 @@ use tokio::sync::oneshot;
 
 use super::client::McpClient;
 
-const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
-
 /// Events emitted during tool execution lifecycle
 #[derive(Debug)]
 pub enum ToolExecutionEvent {
@@ -36,6 +34,7 @@ pub enum ToolExecutionEvent {
 pub enum McpCommand {
     ExecuteTool {
         request: ToolCallRequest,
+        timeout: Duration,
         tx: mpsc::Sender<ToolExecutionEvent>,
     },
     ListPrompts {
@@ -65,7 +64,7 @@ pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<Mc
 
 async fn on_command(command: McpCommand, mcp: &McpManager) {
     match command {
-        McpCommand::ExecuteTool { request, tx } => {
+        McpCommand::ExecuteTool { request, timeout, tx } => {
             let tool_id = request.id.clone();
             let tool_name = request.name.clone();
 
@@ -80,7 +79,7 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
                 Ok(client) => {
                     tokio::spawn(async move {
                         let result =
-                            try_execute_tool(client, &request, tool_id.clone(), tx.clone()).await;
+                            try_execute_tool(client, &request, timeout, tool_id.clone(), tx.clone()).await;
                         let _ = tx
                             .send(ToolExecutionEvent::Complete { tool_id, result })
                             .await;
@@ -129,6 +128,7 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
 async fn try_execute_tool(
     client: Arc<RunningService<RoleClient, McpClient>>,
     request: &ToolCallRequest,
+    timeout: Duration,
     tool_call_id: String,
     event_tx: mpsc::Sender<ToolExecutionEvent>,
 ) -> Result<ToolCallResult, ToolCallError> {
@@ -147,7 +147,7 @@ async fn try_execute_tool(
         .send_cancellable_request(
             CallToolRequest(Request::new(tool_request_param)),
             PeerRequestOptions {
-                timeout: Some(TOOL_EXECUTION_TIMEOUT),
+                timeout: Some(timeout),
                 meta: None,
             },
         )
