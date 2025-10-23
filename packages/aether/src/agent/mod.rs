@@ -14,6 +14,6 @@ pub use prompt::*;
 
 use crate::llm::StreamingModelProvider;
 
-pub fn agent<T: StreamingModelProvider + 'static>(llm: T) -> AgentBuilder<T> {
-    AgentBuilder::new(llm)
+pub fn agent<T: StreamingModelProvider + 'static>(llm: T) -> AgentBuilder {
+    AgentBuilder::new(Box::new(llm))
 }

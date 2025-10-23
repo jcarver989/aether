@@ -14,8 +14,8 @@ pub struct AgentHandle {
     _agent_handle: JoinHandle<()>,
 }
 
-pub struct AgentBuilder<T: StreamingModelProvider> {
-    llm: T,
+pub struct AgentBuilder {
+    llm: Box<dyn StreamingModelProvider>,
     system_prompt: Option<String>,
     middleware: Middleware,
     tool_definitions: Vec<ToolDefinition>,
@@ -24,8 +24,8 @@ pub struct AgentBuilder<T: StreamingModelProvider> {
     tool_timeout: Duration,
 }
 
-impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
-    pub fn new(llm: T) -> Self {
+impl AgentBuilder {
+    pub fn new(llm: Box<dyn StreamingModelProvider>) -> Self {
         Self {
             llm,
             system_prompt: None,

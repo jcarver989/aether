@@ -1,8 +1,6 @@
 use std::error::Error;
 use std::time::Duration;
 
-use futures::future::join_all;
-
 use crate::agent::{AgentMessage, UserMessage, agent};
 use crate::llm::LlmResponse;
 use crate::mcp::mcp;
@@ -65,9 +63,13 @@ impl TestAgentBuilder {
         }
 
         let (tx, mut rx, _handle) = builder.spawn().await?;
-        let futures: Vec<_> = self.messages.iter().map(|m| tx.send(m.clone())).collect();
 
-        join_all(futures).await;
+        // Send messages sequentially without cloning (UserMessage is no longer Clone)
+        for message in self.messages {
+            if tx.send(message).await.is_err() {
+                break;
+            }
+        }
         drop(tx);
 
         let mut messages = Vec::new();

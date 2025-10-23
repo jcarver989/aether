@@ -1,4 +1,4 @@
-use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult};
+use crate::llm::{StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentMessage {
@@ -42,9 +42,14 @@ pub enum AgentMessage {
     Done,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum UserMessage {
-    Text { content: String },
+    Text {
+        content: String,
+    },
+    SetLlm {
+        llm: Box<dyn StreamingModelProvider>,
+    },
     Cancel,
 }
 

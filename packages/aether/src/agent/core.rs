@@ -25,8 +25,8 @@ enum StreamEvent {
 
 type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
 
-pub struct Agent<T: StreamingModelProvider> {
-    llm: T,
+pub struct Agent {
+    llm: Box<dyn StreamingModelProvider>,
     context: Context,
     mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
     agent_message_tx: mpsc::Sender<AgentMessage>,
@@ -35,9 +35,9 @@ pub struct Agent<T: StreamingModelProvider> {
     tool_timeout: Duration,
 }
 
-impl<T: StreamingModelProvider + 'static> Agent<T> {
+impl Agent {
     pub fn new(
-        llm: T,
+        llm: Box<dyn StreamingModelProvider>,
         context: Context,
         mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
         user_message_rx: mpsc::Receiver<UserMessage>,
@@ -75,6 +75,10 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             match event {
                 StreamEvent::UserMessage(Cancel) => {
                     self.on_user_cancel(&mut state).await;
+                }
+
+                StreamEvent::UserMessage(SetLlm { llm }) => {
+                    self.on_set_llm(llm, &mut state).await;
                 }
 
                 StreamEvent::UserMessage(Text { content }) => {
@@ -132,6 +136,20 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             })
             .await;
         let _ = self.agent_message_tx.send(AgentMessage::Done).await;
+    }
+
+    async fn on_set_llm(
+        &mut self,
+        llm: Box<dyn StreamingModelProvider>,
+        _state: &mut IterationState,
+    ) {
+        // Cancel any active LLM stream
+        self.streams.remove("llm");
+
+        // Replace the LLM provider
+        self.llm = llm;
+
+        tracing::debug!("LLM provider switched to: {}", self.llm.display_name());
     }
 
     async fn on_user_text(&mut self, content: String) {
