@@ -123,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|e| format!("Failed to parse judge model '{}': {}", judge_model, e))?;
 
             let crucible = Crucible::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests"))
-                .with_server_factory("coding", Box::new(|| Box::new(CodingMcp::new())))
+                .with_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())))
                 .with_output_dir(output_dir_path.clone());
 
             let mut config = EvalsConfig::new(agent_llm, judge_llm);

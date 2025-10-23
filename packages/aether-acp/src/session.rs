@@ -41,38 +41,41 @@ impl Session {
         // Register the coding and slash-commands server factories
         let config_str = mcp_config_path.to_str().ok_or("Invalid MCP config path")?;
 
-        // Determine prompts directory - use ~/.aether/prompts or a default location
-        let prompts_dir = dirs::home_dir()
-            .map(|home| home.join(".aether").join("prompts"))
-            .unwrap_or_else(|| PathBuf::from("prompts"));
-
         let (tools, mcp_tx, mcp_handle) = if let Some((actor_handle, session_id)) = acp_info {
             // Use ACP-enabled CodingMcp
-            debug!("Creating ACP-enabled CodingMcp and SlashCommandMcp");
+            debug!("Creating ACP-enabled CodingMcp and PluginsMcp");
 
             mcp()
                 .register_in_memory_server(
                     "coding",
-                    Box::new(move || {
+                    Box::new(move |_args| {
                         let tools = AcpCodingTools::new(actor_handle.clone(), session_id.clone());
                         CodingMcp::with_tools(tools).into_dyn()
                     }),
                 )
                 .register_in_memory_server(
                     "plugins",
-                    Box::new(move || PluginsMcp::new(prompts_dir.clone()).into_dyn()),
+                    Box::new(|args| {
+                        PluginsMcp::from_args(args)
+                            .expect("Failed to parse PluginsMcp args")
+                            .into_dyn()
+                    }),
                 )
                 .from_json_file(config_str)?
                 .spawn()
                 .await?
         } else {
             // Use default (local filesystem) CodingMcp
-            debug!("Creating default CodingMcp and SlashCommandMcp");
+            debug!("Creating default CodingMcp and PluginsMcp");
             mcp()
-                .register_in_memory_server("coding", Box::new(|| CodingMcp::new().into_dyn()))
+                .register_in_memory_server("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
                 .register_in_memory_server(
-                    "slash-commands",
-                    Box::new(move || PluginsMcp::new(prompts_dir.clone()).into_dyn()),
+                    "plugins",
+                    Box::new(|args| {
+                        PluginsMcp::from_args(args)
+                            .expect("Failed to parse PluginsMcp args")
+                            .into_dyn()
+                    }),
                 )
                 .from_json_file(config_str)?
                 .spawn()

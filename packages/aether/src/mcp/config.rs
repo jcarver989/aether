@@ -45,7 +45,10 @@ pub enum RawMcpServerConfig {
     /// In-memory transport (Aether extension) - requires a registered factory
     /// The factory is looked up using the server name from the mcp.json key
     #[serde(rename = "in-memory")]
-    InMemory,
+    InMemory {
+        #[serde(default)]
+        args: Vec<String>,
+    },
 }
 
 pub enum McpServerConfig {
@@ -107,7 +110,8 @@ impl std::fmt::Debug for McpServerConfig {
 }
 
 /// Factory function that creates an MCP server instance
-pub type ServerFactory = Box<dyn Fn() -> Box<dyn DynService<RoleServer>> + Send + Sync>;
+/// The factory receives parsed CLI arguments from the configuration
+pub type ServerFactory = Box<dyn Fn(Vec<String>) -> Box<dyn DynService<RoleServer>> + Send + Sync>;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -213,11 +217,17 @@ impl RawMcpServerConfig {
                 })
             }
 
-            RawMcpServerConfig::InMemory => {
+            RawMcpServerConfig::InMemory { args } => {
                 let server_factory = factories
                     .get(&name)
                     .ok_or_else(|| ParseError::FactoryNotFound(name.clone()))?;
-                let server = server_factory();
+
+                let expanded_args = args
+                    .into_iter()
+                    .map(|a| expand_env_vars(&a))
+                    .collect::<Result<Vec<_>, VarError>>()?;
+
+                let server = server_factory(expanded_args);
                 Ok(McpServerConfig::InMemory { name, server })
             }
         }
