@@ -1,6 +1,7 @@
 // Don't use custom Result type here as we need to return rmcp::ErrorData
 use rmcp::{
     ClientHandler, RoleClient,
+    handler::client::progress::ProgressDispatcher,
     model::{
         ClientInfo, CreateElicitationRequestParam, CreateElicitationResult, ElicitationAction,
         ErrorData, ProgressNotificationParam,
@@ -15,19 +16,18 @@ use crate::mcp::ElicitationRequest;
 
 pub struct McpClient {
     client_info: ClientInfo,
-    progress_tx: mpsc::Sender<ProgressNotificationParam>,
+    pub progress_dispatcher: ProgressDispatcher,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
 }
 
 impl McpClient {
     pub fn new(
         client_info: ClientInfo,
-        progress_tx: mpsc::Sender<ProgressNotificationParam>,
         elicitation_sender: mpsc::Sender<ElicitationRequest>,
     ) -> Self {
         Self {
             client_info,
-            progress_tx,
+            progress_dispatcher: ProgressDispatcher::new(),
             elicitation_sender,
         }
     }
@@ -43,10 +43,7 @@ impl ClientHandler for McpClient {
         params: ProgressNotificationParam,
         _context: NotificationContext<RoleClient>,
     ) -> () {
-        match self.progress_tx.send(params).await {
-            Ok(_) => {}
-            Err(e) => {}
-        };
+        self.progress_dispatcher.handle_notification(params).await;
     }
 
     async fn create_elicitation(

@@ -17,6 +17,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::{mcp::client::McpClient, transport::create_in_memory_transport};
+use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 
@@ -40,14 +41,11 @@ pub struct McpManager {
     tools: HashMap<String, Tool>,
     tool_definitions: Vec<ToolDefinition>,
     client_info: ClientInfo,
-    progress_tx: mpsc::Sender<ProgressNotificationParam>,
-    progress_rx: mpsc::Receiver<ProgressNotificationParam>,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
 }
 
 impl McpManager {
     pub fn new(elicitation_sender: mpsc::Sender<ElicitationRequest>) -> Self {
-        let (progress_tx, progress_rx) = mpsc::channel(100);
         Self {
             servers: HashMap::new(),
             tools: HashMap::new(),
@@ -68,22 +66,12 @@ impl McpManager {
                     website_url: None,
                 },
             },
-            progress_tx,
-            progress_rx,
             elicitation_sender,
         }
     }
 
-    async fn recv_progress(&mut self) -> Option<ProgressNotificationParam> {
-        self.progress_rx.recv().await
-    }
-
     fn create_mcp_client(&self) -> McpClient {
-        McpClient::new(
-            self.client_info.clone(),
-            self.progress_tx.clone(),
-            self.elicitation_sender.clone(),
-        )
+        McpClient::new(self.client_info.clone(), self.elicitation_sender.clone())
     }
 
     pub async fn add_mcps(&mut self, configs: Vec<McpServerConfig>) -> Result<()> {
@@ -109,7 +97,7 @@ impl McpManager {
 
                 let server_connection = McpServerConnection {
                     _name: name.clone(),
-                    client,
+                    client: Arc::new(client),
                     server_task: None,
                 };
 
@@ -138,7 +126,7 @@ impl McpManager {
                     name.clone(),
                     McpServerConnection {
                         _name: name.clone(),
-                        client,
+                        client: Arc::new(client),
                         server_task: None,
                     },
                 );
@@ -173,7 +161,7 @@ impl McpManager {
 
                 let server_connection = McpServerConnection {
                     _name: name.clone(),
-                    client,
+                    client: Arc::new(client),
                     server_task: Some(server_handle),
                 };
 
@@ -216,7 +204,7 @@ impl McpManager {
     pub fn get_client_for_tool(
         &self,
         namespaced_tool_name: &str,
-    ) -> Result<rmcp::Peer<RoleClient>> {
+    ) -> Result<Arc<RunningService<RoleClient, McpClient>>> {
         if !self.tools.contains_key(namespaced_tool_name) {
             return Err(McpError::ToolNotFound(namespaced_tool_name.to_string()));
         }
@@ -224,13 +212,13 @@ impl McpManager {
         let (server_name, _) = split_on_server_name(namespaced_tool_name)
             .ok_or_else(|| McpError::InvalidToolNameFormat(namespaced_tool_name.to_string()))?;
 
-        let client = self
+        let service = self
             .servers
             .get(server_name)
             .map(|server| server.client.clone())
             .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?;
 
-        Ok(client)
+        Ok(service)
     }
 
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
@@ -402,7 +390,7 @@ pub struct Tool {
 
 struct McpServerConnection {
     _name: String,
-    client: RunningService<RoleClient, McpClient>,
+    client: Arc<RunningService<RoleClient, McpClient>>,
     server_task: Option<tokio::task::JoinHandle<()>>,
 }
 

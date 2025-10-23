@@ -4,13 +4,13 @@ use crate::llm::{
     ChatMessage, StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult,
 };
 use crate::llm::{Context, LlmError, LlmResponse};
-use crate::mcp::run_mcp_task::McpCommand;
+use crate::mcp::run_mcp_task::{McpCommand, ToolExecutionEvent};
 use crate::types::IsoString;
-use futures::{Stream, stream};
+use futures::Stream;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::StreamMap;
 use tokio_stream::wrappers::ReceiverStream;
@@ -19,16 +19,8 @@ use tokio_stream::wrappers::ReceiverStream;
 #[derive(Debug)]
 enum StreamEvent {
     Llm(Result<LlmResponse, LlmError>),
-    ToolResult(Result<ToolCallResult, ToolResultError>),
+    ToolExecution(ToolExecutionEvent),
     UserMessage(UserMessage),
-}
-
-/// Error type for tool result reception
-#[derive(Debug)]
-enum ToolResultError {
-    ChannelClosed,
-    Timeout { tool_id: String, tool_name: String },
-    McpError(ToolCallError),
 }
 
 type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
@@ -95,16 +87,9 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     }
                 }
 
-                StreamEvent::ToolResult(result) => {
+                StreamEvent::ToolExecution(tool_event) => {
                     if !state.cancelled {
-                        match result {
-                            Ok(tool_result) => {
-                                self.on_tool_result(tool_result, &mut state).await;
-                            }
-                            Err(e) => {
-                                self.on_tool_result_error(e, &mut state).await;
-                            }
-                        }
+                        self.on_tool_execution_event(tool_event, &mut state).await;
                     }
                 }
             }
@@ -287,22 +272,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     model_name: self.llm.display_name(),
                 });
 
-                let (tx, rx) = oneshot::channel();
-                let timeout = self.tool_timeout;
-                let tool_id = tool_call.id.clone();
-                let tool_name = tool_call.name.clone();
-
-                let stream = stream::once(async move {
-                    tokio::time::timeout(timeout, rx)
-                        .await
-                        .map_err(|_| ToolResultError::Timeout { tool_id, tool_name })
-                        .and_then(|result| result.map_err(|_| ToolResultError::ChannelClosed))
-                        .and_then(|result: Result<ToolCallResult, ToolCallError>| {
-                            result.map_err(ToolResultError::McpError)
-                        })
-                })
-                .map(StreamEvent::ToolResult);
-
+                let (tx, rx) = mpsc::channel(100);
+                let stream = ReceiverStream::new(rx).map(StreamEvent::ToolExecution);
                 let stream_key = tool_call.id.clone();
                 self.streams.insert(stream_key, Box::pin(stream));
 
@@ -331,72 +302,63 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         }
     }
 
-    async fn on_tool_result(&mut self, result: ToolCallResult, state: &mut IterationState) {
-        tracing::debug!(
-            "Tool result received: {} -> {}",
-            result.name,
-            result.result.len()
-        );
-        tracing::trace!("Processing tool result for tool_call_id: {}", result.id);
-
-        // Only process results for active tool requests
-        if let Some(_request) = state.pending_tool_calls.remove(&result.id) {
-            state.completed_tool_calls.push(Ok(result.clone()));
-
-            let msg = AgentMessage::ToolResult {
-                result,
-                model_name: self.llm.display_name(),
-            };
-
-            if let Err(e) = self.agent_message_tx.send(msg).await {
-                tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
+    async fn on_tool_execution_event(
+        &mut self,
+        event: ToolExecutionEvent,
+        state: &mut IterationState,
+    ) {
+        match event {
+            ToolExecutionEvent::Started { tool_id, tool_name } => {
+                tracing::debug!("Tool execution started: {} ({})", tool_name, tool_id);
             }
-        } else {
-            tracing::debug!("Ignoring stale tool result for id: {}", result.id);
-        }
-    }
 
-    async fn on_tool_result_error(&mut self, error: ToolResultError, state: &mut IterationState) {
-        match error {
-            ToolResultError::McpError(tool_error) => {
-                if let Some(_request) = state.pending_tool_calls.remove(&tool_error.id) {
-                    state.completed_tool_calls.push(Err(tool_error.clone()));
+            ToolExecutionEvent::Progress { tool_id, progress } => {
+                tracing::debug!(
+                    "Tool progress for {}: {}/{}",
+                    tool_id,
+                    progress.progress,
+                    progress.total.unwrap_or(0.0)
+                );
+            }
 
-                    let _ = self
-                        .agent_message_tx
-                        .send(AgentMessage::ToolError {
-                            error: tool_error,
+            ToolExecutionEvent::Complete { result } => match result {
+                Ok(tool_result) => {
+                    tracing::debug!(
+                        "Tool result received: {} -> {}",
+                        tool_result.name,
+                        tool_result.result.len()
+                    );
+
+                    if let Some(_request) = state.pending_tool_calls.remove(&tool_result.id) {
+                        state.completed_tool_calls.push(Ok(tool_result.clone()));
+
+                        let msg = AgentMessage::ToolResult {
+                            result: tool_result,
                             model_name: self.llm.display_name(),
-                        })
-                        .await;
+                        };
+
+                        if let Err(e) = self.agent_message_tx.send(msg).await {
+                            tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
+                        }
+                    } else {
+                        tracing::debug!("Ignoring stale tool result for id: {}", tool_result.id);
+                    }
                 }
-            }
-            ToolResultError::Timeout { tool_id, tool_name } => {
-                if let Some(request) = state.pending_tool_calls.remove(&tool_id) {
-                    let error_message =
-                        format!("Tool execution timed out after {:?}", self.tool_timeout);
 
-                    let tool_error = ToolCallError {
-                        id: tool_id,
-                        name: tool_name,
-                        arguments: Some(request.arguments),
-                        error: error_message,
-                    };
+                Err(tool_error) => {
+                    if let Some(_request) = state.pending_tool_calls.remove(&tool_error.id) {
+                        state.completed_tool_calls.push(Err(tool_error.clone()));
 
-                    state.completed_tool_calls.push(Err(tool_error.clone()));
-
-                    let _ = self
-                        .agent_message_tx
-                        .send(AgentMessage::ToolError {
-                            error: tool_error,
-                            model_name: self.llm.display_name(),
-                        })
-                        .await;
+                        let _ = self
+                            .agent_message_tx
+                            .send(AgentMessage::ToolError {
+                                error: tool_error,
+                                model_name: self.llm.display_name(),
+                            })
+                            .await;
+                    }
                 }
-            }
-            ToolResultError::ChannelClosed => {
-                tracing::error!("Tool result channel closed unexpectedly");
-            }
+            },
         }
     }
 
