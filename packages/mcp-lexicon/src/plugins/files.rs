@@ -5,6 +5,7 @@ use crate::MarkdownFile;
 
 pub type PromptFile = MarkdownFile<PromptFrontmatter>;
 pub type SkillsFile = MarkdownFile<SkillsFrontmatter>;
+pub type AgentFile = MarkdownFile<AgentFrontmatter>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptFrontmatter {
@@ -14,6 +15,13 @@ pub struct PromptFrontmatter {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillsFrontmatter {
     pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentFrontmatter {
+    pub description: Option<String>,
+    /// Model spec (e.g., "anthropic:claude-3.5-sonnet", "ollama:llama3.2")
+    pub model: Option<String>,
 }
 
 impl PromptFile {
