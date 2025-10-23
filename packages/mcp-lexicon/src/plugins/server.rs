@@ -310,8 +310,8 @@ Takes:
 - prompt: the task for the agent to perform
 - model: optional model override (e.g., 'anthropic:claude-3.5-sonnet')
 
-The agent will be spawned in-process with its system prompt from AGENTS.md and the provided task.
-Progress updates will be streamed as the agent works.
+The agent will be spawned in-process as a separate tokio task with its system prompt from AGENTS.md.
+Multiple agents can run concurrently without blocking each other.
 
 Returns the agent's final output and success status."
     )]
@@ -370,7 +370,7 @@ Returns the agent's final output and success status."
             .map_err(|e| format!("Failed to spawn MCP manager: {}", e))?;
 
         // Build and spawn the agent
-        let (user_tx, mut agent_rx, _agent_handle) = agent(llm)
+        let (user_tx, agent_rx, _agent_handle) = agent(llm)
             .system(&agent_file.content)
             .tools(mcp_tx, tools)
             .spawn()
@@ -383,49 +383,60 @@ Returns the agent's final output and success status."
             .await
             .map_err(|e| format!("Failed to send message to agent: {}", e))?;
 
-        // Collect agent output
-        let mut output_buffer = String::new();
-        let mut success = true;
-        let mut error_message = None;
+        // Spawn a task to run the agent and collect output
+        // This prevents blocking and allows multiple agents to run concurrently
+        let agent_task = tokio::spawn(async move {
+            let mut output_buffer = String::new();
+            let mut success = true;
+            let mut error_message: Option<String> = None;
+            let mut agent_rx = agent_rx;
 
-        while let Some(message) = agent_rx.recv().await {
-            match message {
-                AgentMessage::Text { chunk, .. } => {
-                    output_buffer.push_str(&chunk);
-                    // TODO: Stream as MCP progress notification
-                }
-                AgentMessage::ToolCall { request, .. } => {
-                    let msg = format!("[Tool Call: {}]\n", request.name);
-                    output_buffer.push_str(&msg);
-                    // TODO: Stream as MCP progress notification
-                }
-                AgentMessage::ToolResult { result, .. } => {
-                    let msg = format!("[Tool Result: {}]\n", result.name);
-                    output_buffer.push_str(&msg);
-                    // TODO: Stream as MCP progress notification
-                }
-                AgentMessage::ToolError { error, .. } => {
-                    let msg = format!("[Tool Error: {}] {}\n", error.name, error.error);
-                    output_buffer.push_str(&msg);
-                    // TODO: Stream as MCP progress notification
-                }
-                AgentMessage::Error { message } => {
-                    success = false;
-                    error_message = Some(message.clone());
-                    output_buffer.push_str(&format!("[Error: {}]\n", message));
-                }
-                AgentMessage::Cancelled { message } => {
-                    success = false;
-                    output_buffer.push_str(&format!("[Cancelled: {}]\n", message));
-                }
-                AgentMessage::Done => {
-                    break;
-                }
-                AgentMessage::ToolProgress { .. } => {
-                    // Already handled via MCP progress notifications in the agent
+            while let Some(message) = agent_rx.recv().await {
+                match message {
+                    AgentMessage::Text { chunk, .. } => {
+                        output_buffer.push_str(&chunk);
+                        // TODO: Stream as MCP progress notification
+                    }
+                    AgentMessage::ToolCall { request, .. } => {
+                        let msg = format!("[Tool Call: {}]\n", request.name);
+                        output_buffer.push_str(&msg);
+                        // TODO: Stream as MCP progress notification
+                    }
+                    AgentMessage::ToolResult { result, .. } => {
+                        let msg = format!("[Tool Result: {}]\n", result.name);
+                        output_buffer.push_str(&msg);
+                        // TODO: Stream as MCP progress notification
+                    }
+                    AgentMessage::ToolError { error, .. } => {
+                        let msg = format!("[Tool Error: {}] {}\n", error.name, error.error);
+                        output_buffer.push_str(&msg);
+                        // TODO: Stream as MCP progress notification
+                    }
+                    AgentMessage::Error { message } => {
+                        success = false;
+                        error_message = Some(message.clone());
+                        output_buffer.push_str(&format!("[Error: {}]\n", message));
+                    }
+                    AgentMessage::Cancelled { message } => {
+                        success = false;
+                        output_buffer.push_str(&format!("[Cancelled: {}]\n", message));
+                    }
+                    AgentMessage::Done => {
+                        break;
+                    }
+                    AgentMessage::ToolProgress { .. } => {
+                        // Already handled via MCP progress notifications in the agent
+                    }
                 }
             }
-        }
+
+            (output_buffer, success, error_message)
+        });
+
+        // Await the agent task to get the result
+        let (output_buffer, success, error_message) = agent_task
+            .await
+            .map_err(|e| format!("Agent task panicked: {}", e))?;
 
         // If there was an error, include it in the output
         if let Some(err) = error_message {
