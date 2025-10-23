@@ -1,6 +1,7 @@
 use crate::llm::{Context, LlmResponse, LlmResponseStream, StreamingModelProvider};
 
 pub struct FakeLlmProvider {
+    name: String,
     responses: Vec<Vec<LlmResponse>>,
     call_count: std::sync::atomic::AtomicUsize,
 }
@@ -8,6 +9,7 @@ pub struct FakeLlmProvider {
 impl FakeLlmProvider {
     pub fn new(responses: Vec<Vec<LlmResponse>>) -> Self {
         Self {
+            name: "Fake LLM".to_string(),
             responses,
             call_count: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -15,6 +17,14 @@ impl FakeLlmProvider {
 
     pub fn with_single_response(chunks: Vec<LlmResponse>) -> Self {
         Self::new(vec![chunks])
+    }
+
+    pub fn with_name(name: &str, responses: Vec<Vec<LlmResponse>>) -> Self {
+        Self {
+            name: name.to_string(),
+            responses,
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        }
     }
 }
 
@@ -34,6 +44,6 @@ impl StreamingModelProvider for FakeLlmProvider {
     }
 
     fn display_name(&self) -> String {
-        "Fake LLM".to_string()
+        self.name.clone()
     }
 }

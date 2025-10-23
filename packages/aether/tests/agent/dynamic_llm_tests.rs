@@ -2,45 +2,21 @@ use std::error::Error;
 
 use aether::{
     agent::{agent, AgentMessage, UserMessage},
-    llm::{Context, LlmResponse, LlmResponseStream, StreamingModelProvider},
     mcp::mcp,
-    testing::{agent_message, fake_mcp, llm_response, FakeMcpServer},
+    testing::{fake_mcp, llm_response, FakeLlmProvider, FakeMcpServer},
 };
-
-/// Mock LLM provider for testing
-struct MockLlmProvider {
-    name: String,
-    responses: Vec<LlmResponse>,
-}
-
-impl MockLlmProvider {
-    fn new(name: &str, responses: Vec<LlmResponse>) -> Self {
-        Self {
-            name: name.to_string(),
-            responses,
-        }
-    }
-}
-
-impl StreamingModelProvider for MockLlmProvider {
-    fn stream_response(&self, _context: &Context) -> LlmResponseStream {
-        Box::pin(tokio_stream::iter(self.responses.clone().into_iter().map(Ok)))
-    }
-
-    fn display_name(&self) -> String {
-        self.name.clone()
-    }
-}
 
 #[tokio::test]
 async fn test_set_llm_switches_provider() -> Result<(), Box<dyn Error>> {
     // Setup first provider
     let (m1_id, m1_chunks) = ("message_1", ["Hello", " from", " Provider", " A"]);
-    let provider_a = MockLlmProvider::new("Provider A", llm_response(m1_id).text(&m1_chunks).build());
+    let provider_a =
+        FakeLlmProvider::with_name("Provider A", vec![llm_response(m1_id).text(&m1_chunks).build()]);
 
     // Setup second provider
     let (m2_id, m2_chunks) = ("message_2", ["Hello", " from", " Provider", " B"]);
-    let provider_b = MockLlmProvider::new("Provider B", llm_response(m2_id).text(&m2_chunks).build());
+    let provider_b =
+        FakeLlmProvider::with_name("Provider B", vec![llm_response(m2_id).text(&m2_chunks).build()]);
 
     // Create agent with provider A
     let (tool_definitions, mcp_tx, _mcp_handle) = mcp()
@@ -48,7 +24,7 @@ async fn test_set_llm_switches_provider() -> Result<(), Box<dyn Error>> {
         .spawn()
         .await?;
 
-    let (tx, mut rx, _handle) = agent(Box::new(provider_a) as Box<dyn StreamingModelProvider>)
+    let (tx, mut rx, _handle) = agent(provider_a)
         .tools(mcp_tx, tool_definitions)
         .spawn()
         .await?;
@@ -112,23 +88,25 @@ async fn test_set_llm_switches_provider() -> Result<(), Box<dyn Error>> {
 async fn test_set_llm_during_streaming_cancels_and_switches() -> Result<(), Box<dyn Error>> {
     // Setup provider with long response
     let long_chunks = vec![
-        "This", " is", " a", " very", " long", " response", " that", " should", " be", " interrupted",
+        "This", " is", " a", " very", " long", " response", " that", " should", " be",
+        " interrupted",
     ];
-    let mut provider_a_responses = vec![LlmResponse::Start {
+    let mut provider_a_response = vec![aether::llm::LlmResponse::Start {
         message_id: "message_1".to_string(),
     }];
     for chunk in &long_chunks {
-        provider_a_responses.push(LlmResponse::Text {
+        provider_a_response.push(aether::llm::LlmResponse::Text {
             chunk: chunk.to_string(),
         });
     }
-    provider_a_responses.push(LlmResponse::Done);
+    provider_a_response.push(aether::llm::LlmResponse::Done);
 
-    let provider_a = MockLlmProvider::new("Provider A", provider_a_responses);
+    let provider_a = FakeLlmProvider::with_name("Provider A", vec![provider_a_response]);
 
     // Setup second provider
     let (m2_id, m2_chunks) = ("message_2", ["Response", " from", " Provider", " B"]);
-    let provider_b = MockLlmProvider::new("Provider B", llm_response(m2_id).text(&m2_chunks).build());
+    let provider_b =
+        FakeLlmProvider::with_name("Provider B", vec![llm_response(m2_id).text(&m2_chunks).build()]);
 
     // Create agent
     let (tool_definitions, mcp_tx, _mcp_handle) = mcp()
@@ -136,7 +114,7 @@ async fn test_set_llm_during_streaming_cancels_and_switches() -> Result<(), Box<
         .spawn()
         .await?;
 
-    let (tx, mut rx, _handle) = agent(Box::new(provider_a) as Box<dyn StreamingModelProvider>)
+    let (tx, mut rx, _handle) = agent(provider_a)
         .tools(mcp_tx, tool_definitions)
         .spawn()
         .await?;
@@ -199,11 +177,13 @@ async fn test_set_llm_preserves_context() -> Result<(), Box<dyn Error>> {
 
     // Setup first provider
     let (m1_id, m1_chunks) = ("message_1", ["Response", " A"]);
-    let provider_a = MockLlmProvider::new("Provider A", llm_response(m1_id).text(&m1_chunks).build());
+    let provider_a =
+        FakeLlmProvider::with_name("Provider A", vec![llm_response(m1_id).text(&m1_chunks).build()]);
 
     // Setup second provider
     let (m2_id, m2_chunks) = ("message_2", ["Response", " B"]);
-    let provider_b = MockLlmProvider::new("Provider B", llm_response(m2_id).text(&m2_chunks).build());
+    let provider_b =
+        FakeLlmProvider::with_name("Provider B", vec![llm_response(m2_id).text(&m2_chunks).build()]);
 
     // Create agent
     let (tool_definitions, mcp_tx, _mcp_handle) = mcp()
@@ -211,7 +191,7 @@ async fn test_set_llm_preserves_context() -> Result<(), Box<dyn Error>> {
         .spawn()
         .await?;
 
-    let (tx, mut rx, _handle) = agent(Box::new(provider_a) as Box<dyn StreamingModelProvider>)
+    let (tx, mut rx, _handle) = agent(provider_a)
         .tools(mcp_tx, tool_definitions)
         .spawn()
         .await?;
@@ -270,12 +250,12 @@ async fn test_multiple_provider_switches() -> Result<(), Box<dyn Error>> {
         .await?;
 
     // Start with first provider
-    let initial_provider = MockLlmProvider::new(
+    let initial_provider = FakeLlmProvider::with_name(
         providers[0].0,
-        llm_response(providers[0].1).text(&["Initial"]).build(),
+        vec![llm_response(providers[0].1).text(&["Initial"]).build()],
     );
 
-    let (tx, mut rx, _handle) = agent(Box::new(initial_provider) as Box<dyn StreamingModelProvider>)
+    let (tx, mut rx, _handle) = agent(initial_provider)
         .tools(mcp_tx, tool_definitions)
         .spawn()
         .await?;
@@ -291,9 +271,9 @@ async fn test_multiple_provider_switches() -> Result<(), Box<dyn Error>> {
 
     // Switch through each provider
     for (i, (provider_name, msg_id)) in providers.iter().skip(1).enumerate() {
-        let provider = MockLlmProvider::new(
+        let provider = FakeLlmProvider::with_name(
             provider_name,
-            llm_response(msg_id).text(&[provider_name]).build(),
+            vec![llm_response(msg_id).text(&[provider_name]).build()],
         );
 
         tx.send(UserMessage::SetLlm {
