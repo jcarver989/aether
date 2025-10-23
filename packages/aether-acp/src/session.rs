@@ -4,7 +4,6 @@ use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
 use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{mpsc, oneshot};
@@ -89,7 +88,7 @@ impl Session {
         }
 
         let system_prompt_text = Prompt::build_all(&prompts)
-            .map_err(|e| format!("Failed to build system prompt: {}", e))?;
+            .map_err(|e| format!("Failed to build system prompt: {e}"))?;
 
         let builder = agent(llm)
             .system(&system_prompt_text)
@@ -116,7 +115,7 @@ impl Session {
         self.agent_tx
             .send(UserMessage::text(&text))
             .await
-            .map_err(|e| format!("Failed to send prompt: {}", e))?;
+            .map_err(|e| format!("Failed to send prompt: {e}"))?;
         Ok(())
     }
 
@@ -127,7 +126,7 @@ impl Session {
         self.agent_tx
             .send(UserMessage::Cancel)
             .await
-            .map_err(|e| format!("Failed to send cancel: {}", e))?;
+            .map_err(|e| format!("Failed to send cancel: {e}"))?;
         Ok(())
     }
 
@@ -145,11 +144,11 @@ impl Session {
         self.mcp_tx
             .send(McpCommand::ListPrompts { tx })
             .await
-            .map_err(|e| format!("Failed to send ListPrompts command: {}", e))?;
+            .map_err(|e| format!("Failed to send ListPrompts command: {e}"))?;
 
         let prompts = rx
             .await
-            .map_err(|e| format!("Failed to receive prompts: {}", e))??;
+            .map_err(|e| format!("Failed to receive prompts: {e}"))??;
 
         let commands = prompts
             .iter()
@@ -182,11 +181,11 @@ impl Session {
         self.mcp_tx
             .send(McpCommand::ListPrompts { tx: tx_list })
             .await
-            .map_err(|e| format!("Failed to send ListPrompts command: {}", e))?;
+            .map_err(|e| format!("Failed to send ListPrompts command: {e}"))?;
 
         let prompts = rx_list
             .await
-            .map_err(|e| format!("Failed to receive prompts: {}", e))??;
+            .map_err(|e| format!("Failed to receive prompts: {e}"))??;
 
         // Find the prompt that matches the command name
         let matching_prompt = prompts
@@ -195,7 +194,7 @@ impl Session {
                 // Extract the base name from the namespaced prompt name
                 p.name.split("__").last().unwrap_or("") == command_name
             })
-            .ok_or_else(|| format!("Slash command '{}' not found", command_name))?;
+            .ok_or_else(|| format!("Slash command '{command_name}' not found"))?;
 
         let namespaced_name = matching_prompt.name.to_string();
 
@@ -208,11 +207,11 @@ impl Session {
                 tx: tx_get,
             })
             .await
-            .map_err(|e| format!("Failed to send GetPrompt command: {}", e))?;
+            .map_err(|e| format!("Failed to send GetPrompt command: {e}"))?;
 
         let prompt_result = rx_get
             .await
-            .map_err(|e| format!("Failed to receive prompt: {}", e))??;
+            .map_err(|e| format!("Failed to receive prompt: {e}"))??;
 
         // Extract text content from the first message
         if let Some(message) = prompt_result.messages.first() {

@@ -13,69 +13,55 @@ use super::{
 pub struct DefaultCodingTools;
 
 impl CodingTools for DefaultCodingTools {
-    fn read_file(
+    async fn read_file(
         &self,
         args: ReadFileArgs,
-    ) -> impl Future<Output = Result<ReadFileResult, String>> + Send {
-        async move {
-            read_file_contents(args)
-                .await
-                .map_err(|e| format!("Read file error: {e}"))
-        }
+    ) -> Result<ReadFileResult, String> {
+        read_file_contents(args)
+            .await
+            .map_err(|e| format!("Read file error: {e}"))
     }
 
-    fn write_file(
+    async fn write_file(
         &self,
         args: WriteFileArgs,
-    ) -> impl Future<Output = Result<WriteFileResponse, String>> + Send {
-        async move {
-            write_file_contents(args)
-                .await
-                .map_err(|e| format!("Write file error: {e}"))
-        }
+    ) -> Result<WriteFileResponse, String> {
+        write_file_contents(args)
+            .await
+            .map_err(|e| format!("Write file error: {e}"))
     }
 
-    fn edit_file(
+    async fn edit_file(
         &self,
         args: EditFileArgs,
-    ) -> impl Future<Output = Result<EditFileResponse, String>> + Send {
-        async move {
-            edit_file_contents(args)
-                .await
-                .map_err(|e| format!("Edit file error: {e}"))
-        }
+    ) -> Result<EditFileResponse, String> {
+        edit_file_contents(args)
+            .await
+            .map_err(|e| format!("Edit file error: {e}"))
     }
 
-    fn list_files(
+    async fn list_files(
         &self,
         args: ListFilesArgs,
-    ) -> impl Future<Output = Result<ListFilesResult, String>> + Send {
-        async move {
-            list_files(args)
-                .await
-                .map_err(|e| format!("List files error: {e}"))
-        }
+    ) -> Result<ListFilesResult, String> {
+        list_files(args)
+            .await
+            .map_err(|e| format!("List files error: {e}"))
     }
 
-    fn bash(&self, args: BashInput) -> impl Future<Output = Result<BashResult, String>> + Send {
-        async move {
-            execute_command(args)
-                .await
-                .map_err(|e| format!("Bash command error: {e}"))
-        }
+    async fn bash(&self, args: BashInput) -> Result<BashResult, String> {
+        execute_command(args)
+            .await
+            .map_err(|e| format!("Bash command error: {e}"))
     }
 
-    fn read_background_bash(
+    async fn read_background_bash(
         &self,
         handle: BackgroundProcessHandle,
         filter: Option<String>,
-    ) -> impl Future<
-        Output = Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String>,
-    > + Send {
-        async move {
-            read_background_bash(handle, filter)
-                .await
-                .map_err(|e| format!("Failed to get output: {e}"))
-        }
+    ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String> {
+        read_background_bash(handle, filter)
+            .await
+            .map_err(|e| format!("Failed to get output: {e}"))
     }
 }

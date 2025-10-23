@@ -69,7 +69,7 @@ pub fn process_todo_write(input: TodoWriteInput) -> TodoWriteOutput {
         .count();
 
     TodoWriteOutput {
-        message: format!("Todo list updated with {} task(s)", total),
+        message: format!("Todo list updated with {total} task(s)"),
         stats: TodoStats {
             total,
             pending,

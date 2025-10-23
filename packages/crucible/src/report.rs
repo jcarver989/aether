@@ -346,7 +346,7 @@ pub fn serve_report(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>>
     let report_data_path = output_dir.join("report").join("report-data.json");
 
     if !report_data_path.exists() {
-        return Err(format!("Report data not found: {:?}", report_data_path).into());
+        return Err(format!("Report data not found: {report_data_path:?}").into());
     }
 
     // Embedded templates (served from memory)
@@ -355,7 +355,7 @@ pub fn serve_report(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>>
     let script_js = include_str!("../templates/script.js");
 
     let server = tiny_http::Server::http("127.0.0.1:3000")
-        .map_err(|e| format!("Failed to start server: {}", e))?;
+        .map_err(|e| format!("Failed to start server: {e}"))?;
 
     println!("\n{}", "=== Eval Report Server ===".bold().green());
     println!(

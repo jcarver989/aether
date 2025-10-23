@@ -120,10 +120,10 @@ async fn run_agent(
             } => {
                 let progress_msg = message
                     .as_ref()
-                    .map(|m| format!("{} ", m))
+                    .map(|m| format!("{m} "))
                     .unwrap_or_default();
                 let total_str = total
-                    .map(|t| format!("/{}", t))
+                    .map(|t| format!("/{t}"))
                     .unwrap_or_else(|| "".to_string());
                 println!(
                     "Tool call '{}' progress: {}{}{}",

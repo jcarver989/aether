@@ -37,7 +37,7 @@ impl PluginsMcpArgs {
         full_args.extend(args);
 
         Self::try_parse_from(full_args)
-            .map_err(|e| format!("Failed to parse PluginsMcp arguments: {}", e))
+            .map_err(|e| format!("Failed to parse PluginsMcp arguments: {e}"))
     }
 }
 
@@ -121,58 +121,54 @@ impl ServerHandler for PluginsMcp {
         }
     }
 
-    fn list_prompts(
+    async fn list_prompts(
         &self,
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListPromptsResult, McpError>> + Send {
-        async move {
-            let command_files_with_paths =
-                PromptFile::from_dir(&self.commands_dir)
-                    .await
-                    .map_err(|e| {
-                        McpError::internal_error(format!("Failed to load commands: {}", e), None)
-                    })?;
+    ) -> Result<ListPromptsResult, McpError> {
+        let command_files_with_paths =
+            PromptFile::from_dir(&self.commands_dir)
+                .await
+                .map_err(|e| {
+                    McpError::internal_error(format!("Failed to load commands: {e}"), None)
+                })?;
 
-            let commands = command_files_with_paths
-                .iter()
-                .filter_map(|(path, file)| {
-                    let name = path.file_stem()?.to_string_lossy().to_string();
-                    Some(file.to_prompt(name))
-                })
-                .collect();
-            Ok(ListPromptsResult {
-                prompts: commands,
-                next_cursor: None,
+        let commands = command_files_with_paths
+            .iter()
+            .filter_map(|(path, file)| {
+                let name = path.file_stem()?.to_string_lossy().to_string();
+                Some(file.to_prompt(name))
             })
-        }
+            .collect();
+        Ok(ListPromptsResult {
+            prompts: commands,
+            next_cursor: None,
+        })
     }
 
-    fn get_prompt(
+    async fn get_prompt(
         &self,
         request: GetPromptRequestParam,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<GetPromptResult, McpError>> + Send {
-        async move {
-            let prompt_path = self.commands_dir.join(format!("{}.md", request.name));
-            let command_file = PromptFile::from_file(&prompt_path).map_err(|e| {
-                McpError::invalid_params(
-                    format!("Prompt '{}' not found: {}", request.name, e),
-                    None,
-                )
-            })?;
+    ) -> Result<GetPromptResult, McpError> {
+        let prompt_path = self.commands_dir.join(format!("{}.md", request.name));
+        let command_file = PromptFile::from_file(&prompt_path).map_err(|e| {
+            McpError::invalid_params(
+                format!("Prompt '{}' not found: {}", request.name, e),
+                None,
+            )
+        })?;
 
-            let content = substitute_parameters(&command_file.content, &request.arguments);
-            let messages = vec![PromptMessage::new_text(PromptMessageRole::User, content)];
+        let content = substitute_parameters(&command_file.content, &request.arguments);
+        let messages = vec![PromptMessage::new_text(PromptMessageRole::User, content)];
 
-            Ok(GetPromptResult {
-                description: command_file
-                    .frontmatter
-                    .as_ref()
-                    .and_then(|f| f.description.clone()),
-                messages,
-            })
-        }
+        Ok(GetPromptResult {
+            description: command_file
+                .frontmatter
+                .as_ref()
+                .and_then(|f| f.description.clone()),
+            messages,
+        })
     }
 }
 
@@ -190,7 +186,7 @@ Use this to discover available skills before loading their full content with get
     pub async fn list_skills(&self) -> Result<Json<ListSkillsOutput>, String> {
         let skills_with_dirs = SkillsFile::from_nested_dirs(&self.skills_dir, "SKILL.md")
             .await
-            .map_err(|e| format!("Failed to load skills: {}", e))?;
+            .map_err(|e| format!("Failed to load skills: {e}"))?;
 
         let skills = skills_with_dirs
             .iter()

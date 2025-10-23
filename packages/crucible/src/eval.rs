@@ -25,31 +25,31 @@ impl Eval {
         let eval_name = eval_path
             .file_name()
             .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("Invalid eval directory name: {:?}", eval_path))?
+            .ok_or_else(|| format!("Invalid eval directory name: {eval_path:?}"))?
             .to_string();
 
         // Read prompt.md
         let prompt_path = eval_path.join("prompt.md");
         let prompt = std::fs::read_to_string(&prompt_path)
-            .map_err(|e| format!("Failed to read {:?}: {}", prompt_path, e))?;
+            .map_err(|e| format!("Failed to read {prompt_path:?}: {e}"))?;
 
         // Create a tmpdir for this eval and copy src/ files into it
         let tmpdir = tempfile::tempdir()
-            .map_err(|e| format!("Failed to create tmpdir for {}: {}", eval_name, e))?;
+            .map_err(|e| format!("Failed to create tmpdir for {eval_name}: {e}"))?;
 
         let src_dir = eval_path.join("src");
         if src_dir.exists() && src_dir.is_dir() {
             copy_dir_all(&src_dir, tmpdir.path())
-                .map_err(|e| format!("Failed to copy files from {:?}: {}", src_dir, e))?;
+                .map_err(|e| format!("Failed to copy files from {src_dir:?}: {e}"))?;
         }
 
         // Parse assertions.json
         let assertions_path = eval_path.join("assertions.json");
         let assertions = if assertions_path.exists() {
             let content = std::fs::read_to_string(&assertions_path)
-                .map_err(|e| format!("Failed to read {:?}: {}", assertions_path, e))?;
+                .map_err(|e| format!("Failed to read {assertions_path:?}: {e}"))?;
             serde_json::from_str::<Vec<EvalAssertion>>(&content)
-                .map_err(|e| format!("Failed to parse {:?}: {}", assertions_path, e))?
+                .map_err(|e| format!("Failed to parse {assertions_path:?}: {e}"))?
         } else {
             Vec::new()
         };
@@ -84,11 +84,11 @@ impl Eval {
         let evals_dir = base_dir.join("evals");
 
         if !evals_dir.exists() {
-            return Err(format!("Evals directory not found: {:?}", evals_dir).into());
+            return Err(format!("Evals directory not found: {evals_dir:?}").into());
         }
 
         let entries = std::fs::read_dir(&evals_dir)
-            .map_err(|e| format!("Failed to read evals directory: {}", e))?;
+            .map_err(|e| format!("Failed to read evals directory: {e}"))?;
 
         for entry in entries.flatten() {
             let eval_path = entry.path();
@@ -181,12 +181,12 @@ impl Eval {
         if file_path.exists() {
             tracing::info!("✓ FileExists assertion passed: {}", path);
             EvalAssertionResult::Success {
-                message: format!("File '{}' exists", path),
+                message: format!("File '{path}' exists"),
             }
         } else {
             tracing::error!("✗ FileExists assertion failed: {}", path);
             EvalAssertionResult::Failure {
-                message: format!("File '{}' does not exist", path),
+                message: format!("File '{path}' does not exist"),
             }
         }
     }
@@ -199,19 +199,19 @@ impl Eval {
                 if file_content.contains(content) {
                     tracing::info!("✓ FileMatches assertion passed: {}", path);
                     EvalAssertionResult::Success {
-                        message: format!("File '{}' contains '{}'", path, content),
+                        message: format!("File '{path}' contains '{content}'"),
                     }
                 } else {
                     tracing::error!("✗ FileMatches assertion failed: {}", path);
                     EvalAssertionResult::Failure {
-                        message: format!("File '{}' does not contain '{}'", path, content),
+                        message: format!("File '{path}' does not contain '{content}'"),
                     }
                 }
             }
             Err(e) => {
                 tracing::error!("✗ FileMatches assertion failed: {} ({})", path, e);
                 EvalAssertionResult::Failure {
-                    message: format!("Failed to read file '{}': {}", path, e),
+                    message: format!("Failed to read file '{path}': {e}"),
                 }
             }
         }
@@ -243,8 +243,7 @@ impl Eval {
                     );
                     EvalAssertionResult::Success {
                         message: format!(
-                            "Command '{}' exited with code {} as expected",
-                            command, actual_code
+                            "Command '{command}' exited with code {actual_code} as expected"
                         ),
                     }
                 } else {
@@ -257,8 +256,7 @@ impl Eval {
                     );
                     EvalAssertionResult::Failure {
                         message: format!(
-                            "Command '{}' exited with code {} (expected {})\nstderr: {}",
-                            command, actual_code, expected_code, stderr
+                            "Command '{command}' exited with code {actual_code} (expected {expected_code})\nstderr: {stderr}"
                         ),
                     }
                 }
@@ -266,7 +264,7 @@ impl Eval {
             Err(e) => {
                 tracing::error!("✗ CommandExitCode assertion failed: {} ({})", command, e);
                 EvalAssertionResult::Failure {
-                    message: format!("Failed to execute command '{}': {}", command, e),
+                    message: format!("Failed to execute command '{command}': {e}"),
                 }
             }
         }
@@ -290,16 +288,16 @@ impl Eval {
                     messages_summary.push('\n');
                 }
                 EvalMessage::ToolCall { name, arguments } => {
-                    messages_summary.push_str(&format!("Tool call: {} ({})\n", name, arguments));
+                    messages_summary.push_str(&format!("Tool call: {name} ({arguments})\n"));
                 }
                 EvalMessage::ToolResult { name, result } => {
-                    messages_summary.push_str(&format!("Tool result ({}): {}\n", name, result));
+                    messages_summary.push_str(&format!("Tool result ({name}): {result}\n"));
                 }
                 EvalMessage::ToolError(error) => {
-                    messages_summary.push_str(&format!("Tool error: {}\n", error));
+                    messages_summary.push_str(&format!("Tool error: {error}\n"));
                 }
                 EvalMessage::Error(error) => {
-                    messages_summary.push_str(&format!("Error: {}\n", error));
+                    messages_summary.push_str(&format!("Error: {error}\n"));
                 }
                 EvalMessage::Done => {}
             }
@@ -341,7 +339,7 @@ impl Eval {
                 Err(e) => {
                     tracing::error!("✗ LLM judge error: {}", e);
                     return EvalAssertionResult::Failure {
-                        message: format!("Judge LLM error: {}", e),
+                        message: format!("Judge LLM error: {e}"),
                     };
                 }
             }
@@ -374,8 +372,7 @@ impl Eval {
                 tracing::error!("Raw response: {}", judge_response);
                 EvalAssertionResult::Failure {
                     message: format!(
-                        "Judge returned invalid JSON: {}\nRaw response: {}",
-                        e, judge_response
+                        "Judge returned invalid JSON: {e}\nRaw response: {judge_response}"
                     ),
                 }
             }
@@ -430,8 +427,7 @@ impl Eval {
             if !count_valid {
                 return EvalAssertionResult::Failure {
                     message: format!(
-                        "Tool '{}' was called {} times, but expected {:?}",
-                        name, actual_count, count_req
+                        "Tool '{name}' was called {actual_count} times, but expected {count_req:?}"
                     ),
                 };
             }
@@ -439,7 +435,7 @@ impl Eval {
 
         if matching_calls.is_empty() {
             EvalAssertionResult::Failure {
-                message: format!("Tool '{}' was not called with matching arguments", name),
+                message: format!("Tool '{name}' was not called with matching arguments"),
             }
         } else {
             tracing::info!(
@@ -449,8 +445,7 @@ impl Eval {
             );
             EvalAssertionResult::Success {
                 message: format!(
-                    "Tool '{}' was called {} time(s) successfully",
-                    name, actual_count
+                    "Tool '{name}' was called {actual_count} time(s) successfully"
                 ),
             }
         }
@@ -469,8 +464,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
         Ok(())
     } else {
         Err(std::io::Error::other(format!(
-            "Failed to copy directory from {:?} to {:?}",
-            src, dst
+            "Failed to copy directory from {src:?} to {dst:?}"
         )))
     }
 }

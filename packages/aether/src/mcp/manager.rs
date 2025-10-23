@@ -255,7 +255,7 @@ impl McpManager {
                             let namespaced_name =
                                 create_namespaced_tool_name(&server_name, &prompt.name);
                             rmcp::model::Prompt {
-                                name: namespaced_name.into(),
+                                name: namespaced_name,
                                 description: prompt.description,
                                 arguments: prompt.arguments,
                                 title: prompt.title,

@@ -49,15 +49,13 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
             current_content.replace(&args.old_string, &args.new_string),
             count,
         )
+    } else if current_content.contains(&args.old_string) {
+        (
+            current_content.replacen(&args.old_string, &args.new_string, 1),
+            1,
+        )
     } else {
-        if current_content.contains(&args.old_string) {
-            (
-                current_content.replacen(&args.old_string, &args.new_string, 1),
-                1,
-            )
-        } else {
-            (current_content.clone(), 0)
-        }
+        (current_content.clone(), 0)
     };
 
     // Check if any replacement actually occurred

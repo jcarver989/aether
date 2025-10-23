@@ -74,7 +74,7 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, St
                             line.len()
                         )
                     } else {
-                        format!("{:5}\t{}", line_num, line)
+                        format!("{line_num:5}\t{line}")
                     }
                 })
                 .collect();
@@ -157,7 +157,7 @@ mod tests {
         let test_path = temp_dir.path().join("test_truncation.txt");
         let short_line = "short";
         let long_line = "x".repeat(2500);
-        let test_content = format!("{}\n{}", short_line, long_line);
+        let test_content = format!("{short_line}\n{long_line}");
 
         fs::write(&test_path, &test_content).unwrap();
 
@@ -184,7 +184,7 @@ mod tests {
         // Create file with more than DEFAULT_LINE_LIMIT lines
         let mut lines = Vec::new();
         for i in 1..=2500 {
-            lines.push(format!("Line {}", i));
+            lines.push(format!("Line {i}"));
         }
         let test_content = lines.join("\n");
 

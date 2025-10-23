@@ -41,7 +41,7 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
     }
 
     // Count bytes for response
-    let bytes_written = args.content.as_bytes().len();
+    let bytes_written = args.content.len();
 
     Ok(WriteFileResponse {
         message: format!(

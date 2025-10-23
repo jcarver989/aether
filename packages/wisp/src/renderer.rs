@@ -93,7 +93,7 @@ impl<W: Write> Renderer<W> {
                     self.writer.flush_commands(&[
                         TerminalCommand::MoveToColumn(0),
                         TerminalCommand::ClearLine,
-                        TerminalCommand::Print(format!("{}\r\n", user_input)),
+                        TerminalCommand::Print(format!("{user_input}\r\n")),
                     ])?;
 
                     if let Err(e) = tx
@@ -190,7 +190,7 @@ impl<W: Write> Renderer<W> {
         }
 
         // Only render prompt if we have commands to execute and should render prompt
-        if commands.len() > 0 {
+        if !commands.is_empty() {
             if should_render_prompt {
                 let input_prompt = InputPrompt {};
                 commands.extend(input_prompt.render((), &self.context));

@@ -4,8 +4,6 @@ use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::info;
-use tracing_appender;
-use tracing_subscriber;
 
 use crate::{
     acp_actor::{AcpActor, AcpActorHandle},

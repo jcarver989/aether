@@ -203,7 +203,7 @@ impl Crucible {
 
         let output_dir = self.output_dir.unwrap_or_else(|| {
             let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-            PathBuf::from(format!("crucible_output_{}", timestamp))
+            PathBuf::from(format!("crucible_output_{timestamp}"))
         });
 
         std::fs::create_dir_all(&output_dir)?;

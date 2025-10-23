@@ -8,7 +8,6 @@ use rmcp::{
     },
     service::{NotificationContext, RequestContext},
 };
-use std::future::Future;
 use std::result::Result;
 use tokio::sync::{mpsc, oneshot};
 
