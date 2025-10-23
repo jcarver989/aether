@@ -358,7 +358,10 @@ pub fn serve_report(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>>
         .map_err(|e| format!("Failed to start server: {}", e))?;
 
     println!("\n{}", "=== Eval Report Server ===".bold().green());
-    println!("Report available at: {}", "http://localhost:3000".bold().cyan());
+    println!(
+        "Report available at: {}",
+        "http://localhost:3000".bold().cyan()
+    );
     println!("Press {} to stop the server\n", "Ctrl+C".bold());
 
     for request in server.incoming_requests() {
@@ -369,19 +372,18 @@ pub fn serve_report(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>>
             "/" | "" | "/index.html" => {
                 (index_html.as_bytes().to_vec(), "text/html; charset=utf-8")
             }
-            "/styles.css" => {
-                (styles_css.as_bytes().to_vec(), "text/css; charset=utf-8")
-            }
-            "/script.js" => {
-                (script_js.as_bytes().to_vec(), "application/javascript; charset=utf-8")
-            }
+            "/styles.css" => (styles_css.as_bytes().to_vec(), "text/css; charset=utf-8"),
+            "/script.js" => (
+                script_js.as_bytes().to_vec(),
+                "application/javascript; charset=utf-8",
+            ),
             "/report-data.json" => {
                 // Read report-data.json from disk
                 match fs::read(&report_data_path) {
                     Ok(data) => (data, "application/json; charset=utf-8"),
                     Err(_) => {
-                        let response = tiny_http::Response::from_string("404 Not Found")
-                            .with_status_code(404);
+                        let response =
+                            tiny_http::Response::from_string("404 Not Found").with_status_code(404);
                         let _ = request.respond(response);
                         continue;
                     }
@@ -389,18 +391,16 @@ pub fn serve_report(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>>
             }
             _ => {
                 // 404 for any other path
-                let response = tiny_http::Response::from_string("404 Not Found")
-                    .with_status_code(404);
+                let response =
+                    tiny_http::Response::from_string("404 Not Found").with_status_code(404);
                 let _ = request.respond(response);
                 continue;
             }
         };
 
-        let response = tiny_http::Response::from_data(content)
-            .with_header(
-                tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
-                    .unwrap(),
-            );
+        let response = tiny_http::Response::from_data(content).with_header(
+            tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap(),
+        );
         let _ = request.respond(response);
     }
 
@@ -541,7 +541,15 @@ mod tests {
 
         // Should fail when report-data.json doesn't exist
         let result = serve_report(&nonexistent_path);
-        assert!(result.is_err(), "Should fail when report-data.json doesn't exist");
-        assert!(result.unwrap_err().to_string().contains("Report data not found"));
+        assert!(
+            result.is_err(),
+            "Should fail when report-data.json doesn't exist"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Report data not found")
+        );
     }
 }

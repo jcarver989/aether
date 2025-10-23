@@ -33,7 +33,10 @@ impl fmt::Display for LlmError {
             LlmError::IoError(msg) => write!(f, "IO error reading stream: {msg}"),
             LlmError::JsonParsing(msg) => write!(f, "JSON parsing error: {msg}"),
             LlmError::ToolParameterParsing { tool_name, error } => {
-                write!(f, "Failed to parse tool parameters for {tool_name}: {error}")
+                write!(
+                    f,
+                    "Failed to parse tool parameters for {tool_name}: {error}"
+                )
             }
             LlmError::Other(msg) => write!(f, "{msg}"),
         }

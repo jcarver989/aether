@@ -1,4 +1,4 @@
-use crate::llm::{local::util::get_local_config, openai::OpenAiChatProvider, ProviderFactory};
+use crate::llm::{ProviderFactory, local::util::get_local_config, openai::OpenAiChatProvider};
 use async_openai::{Client, config::OpenAIConfig};
 
 pub struct OllamaProvider {

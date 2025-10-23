@@ -95,9 +95,7 @@ impl ToolCallCollector {
 
         if let Some(function) = tool_call.function {
             if let Some(name) = function.name {
-                let id = tool_call
-                    .id
-                    .unwrap_or_else(|| format!("tool_call_{index}"));
+                let id = tool_call.id.unwrap_or_else(|| format!("tool_call_{index}"));
                 self.start_tool_call(index, id.clone(), name.clone());
                 responses.push(LlmResponse::ToolRequestStart { id, name });
             }

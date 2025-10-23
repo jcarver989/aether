@@ -17,5 +17,5 @@ pub use chat_message::ChatMessage;
 pub use context::Context;
 pub use error::{LlmError, Result};
 pub use llm_response::LlmResponse;
-pub use provider::{LlmResponseStream, StreamingModelProvider, ProviderFactory};
+pub use provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
 pub use tools::*;

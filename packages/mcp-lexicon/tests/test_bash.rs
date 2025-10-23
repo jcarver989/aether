@@ -1,4 +1,4 @@
-use mcp_lexicon::coding::{execute_command, read_background_bash, BashInput, BashResult};
+use mcp_lexicon::coding::{BashInput, BashResult, execute_command, read_background_bash};
 use std::time::Duration;
 
 #[tokio::test]
@@ -95,9 +95,11 @@ async fn test_timeout_validation() {
 
     let result = execute_command(args).await;
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .contains("Timeout cannot exceed 600000ms"));
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Timeout cannot exceed 600000ms")
+    );
 }
 
 #[tokio::test]
@@ -208,7 +210,9 @@ async fn test_read_background_bash() {
 #[tokio::test]
 async fn test_read_background_bash_with_filter() {
     let args = BashInput {
-        command: "echo 'ERROR: something went wrong'; echo 'INFO: all good'; echo 'ERROR: another issue'".to_string(),
+        command:
+            "echo 'ERROR: something went wrong'; echo 'INFO: all good'; echo 'ERROR: another issue'"
+                .to_string(),
         timeout: None,
         description: None,
         run_in_background: Some(true),

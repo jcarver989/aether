@@ -1,6 +1,6 @@
-use crate::llm::{LlmError, Context, LlmResponseStream, StreamingModelProvider, ProviderFactory};
 use crate::llm::openai::mappers::{map_messages, map_tools};
 use crate::llm::openai_compatible::create_custom_stream;
+use crate::llm::{Context, LlmError, LlmResponseStream, ProviderFactory, StreamingModelProvider};
 use async_openai::{Client, config::OpenAIConfig, types::CreateChatCompletionRequest};
 
 pub struct ZAiProvider {

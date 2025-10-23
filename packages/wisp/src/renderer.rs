@@ -154,7 +154,8 @@ impl<W: Write> Renderer<W> {
             }
 
             AgentMessage::ToolCall { request, .. } => {
-                let tool_commands = self.tool_call_statuses
+                let tool_commands = self
+                    .tool_call_statuses
                     .on_tool_request(&request, &self.context);
 
                 // Only clear line and render prompt if this is a new tool call

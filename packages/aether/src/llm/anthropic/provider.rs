@@ -1,7 +1,7 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
 use super::types::Request;
-use crate::llm::provider::{LlmResponseStream, StreamingModelProvider, ProviderFactory};
+use crate::llm::provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
 use crate::llm::{Context, LlmError, Result};
 use async_stream;
 use futures::StreamExt;
@@ -137,9 +137,7 @@ impl AnthropicProvider {
 
         let stream = response.bytes_stream();
         let stream_reader =
-            StreamReader::new(stream.map(|result| {
-                result.map_err(std::io::Error::other)
-            }));
+            StreamReader::new(stream.map(|result| result.map_err(std::io::Error::other)));
 
         let lines_stream = LinesStream::new(tokio::io::BufReader::new(stream_reader).lines());
 

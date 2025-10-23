@@ -49,7 +49,10 @@ impl fmt::Display for McpError {
                 server_name,
                 error,
             } => {
-                write!(f, "Failed to execute tool {tool_name} on server {server_name}: {error}")
+                write!(
+                    f,
+                    "Failed to execute tool {tool_name} on server {server_name}: {error}"
+                )
             }
             McpError::ToolExecutionError(msg) => write!(f, "Tool execution failed: {msg}"),
             McpError::ToolDiscoveryFailed(msg) => write!(f, "Tool discovery failed: {msg}"),

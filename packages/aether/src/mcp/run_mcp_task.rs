@@ -64,7 +64,11 @@ pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<Mc
 
 async fn on_command(command: McpCommand, mcp: &McpManager) {
     match command {
-        McpCommand::ExecuteTool { request, timeout, tx } => {
+        McpCommand::ExecuteTool {
+            request,
+            timeout,
+            tx,
+        } => {
             let tool_id = request.id.clone();
             let tool_name = request.name.clone();
 
@@ -78,8 +82,14 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
             match mcp.get_client_for_tool(&request.name) {
                 Ok(client) => {
                     tokio::spawn(async move {
-                        let result =
-                            try_execute_tool(client, &request, timeout, tool_id.clone(), tx.clone()).await;
+                        let result = try_execute_tool(
+                            client,
+                            &request,
+                            timeout,
+                            tool_id.clone(),
+                            tx.clone(),
+                        )
+                        .await;
                         let _ = tx
                             .send(ToolExecutionEvent::Complete { tool_id, result })
                             .await;

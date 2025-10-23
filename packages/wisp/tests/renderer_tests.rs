@@ -15,10 +15,7 @@ async fn test_agent_message_text_chunks() {
     ])
     .await;
 
-    assert_buffer_eq(
-        renderer.writer(),
-        &["Hello World", ">"],
-    );
+    assert_buffer_eq(renderer.writer(), &["Hello World", ">"]);
 }
 
 #[tokio::test]
@@ -27,10 +24,7 @@ async fn test_agent_message_tool_call() {
 
     assert_buffer_eq(
         renderer.writer(),
-        &[
-            "● test_tool {\"arg1\": \"value1\"}",
-            ">",
-        ],
+        &["● test_tool {\"arg1\": \"value1\"}", ">"],
     );
 }
 
@@ -47,10 +41,7 @@ async fn test_agent_message_tool_result() {
     // So we should only see the success message with a single prompt
     assert_buffer_eq(
         renderer.writer(),
-        &[
-            "● test_tool ✓ {\"arg1\": \"value1\"}",
-            ">",
-        ],
+        &["● test_tool ✓ {\"arg1\": \"value1\"}", ">"],
     );
 }
 
@@ -72,7 +63,7 @@ async fn test_multiple_messages_sequence() {
         &[
             "Processing your request",
             "● search ✓ {\"query\": \"test\"}",
-            "  Found results",  // Has leading spaces from clear line position
+            "  Found results", // Has leading spaces from clear line position
             ">",
         ],
     );
@@ -97,10 +88,7 @@ async fn test_streaming_tool_call_arguments() {
     // The duplicate tool call detection should prevent multiple lines
     assert_buffer_eq(
         renderer.writer(),
-        &[
-            "● Read ✓ {\"file\": \"test.rs\"}",
-            ">",
-        ],
+        &["● Read ✓ {\"file\": \"test.rs\"}", ">"],
     );
 }
 
@@ -171,7 +159,7 @@ async fn test_user_message_submission() {
         renderer.writer(),
         &[
             "Hello world",
-            "",  // Blank line from InputPrompt's \r\n
+            "", // Blank line from InputPrompt's \r\n
             ">",
         ],
     );

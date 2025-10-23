@@ -161,13 +161,17 @@ pub fn map_agent_message_to_session_notification(
                     "{} ({}/{})",
                     msg,
                     progress,
-                    total.map(|t| t.to_string()).unwrap_or_else(|| "?".to_string())
+                    total
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "?".to_string())
                 )
             } else {
                 format!(
                     "Progress: {}/{}",
                     progress,
-                    total.map(|t| t.to_string()).unwrap_or_else(|| "?".to_string())
+                    total
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "?".to_string())
                 )
             };
 

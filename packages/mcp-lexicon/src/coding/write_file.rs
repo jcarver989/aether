@@ -44,7 +44,10 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
     let bytes_written = args.content.as_bytes().len();
 
     Ok(WriteFileResponse {
-        message: format!("Successfully wrote {} bytes to {}", bytes_written, args.file_path),
+        message: format!(
+            "Successfully wrote {} bytes to {}",
+            bytes_written, args.file_path
+        ),
         bytes_written,
         file_path: args.file_path,
     })

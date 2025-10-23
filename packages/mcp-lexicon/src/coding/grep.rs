@@ -147,7 +147,11 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, String> {
             Glob::new(glob_pattern)
                 .map_err(|e| format!("Invalid glob pattern '{}': {}", glob_pattern, e))?,
         );
-        Some(builder.build().map_err(|e| format!("Failed to build glob set: {}", e))?)
+        Some(
+            builder
+                .build()
+                .map_err(|e| format!("Failed to build glob set: {}", e))?,
+        )
     } else {
         None
     };
@@ -288,14 +292,19 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, String> {
                                     args.line_numbers.unwrap_or(true),
                                     Some(remaining),
                                 );
-                                if searcher.search_path(&matcher, entry.path(), &mut sink).is_ok() {
+                                if searcher
+                                    .search_path(&matcher, entry.path(), &mut sink)
+                                    .is_ok()
+                                {
                                     total_items += sink.matches.len();
                                     all_matches.extend(sink.matches);
                                 }
                             }
                             OutputMode::FilesWithMatches => {
                                 let mut sink = HasMatchSink::new();
-                                if searcher.search_path(&matcher, entry.path(), &mut sink).is_ok()
+                                if searcher
+                                    .search_path(&matcher, entry.path(), &mut sink)
+                                    .is_ok()
                                     && sink.has_match
                                 {
                                     files_with_matches
@@ -305,7 +314,9 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, String> {
                             }
                             OutputMode::Count => {
                                 let mut sink = CountSink::new();
-                                if searcher.search_path(&matcher, entry.path(), &mut sink).is_ok()
+                                if searcher
+                                    .search_path(&matcher, entry.path(), &mut sink)
+                                    .is_ok()
                                     && sink.count > 0
                                 {
                                     file_counts.push(GrepFileCount {

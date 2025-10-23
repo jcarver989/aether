@@ -178,7 +178,7 @@ impl TestTerminal {
                         params.split(';').filter_map(|s| s.parse().ok()).collect();
                     let row = parts.first().copied().unwrap_or(1).saturating_sub(1);
                     let col = parts.get(1).copied().unwrap_or(1).saturating_sub(1);
-                    self.move_to(col, row);  // move_to takes (col, row)
+                    self.move_to(col, row); // move_to takes (col, row)
                 }
                 'A' => {
                     // Cursor Up
@@ -413,13 +413,13 @@ mod tests {
         write!(term, "\x1b[6;11HFirst").unwrap();
 
         // Save cursor position (should save col 15, row 5)
-        write!(term, "\x1b7").unwrap();  // DEC save cursor
+        write!(term, "\x1b7").unwrap(); // DEC save cursor
 
         // Move somewhere else and write
         write!(term, "\x1b[1;1HSecond").unwrap();
 
         // Restore cursor position (back to col 15, row 5) and write
-        write!(term, "\x1b8Third").unwrap();  // DEC restore cursor
+        write!(term, "\x1b8Third").unwrap(); // DEC restore cursor
 
         term.flush().unwrap();
 
