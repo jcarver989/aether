@@ -1,5 +1,4 @@
 use aether::llm::openai_compatible::ChatCompletionStreamResponse;
-use serde_json;
 
 /// Test that we can deserialize the actual Z.ai response format
 /// The error showed this JSON structure:

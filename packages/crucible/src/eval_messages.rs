@@ -68,7 +68,7 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
             }
             AgentMessage::ToolError { error, .. } => {
                 tracing::info!("Tool error: {:?}", error);
-                eval_messages.push(EvalMessage::ToolError(format!("{:?}", error)));
+                eval_messages.push(EvalMessage::ToolError(format!("{error:?}")));
             }
             AgentMessage::ToolProgress {
                 request,
@@ -78,9 +78,9 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
             } => {
                 let msg = message
                     .as_ref()
-                    .map(|m| format!("{} ", m))
+                    .map(|m| format!("{m} "))
                     .unwrap_or_default();
-                let total_str = total.map(|t| format!("/{}", t)).unwrap_or_default();
+                let total_str = total.map(|t| format!("/{t}")).unwrap_or_default();
                 tracing::info!(
                     "Tool progress for {}: {}{}{}",
                     request.name,
@@ -98,7 +98,7 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
             }
             AgentMessage::Cancelled { message: msg } => {
                 tracing::info!("Agent cancelled: {}", msg);
-                eval_messages.push(EvalMessage::Error(format!("Cancelled: {}", msg)));
+                eval_messages.push(EvalMessage::Error(format!("Cancelled: {msg}")));
                 // Cancellation is terminal - break out
                 break;
             }

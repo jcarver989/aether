@@ -73,7 +73,7 @@ impl AcpActor {
                     .conn
                     .read_text_file(request)
                     .await
-                    .map_err(|e| format!("read_text_file error: {}", e));
+                    .map_err(|e| format!("read_text_file error: {e}"));
                 let _ = response_tx.send(result);
             }
 
@@ -86,7 +86,7 @@ impl AcpActor {
                     .conn
                     .write_text_file(request)
                     .await
-                    .map_err(|e| format!("write_text_file error: {}", e));
+                    .map_err(|e| format!("write_text_file error: {e}"));
                 let _ = response_tx.send(result);
             }
 
@@ -99,7 +99,7 @@ impl AcpActor {
                     .conn
                     .create_terminal(request)
                     .await
-                    .map_err(|e| format!("create_terminal error: {}", e));
+                    .map_err(|e| format!("create_terminal error: {e}"));
                 let _ = response_tx.send(result);
             }
 
@@ -115,7 +115,7 @@ impl AcpActor {
                     .conn
                     .wait_for_terminal_exit(request)
                     .await
-                    .map_err(|e| format!("wait_for_terminal_exit error: {}", e));
+                    .map_err(|e| format!("wait_for_terminal_exit error: {e}"));
                 let _ = response_tx.send(result);
             }
 
@@ -128,7 +128,7 @@ impl AcpActor {
                     .conn
                     .terminal_output(request)
                     .await
-                    .map_err(|e| format!("terminal_output error: {}", e));
+                    .map_err(|e| format!("terminal_output error: {e}"));
                 let _ = response_tx.send(result);
             }
 
@@ -142,7 +142,7 @@ impl AcpActor {
                     .release_terminal(request)
                     .await
                     .map(|_| ()) // Convert response to ()
-                    .map_err(|e| format!("release_terminal error: {}", e));
+                    .map_err(|e| format!("release_terminal error: {e}"));
                 let _ = response_tx.send(result);
             }
 
@@ -155,7 +155,7 @@ impl AcpActor {
                     .conn
                     .session_notification(notification)
                     .await
-                    .map_err(|e| format!("session_notification error: {}", e));
+                    .map_err(|e| format!("session_notification error: {e}"));
                 let _ = response_tx.send(result);
             }
         }

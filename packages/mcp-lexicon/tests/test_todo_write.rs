@@ -1,5 +1,4 @@
 use mcp_lexicon::coding::{TodoItem, TodoState, TodoWriteInput, process_todo_write};
-use serde_json;
 
 #[test]
 fn test_todo_write_empty_list() {
@@ -176,7 +175,7 @@ fn test_serde_casing_consistency() {
     };
 
     let todo_json = serde_json::to_string(&todo_item).unwrap();
-    println!("TodoItem JSON: {}", todo_json);
+    println!("TodoItem JSON: {todo_json}");
 
     // Verify that TodoItem uses snake_case
     assert!(todo_json.contains("active_form"));
@@ -190,7 +189,7 @@ fn test_serde_casing_consistency() {
 
     // Test JSON serialization uses consistent camelCase
     let json = serde_json::to_string(&output).unwrap();
-    println!("Output JSON: {}", json);
+    println!("Output JSON: {json}");
 
     // Verify that output uses snake_case for stats
     assert!(json.contains("in_progress")); // stats.in_progress should be snake_case

@@ -61,14 +61,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Create output directory structure
             let output_dir_path = output_dir.clone().unwrap_or_else(|| {
                 let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-                PathBuf::from(format!("crucible_output_{}", timestamp))
+                PathBuf::from(format!("crucible_output_{timestamp}"))
             });
 
             fs::create_dir_all(&output_dir_path)?;
 
             // Copy HTML report templates immediately so users can open and refresh the report
             if let Err(e) = crucible::copy_report_templates(&output_dir_path) {
-                eprintln!("Warning: Failed to copy report templates: {}", e);
+                eprintln!("Warning: Failed to copy report templates: {e}");
             } else {
                 println!(
                     "HTML report templates ready at {}/report/index.html",
@@ -116,11 +116,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let parser = ModelProviderParser::default();
             let agent_llm = parser
                 .parse(&agent_model)
-                .map_err(|e| format!("Failed to parse agent model '{}': {}", agent_model, e))?;
+                .map_err(|e| format!("Failed to parse agent model '{agent_model}': {e}"))?;
 
             let judge_llm = parser
                 .parse(&judge_model)
-                .map_err(|e| format!("Failed to parse judge model '{}': {}", judge_model, e))?;
+                .map_err(|e| format!("Failed to parse judge model '{judge_model}': {e}"))?;
 
             let crucible = Crucible::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests"))
                 .with_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())))
@@ -142,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let summary = crucible
                 .run_evals(config)
                 .await
-                .map_err(|e| format!("Failed to run evals: {}", e))?;
+                .map_err(|e| format!("Failed to run evals: {e}"))?;
 
             summary.print();
 
@@ -165,7 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                     Err(e) => {
-                        eprintln!("Failed to generate HTML report: {}", e);
+                        eprintln!("Failed to generate HTML report: {e}");
                     }
                 }
             }
@@ -185,25 +185,25 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
         if let Some(ms) = seconds.strip_suffix("ms") {
             ms.parse::<u64>()
                 .map(Duration::from_millis)
-                .map_err(|_| format!("Invalid milliseconds: {}", s))
+                .map_err(|_| format!("Invalid milliseconds: {s}"))
         } else {
             seconds
                 .parse::<f64>()
                 .map(Duration::from_secs_f64)
-                .map_err(|_| format!("Invalid seconds: {}", s))
+                .map_err(|_| format!("Invalid seconds: {s}"))
         }
     } else if let Some(minutes) = s.strip_suffix('m') {
         minutes
             .parse::<u64>()
             .map(Duration::from_secs)
             .map(|secs| secs * 60)
-            .map_err(|_| format!("Invalid minutes: {}", s))
+            .map_err(|_| format!("Invalid minutes: {s}"))
     } else if let Some(hours) = s.strip_suffix('h') {
         hours
             .parse::<u64>()
             .map(Duration::from_secs)
             .map(|secs| secs * 3600)
-            .map_err(|_| format!("Invalid hours: {}", s))
+            .map_err(|_| format!("Invalid hours: {s}"))
     } else {
         Err("Duration must end with 's', 'ms', 'm', or 'h' (e.g., '2s', '500ms', '1m')".to_string())
     }

@@ -84,7 +84,7 @@ pub fn map_agent_message_to_session_notification(
             update: acp::SessionUpdate::AgentMessageChunk {
                 content: acp::ContentBlock::Text(acp::TextContent {
                     annotations: None,
-                    text: chunk.clone().into(),
+                    text: chunk.clone(),
                     meta: None,
                 }),
             },
@@ -119,7 +119,7 @@ pub fn map_agent_message_to_session_notification(
                     content: Some(vec![acp::ToolCallContent::Content {
                         content: acp::ContentBlock::Text(acp::TextContent {
                             annotations: None,
-                            text: result.result.clone().into(),
+                            text: result.result.clone(),
                             meta: None,
                         }),
                     }]),
@@ -139,7 +139,7 @@ pub fn map_agent_message_to_session_notification(
                     content: Some(vec![acp::ToolCallContent::Content {
                         content: acp::ContentBlock::Text(acp::TextContent {
                             annotations: None,
-                            text: error.error.clone().into(),
+                            text: error.error.clone(),
                             meta: None,
                         }),
                     }]),
@@ -184,7 +184,7 @@ pub fn map_agent_message_to_session_notification(
                         content: Some(vec![acp::ToolCallContent::Content {
                             content: acp::ContentBlock::Text(acp::TextContent {
                                 annotations: None,
-                                text: progress_text.into(),
+                                text: progress_text,
                                 meta: None,
                             }),
                         }]),

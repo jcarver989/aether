@@ -360,11 +360,11 @@ async fn test_list_files_tool() {
     fs::create_dir_all(test_dir).expect("Failed to create test directory");
 
     // Create some test files
-    fs::write(format!("{}/file1.txt", test_dir), "content1").expect("Failed to create test file 1");
-    fs::write(format!("{}/file2.rs", test_dir), "fn main() {}")
+    fs::write(format!("{test_dir}/file1.txt"), "content1").expect("Failed to create test file 1");
+    fs::write(format!("{test_dir}/file2.rs"), "fn main() {}")
         .expect("Failed to create test file 2");
-    fs::create_dir(format!("{}/subdir", test_dir)).expect("Failed to create subdirectory");
-    fs::write(format!("{}/.hidden_file", test_dir), "hidden content")
+    fs::create_dir(format!("{test_dir}/subdir")).expect("Failed to create subdirectory");
+    fs::write(format!("{test_dir}/.hidden_file"), "hidden content")
         .expect("Failed to create hidden file");
 
     // Test list_files tool

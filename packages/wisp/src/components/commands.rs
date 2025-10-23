@@ -47,7 +47,7 @@ pub trait ExecuteCommands {
 
 impl<T: Write> ExecuteCommands for T {
     fn flush_commands(&mut self, commands: &[TerminalCommand]) -> Result<()> {
-        if commands.len() == 0 {
+        if commands.is_empty() {
             return Ok(());
         }
 

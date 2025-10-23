@@ -34,14 +34,14 @@ pub enum ToolCallCount {
 impl std::fmt::Display for EvalAssertion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EvalAssertion::FileExists { path } => write!(f, "FileExists({})", path),
+            EvalAssertion::FileExists { path } => write!(f, "FileExists({path})"),
             EvalAssertion::FileMatches { path, content } => {
                 let truncated = if content.len() > 30 {
                     format!("{}...", &content[..30])
                 } else {
                     content.clone()
                 };
-                write!(f, "FileMatches({}, \"{}\")", path, truncated)
+                write!(f, "FileMatches({path}, \"{truncated}\")")
             }
             EvalAssertion::LLMJudge { prompt } => {
                 let truncated = if prompt.len() > 40 {
@@ -49,7 +49,7 @@ impl std::fmt::Display for EvalAssertion {
                 } else {
                     prompt.clone()
                 };
-                write!(f, "LLMJudge(\"{}\")", truncated)
+                write!(f, "LLMJudge(\"{truncated}\")")
             }
             EvalAssertion::CommandExitCode {
                 command,
@@ -62,8 +62,7 @@ impl std::fmt::Display for EvalAssertion {
                 };
                 write!(
                     f,
-                    "CommandExitCode(\"{}\", code={})",
-                    truncated, expected_code
+                    "CommandExitCode(\"{truncated}\", code={expected_code})"
                 )
             }
             EvalAssertion::ToolCall {
@@ -83,12 +82,12 @@ impl std::fmt::Display for EvalAssertion {
                 };
 
                 let count_str = if let Some(cnt) = count {
-                    format!(" {:?}", cnt)
+                    format!(" {cnt:?}")
                 } else {
                     "".to_string()
                 };
 
-                write!(f, "ToolCall({}, args={}{})", name, args_str, count_str)
+                write!(f, "ToolCall({name}, args={args_str}{count_str})")
             }
         }
     }

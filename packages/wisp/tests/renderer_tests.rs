@@ -184,7 +184,7 @@ fn text_complete(text: &str) -> AgentMessage {
 }
 
 fn tool_call(name: &str, args: &str) -> AgentMessage {
-    tool_call_with_id(name, &format!("call_{}", name), args)
+    tool_call_with_id(name, &format!("call_{name}"), args)
 }
 
 fn tool_call_with_id(name: &str, id: &str, args: &str) -> AgentMessage {
@@ -199,7 +199,7 @@ fn tool_call_with_id(name: &str, id: &str, args: &str) -> AgentMessage {
 }
 
 fn tool_result(name: &str, args: &str, result: &str) -> AgentMessage {
-    tool_result_with_id(name, &format!("call_{}", name), args, result)
+    tool_result_with_id(name, &format!("call_{name}"), args, result)
 }
 
 fn tool_result_with_id(name: &str, id: &str, args: &str, result: &str) -> AgentMessage {

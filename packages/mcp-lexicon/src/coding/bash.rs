@@ -80,7 +80,7 @@ pub async fn read_background_bash(
     // Collect all available output
     let mut output = String::new();
     let filter_regex = if let Some(pattern) = filter {
-        Some(regex::Regex::new(&pattern).map_err(|e| format!("Invalid regex: {}", e))?)
+        Some(regex::Regex::new(&pattern).map_err(|e| format!("Invalid regex: {e}"))?)
     } else {
         None
     };
@@ -99,7 +99,7 @@ pub async fn read_background_bash(
     if task_handle.is_finished() {
         let (exit_code, killed) = task_handle
             .await
-            .map_err(|e| format!("Failed to join task: {}", e))?;
+            .map_err(|e| format!("Failed to join task: {e}"))?;
 
         let status = if killed {
             "failed".to_string()
@@ -143,7 +143,7 @@ async fn run_command_with_timeout(
 
     let tx_clone = output_tx.clone();
     let run_command = async move {
-        let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn: {}", e))?;
+        let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn: {e}"))?;
 
         // Stream stdout
         if let Some(stdout) = child.stdout.take() {
@@ -172,7 +172,7 @@ async fn run_command_with_timeout(
         let status = child
             .wait()
             .await
-            .map_err(|e| format!("Wait failed: {}", e))?;
+            .map_err(|e| format!("Wait failed: {e}"))?;
         Ok::<_, String>((status.code().unwrap_or(-1), false))
     };
 
@@ -248,7 +248,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, String> {
                 } else if stdout.is_empty() {
                     stderr
                 } else {
-                    format!("{}{}", stdout, stderr)
+                    format!("{stdout}{stderr}")
                 };
 
                 Ok(BashResult::Completed(BashOutput {
@@ -266,7 +266,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, String> {
                 // Timeout occurred
                 let timeout_ms = timeout.map(|d| d.as_millis()).unwrap_or(120000);
                 Ok(BashResult::Completed(BashOutput {
-                    output: format!("Command timed out after {}ms", timeout_ms),
+                    output: format!("Command timed out after {timeout_ms}ms"),
                     exit_code: -1,
                     killed: Some(true),
                     shell_id: None,
