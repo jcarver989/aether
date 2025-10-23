@@ -7,7 +7,7 @@ Sub-agents allow you to spawn specialized AI agents with their own system prompt
 Sub-agents are defined in the `sub-agents/` directory within your base plugin directory (typically `~/.aether/sub-agents/`).
 
 Each sub-agent has its own directory containing:
-- `AGENT.md` - Agent definition with frontmatter and system prompt
+- `AGENTS.md` - Agent definition with frontmatter and system prompt
 - `mcp.json` (optional) - MCP server configuration for the agent
 
 Example structure:
@@ -15,18 +15,18 @@ Example structure:
 ~/.aether/
 └── sub-agents/
     ├── debugger/
-    │   ├── AGENT.md
+    │   ├── AGENTS.md
     │   └── mcp.json
     ├── code-reviewer/
-    │   ├── AGENT.md
+    │   ├── AGENTS.md
     │   └── mcp.json
     └── data-analyst/
-        └── AGENT.md
+        └── AGENTS.md
 ```
 
-## Agent Definition (AGENT.md)
+## Agent Definition (AGENTS.md)
 
-The `AGENT.md` file contains YAML frontmatter with agent metadata and the agent's system prompt:
+The `AGENTS.md` file contains YAML frontmatter with agent metadata and the agent's system prompt:
 
 ```markdown
 ---
@@ -159,20 +159,23 @@ Create well-structured docs with examples and best practices.
 
 When `spawn_agent` is called:
 
-1. The plugin server loads the agent's `AGENT.md` file
+1. The plugin server loads the agent's `AGENTS.md` file
 2. The agent's system prompt (content) is extracted
 3. The model is determined (from parameter or frontmatter)
-4. The `aether` CLI is spawned as a subprocess with:
-   - `--model <model>` - The LLM model to use
-   - `--system <content>` - The agent's system prompt
-   - `--prompt <task>` - The user's task
-   - Working directory set to the agent's directory (to load `mcp.json`)
-5. The subprocess output is collected and returned
-6. Success/failure status is reported
+4. The model provider is parsed (e.g., "anthropic:claude-3.5-sonnet")
+5. The agent's `mcp.json` is loaded (if present) for tool configuration
+6. An MCP manager is spawned with the agent's tools
+7. An agent is built with the system prompt and tools
+8. The agent runs in-process as a tokio task
+9. Agent messages are collected and streamed back
+10. Final output and success status are returned
 
-This allows for:
-- Isolated agent contexts
-- Specialized system prompts
-- Per-agent MCP tool access
-- Parallel agent execution
-- Modular agent development
+This in-process design provides:
+- **No external dependencies** - Uses the aether library directly
+- **Better integration** - Proper MCP progress notification support
+- **Isolated agent contexts** - Each agent has its own MCP configuration
+- **Specialized system prompts** - Custom prompts per agent type
+- **Per-agent MCP tool access** - Configure tools via mcp.json
+- **Efficient execution** - In-process tokio tasks vs subprocess overhead
+- **Parallel agent execution** - Multiple agents can run concurrently
+- **Modular agent development** - Easy to add/modify agents

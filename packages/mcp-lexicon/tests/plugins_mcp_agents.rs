@@ -54,15 +54,15 @@ async fn create_test_client(
 async fn test_list_agents_tool() {
     let test_files = vec![
         (
-            "sub-agents/debugger/AGENT.md",
+            "sub-agents/debugger/AGENTS.md",
             "---\ndescription: Debug and fix code issues\nmodel: anthropic:claude-3.5-sonnet\n---\nYou are a debugging expert.",
         ),
         (
-            "sub-agents/code-reviewer/AGENT.md",
+            "sub-agents/code-reviewer/AGENTS.md",
             "---\ndescription: Review code for best practices\n---\nYou are a code review expert.",
         ),
         (
-            "sub-agents/no-frontmatter/AGENT.md",
+            "sub-agents/no-frontmatter/AGENTS.md",
             "# Agent with no frontmatter\n\nThis should have empty description.",
         ),
     ];
