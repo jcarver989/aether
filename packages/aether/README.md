@@ -77,6 +77,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(ToolError { .. }) => {
                 // Tool errors not used in this minimal example
             }
+            Some(ToolProgress { .. }) => {
+                // Tool progress not used in this minimal example
+            }
             Some(Done) => break,
             Some(Error { message }) => {
                 eprintln!("Error: {message}");
@@ -173,6 +176,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Some(ToolError { error, .. }) => {
                 eprintln!("Tool '{}' failed: {}", error.name, error.error);
+            }
+            Some(ToolProgress { .. }) => {
+                // Tool progress updates (can be used to show progress bars, etc.)
             }
             Some(Done) => {
                 println!("\nAgent finished");
