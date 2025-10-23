@@ -166,16 +166,36 @@ When `spawn_agent` is called:
 5. The agent's `mcp.json` is loaded (if present) for tool configuration
 6. An MCP manager is spawned with the agent's tools
 7. An agent is built with the system prompt and tools
-8. The agent runs in-process as a tokio task
-9. Agent messages are collected and streamed back
-10. Final output and success status are returned
+8. **A tokio task is spawned** to run the agent independently
+9. The user's prompt is sent to the agent
+10. Agent messages are collected in the task
+11. The task is awaited for final output and success status
 
-This in-process design provides:
+### Execution Model
+
+The agent runs in a **separate tokio task** within the same process:
+
+```rust
+// Spawn task to run agent independently
+let agent_task = tokio::spawn(async move {
+    // Collect agent output without blocking
+    while let Some(message) = agent_rx.recv().await {
+        // Process messages...
+    }
+    (output, success, error)
+});
+
+// Await result
+let (output, success, error) = agent_task.await?;
+```
+
+This design provides:
 - **No external dependencies** - Uses the aether library directly
+- **Non-blocking execution** - Agent runs in separate tokio task
 - **Better integration** - Proper MCP progress notification support
+- **Concurrent agents** - Multiple spawn_agent calls run in parallel
 - **Isolated agent contexts** - Each agent has its own MCP configuration
 - **Specialized system prompts** - Custom prompts per agent type
 - **Per-agent MCP tool access** - Configure tools via mcp.json
 - **Efficient execution** - In-process tokio tasks vs subprocess overhead
-- **Parallel agent execution** - Multiple agents can run concurrently
 - **Modular agent development** - Easy to add/modify agents
