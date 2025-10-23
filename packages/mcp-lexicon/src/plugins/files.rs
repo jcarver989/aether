@@ -19,9 +19,8 @@ pub struct SkillsFrontmatter {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentFrontmatter {
-    pub description: Option<String>,
-    /// Model spec (e.g., "anthropic:claude-3.5-sonnet", "ollama:llama3.2")
-    pub model: Option<String>,
+    pub description: String,
+    pub model: String,
 }
 
 impl PromptFile {

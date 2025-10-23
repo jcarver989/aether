@@ -77,19 +77,27 @@ pub fn map_agent_message_to_session_notification(
         AgentMessage::Text {
             message_id: _,
             chunk,
-            is_complete: _,
+            is_complete,
             model_name: _,
-        } => Some(acp::SessionNotification {
-            session_id,
-            update: acp::SessionUpdate::AgentMessageChunk {
-                content: acp::ContentBlock::Text(acp::TextContent {
-                    annotations: None,
-                    text: chunk.clone(),
-                    meta: None,
-                }),
-            },
-            meta: None,
-        }),
+        } => {
+            // Skip the final completion message to avoid sending duplicate content
+            // The client has already received all the chunks during streaming
+            if *is_complete {
+                return None;
+            }
+
+            Some(acp::SessionNotification {
+                session_id,
+                update: acp::SessionUpdate::AgentMessageChunk {
+                    content: acp::ContentBlock::Text(acp::TextContent {
+                        annotations: None,
+                        text: chunk.clone(),
+                        meta: None,
+                    }),
+                },
+                meta: None,
+            })
+        }
 
         AgentMessage::ToolCall { request, .. } => {
             let raw_input = serde_json::from_str(&request.arguments).ok();

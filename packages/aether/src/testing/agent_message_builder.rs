@@ -10,6 +10,7 @@ pub struct AgentMessageBuilder {
     message_id: String,
     model_name: String,
     chunks: Vec<AgentMessage>,
+    full_text: String,
 }
 
 impl AgentMessageBuilder {
@@ -18,6 +19,7 @@ impl AgentMessageBuilder {
             message_id: message_id.to_string(),
             model_name: "Fake LLM".to_string(),
             chunks: Vec::new(),
+            full_text: String::new(),
         }
     }
 
@@ -29,6 +31,7 @@ impl AgentMessageBuilder {
                 false,
                 &self.model_name,
             ));
+            self.full_text.push_str(chunk);
         }
         self
     }
@@ -158,7 +161,7 @@ impl AgentMessageBuilder {
     pub fn build(mut self) -> Vec<AgentMessage> {
         self.chunks.push(AgentMessage::text(
             &self.message_id,
-            "",
+            &self.full_text,
             true,
             &self.model_name,
         ));
