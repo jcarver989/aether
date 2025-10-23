@@ -3,8 +3,10 @@ use crate::output_formatters::ASSISTANT_COLOR;
 use super::commands::TerminalCommand;
 use crossterm::style::Stylize;
 
+#[allow(dead_code)]
 pub struct AgentTextMessage {}
 
+#[allow(dead_code)]
 impl AgentTextMessage {
     pub fn render() -> Vec<TerminalCommand> {
         vec![

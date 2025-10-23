@@ -322,6 +322,7 @@ pub fn assert_buffer_eq<S: AsRef<str>>(terminal: &TestTerminal, expected: &[S]) 
 /// let terminal_string = styled_to_string(styled);
 /// // terminal_string will be "38;2;255;0;0mHello39m" (without \x1b[ prefix)
 /// ```
+#[allow(dead_code)]
 pub fn styled_to_string<T: std::fmt::Display + Clone>(
     styled: crossterm::style::StyledContent<T>,
 ) -> String {

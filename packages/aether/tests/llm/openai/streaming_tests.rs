@@ -28,6 +28,7 @@ async fn test_parallel_tool_calls() {
                         }]),
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: None,
@@ -60,6 +61,7 @@ async fn test_parallel_tool_calls() {
                         }]),
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: None,
@@ -92,6 +94,7 @@ async fn test_parallel_tool_calls() {
                         }]),
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: None,
@@ -124,6 +127,7 @@ async fn test_parallel_tool_calls() {
                         }]),
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: None,
@@ -156,6 +160,7 @@ async fn test_parallel_tool_calls() {
                         }]),
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: None,
@@ -188,6 +193,7 @@ async fn test_parallel_tool_calls() {
                         }]),
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: None,
@@ -212,6 +218,7 @@ async fn test_parallel_tool_calls() {
                         tool_calls: None,
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: Some(FinishReason::ToolCalls),
@@ -300,6 +307,7 @@ async fn test_tool_call_followed_by_content() {
                         }]),
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: None,
@@ -332,6 +340,7 @@ async fn test_tool_call_followed_by_content() {
                         }]),
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: None,
@@ -356,6 +365,7 @@ async fn test_tool_call_followed_by_content() {
                         tool_calls: None,
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: None,
@@ -380,6 +390,7 @@ async fn test_tool_call_followed_by_content() {
                         tool_calls: None,
                         role: None,
                         refusal: None,
+                        #[allow(deprecated)]
                         function_call: None,
                     },
                     finish_reason: Some(FinishReason::Stop),
