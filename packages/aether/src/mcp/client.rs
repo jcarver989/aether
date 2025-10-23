@@ -3,10 +3,11 @@ use rmcp::{
     ClientHandler, RoleClient,
     model::{
         ClientInfo, CreateElicitationRequestParam, CreateElicitationResult, ElicitationAction,
-        ErrorData,
+        ErrorData, ProgressNotificationParam,
     },
-    service::RequestContext,
+    service::{NotificationContext, RequestContext},
 };
+use std::future::Future;
 use std::result::Result;
 use tokio::sync::{mpsc, oneshot};
 
@@ -14,16 +15,19 @@ use crate::mcp::ElicitationRequest;
 
 pub struct McpClient {
     client_info: ClientInfo,
+    progress_tx: mpsc::Sender<ProgressNotificationParam>,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
 }
 
 impl McpClient {
     pub fn new(
         client_info: ClientInfo,
+        progress_tx: mpsc::Sender<ProgressNotificationParam>,
         elicitation_sender: mpsc::Sender<ElicitationRequest>,
     ) -> Self {
         Self {
             client_info,
+            progress_tx,
             elicitation_sender,
         }
     }
@@ -32,6 +36,17 @@ impl McpClient {
 impl ClientHandler for McpClient {
     fn get_info(&self) -> ClientInfo {
         self.client_info.clone()
+    }
+
+    async fn on_progress(
+        &self,
+        params: ProgressNotificationParam,
+        _context: NotificationContext<RoleClient>,
+    ) -> () {
+        match self.progress_tx.send(params).await {
+            Ok(_) => {}
+            Err(e) => {}
+        };
     }
 
     async fn create_elicitation(
