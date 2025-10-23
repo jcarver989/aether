@@ -14,6 +14,13 @@ pub enum AgentMessage {
         model_name: String,
     },
 
+    ToolProgress {
+        request: ToolCallRequest,
+        progress: f64,
+        total: Option<f64>,
+        message: Option<String>,
+    },
+
     ToolResult {
         result: ToolCallResult,
         model_name: String,

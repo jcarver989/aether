@@ -44,6 +44,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(ToolError { error, .. }) => {
                 eprintln!("\n🔧 Tool '{}' failed: {}", error.name, error.error);
             }
+            Some(ToolProgress {
+                request,
+                progress,
+                total,
+                message,
+            }) => {
+                let msg = message.as_ref().map(|m| format!("{} ", m)).unwrap_or_default();
+                let total_str = total.map(|t| format!("/{}", t)).unwrap_or_default();
+                println!("\n🔧 Tool '{}' progress: {}{}{}", request.name, msg, progress, total_str);
+            }
             Some(Done) => {
                 println!("\n✓ Agent finished");
                 break;
