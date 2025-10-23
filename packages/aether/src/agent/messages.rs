@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AgentMessage {
     Text {
         message_id: String,

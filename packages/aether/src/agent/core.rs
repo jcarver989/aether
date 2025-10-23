@@ -102,7 +102,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     .agent_message_tx
                     .send(AgentMessage::Text {
                         message_id: id.clone(),
-                        chunk: String::new(), // Empty chunk for completion signal
+                        chunk: state.message_content.clone(), // Send full message content
                         is_complete: true,
                         model_name: model_name.clone(),
                     })

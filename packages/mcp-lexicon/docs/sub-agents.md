@@ -62,15 +62,19 @@ The optional `mcp.json` file configures which MCP servers the agent has access t
 
 The agent process will load this configuration from its working directory, giving it access to the specified tools.
 
+### Available In-Memory Servers
+
+- **coding**: Provides file operations (read, write, edit), grep search, find, and bash command execution with local filesystem access
+
 ## Available Tools
 
-### list_agents
+### list_subagents
 
 Lists all available sub-agents with their names and descriptions.
 
 ```json
 {
-  "name": "list_agents",
+  "name": "list_subagents",
   "arguments": {}
 }
 ```
@@ -91,13 +95,15 @@ Returns:
 }
 ```
 
-### spawn_agent
+### spawn_subagent
 
-Spawns a sub-agent to run as a background task (like spawning a process).
+Spawns a sub-agent to perform a specific task. The tool executes the agent synchronously
+and returns its final output. During execution, the agent's progress is streamed to the
+parent agent via MCP progress notifications.
 
 ```json
 {
-  "name": "spawn_agent",
+  "name": "spawn_subagent",
   "arguments": {
     "agent_name": "debugger",
     "prompt": "Find and fix the null pointer exception in main.rs",
@@ -106,10 +112,10 @@ Spawns a sub-agent to run as a background task (like spawning a process).
 }
 ```
 
-Returns immediately with a task ID:
+Returns the agent's final output:
 ```json
 {
-  "task_id": "agent-550e8400-e29b-41d4-a716-446655440000"
+  "output": "I found and fixed the null pointer exception in main.rs:42. The issue was..."
 }
 ```
 
@@ -118,29 +124,18 @@ Parameters:
 - `prompt`: Task for the agent to perform
 - `model` (optional): Override the model specified in AGENTS.md
 
-### get_agent_output
+**Progress Notifications:**
+While the agent runs, progress notifications are sent via MCP's progress notification protocol.
+These notifications show:
+- Agent text output
+- Tool calls being made
+- Tool progress updates
+- Tool results
+- Any errors or cancellations
 
-Gets output from a running or completed agent task.
-
-```json
-{
-  "name": "get_agent_output",
-  "arguments": {
-    "task_id": "agent-550e8400-e29b-41d4-a716-446655440000"
-  }
-}
-```
-
-Returns:
-```json
-{
-  "output": "Agent's output so far...",
-  "running": true,
-  "success": null  // Set when running=false
-}
-```
-
-Call this repeatedly to stream agent messages. When `running` becomes `false`, the agent has completed and `success` indicates whether it succeeded.
+These progress notifications are visible in the parent agent's UI but do NOT consume the
+parent agent's LLM context window. Only the final output is returned as the tool result
+and added to the parent agent's conversation history.
 
 ## Example Use Cases
 
