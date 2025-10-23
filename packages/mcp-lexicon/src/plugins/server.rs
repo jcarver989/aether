@@ -14,11 +14,32 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use clap::Parser;
 
 use super::{
     files::{PromptFile, SkillsFile},
     substitute_parameters,
 };
+
+/// CLI arguments for PluginsMcp server
+#[derive(Debug, Clone, Parser)]
+pub struct PluginsMcpArgs {
+    /// Base directory for plugins (contains 'commands' and 'skills' subdirectories)
+    #[arg(long = "dir")]
+    pub base_dir: Option<PathBuf>,
+}
+
+impl PluginsMcpArgs {
+    /// Parse args from a vector of strings
+    pub fn from_args(args: Vec<String>) -> Result<Self, String> {
+        // Prepend a dummy program name since clap expects it
+        let mut full_args = vec!["plugins-mcp".to_string()];
+        full_args.extend(args);
+
+        Self::try_parse_from(full_args)
+            .map_err(|e| format!("Failed to parse PluginsMcp arguments: {}", e))
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -62,12 +83,21 @@ pub struct PluginsMcp {
 }
 
 impl PluginsMcp {
+    /// Create a new PluginsMcp server with the given base directory
     pub fn new(base_dir: PathBuf) -> Self {
         Self {
             commands_dir: base_dir.join("commands"),
             skills_dir: base_dir.join("skills"),
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Create a new PluginsMcp server from parsed CLI arguments
+    /// If no --dir argument is provided, uses the current directory
+    pub fn from_args(args: Vec<String>) -> Result<Self, String> {
+        let parsed_args = PluginsMcpArgs::from_args(args)?;
+        let base_dir = parsed_args.base_dir.unwrap_or_else(|| PathBuf::from("."));
+        Ok(Self::new(base_dir))
     }
 }
 

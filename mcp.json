@@ -4,7 +4,8 @@
       "type": "in-memory"
     },
     "plugins": {
-      "type": "in-memory"
+      "type": "in-memory",
+      "args": ["--dir", "$HOME/.aether"]
     }
   }
 }
