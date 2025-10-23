@@ -36,7 +36,7 @@ struct Args {
     log_dir: PathBuf,
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> acp::Result<()> {
     let args = Args::parse();
 
@@ -62,9 +62,10 @@ async fn main() -> acp::Result<()> {
 
     info!("Using MCP config path: {:?}", args.mcp_config);
 
-    // The AgentSideConnection will spawn futures onto our Tokio runtime.
-    // LocalSet and spawn_local are used because the futures from the
-    // agent-client-protocol crate are not Send.
+    // Use multi-threaded runtime with LocalSet:
+    // - LocalSet pins !Send ACP futures to this thread via spawn_local
+    // - The multi-threaded pool allows agents to use tokio::spawn for Send futures
+    // This enables sub-agents to spawn correctly while supporting ACP's !Send requirements
     let local_set = tokio::task::LocalSet::new();
     local_set
         .run_until(async move {
