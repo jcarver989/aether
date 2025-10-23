@@ -44,11 +44,13 @@ impl<W: Write> Renderer<W> {
     }
 
     /// Get a reference to the writer (useful for testing)
+    #[allow(dead_code)]
     pub fn writer(&self) -> &W {
         &self.writer
     }
 
     /// Get a mutable reference to the writer (useful for testing)
+    #[allow(dead_code)]
     pub fn writer_mut(&mut self) -> &mut W {
         &mut self.writer
     }
@@ -222,6 +224,7 @@ impl<W: Write> Renderer<W> {
     }
 
     /// Update render context with provided position and size (useful for testing)
+    #[allow(dead_code)]
     pub fn update_render_context_with(&mut self, position: (u16, u16), size: (u16, u16)) {
         self.context = RenderContext::new(position, size);
     }

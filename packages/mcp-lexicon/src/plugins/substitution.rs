@@ -19,13 +19,9 @@ pub fn substitute_parameters(
 
         // Try to extract numbered arguments (0, 1, 2, etc.)
         let mut i = 0;
-        loop {
-            if let Some(value) = args.get(&i.to_string()) {
-                positional_args.push(value_to_string(value));
-                i += 1;
-            } else {
-                break;
-            }
+        while let Some(value) = args.get(&i.to_string()) {
+            positional_args.push(value_to_string(value));
+            i += 1;
         }
 
         // If no numbered args, use all values in order (sorted by key)

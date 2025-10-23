@@ -8,6 +8,7 @@ use std::io::{Result, Write};
 
 /// Wrapper enum for crossterm commands to enable collecting them
 #[derive(Clone)]
+#[allow(dead_code)]
 pub enum TerminalCommand {
     MoveToColumn(u16),
     MoveLeft,

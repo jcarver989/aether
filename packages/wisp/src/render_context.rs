@@ -3,6 +3,7 @@ use crate::components::commands::TerminalCommand;
 
 pub struct RenderContext {
     pub cursor_position: (u16, u16),
+    #[allow(dead_code)]
     pub size: (u16, u16),
     pub theme: Theme,
 }

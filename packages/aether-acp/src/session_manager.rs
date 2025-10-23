@@ -238,7 +238,7 @@ impl acp::Agent for SessionManager {
         })?;
 
         // Stream agent messages back as session updates
-        let mut final_stop_reason = acp::StopReason::EndTurn;
+        let final_stop_reason;
 
         loop {
             match session.recv().await {

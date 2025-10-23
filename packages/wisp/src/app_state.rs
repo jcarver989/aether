@@ -12,6 +12,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 
 pub struct AppState {
+    #[allow(dead_code)]
     pub model_string: String,
     pub agent_tx: Sender<UserMessage>,
     pub agent_rx: Receiver<AgentMessage>,

@@ -9,7 +9,6 @@ use tokio::process::Command;
 /// This shows how to add event handlers that can observe and control agent behavior.
 /// Handlers can block actions (like dangerous tool calls) before they execute.
 /// Great for security controls, logging, and cross-cutting concerns.
-
 /// Helper to run shell commands asynchronously
 async fn run_command(cmd: &str) {
     let _ = Command::new("sh").arg("-c").arg(cmd).output().await;
