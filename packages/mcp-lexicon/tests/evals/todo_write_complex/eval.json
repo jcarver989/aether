@@ -1,0 +1,57 @@
+{
+  "assertions": [
+    {
+      "type": "ToolCall",
+      "data": {
+        "name": "coding__todo_write",
+        "count": { "Exact": 1 }
+      }
+    },
+    {
+      "type": "ToolCall",
+      "data": {
+        "name": "coding__todo_write",
+        "arguments": {
+          "todos": [
+            {
+              "content": "Set up database schema",
+              "active_form": "Setting up database schema",
+              "state": "pending"
+            },
+            {
+              "content": "Create user authentication",
+              "active_form": "Creating user authentication",
+              "state": "pending"
+            },
+            {
+              "content": "Design frontend components",
+              "active_form": "Designing frontend components",
+              "state": "pending"
+            },
+            {
+              "content": "Implement user authentication",
+              "active_form": "Implementing user authentication",
+              "state": "in_progress"
+            },
+            {
+              "content": "Build REST API endpoints",
+              "active_form": "Building REST API endpoints",
+              "state": "in_progress"
+            },
+            {
+              "content": "Write unit tests",
+              "active_form": "Writing unit tests",
+              "state": "completed"
+            },
+            {
+              "content": "Deploy to staging",
+              "active_form": "Deploying to staging",
+              "state": "completed"
+            }
+          ]
+        },
+        "count": { "Exact": 1 }
+      }
+    }
+  ]
+}

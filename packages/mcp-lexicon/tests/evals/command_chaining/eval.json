@@ -1,3 +1,5 @@
+{
+  "assertions": 
 [
   {
     "type": "FileExists",
@@ -25,3 +27,4 @@
     }
   }
 ]
+}

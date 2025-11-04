@@ -1,3 +1,5 @@
+{
+  "assertions": 
 [
   {
     "type": "LLMJudge",
@@ -40,3 +42,4 @@
     }
   }
 ]
+}
