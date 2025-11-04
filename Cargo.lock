@@ -561,6 +561,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "futures",
+ "mcp_lexicon",
  "owo-colors",
  "serde",
  "serde_json",
