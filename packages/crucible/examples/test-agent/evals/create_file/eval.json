@@ -1,0 +1,17 @@
+{
+  "assertions": [
+    {
+      "type": "FileExists",
+      "data": {
+        "path": "greeting.txt"
+      }
+    },
+    {
+      "type": "FileMatches",
+      "data": {
+        "path": "greeting.txt",
+        "content": "Hello, World!"
+      }
+    }
+  ]
+}
