@@ -1,0 +1,17 @@
+{
+  "assertions": [
+    {
+      "type": "ToolCall",
+      "data": {
+        "name": "bash",
+        "count": { "AtLeast": 1 }
+      }
+    },
+    {
+      "type": "LLMJudge",
+      "data": {
+        "prompt": "Did the agent successfully run the echo command and display the output 'Hello from Crucible!'?"
+      }
+    }
+  ]
+}
