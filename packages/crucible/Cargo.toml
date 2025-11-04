@@ -38,6 +38,9 @@ tiny_http = "0.12"
 # Internal dependencies
 aether = { path = "../aether" }
 
+[dev-dependencies]
+mcp_lexicon = { path = "../mcp-lexicon" }
+
 [lib]
 name = "crucible"
 path = "src/lib.rs"

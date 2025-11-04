@@ -1,6 +1,8 @@
+mod assertions;
 pub mod eval;
 pub mod eval_assertion;
 pub mod eval_messages;
+pub mod git_repo;
 pub mod report;
 
 pub use eval::Eval;
