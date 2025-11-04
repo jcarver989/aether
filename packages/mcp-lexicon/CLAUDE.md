@@ -11,7 +11,7 @@ Each eval is a directory containing:
 ```
 tests/evals/<eval_name>/
 ├── prompt.md          # User instruction that triggers the tool usage
-├── assertions.json    # Test assertions to validate success
+├── eval.json          # Test assertions and optional git config
 └── src/              # Optional: test files for the eval to operate on
     └── *.rs
 ```
@@ -30,49 +30,27 @@ tests/evals/<eval_name>/
    [Clear instruction that would naturally use the tool being tested]
    ```
 
-3. **Write `assertions.json`** - Validation criteria using these assertion types:
+3. **Write `eval.json`** - Validation criteria using these assertion types:
+
+   ```json
+   {
+     "assertions": [
+       {
+         "type": "LLMJudge",
+         "data": {
+           "prompt": "Did the agent successfully [describe expected behavior]?"
+         }
+       }
+     ]
+   }
+   ```
+
+   **Assertion Types:**
 
    - **LLMJudge**: Uses an LLM to evaluate if the agent succeeded
-     ```json
-     {
-       "type": "LLMJudge",
-       "data": {
-         "prompt": "Did the agent successfully [describe expected behavior]?"
-       }
-     }
-     ```
-
-   - **FileExists**: Verifies a file or directory exists
-     ```json
-     {
-       "type": "FileExists",
-       "data": {
-         "path": "relative/path/to/file"
-       }
-     }
-     ```
-
-   - **FileMatches**: Checks if file contains specific content
-     ```json
-     {
-       "type": "FileMatches",
-       "data": {
-         "path": "relative/path/to/file",
-         "content": "expected content substring"
-       }
-     }
-     ```
-
-   - **CommandExitCode**: Runs a command and checks its exit code
-     ```json
-     {
-       "type": "CommandExitCode",
-       "data": {
-         "command": "cargo check",
-         "expected_code": 0
-       }
-     }
-     ```
+   - **FileExists**: Verifies a file or directory exists (`"data": { "path": "..." }`)
+   - **FileMatches**: Checks if file contains specific content (`"data": { "path": "...", "content": "..." }`)
+   - **CommandExitCode**: Runs a command and checks its exit code (`"data": { "command": "...", "expected_code": 0 }`)
 
 4. **Create test files in `src/`** (if needed):
    - Add any files the eval needs to operate on
@@ -84,7 +62,7 @@ tests/evals/<eval_name>/
 ```
 tests/evals/simple_bash_command/
 ├── prompt.md          # "Run echo 'Hello from bash!'"
-├── assertions.json    # LLMJudge: "Did agent run echo and show output?"
+├── eval.json          # LLMJudge: "Did agent run echo and show output?"
 └── src/main.rs       # Placeholder file
 ```
 
@@ -92,7 +70,7 @@ tests/evals/simple_bash_command/
 ```
 tests/evals/edit_single_file/
 ├── prompt.md          # "Fix the typo in main.rs"
-├── assertions.json    # FileMatches: Check "World" not "Wolrd"
+├── eval.json          # FileMatches: Check "World" not "Wolrd"
 └── src/main.rs       # File containing the typo
 ```
 
@@ -100,7 +78,7 @@ tests/evals/edit_single_file/
 ```
 tests/evals/git_operations/
 ├── prompt.md          # "Init repo, create README, commit"
-├── assertions.json    # FileExists: .git, README.md + FileMatches + LLMJudge
+├── eval.json          # FileExists: .git, README.md + FileMatches + LLMJudge
 └── src/main.rs       # Placeholder
 ```
 

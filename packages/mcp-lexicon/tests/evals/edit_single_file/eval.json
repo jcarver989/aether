@@ -1,0 +1,11 @@
+{
+  "assertions": [
+    {
+      "type": "FileMatches",
+      "data": {
+        "path": "src/main.rs",
+        "content": "Hello, World!"
+      }
+    }
+  ]
+}

@@ -1,8 +1,0 @@
-[
-  {
-    "type": "LLMJudge",
-    "data": {
-      "prompt": "Did the agent successfully run 'pwd' to show the current directory and 'echo $PATH' to display the PATH environment variable?"
-    }
-  }
-]
