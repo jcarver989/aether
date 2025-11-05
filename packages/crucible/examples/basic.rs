@@ -38,11 +38,6 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    // Initialize tracing for debug output
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
     let parser = ModelProviderParser::default();
 
     // Parse the agent model

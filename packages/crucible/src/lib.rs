@@ -212,6 +212,28 @@ impl Crucible {
         std::fs::create_dir_all(output_dir.join("results"))?;
         std::fs::create_dir_all(output_dir.join("report"))?;
 
+        // Set up tracing to write to both stdout and traces.jsonl
+        let traces_file = output_dir.join("traces.jsonl");
+        let file_appender = tracing_appender::rolling::never(&output_dir, "traces.jsonl");
+
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        // Create a JSON layer for file output
+        let json_layer = tracing_subscriber::fmt::layer()
+            .json()
+            .with_writer(file_appender);
+
+        // Create a formatted layer for stdout
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stdout);
+
+        // Try to set as global default (will fail silently if already initialized)
+        let _result = tracing_subscriber::registry()
+            .with(json_layer)
+            .with(fmt_layer)
+            .try_init();
+
         // Start web server in background if requested
         let _server_handle = if config.serve {
             // Create initial empty report data
@@ -252,7 +274,6 @@ impl Crucible {
         let judge_llm = Arc::new(config.judge_llm);
 
         let mut summary = SummaryReport::new();
-        let traces_file = output_dir.join("traces.jsonl");
 
         // Determine batch size (default to all evals if not specified)
         let batch_size = config.batch_size.unwrap_or(evals.len());
@@ -328,7 +349,7 @@ impl Crucible {
             }
 
             // Update report data after each batch if serving
-            if config.serve && traces_file.exists() {
+            if config.serve {
                 if let Err(e) = update_report_data(&output_dir, &summary, &traces_file) {
                     tracing::warn!("Failed to update report data: {}", e);
                 }
@@ -345,7 +366,7 @@ impl Crucible {
         summary.write_to_file(&summary_file)?;
 
         // Final update of report data
-        if config.serve && traces_file.exists() {
+        if config.serve {
             if let Err(e) = update_report_data(&output_dir, &summary, &traces_file) {
                 tracing::warn!("Failed to update final report data: {}", e);
             }
