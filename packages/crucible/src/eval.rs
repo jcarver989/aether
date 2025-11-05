@@ -256,7 +256,7 @@ impl Eval {
                 }
                 EvalAssertion::LLMJudge { prompt } => {
                     assert_llm_judge(
-                        self.working_directory.path(),
+                        &self.working_directory,
                         &self.prompt,
                         &messages,
                         prompt,
