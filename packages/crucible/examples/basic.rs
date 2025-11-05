@@ -11,7 +11,7 @@
 /// ```
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::{Crucible, Eval, EvalAssertion, EvalsConfig, WorkingDirectory};
+use crucible::{Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 
 #[derive(Parser)]
@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = EvalsConfig::new(llm, judge_llm);
 
     // Run evaluations with system prompt and MCP server
-    let summary = Crucible::new()
+    let summary = EvalRunner::new()
         .with_agent_prompt(
             "You are a helpful AI assistant with access to various tools for file operations, \
              shell commands, and more. Your goal is to complete the user's task efficiently and accurately."

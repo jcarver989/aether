@@ -17,7 +17,7 @@
 /// Press Ctrl+C to stop the server.
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::{Crucible, Eval, EvalAssertion, EvalsConfig, WorkingDirectory};
+use crucible::{Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 use std::time::Duration;
 
@@ -110,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_serve(true); // Start web server
 
     // Run evaluations with coding MCP server
-    let summary = Crucible::new()
+    let summary = EvalRunner::new()
         .with_output_dir("./eval-results".into())
         .with_agent_prompt(
             "You are a helpful AI assistant with access to various tools for file operations, \
