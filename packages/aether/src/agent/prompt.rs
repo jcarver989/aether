@@ -1,4 +1,5 @@
-use crate::agent::{AgentError, Result};
+use crate::agent::{AgentError, Result, substitute_parameters};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,7 +8,11 @@ use std::process::Command;
 #[derive(Debug, Clone)]
 pub enum Prompt {
     Text(String),
-    File { path: String, ancestors: bool },
+    File {
+        path: String,
+        ancestors: bool,
+        args: Option<serde_json::Map<String, serde_json::Value>>,
+    },
     SystemEnv,
 }
 
@@ -20,6 +25,25 @@ impl Prompt {
         Self::File {
             path: path.to_string(),
             ancestors,
+            args: None,
+        }
+    }
+
+    pub fn file_with_args(
+        path: &str,
+        ancestors: bool,
+        args: HashMap<String, String>,
+    ) -> Self {
+        // Convert HashMap<String, String> to serde_json::Map<String, Value>
+        let json_args = args
+            .into_iter()
+            .map(|(k, v)| (k, serde_json::Value::String(v)))
+            .collect();
+
+        Self::File {
+            path: path.to_string(),
+            ancestors,
+            args: Some(json_args),
         }
     }
 
@@ -27,6 +51,7 @@ impl Prompt {
         Self::File {
             path: "AGENTS.md".to_string(),
             ancestors: true,
+            args: None,
         }
     }
 
@@ -38,12 +63,19 @@ impl Prompt {
     pub fn build(&self) -> Result<String> {
         match self {
             Prompt::Text(text) => Ok(text.clone()),
-            Prompt::File { path, ancestors } => {
-                if *ancestors {
-                    Self::resolve_file_with_ancestors(path)
+            Prompt::File {
+                path,
+                ancestors,
+                args,
+            } => {
+                let content = if *ancestors {
+                    Self::resolve_file_with_ancestors(path)?
                 } else {
-                    Self::resolve_file(&PathBuf::from(path))
-                }
+                    Self::resolve_file(&PathBuf::from(path))?
+                };
+
+                // Apply argument substitution if args are provided
+                Ok(substitute_parameters(&content, args))
             }
             Prompt::SystemEnv => Self::resolve_system_env(),
         }
