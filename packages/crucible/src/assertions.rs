@@ -1,5 +1,7 @@
+use crate::eval::WorkingDirectory;
 use crate::eval_assertion::{EvalAssertionResult, ToolCallCount};
 use crate::eval_messages::EvalMessage;
+use crate::git_repo::GitRepo;
 use aether::llm::{ChatMessage, Context, StreamingModelProvider};
 use aether::types::IsoString;
 use futures::StreamExt;
@@ -106,7 +108,7 @@ pub async fn assert_command_exit_code(
 
 /// Check an assertion using the LLM judge
 pub async fn assert_llm_judge<U: StreamingModelProvider>(
-    working_dir: &Path,
+    working_dir: &WorkingDirectory,
     original_prompt: &str,
     messages: &[EvalMessage],
     judge_prompt: &str,
@@ -138,18 +140,79 @@ pub async fn assert_llm_judge<U: StreamingModelProvider>(
         }
     }
 
+    // Build git context if available
+    let git_context = match working_dir {
+        WorkingDirectory::GitRepo {
+            path,
+            url,
+            start_commit,
+            gold_commit,
+        } => {
+            // Generate git diff between start and gold commits
+            let git_repo = GitRepo::from_path(path);
+            let diff_result = git_repo.diff(start_commit, gold_commit);
+
+            match diff_result {
+                Ok(diff) => {
+                    // Check if diff is too large (> 50k chars)
+                    const MAX_DIFF_SIZE: usize = 50_000;
+                    let diff_display = if diff.len() > MAX_DIFF_SIZE {
+                        tracing::warn!(
+                            "Git diff is too large ({} chars), truncating to {} chars",
+                            diff.len(),
+                            MAX_DIFF_SIZE
+                        );
+                        format!(
+                            "{}\n\n[... diff truncated, showing first {} of {} characters ...]",
+                            &diff[..MAX_DIFF_SIZE],
+                            MAX_DIFF_SIZE,
+                            diff.len()
+                        )
+                    } else {
+                        diff
+                    };
+
+                    Some(format!(
+                        "\n\nGit Repository Context:\n\
+                         - Repository: {}\n\
+                         - Start Commit (agent started from): {}\n\
+                         - Gold Commit (target solution): {}\n\
+                         - Actual Changes (git diff):\n\
+                         ```\n\
+                         {}\n\
+                         ```\n",
+                        url, start_commit, gold_commit, diff_display
+                    ))
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to generate git diff: {}", e);
+                    Some(format!(
+                        "\n\nGit Repository Context:\n\
+                         - Repository: {}\n\
+                         - Start Commit: {}\n\
+                         - Gold Commit: {}\n\
+                         - Note: Failed to generate diff: {}\n",
+                        url, start_commit, gold_commit, e
+                    ))
+                }
+            }
+        }
+        WorkingDirectory::Local { .. } => None,
+    };
+
     let judge_prompt_text = format!(
         "You are evaluating an AI agent's performance on a coding task. The agent was asked to perform all work in this directory: {}\n\n\
          Original Task: {}\n\n\
-         Agent Messages:\n{}\n\n\
+         Agent Messages:\n{}\n{}\
          Evaluation Question: {}\n\n\
          Respond with valid JSON in this exact format:\n\
          {{\"success\": true, \"reason\": \"explanation\"}} for success\n\
          {{\"success\": false, \"reason\": \"explanation\"}} for failure\n\n\
          Only output the JSON, nothing else.",
-        working_dir.display(),
+        working_dir.path().display(),
         original_prompt,
         messages_summary,
+        git_context.as_deref().unwrap_or(""),
         judge_prompt
     );
 
