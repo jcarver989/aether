@@ -104,14 +104,14 @@ impl<T, U> EvalsConfig<T, U> {
 }
 
 /// Configure and run AI agent evaluations with custom MCP servers
-pub struct Crucible {
+pub struct EvalRunner {
     output_dir: Option<PathBuf>,
     factories: HashMap<String, ServerFactory>,
     agent_prompt: Option<String>,
     mcp_json_path: Option<PathBuf>,
 }
 
-impl Crucible {
+impl EvalRunner {
     /// Create a new Crucible instance
     pub fn new() -> Self {
         Self {

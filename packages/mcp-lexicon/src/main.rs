@@ -1,6 +1,6 @@
 use aether::llm::parser::ModelProviderParser;
 use clap::{Parser, Subcommand};
-use crucible::{Crucible, EvalsConfig};
+use crucible::{EvalRunner, EvalsConfig};
 use mcp_lexicon::CodingMcp;
 use std::fs;
 use std::path::PathBuf;
@@ -128,7 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             tracing::info!("Loaded {} evals", evals.len());
 
-            let crucible = Crucible::new()
+            let crucible = EvalRunner::new()
                 .with_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())))
                 .with_output_dir(output_dir_path.clone());
 
