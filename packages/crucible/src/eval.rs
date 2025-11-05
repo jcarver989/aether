@@ -176,9 +176,16 @@ impl Eval {
     ///       prompt.md
     ///       assertions.json
     ///       src/  (optional)
-    ///     eval-name-2/
-    ///       ...
+    ///     category/
+    ///       subcategory/
+    ///         eval-name-2/
+    ///           prompt.md
+    ///           assertions.json
+    ///           src/  (optional)
     /// ```
+    ///
+    /// This function recursively searches for eval directories at any nesting level.
+    /// An eval directory is identified by the presence of both prompt.md and eval.json files.
     pub fn load_all(base_dir: &Path) -> Result<Vec<Self>, Box<dyn std::error::Error>> {
         let mut evals = Vec::new();
         let evals_dir = base_dir.join("evals");
@@ -187,23 +194,8 @@ impl Eval {
             return Err(format!("Evals directory not found: {evals_dir:?}").into());
         }
 
-        let entries = std::fs::read_dir(&evals_dir)
-            .map_err(|e| format!("Failed to read evals directory: {e}"))?;
-
-        for entry in entries.flatten() {
-            let eval_path = entry.path();
-            if !eval_path.is_dir() {
-                continue;
-            }
-
-            match Self::from_path(&eval_path) {
-                Ok(eval) => evals.push(eval),
-                Err(e) => {
-                    tracing::warn!("Failed to load eval from {:?}: {}, skipping", eval_path, e);
-                    continue;
-                }
-            }
-        }
+        // Recursively find all eval directories
+        find_eval_dirs(&evals_dir, &mut evals);
 
         if evals.is_empty() {
             return Err("No evals found in directory".into());
@@ -237,7 +229,8 @@ impl Eval {
 
             tx.send(UserMessage::Text {
                 content: [
-                    self.prompt.to_string(),
+                    "Complete the following task:".to_string(),
+                    format!("<task>{}</task>", self.prompt.to_string()),
                     format!("CRITICAL INSTRUCTIONS: when working on this task, you MUST only operate within this directory: {}", self.working_directory.path().display())].join("\n"),
             })
             .await?;
@@ -285,6 +278,39 @@ impl Eval {
     }
 }
 
+/// Recursively search for eval directories and load them
+/// An eval directory is identified by having both prompt.md and eval.json files
+fn find_eval_dirs(dir: &Path, evals: &mut Vec<Eval>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        // Check if this directory is an eval directory
+        // It must have both prompt.md and eval.json
+        let has_prompt = path.join("prompt.md").exists();
+        let has_config = path.join("eval.json").exists();
+
+        if has_prompt && has_config {
+            // This is an eval directory, try to load it
+            match Eval::from_path(&path) {
+                Ok(eval) => evals.push(eval),
+                Err(e) => {
+                    tracing::warn!("Failed to load eval from {:?}: {}, skipping", path, e);
+                }
+            }
+        } else {
+            // Not an eval directory, recurse into it
+            find_eval_dirs(&path, evals);
+        }
+    }
+}
+
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
     // Keep the directory structure (e.g., src/ -> dst/src/)
     let status = std::process::Command::new("cp")
@@ -299,5 +325,80 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
         Err(std::io::Error::other(format!(
             "Failed to copy directory from {src:?} to {dst:?}"
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_load_nested_evals() {
+        // Create a temporary directory structure with nested evals
+        let temp_dir = tempfile::tempdir().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create nested eval structure: evals/category1/subcategory/eval-1/
+        let eval_path = base_path.join("evals/category1/subcategory/eval-1");
+        fs::create_dir_all(&eval_path).unwrap();
+
+        // Write required files
+        fs::write(eval_path.join("prompt.md"), "Test prompt").unwrap();
+        fs::write(eval_path.join("eval.json"), r#"{"assertions": []}"#).unwrap();
+
+        // Create src directory
+        let src_dir = eval_path.join("src");
+        fs::create_dir(&src_dir).unwrap();
+        fs::write(src_dir.join("test.txt"), "test content").unwrap();
+
+        // This should find the eval even though it's nested 3 levels deep
+        let result = Eval::load_all(base_path);
+
+        assert!(
+            result.is_ok(),
+            "Failed to load nested evals: {:?}",
+            result.err()
+        );
+        let evals = result.unwrap();
+        assert_eq!(evals.len(), 1, "Should find exactly 1 eval");
+        assert_eq!(evals[0].name, "eval-1");
+    }
+
+    #[test]
+    fn test_load_multiple_nested_evals() {
+        // Create a temporary directory structure with multiple nested evals
+        let temp_dir = tempfile::tempdir().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create multiple evals at different nesting levels
+        let eval_paths = vec![
+            "evals/easy/eval-1",
+            "evals/medium/subcat/eval-2",
+            "evals/hard/deeply/nested/eval-3",
+        ];
+
+        for eval_path_str in eval_paths {
+            let eval_path = base_path.join(eval_path_str);
+            fs::create_dir_all(&eval_path).unwrap();
+            fs::write(eval_path.join("prompt.md"), "Test prompt").unwrap();
+            fs::write(eval_path.join("eval.json"), r#"{"assertions": []}"#).unwrap();
+            let src_dir = eval_path.join("src");
+            fs::create_dir(&src_dir).unwrap();
+            fs::write(src_dir.join("test.txt"), "test").unwrap();
+        }
+
+        let result = Eval::load_all(base_path);
+        assert!(
+            result.is_ok(),
+            "Failed to load nested evals: {:?}",
+            result.err()
+        );
+        let evals = result.unwrap();
+        assert_eq!(
+            evals.len(),
+            3,
+            "Should find all 3 evals at different nesting levels"
+        );
     }
 }

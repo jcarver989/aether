@@ -60,11 +60,6 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    // Initialize tracing for debug output
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
     println!("Running evaluations with advanced configuration...");
     println!("The interactive report will be available at http://localhost:3000\n");
 

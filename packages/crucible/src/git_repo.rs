@@ -9,6 +9,7 @@ pub struct GitRepo {
 impl GitRepo {
     /// Clone a repository to the specified destination
     pub fn clone(url: &str, dest: &Path) -> Result<Self, GitRepoError> {
+        tracing::info!("Cloning repository from {}", url);
         let output = Command::new("git")
             .arg("clone")
             .arg(url)
@@ -30,6 +31,7 @@ impl GitRepo {
 
     /// Checkout a specific commit, branch, or tag
     pub fn checkout(&self, reference: &str) -> Result<(), GitRepoError> {
+        tracing::info!("Checking out ref: {}", reference);
         let output = Command::new("git")
             .arg("-C")
             .arg(&self.path)
