@@ -1,0 +1,21 @@
+[package]
+name = "planning-agent"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mcp_lexicon = { path = "../mcp-lexicon" }
+crucible = { path = "../crucible" }
+aether = { path = "../aether" }
+
+# CLI
+clap = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Logging and tracing
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
