@@ -1,5 +1,5 @@
 use aether::{
-    agent::{AgentHandle, AgentMessage, UserMessage, agent},
+    agent::{AgentHandle, AgentMessage, UserMessage, agent, substitute_parameters},
     llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser},
     mcp::{mcp, run_mcp_task::McpCommand},
 };
@@ -24,10 +24,7 @@ use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use super::{
-    files::{AgentFile, PromptFile, SkillsFile},
-    substitute_parameters,
-};
+use super::files::{AgentFile, PromptFile, SkillsFile};
 use crate::coding::CodingMcp;
 
 /// CLI arguments for PluginsMcp server
