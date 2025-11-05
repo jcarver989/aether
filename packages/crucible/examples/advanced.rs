@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "You are a helpful AI assistant with access to various tools for file operations, \
              shell commands, and more. Your goal is to complete the user's task efficiently and accurately."
         )
-        .with_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
+        .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
         .run_evals(evals, config)
         .await?;
 

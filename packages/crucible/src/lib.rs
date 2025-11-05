@@ -147,13 +147,17 @@ impl EvalRunner {
     /// # Arguments
     /// * `name` - The name of the server (referenced in mcp.json)
     /// * `factory` - Factory function that creates server instances
-    pub fn with_server_factory(mut self, name: impl Into<String>, factory: ServerFactory) -> Self {
+    pub fn with_mcp_server_factory(
+        mut self,
+        name: impl Into<String>,
+        factory: ServerFactory,
+    ) -> Self {
         self.factories.insert(name.into(), factory);
         self
     }
 
     /// Register multiple InMemory MCP server factories
-    pub fn with_server_factories(mut self, factories: HashMap<String, ServerFactory>) -> Self {
+    pub fn with_mcp_server_factories(mut self, factories: HashMap<String, ServerFactory>) -> Self {
         self.factories.extend(factories);
         self
     }

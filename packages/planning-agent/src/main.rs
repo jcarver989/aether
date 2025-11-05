@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let summary = EvalRunner::new()
         .with_output_dir(cli.output_dir.into())
-        .with_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
+        .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
         .run_evals(evals, config)
         .await?;
 

@@ -129,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::info!("Loaded {} evals", evals.len());
 
             let crucible = EvalRunner::new()
-                .with_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())))
+                .with_mcp_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())))
                 .with_output_dir(output_dir_path.clone());
 
             let mut config = EvalsConfig::new(agent_llm, judge_llm);
