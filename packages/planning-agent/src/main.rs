@@ -1,0 +1,125 @@
+/// Planning Agent Evaluation Runner
+///
+/// This runner executes evaluations for the planning agent using the Crucible framework.
+/// It supports batching, web server for viewing results, and custom MCP servers.
+///
+/// # Usage
+///
+/// ```bash
+/// cargo run -p planning-agent -- --model openrouter:anthropic/claude-3-5-sonnet-20241022
+/// cargo run -p planning-agent -- --model ollama:llama3.3 --batch-size 2
+/// ```
+///
+/// Then open http://localhost:3000 in your browser to view the interactive report.
+/// Press Ctrl+C to stop the server.
+use aether::llm::parser::ModelProviderParser;
+use clap::Parser;
+use crucible::{Crucible, EvalsConfig};
+use mcp_lexicon::{CodingMcp, ServiceExt};
+use std::time::Duration;
+
+#[derive(Parser)]
+#[command(name = "planning-agent")]
+#[command(about = "Planning agent evaluation runner with Crucible")]
+struct Cli {
+    #[arg(
+        short = 'm',
+        long = "model",
+        help = "Model spec for the agent",
+        default_value = "zai:GLM-4.6"
+    )]
+    model: String,
+
+    #[arg(
+        short = 'j',
+        long = "judge-model",
+        help = "Model spec for the judge LLM (defaults to same as --model)"
+    )]
+    judge_model: Option<String>,
+
+    #[arg(
+        short = 'b',
+        long = "batch-size",
+        help = "Number of evals to run concurrently",
+        default_value = "3"
+    )]
+    batch_size: usize,
+
+    #[arg(
+        short = 'd',
+        long = "batch-delay",
+        help = "Delay in seconds between batches",
+        default_value = "2"
+    )]
+    batch_delay: u64,
+
+    #[arg(
+        short = 'e',
+        long = "evals-dir",
+        help = "Directory containing the evaluations",
+        default_value = "./tests"
+    )]
+    evals_dir: String,
+
+    #[arg(
+        short = 'o',
+        long = "output-dir",
+        help = "Directory for evaluation results",
+        default_value = "./eval-results"
+    )]
+    output_dir: String,
+
+    #[arg(long = "no-serve", help = "Disable the web server for viewing results")]
+    no_serve: bool,
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
+    tracing::info!("Running planning agent evaluations...");
+
+    let parser = ModelProviderParser::default();
+
+    let llm = parser
+        .parse(&cli.model)
+        .map_err(|e| format!("Error parsing model spec '{}': {}", cli.model, e))?;
+
+    let judge_model = cli.judge_model.as_ref().unwrap_or(&cli.model);
+    let judge_llm = parser
+        .parse(judge_model)
+        .map_err(|e| format!("Error parsing judge model spec '{}': {}", judge_model, e))?;
+
+    let config = EvalsConfig::new(llm, judge_llm)
+        .with_batch_size(cli.batch_size)
+        .with_batch_delay(Duration::from_secs(cli.batch_delay))
+        .with_serve(!cli.no_serve);
+
+    let summary = Crucible::new(cli.evals_dir.into())
+        .with_output_dir(cli.output_dir.into())
+        .with_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
+        .run_evals(config)
+        .await?;
+
+    tracing::info!("\n{}", "=".repeat(50));
+    tracing::info!("Evaluation Summary");
+    tracing::info!("{}", "=".repeat(50));
+    tracing::info!("Total: {}", summary.total_evals);
+    tracing::info!("Passed: {}", summary.passed_evals);
+    tracing::info!("Failed: {}", summary.failed_evals);
+    tracing::info!(
+        "Pass Rate: {:.1}%",
+        (summary.passed_evals as f64 / summary.total_evals as f64) * 100.0
+    );
+
+    if !cli.no_serve {
+        tracing::info!("\nView detailed results at http://localhost:3000");
+        tracing::info!("Press Ctrl+C to stop the server.");
+    }
+
+    Ok(())
+}
