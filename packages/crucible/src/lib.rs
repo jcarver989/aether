@@ -5,8 +5,8 @@ pub mod eval_messages;
 pub mod git_repo;
 pub mod report;
 
-pub use eval::Eval;
-pub use eval_assertion::{EvalAssertion, EvalAssertionResult};
+pub use eval::{Eval, WorkingDirectory};
+pub use eval_assertion::{EvalAssertion, EvalAssertionResult, ToolCallCount};
 pub use eval_messages::EvalMessage;
 pub use report::{
     AssertionReport, EvalReport, ReportData, SummaryReport, copy_report_templates,
@@ -105,21 +105,20 @@ impl<T, U> EvalsConfig<T, U> {
 
 /// Configure and run AI agent evaluations with custom MCP servers
 pub struct Crucible {
-    base_dir: PathBuf,
     output_dir: Option<PathBuf>,
     factories: HashMap<String, ServerFactory>,
+    agent_prompt: Option<String>,
+    mcp_json_path: Option<PathBuf>,
 }
 
 impl Crucible {
     /// Create a new Crucible instance
-    ///
-    /// # Arguments
-    /// * `base_dir` - Directory containing AGENTS.md, mcp.json (optional), and evals/
-    pub fn new(base_dir: PathBuf) -> Self {
+    pub fn new() -> Self {
         Self {
-            base_dir,
             output_dir: None,
             factories: HashMap::new(),
+            agent_prompt: None,
+            mcp_json_path: None,
         }
     }
 
@@ -128,6 +127,18 @@ impl Crucible {
     /// If not set, a timestamped directory will be created
     pub fn with_output_dir(mut self, output_dir: PathBuf) -> Self {
         self.output_dir = Some(output_dir);
+        self
+    }
+
+    /// Set the system prompt for the agent under eval
+    pub fn with_agent_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.agent_prompt = Some(prompt.into());
+        self
+    }
+
+    /// Set the path to mcp.json for agent under eval
+    pub fn with_mcp_json(mut self, path: PathBuf) -> Self {
+        self.mcp_json_path = Some(path);
         self
     }
 
@@ -147,61 +158,29 @@ impl Crucible {
         self
     }
 
-    /// Load AGENTS.md if it exists in the base directory
-    fn load_agents_prompt(&self) -> Option<String> {
-        use aether::agent::Prompt;
-
-        let agents_md_path = self.base_dir.join("AGENTS.md");
-        if agents_md_path.exists() {
-            match Prompt::file(agents_md_path.to_str()?, false).build() {
-                Ok(content) => {
-                    tracing::info!("Loaded AGENTS.md from {:?}", agents_md_path);
-                    Some(content)
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to read AGENTS.md: {}", e);
-                    None
-                }
-            }
-        } else {
-            tracing::debug!("No AGENTS.md found in {:?}", self.base_dir);
-            None
-        }
-    }
-
-    /// Get the mcp.json path if it exists
-    fn mcp_json_path(&self) -> Option<PathBuf> {
-        let path = self.base_dir.join("mcp.json");
-        if path.exists() { Some(path) } else { None }
-    }
-
-    /// Load evals from the base directory
-    ///
-    /// # Returns
-    /// Vector of loaded evals
-    pub fn load_evals(&self) -> Result<Vec<Eval>, Box<dyn std::error::Error>> {
-        Eval::load_all(&self.base_dir)
-    }
-
     /// Run the evaluations
     ///
     /// # Arguments
-    /// * `llm` - The LLM provider to use for running the agent
-    /// * `judge_llm` - The LLM provider to use for LLM judge assertions
+    /// * `evals` - Vector of evaluations to run
+    /// * `config` - Configuration including LLM providers and batching settings
     ///
     /// # Returns
     /// Result containing the summary report
     pub async fn run_evals<T, U>(
         self,
+        evals: Vec<Eval>,
         config: EvalsConfig<T, U>,
     ) -> Result<SummaryReport, Box<dyn std::error::Error>>
     where
         T: StreamingModelProvider + 'static,
         U: StreamingModelProvider + 'static,
     {
-        let evals = self.load_evals()?;
-        let agents_prompt = self.load_agents_prompt();
-        let mcp_json_path = self.mcp_json_path();
+        if evals.is_empty() {
+            return Err("No evals provided".into());
+        }
+
+        let agents_prompt = self.agent_prompt;
+        let mcp_json_path = self.mcp_json_path;
 
         let output_dir = self.output_dir.unwrap_or_else(|| {
             let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
@@ -225,8 +204,7 @@ impl Crucible {
             .with_writer(file_appender);
 
         // Create a formatted layer for stdout
-        let fmt_layer = tracing_subscriber::fmt::layer()
-            .with_writer(std::io::stdout);
+        let fmt_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
 
         // Try to set as global default (will fail silently if already initialized)
         let _result = tracing_subscriber::registry()

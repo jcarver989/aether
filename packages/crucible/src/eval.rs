@@ -3,11 +3,7 @@ use aether::{
     llm::{StreamingModelProvider, ToolDefinition},
     mcp::run_mcp_task::McpCommand,
 };
-use serde::{Deserialize, Serialize};
-use std::{
-    fs::read_to_string,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::Sender;
 
 use crate::assertions::{
@@ -46,162 +42,94 @@ impl WorkingDirectory {
             WorkingDirectory::GitRepo { path, .. } => path,
         }
     }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct EvalConfig {
-    #[serde(default)]
-    assertions: Vec<EvalAssertion>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    git: Option<GitConfig>,
-}
+    /// Copies files from src_path into a new tmp directory
+    pub fn local(src_path: impl Into<PathBuf>) -> Result<Self, Box<dyn std::error::Error>> {
+        let src_path = src_path.into();
+        let tmpdir = tempfile::tempdir()?;
 
-impl EvalConfig {
-    /// Load config from a JSON file
-    fn from_json_file(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        let content = read_to_string(path)?;
-        serde_json::from_str::<EvalConfig>(&content).map_err(|e| e.into())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitConfig {
-    url: String,
-    start_commit: String,
-    eval_commit: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    subdir: Option<String>,
-}
-
-impl Eval {
-    /// Load an eval from a directory containing prompt.md and optional eval.json
-    pub fn from_path(eval_path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        let eval_name = eval_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("Invalid eval directory name: {eval_path:?}"))?
-            .to_string();
-
-        let prompt_path = eval_path.join("prompt.md");
-        let prompt = std::fs::read_to_string(&prompt_path)
-            .map_err(|e| format!("Failed to read {prompt_path:?}: {e}"))?;
-
-        let config = EvalConfig::from_json_file(&eval_path.join("eval.json"))?;
-
-        // Check for both git config and src/ - this is an error
-        let src_dir = eval_path.join("src");
-        let has_git_config = config.git.is_some();
-        let has_src_dir = src_dir.exists() && src_dir.is_dir();
-
-        if has_git_config && has_src_dir {
-            return Err(format!(
-                "Eval '{}' has both git config in eval.json and src/ directory. Only one is allowed.",
-                eval_name
-            ).into());
+        if src_path.exists() {
+            copy_dir_all(&src_path, tmpdir.path())?;
         }
 
-        let tmpdir = tempfile::tempdir()
-            .map_err(|e| format!("Failed to create tmpdir for {eval_name}: {e}"))?;
+        let path = tmpdir.path().to_path_buf();
+        let _ = tmpdir.keep(); // Keep the directory alive
+        Ok(Self::Local { path })
+    }
 
-        let working_directory = if let Some(git_config) = config.git {
-            tracing::info!(
-                "Cloning git repo {} at commit {} for eval {}",
-                git_config.url,
-                git_config.start_commit,
-                eval_name
-            );
+    /// Create an empty tmp directory. Useful for simple evals that start with an empty state and only create files
+    pub fn empty() -> Result<Self, Box<dyn std::error::Error>> {
+        let tmpdir = tempfile::tempdir()?;
+        let path = tmpdir.path().to_path_buf();
+        let _ = tmpdir.keep(); // Keep the directory alive
+        Ok(Self::Local { path })
+    }
 
-            let repo = GitRepo::clone(&git_config.url, tmpdir.path())
-                .map_err(|e| format!("Failed to clone repo for {eval_name}: {e}"))?;
+    /// Clone a git repository into a new tmp directory and checkout the start_commit sha
+    ///
+    /// # Arguments
+    /// * `url` - Git repository URL
+    /// * `start_commit` - Commit SHA to checkout
+    /// * `gold_commit` - Gold standard commit SHA for comparison
+    /// * `subdir` - Optional subdirectory within the repo to use as working directory
+    pub fn git_repo(
+        url: impl Into<String>,
+        start_commit: impl Into<String>,
+        gold_commit: impl Into<String>,
+        subdir: Option<impl Into<PathBuf>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let url = url.into();
+        let start_commit = start_commit.into();
+        let gold_commit = gold_commit.into();
+        let tmpdir = tempfile::tempdir()?;
 
-            repo.checkout(&git_config.start_commit)
-                .map_err(|e| format!("Failed to checkout commit for {eval_name}: {e}"))?;
+        tracing::info!("Cloning git repo {} at commit {}", url, start_commit);
 
-            let working_dir = if let Some(ref subdir) = git_config.subdir {
-                tmpdir.path().join(subdir)
-            } else {
-                tmpdir.path().to_path_buf()
-            };
+        let repo = GitRepo::clone(&url, tmpdir.path())?;
+        repo.checkout(&start_commit)?;
+
+        let path = if let Some(subdir) = subdir {
+            let subdir = subdir.into();
+            let working_dir = tmpdir.path().join(&subdir);
 
             if !working_dir.exists() {
                 return Err(format!(
                     "Subdirectory '{}' does not exist in cloned repo",
-                    git_config.subdir.as_ref().unwrap()
+                    subdir.display()
                 )
                 .into());
             }
 
-            WorkingDirectory::GitRepo {
-                path: working_dir,
-                url: git_config.url,
-                start_commit: git_config.start_commit,
-                gold_commit: git_config.eval_commit,
-            }
-        } else if has_src_dir {
-            copy_dir_all(&src_dir, tmpdir.path())
-                .map_err(|e| format!("Failed to copy files from {src_dir:?}: {e}"))?;
-            WorkingDirectory::Local {
-                path: tmpdir.path().to_path_buf(),
-            }
+            working_dir
         } else {
-            return Err(format!(
-                "Eval '{}' must have either a git config in eval.json or a src/ directory",
-                eval_name
-            )
-            .into());
+            tmpdir.path().to_path_buf()
         };
 
-        tracing::info!(
-            "Loaded eval: {} with {} assertions",
-            eval_name,
-            config.assertions.len()
-        );
+        let _ = tmpdir.keep(); // Keep the directory alive
 
-        // Keep the tmpdir so it persists after this function
-        let _ = tmpdir.keep();
-
-        Ok(Eval {
-            name: eval_name,
-            prompt,
-            working_directory,
-            assertions: config.assertions,
+        Ok(Self::GitRepo {
+            path,
+            url,
+            start_commit,
+            gold_commit,
         })
     }
+}
 
-    /// Load all evals from a directory with the expected structure:
-    /// ```text
-    /// dir/
-    ///   evals/
-    ///     eval-name-1/
-    ///       prompt.md
-    ///       assertions.json
-    ///       src/  (optional)
-    ///     category/
-    ///       subcategory/
-    ///         eval-name-2/
-    ///           prompt.md
-    ///           assertions.json
-    ///           src/  (optional)
-    /// ```
-    ///
-    /// This function recursively searches for eval directories at any nesting level.
-    /// An eval directory is identified by the presence of both prompt.md and eval.json files.
-    pub fn load_all(base_dir: &Path) -> Result<Vec<Self>, Box<dyn std::error::Error>> {
-        let mut evals = Vec::new();
-        let evals_dir = base_dir.join("evals");
-
-        if !evals_dir.exists() {
-            return Err(format!("Evals directory not found: {evals_dir:?}").into());
+impl Eval {
+    /// Create a new eval
+    pub fn new(
+        name: impl Into<String>,
+        prompt: impl Into<String>,
+        working_directory: WorkingDirectory,
+        assertions: Vec<EvalAssertion>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            prompt: prompt.into(),
+            working_directory,
+            assertions,
         }
-
-        // Recursively find all eval directories
-        find_eval_dirs(&evals_dir, &mut evals);
-
-        if evals.is_empty() {
-            return Err("No evals found in directory".into());
-        }
-
-        Ok(evals)
     }
 
     pub async fn run<T: StreamingModelProvider + 'static, U: StreamingModelProvider + 'static>(
@@ -278,39 +206,6 @@ impl Eval {
     }
 }
 
-/// Recursively search for eval directories and load them
-/// An eval directory is identified by having both prompt.md and eval.json files
-fn find_eval_dirs(dir: &Path, evals: &mut Vec<Eval>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        // Check if this directory is an eval directory
-        // It must have both prompt.md and eval.json
-        let has_prompt = path.join("prompt.md").exists();
-        let has_config = path.join("eval.json").exists();
-
-        if has_prompt && has_config {
-            // This is an eval directory, try to load it
-            match Eval::from_path(&path) {
-                Ok(eval) => evals.push(eval),
-                Err(e) => {
-                    tracing::warn!("Failed to load eval from {:?}: {}, skipping", path, e);
-                }
-            }
-        } else {
-            // Not an eval directory, recurse into it
-            find_eval_dirs(&path, evals);
-        }
-    }
-}
-
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
     // Keep the directory structure (e.g., src/ -> dst/src/)
     let status = std::process::Command::new("cp")
@@ -325,80 +220,5 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
         Err(std::io::Error::other(format!(
             "Failed to copy directory from {src:?} to {dst:?}"
         )))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn test_load_nested_evals() {
-        // Create a temporary directory structure with nested evals
-        let temp_dir = tempfile::tempdir().unwrap();
-        let base_path = temp_dir.path();
-
-        // Create nested eval structure: evals/category1/subcategory/eval-1/
-        let eval_path = base_path.join("evals/category1/subcategory/eval-1");
-        fs::create_dir_all(&eval_path).unwrap();
-
-        // Write required files
-        fs::write(eval_path.join("prompt.md"), "Test prompt").unwrap();
-        fs::write(eval_path.join("eval.json"), r#"{"assertions": []}"#).unwrap();
-
-        // Create src directory
-        let src_dir = eval_path.join("src");
-        fs::create_dir(&src_dir).unwrap();
-        fs::write(src_dir.join("test.txt"), "test content").unwrap();
-
-        // This should find the eval even though it's nested 3 levels deep
-        let result = Eval::load_all(base_path);
-
-        assert!(
-            result.is_ok(),
-            "Failed to load nested evals: {:?}",
-            result.err()
-        );
-        let evals = result.unwrap();
-        assert_eq!(evals.len(), 1, "Should find exactly 1 eval");
-        assert_eq!(evals[0].name, "eval-1");
-    }
-
-    #[test]
-    fn test_load_multiple_nested_evals() {
-        // Create a temporary directory structure with multiple nested evals
-        let temp_dir = tempfile::tempdir().unwrap();
-        let base_path = temp_dir.path();
-
-        // Create multiple evals at different nesting levels
-        let eval_paths = vec![
-            "evals/easy/eval-1",
-            "evals/medium/subcat/eval-2",
-            "evals/hard/deeply/nested/eval-3",
-        ];
-
-        for eval_path_str in eval_paths {
-            let eval_path = base_path.join(eval_path_str);
-            fs::create_dir_all(&eval_path).unwrap();
-            fs::write(eval_path.join("prompt.md"), "Test prompt").unwrap();
-            fs::write(eval_path.join("eval.json"), r#"{"assertions": []}"#).unwrap();
-            let src_dir = eval_path.join("src");
-            fs::create_dir(&src_dir).unwrap();
-            fs::write(src_dir.join("test.txt"), "test").unwrap();
-        }
-
-        let result = Eval::load_all(base_path);
-        assert!(
-            result.is_ok(),
-            "Failed to load nested evals: {:?}",
-            result.err()
-        );
-        let evals = result.unwrap();
-        assert_eq!(
-            evals.len(),
-            3,
-            "Should find all 3 evals at different nesting levels"
-        );
     }
 }
