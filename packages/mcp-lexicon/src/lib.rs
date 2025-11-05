@@ -1,4 +1,5 @@
 pub mod coding;
+pub mod evals;
 pub mod markdown_file;
 pub mod plugins;
 

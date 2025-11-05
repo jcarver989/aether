@@ -122,7 +122,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .parse(&judge_model)
                 .map_err(|e| format!("Failed to parse judge model '{judge_model}': {e}"))?;
 
-            let crucible = Crucible::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests"))
+            // Load evals programmatically
+            let evals = mcp_lexicon::evals::all_evals()
+                .map_err(|e| format!("Failed to load evals: {e}"))?;
+
+            tracing::info!("Loaded {} evals", evals.len());
+
+            let crucible = Crucible::new()
                 .with_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())))
                 .with_output_dir(output_dir_path.clone());
 
@@ -140,7 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let summary = crucible
-                .run_evals(config)
+                .run_evals(evals, config)
                 .await
                 .map_err(|e| format!("Failed to run evals: {e}"))?;
 

@@ -94,15 +94,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse(judge_model)
         .map_err(|e| format!("Error parsing judge model spec '{}': {}", judge_model, e))?;
 
+    // Load evals programmatically
+    let evals = planning_agent::evals::all_evals()
+        .map_err(|e| format!("Failed to load evals: {e}"))?;
+
+    tracing::info!("Loaded {} evals", evals.len());
+
     let config = EvalsConfig::new(llm, judge_llm)
         .with_batch_size(cli.batch_size)
         .with_batch_delay(Duration::from_secs(cli.batch_delay))
         .with_serve(!cli.no_serve);
 
-    let summary = Crucible::new(cli.evals_dir.into())
+    let summary = Crucible::new()
         .with_output_dir(cli.output_dir.into())
         .with_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
-        .run_evals(config)
+        .run_evals(evals, config)
         .await?;
 
     tracing::info!("\n{}", "=".repeat(50));
