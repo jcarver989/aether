@@ -5,21 +5,117 @@ let expandedTraces = new Set();
 let allExpanded = false;
 let searchTerm = '';
 let currentTab = 'assertions'; // 'assertions', 'traces', 'code_changes'
+let eventSource = null;
+let isLive = false;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        const response = await fetch('report-data.json');
+        const response = await fetch('/api/report-data');
         reportData = await response.json();
         renderSummary();
         renderEvalList();
         setupEventListeners();
+        connectSSE();
     } catch (error) {
         console.error('Failed to load report data:', error);
         document.getElementById('empty-state').innerHTML =
             `<p style="color: var(--failure);">Failed to load report data: ${error.message}</p>`;
     }
 });
+
+// Connect to SSE for real-time updates
+function connectSSE() {
+    try {
+        eventSource = new EventSource('/api/events');
+
+        eventSource.onopen = () => {
+            isLive = true;
+            updateConnectionStatus();
+            console.log('SSE connected');
+        };
+
+        eventSource.onerror = (error) => {
+            isLive = false;
+            updateConnectionStatus();
+            console.error('SSE connection error. ReadyState:', eventSource.readyState);
+
+            // ReadyState: 0 = CONNECTING, 1 = OPEN, 2 = CLOSED
+            if (eventSource.readyState === EventSource.CLOSED) {
+                console.log('SSE connection permanently closed by server');
+            } else if (eventSource.readyState === EventSource.CONNECTING) {
+                console.log('SSE reconnecting...');
+            }
+        };
+        eventSource.addEventListener('eval_started', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Eval started:', data.name);
+    });
+
+    eventSource.addEventListener('eval_completed', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Eval completed:', data.name);
+
+        // Update the specific eval in our report data
+        const evalIndex = reportData.summary.evals.findIndex(e => e.eval_name === data.name);
+        if (evalIndex >= 0) {
+            reportData.summary.evals[evalIndex] = data.report;
+        } else {
+            reportData.summary.evals.push(data.report);
+        }
+
+        // Re-render the eval list
+        renderEvalList();
+
+        // If this is the currently selected eval, update the details
+        if (currentEval === data.name) {
+            renderEvalDetails();
+        }
+    });
+
+    eventSource.addEventListener('summary_updated', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Summary updated');
+        reportData.summary = data.summary;
+        renderSummary();
+        renderEvalList();
+
+        // Refresh current eval if selected
+        if (currentEval) {
+            renderEvalDetails();
+        }
+    });
+
+    eventSource.addEventListener('trace', (e) => {
+        const data = JSON.parse(e.data);
+        // Add trace to the appropriate eval
+        if (!reportData.eval_traces[data.eval_name]) {
+            reportData.eval_traces[data.eval_name] = [];
+        }
+        reportData.eval_traces[data.eval_name].push(data.trace);
+
+        // If viewing this eval's traces, re-render
+        if (currentEval === data.eval_name && currentTab === 'traces') {
+            renderTraces();
+        }
+    });
+}
+
+// Update connection status indicator
+function updateConnectionStatus() {
+    const existingStatus = document.getElementById('connection-status');
+    if (existingStatus) {
+        existingStatus.remove();
+    }
+
+    if (isLive) {
+        const statusBadge = document.createElement('div');
+        statusBadge.id = 'connection-status';
+        statusBadge.className = 'connection-badge live';
+        statusBadge.innerHTML = '<span class="live-dot"></span> Live';
+        document.querySelector('.header').appendChild(statusBadge);
+    }
+}
 
 // Event Listeners
 function setupEventListeners() {
