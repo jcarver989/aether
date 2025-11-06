@@ -60,32 +60,64 @@ impl GitRepo {
         Ok(())
     }
 
-    /// Get the diff between two commits
+    /// Get the diff from a commit to another commit or working directory
     ///
-    /// Returns the output of `git diff from_commit..to_commit`
-    pub fn diff(&self, from_commit: &str, to_commit: &str) -> Result<String, GitRepoError> {
-        tracing::info!("Getting diff from {} to {}", from_commit, to_commit);
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(&self.path)
-            .arg("diff")
-            .arg(format!("{}..{}", from_commit, to_commit))
-            .output()
-            .map_err(|e| {
-                GitRepoError::CommandFailed(format!("Failed to execute git diff: {}", e))
-            })?;
+    /// # Arguments
+    /// * `from_commit` - Starting commit
+    /// * `to_commit` - Ending commit (None means working directory/unstaged changes)
+    ///
+    /// # Examples
+    /// * `diff_range("abc123", Some("def456"))` - diff between two commits
+    /// * `diff_range("abc123", None)` - changes from commit to working directory
+    /// * `diff_range("HEAD", None)` - unstaged changes (equivalent to `git diff`)
+    pub fn diff_range(
+        &self,
+        from_commit: &str,
+        to_commit: Option<&str>,
+    ) -> Result<String, GitRepoError> {
+        let mut cmd = Command::new("git");
+        cmd.arg("-C").arg(&self.path).arg("diff");
+
+        match to_commit {
+            Some(to) => {
+                tracing::info!("Getting diff from {} to {}", from_commit, to);
+                cmd.arg(format!("{}..{}", from_commit, to));
+            }
+            None => {
+                tracing::info!("Getting diff from {} to working directory", from_commit);
+                cmd.arg(from_commit);
+            }
+        }
+
+        let output = cmd.output().map_err(|e| {
+            GitRepoError::CommandFailed(format!("Failed to execute git diff: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(GitRepoError::DiffFailed {
                 from: from_commit.to_string(),
-                to: to_commit.to_string(),
+                to: to_commit.unwrap_or("working directory").to_string(),
                 reason: stderr.to_string(),
             });
         }
 
         let diff = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(diff)
+    }
+
+    /// Get the diff between two commits
+    ///
+    /// Returns the output of `git diff from_commit..to_commit`
+    pub fn diff(&self, from_commit: &str, to_commit: &str) -> Result<String, GitRepoError> {
+        self.diff_range(from_commit, Some(to_commit))
+    }
+
+    /// Get the diff of unstaged changes in the working directory
+    ///
+    /// Returns the output of `git diff` which shows all unstaged changes
+    pub fn diff_unstaged(&self) -> Result<String, GitRepoError> {
+        self.diff_range("HEAD", None)
     }
 
     /// Get the path to the repository
@@ -215,5 +247,98 @@ mod tests {
             diff.contains("modified content") || diff.contains("+modified content"),
             "Diff should show modified content"
         );
+    }
+
+    #[test]
+    fn test_unified_diff_function() {
+        // Create a temporary directory for the test
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_path = temp_dir.path();
+
+        // Initialize a git repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Configure git user for commits
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Create initial file and commit
+        fs::write(repo_path.join("test.txt"), "initial content\n").unwrap();
+        Command::new("git")
+            .args(["add", "test.txt"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        let first_commit = String::from_utf8(
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(repo_path)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .to_string();
+
+        // Make changes and create second commit
+        fs::write(repo_path.join("test.txt"), "modified content\n").unwrap();
+        Command::new("git")
+            .args(["add", "test.txt"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Second commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        let second_commit = String::from_utf8(
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(repo_path)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .to_string();
+
+        // Make unstaged changes
+        fs::write(repo_path.join("test.txt"), "unstaged content\n").unwrap();
+
+        let git_repo = GitRepo::from_path(repo_path);
+
+        // Test: diff between two specific commits
+        let diff = git_repo.diff_range(&first_commit, Some(&second_commit)).unwrap();
+        assert!(diff.contains("modified content") || diff.contains("+modified content"));
+
+        // Test: diff unstaged changes (from HEAD to working directory)
+        let unstaged_diff = git_repo.diff_range("HEAD", None).unwrap();
+        assert!(unstaged_diff.contains("unstaged content") || unstaged_diff.contains("+unstaged content"));
+
+        // Test: diff from specific commit to working directory
+        let from_commit_diff = git_repo.diff_range(&first_commit, None).unwrap();
+        assert!(from_commit_diff.contains("unstaged content") || from_commit_diff.contains("+unstaged content"));
     }
 }

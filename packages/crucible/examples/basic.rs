@@ -11,7 +11,7 @@
 /// ```
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::{Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
+use crucible::{BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 
 #[derive(Parser)]
@@ -70,9 +70,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             WorkingDirectory::empty()?,
             vec![
                 EvalAssertion::tool_call_at_least("bash", 1),
-                EvalAssertion::llm_judge(
-                    "Did the agent successfully run the echo command and display the output 'Hello from Crucible!'?",
-                ),
+                EvalAssertion::llm_judge(|_ctx| {
+                    format!(
+                        "Did the agent successfully run the echo command and display the output 'Hello from Crucible!'?\n\nRespond with JSON matching this schema:\n{}\n\nOnly return the JSON, no other text.",
+                        BinaryMetric::json_schema()
+                    )
+                }),
             ],
         ),
     ];

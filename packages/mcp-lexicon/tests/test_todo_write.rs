@@ -1,4 +1,4 @@
-use mcp_lexicon::coding::{TodoItem, TodoState, TodoWriteInput, process_todo_write};
+use mcp_lexicon::coding::{TodoItem, TodoStatus, TodoWriteInput, process_todo_write};
 
 #[test]
 fn test_todo_write_empty_list() {
@@ -17,7 +17,7 @@ fn test_todo_write_single_pending_task() {
     let input = TodoWriteInput {
         todos: vec![TodoItem {
             content: "Write unit tests".to_string(),
-            state: TodoState::Pending,
+            status: TodoStatus::Pending,
             active_form: "Writing unit tests".to_string(),
         }],
     };
@@ -37,22 +37,22 @@ fn test_todo_write_mixed_statuses() {
         todos: vec![
             TodoItem {
                 content: "Design API".to_string(),
-                state: TodoState::Completed,
+                status: TodoStatus::Completed,
                 active_form: "Designing API".to_string(),
             },
             TodoItem {
                 content: "Implement feature".to_string(),
-                state: TodoState::InProgress,
+                status: TodoStatus::InProgress,
                 active_form: "Implementing feature".to_string(),
             },
             TodoItem {
                 content: "Write documentation".to_string(),
-                state: TodoState::Pending,
+                status: TodoStatus::Pending,
                 active_form: "Writing documentation".to_string(),
             },
             TodoItem {
                 content: "Review code".to_string(),
-                state: TodoState::Pending,
+                status: TodoStatus::Pending,
                 active_form: "Reviewing code".to_string(),
             },
         ],
@@ -73,12 +73,12 @@ fn test_todo_write_all_in_progress() {
         todos: vec![
             TodoItem {
                 content: "Task 1".to_string(),
-                state: TodoState::InProgress,
+                status: TodoStatus::InProgress,
                 active_form: "Working on task 1".to_string(),
             },
             TodoItem {
                 content: "Task 2".to_string(),
-                state: TodoState::InProgress,
+                status: TodoStatus::InProgress,
                 active_form: "Working on task 2".to_string(),
             },
         ],
@@ -98,17 +98,17 @@ fn test_todo_write_all_completed() {
         todos: vec![
             TodoItem {
                 content: "Task 1".to_string(),
-                state: TodoState::Completed,
+                status: TodoStatus::Completed,
                 active_form: "Working on task 1".to_string(),
             },
             TodoItem {
                 content: "Task 2".to_string(),
-                state: TodoState::Completed,
+                status: TodoStatus::Completed,
                 active_form: "Working on task 2".to_string(),
             },
             TodoItem {
                 content: "Task 3".to_string(),
-                state: TodoState::Completed,
+                status: TodoStatus::Completed,
                 active_form: "Working on task 3".to_string(),
             },
         ],
@@ -128,7 +128,7 @@ fn test_todo_write_progress_workflow() {
     let input1 = TodoWriteInput {
         todos: vec![TodoItem {
             content: "Implement feature X".to_string(),
-            state: TodoState::Pending,
+            status: TodoStatus::Pending,
             active_form: "Implementing feature X".to_string(),
         }],
     };
@@ -141,7 +141,7 @@ fn test_todo_write_progress_workflow() {
     let input2 = TodoWriteInput {
         todos: vec![TodoItem {
             content: "Implement feature X".to_string(),
-            state: TodoState::InProgress,
+            status: TodoStatus::InProgress,
             active_form: "Implementing feature X".to_string(),
         }],
     };
@@ -154,7 +154,7 @@ fn test_todo_write_progress_workflow() {
     let input3 = TodoWriteInput {
         todos: vec![TodoItem {
             content: "Implement feature X".to_string(),
-            state: TodoState::Completed,
+            status: TodoStatus::Completed,
             active_form: "Implementing feature X".to_string(),
         }],
     };
@@ -170,7 +170,7 @@ fn test_serde_casing_consistency() {
     // Test serialization of TodoItem (which has active_form field)
     let todo_item = TodoItem {
         content: "Test task".to_string(),
-        state: TodoState::InProgress,
+        status: TodoStatus::InProgress,
         active_form: "Testing task".to_string(),
     };
 
@@ -179,7 +179,8 @@ fn test_serde_casing_consistency() {
 
     // Verify that TodoItem uses snake_case
     assert!(todo_json.contains("active_form"));
-    assert!(todo_json.contains("in_progress")); // status should be snake_case
+    assert!(todo_json.contains("in_progress")); // status value should be snake_case
+    assert!(todo_json.contains("\"status\"")); // field name should be "status"
 
     let input = TodoWriteInput {
         todos: vec![todo_item],
@@ -194,13 +195,13 @@ fn test_serde_casing_consistency() {
     // Verify that output uses snake_case for stats
     assert!(json.contains("in_progress")); // stats.in_progress should be snake_case
 
-    // Test deserialization also works with camelCase
+    // Test deserialization also works with snake_case
     let json_input = r#"
     {
         "todos": [
             {
                 "content": "Test task",
-                "state": "in_progress",
+                "status": "in_progress",
                 "active_form": "Testing task"
             }
         ]
@@ -210,6 +211,50 @@ fn test_serde_casing_consistency() {
     let parsed: TodoWriteInput = serde_json::from_str(json_input).unwrap();
     assert_eq!(parsed.todos.len(), 1);
     assert_eq!(parsed.todos[0].content, "Test task");
-    assert!(matches!(parsed.todos[0].state, TodoState::InProgress));
+    assert!(matches!(parsed.todos[0].status, TodoStatus::InProgress));
     assert_eq!(parsed.todos[0].active_form, "Testing task");
+}
+
+#[test]
+fn test_correct_status_field() {
+    // After fix: agent sending "status" should now work!
+    let json_input = r#"
+    {
+        "todos": [
+            {
+                "content": "Analyze current schema checking implementation",
+                "active_form": "Analyzing current schema checking implementation",
+                "status": "completed"
+            }
+        ]
+    }
+    "#;
+
+    let result = serde_json::from_str::<TodoWriteInput>(json_input);
+    assert!(result.is_ok());
+    let input = result.unwrap();
+    assert_eq!(input.todos.len(), 1);
+    assert!(matches!(input.todos[0].status, TodoStatus::Completed));
+}
+
+#[test]
+fn test_agent_confusion_with_camelcase() {
+    // Reproduces another potential bug: agent might use camelCase "activeForm"
+    // This should fail with: "missing field `active_form`"
+    let json_input = r#"
+    {
+        "todos": [
+            {
+                "content": "Test task",
+                "status": "in_progress",
+                "activeForm": "Testing task"
+            }
+        ]
+    }
+    "#;
+
+    let result = serde_json::from_str::<TodoWriteInput>(json_input);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("missing field `active_form`"));
 }

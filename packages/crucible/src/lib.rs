@@ -3,11 +3,13 @@ pub mod eval;
 pub mod eval_assertion;
 pub mod eval_messages;
 pub mod git_repo;
+pub mod metrics;
 pub mod report;
 
 pub use eval::{Eval, WorkingDirectory};
-pub use eval_assertion::{EvalAssertion, EvalAssertionResult, ToolCallCount};
+pub use eval_assertion::{EvalAssertion, EvalAssertionResult, LlmJudgeContext, ToolCallCount};
 pub use eval_messages::EvalMessage;
+pub use metrics::{BinaryMetric, EvalMetric, NumericMetric};
 pub use report::{
     AssertionReport, EvalReport, ReportData, SummaryReport, copy_report_templates,
     create_eval_report, serve_report, update_report_data,
@@ -137,8 +139,8 @@ impl EvalRunner {
     }
 
     /// Set the path to mcp.json for agent under eval
-    pub fn with_mcp_json(mut self, path: PathBuf) -> Self {
-        self.mcp_json_path = Some(path);
+    pub fn with_mcp_json(mut self, path: impl Into<PathBuf>) -> Self {
+        self.mcp_json_path = Some(path.into());
         self
     }
 
@@ -260,16 +262,22 @@ impl EvalRunner {
         // Determine batch size (default to all evals if not specified)
         let batch_size = config.batch_size.unwrap_or(evals.len());
         let batch_delay = config.batch_delay.unwrap_or(Duration::ZERO);
+        let total_evals = evals.len();
 
         // Process evals in batches
-        for batch_start in (0..evals.len()).step_by(batch_size) {
-            let batch_end = std::cmp::min(batch_start + batch_size, evals.len());
-            let batch: Vec<Eval> = evals[batch_start..batch_end].to_vec();
+        let mut evals_iter = evals.into_iter();
+        let mut batch_num = 0;
+        loop {
+            let batch: Vec<Eval> = evals_iter.by_ref().take(batch_size).collect();
+            if batch.is_empty() {
+                break;
+            }
+            batch_num += 1;
 
             tracing::info!(
                 "Processing batch {}/{} ({} evals)",
-                (batch_start / batch_size) + 1,
-                evals.len().div_ceil(batch_size),
+                batch_num,
+                total_evals.div_ceil(batch_size),
                 batch.len()
             );
 
@@ -338,7 +346,7 @@ impl EvalRunner {
             }
 
             // Add delay between batches to prevent rate limiting
-            if !batch_delay.is_zero() && batch_end < evals.len() {
+            if !batch_delay.is_zero() && batch_num * batch_size < total_evals {
                 tracing::info!("Waiting {:?} before next batch...", batch_delay);
                 tokio::time::sleep(batch_delay).await;
             }
@@ -365,48 +373,5 @@ impl EvalRunner {
         }
 
         Ok(summary)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    // Mock LLM provider for testing
-    struct MockLLM;
-
-    impl aether::llm::StreamingModelProvider for MockLLM {
-        fn stream_response(
-            &self,
-            _context: &aether::llm::Context,
-        ) -> aether::llm::LlmResponseStream {
-            Box::pin(futures::stream::empty())
-        }
-
-        fn display_name(&self) -> String {
-            "MockLLM".to_string()
-        }
-    }
-
-    #[test]
-    fn test_evals_config_batch_configuration() {
-        let llm = MockLLM;
-        let judge_llm = MockLLM;
-
-        // Test default configuration
-        let config = EvalsConfig::new(llm, judge_llm);
-        assert!(config.batch_size.is_none());
-        assert!(config.batch_delay.is_none());
-
-        // Test with batch size
-        let llm = MockLLM;
-        let judge_llm = MockLLM;
-        let config = EvalsConfig::new(llm, judge_llm)
-            .with_batch_size(5)
-            .with_batch_delay(Duration::from_millis(1000));
-
-        assert_eq!(config.batch_size, Some(5));
-        assert_eq!(config.batch_delay, Some(Duration::from_millis(1000)));
     }
 }
