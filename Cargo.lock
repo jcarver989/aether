@@ -563,6 +563,7 @@ dependencies = [
  "futures",
  "mcp_lexicon",
  "owo-colors",
+ "schemars",
  "serde",
  "serde_json",
  "tempfile",
