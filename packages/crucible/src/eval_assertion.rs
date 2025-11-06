@@ -2,22 +2,6 @@ use crate::git_repo::GitRepo;
 use crate::{EvalMessage, WorkingDirectory};
 use std::sync::Arc;
 
-/// Helper function to create a simple prompt builder that wraps a question with JSON formatting instructions
-pub fn simple_prompt(
-    question: impl Into<String>,
-) -> impl Fn(&LlmJudgeContext) -> String + Send + Sync + 'static {
-    let question = question.into();
-    move |_ctx| {
-        format!(
-            "{}\n\nRespond with valid JSON in this exact format:\n\
-             {{\"success\": true, \"reason\": \"explanation\"}} for success\n\
-             {{\"success\": false, \"reason\": \"explanation\"}} for failure\n\n\
-             Only output the JSON, nothing else.",
-            question
-        )
-    }
-}
-
 /// Context provided to LLM judge prompt builders
 pub struct LlmJudgeContext<'a> {
     pub working_dir: &'a WorkingDirectory,
@@ -33,9 +17,7 @@ impl<'a> LlmJudgeContext<'a> {
     pub fn git_diff(&self, to_commit: Option<&str>) -> Option<String> {
         match self.working_dir {
             WorkingDirectory::GitRepo {
-                path,
-                start_commit,
-                ..
+                path, start_commit, ..
             } => {
                 let git_repo = GitRepo::from_path(path);
                 match to_commit {
