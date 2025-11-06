@@ -25,34 +25,29 @@ pub struct Eval {
     pub working_directory: WorkingDirectory,
     pub assertions: Vec<EvalAssertion>,
 
-    agent_complete_hooks: Vec<Box<dyn BeforeAssertionsHook>>,
+    setup_hooks: Vec<Box<dyn Hook>>,
+    before_assertions_hooks: Vec<Box<dyn Hook>>,
 }
 
-pub struct BeforeAssertionsHookInput {
+pub struct HookInput {
     pub working_directory: PathBuf,
     pub messages: Vec<EvalMessage>,
 }
 
 pub type HookResult = Result<(), Box<dyn std::error::Error>>;
 
-/// Trait for hooks that run after the agent completes but before assertions
-pub trait BeforeAssertionsHook: Send + Sync {
-    fn run(
-        &self,
-        input: BeforeAssertionsHookInput,
-    ) -> Pin<Box<dyn Future<Output = HookResult> + Send>>;
+/// Trait for eval lifecycle hooks (useful for running setup functions)
+pub trait Hook: Send + Sync {
+    fn run(&self, input: HookInput) -> Pin<Box<dyn Future<Output = HookResult> + Send>>;
 }
 
 // Implement for closures that return futures
-impl<F, Fut> BeforeAssertionsHook for F
+impl<F, Fut> Hook for F
 where
-    F: Fn(BeforeAssertionsHookInput) -> Fut + Send + Sync,
+    F: Fn(HookInput) -> Fut + Send + Sync,
     Fut: Future<Output = HookResult> + Send + 'static,
 {
-    fn run(
-        &self,
-        input: BeforeAssertionsHookInput,
-    ) -> Pin<Box<dyn Future<Output = HookResult> + Send>> {
+    fn run(&self, input: HookInput) -> Pin<Box<dyn Future<Output = HookResult> + Send>> {
         Box::pin(self(input))
     }
 }
@@ -164,13 +159,19 @@ impl Eval {
             prompt: prompt.into(),
             working_directory,
             assertions,
-            agent_complete_hooks: Vec::new(),
+            setup_hooks: Vec::new(),
+            before_assertions_hooks: Vec::new(),
         }
     }
 
+    pub fn setup(mut self, hook: impl Hook + 'static) -> Self {
+        self.setup_hooks.push(Box::new(hook));
+        self
+    }
+
     /// Run a hook when the agent completes, but before the eval runs
-    pub fn before_assertions(mut self, hook: impl BeforeAssertionsHook + 'static) -> Self {
-        self.agent_complete_hooks.push(Box::new(hook));
+    pub fn before_assertions(mut self, hook: impl Hook + 'static) -> Self {
+        self.before_assertions_hooks.push(Box::new(hook));
         self
     }
 
@@ -187,6 +188,15 @@ impl Eval {
         let _enter = span.enter();
 
         tracing::info!("Running eval: {}", self.name);
+
+        for hook in &self.setup_hooks {
+            hook.run(HookInput {
+                working_directory: self.working_directory.path().to_path_buf(),
+                messages: Vec::new(),
+            })
+            .await
+            .map_err(|e| format!("Agent setup hook failed: {}", e))?;
+        }
 
         let messages = {
             let mut agent_builder = agent(llm).tools(mcp_tx, tool_definitions);
@@ -207,8 +217,8 @@ impl Eval {
             to_eval_messages(rx).await
         };
 
-        for hook in &self.agent_complete_hooks {
-            hook.run(BeforeAssertionsHookInput {
+        for hook in &self.before_assertions_hooks {
+            hook.run(HookInput {
                 working_directory: self.working_directory.path().to_path_buf(),
                 messages: messages.clone(),
             })
