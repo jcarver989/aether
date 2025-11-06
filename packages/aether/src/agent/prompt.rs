@@ -11,7 +11,7 @@ pub enum Prompt {
     File {
         path: String,
         ancestors: bool,
-        args: Option<serde_json::Map<String, serde_json::Value>>,
+        args: Option<HashMap<String, String>>,
     },
     SystemEnv,
 }
@@ -29,21 +29,11 @@ impl Prompt {
         }
     }
 
-    pub fn file_with_args(
-        path: &str,
-        ancestors: bool,
-        args: HashMap<String, String>,
-    ) -> Self {
-        // Convert HashMap<String, String> to serde_json::Map<String, Value>
-        let json_args = args
-            .into_iter()
-            .map(|(k, v)| (k, serde_json::Value::String(v)))
-            .collect();
-
+    pub fn file_with_args(path: &str, ancestors: bool, args: HashMap<String, String>) -> Self {
         Self::File {
             path: path.to_string(),
             ancestors,
-            args: Some(json_args),
+            args: Some(args),
         }
     }
 
@@ -74,7 +64,6 @@ impl Prompt {
                     Self::resolve_file(&PathBuf::from(path))?
                 };
 
-                // Apply argument substitution if args are provided
                 Ok(substitute_parameters(&content, args))
             }
             Prompt::SystemEnv => Self::resolve_system_env(),

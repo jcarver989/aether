@@ -20,6 +20,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -193,7 +194,14 @@ impl ServerHandler for PluginsMcp {
             McpError::invalid_params(format!("Prompt '{}' not found: {}", request.name, e), None)
         })?;
 
-        let content = substitute_parameters(&command_file.content, &request.arguments);
+        let arguments = request.arguments.as_ref().map(|json_map| {
+            json_map
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect::<HashMap<String, String>>()
+        });
+
+        let content = substitute_parameters(&command_file.content, &arguments);
         let messages = vec![PromptMessage::new_text(PromptMessageRole::User, content)];
 
         Ok(GetPromptResult {
