@@ -214,72 +214,8 @@ pub struct ReportData {
     pub eval_traces: HashMap<String, Vec<TraceEvent>>,
 }
 
-/// Copy HTML report static files (HTML, CSS, JS) so users can view the report before it's complete
-pub fn copy_report_templates(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let report_dir = output_dir.join("report");
-    fs::create_dir_all(&report_dir)?;
 
-    // Write HTML, CSS, and JS files
-    fs::write(
-        report_dir.join("index.html"),
-        include_str!("../templates/index.html"),
-    )?;
-    fs::write(
-        report_dir.join("styles.css"),
-        include_str!("../templates/styles.css"),
-    )?;
-    fs::write(
-        report_dir.join("script.js"),
-        include_str!("../templates/script.js"),
-    )?;
-
-    // Create an initial empty report-data.json so the page loads without errors
-    let empty_report = ReportData {
-        summary: SummaryReport::new(),
-        eval_traces: HashMap::new(),
-    };
-    let empty_json = serde_json::to_string_pretty(&empty_report)?;
-    fs::write(report_dir.join("report-data.json"), empty_json)?;
-
-    Ok(())
-}
-
-/// Update the report data JSON with current traces and summary
-pub fn update_report_data(
-    output_dir: &Path,
-    summary: &SummaryReport,
-    traces_file: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Parse traces and group by eval_name
-    let eval_traces = parse_and_group_traces(traces_file)?;
-
-    // Create report directory (in case it wasn't created yet)
-    let report_dir = output_dir.join("report");
-    fs::create_dir_all(&report_dir)?;
-
-    // Create report data JSON
-    let report_data = ReportData {
-        summary: summary.clone(),
-        eval_traces,
-    };
-    let data_json = serde_json::to_string_pretty(&report_data)?;
-    fs::write(report_dir.join("report-data.json"), data_json)?;
-
-    Ok(())
-}
-
-/// Generate complete HTML report with traces grouped by eval (convenience function)
-pub fn generate_html_report(
-    output_dir: &Path,
-    summary: &SummaryReport,
-    traces_file: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    copy_report_templates(output_dir)?;
-    update_report_data(output_dir, summary, traces_file)?;
-    Ok(())
-}
-
-fn parse_and_group_traces(
+pub fn parse_traces_file(
     traces_file: &Path,
 ) -> Result<HashMap<String, Vec<TraceEvent>>, Box<dyn std::error::Error>> {
     let file = fs::File::open(traces_file)?;
@@ -370,81 +306,6 @@ fn parse_and_group_traces(
     Ok(grouped)
 }
 
-/// Serve the HTML report on localhost:3000
-///
-/// This starts a simple HTTP server to serve the report. The HTML, CSS, and JS templates
-/// are served directly from memory (embedded at compile time), while report-data.json is
-/// read from disk. This avoids CORS issues that occur when opening HTML files directly.
-///
-/// # Arguments
-/// * `output_dir` - The output directory containing report-data.json
-///
-/// # Returns
-/// Never returns - runs until interrupted with Ctrl+C
-pub fn serve_report(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let report_data_path = output_dir.join("report").join("report-data.json");
-
-    if !report_data_path.exists() {
-        return Err(format!("Report data not found: {report_data_path:?}").into());
-    }
-
-    // Embedded templates (served from memory)
-    let index_html = include_str!("../templates/index.html");
-    let styles_css = include_str!("../templates/styles.css");
-    let script_js = include_str!("../templates/script.js");
-
-    let server = tiny_http::Server::http("127.0.0.1:3000")
-        .map_err(|e| format!("Failed to start server: {e}"))?;
-
-    println!("\n{}", "=== Eval Report Server ===".bold().green());
-    println!(
-        "Report available at: {}",
-        "http://localhost:3000".bold().cyan()
-    );
-    println!("Press {} to stop the server\n", "Ctrl+C".bold());
-
-    for request in server.incoming_requests() {
-        let url_path = request.url();
-
-        // Route requests to either embedded templates or report-data.json
-        let (content, content_type): (Vec<u8>, &str) = match url_path {
-            "/" | "" | "/index.html" => {
-                (index_html.as_bytes().to_vec(), "text/html; charset=utf-8")
-            }
-            "/styles.css" => (styles_css.as_bytes().to_vec(), "text/css; charset=utf-8"),
-            "/script.js" => (
-                script_js.as_bytes().to_vec(),
-                "application/javascript; charset=utf-8",
-            ),
-            "/report-data.json" => {
-                // Read report-data.json from disk
-                match fs::read(&report_data_path) {
-                    Ok(data) => (data, "application/json; charset=utf-8"),
-                    Err(_) => {
-                        let response =
-                            tiny_http::Response::from_string("404 Not Found").with_status_code(404);
-                        let _ = request.respond(response);
-                        continue;
-                    }
-                }
-            }
-            _ => {
-                // 404 for any other path
-                let response =
-                    tiny_http::Response::from_string("404 Not Found").with_status_code(404);
-                let _ = request.respond(response);
-                continue;
-            }
-        };
-
-        let response = tiny_http::Response::from_data(content).with_header(
-            tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap(),
-        );
-        let _ = request.respond(response);
-    }
-
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
@@ -452,81 +313,6 @@ mod tests {
     use std::io::Write;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_html_report_generation() {
-        let temp_dir = TempDir::new().unwrap();
-        let temp_path = temp_dir.path();
-
-        // Create sample traces.jsonl
-        let traces_file = temp_path.join("traces.jsonl");
-        let mut file = std::fs::File::create(&traces_file).unwrap();
-
-        // Write some sample JSON traces
-        writeln!(
-            file,
-            r#"{{"timestamp":"2024-01-01T12:00:00Z","level":"INFO","message":"Starting eval","target":"crucible::eval","span":{{"eval_name":"test_eval"}}}}"#
-        ).unwrap();
-        writeln!(
-            file,
-            r#"{{"timestamp":"2024-01-01T12:00:01Z","level":"INFO","message":"Agent response: Hello","target":"crucible::eval","span":{{"eval_name":"test_eval"}}}}"#
-        ).unwrap();
-
-        // Create sample summary
-        let mut summary = SummaryReport::new();
-        let eval_report = EvalReport {
-            eval_name: "test_eval".to_string(),
-            passed: true,
-            duration: None,
-            assertions: vec![AssertionReport {
-                assertion_type: "FileExists".to_string(),
-                passed: true,
-                message: "File exists".to_string(),
-            }],
-            agent_diff: None,
-            gold_diff: None,
-            diff_stats: None,
-        };
-        summary.add_eval(eval_report);
-
-        // Generate HTML report
-        let result = generate_html_report(temp_path, &summary, &traces_file);
-        assert!(
-            result.is_ok(),
-            "HTML report generation failed: {:?}",
-            result.err()
-        );
-
-        // Verify report files were created
-        let report_dir = temp_path.join("report");
-        assert!(report_dir.exists(), "Report directory was not created");
-        assert!(
-            report_dir.join("index.html").exists(),
-            "index.html was not created"
-        );
-        assert!(
-            report_dir.join("styles.css").exists(),
-            "styles.css was not created"
-        );
-        assert!(
-            report_dir.join("script.js").exists(),
-            "script.js was not created"
-        );
-        assert!(
-            report_dir.join("report-data.json").exists(),
-            "report-data.json was not created"
-        );
-
-        // Verify report-data.json contains expected data
-        let data_content = std::fs::read_to_string(report_dir.join("report-data.json")).unwrap();
-        assert!(
-            data_content.contains("test_eval"),
-            "report-data.json should contain eval name"
-        );
-        assert!(
-            data_content.contains("Starting eval"),
-            "report-data.json should contain trace message"
-        );
-    }
 
     #[test]
     fn test_parse_and_group_traces() {
@@ -549,7 +335,7 @@ mod tests {
         )
         .unwrap();
 
-        let grouped = parse_and_group_traces(&traces_file).unwrap();
+        let grouped = parse_traces_file(&traces_file).unwrap();
 
         assert!(
             grouped.contains_key("eval_one"),
@@ -576,24 +362,6 @@ mod tests {
         assert_eq!(grouped["eval_two"][0].message, "Eval 2");
     }
 
-    #[test]
-    fn test_serve_report_validates_report_data() {
-        let temp_dir = TempDir::new().unwrap();
-        let nonexistent_path = temp_dir.path().join("nonexistent");
-
-        // Should fail when report-data.json doesn't exist
-        let result = serve_report(&nonexistent_path);
-        assert!(
-            result.is_err(),
-            "Should fail when report-data.json doesn't exist"
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Report data not found")
-        );
-    }
 
     #[test]
     fn test_compute_diff_stats() {
