@@ -145,15 +145,11 @@ where
     match serde_json::from_str::<EvalMetric>(trimmed_response) {
         Ok(metric) => {
             let (is_success, reason) = match &metric {
-                EvalMetric::Binary { success, reason } => (*success, reason.clone()),
-                EvalMetric::Numeric {
-                    score,
-                    max_score,
-                    reason,
-                } => {
+                EvalMetric::Binary(binary) => (binary.success, binary.reason.clone()),
+                EvalMetric::Numeric(numeric) => {
                     // Consider it a success if score is above 70% of max
-                    let success = score / max_score >= 0.7;
-                    (success, format!("{reason} (score: {score}/{max_score})"))
+                    let success = numeric.score / numeric.max_score >= 0.7;
+                    (success, format!("{} (score: {}/{})", numeric.reason, numeric.score, numeric.max_score))
                 }
             };
 

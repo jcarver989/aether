@@ -7,11 +7,9 @@ pub mod metrics;
 pub mod report;
 
 pub use eval::{Eval, WorkingDirectory};
-pub use eval_assertion::{
-    EvalAssertion, EvalAssertionResult, LlmJudgeContext, ToolCallCount, simple_prompt,
-};
+pub use eval_assertion::{EvalAssertion, EvalAssertionResult, LlmJudgeContext, ToolCallCount};
 pub use eval_messages::EvalMessage;
-pub use metrics::EvalMetric;
+pub use metrics::{BinaryMetric, EvalMetric, NumericMetric};
 pub use report::{
     AssertionReport, EvalReport, ReportData, SummaryReport, copy_report_templates,
     create_eval_report, serve_report, update_report_data,
