@@ -1,7 +1,7 @@
-/// Basic example demonstrating how to run evals with Crucible
+/// Basic example demonstrating how to run evals with Crucible using programmatic API
 ///
-/// This example shows the minimal setup needed to run evaluations against
-/// an agent. It uses the ModelProviderParser to support any provider.
+/// This example shows how to define evaluations directly in Rust code instead of
+/// loading them from JSON files. It uses the ModelProviderParser to support any provider.
 ///
 /// # Usage
 ///
@@ -11,7 +11,7 @@
 /// ```
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::{Crucible, EvalsConfig};
+use crucible::{Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 
 #[derive(Parser)]
@@ -51,17 +51,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse(judge_model)
         .map_err(|e| format!("Error parsing judge model spec '{}': {}", judge_model, e))?;
 
+    // Define evaluations programmatically
+    let evals = vec![
+        // Eval 1: Create a file
+        Eval::new(
+            "create_file",
+            "Create a file called `greeting.txt` with the content \"Hello, World!\".",
+            WorkingDirectory::empty()?,
+            vec![
+                EvalAssertion::file_exists("greeting.txt"),
+                EvalAssertion::file_matches("greeting.txt", "Hello, World!"),
+            ],
+        ),
+        // Eval 2: Run a bash command
+        Eval::new(
+            "simple_bash",
+            "Please run the command `echo \"Hello from Crucible!\"` in the terminal and show me the output.",
+            WorkingDirectory::empty()?,
+            vec![
+                EvalAssertion::tool_call_at_least("bash", 1),
+                EvalAssertion::llm_judge(
+                    "Did the agent successfully run the echo command and display the output 'Hello from Crucible!'?",
+                ),
+            ],
+        ),
+    ];
+
     // Create configuration
     let config = EvalsConfig::new(llm, judge_llm);
 
-    // Run evaluations
-    // This will look for:
-    // - ./examples/test-agent/AGENTS.md (optional system prompt)
-    // - ./examples/test-agent/mcp.json (optional MCP server config)
-    // - ./examples/test-agent/evals/* (eval directories)
-    let summary = Crucible::new("./examples/test-agent".into())
-        .with_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
-        .run_evals(config)
+    // Run evaluations with system prompt and MCP server
+    let summary = EvalRunner::new()
+        .with_agent_prompt(
+            "You are a helpful AI assistant with access to various tools for file operations, \
+             shell commands, and more. Your goal is to complete the user's task efficiently and accurately."
+        )
+        .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
+        .run_evals(evals, config)
         .await?;
 
     // Print results
