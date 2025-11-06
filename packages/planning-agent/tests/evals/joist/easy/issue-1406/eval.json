@@ -1,0 +1,15 @@
+{
+  "git": {
+    "url": "https://github.com/joist-orm/joist-orm",
+    "start_commit": "215c15f99380d3864b58201e31a7614c02d2a366",
+    "eval_commit": "ac4ac099ad0c667020267f16ee81652cf3d4b181"
+  },
+  "assertions": [
+    {
+      "type": "LLMJudge",
+      "data": {
+        "prompt": "The agent should have written a plan.md file to describe their implementation plan. The agent was working off a git commit from the past. You have the actual git diff that real humans wrote to accomplish the task, this is the 'gold standard'. Using the actual diff as the platonic ideal, score the agent's plan on a scale of 1 to 10 from the lens of a staff+ engineer and how likely this plan (if followed) would be to produce the actual code humans wrote."
+      }
+    }
+  ]
+}
