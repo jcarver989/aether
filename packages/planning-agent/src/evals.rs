@@ -1,33 +1,85 @@
+use crate::PrInfo;
 use crate::claude_code::ClaudeCode;
 use aether::agent::{AgentError, Prompt};
 use crucible::{Eval, EvalAssertion, EvalMetric, WorkingDirectory};
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 
-/// Returns all planning-agent evals defined programmatically
+const JOIST_ORM_REPO: &str = "https://github.com/joist-orm/joist-orm";
+
 pub fn all_evals() -> Result<Vec<Eval>, Box<dyn std::error::Error>> {
-    Ok(vec![
-        // Joist ORM - Issue 1406: Optional schema configuration
-        Eval::new(
-            "joist_easy_issue_1406",
-            load_agent_prompt("joist/easy/issue-1406")?,
-            WorkingDirectory::git_repo(
-                "https://github.com/joist-orm/joist-orm",
-                "215c15f99380d3864b58201e31a7614c02d2a366",
-                "ac4ac099ad0c667020267f16ee81652cf3d4b181",
-                None::<&str>,
-            )?,
-            vec![code_quality_scorer()?],
-        )
-        .before_assertions(ClaudeCode::new("plan.md")),
-    ])
+    let tests_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let evals_dir = tests_dir.join("evals");
+
+    let mut evals = Vec::new();
+
+    for repo_entry in fs::read_dir(&evals_dir)? {
+        let repo_path = repo_entry?.path();
+
+        if !repo_path.is_dir() {
+            continue;
+        }
+
+        for difficulty_entry in fs::read_dir(&repo_path)? {
+            let difficulty_entry = difficulty_entry?;
+            let difficulty_path = difficulty_entry.path();
+
+            if !difficulty_path.is_dir() {
+                continue;
+            }
+
+            for issue_entry in fs::read_dir(&difficulty_path)? {
+                let issue_entry = issue_entry?;
+                let issue_path = issue_entry.path();
+
+                if !issue_path.is_dir() {
+                    continue;
+                }
+
+                let eval_path = issue_path
+                    .strip_prefix(&evals_dir)
+                    .map_err(|e| format!("Failed to strip prefix: {}", e))?
+                    .to_str()
+                    .ok_or("Invalid eval path")?;
+
+                match eval(eval_path, JOIST_ORM_REPO) {
+                    Ok(e) => evals.push(e),
+                    Err(err) => {
+                        eprintln!("Warning: Failed to load eval '{}': {}", eval_path, err)
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(evals)
 }
 
-fn load_agent_prompt(eval_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn eval(eval_path: &str, repo_url: &str) -> Result<Eval, Box<dyn std::error::Error>> {
     let tests_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
-    let prompt_path = tests_dir.join("evals").join(eval_path).join("prompt.md");
-    let prompt = Prompt::file(prompt_path.to_str().ok_or("Invalid path")?, false).build()?;
-    Ok(prompt)
+    let eval_dir = tests_dir.join("evals").join(eval_path);
+    let prompt_path = eval_dir.join("issue.md");
+    let prompt =
+        Prompt::file(prompt_path.to_str().ok_or("Invalid issue.md path")?, false).build()?;
+
+    let pr_json_path = eval_dir.join("pr.json");
+    let pr_json_content = fs::read_to_string(&pr_json_path)?;
+    let pr_info: PrInfo = serde_json::from_str(&pr_json_content)?;
+    let eval_name = eval_path.replace('/', "_").replace('-', "_");
+
+    Ok(Eval::new(
+        &eval_name,
+        prompt,
+        WorkingDirectory::git_repo(
+            repo_url,
+            &pr_info.before_commit,
+            &pr_info.after_commit,
+            None::<&str>,
+        )?,
+        vec![code_quality_scorer()?],
+    )
+    .before_assertions(ClaudeCode::new("plan.md")))
 }
 
 /// Uses LLM as a judge to score code quality (vs human code) on a 10 point scale
