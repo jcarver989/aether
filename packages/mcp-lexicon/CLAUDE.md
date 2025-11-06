@@ -66,7 +66,8 @@ Available assertion builders:
   - `EvalAssertion::tool_call_at_most(name, count)` - Checks maximum calls
 
 - **LLM Judge:**
-  - `EvalAssertion::llm_judge(prompt)` - Uses LLM to evaluate success
+  - `EvalAssertion::llm_judge(simple_prompt("question"))` - Simple LLM judge with a static prompt wrapped in JSON formatting
+  - `EvalAssertion::llm_judge(|ctx| { ... })` - Advanced LLM judge with access to eval context (working dir, git diff, messages)
 
 ### Working Directory Options
 
@@ -83,7 +84,7 @@ Eval::new(
     load_prompt("simple_bash_command")?,
     WorkingDirectory::empty()?,
     vec![
-        EvalAssertion::llm_judge("Did agent run echo and show output?"),
+        EvalAssertion::llm_judge(simple_prompt("Did agent run echo and show output?")),
     ],
 ),
 ```
@@ -110,7 +111,7 @@ Eval::new(
         EvalAssertion::file_exists(".git"),
         EvalAssertion::file_exists("README.md"),
         EvalAssertion::file_matches("README.md", "# My Project"),
-        EvalAssertion::llm_judge("Did agent init repo, create README, and commit?"),
+        EvalAssertion::llm_judge(simple_prompt("Did agent init repo, create README, and commit?")),
     ],
 ),
 ```
