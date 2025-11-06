@@ -34,7 +34,10 @@ chrono = { workspace = true }
 tempfile = { workspace = true }
 
 # HTTP server
-tiny_http = "0.12"
+axum = "0.8.6"
+tower = "0.5.2"
+tower-http = { version = "0.6.6", features = ["fs", "cors"] }
+tokio-stream = { workspace = true, features = ["sync"] }
 
 # Internal dependencies
 aether = { path = "../aether" }
