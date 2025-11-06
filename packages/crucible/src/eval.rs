@@ -113,7 +113,7 @@ impl WorkingDirectory {
         let gold_commit = gold_commit.into();
         let tmpdir = tempfile::tempdir()?;
 
-        tracing::info!("Cloning git repo {} at commit {}", url, start_commit);
+        tracing::debug!("Cloning git repo {} at commit {}", url, start_commit);
 
         let repo = GitRepo::clone(&url, tmpdir.path())?;
         repo.checkout(&start_commit)?;
@@ -175,6 +175,7 @@ impl Eval {
         self
     }
 
+    #[tracing::instrument(skip(self, llm, judge_llm, tool_definitions, mcp_tx, system_prompt), fields(eval_name = %self.name))]
     pub async fn run<T: StreamingModelProvider + 'static, U: StreamingModelProvider + 'static>(
         &self,
         llm: T,
@@ -184,12 +185,12 @@ impl Eval {
         system_prompt: Option<String>,
     ) -> Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>
     {
-        let span = tracing::info_span!("eval", eval_name = %self.name);
-        let _enter = span.enter();
-
         tracing::info!("Running eval: {}", self.name);
 
-        for hook in &self.setup_hooks {
+        for (i, hook) in self.setup_hooks.iter().enumerate() {
+            let span = tracing::debug_span!("setup_hook", hook_index = i);
+            let _enter = span.enter();
+
             hook.run(HookInput {
                 working_directory: self.working_directory.path().to_path_buf(),
                 messages: Vec::new(),
@@ -217,7 +218,10 @@ impl Eval {
             to_eval_messages(rx).await
         };
 
-        for hook in &self.before_assertions_hooks {
+        for (i, hook) in self.before_assertions_hooks.iter().enumerate() {
+            let span = tracing::debug_span!("before_assertions_hook", hook_index = i);
+            let _enter = span.enter();
+
             hook.run(HookInput {
                 working_directory: self.working_directory.path().to_path_buf(),
                 messages: messages.clone(),
@@ -227,7 +231,9 @@ impl Eval {
         }
 
         let mut results = Vec::new();
-        for assertion in &self.assertions {
+        for (i, assertion) in self.assertions.iter().enumerate() {
+            let span = tracing::debug_span!("assertion", assertion_index = i);
+            let _enter = span.enter();
             let result = match assertion {
                 EvalAssertion::FileExists { path } => {
                     assert_file_exists(self.working_directory.path(), path)

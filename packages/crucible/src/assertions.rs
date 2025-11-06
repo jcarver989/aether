@@ -12,12 +12,12 @@ use std::path::Path;
 pub fn assert_file_exists(working_dir: &Path, path: &str) -> EvalAssertionResult {
     let file_path = working_dir.join(path);
     if file_path.exists() {
-        tracing::info!("✓ FileExists assertion passed: {}", path);
+        tracing::debug!("✓ FileExists assertion passed: {}", path);
         EvalAssertionResult::Success {
             message: format!("File '{path}' exists"),
         }
     } else {
-        tracing::error!("✗ FileExists assertion failed: {}", path);
+        tracing::debug!("✗ FileExists assertion failed: {}", path);
         EvalAssertionResult::Failure {
             message: format!("File '{path}' does not exist"),
         }
@@ -30,19 +30,19 @@ pub fn assert_file_matches(working_dir: &Path, path: &str, content: &str) -> Eva
     match std::fs::read_to_string(&file_path) {
         Ok(file_content) => {
             if file_content.contains(content) {
-                tracing::info!("✓ FileMatches assertion passed: {}", path);
+                tracing::debug!("✓ FileMatches assertion passed: {}", path);
                 EvalAssertionResult::Success {
                     message: format!("File '{path}' contains '{content}'"),
                 }
             } else {
-                tracing::error!("✗ FileMatches assertion failed: {}", path);
+                tracing::debug!("✗ FileMatches assertion failed: {}", path);
                 EvalAssertionResult::Failure {
                     message: format!("File '{path}' does not contain '{content}'"),
                 }
             }
         }
         Err(e) => {
-            tracing::error!("✗ FileMatches assertion failed: {} ({})", path, e);
+            tracing::debug!("✗ FileMatches assertion failed: {} ({})", path, e);
             EvalAssertionResult::Failure {
                 message: format!("Failed to read file '{path}': {e}"),
             }
@@ -69,7 +69,7 @@ pub async fn assert_command_exit_code(
         Ok(output) => {
             let actual_code = output.status.code().unwrap_or(-1);
             if actual_code == expected_code {
-                tracing::info!(
+                tracing::debug!(
                     "✓ CommandExitCode assertion passed: {} (exit code: {})",
                     command,
                     actual_code
@@ -81,7 +81,7 @@ pub async fn assert_command_exit_code(
                 }
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                tracing::error!(
+                tracing::debug!(
                     "✗ CommandExitCode assertion failed: {} (expected: {}, got: {})",
                     command,
                     expected_code,
@@ -95,7 +95,7 @@ pub async fn assert_command_exit_code(
             }
         }
         Err(e) => {
-            tracing::error!("✗ CommandExitCode assertion failed: {} ({})", command, e);
+            tracing::debug!("✗ CommandExitCode assertion failed: {} ({})", command, e);
             EvalAssertionResult::Failure {
                 message: format!("Failed to execute command '{command}': {e}"),
             }
@@ -154,16 +154,16 @@ where
             };
 
             if is_success {
-                tracing::info!("✓ LLM judge assertion passed");
+                tracing::debug!("✓ LLM judge assertion passed");
                 EvalAssertionResult::Success { message: reason }
             } else {
-                tracing::error!("✗ LLM judge assertion failed");
+                tracing::debug!("✗ LLM judge assertion failed");
                 EvalAssertionResult::Failure { message: reason }
             }
         }
         Err(e) => {
-            tracing::error!("✗ LLM judge returned invalid JSON: {}", e);
-            tracing::error!("Raw response: {}", judge_response);
+            tracing::debug!("✗ LLM judge returned invalid JSON: {}", e);
+            tracing::debug!("Raw response: {}", judge_response);
             EvalAssertionResult::Failure {
                 message: format!(
                     "Judge returned invalid JSON: {e}\nRaw response: {judge_response}"
@@ -231,7 +231,7 @@ pub async fn assert_tool_call(
             message: format!("Tool '{name}' was not called with matching arguments"),
         }
     } else {
-        tracing::info!(
+        tracing::debug!(
             "✓ ToolCall assertion passed: {} (matched {} time(s))",
             name,
             actual_count
