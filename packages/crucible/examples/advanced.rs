@@ -1,6 +1,7 @@
-/// Advanced example with batching, web server, and custom MCP servers
+/// Advanced example with batching, web server, and programmatic eval definition
 ///
 /// This example demonstrates all the bells and whistles:
+/// - Programmatic eval definition (no JSON files)
 /// - Batch processing to avoid rate limits
 /// - Interactive web server for viewing results
 /// - Custom in-memory MCP server integration
@@ -16,7 +17,7 @@
 /// Press Ctrl+C to stop the server.
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::{Crucible, EvalsConfig};
+use crucible::{Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 use std::time::Duration;
 
@@ -76,6 +77,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse(judge_model)
         .map_err(|e| format!("Error parsing judge model spec '{}': {}", judge_model, e))?;
 
+    // Define evaluations programmatically
+    let evals = vec![
+        // Eval 1: Create a file
+        Eval::new(
+            "create_file",
+            "Create a file called `greeting.txt` with the content \"Hello, World!\".",
+            WorkingDirectory::empty()?,
+            vec![
+                EvalAssertion::file_exists("greeting.txt"),
+                EvalAssertion::file_matches("greeting.txt", "Hello, World!"),
+            ],
+        ),
+        // Eval 2: Run a bash command
+        Eval::new(
+            "simple_bash",
+            "Please run the command `echo \"Hello from Crucible!\"` in the terminal and show me the output.",
+            WorkingDirectory::empty()?,
+            vec![
+                EvalAssertion::tool_call_at_least("bash", 1),
+                EvalAssertion::llm_judge(
+                    "Did the agent successfully run the echo command and display the output 'Hello from Crucible!'?",
+                ),
+            ],
+        ),
+    ];
+
     // Create configuration with all features enabled
     let config = EvalsConfig::new(llm, judge_llm)
         .with_batch_size(cli.batch_size) // Run N evals concurrently
@@ -83,10 +110,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_serve(true); // Start web server
 
     // Run evaluations with coding MCP server
-    let summary = Crucible::new("./examples/test-agent".into())
+    let summary = EvalRunner::new()
         .with_output_dir("./eval-results".into())
-        .with_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
-        .run_evals(config)
+        .with_agent_prompt(
+            "You are a helpful AI assistant with access to various tools for file operations, \
+             shell commands, and more. Your goal is to complete the user's task efficiently and accurately."
+        )
+        .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
+        .run_evals(evals, config)
         .await?;
 
     // Print results
