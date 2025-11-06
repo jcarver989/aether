@@ -11,7 +11,7 @@
 /// ```
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::{Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
+use crucible::{simple_prompt, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 
 #[derive(Parser)]
@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             WorkingDirectory::empty()?,
             vec![
                 EvalAssertion::tool_call_at_least("bash", 1),
-                EvalAssertion::llm_judge(
+                EvalAssertion::llm_judge(simple_prompt(
                     "Did the agent successfully run the echo command and display the output 'Hello from Crucible!'?",
                 ),
             ],
