@@ -3,17 +3,19 @@ pub mod eval;
 pub mod eval_assertion;
 pub mod eval_messages;
 pub mod git_repo;
+pub mod hooks;
 pub mod metrics;
 pub mod report;
+pub mod server;
 
 pub use eval::{Eval, WorkingDirectory};
 pub use eval_assertion::{EvalAssertion, EvalAssertionResult, LlmJudgeContext, ToolCallCount};
 pub use eval_messages::EvalMessage;
 pub use metrics::{BinaryMetric, EvalMetric, NumericMetric};
 pub use report::{
-    AssertionReport, EvalReport, ReportData, SummaryReport, copy_report_templates,
-    create_eval_report, serve_report, update_report_data,
+    AssertionReport, EvalReport, ReportData, SummaryReport, create_eval_report, parse_traces_file,
 };
+pub use server::{AppState, SseEvent};
 
 use aether::llm::StreamingModelProvider;
 use aether::mcp::{ServerFactory, mcp};
@@ -195,7 +197,6 @@ impl EvalRunner {
 
         std::fs::create_dir_all(&output_dir)?;
         std::fs::create_dir_all(output_dir.join("results"))?;
-        std::fs::create_dir_all(output_dir.join("report"))?;
 
         // Set up tracing to write to both stdout and traces.jsonl
         let traces_file = output_dir.join("traces.jsonl");
@@ -207,8 +208,8 @@ impl EvalRunner {
 
         // Create an environment filter that respects RUST_LOG
         // Default to "info" level if RUST_LOG is not set
-        let env_filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("info"));
+        let env_filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
         // Create a JSON layer for file output (captures all levels)
         let json_layer = tracing_subscriber::fmt::layer()
@@ -216,8 +217,7 @@ impl EvalRunner {
             .with_writer(file_appender);
 
         // Create a formatted layer for stdout (respects env filter)
-        let fmt_layer = tracing_subscriber::fmt::layer()
-            .with_writer(std::io::stdout);
+        let fmt_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
 
         // Try to set as global default (will fail silently if already initialized)
         let _result = tracing_subscriber::registry()
@@ -225,26 +225,25 @@ impl EvalRunner {
             .with(fmt_layer.with_filter(env_filter))
             .try_init();
 
+        // Create app state for SSE if serving
+        let app_state = if config.serve {
+            Some(server::AppState::new())
+        } else {
+            None
+        };
+
         // Start web server in background if requested
         let server_handle = if config.serve {
-            // Create initial empty report data
-            let empty_report = report::ReportData {
-                summary: SummaryReport::new(),
-                eval_traces: HashMap::new(),
-            };
-            let empty_json = serde_json::to_string_pretty(&empty_report)?;
-            std::fs::write(
-                output_dir.join("report").join("report-data.json"),
-                empty_json,
-            )?;
-
-            // Spawn server in background task
-            let output_dir_clone = output_dir.clone();
-            Some(tokio::spawn(async move {
-                if let Err(e) = serve_report(&output_dir_clone) {
-                    tracing::error!("Server error: {}", e);
-                }
-            }))
+            if let Some(state) = app_state.clone() {
+                // Spawn server in background task
+                Some(tokio::spawn(async move {
+                    if let Err(e) = server::serve(state).await {
+                        tracing::error!("Server error: {}", e);
+                    }
+                }))
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -297,9 +296,18 @@ impl EvalRunner {
                     let llm_clone = llm.clone();
                     let judge_llm_clone = judge_llm.clone();
                     let eval_name = eval.name.clone();
+                    let eval_name_for_span = eval_name.clone();
+                    let app_state_clone = app_state.clone();
 
                     tokio::spawn(
                         async move {
+                            // Broadcast eval started event
+                            if let Some(state) = &app_state_clone {
+                                state.send_sse_event(server::SseEvent::EvalStarted {
+                                    name: eval_name.clone(),
+                                });
+                            }
+
                             let start = Instant::now();
 
                             let result = eval
@@ -312,9 +320,11 @@ impl EvalRunner {
                                 )
                                 .await;
                             let duration = start.elapsed();
-                            (eval, result, duration)
+                            (eval, result, duration, app_state_clone)
                         }
-                        .instrument(tracing::info_span!("eval_task", eval_name = %eval_name)),
+                        .instrument(
+                            tracing::info_span!("eval_task", eval_name = %eval_name_for_span),
+                        ),
                     )
                 })
                 .collect();
@@ -324,7 +334,7 @@ impl EvalRunner {
 
             for result in results {
                 match result {
-                    Ok((eval, Ok(eval_results), duration)) => {
+                    Ok((eval, Ok(eval_results), duration, state)) => {
                         let mut report = create_eval_report(&eval, &eval_results, Some(duration));
 
                         // Capture diffs for GitRepo working directories
@@ -356,9 +366,17 @@ impl EvalRunner {
                             tracing::warn!("Failed to write result file for {}: {}", eval.name, e);
                         }
 
+                        // Broadcast eval completed event
+                        if let Some(state) = &state {
+                            state.send_sse_event(server::SseEvent::EvalCompleted {
+                                name: report.eval_name.clone(),
+                                report: report.clone(),
+                            });
+                        }
+
                         summary.add_eval(report);
                     }
-                    Ok((eval, Err(e), _duration)) => {
+                    Ok((eval, Err(e), _duration, _state)) => {
                         tracing::error!("Eval '{}' failed with error: {}", eval.name, e);
                     }
                     Err(e) => {
@@ -367,10 +385,18 @@ impl EvalRunner {
                 }
             }
 
-            // Update report data after each batch if serving
+            // Update app state after each batch if serving
             if config.serve {
-                if let Err(e) = update_report_data(&output_dir, &summary, &traces_file) {
-                    tracing::warn!("Failed to update report data: {}", e);
+                if let Some(state) = &app_state {
+                    // Parse and load traces into app state
+                    if let Ok(eval_traces) = report::parse_traces_file(&traces_file) {
+                        for (eval_name, traces) in eval_traces.iter() {
+                            state.add_traces(eval_name.clone(), traces.clone());
+                        }
+                    }
+
+                    // Broadcast summary update
+                    state.update_summary(summary.clone());
                 }
             }
 
@@ -384,10 +410,15 @@ impl EvalRunner {
         let summary_file = output_dir.join("summary.json");
         summary.write_to_file(&summary_file)?;
 
-        // Final update of report data
+        // Final update to app state if serving
         if config.serve {
-            if let Err(e) = update_report_data(&output_dir, &summary, &traces_file) {
-                tracing::warn!("Failed to update final report data: {}", e);
+            if let Some(state) = &app_state {
+                if let Ok(eval_traces) = report::parse_traces_file(&traces_file) {
+                    for (eval_name, traces) in eval_traces.iter() {
+                        state.add_traces(eval_name.clone(), traces.clone());
+                    }
+                }
+                state.update_summary(summary.clone());
             }
 
             // Keep the server running (it's in a background task)
