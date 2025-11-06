@@ -149,7 +149,13 @@ where
                 EvalMetric::Numeric(numeric) => {
                     // Consider it a success if score is above 70% of max
                     let success = numeric.score / numeric.max_score >= 0.7;
-                    (success, format!("{} (score: {}/{})", numeric.reason, numeric.score, numeric.max_score))
+                    (
+                        success,
+                        format!(
+                            "{} (score: {}/{})",
+                            numeric.reason, numeric.score, numeric.max_score
+                        ),
+                    )
                 }
             };
 

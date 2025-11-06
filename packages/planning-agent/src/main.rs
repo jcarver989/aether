@@ -105,8 +105,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_batch_delay(Duration::from_secs(cli.batch_delay))
         .with_serve(!cli.no_serve);
 
-    let summary = EvalRunner::new()
-        .with_output_dir(cli.output_dir.into())
+    let results_store = crucible::FileSystemStore::new(cli.output_dir.into())
+        .map_err(|e| format!("Failed to create results store: {e}"))?;
+
+    let summary = EvalRunner::new(results_store)
         .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
         .with_mcp_json("mcp.json")
         .with_agent_prompt(Prompt::file("./tests/AGENTS.md", false).build()?)

@@ -5,17 +5,15 @@ pub mod eval_messages;
 pub mod git_repo;
 pub mod hooks;
 pub mod metrics;
-pub mod report;
 pub mod server;
+pub mod storage;
 
 pub use eval::{Eval, WorkingDirectory};
 pub use eval_assertion::{EvalAssertion, EvalAssertionResult, LlmJudgeContext, ToolCallCount};
 pub use eval_messages::EvalMessage;
 pub use metrics::{BinaryMetric, EvalMetric, NumericMetric};
-pub use report::{
-    AssertionReport, EvalReport, ReportData, SummaryReport, create_eval_report, parse_traces_file,
-};
 pub use server::{AppState, SseEvent};
+pub use storage::{FileSystemStore, Result as StoreResult, ResultsStore};
 
 use aether::llm::StreamingModelProvider;
 use aether::mcp::{ServerFactory, mcp};
@@ -25,6 +23,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::Instrument;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer};
+use uuid::Uuid;
+
+use crate::storage::{EvalResult, RunResult};
 
 pub struct EvalsConfig<T, U> {
     llm: T,
@@ -108,27 +112,27 @@ impl<T, U> EvalsConfig<T, U> {
 }
 
 /// Configure and run AI agent evaluations with custom MCP servers
-pub struct EvalRunner {
+pub struct EvalRunner<T: ResultsStore> {
     output_dir: Option<PathBuf>,
     factories: HashMap<String, ServerFactory>,
     agent_prompt: Option<String>,
     mcp_json_path: Option<PathBuf>,
+    results_store: T,
 }
 
-impl EvalRunner {
-    /// Create a new Crucible instance
-    pub fn new() -> Self {
+impl<T: ResultsStore + 'static> EvalRunner<T> {
+    /// Create a new EvalRunner with the given results store
+    pub fn new(results_store: T) -> Self {
         Self {
             output_dir: None,
             factories: HashMap::new(),
             agent_prompt: None,
             mcp_json_path: None,
+            results_store,
         }
     }
 
     /// Set the output directory for logs and results
-    ///
-    /// If not set, a timestamped directory will be created
     pub fn with_output_dir(mut self, output_dir: PathBuf) -> Self {
         self.output_dir = Some(output_dir);
         self
@@ -174,70 +178,50 @@ impl EvalRunner {
     ///
     /// # Returns
     /// Result containing the summary report
-    pub async fn run_evals<T, U>(
+    pub async fn run_evals<M, J>(
         self,
         evals: Vec<Eval>,
-        config: EvalsConfig<T, U>,
-    ) -> Result<SummaryReport, Box<dyn std::error::Error>>
+        config: EvalsConfig<M, J>,
+    ) -> Result<RunResult, Box<dyn std::error::Error>>
     where
-        T: StreamingModelProvider + 'static,
-        U: StreamingModelProvider + 'static,
+        M: StreamingModelProvider + 'static,
+        J: StreamingModelProvider + 'static,
     {
         if evals.is_empty() {
             return Err("No evals provided".into());
         }
 
-        let agents_prompt = self.agent_prompt;
-        let mcp_json_path = self.mcp_json_path;
+        // Generate a unique run ID for this evaluation run
+        let run_id = Uuid::new_v4();
 
-        let output_dir = self.output_dir.unwrap_or_else(|| {
-            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-            PathBuf::from(format!("crucible_output_{timestamp}"))
-        });
+        println!(
+            "\n{} {}",
+            "Run ID:".bold(),
+            run_id.to_string().bright_cyan()
+        );
 
-        std::fs::create_dir_all(&output_dir)?;
-        std::fs::create_dir_all(output_dir.join("results"))?;
+        // Extract fields from self before using helper methods
+        let agent_prompt = self.agent_prompt;
+        let results_store = Arc::new(self.results_store);
 
-        // Set up tracing to write to both stdout and traces.jsonl
-        let traces_file = output_dir.join("traces.jsonl");
-        let file_appender = tracing_appender::rolling::never(&output_dir, "traces.jsonl");
-
-        use tracing_subscriber::layer::SubscriberExt;
-        use tracing_subscriber::util::SubscriberInitExt;
-        use tracing_subscriber::{EnvFilter, Layer};
-
-        // Create an environment filter that respects RUST_LOG
-        // Default to "info" level if RUST_LOG is not set
-        let env_filter =
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-
-        // Create a JSON layer for file output (captures all levels)
-        let json_layer = tracing_subscriber::fmt::layer()
-            .json()
-            .with_writer(file_appender);
-
-        // Create a formatted layer for stdout (respects env filter)
-        let fmt_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
-
-        // Try to set as global default (will fail silently if already initialized)
-        let _result = tracing_subscriber::registry()
-            .with(json_layer)
-            .with(fmt_layer.with_filter(env_filter))
-            .try_init();
+        // Setup tracing subscriber
+        Self::setup_tracing_helper(run_id, &results_store)?;
 
         // Create app state for SSE if serving
         let app_state = if config.serve {
-            Some(server::AppState::new())
+            Some(Arc::new(server::AppState::new(
+                results_store.clone(),
+                run_id,
+            )))
         } else {
             None
         };
 
-        // Start web server in background if requested
         let server_handle = if config.serve {
-            if let Some(state) = app_state.clone() {
-                // Spawn server in background task
+            if let Some(state) = app_state.as_ref() {
+                let state_clone = state.as_ref().clone();
                 Some(tokio::spawn(async move {
-                    if let Err(e) = server::serve(state).await {
+                    if let Err(e) = server::serve(state_clone).await {
                         tracing::error!("Server error: {}", e);
                     }
                 }))
@@ -248,22 +232,14 @@ impl EvalRunner {
             None
         };
 
-        let mut mcp_builder = mcp();
-        for (name, factory) in self.factories {
-            mcp_builder = mcp_builder.register_in_memory_server(name, factory);
-        }
-
-        if let Some(mcp_json_path) = mcp_json_path {
-            mcp_builder = mcp_builder.from_json_file(mcp_json_path.to_str().unwrap())?;
-        }
-
+        // Setup MCP builder and spawn MCP servers
+        let mcp_builder = Self::setup_mcp_builder_helper(self.factories, self.mcp_json_path)?;
         let (tool_definitions, mcp_tx, _mcp_handle) = mcp_builder.spawn().await?;
 
         // Wrap providers in Arc so they can be shared across tasks
         let llm = Arc::new(config.llm);
         let judge_llm = Arc::new(config.judge_llm);
-
-        let mut summary = SummaryReport::new();
+        let mut run_result = RunResult::new(run_id, config.batch_size, config.batch_delay);
 
         // Determine batch size (default to all evals if not specified)
         let batch_size = config.batch_size.unwrap_or(evals.len());
@@ -290,41 +266,14 @@ impl EvalRunner {
             let tasks: Vec<_> = batch
                 .into_iter()
                 .map(|eval| {
-                    let agents_prompt_clone = agents_prompt.clone();
-                    let tool_definitions_clone = tool_definitions.clone();
-                    let mcp_tx_clone = mcp_tx.clone();
-                    let llm_clone = llm.clone();
-                    let judge_llm_clone = judge_llm.clone();
-                    let eval_name = eval.name.clone();
-                    let eval_name_for_span = eval_name.clone();
-                    let app_state_clone = app_state.clone();
-
-                    tokio::spawn(
-                        async move {
-                            // Broadcast eval started event
-                            if let Some(state) = &app_state_clone {
-                                state.send_sse_event(server::SseEvent::EvalStarted {
-                                    name: eval_name.clone(),
-                                });
-                            }
-
-                            let start = Instant::now();
-
-                            let result = eval
-                                .run(
-                                    llm_clone,
-                                    judge_llm_clone,
-                                    tool_definitions_clone,
-                                    mcp_tx_clone,
-                                    agents_prompt_clone,
-                                )
-                                .await;
-                            let duration = start.elapsed();
-                            (eval, result, duration, app_state_clone)
-                        }
-                        .instrument(
-                            tracing::info_span!("eval_task", eval_name = %eval_name_for_span),
-                        ),
+                    Self::spawn_eval_task_helper(
+                        eval,
+                        agent_prompt.clone(),
+                        tool_definitions.clone(),
+                        mcp_tx.clone(),
+                        llm.clone(),
+                        judge_llm.clone(),
+                        app_state.clone(),
                     )
                 })
                 .collect();
@@ -333,71 +282,19 @@ impl EvalRunner {
             let results = futures::future::join_all(tasks).await;
 
             for result in results {
-                match result {
-                    Ok((eval, Ok(eval_results), duration, state)) => {
-                        let mut report = create_eval_report(&eval, &eval_results, Some(duration));
-
-                        // Capture diffs for GitRepo working directories
-                        if let WorkingDirectory::GitRepo {
-                            path,
-                            start_commit,
-                            gold_commit,
-                            ..
-                        } = &eval.working_directory
-                        {
-                            let repo = git_repo::GitRepo::from_path(path);
-
-                            // Capture agent diff (unstaged changes)
-                            if let Ok(agent_diff) = repo.diff_unstaged() {
-                                report.diff_stats = Some(report::compute_diff_stats(&agent_diff));
-                                report.agent_diff = Some(agent_diff);
-                            }
-
-                            // Capture gold diff (human solution)
-                            if let Ok(gold_diff) = repo.diff(start_commit, gold_commit) {
-                                report.gold_diff = Some(gold_diff);
-                            }
-                        }
-
-                        let result_file = output_dir
-                            .join("results")
-                            .join(format!("{}.json", eval.name));
-                        if let Err(e) = report.write_to_file(&result_file) {
-                            tracing::warn!("Failed to write result file for {}: {}", eval.name, e);
-                        }
-
-                        // Broadcast eval completed event
-                        if let Some(state) = &state {
-                            state.send_sse_event(server::SseEvent::EvalCompleted {
-                                name: report.eval_name.clone(),
-                                report: report.clone(),
-                            });
-                        }
-
-                        summary.add_eval(report);
-                    }
-                    Ok((eval, Err(e), _duration, _state)) => {
-                        tracing::error!("Eval '{}' failed with error: {}", eval.name, e);
-                    }
-                    Err(e) => {
-                        tracing::error!("Task panicked: {}", e);
-                    }
-                }
+                Self::handle_eval_result_helper(result, &mut run_result, &results_store, run_id)
+                    .await;
             }
 
             // Update app state after each batch if serving
             if config.serve {
-                if let Some(state) = &app_state {
-                    // Parse and load traces into app state
-                    if let Ok(eval_traces) = report::parse_traces_file(&traces_file) {
-                        for (eval_name, traces) in eval_traces.iter() {
-                            state.add_traces(eval_name.clone(), traces.clone());
-                        }
-                    }
-
-                    // Broadcast summary update
-                    state.update_summary(summary.clone());
-                }
+                Self::update_app_state_after_batch_helper(
+                    &app_state,
+                    &mut run_result,
+                    &results_store,
+                    run_id,
+                )
+                .await;
             }
 
             // Add delay between batches to prevent rate limiting
@@ -407,19 +304,22 @@ impl EvalRunner {
             }
         }
 
-        let summary_file = output_dir.join("summary.json");
-        summary.write_to_file(&summary_file)?;
+        // Complete the run and write it
+        run_result.complete();
+        results_store
+            .save_run_result(run_id, &run_result)
+            .await
+            .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
 
         // Final update to app state if serving
         if config.serve {
-            if let Some(state) = &app_state {
-                if let Ok(eval_traces) = report::parse_traces_file(&traces_file) {
-                    for (eval_name, traces) in eval_traces.iter() {
-                        state.add_traces(eval_name.clone(), traces.clone());
-                    }
-                }
-                state.update_summary(summary.clone());
-            }
+            Self::update_app_state_after_batch_helper(
+                &app_state,
+                &mut run_result,
+                &results_store,
+                run_id,
+            )
+            .await;
 
             // Keep the server running (it's in a background task)
             println!(
@@ -436,6 +336,184 @@ impl EvalRunner {
             }
         }
 
-        Ok(summary)
+        Ok(run_result)
+    }
+
+    // Private helper methods
+
+    /// Set up tracing subscriber with store and fmt layers
+    fn setup_tracing_helper(
+        run_id: Uuid,
+        results_store: &Arc<T>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let env_filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+        let store_layer = results_store.create_tracing_layer(run_id);
+        let fmt_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
+
+        tracing_subscriber::registry()
+            .with(store_layer)
+            .with(fmt_layer.with_filter(env_filter))
+            .try_init()
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
+    }
+
+    /// Configure MCP builder with factories and json config
+    fn setup_mcp_builder_helper(
+        factories: HashMap<String, ServerFactory>,
+        mcp_json_path: Option<PathBuf>,
+    ) -> Result<aether::mcp::McpBuilder, Box<dyn std::error::Error>> {
+        let mut mcp_builder = mcp();
+        for (name, factory) in factories {
+            mcp_builder = mcp_builder.register_in_memory_server(name, factory);
+        }
+
+        if let Some(mcp_json_path) = mcp_json_path {
+            mcp_builder = mcp_builder.from_json_file(mcp_json_path.to_str().unwrap())?;
+        }
+
+        Ok(mcp_builder)
+    }
+
+    /// Capture git diffs (agent and reference) for GitRepo working directories
+    fn capture_git_diffs(eval: &Eval, report: &mut EvalResult) {
+        if let WorkingDirectory::GitRepo {
+            path,
+            start_commit,
+            gold_commit,
+            ..
+        } = &eval.working_directory
+        {
+            use crate::storage::{DiffStats, GitDiff};
+            let repo = git_repo::GitRepo::from_path(path);
+
+            // Capture agent diff (unstaged changes)
+            if let Ok(agent_diff_str) = repo.diff_unstaged() {
+                let stats = DiffStats::from_diff(&agent_diff_str);
+                report.agent_diff = Some(GitDiff {
+                    diff: agent_diff_str,
+                    stats,
+                });
+            }
+
+            // Capture reference diff (gold/human solution)
+            if let Ok(gold_diff_str) = repo.diff(start_commit, gold_commit) {
+                let stats = DiffStats::from_diff(&gold_diff_str);
+                report.reference_diff = Some(GitDiff {
+                    diff: gold_diff_str,
+                    stats,
+                });
+            }
+        }
+    }
+
+    /// Spawn a single eval task with tracing instrumentation
+    fn spawn_eval_task_helper<M, J>(
+        eval: Eval,
+        agents_prompt: Option<String>,
+        tool_definitions: Vec<aether::llm::ToolDefinition>,
+        mcp_tx: tokio::sync::mpsc::Sender<aether::mcp::run_mcp_task::McpCommand>,
+        llm: Arc<M>,
+        judge_llm: Arc<J>,
+        app_state: Option<Arc<server::AppState<T>>>,
+    ) -> tokio::task::JoinHandle<(
+        Eval,
+        Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>,
+        Duration,
+        Option<Arc<server::AppState<T>>>,
+    )>
+    where
+        M: StreamingModelProvider + 'static,
+        J: StreamingModelProvider + 'static,
+    {
+        let eval_name = eval.name.clone();
+        let eval_name_for_span = eval_name.clone();
+
+        tokio::spawn(
+            async move {
+                // Broadcast eval started event
+                if let Some(state) = &app_state {
+                    state.send_sse_event(server::SseEvent::EvalStarted {
+                        name: eval_name.clone(),
+                    });
+                }
+
+                let start = Instant::now();
+                let result = eval
+                    .run(llm, judge_llm, tool_definitions, mcp_tx, agents_prompt)
+                    .await;
+                let duration = start.elapsed();
+                (eval, result, duration, app_state)
+            }
+            .instrument(tracing::info_span!("eval_task", eval_name = %eval_name_for_span)),
+        )
+    }
+
+    /// Handle the result of a single eval task
+    async fn handle_eval_result_helper(
+        task_result: Result<
+            (
+                Eval,
+                Result<
+                    Vec<(EvalAssertion, EvalAssertionResult)>,
+                    Box<dyn std::error::Error + Send + Sync>,
+                >,
+                Duration,
+                Option<Arc<server::AppState<T>>>,
+            ),
+            tokio::task::JoinError,
+        >,
+        run_result: &mut RunResult,
+        results_store: &Arc<T>,
+        run_id: Uuid,
+    ) {
+        match task_result {
+            Ok((eval, Ok(eval_results), duration, state)) => {
+                let mut report = EvalResult::new(&eval, &eval_results[..], Some(duration));
+
+                // Capture diffs for GitRepo working directories
+                Self::capture_git_diffs(&eval, &mut report);
+
+                // Write eval result to store
+                if let Err(e) = results_store
+                    .save_eval_result(run_id, &eval.name, &report)
+                    .await
+                {
+                    tracing::warn!("Failed to write result file for {}: {}", eval.name, e);
+                }
+
+                // Broadcast eval completed event
+                if let Some(state) = &state {
+                    state.send_sse_event(server::SseEvent::EvalCompleted {
+                        name: report.eval_name.clone(),
+                        report: report.clone(),
+                    });
+                }
+
+                run_result.add_eval_result(report);
+            }
+            Ok((eval, Err(e), _duration, _state)) => {
+                tracing::error!("Eval '{}' failed with error: {}", eval.name, e);
+            }
+            Err(e) => {
+                tracing::error!("Task panicked: {}", e);
+            }
+        }
+    }
+
+    /// Update app state with latest run result and traces after batch completion
+    async fn update_app_state_after_batch_helper(
+        app_state: &Option<Arc<server::AppState<T>>>,
+        run_result: &mut RunResult,
+        results_store: &Arc<T>,
+        run_id: Uuid,
+    ) {
+        if let Some(state) = app_state {
+            if let Ok(eval_traces) = results_store.save_trace_events(run_id).await {
+                run_result.eval_traces = eval_traces;
+            }
+            state.update_run_result(run_result.clone());
+        }
     }
 }

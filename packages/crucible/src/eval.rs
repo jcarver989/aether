@@ -1,23 +1,21 @@
+use crate::assertions::{
+    assert_command_exit_code, assert_file_exists, assert_file_matches, assert_llm_judge,
+    assert_tool_call,
+};
+use crate::eval_messages::to_eval_messages;
+use crate::git_repo::GitRepo;
+use crate::hooks::HookInput;
+use crate::{
+    eval_assertion::{EvalAssertion, EvalAssertionResult},
+    hooks::Hook,
+};
 use aether::{
     agent::{UserMessage, agent},
     llm::{StreamingModelProvider, ToolDefinition},
     mcp::run_mcp_task::McpCommand,
 };
-use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 use tokio::sync::mpsc::Sender;
-
-use crate::eval_assertion::{EvalAssertion, EvalAssertionResult};
-use crate::eval_messages::to_eval_messages;
-use crate::git_repo::GitRepo;
-use crate::{
-    EvalMessage,
-    assertions::{
-        assert_command_exit_code, assert_file_exists, assert_file_matches, assert_llm_judge,
-        assert_tool_call,
-    },
-};
 
 pub struct Eval {
     pub name: String,
@@ -27,29 +25,6 @@ pub struct Eval {
 
     setup_hooks: Vec<Box<dyn Hook>>,
     before_assertions_hooks: Vec<Box<dyn Hook>>,
-}
-
-pub struct HookInput {
-    pub working_directory: PathBuf,
-    pub messages: Vec<EvalMessage>,
-}
-
-pub type HookResult = Result<(), Box<dyn std::error::Error>>;
-
-/// Trait for eval lifecycle hooks (useful for running setup functions)
-pub trait Hook: Send + Sync {
-    fn run(&self, input: HookInput) -> Pin<Box<dyn Future<Output = HookResult> + Send>>;
-}
-
-// Implement for closures that return futures
-impl<F, Fut> Hook for F
-where
-    F: Fn(HookInput) -> Fut + Send + Sync,
-    Fut: Future<Output = HookResult> + Send + 'static,
-{
-    fn run(&self, input: HookInput) -> Pin<Box<dyn Future<Output = HookResult> + Send>> {
-        Box::pin(self(input))
-    }
 }
 
 #[derive(Debug, Clone)]
