@@ -15,10 +15,19 @@ impl GitRepo {
     }
 
     /// Clone a repository to the specified destination
+    ///
+    /// Uses a blobless partial clone (--filter=blob:none) with --no-checkout for efficiency.
+    /// This downloads commit history and tree structures but defers downloading file blobs
+    /// until they're needed (e.g., during checkout or diff operations).
+    ///
+    /// This significantly reduces clone time and disk space usage, especially for large repos,
+    /// while still allowing full git operations. Blobs are automatically fetched on-demand.
     pub fn clone(url: &str, dest: &Path) -> Result<Self, GitRepoError> {
-        tracing::info!("Cloning repository from {}", url);
+        tracing::info!("Cloning repository from {} (blobless clone)", url);
         let output = Command::new("git")
             .arg("clone")
+            .arg("--no-checkout")
+            .arg("--filter=blob:none")
             .arg(url)
             .arg(dest)
             .output()
@@ -130,8 +139,15 @@ impl GitRepo {
 pub enum GitRepoError {
     CommandFailed(String),
     CloneFailed(String),
-    CheckoutFailed { reference: String, reason: String },
-    DiffFailed { from: String, to: String, reason: String },
+    CheckoutFailed {
+        reference: String,
+        reason: String,
+    },
+    DiffFailed {
+        from: String,
+        to: String,
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for GitRepoError {
@@ -330,15 +346,126 @@ mod tests {
         let git_repo = GitRepo::from_path(repo_path);
 
         // Test: diff between two specific commits
-        let diff = git_repo.diff_range(&first_commit, Some(&second_commit)).unwrap();
+        let diff = git_repo
+            .diff_range(&first_commit, Some(&second_commit))
+            .unwrap();
         assert!(diff.contains("modified content") || diff.contains("+modified content"));
 
         // Test: diff unstaged changes (from HEAD to working directory)
         let unstaged_diff = git_repo.diff_range("HEAD", None).unwrap();
-        assert!(unstaged_diff.contains("unstaged content") || unstaged_diff.contains("+unstaged content"));
+        assert!(
+            unstaged_diff.contains("unstaged content")
+                || unstaged_diff.contains("+unstaged content")
+        );
 
         // Test: diff from specific commit to working directory
         let from_commit_diff = git_repo.diff_range(&first_commit, None).unwrap();
-        assert!(from_commit_diff.contains("unstaged content") || from_commit_diff.contains("+unstaged content"));
+        assert!(
+            from_commit_diff.contains("unstaged content")
+                || from_commit_diff.contains("+unstaged content")
+        );
+    }
+
+    #[test]
+    fn test_blobless_clone_and_checkout() {
+        // Create a test repository to clone from
+        let source_dir = tempfile::tempdir().unwrap();
+        let source_path = source_dir.path();
+
+        // Initialize source repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(source_path)
+            .output()
+            .unwrap();
+
+        // Configure git user
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(source_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(source_path)
+            .output()
+            .unwrap();
+
+        // Create a file and commit
+        fs::write(source_path.join("test.txt"), "initial content\n").unwrap();
+        Command::new("git")
+            .args(["add", "test.txt"])
+            .current_dir(source_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(source_path)
+            .output()
+            .unwrap();
+
+        let first_commit = String::from_utf8(
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(source_path)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .to_string();
+
+        // Create another commit
+        fs::write(source_path.join("test.txt"), "modified content\n").unwrap();
+        Command::new("git")
+            .args(["add", "test.txt"])
+            .current_dir(source_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Second commit"])
+            .current_dir(source_path)
+            .output()
+            .unwrap();
+
+        let second_commit = String::from_utf8(
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(source_path)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .to_string();
+
+        // Clone the repo (blobless clone with --no-checkout)
+        let clone_dir = tempfile::tempdir().unwrap();
+        let repo = GitRepo::clone(source_path.to_str().unwrap(), clone_dir.path()).unwrap();
+
+        // Verify working directory is empty (no files checked out)
+        let entries: Vec<_> = fs::read_dir(clone_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != ".git")
+            .collect();
+        assert_eq!(
+            entries.len(),
+            0,
+            "Working directory should be empty after blobless clone"
+        );
+
+        // Checkout the first commit
+        repo.checkout(&first_commit).unwrap();
+
+        // Verify file is now present with correct content
+        let content = fs::read_to_string(clone_dir.path().join("test.txt")).unwrap();
+        assert_eq!(content, "initial content\n");
+
+        // Verify we can get diffs between commits (tests lazy blob fetching)
+        let diff = repo.diff(&first_commit, &second_commit).unwrap();
+        assert!(diff.contains("modified content") || diff.contains("+modified content"));
     }
 }
