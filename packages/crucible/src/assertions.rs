@@ -1,8 +1,9 @@
+use crate::LlmJudgeContext;
 use crate::eval::WorkingDirectory;
 use crate::eval_assertion::{EvalAssertionResult, ToolCallCount};
 use crate::eval_messages::EvalMessage;
 use crate::metrics::EvalMetric;
-use aether::llm::{ChatMessage, Context, StreamingModelProvider};
+use aether::llm::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
 use aether::types::IsoString;
 use futures::StreamExt;
 use std::path::Path;
@@ -102,46 +103,33 @@ pub async fn assert_command_exit_code(
     }
 }
 
-/// Check an assertion using the LLM judge
+/// Check an assertion using a LLM as a judge
 pub async fn assert_llm_judge<U: StreamingModelProvider, F>(
     working_dir: &WorkingDirectory,
     original_prompt: &str,
     messages: &[EvalMessage],
-    prompt_builder: F,
+    build_prompt: F,
     judge_llm: &U,
 ) -> EvalAssertionResult
 where
-    F: Fn(&crate::LlmJudgeContext) -> String,
+    F: Fn(&LlmJudgeContext) -> String,
 {
     tracing::info!("Running LLM judge for assertion");
-
-    // Build context for the prompt builder
-    let context = crate::LlmJudgeContext {
-        working_dir,
-        original_prompt,
-        messages,
+    let judge_prompt = ChatMessage::User {
+        content: build_prompt(&LlmJudgeContext {
+            working_dir,
+            original_prompt,
+            messages,
+        }),
+        timestamp: IsoString::now(),
     };
 
-    // Call the prompt builder to get the judge prompt
-    let judge_prompt_text = prompt_builder(&context);
-
-    let llm_context = Context::new(
-        vec![ChatMessage::User {
-            content: judge_prompt_text,
-            timestamp: IsoString::now(),
-        }],
-        vec![],
-    );
-
-    let mut response_stream = judge_llm.stream_response(&llm_context);
+    let mut response_stream = judge_llm.stream_response(&Context::new(vec![judge_prompt], vec![]));
     let mut judge_response = String::new();
-
     while let Some(result) = response_stream.next().await {
         match result {
-            Ok(llm_response) => {
-                if let aether::llm::LlmResponse::Text { chunk } = llm_response {
-                    judge_response.push_str(&chunk);
-                }
+            Ok(LlmResponse::Text { chunk }) => {
+                judge_response.push_str(&chunk);
             }
             Err(e) => {
                 tracing::error!("✗ LLM judge error: {}", e);
@@ -149,6 +137,7 @@ where
                     message: format!("Judge LLM error: {e}"),
                 };
             }
+            _ => {}
         }
     }
 
