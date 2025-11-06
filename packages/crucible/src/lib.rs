@@ -219,7 +219,7 @@ impl EvalRunner {
             .try_init();
 
         // Start web server in background if requested
-        let _server_handle = if config.serve {
+        let server_handle = if config.serve {
             // Create initial empty report data
             let empty_report = report::ReportData {
                 summary: SummaryReport::new(),
@@ -368,8 +368,12 @@ impl EvalRunner {
                     .bold()
                     .green()
             );
-            // Wait indefinitely - user must Ctrl+C to exit
+
+            // Waits indefinitely until user hits Ctrl+C to exit
             tokio::signal::ctrl_c().await?;
+            if let Some(handle) = server_handle {
+                handle.abort();
+            }
         }
 
         Ok(summary)
