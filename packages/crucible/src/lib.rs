@@ -203,19 +203,26 @@ impl EvalRunner {
 
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::util::SubscriberInitExt;
+        use tracing_subscriber::{EnvFilter, Layer};
 
-        // Create a JSON layer for file output
+        // Create an environment filter that respects RUST_LOG
+        // Default to "info" level if RUST_LOG is not set
+        let env_filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("info"));
+
+        // Create a JSON layer for file output (captures all levels)
         let json_layer = tracing_subscriber::fmt::layer()
             .json()
             .with_writer(file_appender);
 
-        // Create a formatted layer for stdout
-        let fmt_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
+        // Create a formatted layer for stdout (respects env filter)
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stdout);
 
         // Try to set as global default (will fail silently if already initialized)
         let _result = tracing_subscriber::registry()
             .with(json_layer)
-            .with(fmt_layer)
+            .with(fmt_layer.with_filter(env_filter))
             .try_init();
 
         // Start web server in background if requested

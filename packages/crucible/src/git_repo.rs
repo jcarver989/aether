@@ -22,8 +22,9 @@ impl GitRepo {
     ///
     /// This significantly reduces clone time and disk space usage, especially for large repos,
     /// while still allowing full git operations. Blobs are automatically fetched on-demand.
+    #[tracing::instrument(skip(dest))]
     pub fn clone(url: &str, dest: &Path) -> Result<Self, GitRepoError> {
-        tracing::info!("Cloning repository from {} (blobless clone)", url);
+        tracing::debug!("Cloning repository from {} (blobless clone)", url);
         let output = Command::new("git")
             .arg("clone")
             .arg("--no-checkout")
@@ -46,8 +47,9 @@ impl GitRepo {
     }
 
     /// Checkout a specific commit, branch, or tag
+    #[tracing::instrument(skip(self))]
     pub fn checkout(&self, reference: &str) -> Result<(), GitRepoError> {
-        tracing::info!("Checking out ref: {}", reference);
+        tracing::debug!("Checking out ref: {}", reference);
         let output = Command::new("git")
             .arg("-C")
             .arg(&self.path)
@@ -79,6 +81,7 @@ impl GitRepo {
     /// * `diff_range("abc123", Some("def456"))` - diff between two commits
     /// * `diff_range("abc123", None)` - changes from commit to working directory
     /// * `diff_range("HEAD", None)` - unstaged changes (equivalent to `git diff`)
+    #[tracing::instrument(skip(self))]
     pub fn diff_range(
         &self,
         from_commit: &str,
@@ -89,11 +92,11 @@ impl GitRepo {
 
         match to_commit {
             Some(to) => {
-                tracing::info!("Getting diff from {} to {}", from_commit, to);
+                tracing::debug!("Getting diff from {} to {}", from_commit, to);
                 cmd.arg(format!("{}..{}", from_commit, to));
             }
             None => {
-                tracing::info!("Getting diff from {} to working directory", from_commit);
+                tracing::debug!("Getting diff from {} to working directory", from_commit);
                 cmd.arg(from_commit);
             }
         }

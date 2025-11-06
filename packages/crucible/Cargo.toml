@@ -21,7 +21,7 @@ schemars = { workspace = true }
 
 # Logging and tracing
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
+tracing-subscriber = { workspace = true, features = ["fmt", "json", "env-filter"] }
 tracing-appender = { workspace = true }
 
 # Error handling

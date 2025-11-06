@@ -28,7 +28,7 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
                 if *is_complete && !accumulated_text.is_empty() {
                     // Log each line separately to make grep work better
                     for line in accumulated_text.lines() {
-                        tracing::info!("Agent response: {}", line);
+                        tracing::debug!("Agent response: {}", line);
                     }
                     eval_messages.push(EvalMessage::AgentText(accumulated_text.clone()));
                     accumulated_text.clear();
@@ -51,7 +51,7 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
 
                 // Check if this is a complete tool call
                 if !entry.name.is_empty() && entry.arguments.ends_with('}') {
-                    tracing::info!("Tool call: {} with args: {}", entry.name, entry.arguments);
+                    tracing::debug!("Tool call: {} with args: {}", entry.name, entry.arguments);
                     eval_messages.push(EvalMessage::ToolCall {
                         name: entry.name.clone(),
                         arguments: entry.arguments.clone(),
@@ -60,14 +60,14 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
                 }
             }
             AgentMessage::ToolResult { result, .. } => {
-                tracing::info!("Tool result for {}: {}", result.name, result.result);
+                tracing::debug!("Tool result for {}: {}", result.name, result.result);
                 eval_messages.push(EvalMessage::ToolResult {
                     name: result.name.clone(),
                     result: result.result.clone(),
                 });
             }
             AgentMessage::ToolError { error, .. } => {
-                tracing::info!("Tool error: {:?}", error);
+                tracing::debug!("Tool error: {:?}", error);
                 eval_messages.push(EvalMessage::ToolError(format!("{error:?}")));
             }
             AgentMessage::ToolProgress {
@@ -81,7 +81,7 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
                     .map(|m| format!("{m} "))
                     .unwrap_or_default();
                 let total_str = total.map(|t| format!("/{t}")).unwrap_or_default();
-                tracing::info!(
+                tracing::debug!(
                     "Tool progress for {}: {}{}{}",
                     request.name,
                     msg,
@@ -91,13 +91,13 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
                 // Progress events don't need to be captured in eval messages
             }
             AgentMessage::Error { message: msg } => {
-                tracing::info!("Agent error: {}", msg);
+                tracing::debug!("Agent error: {}", msg);
                 eval_messages.push(EvalMessage::Error(msg.clone()));
                 // Agent errors are terminal - agent won't send Done, so break out
                 break;
             }
             AgentMessage::Cancelled { message: msg } => {
-                tracing::info!("Agent cancelled: {}", msg);
+                tracing::debug!("Agent cancelled: {}", msg);
                 eval_messages.push(EvalMessage::Error(format!("Cancelled: {msg}")));
                 // Cancellation is terminal - break out
                 break;
@@ -106,12 +106,12 @@ pub async fn to_eval_messages(mut rx: Receiver<AgentMessage>) -> Vec<EvalMessage
                 // Log any remaining accumulated text before finishing
                 if !accumulated_text.is_empty() {
                     for line in accumulated_text.lines() {
-                        tracing::info!("Agent response: {}", line);
+                        tracing::debug!("Agent response: {}", line);
                     }
                     eval_messages.push(EvalMessage::AgentText(accumulated_text.clone()));
                     accumulated_text.clear();
                 }
-                tracing::info!("Agent done");
+                tracing::debug!("Agent done");
                 eval_messages.push(EvalMessage::Done);
                 break;
             }
