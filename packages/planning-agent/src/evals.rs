@@ -43,16 +43,19 @@ fn ten_point_scorer() -> Result<EvalAssertion, AgentError> {
 
         let args = HashMap::from([
             (
-                "1".to_string(),
+                "working_directory".to_string(),
                 ctx.working_dir.path().display().to_string(),
             ),
-            ("2".to_string(), ctx.original_prompt.to_string()),
+            ("original_task".to_string(), ctx.original_prompt.to_string()),
             (
-                "3".to_string(),
+                "gold_diff".to_string(),
                 ctx.git_diff(gold_commit).unwrap_or_default(),
             ),
-            ("4".to_string(), ctx.git_diff(None).unwrap_or_default()),
-            ("5".to_string(), EvalMetric::json_schema()),
+            (
+                "agent_diff".to_string(),
+                ctx.git_diff(None).unwrap_or_default(),
+            ),
+            ("json_schema".to_string(), EvalMetric::json_schema()),
         ]);
 
         Prompt::file_with_args("./src/ten_point_scorer.md", false, args)

@@ -20,23 +20,23 @@ In your reasoning, include specific code snippets comparing the coding agent's o
 
 ## Eval Context
 
-Working Directory: $1
+Working Directory: $working_directory
 
 Original Task:
-$2
+$original_task
 
 ## Human-Generated Code (Gold Standard)
 
 Git diff between start and gold commits:
 ```diff
-$3
+$gold_diff
 ```
 
 ## Coding Agent's Output
 
 Git diff between start commit and unstaged working directory changes:
 ```diff
-$4
+$agent_diff
 ```
 
 ## Output Format
@@ -44,5 +44,5 @@ $4
 You must respond with valid JSON matching this schema:
 
 ```json
-$5
+$json_schema
 ```
