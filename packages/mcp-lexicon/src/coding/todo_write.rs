@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum TodoState {
+pub enum TodoStatus {
     Pending,
     InProgress,
     Completed,
@@ -19,8 +19,8 @@ pub enum TodoState {
 pub struct TodoItem {
     /// The task description
     pub content: String,
-    /// The task state
-    pub state: TodoState,
+    /// The task status
+    pub status: TodoStatus,
     /// Active form of the task description (e.g., "Fixing bug" while working on "Fix bug")
     pub active_form: String,
 }
@@ -57,15 +57,15 @@ pub fn process_todo_write(input: TodoWriteInput) -> TodoWriteOutput {
     let total = todos.len();
     let pending = todos
         .iter()
-        .filter(|t| matches!(t.state, TodoState::Pending))
+        .filter(|t| matches!(t.status, TodoStatus::Pending))
         .count();
     let in_progress = todos
         .iter()
-        .filter(|t| matches!(t.state, TodoState::InProgress))
+        .filter(|t| matches!(t.status, TodoStatus::InProgress))
         .count();
     let completed = todos
         .iter()
-        .filter(|t| matches!(t.state, TodoState::Completed))
+        .filter(|t| matches!(t.status, TodoStatus::Completed))
         .count();
 
     TodoWriteOutput {
@@ -100,22 +100,22 @@ mod tests {
             todos: vec![
                 TodoItem {
                     content: "Task 1".to_string(),
-                    state: TodoState::Pending,
+                    status: TodoStatus::Pending,
                     active_form: "Working on task 1".to_string(),
                 },
                 TodoItem {
                     content: "Task 2".to_string(),
-                    state: TodoState::InProgress,
+                    status: TodoStatus::InProgress,
                     active_form: "Working on task 2".to_string(),
                 },
                 TodoItem {
                     content: "Task 3".to_string(),
-                    state: TodoState::Completed,
+                    status: TodoStatus::Completed,
                     active_form: "Working on task 3".to_string(),
                 },
                 TodoItem {
                     content: "Task 4".to_string(),
-                    state: TodoState::Pending,
+                    status: TodoStatus::Pending,
                     active_form: "Working on task 4".to_string(),
                 },
             ],
@@ -136,12 +136,12 @@ mod tests {
             todos: vec![
                 TodoItem {
                     content: "Task 1".to_string(),
-                    state: TodoState::Completed,
+                    status: TodoStatus::Completed,
                     active_form: "Working on task 1".to_string(),
                 },
                 TodoItem {
                     content: "Task 2".to_string(),
-                    state: TodoState::Completed,
+                    status: TodoStatus::Completed,
                     active_form: "Working on task 2".to_string(),
                 },
             ],
