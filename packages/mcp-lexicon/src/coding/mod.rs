@@ -32,7 +32,7 @@ pub use find::{FindInput, FindOutput, find_files_by_name};
 pub use grep::{GrepInput, GrepOutput, perform_grep};
 pub use list_files::{ListFilesArgs, ListFilesResult, list_files};
 pub use read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
-pub use todo_write::{TodoItem, TodoState, TodoWriteInput, TodoWriteOutput, process_todo_write};
+pub use todo_write::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, process_todo_write};
 pub use tools_trait::CodingTools;
 pub use write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 

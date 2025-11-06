@@ -12,7 +12,7 @@
 ///
 /// Then open http://localhost:3000 in your browser to view the interactive report.
 /// Press Ctrl+C to stop the server.
-use aether::llm::parser::ModelProviderParser;
+use aether::{agent::Prompt, llm::parser::ModelProviderParser};
 use clap::Parser;
 use crucible::{EvalRunner, EvalsConfig};
 use mcp_lexicon::{CodingMcp, ServiceExt};
@@ -108,6 +108,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let summary = EvalRunner::new()
         .with_output_dir(cli.output_dir.into())
         .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
+        .with_mcp_json("mcp.json")
+        .with_agent_prompt(Prompt::file("./tests/AGENTS.md", false).build()?)
         .run_evals(evals, config)
         .await?;
 
