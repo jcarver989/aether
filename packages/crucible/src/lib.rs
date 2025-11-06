@@ -318,7 +318,29 @@ impl EvalRunner {
             for result in results {
                 match result {
                     Ok((eval, Ok(eval_results), duration)) => {
-                        let report = create_eval_report(&eval, &eval_results, Some(duration));
+                        let mut report = create_eval_report(&eval, &eval_results, Some(duration));
+
+                        // Capture diffs for GitRepo working directories
+                        if let WorkingDirectory::GitRepo {
+                            path,
+                            start_commit,
+                            gold_commit,
+                            ..
+                        } = &eval.working_directory
+                        {
+                            let repo = git_repo::GitRepo::from_path(path);
+
+                            // Capture agent diff (unstaged changes)
+                            if let Ok(agent_diff) = repo.diff_unstaged() {
+                                report.diff_stats = Some(report::compute_diff_stats(&agent_diff));
+                                report.agent_diff = Some(agent_diff);
+                            }
+
+                            // Capture gold diff (human solution)
+                            if let Ok(gold_diff) = repo.diff(start_commit, gold_commit) {
+                                report.gold_diff = Some(gold_diff);
+                            }
+                        }
 
                         let result_file = output_dir
                             .join("results")

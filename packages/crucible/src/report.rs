@@ -10,12 +10,25 @@ use std::path::Path;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffStats {
+    pub files_changed: usize,
+    pub lines_added: usize,
+    pub lines_removed: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvalReport {
     pub eval_name: String,
     pub passed: bool,
     #[serde(skip)]
     pub duration: Option<Duration>,
     pub assertions: Vec<AssertionReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_diff: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gold_diff: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff_stats: Option<DiffStats>,
 }
 
 impl EvalReport {
@@ -125,6 +138,29 @@ impl Default for SummaryReport {
     }
 }
 
+/// Compute basic diff statistics from a git diff string
+pub fn compute_diff_stats(diff: &str) -> DiffStats {
+    let mut lines_added = 0;
+    let mut lines_removed = 0;
+    let mut files_changed = 0;
+
+    for line in diff.lines() {
+        if line.starts_with("diff --git") {
+            files_changed += 1;
+        } else if line.starts_with('+') && !line.starts_with("+++") {
+            lines_added += 1;
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            lines_removed += 1;
+        }
+    }
+
+    DiffStats {
+        files_changed,
+        lines_added,
+        lines_removed,
+    }
+}
+
 pub fn create_eval_report(
     eval: &Eval,
     results: &[(EvalAssertion, EvalAssertionResult)],
@@ -152,6 +188,9 @@ pub fn create_eval_report(
         passed,
         duration,
         assertions,
+        agent_diff: None,
+        gold_diff: None,
+        diff_stats: None,
     }
 }
 
@@ -443,6 +482,9 @@ mod tests {
                 passed: true,
                 message: "File exists".to_string(),
             }],
+            agent_diff: None,
+            gold_diff: None,
+            diff_stats: None,
         };
         summary.add_eval(eval_report);
 
@@ -551,5 +593,110 @@ mod tests {
                 .to_string()
                 .contains("Report data not found")
         );
+    }
+
+    #[test]
+    fn test_compute_diff_stats() {
+        let diff = r#"diff --git a/src/main.rs b/src/main.rs
+index 1234567..abcdefg 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,5 +1,7 @@
+ fn main() {
+-    println!("Hello");
++    println!("Hello, world!");
++    println!("New line");
+ }
++
++// New comment
+diff --git a/src/lib.rs b/src/lib.rs
+index 9876543..fedcba9 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,2 +1,2 @@
+-pub fn old_func() {}
++pub fn new_func() {}
+"#;
+
+        let stats = compute_diff_stats(diff);
+
+        assert_eq!(stats.files_changed, 2, "Should detect 2 files changed");
+        // Added lines: +    println!("Hello, world!"); +    println!("New line"); + (empty line) +// New comment +pub fn new_func() {} = 5 total
+        assert_eq!(stats.lines_added, 5, "Should count 5 added lines");
+        assert_eq!(stats.lines_removed, 2, "Should count 2 removed lines");
+    }
+
+    #[test]
+    fn test_compute_diff_stats_empty() {
+        let diff = "";
+        let stats = compute_diff_stats(diff);
+
+        assert_eq!(stats.files_changed, 0);
+        assert_eq!(stats.lines_added, 0);
+        assert_eq!(stats.lines_removed, 0);
+    }
+
+    #[test]
+    fn test_eval_report_with_diffs_serialization() {
+        let report = EvalReport {
+            eval_name: "test_eval".to_string(),
+            passed: true,
+            duration: None,
+            assertions: vec![],
+            agent_diff: Some("diff --git a/file.txt b/file.txt\n+added line".to_string()),
+            gold_diff: Some("diff --git a/file.txt b/file.txt\n+gold line".to_string()),
+            diff_stats: Some(DiffStats {
+                files_changed: 1,
+                lines_added: 5,
+                lines_removed: 2,
+            }),
+        };
+
+        // Test JSON serialization
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(json.contains("agent_diff"));
+        assert!(json.contains("gold_diff"));
+        assert!(json.contains("diff_stats"));
+        assert!(json.contains("files_changed"));
+        assert!(json.contains("lines_added"));
+        assert!(json.contains("lines_removed"));
+
+        // Test deserialization
+        let deserialized: EvalReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.eval_name, "test_eval");
+        assert!(deserialized.agent_diff.is_some());
+        assert!(deserialized.gold_diff.is_some());
+        assert!(deserialized.diff_stats.is_some());
+
+        let stats = deserialized.diff_stats.unwrap();
+        assert_eq!(stats.files_changed, 1);
+        assert_eq!(stats.lines_added, 5);
+        assert_eq!(stats.lines_removed, 2);
+    }
+
+    #[test]
+    fn test_eval_report_without_diffs_serialization() {
+        let report = EvalReport {
+            eval_name: "test_eval".to_string(),
+            passed: true,
+            duration: None,
+            assertions: vec![],
+            agent_diff: None,
+            gold_diff: None,
+            diff_stats: None,
+        };
+
+        // Test JSON serialization - should not include null fields due to skip_serializing_if
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(!json.contains("agent_diff"));
+        assert!(!json.contains("gold_diff"));
+        assert!(!json.contains("diff_stats"));
+
+        // Test deserialization
+        let deserialized: EvalReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.eval_name, "test_eval");
+        assert!(deserialized.agent_diff.is_none());
+        assert!(deserialized.gold_diff.is_none());
+        assert!(deserialized.diff_stats.is_none());
     }
 }

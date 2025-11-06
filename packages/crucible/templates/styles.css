@@ -468,6 +468,160 @@ body {
     scrollbar-color: var(--border-color) var(--bg-tertiary);
 }
 
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 1.5rem;
+}
+
+.tab {
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: color 0.15s ease, border-color 0.15s ease;
+    margin-bottom: -2px;
+}
+
+.tab:hover {
+    color: var(--text-primary);
+}
+
+.tab.active {
+    color: var(--accent-lavender);
+    border-bottom-color: var(--accent-lavender);
+}
+
+/* Code Changes Section */
+.code-changes-section {
+    background: var(--bg-primary);
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
+}
+
+/* Diff Stats */
+.diff-stats {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.diff-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.diff-stat-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.diff-stat-value {
+    font-size: 1.125rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+}
+
+/* Diff Viewer (Side-by-Side) */
+.diff-viewer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    height: 600px;
+}
+
+.diff-pane {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+}
+
+.diff-pane-header {
+    padding: 0.75rem 1rem;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.diff-pane-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+.diff-content {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+/* Diff Line Styles */
+.diff-line-header {
+    padding: 0.25rem 0.75rem;
+    background: var(--bg-elevated);
+    color: var(--accent-lavender);
+    font-weight: 600;
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.diff-line-file {
+    padding: 0.25rem 0.75rem;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.diff-line-hunk {
+    padding: 0.25rem 0.75rem;
+    background: var(--info-bg);
+    color: var(--info);
+    font-weight: 500;
+}
+
+.diff-line-add {
+    padding: 0.25rem 0.75rem;
+    background: var(--success-bg);
+    color: var(--success);
+    border-left: 3px solid var(--success);
+}
+
+.diff-line-remove {
+    padding: 0.25rem 0.75rem;
+    background: var(--failure-bg);
+    color: var(--failure);
+    border-left: 3px solid var(--failure);
+}
+
+.diff-line-context {
+    padding: 0.25rem 0.75rem;
+    color: var(--text-secondary);
+}
+
+.no-diff {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 /* Utility Classes */
 .hidden {
     display: none !important;

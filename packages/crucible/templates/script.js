@@ -4,6 +4,7 @@ let currentEval = null;
 let expandedTraces = new Set();
 let allExpanded = false;
 let searchTerm = '';
+let currentTab = 'assertions'; // 'assertions', 'traces', 'code_changes'
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -87,6 +88,7 @@ function selectEval(evalName) {
     currentEval = evalName;
     expandedTraces.clear();
     allExpanded = false;
+    currentTab = 'assertions'; // Reset to default tab
 
     // Update active state in sidebar
     document.querySelectorAll('.eval-item').forEach(item => {
@@ -100,6 +102,12 @@ function selectEval(evalName) {
     renderEvalDetails();
 }
 
+// Switch Tab
+function switchTab(tabName) {
+    currentTab = tabName;
+    renderEvalDetails();
+}
+
 // Render Eval Details
 function renderEvalDetails() {
     const eval = reportData.summary.evals.find(e => e.eval_name === currentEval);
@@ -109,42 +117,79 @@ function renderEvalDetails() {
         ? '<span class="status-badge success">✓ Passed</span>'
         : '<span class="status-badge failure">✗ Failed</span>';
 
-    const assertionsHtml = eval.assertions.map(assertion => {
-        const status = assertion.passed ? 'success' : 'failure';
-        return `
-            <div class="assertion ${status}">
-                <div class="assertion-type">${escapeHtml(assertion.assertion_type)}</div>
-                <div class="assertion-message">${escapeHtml(assertion.message)}</div>
+    // Check if code changes are available
+    const hasCodeChanges = eval.agent_diff || eval.gold_diff;
+
+    // Build tabs
+    const tabsHtml = `
+        <div class="tabs">
+            <button class="tab ${currentTab === 'assertions' ? 'active' : ''}" onclick="switchTab('assertions')">
+                Assertions
+            </button>
+            <button class="tab ${currentTab === 'traces' ? 'active' : ''}" onclick="switchTab('traces')">
+                Traces
+            </button>
+            ${hasCodeChanges ? `
+            <button class="tab ${currentTab === 'code_changes' ? 'active' : ''}" onclick="switchTab('code_changes')">
+                Code Changes
+            </button>
+            ` : ''}
+        </div>
+    `;
+
+    let contentHtml = '';
+
+    if (currentTab === 'assertions') {
+        const assertionsHtml = eval.assertions.map(assertion => {
+            const status = assertion.passed ? 'success' : 'failure';
+            return `
+                <div class="assertion ${status}">
+                    <div class="assertion-type">${escapeHtml(assertion.assertion_type)}</div>
+                    <div class="assertion-message">${escapeHtml(assertion.message)}</div>
+                </div>
+            `;
+        }).join('');
+
+        contentHtml = `
+            <div class="assertions-section">
+                <h3 class="section-title">Assertions (${eval.assertions.filter(a => a.passed).length}/${eval.assertions.length})</h3>
+                ${assertionsHtml}
             </div>
         `;
-    }).join('');
+    } else if (currentTab === 'traces') {
+        contentHtml = `
+            <div class="traces-section">
+                <div class="traces-header">
+                    <h3 class="section-title">Traces</h3>
+                    <button class="expand-all-btn" onclick="toggleExpandAll()">
+                        ${allExpanded ? 'Collapse All' : 'Expand All'}
+                    </button>
+                </div>
+                <div class="timeline" id="timeline">
+                    <!-- Populated by renderTraces() -->
+                </div>
+            </div>
+        `;
+    } else if (currentTab === 'code_changes' && hasCodeChanges) {
+        contentHtml = renderCodeChanges(eval);
+    }
 
     const detailsHtml = `
         <div class="eval-header">
             <h2 class="eval-title">${escapeHtml(currentEval)}</h2>
             <div class="eval-subtitle">${statusBadge}</div>
         </div>
-
-        <div class="assertions-section">
-            <h3 class="section-title">Assertions (${eval.assertions.filter(a => a.passed).length}/${eval.assertions.length})</h3>
-            ${assertionsHtml}
-        </div>
-
-        <div class="traces-section">
-            <div class="traces-header">
-                <h3 class="section-title">Traces</h3>
-                <button class="expand-all-btn" onclick="toggleExpandAll()">
-                    ${allExpanded ? 'Collapse All' : 'Expand All'}
-                </button>
-            </div>
-            <div class="timeline" id="timeline">
-                <!-- Populated by renderTraces() -->
-            </div>
-        </div>
+        ${tabsHtml}
+        ${contentHtml}
     `;
 
     document.getElementById('eval-details').innerHTML = detailsHtml;
-    renderTraces();
+
+    if (currentTab === 'traces') {
+        renderTraces();
+    } else if (currentTab === 'code_changes' && hasCodeChanges) {
+        setupDiffScrollSync();
+    }
 }
 
 // Render Traces
@@ -256,4 +301,95 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Render Code Changes (Side-by-Side Diff Viewer)
+function renderCodeChanges(eval) {
+    const diffStats = eval.diff_stats || { files_changed: 0, lines_added: 0, lines_removed: 0 };
+
+    const statsHtml = `
+        <div class="diff-stats">
+            <div class="diff-stat">
+                <span class="diff-stat-label">Files Changed:</span>
+                <span class="diff-stat-value">${diffStats.files_changed}</span>
+            </div>
+            <div class="diff-stat">
+                <span class="diff-stat-label">Lines Added:</span>
+                <span class="diff-stat-value success">+${diffStats.lines_added}</span>
+            </div>
+            <div class="diff-stat">
+                <span class="diff-stat-label">Lines Removed:</span>
+                <span class="diff-stat-value failure">-${diffStats.lines_removed}</span>
+            </div>
+        </div>
+    `;
+
+    const agentDiffHtml = eval.agent_diff ? formatDiff(eval.agent_diff) : '<p class="no-diff">No agent changes</p>';
+    const goldDiffHtml = eval.gold_diff ? formatDiff(eval.gold_diff) : '<p class="no-diff">No gold diff available</p>';
+
+    return `
+        <div class="code-changes-section">
+            <h3 class="section-title">Code Changes Comparison</h3>
+            ${statsHtml}
+            <div class="diff-viewer">
+                <div class="diff-pane" id="agent-diff-pane">
+                    <div class="diff-pane-header">Agent Changes</div>
+                    <div class="diff-pane-content" id="agent-diff-content">
+                        ${agentDiffHtml}
+                    </div>
+                </div>
+                <div class="diff-pane" id="gold-diff-pane">
+                    <div class="diff-pane-header">Human Solution (Gold)</div>
+                    <div class="diff-pane-content" id="gold-diff-content">
+                        ${goldDiffHtml}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Format Diff with Syntax Highlighting
+function formatDiff(diffText) {
+    const lines = diffText.split('\n');
+    const formattedLines = lines.map(line => {
+        let className = 'diff-line-context';
+        if (line.startsWith('+++') || line.startsWith('---')) {
+            className = 'diff-line-file';
+        } else if (line.startsWith('diff --git')) {
+            className = 'diff-line-header';
+        } else if (line.startsWith('+')) {
+            className = 'diff-line-add';
+        } else if (line.startsWith('-')) {
+            className = 'diff-line-remove';
+        } else if (line.startsWith('@@')) {
+            className = 'diff-line-hunk';
+        }
+        return `<div class="${className}">${escapeHtml(line) || ' '}</div>`;
+    }).join('');
+
+    return `<div class="diff-content">${formattedLines}</div>`;
+}
+
+// Setup Synchronized Scrolling for Diff Panes
+function setupDiffScrollSync() {
+    const agentPane = document.getElementById('agent-diff-content');
+    const goldPane = document.getElementById('gold-diff-content');
+
+    if (!agentPane || !goldPane) return;
+
+    let isSyncing = false;
+
+    const syncScroll = (source, target) => {
+        if (isSyncing) return;
+        isSyncing = true;
+
+        const sourceScrollPercentage = source.scrollTop / (source.scrollHeight - source.clientHeight);
+        target.scrollTop = sourceScrollPercentage * (target.scrollHeight - target.clientHeight);
+
+        setTimeout(() => { isSyncing = false; }, 10);
+    };
+
+    agentPane.addEventListener('scroll', () => syncScroll(agentPane, goldPane));
+    goldPane.addEventListener('scroll', () => syncScroll(goldPane, agentPane));
 }
