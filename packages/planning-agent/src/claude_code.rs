@@ -1,4 +1,4 @@
-use crucible::eval::{BeforeAssertionsHook, BeforeAssertionsHookInput, HookResult};
+use crucible::eval::{Hook, HookInput, HookResult};
 use std::{fs, pin::Pin, process::Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -15,11 +15,8 @@ impl ClaudeCode {
     }
 }
 
-impl BeforeAssertionsHook for ClaudeCode {
-    fn run(
-        &self,
-        input: BeforeAssertionsHookInput,
-    ) -> Pin<Box<dyn Future<Output = HookResult> + Send>> {
+impl Hook for ClaudeCode {
+    fn run(&self, input: HookInput) -> Pin<Box<dyn Future<Output = HookResult> + Send>> {
         let plan_file = self.prompt_file.clone();
         Box::pin(async move {
             let plan_path = input.working_directory.join(&plan_file);
