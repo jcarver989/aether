@@ -37,21 +37,16 @@ pub fn all_evals() -> Result<Vec<Eval>, Box<dyn std::error::Error>> {
                     continue;
                 }
 
-                let has_prompt = issue_path.join("prompt.md").exists();
-                let has_pr_json = issue_path.join("pr.json").exists();
+                let eval_path = issue_path
+                    .strip_prefix(&evals_dir)
+                    .map_err(|e| format!("Failed to strip prefix: {}", e))?
+                    .to_str()
+                    .ok_or("Invalid eval path")?;
 
-                if has_prompt && has_pr_json {
-                    let eval_path = issue_path
-                        .strip_prefix(&evals_dir)
-                        .map_err(|e| format!("Failed to strip prefix: {}", e))?
-                        .to_str()
-                        .ok_or("Invalid eval path")?;
-
-                    match eval(eval_path, JOIST_ORM_REPO) {
-                        Ok(e) => evals.push(e),
-                        Err(err) => {
-                            eprintln!("Warning: Failed to load eval '{}': {}", eval_path, err)
-                        }
+                match eval(eval_path, JOIST_ORM_REPO) {
+                    Ok(e) => evals.push(e),
+                    Err(err) => {
+                        eprintln!("Warning: Failed to load eval '{}': {}", eval_path, err)
                     }
                 }
             }
@@ -64,9 +59,9 @@ pub fn all_evals() -> Result<Vec<Eval>, Box<dyn std::error::Error>> {
 fn eval(eval_path: &str, repo_url: &str) -> Result<Eval, Box<dyn std::error::Error>> {
     let tests_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
     let eval_dir = tests_dir.join("evals").join(eval_path);
-    let prompt_path = eval_dir.join("prompt.md");
+    let prompt_path = eval_dir.join("issue.md");
     let prompt =
-        Prompt::file(prompt_path.to_str().ok_or("Invalid prompt.md path")?, false).build()?;
+        Prompt::file(prompt_path.to_str().ok_or("Invalid issue.md path")?, false).build()?;
 
     let pr_json_path = eval_dir.join("pr.json");
     let pr_json_content = fs::read_to_string(&pr_json_path)?;
