@@ -5,26 +5,40 @@
 }
 
 :root {
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8f9fa;
-    --bg-tertiary: #e9ecef;
-    --border-color: #dee2e6;
-    --text-primary: #212529;
-    --text-secondary: #6c757d;
-    --text-muted: #adb5bd;
+    /* Dark mode color palette inspired by Catppuccin Mocha & Tailwind */
+    --bg-primary: #1e1e2e;
+    --bg-secondary: #181825;
+    --bg-tertiary: #11111b;
+    --bg-elevated: #262637;
+    --border-color: #313244;
+    --text-primary: #cdd6f4;
+    --text-secondary: #bac2de;
+    --text-muted: #6c7086;
 
-    --success: #28a745;
-    --success-bg: #d4edda;
-    --failure: #dc3545;
-    --failure-bg: #f8d7da;
-    --info: #0dcaf0;
-    --info-bg: #cff4fc;
-    --warning: #ffc107;
-    --warning-bg: #fff3cd;
+    /* Status colors - optimized for dark backgrounds */
+    --success: #a6e3a1;
+    --success-bg: #1e2d27;
+    --success-border: #2d5a3a;
+    --failure: #f38ba8;
+    --failure-bg: #2d1e24;
+    --failure-border: #5a2d3a;
+    --info: #89dceb;
+    --info-bg: #1e272d;
+    --info-border: #2d4a5a;
+    --warning: #f9e2af;
+    --warning-bg: #2d2a1e;
+    --warning-border: #5a4e2d;
 
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
-    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    /* Accent colors */
+    --accent-lavender: #b4befe;
+    --accent-mauve: #cba6f7;
+    --accent-pink: #f5c2e7;
+    --accent-teal: #94e2d5;
+
+    /* Shadows for depth in dark mode */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
 
     --font-mono: 'Menlo', 'Monaco', 'Courier New', monospace;
 }
@@ -118,11 +132,19 @@ body {
     border-radius: 4px;
     font-size: 0.875rem;
     font-family: inherit;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.search-input::placeholder {
+    color: var(--text-muted);
 }
 
 .search-input:focus {
     outline: none;
     border-color: var(--info);
+    box-shadow: 0 0 0 3px var(--info-bg);
 }
 
 .eval-list {
@@ -149,6 +171,7 @@ body {
 .eval-item.active {
     background: var(--info-bg);
     border-left: 3px solid var(--info);
+    box-shadow: inset 0 0 12px rgba(137, 220, 235, 0.15);
 }
 
 .eval-status {
@@ -243,15 +266,18 @@ body {
     border-left: 3px solid;
     margin-bottom: 0.75rem;
     border-radius: 4px;
+    border: 1px solid;
 }
 
 .assertion.success {
-    border-color: var(--success);
+    border-color: var(--success-border);
+    border-left-color: var(--success);
     background: var(--success-bg);
 }
 
 .assertion.failure {
-    border-color: var(--failure);
+    border-color: var(--failure-border);
+    border-left-color: var(--failure);
     background: var(--failure-bg);
 }
 
@@ -284,16 +310,18 @@ body {
 
 .expand-all-btn {
     padding: 0.5rem 1rem;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.875rem;
-    transition: background 0.15s ease;
+    color: var(--text-primary);
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .expand-all-btn:hover {
     background: var(--bg-tertiary);
+    border-color: var(--accent-lavender);
 }
 
 .timeline {
@@ -358,16 +386,19 @@ body {
 .trace-level.info {
     background: var(--info-bg);
     color: var(--info);
+    border: 1px solid var(--info-border);
 }
 
 .trace-level.warn {
     background: var(--warning-bg);
     color: var(--warning);
+    border: 1px solid var(--warning-border);
 }
 
 .trace-level.error {
     background: var(--failure-bg);
     color: var(--failure);
+    border: 1px solid var(--failure-border);
 }
 
 .trace-timestamp {
@@ -412,21 +443,29 @@ body {
 
 /* Scrollbar Styling */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--bg-secondary);
+    background: var(--bg-tertiary);
+    border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb {
     background: var(--border-color);
-    border-radius: 4px;
+    border-radius: 5px;
+    transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
+}
+
+/* Firefox scrollbar */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) var(--bg-tertiary);
 }
 
 /* Utility Classes */
