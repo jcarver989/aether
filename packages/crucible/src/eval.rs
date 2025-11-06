@@ -3,23 +3,58 @@ use aether::{
     llm::{StreamingModelProvider, ToolDefinition},
     mcp::run_mcp_task::McpCommand,
 };
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use tokio::sync::mpsc::Sender;
 
-use crate::assertions::{
-    assert_command_exit_code, assert_file_exists, assert_file_matches, assert_llm_judge,
-    assert_tool_call,
-};
 use crate::eval_assertion::{EvalAssertion, EvalAssertionResult};
 use crate::eval_messages::to_eval_messages;
 use crate::git_repo::GitRepo;
+use crate::{
+    EvalMessage,
+    assertions::{
+        assert_command_exit_code, assert_file_exists, assert_file_matches, assert_llm_judge,
+        assert_tool_call,
+    },
+};
 
-#[derive(Debug, Clone)]
 pub struct Eval {
     pub name: String,
     pub prompt: String,
     pub working_directory: WorkingDirectory,
     pub assertions: Vec<EvalAssertion>,
+
+    agent_complete_hooks: Vec<Box<dyn BeforeAssertionsHook>>,
+}
+
+pub struct BeforeAssertionsHookInput {
+    pub working_directory: PathBuf,
+    pub messages: Vec<EvalMessage>,
+}
+
+pub type HookResult = Result<(), Box<dyn std::error::Error>>;
+
+/// Trait for hooks that run after the agent completes but before assertions
+pub trait BeforeAssertionsHook: Send + Sync {
+    fn run(
+        &self,
+        input: BeforeAssertionsHookInput,
+    ) -> Pin<Box<dyn Future<Output = HookResult> + Send>>;
+}
+
+// Implement for closures that return futures
+impl<F, Fut> BeforeAssertionsHook for F
+where
+    F: Fn(BeforeAssertionsHookInput) -> Fut + Send + Sync,
+    Fut: Future<Output = HookResult> + Send + 'static,
+{
+    fn run(
+        &self,
+        input: BeforeAssertionsHookInput,
+    ) -> Pin<Box<dyn Future<Output = HookResult> + Send>> {
+        Box::pin(self(input))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -129,7 +164,14 @@ impl Eval {
             prompt: prompt.into(),
             working_directory,
             assertions,
+            agent_complete_hooks: Vec::new(),
         }
+    }
+
+    /// Run a hook when the agent completes, but before the eval runs
+    pub fn before_assertions(mut self, hook: impl BeforeAssertionsHook + 'static) -> Self {
+        self.agent_complete_hooks.push(Box::new(hook));
+        self
     }
 
     pub async fn run<T: StreamingModelProvider + 'static, U: StreamingModelProvider + 'static>(
@@ -165,8 +207,16 @@ impl Eval {
             to_eval_messages(rx).await
         };
 
-        let mut results = Vec::new();
+        for hook in &self.agent_complete_hooks {
+            hook.run(BeforeAssertionsHookInput {
+                working_directory: self.working_directory.path().to_path_buf(),
+                messages: messages.clone(),
+            })
+            .await
+            .map_err(|e| format!("Agent complete hook failed: {}", e))?;
+        }
 
+        let mut results = Vec::new();
         for assertion in &self.assertions {
             let result = match assertion {
                 EvalAssertion::FileExists { path } => {
@@ -182,12 +232,12 @@ impl Eval {
                     assert_command_exit_code(self.working_directory.path(), command, *expected_code)
                         .await
                 }
-                EvalAssertion::LLMJudge { prompt } => {
+                EvalAssertion::LLMJudge { prompt_builder } => {
                     assert_llm_judge(
                         &self.working_directory,
                         &self.prompt,
                         &messages,
-                        prompt,
+                        prompt_builder.as_ref(),
                         &judge_llm,
                     )
                     .await
