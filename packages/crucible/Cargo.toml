@@ -23,12 +23,13 @@ schemars = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "json", "env-filter"] }
 tracing-appender = { workspace = true }
+tracing-serde-structured = "0.4.0"
 
 # Error handling
 color-eyre = { workspace = true }
 
 # Date and time
-chrono = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 
 # File system
 tempfile = { workspace = true }
@@ -41,6 +42,8 @@ tokio-stream = { workspace = true, features = ["sync"] }
 
 # Internal dependencies
 aether = { path = "../aether" }
+uuid = { workspace = true, features = ["v4", "serde"] }
+async-trait.workspace = true
 
 [dev-dependencies]
 mcp_lexicon = { path = "../mcp-lexicon" }

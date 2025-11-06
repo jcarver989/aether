@@ -83,8 +83,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create configuration
     let config = EvalsConfig::new(llm, judge_llm);
 
+    // Create output directory and results store
+    let output_dir = std::env::current_dir()?.join("crucible_output_basic");
+    let results_store = crucible::FileSystemStore::new(output_dir)
+        .map_err(|e| format!("Failed to create store: {}", e))?;
+
     // Run evaluations with system prompt and MCP server
-    let summary = EvalRunner::new()
+    let summary = EvalRunner::new(results_store)
         .with_agent_prompt(
             "You are a helpful AI assistant with access to various tools for file operations, \
              shell commands, and more. Your goal is to complete the user's task efficiently and accurately."

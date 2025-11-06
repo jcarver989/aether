@@ -95,9 +95,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             tracing::info!("Loaded {} evals", evals.len());
 
-            let crucible = EvalRunner::new()
-                .with_mcp_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())))
-                .with_output_dir(output_dir_path);
+            let results_store = crucible::FileSystemStore::new(output_dir_path)
+                .map_err(|e| format!("Failed to create results store: {e}"))?;
+
+            let crucible = EvalRunner::new(results_store)
+                .with_mcp_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())));
 
             let mut config = EvalsConfig::new(agent_llm, judge_llm);
 

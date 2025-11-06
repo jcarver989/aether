@@ -19,6 +19,7 @@ use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
 use crucible::{BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
+use std::path::PathBuf;
 use std::time::Duration;
 
 #[derive(Parser)]
@@ -113,8 +114,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_serve(true); // Start web server
 
     // Run evaluations with coding MCP server
-    let summary = EvalRunner::new()
-        .with_output_dir("./eval-results".into())
+    // Create output directory and results store
+    let output_dir = PathBuf::from("./eval-results");
+    let results_store = crucible::FileSystemStore::new(output_dir)
+        .map_err(|e| format!("Failed to create store: {}", e))?;
+
+    let summary = EvalRunner::new(results_store)
         .with_agent_prompt(
             "You are a helpful AI assistant with access to various tools for file operations, \
              shell commands, and more. Your goal is to complete the user's task efficiently and accurately."

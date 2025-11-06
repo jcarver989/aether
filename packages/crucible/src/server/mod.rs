@@ -1,7 +1,7 @@
-use crate::report::{EvalReport, ReportData, SummaryReport, TraceEvent};
+use crate::storage::{EvalResult, ResultsStore, RunResult, TraceEvent};
 use axum::{
     Router,
-    extract::State,
+    extract::{Path, State},
     http::{StatusCode, header},
     response::{
         Html, IntoResponse, Response,
@@ -13,9 +13,10 @@ use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::{collections::HashMap, sync::RwLock};
+use std::sync::RwLock;
 use tokio::{net::TcpListener, sync::broadcast};
 use tokio_stream::{Stream, StreamExt, wrappers::BroadcastStream};
+use uuid::Uuid;
 
 /// Events sent over SSE to clients
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,32 +27,44 @@ pub enum SseEvent {
     },
     EvalCompleted {
         name: String,
-        report: EvalReport,
+        report: EvalResult,
     },
     TraceEvent {
         eval_name: String,
         trace: TraceEvent,
     },
-    SummaryUpdated {
-        summary: SummaryReport,
+    RunResultUpdated {
+        result: RunResult,
     },
 }
 
 /// Shared application state
-#[derive(Clone)]
-pub struct AppState {
-    pub summary: Arc<RwLock<SummaryReport>>,
-    pub eval_traces: Arc<RwLock<HashMap<String, Vec<TraceEvent>>>>,
+pub struct AppState<T: ResultsStore> {
+    pub run_result: Arc<RwLock<RunResult>>,
     pub sse_tx: broadcast::Sender<SseEvent>,
+    pub results_store: Arc<T>,
+    pub current_run_id: Arc<RwLock<Option<Uuid>>>,
 }
 
-impl AppState {
-    pub fn new() -> Self {
+impl<T: ResultsStore> Clone for AppState<T> {
+    fn clone(&self) -> Self {
+        Self {
+            run_result: Arc::clone(&self.run_result),
+            sse_tx: self.sse_tx.clone(),
+            results_store: Arc::clone(&self.results_store),
+            current_run_id: Arc::clone(&self.current_run_id),
+        }
+    }
+}
+
+impl<T: ResultsStore> AppState<T> {
+    pub fn new(results_store: Arc<T>, run_id: Uuid) -> Self {
         let (sse_tx, _rx) = broadcast::channel(100);
         Self {
-            summary: Arc::new(RwLock::new(SummaryReport::new())),
-            eval_traces: Arc::new(RwLock::new(HashMap::new())),
+            run_result: Arc::new(RwLock::new(RunResult::new(run_id, None, None))),
             sse_tx,
+            results_store,
+            current_run_id: Arc::new(RwLock::new(Some(run_id))),
         }
     }
 
@@ -60,27 +73,19 @@ impl AppState {
         let _ = self.sse_tx.send(event);
     }
 
-    pub fn update_summary(&self, summary: SummaryReport) {
-        *self.summary.write().unwrap() = summary.clone();
-        self.send_sse_event(SseEvent::SummaryUpdated { summary });
+    pub fn update_run_result(&self, result: RunResult) {
+        *self.run_result.write().unwrap() = result.clone();
+        self.send_sse_event(SseEvent::RunResultUpdated { result });
     }
 
-    pub fn add_traces(&self, eval_name: String, traces: Vec<TraceEvent>) {
-        let mut guard = self.eval_traces.write().unwrap();
-        guard.insert(eval_name, traces);
-    }
-
-    pub fn get_report_data(&self) -> ReportData {
-        let summary = self.summary.read().unwrap().clone();
-        let eval_traces = self.eval_traces.read().unwrap().clone();
-        ReportData {
-            summary,
-            eval_traces,
-        }
+    pub fn get_run_result(&self) -> RunResult {
+        self.run_result.read().unwrap().clone()
     }
 }
 
-pub async fn serve(state: AppState) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn serve<T: ResultsStore + Clone + 'static>(
+    state: AppState<T>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let app = create_router(state);
     let listener = TcpListener::bind("127.0.0.1:3000").await?;
 
@@ -95,14 +100,27 @@ pub async fn serve(state: AppState) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn create_router(state: AppState) -> Router {
+pub fn create_router<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> Router {
     Router::new()
         .route("/", get(serve_index))
         .route("/index.html", get(serve_index))
         .route("/styles.css", get(serve_styles))
         .route("/script.js", get(serve_script))
-        .route("/api/report-data", get(get_report_data))
-        .route("/api/events", get(sse_handler))
+        .route("/api/report-data", get(get_report_data::<T>))
+        .route("/api/events", get(sse_handler::<T>))
+        // .route("/api/runs", get(|state| list_runs::<T>(state)))
+        .route(
+            "/api/runs/:run_id",
+            get(|state, path| get_run::<T>(state, path)),
+        )
+        .route(
+            "/api/runs/:run_id/traces",
+            get(|state, path| get_run_traces::<T>(state, path)),
+        )
+        .route(
+            "/api/runs/:run_id/evals/:eval_name",
+            get(|state, path| get_run_eval::<T>(state, path)),
+        )
         .with_state(state)
 }
 
@@ -129,13 +147,13 @@ async fn serve_script() -> impl IntoResponse {
         .unwrap()
 }
 
-async fn get_report_data(State(state): State<AppState>) -> impl IntoResponse {
-    let report_data = state.get_report_data();
-    axum::Json(report_data)
+async fn get_report_data<T: ResultsStore>(State(state): State<AppState<T>>) -> impl IntoResponse {
+    let run_result = state.get_run_result();
+    axum::Json(run_result)
 }
 
-async fn sse_handler(
-    State(state): State<AppState>,
+async fn sse_handler<T: ResultsStore>(
+    State(state): State<AppState<T>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.sse_tx.subscribe();
     let stream = BroadcastStream::new(rx);
@@ -152,4 +170,66 @@ async fn sse_handler(
     });
 
     Sse::new(event_stream).keep_alive(KeepAlive::default())
+}
+
+// TODO: Implement list_runs - need to add get_all_runs to ResultsStore trait
+// /// List all historical runs
+// async fn list_runs<T: ResultsStore>(State(state): State<AppState<T>>) -> impl IntoResponse {
+//     match state.results_store.get_all_runs().await {
+//         Ok(runs) => axum::Json(runs).into_response(),
+//         Err(e) => (
+//             StatusCode::INTERNAL_SERVER_ERROR,
+//             format!("Failed to list runs: {}", e),
+//         )
+//             .into_response(),
+//     }
+// }
+
+/// Get a specific run's report data
+async fn get_run<T: ResultsStore>(
+    State(state): State<AppState<T>>,
+    Path(run_id): Path<Uuid>,
+) -> impl IntoResponse {
+    match state.results_store.get_run_result(run_id).await {
+        Ok(result) => axum::Json(result).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read run: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+/// Get traces for a specific run
+async fn get_run_traces<T: ResultsStore>(
+    State(state): State<AppState<T>>,
+    Path(run_id): Path<Uuid>,
+) -> impl IntoResponse {
+    match state.results_store.save_trace_events(run_id).await {
+        Ok(traces) => axum::Json(traces).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read traces: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+/// Get a specific eval result from a specific run
+async fn get_run_eval<T: ResultsStore>(
+    State(state): State<AppState<T>>,
+    Path((run_id, eval_name)): Path<(Uuid, String)>,
+) -> impl IntoResponse {
+    match state
+        .results_store
+        .get_eval_result(run_id, &eval_name)
+        .await
+    {
+        Ok(report) => axum::Json(report).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read eval result: {}", e),
+        )
+            .into_response(),
+    }
 }

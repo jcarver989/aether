@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::git_repo::GitRepo;
 use crate::{EvalMessage, WorkingDirectory};
 use std::sync::Arc;
@@ -242,7 +244,7 @@ impl std::fmt::Display for EvalAssertion {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EvalAssertionResult {
     Success { message: String },
     Failure { message: String },
