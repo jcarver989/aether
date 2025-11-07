@@ -2,6 +2,8 @@
 
 [Agent Client Protocol (ACP)](https://agentclientprotocol.com/overview/introduction) server for Aether agents, enabling AI coding assistance using in editors like Zed.
 
+![Aether ACP in action](screenshot.png)
+
 ## Quick Start
 
 ### 1. Build the Server
@@ -107,7 +109,31 @@ The `mcp.json` file in this repo currently configures two MCP servers and looks 
 Both are configured to run `in-memory`. The `coding` server gives the agent Claude Code style filesystem tools (read, write, bash etc). The `plugins` server gives the agent Claude Code style plugin features -- e.g. custom slash commands (support is nascent here)
 
 #### Slash commands
+
 You can put markdown files in `~/.aether/commands` to define custom slash commands ala Claude Code.
+
+**Example:** Create `~/.aether/commands/plan.md`:
+
+```markdown
+---
+description: Create a detailed implementation spec for a task
+---
+
+You are an expert software architect tasked with creating a comprehensive technical specification.
+
+# Task
+$ARGUMENTS
+
+# Your Mission
+Create a detailed, actionable specification that a senior engineer can use to implement this task...
+```
+
+**Parameter Syntax:**
+- `$ARGUMENTS` - The full argument string (e.g., `/plan add user auth` → "add user auth")
+- `$0`, `$1`, `$2`, etc. - Individual positional arguments (e.g., `/plan add user auth` → $0="add", $1="user", $2="auth")
+
+**Usage in Zed:**
+Type `/plan add user authentication` in the agent panel to expand the command with your task description.
 
 ## Logs
 
