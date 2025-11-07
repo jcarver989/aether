@@ -14,11 +14,11 @@ From the workspace root:
 cargo build --release -p aether-acp
 ```
 
-### 2. Run `mkdir ~/.aether/commands` to create a slash command directory (the agent currently needs this)
+### 2. Run `mkdir -p ~/.aether/commands` to create a slash command directory (the agent currently needs this)
 
 The binary will be located at `target/release/aether-acp`. So if you checked out the aether repository at `$HOME/bob/aether`, the binary will be at `$HOME/bob/aether/target/release/aether-acp`.
 
-### 2. Choose a LLM Model
+### 3. Choose a LLM Model
 
 Aether supports multiple LLM providers using the a `provider:model` string format. Choose a model based on your needs:
 
@@ -45,7 +45,7 @@ Aether supports multiple LLM providers using the a `provider:model` string forma
   - Requires: llama.cpp server running locally (default: `http://localhost:8080/v1`)
   - No API key required
 
-### 3. Configure Your Editor
+### 4. Configure Your Editor
 
 #### Zed
 
@@ -86,7 +86,7 @@ To use the agent:
   - `OPENROUTER_API_KEY` for `openrouter:*` models
   - `OLLAMA_API_KEY` for `ollama:*` models (optional)
 
-### 4. Goodies
+### 5. Goodies
 
 #### MCP servers
 
