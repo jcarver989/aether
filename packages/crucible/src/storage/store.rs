@@ -9,6 +9,9 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 
 /// Trait for storing and retrieving evaluation results, traces, and summaries
 pub trait ResultsStore: Send + Sync + Clone {
+    /// List all run IDs that have been stored
+    fn get_all_run_ids(&self) -> impl Future<Output = Result<Vec<Uuid>>> + Send;
+
     /// Write an individual eval result for a specific run
     fn save_eval_result(
         &self,

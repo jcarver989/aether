@@ -1,6 +1,8 @@
 // State
-let reportData = null;
+let currentRunId = null;
+let evalResults = [];
 let currentEval = null;
+let currentTraces = []; // Cache for currently displayed traces
 let expandedTraces = new Set();
 let allExpanded = false;
 let searchTerm = '';
@@ -11,8 +13,23 @@ let isLive = false;
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        const response = await fetch('/api/report-data');
-        reportData = await response.json();
+        // Fetch list of runs
+        const runsResponse = await fetch('/api/runs');
+        const runs = await runsResponse.json();
+
+        if (runs.length === 0) {
+            document.getElementById('empty-state').innerHTML =
+                '<p style="color: var(--text-muted);">No evaluation runs found</p>';
+            return;
+        }
+
+        // Use the most recent run (first in the list)
+        currentRunId = runs[0];
+
+        // Fetch eval results for this run
+        const resultsResponse = await fetch(`/api/runs/${currentRunId}`);
+        evalResults = await resultsResponse.json();
+
         renderSummary();
         renderEvalList();
         setupEventListeners();
@@ -56,15 +73,16 @@ function connectSSE() {
         const data = JSON.parse(e.data);
         console.log('Eval completed:', data.name);
 
-        // Update the specific eval in our report data
-        const evalIndex = reportData.summary.evals.findIndex(e => e.eval_name === data.name);
+        // Update the specific eval in our results
+        const evalIndex = evalResults.findIndex(e => e.eval_name === data.name);
         if (evalIndex >= 0) {
-            reportData.summary.evals[evalIndex] = data.report;
+            evalResults[evalIndex] = data.report;
         } else {
-            reportData.summary.evals.push(data.report);
+            evalResults.push(data.report);
         }
 
-        // Re-render the eval list
+        // Re-render summary and list
+        renderSummary();
         renderEvalList();
 
         // If this is the currently selected eval, update the details
@@ -73,30 +91,22 @@ function connectSSE() {
         }
     });
 
-    eventSource.addEventListener('summary_updated', (e) => {
+    eventSource.addEventListener('run_completed', (e) => {
         const data = JSON.parse(e.data);
-        console.log('Summary updated');
-        reportData.summary = data.summary;
-        renderSummary();
-        renderEvalList();
+        console.log('Run completed:', data.run_id);
 
-        // Refresh current eval if selected
-        if (currentEval) {
-            renderEvalDetails();
+        // Optionally reload the full results
+        if (data.run_id === currentRunId) {
+            console.log('Current run completed');
         }
     });
 
-    eventSource.addEventListener('trace', (e) => {
+    eventSource.addEventListener('trace', async (e) => {
         const data = JSON.parse(e.data);
-        // Add trace to the appropriate eval
-        if (!reportData.eval_traces[data.eval_name]) {
-            reportData.eval_traces[data.eval_name] = [];
-        }
-        reportData.eval_traces[data.eval_name].push(data.trace);
 
-        // If viewing this eval's traces, re-render
+        // If viewing this eval's traces, fetch and re-render
         if (currentEval === data.eval_name && currentTab === 'traces') {
-            renderTraces();
+            await fetchAndRenderTraces(data.eval_name);
         }
     });
 }
@@ -122,34 +132,47 @@ function setupEventListeners() {
     const searchInput = document.getElementById('search-input');
     searchInput.addEventListener('input', (e) => {
         searchTerm = e.target.value.toLowerCase();
-        renderTraces();
+        if (currentTab === 'traces' && currentTraces.length > 0) {
+            renderTracesWithData();
+        }
     });
 }
 
 // Render Summary Stats
 function renderSummary() {
-    const { summary } = reportData;
+    // Calculate summary statistics from eval results
+    const totalEvals = evalResults.length;
+    const passedEvals = evalResults.filter(e => e.passed).length;
+    const failedEvals = totalEvals - passedEvals;
+
+    const totalAssertions = evalResults.reduce((sum, e) => sum + e.assertions.length, 0);
+    const passedAssertions = evalResults.reduce(
+        (sum, e) => sum + e.assertions.filter(a => a.passed).length,
+        0
+    );
+    const failedAssertions = totalAssertions - passedAssertions;
+
     const statsHtml = `
         <div class="stat">
             <div class="stat-label">Evals</div>
             <div class="stat-value">
-                <span class="success">${summary.passed_evals}</span> /
-                <span class="failure">${summary.failed_evals}</span> /
-                ${summary.total_evals}
+                <span class="success">${passedEvals}</span> /
+                <span class="failure">${failedEvals}</span> /
+                ${totalEvals}
             </div>
         </div>
         <div class="stat">
             <div class="stat-label">Assertions</div>
             <div class="stat-value">
-                <span class="success">${summary.passed_assertions}</span> /
-                <span class="failure">${summary.failed_assertions}</span> /
-                ${summary.total_assertions}
+                <span class="success">${passedAssertions}</span> /
+                <span class="failure">${failedAssertions}</span> /
+                ${totalAssertions}
             </div>
         </div>
         <div class="stat">
             <div class="stat-label">Success Rate</div>
-            <div class="stat-value ${summary.passed_evals === summary.total_evals ? 'success' : 'failure'}">
-                ${summary.total_evals > 0 ? Math.round((summary.passed_evals / summary.total_evals) * 100) : 0}%
+            <div class="stat-value ${passedEvals === totalEvals ? 'success' : 'failure'}">
+                ${totalEvals > 0 ? Math.round((passedEvals / totalEvals) * 100) : 0}%
             </div>
         </div>
     `;
@@ -158,8 +181,7 @@ function renderSummary() {
 
 // Render Eval List
 function renderEvalList() {
-    const { summary } = reportData;
-    const evalListHtml = summary.evals.map(eval => {
+    const evalListHtml = evalResults.map(eval => {
         const status = eval.passed ? '✓' : '✗';
         const statusColor = eval.passed ? 'success' : 'failure';
         const assertionsPassed = eval.assertions.filter(a => a.passed).length;
@@ -206,7 +228,7 @@ function switchTab(tabName) {
 
 // Render Eval Details
 function renderEvalDetails() {
-    const eval = reportData.summary.evals.find(e => e.eval_name === currentEval);
+    const eval = evalResults.find(e => e.eval_name === currentEval);
     if (!eval) return;
 
     const statusBadge = eval.passed
@@ -288,14 +310,30 @@ function renderEvalDetails() {
     }
 }
 
-// Render Traces
-function renderTraces() {
-    const traces = reportData.eval_traces[currentEval] || [];
+// Fetch and Render Traces
+async function fetchAndRenderTraces(evalName) {
+    try {
+        const response = await fetch(`/api/runs/${currentRunId}/${evalName}/traces`);
+        currentTraces = await response.json();
+        renderTracesWithData();
+    } catch (error) {
+        console.error('Failed to fetch traces:', error);
+        document.getElementById('timeline').innerHTML =
+            '<p style="color: var(--failure); text-align: center; padding: 2rem;">Failed to load traces</p>';
+    }
+}
 
+// Render Traces
+async function renderTraces() {
+    await fetchAndRenderTraces(currentEval);
+}
+
+function renderTracesWithData() {
     // Filter traces by search term
-    const filteredTraces = traces.filter(trace => {
+    const filteredTraces = currentTraces.filter(trace => {
         if (!searchTerm) return true;
-        const searchableText = `${trace.message} ${trace.level} ${trace.target}`.toLowerCase();
+        const message = trace.fields?.message || '';
+        const searchableText = `${message} ${trace.level} ${trace.target}`.toLowerCase();
         return searchableText.includes(searchTerm);
     });
 
@@ -314,9 +352,10 @@ function renderTraces() {
         const isExpanded = expandedTraces.has(traceId);
         const level = trace.level.toLowerCase();
         const relativeTime = calculateRelativeTime(firstTimestamp, trace.timestamp);
+        const message = trace.fields?.message || '';
 
-        // Check if there are extra details to show
-        const hasDetails = Object.keys(trace.extra || {}).length > 0 || trace.target;
+        // Check if there are extra details to show (fields, span, or target)
+        const hasDetails = trace.fields || trace.span || trace.target;
 
         return `
             <div class="trace-event">
@@ -325,7 +364,7 @@ function renderTraces() {
                     <div class="trace-header" onclick="${hasDetails ? `toggleTrace('${traceId}')` : ''}">
                         <span class="trace-level ${level}">${escapeHtml(trace.level)}</span>
                         <span class="trace-timestamp">${relativeTime}</span>
-                        <span class="trace-message">${escapeHtml(trace.message)}</span>
+                        <span class="trace-message">${escapeHtml(message)}</span>
                         ${hasDetails ? `<span class="trace-expand-icon ${isExpanded ? 'expanded' : ''}">▶</span>` : ''}
                     </div>
                     ${isExpanded && hasDetails ? renderTraceDetails(trace) : ''}
@@ -341,7 +380,9 @@ function renderTraces() {
 function renderTraceDetails(trace) {
     const details = {
         target: trace.target,
-        ...trace.extra
+        fields: trace.fields,
+        span: trace.span,
+        spans: trace.spans
     };
 
     return `
@@ -358,7 +399,7 @@ function toggleTrace(traceId) {
     } else {
         expandedTraces.add(traceId);
     }
-    renderTraces();
+    renderTracesWithData();
 }
 
 // Toggle Expand All
@@ -367,13 +408,12 @@ function toggleExpandAll() {
     expandedTraces.clear();
 
     if (allExpanded) {
-        const traces = reportData.eval_traces[currentEval] || [];
-        traces.forEach((_, index) => {
+        currentTraces.forEach((_, index) => {
             expandedTraces.add(`trace-${index}`);
         });
     }
 
-    renderEvalDetails();
+    renderTracesWithData();
 }
 
 // Calculate Relative Time

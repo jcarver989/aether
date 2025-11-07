@@ -114,16 +114,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 config = config.with_serve(true);
             }
 
-            let summary = crucible
+            let run_id = crucible
                 .run_evals(evals, config)
                 .await
                 .map_err(|e| format!("Failed to run evals: {e}"))?;
 
-            summary.print();
-
-            if summary.failed_evals > 0 {
-                std::process::exit(1);
-            }
+            println!("\nRun ID: {}", run_id);
 
             Ok(())
         }

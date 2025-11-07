@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let results_store = crucible::FileSystemStore::new(cli.output_dir.into())
         .map_err(|e| format!("Failed to create results store: {e}"))?;
 
-    let summary = EvalRunner::new(results_store)
+    let run_id = EvalRunner::new(results_store)
         .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
         .with_mcp_json("mcp.json")
         .with_agent_prompt(Prompt::file("./tests/AGENTS.md", false).build()?)
@@ -116,18 +116,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     tracing::info!("\n{}", "=".repeat(50));
-    tracing::info!("Evaluation Summary");
+    tracing::info!("Evaluation Complete");
     tracing::info!("{}", "=".repeat(50));
-    tracing::info!("Total: {}", summary.total_evals);
-    tracing::info!("Passed: {}", summary.passed_evals);
-    tracing::info!("Failed: {}", summary.failed_evals);
-    tracing::info!(
-        "Pass Rate: {:.1}%",
-        (summary.passed_evals as f64 / summary.total_evals as f64) * 100.0
-    );
+    tracing::info!("Run ID: {}", run_id);
 
     if !cli.no_serve {
-        tracing::info!("\nView detailed results at http://localhost:3000");
+        tracing::info!("\nView detailed results at http://localhost:3000/api/runs/{}", run_id);
         tracing::info!("Press Ctrl+C to stop the server.");
     }
 

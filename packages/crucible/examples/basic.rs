@@ -100,15 +100,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Print results
     println!("\n{}", "=".repeat(50));
-    println!("Evaluation Summary");
+    println!("Evaluation Complete");
     println!("{}", "=".repeat(50));
-    println!("Total: {}", summary.total_evals());
-    println!("Passed: {}", summary.passed_evals());
-    println!("Failed: {}", summary.failed_evals());
-    println!(
-        "Pass Rate: {:.1}%",
-        (summary.passed_evals() as f64 / summary.total_evals() as f64) * 100.0
-    );
+    println!("Run ID: {}", summary);
 
     Ok(())
 }

@@ -1,91 +1,9 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
     Eval, EvalAssertion,
     eval_assertion::EvalAssertionResult as EvalAssertionResultEnum,
 };
-
-/// Result of running a collection evals
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EvalReport {
-    pub id: Uuid,
-    pub started_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
-
-    pub batch_size: Option<usize>,
-    pub batch_delay_ms: Option<u64>,
-
-    pub evals: Vec<EvalResult>,
-}
-
-impl EvalReport {
-    /// Create a new eval report
-    pub fn new(
-        id: Uuid,
-        started_at: DateTime<Utc>,
-        batch_size: Option<usize>,
-        batch_delay_ms: Option<u64>,
-    ) -> Self {
-        Self {
-            id,
-            started_at,
-            completed_at: None,
-            batch_size,
-            batch_delay_ms,
-            evals: Vec::new(),
-        }
-    }
-
-    /// Mark the report as completed
-    pub fn complete(&mut self, completed_at: DateTime<Utc>) {
-        self.completed_at = Some(completed_at);
-    }
-
-    /// Add an eval result to this report
-    pub fn add_eval_result(&mut self, result: EvalResult) {
-        self.evals.push(result);
-    }
-
-    /// Total number of evaluations
-    pub fn total_evals(&self) -> usize {
-        self.evals.len()
-    }
-
-    /// Number of passed evaluations
-    pub fn passed_evals(&self) -> usize {
-        self.evals.iter().filter(|e| e.passed).count()
-    }
-
-    /// Number of failed evaluations
-    pub fn failed_evals(&self) -> usize {
-        self.evals.iter().filter(|e| !e.passed).count()
-    }
-
-    /// Total number of assertions across all evaluations
-    pub fn total_assertions(&self) -> usize {
-        self.evals.iter().map(|e| e.assertions.len()).sum()
-    }
-
-    /// Number of passed assertions across all evaluations
-    pub fn passed_assertions(&self) -> usize {
-        self.evals
-            .iter()
-            .flat_map(|e| &e.assertions)
-            .filter(|a| a.passed)
-            .count()
-    }
-
-    /// Number of failed assertions across all evaluations
-    pub fn failed_assertions(&self) -> usize {
-        self.evals
-            .iter()
-            .flat_map(|e| &e.assertions)
-            .filter(|a| !a.passed)
-            .count()
-    }
-}
 
 /// Result of running a single evaluation
 #[derive(Debug, Clone, Serialize, Deserialize)]
