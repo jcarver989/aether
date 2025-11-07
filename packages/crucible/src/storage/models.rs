@@ -6,23 +6,44 @@ use crate::{
     eval_assertion::EvalAssertionResult as EvalAssertionResultEnum,
 };
 
-/// Result of running a single evaluation
+/// Result of an evaluation in various states
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EvalResult {
-    pub id: Uuid,
-    pub eval_name: String,
-    pub passed: bool,
-    pub assertions: Vec<EvalAssertionResult>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_diff: Option<GitDiff>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reference_diff: Option<GitDiff>,
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum EvalResult {
+    /// Eval has started but not yet running
+    Started {
+        id: Uuid,
+        eval_name: String,
+    },
+    /// Eval is currently running
+    Running {
+        id: Uuid,
+        eval_name: String,
+    },
+    /// Eval has completed with results
+    Completed {
+        id: Uuid,
+        eval_name: String,
+        passed: bool,
+        assertions: Vec<EvalAssertionResult>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        agent_diff: Option<GitDiff>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reference_diff: Option<GitDiff>,
+    },
 }
 
 impl EvalResult {
-    pub fn new(eval: &Eval, eval_id: Uuid, results: &[(EvalAssertion, EvalAssertionResultEnum)]) -> EvalResult {
+    /// Create a new EvalResult in "Started" state
+    pub fn started(eval: &Eval, eval_id: Uuid) -> Self {
+        EvalResult::Started {
+            id: eval_id,
+            eval_name: eval.name.clone(),
+        }
+    }
+
+    /// Create a completed EvalResult with assertion results
+    pub fn completed(eval: &Eval, eval_id: Uuid, results: &[(EvalAssertion, EvalAssertionResultEnum)]) -> EvalResult {
         let assertions: Vec<EvalAssertionResult> = results
             .iter()
             .map(|(assertion, result)| EvalAssertionResult {
@@ -40,13 +61,63 @@ impl EvalResult {
 
         let passed = assertions.iter().all(|a| a.passed);
 
-        EvalResult {
+        EvalResult::Completed {
             id: eval_id,
             eval_name: eval.name.clone(),
             passed,
             assertions,
             agent_diff: None,
             reference_diff: None,
+        }
+    }
+
+    /// For backwards compatibility - same as completed()
+    pub fn new(eval: &Eval, eval_id: Uuid, results: &[(EvalAssertion, EvalAssertionResultEnum)]) -> EvalResult {
+        Self::completed(eval, eval_id, results)
+    }
+
+    /// Get the eval ID regardless of state
+    pub fn id(&self) -> Uuid {
+        match self {
+            EvalResult::Started { id, .. } => *id,
+            EvalResult::Running { id, .. } => *id,
+            EvalResult::Completed { id, .. } => *id,
+        }
+    }
+
+    /// Get the eval name regardless of state
+    pub fn eval_name(&self) -> &str {
+        match self {
+            EvalResult::Started { eval_name, .. } => eval_name,
+            EvalResult::Running { eval_name, .. } => eval_name,
+            EvalResult::Completed { eval_name, .. } => eval_name,
+        }
+    }
+
+    /// Check if this eval has completed
+    pub fn is_completed(&self) -> bool {
+        matches!(self, EvalResult::Completed { .. })
+    }
+
+    /// Get whether the eval passed (only for completed evals)
+    pub fn passed(&self) -> Option<bool> {
+        match self {
+            EvalResult::Completed { passed, .. } => Some(*passed),
+            _ => None,
+        }
+    }
+
+    /// Update the agent diff (only for completed evals)
+    pub fn set_agent_diff(&mut self, diff: GitDiff) {
+        if let EvalResult::Completed { agent_diff, .. } = self {
+            *agent_diff = Some(diff);
+        }
+    }
+
+    /// Update the reference diff (only for completed evals)
+    pub fn set_reference_diff(&mut self, diff: GitDiff) {
+        if let EvalResult::Completed { reference_diff, .. } = self {
+            *reference_diff = Some(diff);
         }
     }
 
