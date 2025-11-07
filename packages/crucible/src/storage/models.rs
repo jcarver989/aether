@@ -1,25 +1,16 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    Eval, EvalAssertion,
-    eval_assertion::EvalAssertionResult as EvalAssertionResultEnum,
-};
+use crate::{Eval, EvalAssertion, eval_assertion::EvalAssertionResult as EvalAssertionResultEnum};
 
 /// Result of an evaluation in various states
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum EvalResult {
     /// Eval has started but not yet running
-    Started {
-        id: Uuid,
-        eval_name: String,
-    },
+    Started { id: Uuid, eval_name: String },
     /// Eval is currently running
-    Running {
-        id: Uuid,
-        eval_name: String,
-    },
+    Running { id: Uuid, eval_name: String },
     /// Eval has completed with results
     Completed {
         id: Uuid,
@@ -43,7 +34,11 @@ impl EvalResult {
     }
 
     /// Create a completed EvalResult with assertion results
-    pub fn completed(eval: &Eval, eval_id: Uuid, results: &[(EvalAssertion, EvalAssertionResultEnum)]) -> EvalResult {
+    pub fn completed(
+        eval: &Eval,
+        eval_id: Uuid,
+        results: &[(EvalAssertion, EvalAssertionResultEnum)],
+    ) -> EvalResult {
         let assertions: Vec<EvalAssertionResult> = results
             .iter()
             .map(|(assertion, result)| EvalAssertionResult {
@@ -69,11 +64,6 @@ impl EvalResult {
             agent_diff: None,
             reference_diff: None,
         }
-    }
-
-    /// For backwards compatibility - same as completed()
-    pub fn new(eval: &Eval, eval_id: Uuid, results: &[(EvalAssertion, EvalAssertionResultEnum)]) -> EvalResult {
-        Self::completed(eval, eval_id, results)
     }
 
     /// Get the eval ID regardless of state
