@@ -73,7 +73,11 @@ impl FileSystemStore {
         for event in events {
             // Try to find eval_id from current span first
             let eval_id = if let Some(span_info) = &event.span {
-                span_info.extra.get("eval_id").and_then(|v| v.as_str()).map(|s| s.to_string())
+                span_info
+                    .extra
+                    .get("eval_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
             } else {
                 None
             };
@@ -81,7 +85,11 @@ impl FileSystemStore {
             // If not found in current span, check parent spans
             let eval_id = eval_id.or_else(|| {
                 event.spans.iter().find_map(|parent_span| {
-                    parent_span.extra.get("eval_id").and_then(|v| v.as_str()).map(|s| s.to_string())
+                    parent_span
+                        .extra
+                        .get("eval_id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
                 })
             });
 
@@ -102,7 +110,7 @@ impl FileSystemStore {
 }
 
 impl ResultsStore for FileSystemStore {
-    async fn get_all_run_ids(&self) -> Result<Vec<Uuid>> {
+    async fn get_run_ids(&self) -> Result<Vec<Uuid>> {
         let runs_dir = self.output_dir.join("runs");
         let mut run_ids = Vec::new();
 
@@ -133,11 +141,7 @@ impl ResultsStore for FileSystemStore {
         Ok(run_ids)
     }
 
-    async fn save_eval_result(
-        &self,
-        run_id: Uuid,
-        report: &EvalResult,
-    ) -> Result<()> {
+    async fn save_eval_result(&self, run_id: Uuid, report: &EvalResult) -> Result<()> {
         let result_file = self.result_file(run_id, report.id());
         if let Some(parent) = result_file.parent() {
             fs::create_dir_all(parent)?;
@@ -176,11 +180,7 @@ impl ResultsStore for FileSystemStore {
         Ok(results)
     }
 
-    async fn get_eval_result(
-        &self,
-        run_id: Uuid,
-        eval_id: Uuid,
-    ) -> Result<Option<EvalResult>> {
+    async fn get_eval_result(&self, run_id: Uuid, eval_id: Uuid) -> Result<Option<EvalResult>> {
         let result_file = self.result_file(run_id, eval_id);
 
         if !result_file.exists() {
@@ -188,15 +188,13 @@ impl ResultsStore for FileSystemStore {
         }
 
         match fs::read_to_string(&result_file) {
-            Ok(json) => {
-                match serde_json::from_str::<EvalResult>(&json) {
-                    Ok(eval_result) => Ok(Some(eval_result)),
-                    Err(e) => {
-                        tracing::warn!("Failed to parse eval result file {:?}: {}", result_file, e);
-                        Ok(None)
-                    }
+            Ok(json) => match serde_json::from_str::<EvalResult>(&json) {
+                Ok(eval_result) => Ok(Some(eval_result)),
+                Err(e) => {
+                    tracing::warn!("Failed to parse eval result file {:?}: {}", result_file, e);
+                    Ok(None)
                 }
-            }
+            },
             Err(e) => {
                 tracing::warn!("Failed to read eval result file {:?}: {}", result_file, e);
                 Ok(None)
@@ -210,7 +208,11 @@ impl ResultsStore for FileSystemStore {
         tracing::debug!("Parsed {} total trace events", all_events.len());
 
         let grouped = self.group_traces_by_eval(all_events)?;
-        tracing::debug!("Grouped into {} groups: {:?}", grouped.len(), grouped.keys().collect::<Vec<_>>());
+        tracing::debug!(
+            "Grouped into {} groups: {:?}",
+            grouped.len(),
+            grouped.keys().collect::<Vec<_>>()
+        );
 
         // Use eval_id as the key (converted to string)
         let eval_id_str = eval_id.to_string();
@@ -256,7 +258,10 @@ mod tests {
 
         assert_eq!(span.name, "eval_task");
         assert!(span.extra.get("eval_id").is_some());
-        assert_eq!(span.extra.get("eval_id").and_then(|v| v.as_str()), Some("09373995-4265-4d6d-9315-26914861a182"));
+        assert_eq!(
+            span.extra.get("eval_id").and_then(|v| v.as_str()),
+            Some("09373995-4265-4d6d-9315-26914861a182")
+        );
     }
 
     #[test]
@@ -348,5 +353,4 @@ mod tests {
         assert_eq!(grouped.get(eval_id_2).unwrap().len(), 1);
         assert_eq!(grouped.get("_ungrouped").unwrap().len(), 1);
     }
-
 }

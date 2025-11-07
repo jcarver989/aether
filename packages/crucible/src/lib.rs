@@ -8,6 +8,7 @@ pub mod metrics;
 pub mod server;
 pub mod storage;
 
+use aether::mcp::run_mcp_task::McpCommand;
 pub use eval::{Eval, WorkingDirectory};
 pub use eval_assertion::{EvalAssertion, EvalAssertionResult, LlmJudgeContext, ToolCallCount};
 pub use eval_messages::EvalMessage;
@@ -15,13 +16,15 @@ pub use metrics::{BinaryMetric, EvalMetric, NumericMetric};
 pub use server::{AppState, SseEvent};
 pub use storage::{FileSystemStore, Result as StoreResult, ResultsStore};
 
-use aether::llm::StreamingModelProvider;
+use aether::llm::{StreamingModelProvider, ToolDefinition};
 use aether::mcp::{ServerFactory, mcp};
 use owo_colors::OwoColorize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tracing::Instrument;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -191,59 +194,29 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             return Err("No evals provided".into());
         }
 
-        // Generate a unique run ID for this evaluation run
         let run_id = Uuid::new_v4();
-
         println!(
             "\n{} {}",
             "Run ID:".bold(),
             run_id.to_string().bright_cyan()
         );
 
-        // Extract fields from self before using helper methods
         let agent_prompt = self.agent_prompt;
         let results_store = Arc::new(self.results_store);
+        let store_layer = results_store.create_tracing_layer(run_id);
+        Self::setup_tracing(store_layer)?;
 
-        // Setup tracing subscriber
-        Self::setup_tracing_helper(run_id, &results_store)?;
-
-        // Create app state for SSE if serving
-        let app_state = if config.serve {
-            Some(Arc::new(server::AppState::new(
-                results_store.clone(),
-                run_id,
-            )))
-        } else {
-            None
-        };
-
-        let server_handle = if config.serve {
-            if let Some(state) = app_state.as_ref() {
-                let state_clone = state.as_ref().clone();
-                Some(tokio::spawn(async move {
-                    if let Err(e) = server::serve(state_clone).await {
-                        tracing::error!("Server error: {}", e);
-                    }
-                }))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // Setup MCP builder and spawn MCP servers
-        let mcp_builder = Self::setup_mcp_builder_helper(self.factories, self.mcp_json_path)?;
+        let (server_handle, sse_tx) =
+            Self::start_axum_server(&results_store, run_id, config.serve)?;
+        let mcp_builder = Self::create_mcp_builder(self.factories, self.mcp_json_path)?;
         let (tool_definitions, mcp_tx, _mcp_handle) = mcp_builder.spawn().await?;
 
         // Wrap providers in Arc so they can be shared across tasks
         let llm = Arc::new(config.llm);
         let judge_llm = Arc::new(config.judge_llm);
 
-        // Determine batch size (default to all evals if not specified)
         let batch_size = config.batch_size.unwrap_or(evals.len());
         let batch_delay = config.batch_delay.unwrap_or(Duration::ZERO);
-
         let total_evals = evals.len();
 
         // Process evals in batches
@@ -263,31 +236,18 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                 batch.len()
             );
 
-            let tasks: Vec<_> = batch
-                .into_iter()
-                .map(|eval| {
-                    let eval_id = Uuid::new_v4();
-                    Self::spawn_eval_task_helper(
-                        eval,
-                        eval_id,
-                        run_id,
-                        agent_prompt.clone(),
-                        tool_definitions.clone(),
-                        mcp_tx.clone(),
-                        llm.clone(),
-                        judge_llm.clone(),
-                        app_state.clone(),
-                        results_store.clone(),
-                    )
-                })
-                .collect();
-
-            // Await all tasks in this batch concurrently
-            let results = futures::future::join_all(tasks).await;
-
-            for result in results {
-                Self::handle_eval_result_helper(result, &results_store, run_id).await;
-            }
+            Self::run_eval_batch(
+                batch,
+                run_id,
+                &agent_prompt,
+                &tool_definitions,
+                &mcp_tx,
+                &llm,
+                &judge_llm,
+                &sse_tx,
+                &results_store,
+            )
+            .await;
 
             // Add delay between batches to prevent rate limiting
             if !batch_delay.is_zero() && batch_num * batch_size < total_evals {
@@ -297,8 +257,8 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         }
 
         // Notify that the run is complete
-        if let Some(state) = &app_state {
-            state.send_sse_event(server::SseEvent::RunCompleted { run_id });
+        if let Some(tx) = &sse_tx {
+            let _ = tx.send(server::SseEvent::RunCompleted { run_id });
         }
 
         // Keep the server running if serving
@@ -324,14 +284,12 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
     // Private helper methods
 
     /// Set up tracing subscriber with store and fmt layers
-    fn setup_tracing_helper(
-        run_id: Uuid,
-        results_store: &Arc<T>,
+    fn setup_tracing(
+        store_layer: Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let env_filter =
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-        let store_layer = results_store.create_tracing_layer(run_id);
         let fmt_layer = tracing_subscriber::fmt::layer()
             .with_writer(std::io::stdout)
             .pretty();
@@ -343,8 +301,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
     }
 
-    /// Configure MCP builder with factories and json config
-    fn setup_mcp_builder_helper(
+    fn create_mcp_builder(
         factories: HashMap<String, ServerFactory>,
         mcp_json_path: Option<PathBuf>,
     ) -> Result<aether::mcp::McpBuilder, Box<dyn std::error::Error>> {
@@ -393,23 +350,23 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
     }
 
     /// Spawn a single eval task with tracing instrumentation
-    fn spawn_eval_task_helper<M, J>(
+    fn spawn_eval_task<M, J>(
         eval: Eval,
         eval_id: Uuid,
         run_id: Uuid,
         agents_prompt: Option<String>,
-        tool_definitions: Vec<aether::llm::ToolDefinition>,
-        mcp_tx: tokio::sync::mpsc::Sender<aether::mcp::run_mcp_task::McpCommand>,
+        tool_definitions: Vec<ToolDefinition>,
+        mcp_tx: mpsc::Sender<McpCommand>,
         llm: Arc<M>,
         judge_llm: Arc<J>,
-        app_state: Option<Arc<server::AppState<T>>>,
+        sse_tx: Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
         results_store: Arc<T>,
     ) -> tokio::task::JoinHandle<(
         Eval,
         Uuid,
         Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>,
         Duration,
-        Option<Arc<server::AppState<T>>>,
+        Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
     )>
     where
         M: StreamingModelProvider + 'static,
@@ -427,8 +384,8 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                 }
 
                 // Broadcast eval started event
-                if let Some(state) = &app_state {
-                    state.send_sse_event(server::SseEvent::EvalStarted {
+                if let Some(tx) = &sse_tx {
+                    let _ = tx.send(server::SseEvent::EvalStarted {
                         run_id,
                         eval_id,
                         name: eval_name.clone(),
@@ -440,14 +397,14 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                     .run(llm, judge_llm, tool_definitions, mcp_tx, agents_prompt)
                     .await;
                 let duration = start.elapsed();
-                (eval, eval_id, result, duration, app_state)
+                (eval, eval_id, result, duration, sse_tx)
             }
             .instrument(tracing::info_span!("eval_task", eval_name = %eval_name_for_span, eval_id = %eval_id)),
         )
     }
 
     /// Handle the result of a single eval task
-    async fn handle_eval_result_helper(
+    async fn on_eval_result(
         task_result: Result<
             (
                 Eval,
@@ -457,7 +414,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                     Box<dyn std::error::Error + Send + Sync>,
                 >,
                 Duration,
-                Option<Arc<server::AppState<T>>>,
+                Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
             ),
             tokio::task::JoinError,
         >,
@@ -465,20 +422,17 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         run_id: Uuid,
     ) {
         match task_result {
-            Ok((eval, eval_id, Ok(eval_results), _duration, state)) => {
-                let mut report = EvalResult::new(&eval, eval_id, &eval_results[..]);
-
-                // Capture diffs for GitRepo working directories
+            Ok((eval, eval_id, Ok(eval_results), _duration, sse_tx)) => {
+                let mut report = EvalResult::completed(&eval, eval_id, &eval_results[..]);
                 Self::capture_git_diffs(&eval, &mut report);
 
-                // Write eval result to store
                 if let Err(e) = results_store.save_eval_result(run_id, &report).await {
                     tracing::warn!("Failed to write result file for {}: {}", eval.name, e);
                 }
 
                 // Broadcast eval completed event
-                if let Some(state) = &state {
-                    state.send_sse_event(server::SseEvent::EvalCompleted {
+                if let Some(tx) = &sse_tx {
+                    let _ = tx.send(server::SseEvent::EvalCompleted {
                         run_id,
                         eval_id,
                         name: report.eval_name().to_string(),
@@ -486,12 +440,81 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                     });
                 }
             }
-            Ok((eval, _eval_id, Err(e), _duration, _state)) => {
+            Ok((eval, _eval_id, Err(e), _duration, _sse_tx)) => {
                 tracing::error!("Eval '{}' failed with error: {}", eval.name, e);
             }
             Err(e) => {
                 tracing::error!("Task panicked: {}", e);
             }
+        }
+    }
+
+    /// Start the axum server and return the task handle and SSE transmitter
+    fn start_axum_server(
+        results_store: &Arc<T>,
+        run_id: Uuid,
+        serve: bool,
+    ) -> Result<
+        (
+            Option<JoinHandle<()>>,
+            Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
+        ),
+        Box<dyn std::error::Error>,
+    > {
+        if serve {
+            let state = Arc::new(server::AppState::new(results_store.clone(), run_id));
+            let sse_tx = Some(state.sse_tx.clone());
+            let state_clone = state.as_ref().clone();
+            let server_handle = Some(tokio::spawn(async move {
+                if let Err(e) = server::serve(state_clone).await {
+                    tracing::error!("Server error: {}", e);
+                }
+            }));
+            Ok((server_handle, sse_tx))
+        } else {
+            Ok((None, None))
+        }
+    }
+
+    /// Run a single batch of evaluations
+    async fn run_eval_batch<M, J>(
+        batch: Vec<Eval>,
+        run_id: Uuid,
+        agent_prompt: &Option<String>,
+        tool_definitions: &Vec<ToolDefinition>,
+        mcp_tx: &mpsc::Sender<McpCommand>,
+        llm: &Arc<M>,
+        judge_llm: &Arc<J>,
+        sse_tx: &Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
+        results_store: &Arc<T>,
+    ) where
+        M: StreamingModelProvider + 'static,
+        J: StreamingModelProvider + 'static,
+    {
+        let tasks: Vec<_> = batch
+            .into_iter()
+            .map(|eval| {
+                let eval_id = Uuid::new_v4();
+                Self::spawn_eval_task(
+                    eval,
+                    eval_id,
+                    run_id,
+                    agent_prompt.clone(),
+                    tool_definitions.clone(),
+                    mcp_tx.clone(),
+                    llm.clone(),
+                    judge_llm.clone(),
+                    sse_tx.clone(),
+                    results_store.clone(),
+                )
+            })
+            .collect();
+
+        // Await all tasks in this batch concurrently
+        let results = futures::future::join_all(tasks).await;
+
+        for result in results {
+            Self::on_eval_result(result, results_store, run_id).await;
         }
     }
 }
