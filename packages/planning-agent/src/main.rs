@@ -77,11 +77,9 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
-    tracing::info!("Running planning agent evaluations...");
+    // Note: Tracing is initialized by crucible's EvalRunner
+    // Do not initialize it here to avoid SetGlobalDefaultError
+    println!("Running planning agent evaluations...");
 
     let parser = ModelProviderParser::default();
 
@@ -98,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let evals =
         planning_agent::evals::all_evals().map_err(|e| format!("Failed to load evals: {e}"))?;
 
-    tracing::info!("Loaded {} evals", evals.len());
+    println!("Loaded {} evals", evals.len());
 
     let config = EvalsConfig::new(llm, judge_llm)
         .with_batch_size(cli.batch_size)
@@ -115,17 +113,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run_evals(evals, config)
         .await?;
 
-    tracing::info!("\n{}", "=".repeat(50));
-    tracing::info!("Evaluation Complete");
-    tracing::info!("{}", "=".repeat(50));
-    tracing::info!("Run ID: {}", run_id);
+    println!("\n{}", "=".repeat(50));
+    println!("Evaluation Complete");
+    println!("{}", "=".repeat(50));
+    println!("Run ID: {}", run_id);
 
     if !cli.no_serve {
-        tracing::info!(
+        println!(
             "\nView detailed results at http://localhost:3000/api/runs/{}",
             run_id
         );
-        tracing::info!("Press Ctrl+C to stop the server.");
+        println!("Press Ctrl+C to stop the server.");
     }
 
     Ok(())
