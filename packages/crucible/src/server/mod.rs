@@ -225,8 +225,7 @@ async fn eval_sse_handler<T: ResultsStore>(
         result
             .ok()
             .filter(|event| {
-                event.run_id() == run_id
-                    && event.eval_id().map_or(false, |eid| eid == eval_id)
+                event.run_id() == run_id && event.eval_id().map_or(false, |eid| eid == eval_id)
             })
             .and_then(|event| {
                 serde_json::to_string(&event)
@@ -292,11 +291,7 @@ async fn get_eval_traces_handler<T: ResultsStore>(
     State(state): State<AppState<T>>,
     Path((run_id, eval_id)): Path<(Uuid, Uuid)>,
 ) -> impl IntoResponse {
-    match state
-        .results_store
-        .get_eval_traces(run_id, eval_id)
-        .await
-    {
+    match state.results_store.get_eval_traces(run_id, eval_id).await {
         Ok(traces) => axum::Json(traces).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
