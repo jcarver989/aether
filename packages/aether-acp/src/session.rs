@@ -164,16 +164,7 @@ impl Session {
         command_name: &str,
         args_text: &str,
     ) -> Result<String, Box<dyn std::error::Error>> {
-        // Parse arguments as positional parameters
-        let arguments = if args_text.is_empty() {
-            None
-        } else {
-            let mut arg_map = serde_json::Map::new();
-            for (i, arg) in args_text.split_whitespace().enumerate() {
-                arg_map.insert(i.to_string(), serde_json::Value::String(arg.to_string()));
-            }
-            Some(arg_map)
-        };
+        let arguments = parse_slash_command_arguments(args_text);
 
         // Try to find the prompt by querying all available prompts
         // We need to map the command name back to its namespaced form
@@ -225,9 +216,60 @@ impl Session {
     }
 }
 
-impl Drop for Session {
-    fn drop(&mut self) {
-        debug!("Dropping session {}", self.id);
-        // The agent_handle and channels will be dropped, which will clean up the agent task
+/// Parse slash command arguments into a map with both positional and special variables
+///
+/// Creates an argument map with:
+/// - "ARGUMENTS": The full argument string
+/// - "0", "1", "2", etc.: Individual positional arguments
+fn parse_slash_command_arguments(
+    args_text: &str,
+) -> Option<serde_json::Map<String, serde_json::Value>> {
+    if args_text.is_empty() {
+        None
+    } else {
+        let mut arg_map = serde_json::Map::new();
+
+        // Add special ARGUMENTS variable with all args as a single string
+        arg_map.insert(
+            "ARGUMENTS".to_string(),
+            serde_json::Value::String(args_text.to_string()),
+        );
+
+        // Add positional parameters
+        for (i, arg) in args_text.split_whitespace().enumerate() {
+            arg_map.insert(i.to_string(), serde_json::Value::String(arg.to_string()));
+        }
+
+        Some(arg_map)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Map;
+    use serde_json::Value;
+
+    use super::*;
+
+    #[test]
+    fn test_argument_parsing() -> Result<(), Box<dyn std::error::Error>> {
+        let args_text = "do a thing that has spaces";
+        let arg_map = parse_slash_command_arguments(args_text).ok_or("Expected Some, got None")?;
+        let expected = Map::from_iter([
+            (
+                "ARGUMENTS".to_string(),
+                Value::String("do a thing that has spaces".to_string()),
+            ),
+            ("0".to_string(), Value::String("do".to_string())),
+            ("1".to_string(), Value::String("a".to_string())),
+            ("2".to_string(), Value::String("thing".to_string())),
+            ("3".to_string(), Value::String("that".to_string())),
+            ("4".to_string(), Value::String("has".to_string())),
+            ("5".to_string(), Value::String("spaces".to_string())),
+        ]);
+
+        assert_eq!(arg_map, expected);
+
+        Ok(())
     }
 }

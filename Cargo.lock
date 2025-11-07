@@ -1843,9 +1843,14 @@ name = "planning-agent"
 version = "0.1.0"
 dependencies = [
  "aether",
+ "anyhow",
  "clap",
  "crucible",
  "mcp_lexicon",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
