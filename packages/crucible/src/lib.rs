@@ -442,7 +442,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                 let duration = start.elapsed();
                 (eval, eval_id, result, duration, app_state)
             }
-            .instrument(tracing::info_span!("eval_task", eval_name = %eval_name_for_span)),
+            .instrument(tracing::info_span!("eval_task", eval_name = %eval_name_for_span, eval_id = %eval_id)),
         )
     }
 

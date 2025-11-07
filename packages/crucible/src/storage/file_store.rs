@@ -62,51 +62,31 @@ impl FileSystemStore {
         Ok(events)
     }
 
-    /// Group traces by eval name using span hierarchy
+    /// Group traces by eval ID using span hierarchy
     fn group_traces_by_eval(
         &self,
         events: Vec<TraceEvent>,
     ) -> Result<HashMap<String, Vec<TraceEvent>>> {
         let mut grouped: HashMap<String, Vec<TraceEvent>> = HashMap::new();
-        let mut span_to_eval: HashMap<u64, String> = HashMap::new();
 
-        // First pass: build span -> eval name mapping
-        for event in &events {
-            // Check if this is an eval span (has eval_name field)
-            if let Some(span_info) = &event.span {
-                if let Some(fields) = &span_info.fields {
-                    if let Some(eval_name) = fields.get("eval_name").and_then(|v| v.as_str()) {
-                        if let Some(span_id) = span_info.id {
-                            span_to_eval.insert(span_id, eval_name.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Second pass: group events by eval
+        // Group events by eval_id found in current span or parent spans
         for event in events {
-            // Try to find eval name from current span or parent spans
-            let eval_name = if let Some(span_info) = &event.span {
-                // Check current span
-                if let Some(id) = span_info.id {
-                    if let Some(name) = span_to_eval.get(&id) {
-                        Some(name.clone())
-                    } else {
-                        // Check parent spans
-                        event.spans.iter().find_map(|parent| {
-                            parent.id.and_then(|id| span_to_eval.get(&id).cloned())
-                        })
-                    }
-                } else {
-                    None
-                }
+            // Try to find eval_id from current span first
+            let eval_id = if let Some(span_info) = &event.span {
+                span_info.extra.get("eval_id").and_then(|v| v.as_str()).map(|s| s.to_string())
             } else {
                 None
             };
 
-            if let Some(eval_name) = eval_name {
-                grouped.entry(eval_name).or_default().push(event);
+            // If not found in current span, check parent spans
+            let eval_id = eval_id.or_else(|| {
+                event.spans.iter().find_map(|parent_span| {
+                    parent_span.extra.get("eval_id").and_then(|v| v.as_str()).map(|s| s.to_string())
+                })
+            });
+
+            if let Some(eval_id) = eval_id {
+                grouped.entry(eval_id).or_default().push(event);
             } else {
                 // Ungrouped events
                 grouped
@@ -116,6 +96,7 @@ impl FileSystemStore {
             }
         }
 
+        tracing::debug!("Grouped into {} groups", grouped.len());
         Ok(grouped)
     }
 }
@@ -224,19 +205,21 @@ impl ResultsStore for FileSystemStore {
     }
 
     async fn get_eval_traces(&self, run_id: Uuid, eval_id: Uuid) -> Result<Vec<TraceEvent>> {
-        // First, get the eval result to find the eval_name
-        let eval_result = self.get_eval_result(run_id, eval_id).await?;
-
-        let eval_name = match eval_result {
-            Some(result) => result.eval_name().to_string(),
-            None => return Ok(Vec::new()),
-        };
-
         let traces_file = self.traces_file(run_id);
         let all_events = self.parse_traces_file(&traces_file)?;
-        let grouped = self.group_traces_by_eval(all_events)?;
+        tracing::debug!("Parsed {} total trace events", all_events.len());
 
-        Ok(grouped.get(&eval_name).cloned().unwrap_or_default())
+        let grouped = self.group_traces_by_eval(all_events)?;
+        tracing::debug!("Grouped into {} groups: {:?}", grouped.len(), grouped.keys().collect::<Vec<_>>());
+
+        // Use eval_id as the key (converted to string)
+        let eval_id_str = eval_id.to_string();
+        tracing::debug!("Looking for eval_id: {}", eval_id_str);
+
+        let traces = grouped.get(&eval_id_str).cloned().unwrap_or_default();
+        tracing::debug!("Found {} traces for eval_id {}", traces.len(), eval_id_str);
+
+        Ok(traces)
     }
 
     fn create_tracing_layer(&self, run_id: Uuid) -> Box<dyn Layer<Registry> + Send + Sync> {
@@ -264,6 +247,17 @@ mod tests {
     use crate::storage::SpanInfo;
     use std::io::Write;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_deserialize_span_with_eval_id() {
+        // Test that SpanInfo correctly deserializes eval_id from top level
+        let json = r#"{"eval_id":"09373995-4265-4d6d-9315-26914861a182","eval_name":"test","name":"eval_task"}"#;
+        let span: SpanInfo = serde_json::from_str(json).unwrap();
+
+        assert_eq!(span.name, "eval_task");
+        assert!(span.extra.get("eval_id").is_some());
+        assert_eq!(span.extra.get("eval_id").and_then(|v| v.as_str()), Some("09373995-4265-4d6d-9315-26914861a182"));
+    }
 
     #[test]
     fn test_parse_traces_file_empty() {
@@ -304,6 +298,9 @@ mod tests {
     fn test_group_traces_by_eval() {
         let store = FileSystemStore::new(TempDir::new().unwrap().path().to_path_buf()).unwrap();
 
+        let eval_id_1 = "11111111-1111-1111-1111-111111111111";
+        let eval_id_2 = "22222222-2222-2222-2222-222222222222";
+
         let events = vec![
             TraceEvent {
                 timestamp: "2024-01-01T12:00:00Z".to_string(),
@@ -313,7 +310,8 @@ mod tests {
                 span: Some(SpanInfo {
                     id: Some(1),
                     name: "eval_span".to_string(),
-                    fields: Some(serde_json::json!({"eval_name": "test_eval_1"})),
+                    fields: None,
+                    extra: serde_json::json!({"eval_id": eval_id_1}),
                 }),
                 spans: vec![],
             },
@@ -325,7 +323,8 @@ mod tests {
                 span: Some(SpanInfo {
                     id: Some(2),
                     name: "eval_span".to_string(),
-                    fields: Some(serde_json::json!({"eval_name": "test_eval_2"})),
+                    fields: None,
+                    extra: serde_json::json!({"eval_id": eval_id_2}),
                 }),
                 spans: vec![],
             },
@@ -342,11 +341,11 @@ mod tests {
         let grouped = store.group_traces_by_eval(events).unwrap();
 
         assert_eq!(grouped.len(), 3);
-        assert!(grouped.contains_key("test_eval_1"));
-        assert!(grouped.contains_key("test_eval_2"));
+        assert!(grouped.contains_key(eval_id_1));
+        assert!(grouped.contains_key(eval_id_2));
         assert!(grouped.contains_key("_ungrouped"));
-        assert_eq!(grouped.get("test_eval_1").unwrap().len(), 1);
-        assert_eq!(grouped.get("test_eval_2").unwrap().len(), 1);
+        assert_eq!(grouped.get(eval_id_1).unwrap().len(), 1);
+        assert_eq!(grouped.get(eval_id_2).unwrap().len(), 1);
         assert_eq!(grouped.get("_ungrouped").unwrap().len(), 1);
     }
 

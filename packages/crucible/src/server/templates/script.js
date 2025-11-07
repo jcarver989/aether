@@ -149,9 +149,16 @@ function handleRunCompleted(event) {
 }
 
 function handleTraceEvent(event) {
-    // If viewing this eval's traces, fetch and re-render
-    if (currentEval === event.eval_id && currentTab === 'traces') {
-        fetchAndRenderTraces(event.eval_id);
+    // If viewing this eval, fetch and re-render traces
+    // For completed evals, only update if on traces tab
+    // For running evals, always update (traces are always shown)
+    if (currentEval === event.eval_id) {
+        const eval = evalResults.find(e => e.id === event.eval_id);
+        const isRunning = eval && eval.status !== 'completed';
+
+        if (isRunning || currentTab === 'traces') {
+            fetchAndRenderTraces(event.eval_id);
+        }
     }
 }
 
@@ -246,7 +253,7 @@ function renderEvalList() {
         } else {
             // Started or running eval
             return `
-                <div class="eval-item running" data-eval="${eval.id}">
+                <div class="eval-item running" data-eval="${eval.id}" onclick="selectEval('${eval.id}')">
                     <div class="eval-status" style="color: var(--text-muted)">⟳</div>
                     <div style="flex: 1; min-width: 0;">
                         <div class="eval-name">${escapeHtml(eval.eval_name)}</div>
@@ -290,20 +297,35 @@ function renderEvalDetails() {
     const eval = evalResults.find(e => e.id === currentEval);
     if (!eval) return;
 
-    // Handle non-completed evals
+    // Handle non-completed evals - show traces only
     if (eval.status !== 'completed') {
         const statusText = eval.status === 'running' ? 'Running' : 'Started';
+        const statusBadge = `<span class="status-badge" style="background: var(--text-muted)">⟳ ${statusText}...</span>`;
+
+        const contentHtml = `
+            <div class="traces-section">
+                <div class="traces-header">
+                    <h3 class="section-title">Traces</h3>
+                    <button class="expand-all-btn" onclick="toggleExpandAll()">
+                        ${allExpanded ? 'Collapse All' : 'Expand All'}
+                    </button>
+                </div>
+                <div class="timeline" id="timeline">
+                    <!-- Populated by renderTraces() -->
+                </div>
+            </div>
+        `;
+
         document.getElementById('eval-details').innerHTML = `
             <div class="eval-header">
                 <h2 class="eval-title">${escapeHtml(eval.eval_name)}</h2>
-                <div class="eval-subtitle">
-                    <span class="status-badge" style="background: var(--text-muted)">⟳ ${statusText}...</span>
-                </div>
+                <div class="eval-subtitle">${statusBadge}</div>
             </div>
-            <div style="padding: 2rem; text-align: center; color: var(--text-muted);">
-                <p>This evaluation is currently ${statusText.toLowerCase()}. Results will appear here when complete.</p>
-            </div>
+            ${contentHtml}
         `;
+
+        // Render traces for running eval
+        renderTraces();
         return;
     }
 
