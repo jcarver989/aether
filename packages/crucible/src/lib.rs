@@ -455,7 +455,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
 
                 // Write eval result to store
                 if let Err(e) = results_store
-                    .save_eval_result(run_id, &eval.name, &report)
+                    .save_eval_result(run_id, &report)
                     .await
                 {
                     tracing::warn!("Failed to write result file for {}: {}", eval.name, e);
