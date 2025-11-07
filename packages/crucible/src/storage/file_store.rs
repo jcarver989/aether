@@ -1,17 +1,8 @@
-use std::{
-    collections::HashMap,
-    fs,
-    io::{BufRead, BufReader},
-    path::{Path, PathBuf},
-};
-
+use crate::storage::{EvalResult, Result as StoreResult, ResultsStore, TraceEvent};
+use std::collections::HashMap;
+use std::{fs, io::BufRead, path::PathBuf};
+use tracing_subscriber::{fmt, Layer, Registry};
 use uuid::Uuid;
-
-use tracing_subscriber::{Layer, Registry};
-
-use crate::storage::{
-    EvalResult, Result as StoreResult, ResultsStore, RunResult, StructuredLayer, TraceEvent,
-};
 
 /// File system-based implementation of ResultsStore
 #[derive(Clone)]
@@ -40,17 +31,19 @@ impl FileSystemStore {
             .join(format!("{}.json", eval_name))
     }
 
-    fn run_result_file(&self, run_id: Uuid) -> PathBuf {
-        self.run_dir(run_id).join("run_result.json")
+    fn results_dir(&self, run_id: Uuid) -> PathBuf {
+        self.run_dir(run_id).join("results")
     }
 
-    fn parse_traces_file(
-        traces_file: &Path,
-    ) -> Result<HashMap<String, Vec<TraceEvent>>, Box<dyn std::error::Error>> {
-        let file = fs::File::open(traces_file)?;
-        let reader = BufReader::new(file);
+    /// Parse traces from JSONL file
+    fn parse_traces_file(&self, path: &PathBuf) -> StoreResult<Vec<TraceEvent>> {
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
 
-        let mut all_traces = Vec::new();
+        let file = fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        let mut events = Vec::new();
 
         for line in reader.lines() {
             let line = line?;
@@ -58,83 +51,67 @@ impl FileSystemStore {
                 continue;
             }
 
-            // Parse JSON and extract into our DTO
-            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
-                if let Some(event_obj) = value.get("event") {
-                    // Extract event data from JSON
-                    let metadata = event_obj.get("metadata");
-                    let fields = event_obj.get("fields");
-
-                    let level = metadata
-                        .and_then(|m| m.get("level"))
-                        .and_then(|l| l.as_str())
-                        .unwrap_or("UNKNOWN")
-                        .to_string();
-
-                    let target = metadata
-                        .and_then(|m| m.get("target"))
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("")
-                        .to_string();
-
-                    // Extract message from fields.message.Debug
-                    let message = fields
-                        .and_then(|f| f.get("message"))
-                        .and_then(|m| m.get("Debug"))
-                        .and_then(|d| d.as_str())
-                        .map(|s| s.to_string());
-
-                    all_traces.push(TraceEvent::Event {
-                        level,
-                        target,
-                        message,
-                        fields: fields.cloned().unwrap_or_default(),
-                    });
-                    continue;
+            match serde_json::from_str::<TraceEvent>(&line) {
+                Ok(event) => events.push(event),
+                Err(e) => {
+                    tracing::warn!("Failed to parse trace event: {}", e);
                 }
-
-                if let Some(span_obj) = value.get("new_span") {
-                    // Extract span data from JSON
-                    if let Some(attrs_obj) = span_obj.get("attributes") {
-                        let metadata = attrs_obj.get("metadata");
-                        let fields = attrs_obj.get("fields");
-
-                        let name = metadata
-                            .and_then(|m| m.get("name"))
-                            .and_then(|n| n.as_str())
-                            .unwrap_or("unknown")
-                            .to_string();
-
-                        let level = metadata
-                            .and_then(|m| m.get("level"))
-                            .and_then(|l| l.as_str())
-                            .unwrap_or("UNKNOWN")
-                            .to_string();
-
-                        let target = metadata
-                            .and_then(|m| m.get("target"))
-                            .and_then(|t| t.as_str())
-                            .unwrap_or("")
-                            .to_string();
-
-                        all_traces.push(TraceEvent::Span {
-                            name,
-                            level,
-                            target,
-                            fields: fields.cloned().unwrap_or_default(),
-                        });
-                        continue;
-                    }
-                }
-
-                // If we couldn't parse it as either, mark as Other
-                all_traces.push(TraceEvent::Other);
             }
         }
 
-        // Put all traces in ungrouped
-        let mut grouped = HashMap::new();
-        grouped.insert("_ungrouped".to_string(), all_traces);
+        Ok(events)
+    }
+
+    /// Group traces by eval name using span hierarchy
+    fn group_traces_by_eval(
+        &self,
+        events: Vec<TraceEvent>,
+    ) -> StoreResult<HashMap<String, Vec<TraceEvent>>> {
+        let mut grouped: HashMap<String, Vec<TraceEvent>> = HashMap::new();
+        let mut span_to_eval: HashMap<u64, String> = HashMap::new();
+
+        // First pass: build span -> eval name mapping
+        for event in &events {
+            // Check if this is an eval span (has eval_name field)
+            if let Some(span_info) = &event.span {
+                if let Some(fields) = &span_info.fields {
+                    if let Some(eval_name) = fields.get("eval_name").and_then(|v| v.as_str()) {
+                        if let Some(span_id) = span_info.id {
+                            span_to_eval.insert(span_id, eval_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Second pass: group events by eval
+        for event in events {
+            // Try to find eval name from current span or parent spans
+            let eval_name = if let Some(span_info) = &event.span {
+                // Check current span
+                if let Some(id) = span_info.id {
+                    if let Some(name) = span_to_eval.get(&id) {
+                        Some(name.clone())
+                    } else {
+                        // Check parent spans
+                        event.spans.iter().find_map(|parent| {
+                            parent.id.and_then(|id| span_to_eval.get(&id).cloned())
+                        })
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(eval_name) = eval_name {
+                grouped.entry(eval_name).or_default().push(event);
+            } else {
+                // Ungrouped events
+                grouped.entry("_ungrouped".to_string()).or_default().push(event);
+            }
+        }
 
         Ok(grouped)
     }
@@ -148,7 +125,6 @@ impl ResultsStore for FileSystemStore {
         report: &EvalResult,
     ) -> StoreResult<()> {
         let result_file = self.result_file(run_id, eval_name);
-        // Ensure the results directory exists
         if let Some(parent) = result_file.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -157,132 +133,218 @@ impl ResultsStore for FileSystemStore {
         Ok(())
     }
 
-    async fn save_run_result(&self, run_id: Uuid, result: &RunResult) -> StoreResult<()> {
-        let result_file = self.run_result_file(run_id);
-        if let Some(parent) = result_file.parent() {
-            fs::create_dir_all(parent)?;
+    async fn get_eval_results(&self, run_id: Uuid) -> StoreResult<Vec<EvalResult>> {
+        let results_dir = self.results_dir(run_id);
+        fs::create_dir_all(&results_dir)?;
+        let mut results = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(&results_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                    let result = fs::read_to_string(&path).and_then(|json| {
+                        serde_json::from_str::<EvalResult>(&json)
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                    });
+
+                    match result {
+                        Ok(eval_result) => results.push(eval_result),
+                        Err(e) => tracing::warn!(
+                            "Failed to read/parse eval result file {:?}: {}",
+                            path,
+                            e
+                        ),
+                    }
+                }
+            }
         }
-        let json = serde_json::to_string_pretty(result).map_err(|e| Box::new(e))?;
-        fs::write(result_file, json).map_err(|e| Box::new(e))?;
-        Ok(())
+
+        Ok(results)
     }
 
-    async fn save_trace_events(
+    async fn get_eval_traces(
         &self,
         run_id: Uuid,
-    ) -> StoreResult<HashMap<String, Vec<TraceEvent>>> {
+        eval_name: &str,
+    ) -> StoreResult<Vec<TraceEvent>> {
         let traces_file = self.traces_file(run_id);
-        let traces = Self::parse_traces_file(&traces_file)
-            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { format!("{}", e).into() })?;
-        Ok(traces)
-    }
+        let all_events = self.parse_traces_file(&traces_file)?;
+        let grouped = self.group_traces_by_eval(all_events)?;
 
-    async fn get_run_result(&self, run_id: Uuid) -> StoreResult<RunResult> {
-        let result_file = self.run_result_file(run_id);
-        let json = fs::read_to_string(&result_file).map_err(|e| Box::new(e))?;
-        let result: RunResult = serde_json::from_str(&json).map_err(|e| Box::new(e))?;
-        Ok(result)
-    }
-
-    async fn get_eval_result(&self, run_id: Uuid, eval_name: &str) -> StoreResult<EvalResult> {
-        let result_file = self.result_file(run_id, eval_name);
-        let json = fs::read_to_string(&result_file).map_err(|e| Box::new(e))?;
-        let report: EvalResult = serde_json::from_str(&json).map_err(|e| Box::new(e))?;
-        Ok(report)
+        Ok(grouped.get(eval_name).cloned().unwrap_or_default())
     }
 
     fn create_tracing_layer(&self, run_id: Uuid) -> Box<dyn Layer<Registry> + Send + Sync> {
+        let run_dir = self.run_dir(run_id);
+        fs::create_dir_all(&run_dir).expect("Failed to create run directory");
+
         let traces_file = self.traces_file(run_id);
-        // Ensure the run directory exists
-        if let Some(parent) = traces_file.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(traces_file)
+            .expect("Failed to open traces file");
 
-        // Open the file for writing
-        let file = fs::File::create(traces_file).expect("Failed to create traces file");
-
-        let structured_layer = StructuredLayer::new(file);
-        Box::new(structured_layer)
+        Box::new(
+            fmt::layer()
+                .json()
+                .with_writer(move || file.try_clone().expect("Failed to clone file handle")),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::{EvalAssertionResult, EvalReport, SpanInfo};
     use std::io::Write;
     use tempfile::TempDir;
 
     #[test]
-    fn test_parse_traces_file_structured_format() {
-        // Create a temporary directory and file
+    fn test_parse_traces_file_empty() {
         let temp_dir = TempDir::new().unwrap();
-        let traces_path = temp_dir.path().join("traces.jsonl");
+        let store = FileSystemStore::new(temp_dir.path().to_path_buf()).unwrap();
+        let traces_file = temp_dir.path().join("empty.jsonl");
 
-        // Write sample structured trace data
-        let mut file = fs::File::create(&traces_path).unwrap();
+        let result = store.parse_traces_file(&traces_file).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_traces_file_valid_events() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = FileSystemStore::new(temp_dir.path().to_path_buf()).unwrap();
+        let traces_file = temp_dir.path().join("traces.jsonl");
+
+        // Write sample trace events
+        let mut file = fs::File::create(&traces_file).unwrap();
         writeln!(
             file,
-            r#"{{"event":{{"fields":{{"message":{{"Debug":"Test message"}},"eval_name":{{"Debug":"test_eval"}}}}, "metadata":{{"level":"INFO","target":"test","name":"event","file":"test.rs","line":1,"module_path":"test","is_event":true,"is_span":false,"fields":["message","eval_name"]}}, "parent":null}}}}"#
+            r#"{{"timestamp":"2024-01-01T12:00:00Z","level":"INFO","target":"test","fields":{{"message":"test event"}}}}"#
         )
         .unwrap();
         writeln!(
             file,
-            r#"{{"new_span":{{"attributes":{{"metadata":{{"name":"test_span","level":"INFO","target":"test","file":"test.rs","line":2,"module_path":"test","is_event":false,"is_span":true,"fields":["eval_name"]}},"fields":{{"eval_name":{{"Debug":"test_eval2"}}}},"is_root":false,"parent":null}}, "id":{{"id":1}}}}}}"#
+            r#"{{"timestamp":"2024-01-01T12:00:01Z","level":"DEBUG","target":"test","fields":{{"message":"debug event"}}}}"#
         )
         .unwrap();
-        writeln!(
-            file,
-            r#"{{"event":{{"fields":{{"message":{{"Debug":"Ungrouped message"}}}}, "metadata":{{"level":"WARN","target":"test","name":"event","file":"test.rs","line":3,"module_path":"test","is_event":true,"is_span":false,"fields":["message"]}}, "parent":null}}}}"#
-        )
-        .unwrap();
-        drop(file);
 
-        // Parse the traces
-        let result = FileSystemStore::parse_traces_file(&traces_path);
-        assert!(result.is_ok(), "Failed to parse traces: {:?}", result.err());
+        let result = store.parse_traces_file(&traces_file).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].level, "INFO");
+        assert_eq!(result[1].level, "DEBUG");
+    }
 
-        let grouped = result.unwrap();
+    #[test]
+    fn test_group_traces_by_eval() {
+        let store =
+            FileSystemStore::new(TempDir::new().unwrap().path().to_path_buf()).unwrap();
 
-        // All traces should be in _ungrouped
+        let events = vec![
+            TraceEvent {
+                timestamp: "2024-01-01T12:00:00Z".to_string(),
+                level: "INFO".to_string(),
+                target: "test".to_string(),
+                fields: serde_json::json!({"message": "eval1 event"}),
+                span: Some(SpanInfo {
+                    id: Some(1),
+                    name: "eval_span".to_string(),
+                    fields: Some(serde_json::json!({"eval_name": "test_eval_1"})),
+                }),
+                spans: vec![],
+            },
+            TraceEvent {
+                timestamp: "2024-01-01T12:00:01Z".to_string(),
+                level: "INFO".to_string(),
+                target: "test".to_string(),
+                fields: serde_json::json!({"message": "eval2 event"}),
+                span: Some(SpanInfo {
+                    id: Some(2),
+                    name: "eval_span".to_string(),
+                    fields: Some(serde_json::json!({"eval_name": "test_eval_2"})),
+                }),
+                spans: vec![],
+            },
+            TraceEvent {
+                timestamp: "2024-01-01T12:00:02Z".to_string(),
+                level: "INFO".to_string(),
+                target: "test".to_string(),
+                fields: serde_json::json!({"message": "ungrouped event"}),
+                span: None,
+                spans: vec![],
+            },
+        ];
+
+        let grouped = store.group_traces_by_eval(events).unwrap();
+
+        assert_eq!(grouped.len(), 3);
+        assert!(grouped.contains_key("test_eval_1"));
+        assert!(grouped.contains_key("test_eval_2"));
         assert!(grouped.contains_key("_ungrouped"));
-        let ungrouped = &grouped["_ungrouped"];
-        assert_eq!(ungrouped.len(), 3);
+        assert_eq!(grouped.get("test_eval_1").unwrap().len(), 1);
+        assert_eq!(grouped.get("test_eval_2").unwrap().len(), 1);
+        assert_eq!(grouped.get("_ungrouped").unwrap().len(), 1);
+    }
 
-        // Verify trace types and data
-        match &ungrouped[0] {
-            TraceEvent::Event {
-                level,
-                target,
-                message,
-                ..
-            } => {
-                assert_eq!(level, "INFO");
-                assert_eq!(target, "test");
-                assert_eq!(message.as_deref(), Some("Test message"));
-            }
-            _ => panic!("Expected Event"),
-        }
+    #[test]
+    fn test_eval_report_computed_methods() {
+        use chrono::Utc;
 
-        match &ungrouped[1] {
-            TraceEvent::Span {
-                name,
-                level,
-                target,
-                ..
-            } => {
-                assert_eq!(name, "test_span");
-                assert_eq!(level, "INFO");
-                assert_eq!(target, "test");
-            }
-            _ => panic!("Expected Span"),
-        }
+        let mut report = EvalReport::new(
+            uuid::Uuid::new_v4(),
+            Utc::now(),
+            Some(5),
+            Some(1000),
+        );
 
-        match &ungrouped[2] {
-            TraceEvent::Event { level, message, .. } => {
-                assert_eq!(level, "WARN");
-                assert_eq!(message.as_deref(), Some("Ungrouped message"));
-            }
-            _ => panic!("Expected Event"),
-        }
+        // Add some eval results
+        report.add_eval_result(EvalResult {
+            eval_name: "eval1".to_string(),
+            passed: true,
+            assertions: vec![
+                EvalAssertionResult {
+                    assertion_type: "FileExists".to_string(),
+                    passed: true,
+                    message: "pass".to_string(),
+                },
+                EvalAssertionResult {
+                    assertion_type: "FileMatches".to_string(),
+                    passed: true,
+                    message: "pass".to_string(),
+                },
+            ],
+            agent_diff: None,
+            reference_diff: None,
+        });
+
+        report.add_eval_result(EvalResult {
+            eval_name: "eval2".to_string(),
+            passed: false,
+            assertions: vec![
+                EvalAssertionResult {
+                    assertion_type: "FileExists".to_string(),
+                    passed: true,
+                    message: "pass".to_string(),
+                },
+                EvalAssertionResult {
+                    assertion_type: "FileMatches".to_string(),
+                    passed: false,
+                    message: "fail".to_string(),
+                },
+            ],
+            agent_diff: None,
+            reference_diff: None,
+        });
+
+        assert_eq!(report.total_evals(), 2);
+        assert_eq!(report.passed_evals(), 1);
+        assert_eq!(report.failed_evals(), 1);
+        assert_eq!(report.total_assertions(), 4);
+        assert_eq!(report.passed_assertions(), 3);
+        assert_eq!(report.failed_assertions(), 1);
+
+        // Test completion
+        report.complete(Utc::now());
+        assert!(report.completed_at.is_some());
     }
 }
