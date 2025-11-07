@@ -28,7 +28,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 use uuid::Uuid;
 
-use crate::storage::{EvalResult, RunResult};
+use crate::storage::{EvalReport, EvalResult};
 
 pub struct EvalsConfig<T, U> {
     llm: T,
@@ -182,7 +182,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         self,
         evals: Vec<Eval>,
         config: EvalsConfig<M, J>,
-    ) -> Result<RunResult, Box<dyn std::error::Error>>
+    ) -> Result<EvalReport, Box<dyn std::error::Error>>
     where
         M: StreamingModelProvider + 'static,
         J: StreamingModelProvider + 'static,
@@ -239,11 +239,22 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         // Wrap providers in Arc so they can be shared across tasks
         let llm = Arc::new(config.llm);
         let judge_llm = Arc::new(config.judge_llm);
-        let mut run_result = RunResult::new(run_id, config.batch_size, config.batch_delay);
 
         // Determine batch size (default to all evals if not specified)
         let batch_size = config.batch_size.unwrap_or(evals.len());
         let batch_delay = config.batch_delay.unwrap_or(Duration::ZERO);
+        let batch_delay_ms = if batch_delay.is_zero() {
+            None
+        } else {
+            Some(batch_delay.as_millis() as u64)
+        };
+
+        let mut run_result = EvalReport::new(
+            run_id,
+            chrono::Utc::now(),
+            config.batch_size,
+            batch_delay_ms,
+        );
         let total_evals = evals.len();
 
         // Process evals in batches
@@ -304,12 +315,8 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             }
         }
 
-        // Complete the run and write it
-        run_result.complete();
-        results_store
-            .save_run_result(run_id, &run_result)
-            .await
-            .map_err(|e| -> Box<dyn std::error::Error> { format!("{}", e).into() })?;
+        // Complete the run
+        run_result.complete(chrono::Utc::now());
 
         // Final update to app state if serving
         if config.serve {
@@ -464,13 +471,13 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             ),
             tokio::task::JoinError,
         >,
-        run_result: &mut RunResult,
+        run_result: &mut EvalReport,
         results_store: &Arc<T>,
         run_id: Uuid,
     ) {
         match task_result {
-            Ok((eval, Ok(eval_results), duration, state)) => {
-                let mut report = EvalResult::new(&eval, &eval_results[..], Some(duration));
+            Ok((eval, Ok(eval_results), _duration, state)) => {
+                let mut report = EvalResult::new(&eval, &eval_results[..]);
 
                 // Capture diffs for GitRepo working directories
                 Self::capture_git_diffs(&eval, &mut report);
@@ -502,17 +509,14 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         }
     }
 
-    /// Update app state with latest run result and traces after batch completion
+    /// Update app state with latest run result after batch completion
     async fn update_app_state_after_batch_helper(
         app_state: &Option<Arc<server::AppState<T>>>,
-        run_result: &mut RunResult,
-        results_store: &Arc<T>,
-        run_id: Uuid,
+        run_result: &mut EvalReport,
+        _results_store: &Arc<T>,
+        _run_id: Uuid,
     ) {
         if let Some(state) = app_state {
-            if let Ok(eval_traces) = results_store.save_trace_events(run_id).await {
-                run_result.eval_traces = eval_traces;
-            }
             state.update_run_result(run_result.clone());
         }
     }

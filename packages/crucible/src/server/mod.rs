@@ -1,4 +1,4 @@
-use crate::storage::{EvalResult, ResultsStore, RunResult, TraceEvent};
+use crate::storage::{EvalReport, EvalResult, ResultsStore, TraceEvent};
 use axum::{
     Router,
     extract::{Path, State},
@@ -34,13 +34,13 @@ pub enum SseEvent {
         trace: TraceEvent,
     },
     RunResultUpdated {
-        result: RunResult,
+        result: EvalReport,
     },
 }
 
 /// Shared application state
 pub struct AppState<T: ResultsStore> {
-    pub run_result: Arc<RwLock<RunResult>>,
+    pub run_result: Arc<RwLock<EvalReport>>,
     pub sse_tx: broadcast::Sender<SseEvent>,
     pub results_store: Arc<T>,
     pub current_run_id: Arc<RwLock<Option<Uuid>>>,
@@ -61,7 +61,12 @@ impl<T: ResultsStore> AppState<T> {
     pub fn new(results_store: Arc<T>, run_id: Uuid) -> Self {
         let (sse_tx, _rx) = broadcast::channel(100);
         Self {
-            run_result: Arc::new(RwLock::new(RunResult::new(run_id, None, None))),
+            run_result: Arc::new(RwLock::new(EvalReport::new(
+                run_id,
+                chrono::Utc::now(),
+                None,
+                None,
+            ))),
             sse_tx,
             results_store,
             current_run_id: Arc::new(RwLock::new(Some(run_id))),
@@ -73,12 +78,12 @@ impl<T: ResultsStore> AppState<T> {
         let _ = self.sse_tx.send(event);
     }
 
-    pub fn update_run_result(&self, result: RunResult) {
+    pub fn update_run_result(&self, result: EvalReport) {
         *self.run_result.write().unwrap() = result.clone();
         self.send_sse_event(SseEvent::RunResultUpdated { result });
     }
 
-    pub fn get_run_result(&self) -> RunResult {
+    pub fn get_run_result(&self) -> EvalReport {
         self.run_result.read().unwrap().clone()
     }
 }
@@ -114,12 +119,12 @@ pub fn create_router<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> R
             get(|state, path| get_run::<T>(state, path)),
         )
         .route(
-            "/api/runs/:run_id/traces",
-            get(|state, path| get_run_traces::<T>(state, path)),
-        )
-        .route(
             "/api/runs/:run_id/evals/:eval_name",
             get(|state, path| get_run_eval::<T>(state, path)),
+        )
+        .route(
+            "/api/runs/:run_id/evals/:eval_name/traces",
+            get(|state, path| get_eval_traces_handler::<T>(state, path)),
         )
         .with_state(state)
 }
@@ -185,31 +190,16 @@ async fn sse_handler<T: ResultsStore>(
 //     }
 // }
 
-/// Get a specific run's report data
+/// Get a specific run's report data (all eval results)
 async fn get_run<T: ResultsStore>(
     State(state): State<AppState<T>>,
     Path(run_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match state.results_store.get_run_result(run_id).await {
-        Ok(result) => axum::Json(result).into_response(),
+    match state.results_store.get_eval_results(run_id).await {
+        Ok(results) => axum::Json(results).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to read run: {}", e),
-        )
-            .into_response(),
-    }
-}
-
-/// Get traces for a specific run
-async fn get_run_traces<T: ResultsStore>(
-    State(state): State<AppState<T>>,
-    Path(run_id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.results_store.save_trace_events(run_id).await {
-        Ok(traces) => axum::Json(traces).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read traces: {}", e),
         )
             .into_response(),
     }
@@ -220,15 +210,41 @@ async fn get_run_eval<T: ResultsStore>(
     State(state): State<AppState<T>>,
     Path((run_id, eval_name)): Path<(Uuid, String)>,
 ) -> impl IntoResponse {
-    match state
-        .results_store
-        .get_eval_result(run_id, &eval_name)
-        .await
-    {
-        Ok(report) => axum::Json(report).into_response(),
+    match state.results_store.get_eval_results(run_id).await {
+        Ok(results) => {
+            // Find the specific eval result
+            if let Some(result) = results.iter().find(|r| r.eval_name == eval_name) {
+                axum::Json(result).into_response()
+            } else {
+                (
+                    StatusCode::NOT_FOUND,
+                    format!("Eval '{}' not found in run {}", eval_name, run_id),
+                )
+                    .into_response()
+            }
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to read eval result: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+/// Get traces for a specific eval within a run
+async fn get_eval_traces_handler<T: ResultsStore>(
+    State(state): State<AppState<T>>,
+    Path((run_id, eval_name)): Path<(Uuid, String)>,
+) -> impl IntoResponse {
+    match state
+        .results_store
+        .get_eval_traces(run_id, &eval_name)
+        .await
+    {
+        Ok(traces) => axum::Json(traces).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read traces: {}", e),
         )
             .into_response(),
     }

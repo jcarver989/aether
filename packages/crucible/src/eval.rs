@@ -83,9 +83,9 @@ impl WorkingDirectory {
         gold_commit: impl Into<String>,
         subdir: Option<impl Into<PathBuf>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let url = url.into();
-        let start_commit = start_commit.into();
-        let gold_commit = gold_commit.into();
+        let url: String = url.into();
+        let start_commit: String = start_commit.into();
+        let gold_commit: String = gold_commit.into();
         let tmpdir = tempfile::tempdir()?;
 
         tracing::debug!("Cloning git repo {} at commit {}", url, start_commit);
