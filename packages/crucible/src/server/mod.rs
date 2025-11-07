@@ -1,4 +1,4 @@
-use crate::storage::{EvalReport, EvalResult, ResultsStore, TraceEvent};
+use crate::storage::{EvalResult, ResultsStore, TraceEvent};
 use axum::{
     Router,
     extract::{Path, State},
@@ -33,14 +33,13 @@ pub enum SseEvent {
         eval_name: String,
         trace: TraceEvent,
     },
-    RunResultUpdated {
-        result: EvalReport,
+    RunCompleted {
+        run_id: Uuid,
     },
 }
 
 /// Shared application state
 pub struct AppState<T: ResultsStore> {
-    pub run_result: Arc<RwLock<EvalReport>>,
     pub sse_tx: broadcast::Sender<SseEvent>,
     pub results_store: Arc<T>,
     pub current_run_id: Arc<RwLock<Option<Uuid>>>,
@@ -49,7 +48,6 @@ pub struct AppState<T: ResultsStore> {
 impl<T: ResultsStore> Clone for AppState<T> {
     fn clone(&self) -> Self {
         Self {
-            run_result: Arc::clone(&self.run_result),
             sse_tx: self.sse_tx.clone(),
             results_store: Arc::clone(&self.results_store),
             current_run_id: Arc::clone(&self.current_run_id),
@@ -61,12 +59,6 @@ impl<T: ResultsStore> AppState<T> {
     pub fn new(results_store: Arc<T>, run_id: Uuid) -> Self {
         let (sse_tx, _rx) = broadcast::channel(100);
         Self {
-            run_result: Arc::new(RwLock::new(EvalReport::new(
-                run_id,
-                chrono::Utc::now(),
-                None,
-                None,
-            ))),
             sse_tx,
             results_store,
             current_run_id: Arc::new(RwLock::new(Some(run_id))),
@@ -76,15 +68,6 @@ impl<T: ResultsStore> AppState<T> {
     /// Send an SSE event to all connected clients
     pub fn send_sse_event(&self, event: SseEvent) {
         let _ = self.sse_tx.send(event);
-    }
-
-    pub fn update_run_result(&self, result: EvalReport) {
-        *self.run_result.write().unwrap() = result.clone();
-        self.send_sse_event(SseEvent::RunResultUpdated { result });
-    }
-
-    pub fn get_run_result(&self) -> EvalReport {
-        self.run_result.read().unwrap().clone()
     }
 }
 
@@ -111,9 +94,8 @@ pub fn create_router<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> R
         .route("/index.html", get(serve_index))
         .route("/styles.css", get(serve_styles))
         .route("/script.js", get(serve_script))
-        .route("/api/report-data", get(get_report_data::<T>))
         .route("/api/events", get(sse_handler::<T>))
-        // .route("/api/runs", get(|state| list_runs::<T>(state)))
+        .route("/api/runs", get(list_runs::<T>))
         .route(
             "/api/runs/:run_id",
             get(|state, path| get_run::<T>(state, path)),
@@ -152,11 +134,6 @@ async fn serve_script() -> impl IntoResponse {
         .unwrap()
 }
 
-async fn get_report_data<T: ResultsStore>(State(state): State<AppState<T>>) -> impl IntoResponse {
-    let run_result = state.get_run_result();
-    axum::Json(run_result)
-}
-
 async fn sse_handler<T: ResultsStore>(
     State(state): State<AppState<T>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
@@ -177,20 +154,19 @@ async fn sse_handler<T: ResultsStore>(
     Sse::new(event_stream).keep_alive(KeepAlive::default())
 }
 
-// TODO: Implement list_runs - need to add get_all_runs to ResultsStore trait
-// /// List all historical runs
-// async fn list_runs<T: ResultsStore>(State(state): State<AppState<T>>) -> impl IntoResponse {
-//     match state.results_store.get_all_runs().await {
-//         Ok(runs) => axum::Json(runs).into_response(),
-//         Err(e) => (
-//             StatusCode::INTERNAL_SERVER_ERROR,
-//             format!("Failed to list runs: {}", e),
-//         )
-//             .into_response(),
-//     }
-// }
+/// List all runs
+async fn list_runs<T: ResultsStore>(State(state): State<AppState<T>>) -> impl IntoResponse {
+    match state.results_store.get_all_run_ids().await {
+        Ok(runs) => axum::Json(runs).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to list runs: {}", e),
+        )
+            .into_response(),
+    }
+}
 
-/// Get a specific run's report data (all eval results)
+/// Get a specific run's eval results
 async fn get_run<T: ResultsStore>(
     State(state): State<AppState<T>>,
     Path(run_id): Path<Uuid>,

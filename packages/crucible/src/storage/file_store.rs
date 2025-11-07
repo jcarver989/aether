@@ -121,6 +121,37 @@ impl FileSystemStore {
 }
 
 impl ResultsStore for FileSystemStore {
+    async fn get_all_run_ids(&self) -> Result<Vec<Uuid>> {
+        let runs_dir = self.output_dir.join("runs");
+        let mut run_ids = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(&runs_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+                        if let Ok(uuid) = Uuid::parse_str(dir_name) {
+                            run_ids.push(uuid);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by directory modification time (most recent first)
+        run_ids.sort_by(|a, b| {
+            let a_modified = fs::metadata(self.run_dir(*a))
+                .and_then(|m| m.modified())
+                .ok();
+            let b_modified = fs::metadata(self.run_dir(*b))
+                .and_then(|m| m.modified())
+                .ok();
+            b_modified.cmp(&a_modified)
+        });
+
+        Ok(run_ids)
+    }
+
     async fn save_eval_result(
         &self,
         run_id: Uuid,
@@ -195,7 +226,7 @@ impl ResultsStore for FileSystemStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{EvalAssertionResult, EvalReport, SpanInfo};
+    use crate::storage::SpanInfo;
     use std::io::Write;
     use tempfile::TempDir;
 
@@ -284,60 +315,4 @@ mod tests {
         assert_eq!(grouped.get("_ungrouped").unwrap().len(), 1);
     }
 
-    #[test]
-    fn test_eval_report_computed_methods() {
-        use chrono::Utc;
-
-        let mut report = EvalReport::new(uuid::Uuid::new_v4(), Utc::now(), Some(5), Some(1000));
-
-        // Add some eval results
-        report.add_eval_result(EvalResult {
-            eval_name: "eval1".to_string(),
-            passed: true,
-            assertions: vec![
-                EvalAssertionResult {
-                    assertion_type: "FileExists".to_string(),
-                    passed: true,
-                    message: "pass".to_string(),
-                },
-                EvalAssertionResult {
-                    assertion_type: "FileMatches".to_string(),
-                    passed: true,
-                    message: "pass".to_string(),
-                },
-            ],
-            agent_diff: None,
-            reference_diff: None,
-        });
-
-        report.add_eval_result(EvalResult {
-            eval_name: "eval2".to_string(),
-            passed: false,
-            assertions: vec![
-                EvalAssertionResult {
-                    assertion_type: "FileExists".to_string(),
-                    passed: true,
-                    message: "pass".to_string(),
-                },
-                EvalAssertionResult {
-                    assertion_type: "FileMatches".to_string(),
-                    passed: false,
-                    message: "fail".to_string(),
-                },
-            ],
-            agent_diff: None,
-            reference_diff: None,
-        });
-
-        assert_eq!(report.total_evals(), 2);
-        assert_eq!(report.passed_evals(), 1);
-        assert_eq!(report.failed_evals(), 1);
-        assert_eq!(report.total_assertions(), 4);
-        assert_eq!(report.passed_assertions(), 3);
-        assert_eq!(report.failed_assertions(), 1);
-
-        // Test completion
-        report.complete(Utc::now());
-        assert!(report.completed_at.is_some());
-    }
 }

@@ -28,7 +28,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 use uuid::Uuid;
 
-use crate::storage::{EvalReport, EvalResult};
+use crate::storage::EvalResult;
 
 pub struct EvalsConfig<T, U> {
     llm: T,
@@ -177,12 +177,12 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
     /// * `config` - Configuration including LLM providers and batching settings
     ///
     /// # Returns
-    /// Result containing the summary report
+    /// Result containing the run ID
     pub async fn run_evals<M, J>(
         self,
         evals: Vec<Eval>,
         config: EvalsConfig<M, J>,
-    ) -> Result<EvalReport, Box<dyn std::error::Error>>
+    ) -> Result<Uuid, Box<dyn std::error::Error>>
     where
         M: StreamingModelProvider + 'static,
         J: StreamingModelProvider + 'static,
@@ -243,18 +243,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         // Determine batch size (default to all evals if not specified)
         let batch_size = config.batch_size.unwrap_or(evals.len());
         let batch_delay = config.batch_delay.unwrap_or(Duration::ZERO);
-        let batch_delay_ms = if batch_delay.is_zero() {
-            None
-        } else {
-            Some(batch_delay.as_millis() as u64)
-        };
 
-        let mut run_result = EvalReport::new(
-            run_id,
-            chrono::Utc::now(),
-            config.batch_size,
-            batch_delay_ms,
-        );
         let total_evals = evals.len();
 
         // Process evals in batches
@@ -293,19 +282,8 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             let results = futures::future::join_all(tasks).await;
 
             for result in results {
-                Self::handle_eval_result_helper(result, &mut run_result, &results_store, run_id)
+                Self::handle_eval_result_helper(result, &results_store, run_id)
                     .await;
-            }
-
-            // Update app state after each batch if serving
-            if config.serve {
-                Self::update_app_state_after_batch_helper(
-                    &app_state,
-                    &mut run_result,
-                    &results_store,
-                    run_id,
-                )
-                .await;
             }
 
             // Add delay between batches to prevent rate limiting
@@ -315,19 +293,13 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             }
         }
 
-        // Complete the run
-        run_result.complete(chrono::Utc::now());
+        // Notify that the run is complete
+        if let Some(state) = &app_state {
+            state.send_sse_event(server::SseEvent::RunCompleted { run_id });
+        }
 
-        // Final update to app state if serving
+        // Keep the server running if serving
         if config.serve {
-            Self::update_app_state_after_batch_helper(
-                &app_state,
-                &mut run_result,
-                &results_store,
-                run_id,
-            )
-            .await;
-
             // Keep the server running (it's in a background task)
             println!(
                 "\n{}",
@@ -343,7 +315,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             }
         }
 
-        Ok(run_result)
+        Ok(run_id)
     }
 
     // Private helper methods
@@ -471,7 +443,6 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             ),
             tokio::task::JoinError,
         >,
-        run_result: &mut EvalReport,
         results_store: &Arc<T>,
         run_id: Uuid,
     ) {
@@ -497,8 +468,6 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                         report: report.clone(),
                     });
                 }
-
-                run_result.add_eval_result(report);
             }
             Ok((eval, Err(e), _duration, _state)) => {
                 tracing::error!("Eval '{}' failed with error: {}", eval.name, e);
@@ -509,15 +478,4 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         }
     }
 
-    /// Update app state with latest run result after batch completion
-    async fn update_app_state_after_batch_helper(
-        app_state: &Option<Arc<server::AppState<T>>>,
-        run_result: &mut EvalReport,
-        _results_store: &Arc<T>,
-        _run_id: Uuid,
-    ) {
-        if let Some(state) = app_state {
-            state.update_run_result(run_result.clone());
-        }
-    }
 }
