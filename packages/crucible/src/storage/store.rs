@@ -16,7 +16,6 @@ pub trait ResultsStore: Send + Sync + Clone {
     fn save_eval_result(
         &self,
         run_id: Uuid,
-        eval_name: &str,
         report: &EvalResult,
     ) -> impl Future<Output = Result<()>> + Send;
 
@@ -26,11 +25,18 @@ pub trait ResultsStore: Send + Sync + Clone {
         run_id: Uuid,
     ) -> impl Future<Output = Result<Vec<EvalResult>>> + Send;
 
+    /// Get a specific eval result by its ID
+    fn get_eval_result(
+        &self,
+        run_id: Uuid,
+        eval_id: Uuid,
+    ) -> impl Future<Output = Result<Option<EvalResult>>> + Send;
+
     /// Get traces/spans for a specific eval within a run
     fn get_eval_traces(
         &self,
         run_id: Uuid,
-        eval_name: &str,
+        eval_id: Uuid,
     ) -> impl Future<Output = Result<Vec<TraceEvent>>> + Send;
 
     /// Create a tracing layer that writes to this store for a specific run

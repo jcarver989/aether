@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     Eval, EvalAssertion,
@@ -8,6 +9,7 @@ use crate::{
 /// Result of running a single evaluation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvalResult {
+    pub id: Uuid,
     pub eval_name: String,
     pub passed: bool,
     pub assertions: Vec<EvalAssertionResult>,
@@ -39,6 +41,7 @@ impl EvalResult {
         let passed = assertions.iter().all(|a| a.passed);
 
         EvalResult {
+            id: Uuid::new_v4(),
             eval_name: eval.name.clone(),
             passed,
             assertions,

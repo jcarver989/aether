@@ -101,11 +101,11 @@ pub fn create_router<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> R
             get(|state, path| get_run::<T>(state, path)),
         )
         .route(
-            "/api/runs/:run_id/evals/:eval_name",
+            "/api/runs/:run_id/evals/:eval_id",
             get(|state, path| get_run_eval::<T>(state, path)),
         )
         .route(
-            "/api/runs/:run_id/evals/:eval_name/traces",
+            "/api/runs/:run_id/evals/:eval_id/traces",
             get(|state, path| get_eval_traces_handler::<T>(state, path)),
         )
         .with_state(state)
@@ -184,21 +184,15 @@ async fn get_run<T: ResultsStore>(
 /// Get a specific eval result from a specific run
 async fn get_run_eval<T: ResultsStore>(
     State(state): State<AppState<T>>,
-    Path((run_id, eval_name)): Path<(Uuid, String)>,
+    Path((run_id, eval_id)): Path<(Uuid, Uuid)>,
 ) -> impl IntoResponse {
-    match state.results_store.get_eval_results(run_id).await {
-        Ok(results) => {
-            // Find the specific eval result
-            if let Some(result) = results.iter().find(|r| r.eval_name == eval_name) {
-                axum::Json(result).into_response()
-            } else {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("Eval '{}' not found in run {}", eval_name, run_id),
-                )
-                    .into_response()
-            }
-        }
+    match state.results_store.get_eval_result(run_id, eval_id).await {
+        Ok(Some(result)) => axum::Json(result).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            format!("Eval {} not found in run {}", eval_id, run_id),
+        )
+            .into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to read eval result: {}", e),
@@ -210,11 +204,11 @@ async fn get_run_eval<T: ResultsStore>(
 /// Get traces for a specific eval within a run
 async fn get_eval_traces_handler<T: ResultsStore>(
     State(state): State<AppState<T>>,
-    Path((run_id, eval_name)): Path<(Uuid, String)>,
+    Path((run_id, eval_id)): Path<(Uuid, Uuid)>,
 ) -> impl IntoResponse {
     match state
         .results_store
-        .get_eval_traces(run_id, &eval_name)
+        .get_eval_traces(run_id, eval_id)
         .await
     {
         Ok(traces) => axum::Json(traces).into_response(),

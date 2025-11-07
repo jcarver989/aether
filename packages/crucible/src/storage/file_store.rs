@@ -25,10 +25,10 @@ impl FileSystemStore {
         self.run_dir(run_id).join("traces.jsonl")
     }
 
-    fn result_file(&self, run_id: Uuid, eval_name: &str) -> PathBuf {
+    fn result_file(&self, run_id: Uuid, eval_id: Uuid) -> PathBuf {
         self.run_dir(run_id)
             .join("results")
-            .join(format!("{}.json", eval_name))
+            .join(format!("{}.json", eval_id))
     }
 
     fn results_dir(&self, run_id: Uuid) -> PathBuf {
@@ -155,10 +155,9 @@ impl ResultsStore for FileSystemStore {
     async fn save_eval_result(
         &self,
         run_id: Uuid,
-        eval_name: &str,
         report: &EvalResult,
     ) -> Result<()> {
-        let result_file = self.result_file(run_id, eval_name);
+        let result_file = self.result_file(run_id, report.id);
         if let Some(parent) = result_file.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -196,12 +195,48 @@ impl ResultsStore for FileSystemStore {
         Ok(results)
     }
 
-    async fn get_eval_traces(&self, run_id: Uuid, eval_name: &str) -> Result<Vec<TraceEvent>> {
+    async fn get_eval_result(
+        &self,
+        run_id: Uuid,
+        eval_id: Uuid,
+    ) -> Result<Option<EvalResult>> {
+        let result_file = self.result_file(run_id, eval_id);
+
+        if !result_file.exists() {
+            return Ok(None);
+        }
+
+        match fs::read_to_string(&result_file) {
+            Ok(json) => {
+                match serde_json::from_str::<EvalResult>(&json) {
+                    Ok(eval_result) => Ok(Some(eval_result)),
+                    Err(e) => {
+                        tracing::warn!("Failed to parse eval result file {:?}: {}", result_file, e);
+                        Ok(None)
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read eval result file {:?}: {}", result_file, e);
+                Ok(None)
+            }
+        }
+    }
+
+    async fn get_eval_traces(&self, run_id: Uuid, eval_id: Uuid) -> Result<Vec<TraceEvent>> {
+        // First, get the eval result to find the eval_name
+        let eval_result = self.get_eval_result(run_id, eval_id).await?;
+
+        let eval_name = match eval_result {
+            Some(result) => result.eval_name,
+            None => return Ok(Vec::new()),
+        };
+
         let traces_file = self.traces_file(run_id);
         let all_events = self.parse_traces_file(&traces_file)?;
         let grouped = self.group_traces_by_eval(all_events)?;
 
-        Ok(grouped.get(eval_name).cloned().unwrap_or_default())
+        Ok(grouped.get(&eval_name).cloned().unwrap_or_default())
     }
 
     fn create_tracing_layer(&self, run_id: Uuid) -> Box<dyn Layer<Registry> + Send + Sync> {
