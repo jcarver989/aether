@@ -157,7 +157,7 @@ impl ResultsStore for FileSystemStore {
         run_id: Uuid,
         report: &EvalResult,
     ) -> Result<()> {
-        let result_file = self.result_file(run_id, report.id);
+        let result_file = self.result_file(run_id, report.id());
         if let Some(parent) = result_file.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -228,7 +228,7 @@ impl ResultsStore for FileSystemStore {
         let eval_result = self.get_eval_result(run_id, eval_id).await?;
 
         let eval_name = match eval_result {
-            Some(result) => result.eval_name,
+            Some(result) => result.eval_name().to_string(),
             None => return Ok(Vec::new()),
         };
 

@@ -277,6 +277,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                         llm.clone(),
                         judge_llm.clone(),
                         app_state.clone(),
+                        results_store.clone(),
                     )
                 })
                 .collect();
@@ -374,7 +375,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             // Capture agent diff (unstaged changes)
             if let Ok(agent_diff_str) = repo.diff_unstaged() {
                 let stats = DiffStats::from_diff(&agent_diff_str);
-                report.agent_diff = Some(GitDiff {
+                report.set_agent_diff(GitDiff {
                     diff: agent_diff_str,
                     stats,
                 });
@@ -383,7 +384,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             // Capture reference diff (gold/human solution)
             if let Ok(gold_diff_str) = repo.diff(start_commit, gold_commit) {
                 let stats = DiffStats::from_diff(&gold_diff_str);
-                report.reference_diff = Some(GitDiff {
+                report.set_reference_diff(GitDiff {
                     diff: gold_diff_str,
                     stats,
                 });
@@ -402,6 +403,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         llm: Arc<M>,
         judge_llm: Arc<J>,
         app_state: Option<Arc<server::AppState<T>>>,
+        results_store: Arc<T>,
     ) -> tokio::task::JoinHandle<(
         Eval,
         Uuid,
@@ -418,6 +420,12 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
 
         tokio::spawn(
             async move {
+                // Save "started" state to store
+                let started_result = EvalResult::started(&eval, eval_id);
+                if let Err(e) = results_store.save_eval_result(run_id, &started_result).await {
+                    tracing::warn!("Failed to write started state for {}: {}", eval.name, e);
+                }
+
                 // Broadcast eval started event
                 if let Some(state) = &app_state {
                     state.send_sse_event(server::SseEvent::EvalStarted {
@@ -473,7 +481,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                     state.send_sse_event(server::SseEvent::EvalCompleted {
                         run_id,
                         eval_id,
-                        name: report.eval_name.clone(),
+                        name: report.eval_name().to_string(),
                         report: report.clone(),
                     });
                 }
