@@ -125,23 +125,23 @@ pub fn create_router<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> R
         .route("/api/events", get(sse_handler::<T>))
         .route("/api/runs", get(list_runs::<T>))
         .route(
-            "/api/runs/:run_id",
+            "/api/runs/{run_id}",
             get(|state, path| get_run::<T>(state, path)),
         )
         .route(
-            "/api/runs/:run_id/events",
+            "/api/runs/{run_id}/events",
             get(|state, path| run_sse_handler::<T>(state, path)),
         )
         .route(
-            "/api/runs/:run_id/evals/:eval_id",
+            "/api/runs/{run_id}/evals/{eval_id}",
             get(|state, path| get_run_eval::<T>(state, path)),
         )
         .route(
-            "/api/runs/:run_id/evals/:eval_id/events",
+            "/api/runs/{run_id}/evals/{eval_id}/events",
             get(|state, path| eval_sse_handler::<T>(state, path)),
         )
         .route(
-            "/api/runs/:run_id/evals/:eval_id/traces",
+            "/api/runs/{run_id}/evals/{eval_id}/traces",
             get(|state, path| get_eval_traces_handler::<T>(state, path)),
         )
         .with_state(state)
