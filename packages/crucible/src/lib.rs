@@ -331,7 +331,9 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
         let store_layer = results_store.create_tracing_layer(run_id);
-        let fmt_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stdout)
+            .pretty();
 
         tracing_subscriber::registry()
             .with(store_layer)
