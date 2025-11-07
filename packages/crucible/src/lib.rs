@@ -285,8 +285,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             let results = futures::future::join_all(tasks).await;
 
             for result in results {
-                Self::handle_eval_result_helper(result, &results_store, run_id)
-                    .await;
+                Self::handle_eval_result_helper(result, &results_store, run_id).await;
             }
 
             // Add delay between batches to prevent rate limiting
@@ -463,10 +462,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                 Self::capture_git_diffs(&eval, &mut report);
 
                 // Write eval result to store
-                if let Err(e) = results_store
-                    .save_eval_result(run_id, &report)
-                    .await
-                {
+                if let Err(e) = results_store.save_eval_result(run_id, &report).await {
                     tracing::warn!("Failed to write result file for {}: {}", eval.name, e);
                 }
 
@@ -488,5 +484,4 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             }
         }
     }
-
 }

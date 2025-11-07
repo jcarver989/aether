@@ -121,7 +121,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Run ID: {}", run_id);
 
     if !cli.no_serve {
-        tracing::info!("\nView detailed results at http://localhost:3000/api/runs/{}", run_id);
+        tracing::info!(
+            "\nView detailed results at http://localhost:3000/api/runs/{}",
+            run_id
+        );
         tracing::info!("Press Ctrl+C to stop the server.");
     }
 
