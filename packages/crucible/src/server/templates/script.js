@@ -109,6 +109,11 @@ function connectSSE() {
             await fetchAndRenderTraces(data.eval_name);
         }
     });
+    } catch (error) {
+        console.error('Error connecting to SSE:', error);
+        isLive = false;
+        updateConnectionStatus();
+    }
 }
 
 // Update connection status indicator
