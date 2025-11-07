@@ -199,4 +199,7 @@ pub struct SpanInfo {
     pub name: String,
     #[serde(default)]
     pub fields: Option<serde_json::Value>,
+    /// Captures all other fields (like eval_name, eval_id, etc.) at the span level
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
 }
