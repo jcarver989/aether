@@ -266,8 +266,11 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             let tasks: Vec<_> = batch
                 .into_iter()
                 .map(|eval| {
+                    let eval_id = Uuid::new_v4();
                     Self::spawn_eval_task_helper(
                         eval,
+                        eval_id,
+                        run_id,
                         agent_prompt.clone(),
                         tool_definitions.clone(),
                         mcp_tx.clone(),
@@ -390,6 +393,8 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
     /// Spawn a single eval task with tracing instrumentation
     fn spawn_eval_task_helper<M, J>(
         eval: Eval,
+        eval_id: Uuid,
+        run_id: Uuid,
         agents_prompt: Option<String>,
         tool_definitions: Vec<aether::llm::ToolDefinition>,
         mcp_tx: tokio::sync::mpsc::Sender<aether::mcp::run_mcp_task::McpCommand>,
@@ -398,6 +403,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         app_state: Option<Arc<server::AppState<T>>>,
     ) -> tokio::task::JoinHandle<(
         Eval,
+        Uuid,
         Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>,
         Duration,
         Option<Arc<server::AppState<T>>>,
@@ -414,6 +420,8 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                 // Broadcast eval started event
                 if let Some(state) = &app_state {
                     state.send_sse_event(server::SseEvent::EvalStarted {
+                        run_id,
+                        eval_id,
                         name: eval_name.clone(),
                     });
                 }
@@ -423,7 +431,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                     .run(llm, judge_llm, tool_definitions, mcp_tx, agents_prompt)
                     .await;
                 let duration = start.elapsed();
-                (eval, result, duration, app_state)
+                (eval, eval_id, result, duration, app_state)
             }
             .instrument(tracing::info_span!("eval_task", eval_name = %eval_name_for_span)),
         )
@@ -434,6 +442,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         task_result: Result<
             (
                 Eval,
+                Uuid,
                 Result<
                     Vec<(EvalAssertion, EvalAssertionResult)>,
                     Box<dyn std::error::Error + Send + Sync>,
@@ -447,8 +456,8 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         run_id: Uuid,
     ) {
         match task_result {
-            Ok((eval, Ok(eval_results), _duration, state)) => {
-                let mut report = EvalResult::new(&eval, &eval_results[..]);
+            Ok((eval, eval_id, Ok(eval_results), _duration, state)) => {
+                let mut report = EvalResult::new(&eval, eval_id, &eval_results[..]);
 
                 // Capture diffs for GitRepo working directories
                 Self::capture_git_diffs(&eval, &mut report);
@@ -464,12 +473,14 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                 // Broadcast eval completed event
                 if let Some(state) = &state {
                     state.send_sse_event(server::SseEvent::EvalCompleted {
+                        run_id,
+                        eval_id,
                         name: report.eval_name.clone(),
                         report: report.clone(),
                     });
                 }
             }
-            Ok((eval, Err(e), _duration, _state)) => {
+            Ok((eval, _eval_id, Err(e), _duration, _state)) => {
                 tracing::error!("Eval '{}' failed with error: {}", eval.name, e);
             }
             Err(e) => {

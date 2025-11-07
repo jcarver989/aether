@@ -22,7 +22,7 @@ pub struct EvalResult {
 }
 
 impl EvalResult {
-    pub fn new(eval: &Eval, results: &[(EvalAssertion, EvalAssertionResultEnum)]) -> EvalResult {
+    pub fn new(eval: &Eval, eval_id: Uuid, results: &[(EvalAssertion, EvalAssertionResultEnum)]) -> EvalResult {
         let assertions: Vec<EvalAssertionResult> = results
             .iter()
             .map(|(assertion, result)| EvalAssertionResult {
@@ -41,7 +41,7 @@ impl EvalResult {
         let passed = assertions.iter().all(|a| a.passed);
 
         EvalResult {
-            id: Uuid::new_v4(),
+            id: eval_id,
             eval_name: eval.name.clone(),
             passed,
             assertions,
