@@ -241,7 +241,7 @@ async fn eval_sse_handler<T: ResultsStore>(
 
 /// List all runs
 async fn list_runs<T: ResultsStore>(State(state): State<AppState<T>>) -> impl IntoResponse {
-    match state.results_store.get_all_run_ids().await {
+    match state.results_store.get_run_ids().await {
         Ok(runs) => axum::Json(runs).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
