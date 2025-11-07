@@ -1,7 +1,7 @@
-use crate::storage::{EvalResult, Result as StoreResult, ResultsStore, TraceEvent};
+use crate::storage::{EvalResult, Result, ResultsStore, TraceEvent};
 use std::collections::HashMap;
 use std::{fs, io::BufRead, path::PathBuf};
-use tracing_subscriber::{fmt, Layer, Registry};
+use tracing_subscriber::{Layer, Registry, fmt};
 use uuid::Uuid;
 
 /// File system-based implementation of ResultsStore
@@ -11,7 +11,7 @@ pub struct FileSystemStore {
 }
 
 impl FileSystemStore {
-    pub fn new(output_dir: PathBuf) -> StoreResult<Self> {
+    pub fn new(output_dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&output_dir)?;
         fs::create_dir_all(output_dir.join("runs"))?;
         Ok(Self { output_dir })
@@ -36,7 +36,7 @@ impl FileSystemStore {
     }
 
     /// Parse traces from JSONL file
-    fn parse_traces_file(&self, path: &PathBuf) -> StoreResult<Vec<TraceEvent>> {
+    fn parse_traces_file(&self, path: &PathBuf) -> Result<Vec<TraceEvent>> {
         if !path.exists() {
             return Ok(Vec::new());
         }
@@ -66,7 +66,7 @@ impl FileSystemStore {
     fn group_traces_by_eval(
         &self,
         events: Vec<TraceEvent>,
-    ) -> StoreResult<HashMap<String, Vec<TraceEvent>>> {
+    ) -> Result<HashMap<String, Vec<TraceEvent>>> {
         let mut grouped: HashMap<String, Vec<TraceEvent>> = HashMap::new();
         let mut span_to_eval: HashMap<u64, String> = HashMap::new();
 
@@ -109,7 +109,10 @@ impl FileSystemStore {
                 grouped.entry(eval_name).or_default().push(event);
             } else {
                 // Ungrouped events
-                grouped.entry("_ungrouped".to_string()).or_default().push(event);
+                grouped
+                    .entry("_ungrouped".to_string())
+                    .or_default()
+                    .push(event);
             }
         }
 
@@ -123,7 +126,7 @@ impl ResultsStore for FileSystemStore {
         run_id: Uuid,
         eval_name: &str,
         report: &EvalResult,
-    ) -> StoreResult<()> {
+    ) -> Result<()> {
         let result_file = self.result_file(run_id, eval_name);
         if let Some(parent) = result_file.parent() {
             fs::create_dir_all(parent)?;
@@ -133,7 +136,7 @@ impl ResultsStore for FileSystemStore {
         Ok(())
     }
 
-    async fn get_eval_results(&self, run_id: Uuid) -> StoreResult<Vec<EvalResult>> {
+    async fn get_eval_results(&self, run_id: Uuid) -> Result<Vec<EvalResult>> {
         let results_dir = self.results_dir(run_id);
         fs::create_dir_all(&results_dir)?;
         let mut results = Vec::new();
@@ -162,11 +165,7 @@ impl ResultsStore for FileSystemStore {
         Ok(results)
     }
 
-    async fn get_eval_traces(
-        &self,
-        run_id: Uuid,
-        eval_name: &str,
-    ) -> StoreResult<Vec<TraceEvent>> {
+    async fn get_eval_traces(&self, run_id: Uuid, eval_name: &str) -> Result<Vec<TraceEvent>> {
         let traces_file = self.traces_file(run_id);
         let all_events = self.parse_traces_file(&traces_file)?;
         let grouped = self.group_traces_by_eval(all_events)?;
@@ -237,8 +236,7 @@ mod tests {
 
     #[test]
     fn test_group_traces_by_eval() {
-        let store =
-            FileSystemStore::new(TempDir::new().unwrap().path().to_path_buf()).unwrap();
+        let store = FileSystemStore::new(TempDir::new().unwrap().path().to_path_buf()).unwrap();
 
         let events = vec![
             TraceEvent {
@@ -290,12 +288,7 @@ mod tests {
     fn test_eval_report_computed_methods() {
         use chrono::Utc;
 
-        let mut report = EvalReport::new(
-            uuid::Uuid::new_v4(),
-            Utc::now(),
-            Some(5),
-            Some(1000),
-        );
+        let mut report = EvalReport::new(uuid::Uuid::new_v4(), Utc::now(), Some(5), Some(1000));
 
         // Add some eval results
         report.add_eval_result(EvalResult {
