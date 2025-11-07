@@ -23,19 +23,47 @@ use uuid::Uuid;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SseEvent {
     EvalStarted {
+        run_id: Uuid,
+        eval_id: Uuid,
         name: String,
     },
     EvalCompleted {
+        run_id: Uuid,
+        eval_id: Uuid,
         name: String,
         report: EvalResult,
     },
     TraceEvent {
+        run_id: Uuid,
+        eval_id: Uuid,
         eval_name: String,
         trace: TraceEvent,
     },
     RunCompleted {
         run_id: Uuid,
     },
+}
+
+impl SseEvent {
+    /// Get the run_id associated with this event
+    pub fn run_id(&self) -> Uuid {
+        match self {
+            SseEvent::EvalStarted { run_id, .. } => *run_id,
+            SseEvent::EvalCompleted { run_id, .. } => *run_id,
+            SseEvent::TraceEvent { run_id, .. } => *run_id,
+            SseEvent::RunCompleted { run_id } => *run_id,
+        }
+    }
+
+    /// Get the eval_id associated with this event, if applicable
+    pub fn eval_id(&self) -> Option<Uuid> {
+        match self {
+            SseEvent::EvalStarted { eval_id, .. } => Some(*eval_id),
+            SseEvent::EvalCompleted { eval_id, .. } => Some(*eval_id),
+            SseEvent::TraceEvent { eval_id, .. } => Some(*eval_id),
+            SseEvent::RunCompleted { .. } => None,
+        }
+    }
 }
 
 /// Shared application state
@@ -101,8 +129,16 @@ pub fn create_router<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> R
             get(|state, path| get_run::<T>(state, path)),
         )
         .route(
+            "/api/runs/:run_id/events",
+            get(|state, path| run_sse_handler::<T>(state, path)),
+        )
+        .route(
             "/api/runs/:run_id/evals/:eval_id",
             get(|state, path| get_run_eval::<T>(state, path)),
+        )
+        .route(
+            "/api/runs/:run_id/evals/:eval_id/events",
+            get(|state, path| eval_sse_handler::<T>(state, path)),
         )
         .route(
             "/api/runs/:run_id/evals/:eval_id/traces",
@@ -134,6 +170,7 @@ async fn serve_script() -> impl IntoResponse {
         .unwrap()
 }
 
+/// Global SSE handler - sends all events (deprecated, use scoped endpoints)
 async fn sse_handler<T: ResultsStore>(
     State(state): State<AppState<T>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
@@ -142,6 +179,55 @@ async fn sse_handler<T: ResultsStore>(
     let event_stream = stream.filter_map(|result| {
         result
             .ok()
+            .and_then(|event| {
+                serde_json::to_string(&event)
+                    .map(|json| Event::default().data(json))
+                    .map_err(|e| tracing::error!("Failed to serialize SSE event: {}", e))
+                    .ok()
+            })
+            .map(Ok)
+    });
+
+    Sse::new(event_stream).keep_alive(KeepAlive::default())
+}
+
+/// Run-scoped SSE handler - only sends events for a specific run
+async fn run_sse_handler<T: ResultsStore>(
+    State(state): State<AppState<T>>,
+    Path(run_id): Path<Uuid>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.sse_tx.subscribe();
+    let stream = BroadcastStream::new(rx);
+    let event_stream = stream.filter_map(move |result| {
+        result
+            .ok()
+            .filter(|event| event.run_id() == run_id)
+            .and_then(|event| {
+                serde_json::to_string(&event)
+                    .map(|json| Event::default().data(json))
+                    .map_err(|e| tracing::error!("Failed to serialize SSE event: {}", e))
+                    .ok()
+            })
+            .map(Ok)
+    });
+
+    Sse::new(event_stream).keep_alive(KeepAlive::default())
+}
+
+/// Eval-scoped SSE handler - only sends events for a specific eval within a run
+async fn eval_sse_handler<T: ResultsStore>(
+    State(state): State<AppState<T>>,
+    Path((run_id, eval_id)): Path<(Uuid, Uuid)>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.sse_tx.subscribe();
+    let stream = BroadcastStream::new(rx);
+    let event_stream = stream.filter_map(move |result| {
+        result
+            .ok()
+            .filter(|event| {
+                event.run_id() == run_id
+                    && event.eval_id().map_or(false, |eid| eid == eval_id)
+            })
             .and_then(|event| {
                 serde_json::to_string(&event)
                     .map(|json| Event::default().data(json))
