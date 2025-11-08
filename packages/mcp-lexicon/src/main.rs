@@ -1,11 +1,11 @@
 use aether::llm::parser::ModelProviderParser;
 use clap::{Parser, Subcommand};
-use crucible::{EvalRunner, EvalsConfig};
+use crucible::{AetherRunner, EvalRunner, EvalsConfig};
 use mcp_lexicon::CodingMcp;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser)]
 #[command(name = "mcp-lexicon")]
@@ -59,50 +59,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             serve,
         } => {
             // Create output directory structure
-            let output_dir_path = output_dir.clone().unwrap_or_else(|| {
+            let output_dir_path = output_dir.unwrap_or_else(|| {
                 let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
                 PathBuf::from(format!("crucible_output_{timestamp}"))
             });
 
             fs::create_dir_all(&output_dir_path)?;
 
-            // Copy HTML report templates immediately so users can open and refresh the report
-            if let Err(e) = crucible::copy_report_templates(&output_dir_path) {
-                eprintln!("Warning: Failed to copy report templates: {e}");
-            } else {
-                println!(
-                    "HTML report templates ready at {}/report/index.html",
-                    output_dir_path.display()
-                );
-                println!("You can open this now and refresh to see traces as they appear");
-            }
-
-            // JSON traces for HTML report using tracing-appender for non-blocking writes
-            let traces_file = tracing_appender::rolling::never(&output_dir_path, "traces.jsonl");
-            let (non_blocking, guard) = tracing_appender::non_blocking(traces_file);
-
-            let json_layer = tracing_subscriber::fmt::layer()
-                .json()
-                .with_writer(non_blocking)
-                .with_ansi(false);
-
-            // Human-readable stdout
-            let stdout_layer = tracing_subscriber::fmt::layer()
-                .with_writer(std::io::stdout)
-                .with_ansi(true);
-
-            let env_filter =
-                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(json_layer)
-                .with(stdout_layer)
-                .init();
-
             tracing::info!("Starting evaluations...");
             tracing::info!("Output directory: {}", output_dir_path.display());
-            tracing::info!("JSON traces: {}/traces.jsonl", output_dir_path.display());
             tracing::info!("Agent model: {}", agent_model);
             tracing::info!("Judge model: {}", judge_model);
 
@@ -111,6 +76,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if let Some(batch_delay) = batch_delay {
                 tracing::info!("Batch delay: {:?}", batch_delay);
+            }
+            if serve {
+                tracing::info!("Will serve report on http://localhost:3000");
             }
 
             let parser = ModelProviderParser::default();
@@ -128,11 +96,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             tracing::info!("Loaded {} evals", evals.len());
 
-            let crucible = EvalRunner::new()
-                .with_mcp_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())))
-                .with_output_dir(output_dir_path.clone());
+            let results_store = crucible::FileSystemStore::new(output_dir_path)
+                .map_err(|e| format!("Failed to create results store: {e}"))?;
 
-            let mut config = EvalsConfig::new(agent_llm, judge_llm);
+            let runner = AetherRunner::new(Arc::new(agent_llm))
+                .with_mcp_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())));
+
+            let crucible = EvalRunner::new(runner, results_store);
+
+            let mut config = EvalsConfig::new(judge_llm);
 
             // Apply batch configuration if provided
             if let Some(batch_size) = batch_size {
@@ -145,40 +117,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 config = config.with_serve(true);
             }
 
-            let summary = crucible
+            let run_id = crucible
                 .run_evals(evals, config)
                 .await
                 .map_err(|e| format!("Failed to run evals: {e}"))?;
 
-            summary.print();
-
-            // Flush all traces before generating HTML report
-            drop(guard);
-            println!("Flushed all traces");
-
-            // Generate HTML report after traces are flushed
-            let traces_file = output_dir_path.join("traces.jsonl");
-            if traces_file.exists() {
-                match crucible::report::generate_html_report(
-                    &output_dir_path,
-                    &summary,
-                    &traces_file,
-                ) {
-                    Ok(_) => {
-                        println!(
-                            "HTML report generated at {}/report/index.html",
-                            output_dir_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to generate HTML report: {e}");
-                    }
-                }
-            }
-
-            if summary.failed_evals > 0 {
-                std::process::exit(1);
-            }
+            println!("\nRun ID: {}", run_id);
 
             Ok(())
         }

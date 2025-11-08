@@ -1,4 +1,4 @@
-use crucible::eval::{Hook, HookInput, HookResult};
+use crucible::hooks::{Hook, HookInput, HookResult};
 use std::{fs, pin::Pin, process::Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
 

@@ -11,7 +11,7 @@
 /// ```
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::{BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
+use crucible::{AetherRunner, BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 
 #[derive(Parser)]
@@ -41,9 +41,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let parser = ModelProviderParser::default();
 
     // Parse the agent model
-    let llm = parser
-        .parse(&cli.model)
-        .map_err(|e| format!("Error parsing model spec '{}': {}", cli.model, e))?;
+    let llm = std::sync::Arc::new(
+        parser
+            .parse(&cli.model)
+            .map_err(|e| format!("Error parsing model spec '{}': {}", cli.model, e))?,
+    );
 
     // Parse the judge model (or use the same as agent model)
     let judge_model = cli.judge_model.as_ref().unwrap_or(&cli.model);
@@ -80,30 +82,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ];
 
-    // Create configuration
-    let config = EvalsConfig::new(llm, judge_llm);
+    // Create agent runner with MCP server
+    let runner = AetherRunner::new(llm)
+        .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()));
 
-    // Run evaluations with system prompt and MCP server
-    let summary = EvalRunner::new()
+    // Create configuration
+    let config = EvalsConfig::new(judge_llm);
+
+    // Create output directory and results store
+    let output_dir = std::env::current_dir()?.join("crucible_output_basic");
+    let results_store = crucible::FileSystemStore::new(output_dir)
+        .map_err(|e| format!("Failed to create store: {}", e))?;
+
+    // Run evaluations with system prompt
+    let summary = EvalRunner::new(runner, results_store)
         .with_agent_prompt(
             "You are a helpful AI assistant with access to various tools for file operations, \
              shell commands, and more. Your goal is to complete the user's task efficiently and accurately."
         )
-        .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
         .run_evals(evals, config)
         .await?;
 
     // Print results
     println!("\n{}", "=".repeat(50));
-    println!("Evaluation Summary");
+    println!("Evaluation Complete");
     println!("{}", "=".repeat(50));
-    println!("Total: {}", summary.total_evals);
-    println!("Passed: {}", summary.passed_evals);
-    println!("Failed: {}", summary.failed_evals);
-    println!(
-        "Pass Rate: {:.1}%",
-        (summary.passed_evals as f64 / summary.total_evals as f64) * 100.0
-    );
+    println!("Run ID: {}", summary);
 
     Ok(())
 }

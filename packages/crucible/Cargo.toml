@@ -28,16 +28,21 @@ tracing-appender = { workspace = true }
 color-eyre = { workspace = true }
 
 # Date and time
-chrono = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 
 # File system
 tempfile = { workspace = true }
 
 # HTTP server
-tiny_http = "0.12"
+axum = "0.8.6"
+tower = "0.5.2"
+tower-http = { version = "0.6.6", features = ["fs", "cors"] }
+tokio-stream = { workspace = true, features = ["sync"] }
 
 # Internal dependencies
 aether = { path = "../aether" }
+uuid = { workspace = true, features = ["v4", "serde"] }
+async-trait.workspace = true
 
 [dev-dependencies]
 mcp_lexicon = { path = "../mcp-lexicon" }

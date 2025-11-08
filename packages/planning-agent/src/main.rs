@@ -14,9 +14,9 @@
 /// Press Ctrl+C to stop the server.
 use aether::{agent::Prompt, llm::parser::ModelProviderParser};
 use clap::Parser;
-use crucible::{EvalRunner, EvalsConfig};
+use crucible::{AetherRunner, EvalRunner, EvalsConfig, FileSystemStore};
 use mcp_lexicon::{CodingMcp, ServiceExt};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 #[derive(Parser)]
 #[command(name = "planning-agent")]
@@ -77,11 +77,9 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
-    tracing::info!("Running planning agent evaluations...");
+    // Note: Tracing is initialized by crucible's EvalRunner
+    // Do not initialize it here to avoid SetGlobalDefaultError
+    println!("Running planning agent evaluations...");
 
     let parser = ModelProviderParser::default();
 
@@ -98,35 +96,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let evals =
         planning_agent::evals::all_evals().map_err(|e| format!("Failed to load evals: {e}"))?;
 
-    tracing::info!("Loaded {} evals", evals.len());
+    println!("Loaded {} evals", evals.len());
 
-    let config = EvalsConfig::new(llm, judge_llm)
+    let config = EvalsConfig::new(judge_llm)
         .with_batch_size(cli.batch_size)
         .with_batch_delay(Duration::from_secs(cli.batch_delay))
         .with_serve(!cli.no_serve);
 
-    let summary = EvalRunner::new()
-        .with_output_dir(cli.output_dir.into())
+    let results_store = FileSystemStore::new(cli.output_dir.into())
+        .map_err(|e| format!("Failed to create results store: {e}"))?;
+
+    let runner = AetherRunner::new(Arc::new(llm))
         .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
-        .with_mcp_json("mcp.json")
+        .with_mcp_json("mcp.json");
+
+    let run_id = EvalRunner::new(runner, results_store)
         .with_agent_prompt(Prompt::file("./tests/AGENTS.md", false).build()?)
         .run_evals(evals, config)
         .await?;
 
-    tracing::info!("\n{}", "=".repeat(50));
-    tracing::info!("Evaluation Summary");
-    tracing::info!("{}", "=".repeat(50));
-    tracing::info!("Total: {}", summary.total_evals);
-    tracing::info!("Passed: {}", summary.passed_evals);
-    tracing::info!("Failed: {}", summary.failed_evals);
-    tracing::info!(
-        "Pass Rate: {:.1}%",
-        (summary.passed_evals as f64 / summary.total_evals as f64) * 100.0
-    );
+    println!("\n{}", "=".repeat(50));
+    println!("Evaluation Complete");
+    println!("{}", "=".repeat(50));
+    println!("Run ID: {}", run_id);
 
     if !cli.no_serve {
-        tracing::info!("\nView detailed results at http://localhost:3000");
-        tracing::info!("Press Ctrl+C to stop the server.");
+        println!(
+            "\nView detailed results at http://localhost:3000/api/runs/{}",
+            run_id
+        );
+        println!("Press Ctrl+C to stop the server.");
     }
 
     Ok(())

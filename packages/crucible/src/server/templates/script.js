@@ -1,16 +1,38 @@
 // State
-let reportData = null;
+let currentRunId = null;
+let evalResults = []; // All evals (started, running, completed) from store
 let currentEval = null;
+let currentTraces = []; // Cache for currently displayed traces
 let expandedTraces = new Set();
 let allExpanded = false;
 let searchTerm = '';
 let currentTab = 'assertions'; // 'assertions', 'traces', 'code_changes'
+let eventSource = null;
+let isLive = false;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        const response = await fetch('report-data.json');
-        reportData = await response.json();
+        // Fetch list of runs
+        const runsResponse = await fetch('/api/runs');
+        const runs = await runsResponse.json();
+
+        if (runs.length === 0) {
+            document.getElementById('empty-state').innerHTML =
+                '<p style="color: var(--text-muted);">No evaluation runs found</p>';
+            return;
+        }
+
+        // Use the most recent run (first in the list)
+        currentRunId = runs[0];
+
+        // Connect to SSE FIRST, before loading results, so we don't miss any events
+        connectSSE();
+
+        // Fetch all eval results for this run (includes started, running, completed)
+        const resultsResponse = await fetch(`/api/runs/${currentRunId}`);
+        evalResults = await resultsResponse.json();
+
         renderSummary();
         renderEvalList();
         setupEventListeners();
@@ -21,39 +43,188 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+// Connect to SSE for real-time updates
+function connectSSE() {
+    try {
+        // Use run-specific endpoint to only receive events for this run
+        const endpoint = currentRunId ? `/api/runs/${currentRunId}/events` : '/api/events';
+        eventSource = new EventSource(endpoint);
+
+        eventSource.onopen = () => {
+            isLive = true;
+            updateConnectionStatus();
+            console.log('SSE connected');
+        };
+
+        eventSource.onerror = (error) => {
+            isLive = false;
+            updateConnectionStatus();
+            console.error('SSE connection error. ReadyState:', eventSource.readyState);
+
+            // ReadyState: 0 = CONNECTING, 1 = OPEN, 2 = CLOSED
+            if (eventSource.readyState === EventSource.CLOSED) {
+                console.log('SSE connection permanently closed by server');
+            } else if (eventSource.readyState === EventSource.CONNECTING) {
+                console.log('SSE reconnecting...');
+            }
+        };
+
+        eventSource.onmessage = (e) => {
+            const event = JSON.parse(e.data);
+            console.log('SSE event received:', event.type);
+
+            switch (event.type) {
+                case 'eval_started':
+                    handleEvalStarted(event);
+                    break;
+                case 'eval_completed':
+                    handleEvalCompleted(event);
+                    break;
+                case 'run_completed':
+                    handleRunCompleted(event);
+                    break;
+                case 'trace_event':
+                    handleTraceEvent(event);
+                    break;
+            }
+        };
+    } catch (error) {
+        console.error('Error connecting to SSE:', error);
+        isLive = false;
+        updateConnectionStatus();
+    }
+}
+
+// SSE Event Handlers
+function handleEvalStarted(event) {
+    console.log('Eval started:', event.name);
+
+    // Only track evals for the current run
+    if (event.run_id !== currentRunId) return;
+
+    // Check if we already have this eval in our results
+    const existingIndex = evalResults.findIndex(e => e.id === event.eval_id);
+    if (existingIndex < 0) {
+        // Add new started eval
+        evalResults.push({
+            status: 'started',
+            id: event.eval_id,
+            eval_name: event.name
+        });
+        renderEvalList();
+    }
+}
+
+function handleEvalCompleted(event) {
+    console.log('Eval completed:', event.name);
+
+    // Only process evals for the current run
+    if (event.run_id !== currentRunId) return;
+
+    // Update or add the completed eval result
+    const evalIndex = evalResults.findIndex(e => e.id === event.eval_id);
+    if (evalIndex >= 0) {
+        evalResults[evalIndex] = event.report;
+    } else {
+        evalResults.push(event.report);
+    }
+
+    // Re-render summary and list
+    renderSummary();
+    renderEvalList();
+
+    // If this is the currently selected eval, update the details
+    if (currentEval === event.eval_id) {
+        renderEvalDetails();
+    }
+}
+
+function handleRunCompleted(event) {
+    console.log('Run completed:', event.run_id);
+
+    if (event.run_id === currentRunId) {
+        console.log('Current run completed');
+        // Could optionally reload full results here
+    }
+}
+
+function handleTraceEvent(event) {
+    // If viewing this eval, fetch and re-render traces
+    // For completed evals, only update if on traces tab
+    // For running evals, always update (traces are always shown)
+    if (currentEval === event.eval_id) {
+        const eval = evalResults.find(e => e.id === event.eval_id);
+        const isRunning = eval && eval.status !== 'completed';
+
+        if (isRunning || currentTab === 'traces') {
+            fetchAndRenderTraces(event.eval_id);
+        }
+    }
+}
+
+// Update connection status indicator
+function updateConnectionStatus() {
+    const existingStatus = document.getElementById('connection-status');
+    if (existingStatus) {
+        existingStatus.remove();
+    }
+
+    if (isLive) {
+        const statusBadge = document.createElement('div');
+        statusBadge.id = 'connection-status';
+        statusBadge.className = 'connection-badge live';
+        statusBadge.innerHTML = '<span class="live-dot"></span> Live';
+        document.querySelector('.header').appendChild(statusBadge);
+    }
+}
+
 // Event Listeners
 function setupEventListeners() {
     const searchInput = document.getElementById('search-input');
     searchInput.addEventListener('input', (e) => {
         searchTerm = e.target.value.toLowerCase();
-        renderTraces();
+        if (currentTab === 'traces' && currentTraces.length > 0) {
+            renderTracesWithData();
+        }
     });
 }
 
 // Render Summary Stats
 function renderSummary() {
-    const { summary } = reportData;
+    // Only count completed evals in summary
+    const completedEvals = evalResults.filter(e => e.status === 'completed');
+    const totalEvals = completedEvals.length;
+    const passedEvals = completedEvals.filter(e => e.passed).length;
+    const failedEvals = totalEvals - passedEvals;
+
+    const totalAssertions = completedEvals.reduce((sum, e) => sum + (e.assertions?.length || 0), 0);
+    const passedAssertions = completedEvals.reduce(
+        (sum, e) => sum + (e.assertions?.filter(a => a.passed).length || 0),
+        0
+    );
+    const failedAssertions = totalAssertions - passedAssertions;
+
     const statsHtml = `
         <div class="stat">
             <div class="stat-label">Evals</div>
             <div class="stat-value">
-                <span class="success">${summary.passed_evals}</span> /
-                <span class="failure">${summary.failed_evals}</span> /
-                ${summary.total_evals}
+                <span class="success">${passedEvals}</span> /
+                <span class="failure">${failedEvals}</span> /
+                ${totalEvals}
             </div>
         </div>
         <div class="stat">
             <div class="stat-label">Assertions</div>
             <div class="stat-value">
-                <span class="success">${summary.passed_assertions}</span> /
-                <span class="failure">${summary.failed_assertions}</span> /
-                ${summary.total_assertions}
+                <span class="success">${passedAssertions}</span> /
+                <span class="failure">${failedAssertions}</span> /
+                ${totalAssertions}
             </div>
         </div>
         <div class="stat">
             <div class="stat-label">Success Rate</div>
-            <div class="stat-value ${summary.passed_evals === summary.total_evals ? 'success' : 'failure'}">
-                ${summary.total_evals > 0 ? Math.round((summary.passed_evals / summary.total_evals) * 100) : 0}%
+            <div class="stat-value ${passedEvals === totalEvals ? 'success' : 'failure'}">
+                ${totalEvals > 0 ? Math.round((passedEvals / totalEvals) * 100) : 0}%
             </div>
         </div>
     `;
@@ -62,37 +233,50 @@ function renderSummary() {
 
 // Render Eval List
 function renderEvalList() {
-    const { summary } = reportData;
-    const evalListHtml = summary.evals.map(eval => {
-        const status = eval.passed ? '✓' : '✗';
-        const statusColor = eval.passed ? 'success' : 'failure';
-        const assertionsPassed = eval.assertions.filter(a => a.passed).length;
-        const totalAssertions = eval.assertions.length;
+    const evalListHtml = evalResults.map(eval => {
+        if (eval.status === 'completed') {
+            // Completed eval
+            const status = eval.passed ? '✓' : '✗';
+            const statusColor = eval.passed ? 'success' : 'failure';
+            const assertionsPassed = eval.assertions?.filter(a => a.passed).length || 0;
+            const totalAssertions = eval.assertions?.length || 0;
 
-        return `
-            <div class="eval-item" data-eval="${escapeHtml(eval.eval_name)}" onclick="selectEval('${escapeHtml(eval.eval_name)}')">
-                <div class="eval-status" style="color: var(--${statusColor})">${status}</div>
-                <div style="flex: 1; min-width: 0;">
-                    <div class="eval-name">${escapeHtml(eval.eval_name)}</div>
-                    <div class="eval-meta">${assertionsPassed}/${totalAssertions} assertions passed</div>
+            return `
+                <div class="eval-item" data-eval="${eval.id}" onclick="selectEval('${eval.id}')">
+                    <div class="eval-status" style="color: var(--${statusColor})">${status}</div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div class="eval-name">${escapeHtml(eval.eval_name)}</div>
+                        <div class="eval-meta">${assertionsPassed}/${totalAssertions} assertions passed</div>
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        } else {
+            // Started or running eval
+            return `
+                <div class="eval-item running" data-eval="${eval.id}" onclick="selectEval('${eval.id}')">
+                    <div class="eval-status" style="color: var(--text-muted)">⟳</div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div class="eval-name">${escapeHtml(eval.eval_name)}</div>
+                        <div class="eval-meta" style="color: var(--text-muted)">${eval.status === 'running' ? 'Running' : 'Started'}...</div>
+                    </div>
+                </div>
+            `;
+        }
     }).join('');
 
     document.getElementById('eval-list').innerHTML = evalListHtml;
 }
 
 // Select Eval
-function selectEval(evalName) {
-    currentEval = evalName;
+function selectEval(evalId) {
+    currentEval = evalId;
     expandedTraces.clear();
     allExpanded = false;
     currentTab = 'assertions'; // Reset to default tab
 
     // Update active state in sidebar
     document.querySelectorAll('.eval-item').forEach(item => {
-        item.classList.toggle('active', item.dataset.eval === evalName);
+        item.classList.toggle('active', item.dataset.eval === evalId);
     });
 
     // Show eval details
@@ -110,8 +294,40 @@ function switchTab(tabName) {
 
 // Render Eval Details
 function renderEvalDetails() {
-    const eval = reportData.summary.evals.find(e => e.eval_name === currentEval);
+    const eval = evalResults.find(e => e.id === currentEval);
     if (!eval) return;
+
+    // Handle non-completed evals - show traces only
+    if (eval.status !== 'completed') {
+        const statusText = eval.status === 'running' ? 'Running' : 'Started';
+        const statusBadge = `<span class="status-badge" style="background: var(--text-muted)">⟳ ${statusText}...</span>`;
+
+        const contentHtml = `
+            <div class="traces-section">
+                <div class="traces-header">
+                    <h3 class="section-title">Traces</h3>
+                    <button class="expand-all-btn" onclick="toggleExpandAll()">
+                        ${allExpanded ? 'Collapse All' : 'Expand All'}
+                    </button>
+                </div>
+                <div class="timeline" id="timeline">
+                    <!-- Populated by renderTraces() -->
+                </div>
+            </div>
+        `;
+
+        document.getElementById('eval-details').innerHTML = `
+            <div class="eval-header">
+                <h2 class="eval-title">${escapeHtml(eval.eval_name)}</h2>
+                <div class="eval-subtitle">${statusBadge}</div>
+            </div>
+            ${contentHtml}
+        `;
+
+        // Render traces for running eval
+        renderTraces();
+        return;
+    }
 
     const statusBadge = eval.passed
         ? '<span class="status-badge success">✓ Passed</span>'
@@ -176,7 +392,7 @@ function renderEvalDetails() {
 
     const detailsHtml = `
         <div class="eval-header">
-            <h2 class="eval-title">${escapeHtml(currentEval)}</h2>
+            <h2 class="eval-title">${escapeHtml(eval.eval_name)}</h2>
             <div class="eval-subtitle">${statusBadge}</div>
         </div>
         ${tabsHtml}
@@ -192,14 +408,30 @@ function renderEvalDetails() {
     }
 }
 
-// Render Traces
-function renderTraces() {
-    const traces = reportData.eval_traces[currentEval] || [];
+// Fetch and Render Traces
+async function fetchAndRenderTraces(evalId) {
+    try {
+        const response = await fetch(`/api/runs/${currentRunId}/evals/${evalId}/traces`);
+        currentTraces = await response.json();
+        renderTracesWithData();
+    } catch (error) {
+        console.error('Failed to fetch traces:', error);
+        document.getElementById('timeline').innerHTML =
+            '<p style="color: var(--failure); text-align: center; padding: 2rem;">Failed to load traces</p>';
+    }
+}
 
+// Render Traces
+async function renderTraces() {
+    await fetchAndRenderTraces(currentEval);
+}
+
+function renderTracesWithData() {
     // Filter traces by search term
-    const filteredTraces = traces.filter(trace => {
+    const filteredTraces = currentTraces.filter(trace => {
         if (!searchTerm) return true;
-        const searchableText = `${trace.message} ${trace.level} ${trace.target}`.toLowerCase();
+        const message = trace.fields?.message || '';
+        const searchableText = `${message} ${trace.level} ${trace.target}`.toLowerCase();
         return searchableText.includes(searchTerm);
     });
 
@@ -218,9 +450,10 @@ function renderTraces() {
         const isExpanded = expandedTraces.has(traceId);
         const level = trace.level.toLowerCase();
         const relativeTime = calculateRelativeTime(firstTimestamp, trace.timestamp);
+        const message = trace.fields?.message || '';
 
-        // Check if there are extra details to show
-        const hasDetails = Object.keys(trace.extra || {}).length > 0 || trace.target;
+        // Check if there are extra details to show (fields, span, or target)
+        const hasDetails = trace.fields || trace.span || trace.target;
 
         return `
             <div class="trace-event">
@@ -229,7 +462,7 @@ function renderTraces() {
                     <div class="trace-header" onclick="${hasDetails ? `toggleTrace('${traceId}')` : ''}">
                         <span class="trace-level ${level}">${escapeHtml(trace.level)}</span>
                         <span class="trace-timestamp">${relativeTime}</span>
-                        <span class="trace-message">${escapeHtml(trace.message)}</span>
+                        <span class="trace-message">${escapeHtml(message)}</span>
                         ${hasDetails ? `<span class="trace-expand-icon ${isExpanded ? 'expanded' : ''}">▶</span>` : ''}
                     </div>
                     ${isExpanded && hasDetails ? renderTraceDetails(trace) : ''}
@@ -245,7 +478,9 @@ function renderTraces() {
 function renderTraceDetails(trace) {
     const details = {
         target: trace.target,
-        ...trace.extra
+        fields: trace.fields,
+        span: trace.span,
+        spans: trace.spans
     };
 
     return `
@@ -262,7 +497,7 @@ function toggleTrace(traceId) {
     } else {
         expandedTraces.add(traceId);
     }
-    renderTraces();
+    renderTracesWithData();
 }
 
 // Toggle Expand All
@@ -271,13 +506,12 @@ function toggleExpandAll() {
     expandedTraces.clear();
 
     if (allExpanded) {
-        const traces = reportData.eval_traces[currentEval] || [];
-        traces.forEach((_, index) => {
+        currentTraces.forEach((_, index) => {
             expandedTraces.add(`trace-${index}`);
         });
     }
 
-    renderEvalDetails();
+    renderTracesWithData();
 }
 
 // Calculate Relative Time
