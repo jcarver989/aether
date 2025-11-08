@@ -62,12 +62,51 @@ body {
     padding: 1.5rem 2rem;
     border-bottom: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
+    position: relative;
 }
 
 .header h1 {
     font-size: 1.75rem;
     font-weight: 600;
     margin-bottom: 1rem;
+}
+
+/* Connection Status Badge */
+.connection-badge {
+    position: absolute;
+    top: 1.5rem;
+    right: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.connection-badge.live {
+    background: var(--success-bg);
+    color: var(--success);
+    border: 1px solid var(--success-border);
+}
+
+.live-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
 }
 
 .summary-stats {
@@ -172,6 +211,23 @@ body {
     background: var(--info-bg);
     border-left: 3px solid var(--info);
     box-shadow: inset 0 0 12px rgba(137, 220, 235, 0.15);
+}
+
+.eval-item.running {
+    opacity: 0.8;
+}
+
+.eval-item.running .eval-status {
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .eval-status {
