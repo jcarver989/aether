@@ -1,7 +1,7 @@
 use crate::LlmJudgeContext;
+use crate::agents::AgentRunnerMessage;
 use crate::eval::WorkingDirectory;
 use crate::eval_assertion::{EvalAssertionResult, ToolCallCount};
-use crate::eval_messages::EvalMessage;
 use crate::metrics::EvalMetric;
 use aether::llm::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
 use aether::types::IsoString;
@@ -107,7 +107,7 @@ pub async fn assert_command_exit_code(
 pub async fn assert_llm_judge<U: StreamingModelProvider, F>(
     working_dir: &WorkingDirectory,
     original_prompt: &str,
-    messages: &[EvalMessage],
+    messages: &[AgentRunnerMessage],
     build_prompt: F,
     judge_llm: &U,
 ) -> EvalAssertionResult
@@ -184,12 +184,12 @@ pub async fn assert_tool_call(
     name: &str,
     expected_args: Option<&serde_json::Value>,
     count: &Option<ToolCallCount>,
-    messages: &[EvalMessage],
+    messages: &[AgentRunnerMessage],
 ) -> EvalAssertionResult {
     let matching_calls: Vec<_> = messages
         .iter()
         .filter_map(|msg| {
-            if let EvalMessage::ToolCall {
+            if let AgentRunnerMessage::ToolCall {
                 name: call_name,
                 arguments,
             } = msg
