@@ -17,8 +17,7 @@
 /// Press Ctrl+C to stop the server.
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::aether_runner::AetherRunner;
-use crucible::{BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
+use crucible::{AetherRunner, BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 use std::path::PathBuf;
 use std::time::Duration;

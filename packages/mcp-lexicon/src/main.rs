@@ -1,9 +1,10 @@
 use aether::llm::parser::ModelProviderParser;
 use clap::{Parser, Subcommand};
-use crucible::{EvalRunner, EvalsConfig};
+use crucible::{AetherRunner, EvalRunner, EvalsConfig};
 use mcp_lexicon::CodingMcp;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Parser)]
@@ -98,10 +99,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let results_store = crucible::FileSystemStore::new(output_dir_path)
                 .map_err(|e| format!("Failed to create results store: {e}"))?;
 
-            let crucible = EvalRunner::new(results_store)
+            let runner = AetherRunner::new(Arc::new(agent_llm))
                 .with_mcp_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())));
 
-            let mut config = EvalsConfig::new(agent_llm, judge_llm);
+            let crucible = EvalRunner::new(runner, results_store);
+
+            let mut config = EvalsConfig::new(judge_llm);
 
             // Apply batch configuration if provided
             if let Some(batch_size) = batch_size {
