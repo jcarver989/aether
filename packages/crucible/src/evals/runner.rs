@@ -11,9 +11,9 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 use uuid::Uuid;
 
-use crate::eval::{Eval, WorkingDirectory};
-use crate::eval_assertion::{EvalAssertion, EvalAssertionResult};
-use crate::eval_config::EvalsConfig;
+use crate::evals::eval::{Eval, WorkingDirectory};
+use crate::evals::assertion::{EvalAssertion, EvalAssertionResult};
+use crate::evals::config::EvalsConfig;
 use crate::server;
 use crate::storage::{EvalResult, ResultsStore};
 

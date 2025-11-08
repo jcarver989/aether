@@ -1,7 +1,7 @@
 use crate::LlmJudgeContext;
 use crate::agents::AgentRunnerMessage;
-use crate::eval::WorkingDirectory;
-use crate::eval_assertion::{EvalAssertionResult, ToolCallCount};
+use crate::evals::eval::WorkingDirectory;
+use crate::evals::assertion::{EvalAssertionResult, ToolCallCount};
 use crate::metrics::EvalMetric;
 use aether::llm::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
 use aether::types::IsoString;
