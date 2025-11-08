@@ -71,6 +71,14 @@ trait Foo {
 2. Prefer using specific enum types over `Box<dyn std::error::Error>` as the later makes it impossible for the caller to pattern match on specific errors.
 3. Leverage `map`, `flat_map`, `and_then` etc to flatten nested `match` statements like `Ok(Ok(foo)) => {...}`.
 
+### Imports
+
+1. Prefer using just the type's name vs the qualified module + type name, e.g. `fn foo() -> Boo` vs `fn foo() -> some::module::that_makes_it_hard_to_read::Boo`
+
+## Best Practices
+
+This codebase has documented best-practices in @best-practices/ . When working on a task, look through the files in this directory and (if applicable) read the best-practices that might be help you complete your task.
+
 ## CRITICAL - ALWAYS FOLLOW THIS WORKFLOW
 
 1. Always write tests to prove your code works
