@@ -8,7 +8,7 @@ use crate::assertions::{
 use crate::git_repo::GitRepo;
 use crate::hooks::HookInput;
 use crate::{
-    eval_assertion::{EvalAssertion, EvalAssertionResult},
+    evals::assertion::{EvalAssertion, EvalAssertionResult},
     hooks::Hook,
 };
 use aether::llm::StreamingModelProvider;
