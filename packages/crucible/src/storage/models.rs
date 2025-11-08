@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{Eval, EvalAssertion, evals::assertion::EvalAssertionResult as EvalAssertionResultEnum};
+use crate::{
+    Eval, EvalAssertion, evals::assertion::EvalAssertionResult as EvalAssertionResultEnum,
+};
 
 /// Result of an evaluation in various states
 #[derive(Debug, Clone, Serialize, Deserialize)]

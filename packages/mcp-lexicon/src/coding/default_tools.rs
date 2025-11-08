@@ -13,37 +13,25 @@ use super::{
 pub struct DefaultCodingTools;
 
 impl CodingTools for DefaultCodingTools {
-    async fn read_file(
-        &self,
-        args: ReadFileArgs,
-    ) -> Result<ReadFileResult, String> {
+    async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, String> {
         read_file_contents(args)
             .await
             .map_err(|e| format!("Read file error: {e}"))
     }
 
-    async fn write_file(
-        &self,
-        args: WriteFileArgs,
-    ) -> Result<WriteFileResponse, String> {
+    async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, String> {
         write_file_contents(args)
             .await
             .map_err(|e| format!("Write file error: {e}"))
     }
 
-    async fn edit_file(
-        &self,
-        args: EditFileArgs,
-    ) -> Result<EditFileResponse, String> {
+    async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, String> {
         edit_file_contents(args)
             .await
             .map_err(|e| format!("Edit file error: {e}"))
     }
 
-    async fn list_files(
-        &self,
-        args: ListFilesArgs,
-    ) -> Result<ListFilesResult, String> {
+    async fn list_files(&self, args: ListFilesArgs) -> Result<ListFilesResult, String> {
         list_files(args)
             .await
             .map_err(|e| format!("List files error: {e}"))

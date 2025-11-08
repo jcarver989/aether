@@ -11,7 +11,9 @@
 /// ```
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::{AetherRunner, BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
+use crucible::{
+    AetherRunner, BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory,
+};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 
 #[derive(Parser)]

@@ -17,7 +17,9 @@
 /// Press Ctrl+C to stop the server.
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
-use crucible::{AetherRunner, BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
+use crucible::{
+    AetherRunner, BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory,
+};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -137,7 +139,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Evaluation Complete");
     println!("{}", "=".repeat(50));
     println!("Run ID: {}", summary);
-    println!("\nView detailed results at http://localhost:3000/api/runs/{}", summary);
+    println!(
+        "\nView detailed results at http://localhost:3000/api/runs/{}",
+        summary
+    );
 
     Ok(())
 }
