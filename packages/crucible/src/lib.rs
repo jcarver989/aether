@@ -11,7 +11,7 @@ pub mod server;
 pub mod storage;
 
 pub use agents::AgentRunnerMessage;
-pub use agents::{AgentConfig, AgentRunner, RunError};
+pub use agents::{AetherRunner, AgentConfig, AgentRunner, FakeAgentRunner, RunError};
 pub use eval::{Eval, WorkingDirectory};
 pub use eval_assertion::{EvalAssertion, EvalAssertionResult, LlmJudgeContext, ToolCallCount};
 pub use eval_config::EvalsConfig;

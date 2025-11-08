@@ -14,9 +14,9 @@
 /// Press Ctrl+C to stop the server.
 use aether::{agent::Prompt, llm::parser::ModelProviderParser};
 use clap::Parser;
-use crucible::{EvalRunner, EvalsConfig};
+use crucible::{AetherRunner, EvalRunner, EvalsConfig, FileSystemStore};
 use mcp_lexicon::{CodingMcp, ServiceExt};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 #[derive(Parser)]
 #[command(name = "planning-agent")]
@@ -98,17 +98,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Loaded {} evals", evals.len());
 
-    let config = EvalsConfig::new(llm, judge_llm)
+    let config = EvalsConfig::new(judge_llm)
         .with_batch_size(cli.batch_size)
         .with_batch_delay(Duration::from_secs(cli.batch_delay))
         .with_serve(!cli.no_serve);
 
-    let results_store = crucible::FileSystemStore::new(cli.output_dir.into())
+    let results_store = FileSystemStore::new(cli.output_dir.into())
         .map_err(|e| format!("Failed to create results store: {e}"))?;
 
-    let run_id = EvalRunner::new(results_store)
+    let runner = AetherRunner::new(Arc::new(llm))
         .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
-        .with_mcp_json("mcp.json")
+        .with_mcp_json("mcp.json");
+
+    let run_id = EvalRunner::new(runner, results_store)
         .with_agent_prompt(Prompt::file("./tests/AGENTS.md", false).build()?)
         .run_evals(evals, config)
         .await?;

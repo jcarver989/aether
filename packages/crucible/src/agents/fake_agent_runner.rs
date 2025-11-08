@@ -10,8 +10,7 @@ use tokio::sync::mpsc::Sender;
 /// # Example
 ///
 /// ```
-/// use crucible::fake_agent_runner::FakeAgentRunner;
-/// use crucible::agent_runner_message::AgentRunnerMessage;
+/// use crucible::{AgentRunnerMessage, FakeAgentRunner};
 ///
 /// let messages = vec![
 ///     AgentRunnerMessage::AgentText("I'll create the file".to_string()),
