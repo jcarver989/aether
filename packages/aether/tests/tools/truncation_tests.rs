@@ -41,10 +41,12 @@ async fn test_truncate_summarizer_many_lines() {
 #[tokio::test]
 async fn test_truncate_summarizer_both_lines_and_chars() {
     let summarizer = TruncateSummarizer::new(30, 3);
-    let content = ["x".repeat(100),            // Long line
-        "Short line".to_string(),   // Normal line
-        "y".repeat(80),             // Another long line
-        "Another line".to_string()]
+    let content = [
+        "x".repeat(100),          // Long line
+        "Short line".to_string(), // Normal line
+        "y".repeat(80),           // Another long line
+        "Another line".to_string(),
+    ]
     .join("\n");
 
     let result = summarizer.summarize(&content).await.unwrap();
