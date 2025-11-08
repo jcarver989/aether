@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 use crate::git_repo::GitRepo;
-use crate::{EvalMessage, WorkingDirectory};
+use crate::{AgentRunnerMessage, WorkingDirectory};
 use std::sync::Arc;
 
 /// Context provided to LLM judge prompt builders
 pub struct LlmJudgeContext<'a> {
     pub working_dir: &'a WorkingDirectory,
     pub original_prompt: &'a str,
-    pub messages: &'a [EvalMessage],
+    pub messages: &'a [AgentRunnerMessage],
 }
 
 impl<'a> LlmJudgeContext<'a> {

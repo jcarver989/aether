@@ -17,6 +17,7 @@
 /// Press Ctrl+C to stop the server.
 use aether::llm::parser::ModelProviderParser;
 use clap::Parser;
+use crucible::aether_runner::AetherRunner;
 use crucible::{BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory};
 use mcp_lexicon::{CodingMcp, ServiceExt};
 use std::path::PathBuf;
@@ -68,9 +69,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let parser = ModelProviderParser::default();
 
     // Parse the agent model
-    let llm = parser
-        .parse(&cli.model)
-        .map_err(|e| format!("Error parsing model spec '{}': {}", cli.model, e))?;
+    let llm = std::sync::Arc::new(
+        parser
+            .parse(&cli.model)
+            .map_err(|e| format!("Error parsing model spec '{}': {}", cli.model, e))?,
+    );
 
     // Parse the judge model (or use the same as agent model)
     let judge_model = cli.judge_model.as_ref().unwrap_or(&cli.model);
@@ -107,24 +110,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ];
 
+    // Create agent runner with MCP server
+    let runner = AetherRunner::new(llm)
+        .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()));
+
     // Create configuration with all features enabled
-    let config = EvalsConfig::new(llm, judge_llm)
+    let config = EvalsConfig::new(judge_llm)
         .with_batch_size(cli.batch_size) // Run N evals concurrently
         .with_batch_delay(Duration::from_secs(cli.batch_delay)) // Wait between batches
         .with_serve(true); // Start web server
 
-    // Run evaluations with coding MCP server
     // Create output directory and results store
     let output_dir = PathBuf::from("./eval-results");
     let results_store = crucible::FileSystemStore::new(output_dir)
         .map_err(|e| format!("Failed to create store: {}", e))?;
 
-    let summary = EvalRunner::new(results_store)
+    let summary = EvalRunner::new(runner, results_store)
         .with_agent_prompt(
             "You are a helpful AI assistant with access to various tools for file operations, \
              shell commands, and more. Your goal is to complete the user's task efficiently and accurately."
         )
-        .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
         .run_evals(evals, config)
         .await?;
 

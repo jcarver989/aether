@@ -1,8 +1,8 @@
+pub mod agents;
 mod assertions;
 pub mod eval;
 pub mod eval_assertion;
 pub mod eval_config;
-pub mod eval_messages;
 pub mod eval_runner;
 pub mod git_repo;
 pub mod hooks;
@@ -10,10 +10,11 @@ pub mod metrics;
 pub mod server;
 pub mod storage;
 
+pub use agents::AgentRunnerMessage;
+pub use agents::{AgentConfig, AgentRunner, RunError};
 pub use eval::{Eval, WorkingDirectory};
 pub use eval_assertion::{EvalAssertion, EvalAssertionResult, LlmJudgeContext, ToolCallCount};
 pub use eval_config::EvalsConfig;
-pub use eval_messages::EvalMessage;
 pub use eval_runner::EvalRunner;
 pub use metrics::{BinaryMetric, EvalMetric, NumericMetric};
 pub use server::{AppState, SseEvent};

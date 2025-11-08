@@ -1,10 +1,10 @@
 use std::{path::PathBuf, pin::Pin};
 
-use crate::EvalMessage;
+use crate::AgentRunnerMessage;
 
 pub struct HookInput {
     pub working_directory: PathBuf,
-    pub messages: Vec<EvalMessage>,
+    pub messages: Vec<AgentRunnerMessage>,
 }
 
 pub type HookResult = Result<(), Box<dyn std::error::Error>>;

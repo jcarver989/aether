@@ -1,17 +1,15 @@
 use std::time::Duration;
 
-pub struct EvalsConfig<T, U> {
-    pub(crate) llm: T,
-    pub(crate) judge_llm: U,
+pub struct EvalsConfig<J> {
+    pub(crate) judge_llm: J,
     pub(crate) batch_size: Option<usize>,
     pub(crate) batch_delay: Option<Duration>,
     pub(crate) serve: bool,
 }
 
-impl<T, U> EvalsConfig<T, U> {
-    pub fn new(llm: T, judge_llm: U) -> Self {
+impl<J> EvalsConfig<J> {
+    pub fn new(judge_llm: J) -> Self {
         Self {
-            llm,
             judge_llm,
             batch_size: None,
             batch_delay: None,
@@ -32,9 +30,8 @@ impl<T, U> EvalsConfig<T, U> {
     /// ```no_run
     /// use crucible::EvalsConfig;
     /// use std::time::Duration;
-    /// // let llm = ...; // Your LLM provider
     /// // let judge_llm = ...; // Your judge LLM provider
-    /// // let config = EvalsConfig::new(llm, judge_llm)
+    /// // let config = EvalsConfig::new(judge_llm)
     /// //     .with_batch_size(3)  // Run 3 evals at a time
     /// //     .with_batch_delay(Duration::from_secs(2));  // Wait 2 seconds between batches
     /// ```
@@ -70,9 +67,8 @@ impl<T, U> EvalsConfig<T, U> {
     /// # Example
     /// ```no_run
     /// use crucible::EvalsConfig;
-    /// // let llm = ...; // Your LLM provider
     /// // let judge_llm = ...; // Your judge LLM provider
-    /// // let config = EvalsConfig::new(llm, judge_llm)
+    /// // let config = EvalsConfig::new(judge_llm)
     /// //     .with_serve(true);  // Start web server after evals
     /// ```
     pub fn with_serve(mut self, serve: bool) -> Self {

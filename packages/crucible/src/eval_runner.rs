@@ -1,12 +1,9 @@
-use aether::llm::{StreamingModelProvider, ToolDefinition};
-use aether::mcp::run_mcp_task::McpCommand;
-use aether::mcp::{mcp, ServerFactory};
+use crate::agents::AgentRunner;
+use aether::llm::StreamingModelProvider;
 use owo_colors::OwoColorize;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tracing::Instrument;
 use tracing_subscriber::layer::SubscriberExt;
@@ -20,23 +17,29 @@ use crate::eval_config::EvalsConfig;
 use crate::server;
 use crate::storage::{EvalResult, ResultsStore};
 
-/// Configure and run AI agent evaluations with custom MCP servers
-pub struct EvalRunner<T: ResultsStore> {
+/// Configure and run AI agent evaluations
+pub struct EvalRunner<R, T>
+where
+    R: AgentRunner,
+    T: ResultsStore,
+{
     output_dir: Option<PathBuf>,
-    factories: HashMap<String, ServerFactory>,
     agent_prompt: Option<String>,
-    mcp_json_path: Option<PathBuf>,
+    runner: R,
     results_store: T,
 }
 
-impl<T: ResultsStore + 'static> EvalRunner<T> {
-    /// Create a new EvalRunner with the given results store
-    pub fn new(results_store: T) -> Self {
+impl<R, T> EvalRunner<R, T>
+where
+    R: AgentRunner + 'static,
+    T: ResultsStore + 'static,
+{
+    /// Create a new EvalRunner with the given agent runner and results store
+    pub fn new(runner: R, results_store: T) -> Self {
         Self {
             output_dir: None,
-            factories: HashMap::new(),
             agent_prompt: None,
-            mcp_json_path: None,
+            runner,
             results_store,
         }
     }
@@ -53,32 +56,6 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         self
     }
 
-    /// Set the path to mcp.json for agent under eval
-    pub fn with_mcp_json(mut self, path: impl Into<PathBuf>) -> Self {
-        self.mcp_json_path = Some(path.into());
-        self
-    }
-
-    /// Register an InMemory MCP server factory
-    ///
-    /// # Arguments
-    /// * `name` - The name of the server (referenced in mcp.json)
-    /// * `factory` - Factory function that creates server instances
-    pub fn with_mcp_server_factory(
-        mut self,
-        name: impl Into<String>,
-        factory: ServerFactory,
-    ) -> Self {
-        self.factories.insert(name.into(), factory);
-        self
-    }
-
-    /// Register multiple InMemory MCP server factories
-    pub fn with_mcp_server_factories(mut self, factories: HashMap<String, ServerFactory>) -> Self {
-        self.factories.extend(factories);
-        self
-    }
-
     /// Run the evaluations
     ///
     /// # Arguments
@@ -87,13 +64,12 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
     ///
     /// # Returns
     /// Result containing the run ID
-    pub async fn run_evals<M, J>(
+    pub async fn run_evals<J>(
         self,
         evals: Vec<Eval>,
-        config: EvalsConfig<M, J>,
+        config: EvalsConfig<J>,
     ) -> Result<Uuid, Box<dyn std::error::Error>>
     where
-        M: StreamingModelProvider + 'static,
         J: StreamingModelProvider + 'static,
     {
         if evals.is_empty() {
@@ -108,17 +84,14 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         );
 
         let agent_prompt = self.agent_prompt;
+        let runner = Arc::new(self.runner);
         let results_store = Arc::new(self.results_store);
         let store_layer = results_store.create_tracing_layer(run_id);
         Self::setup_tracing(store_layer)?;
 
         let (server_handle, sse_tx) =
             Self::start_axum_server(&results_store, run_id, config.serve)?;
-        let mcp_builder = Self::create_mcp_builder(self.factories, self.mcp_json_path)?;
-        let (tool_definitions, mcp_tx, _mcp_handle) = mcp_builder.spawn().await?;
 
-        // Wrap providers in Arc so they can be shared across tasks
-        let llm = Arc::new(config.llm);
         let judge_llm = Arc::new(config.judge_llm);
 
         let batch_size = config.batch_size.unwrap_or(evals.len());
@@ -146,9 +119,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                 batch,
                 run_id,
                 &agent_prompt,
-                &tool_definitions,
-                &mcp_tx,
-                &llm,
+                &runner,
                 &judge_llm,
                 &sse_tx,
                 &results_store,
@@ -167,9 +138,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             let _ = tx.send(server::SseEvent::RunCompleted { run_id });
         }
 
-        // Keep the server running if serving
         if config.serve {
-            // Keep the server running (it's in a background task)
             println!(
                 "\n{}",
                 "Server is still running. Press Ctrl+C to exit."
@@ -187,8 +156,6 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         Ok(run_id)
     }
 
-    // Private helper methods
-
     /// Set up tracing subscriber with store and fmt layers
     fn setup_tracing(
         store_layer: Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>,
@@ -205,22 +172,6 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
             .with(fmt_layer.with_filter(env_filter))
             .try_init()
             .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
-    }
-
-    fn create_mcp_builder(
-        factories: HashMap<String, ServerFactory>,
-        mcp_json_path: Option<PathBuf>,
-    ) -> Result<aether::mcp::McpBuilder, Box<dyn std::error::Error>> {
-        let mut mcp_builder = mcp();
-        for (name, factory) in factories {
-            mcp_builder = mcp_builder.register_in_memory_server(name, factory);
-        }
-
-        if let Some(mcp_json_path) = mcp_json_path {
-            mcp_builder = mcp_builder.from_json_file(mcp_json_path.to_str().unwrap())?;
-        }
-
-        Ok(mcp_builder)
     }
 
     /// Capture git diffs (agent and reference) for GitRepo working directories
@@ -256,14 +207,12 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
     }
 
     /// Spawn a single eval task with tracing instrumentation
-    fn spawn_eval_task<M, J>(
+    fn spawn_eval_task<J>(
         eval: Eval,
         eval_id: Uuid,
         run_id: Uuid,
         agents_prompt: Option<String>,
-        tool_definitions: Vec<ToolDefinition>,
-        mcp_tx: mpsc::Sender<McpCommand>,
-        llm: Arc<M>,
+        runner: Arc<R>,
         judge_llm: Arc<J>,
         sse_tx: Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
         results_store: Arc<T>,
@@ -275,7 +224,6 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
         Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
     )>
     where
-        M: StreamingModelProvider + 'static,
         J: StreamingModelProvider + 'static,
     {
         let eval_name = eval.name.clone();
@@ -300,7 +248,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
 
                 let start = Instant::now();
                 let result = eval
-                    .run(llm, judge_llm, tool_definitions, mcp_tx, agents_prompt)
+                    .run(runner.as_ref(), judge_llm, agents_prompt.as_deref())
                     .await;
                 let duration = start.elapsed();
                 (eval, eval_id, result, duration, sse_tx)
@@ -383,18 +331,15 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
     }
 
     /// Run a single batch of evaluations
-    async fn run_eval_batch<M, J>(
+    async fn run_eval_batch<J>(
         batch: Vec<Eval>,
         run_id: Uuid,
         agent_prompt: &Option<String>,
-        tool_definitions: &Vec<ToolDefinition>,
-        mcp_tx: &mpsc::Sender<McpCommand>,
-        llm: &Arc<M>,
+        runner: &Arc<R>,
         judge_llm: &Arc<J>,
         sse_tx: &Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
         results_store: &Arc<T>,
     ) where
-        M: StreamingModelProvider + 'static,
         J: StreamingModelProvider + 'static,
     {
         let tasks: Vec<_> = batch
@@ -406,9 +351,7 @@ impl<T: ResultsStore + 'static> EvalRunner<T> {
                     eval_id,
                     run_id,
                     agent_prompt.clone(),
-                    tool_definitions.clone(),
-                    mcp_tx.clone(),
-                    llm.clone(),
+                    runner.clone(),
                     judge_llm.clone(),
                     sse_tx.clone(),
                     results_store.clone(),

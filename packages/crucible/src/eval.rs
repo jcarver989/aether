@@ -1,21 +1,18 @@
+use crate::agents::AgentConfig;
+use crate::agents::AgentRunner;
+use crate::agents::AgentRunnerMessage;
 use crate::assertions::{
     assert_command_exit_code, assert_file_exists, assert_file_matches, assert_llm_judge,
     assert_tool_call,
 };
-use crate::eval_messages::to_eval_messages;
 use crate::git_repo::GitRepo;
 use crate::hooks::HookInput;
 use crate::{
     eval_assertion::{EvalAssertion, EvalAssertionResult},
     hooks::Hook,
 };
-use aether::{
-    agent::{UserMessage, agent},
-    llm::{StreamingModelProvider, ToolDefinition},
-    mcp::run_mcp_task::McpCommand,
-};
+use aether::llm::StreamingModelProvider;
 use std::path::{Path, PathBuf};
-use tokio::sync::mpsc::Sender;
 
 pub struct Eval {
     pub name: String,
@@ -150,14 +147,12 @@ impl Eval {
         self
     }
 
-    #[tracing::instrument(skip(self, llm, judge_llm, tool_definitions, mcp_tx, system_prompt), fields(eval_name = %self.name))]
-    pub async fn run<T: StreamingModelProvider + 'static, U: StreamingModelProvider + 'static>(
+    #[tracing::instrument(skip(self, runner, judge_llm, system_prompt), fields(eval_name = %self.name))]
+    pub async fn run<R: AgentRunner, U: StreamingModelProvider + 'static>(
         &self,
-        llm: T,
+        runner: &R,
         judge_llm: U,
-        tool_definitions: Vec<ToolDefinition>,
-        mcp_tx: Sender<McpCommand>,
-        system_prompt: Option<String>,
+        system_prompt: Option<&str>,
     ) -> Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>
     {
         tracing::info!("Running eval: {}", self.name);
@@ -175,22 +170,37 @@ impl Eval {
         }
 
         let messages = {
-            let mut agent_builder = agent(llm).tools(mcp_tx, tool_definitions);
+            let (tx, mut rx) = tokio::sync::mpsc::channel(100);
 
-            if let Some(prompt) = system_prompt {
-                agent_builder = agent_builder.system(&prompt);
-            }
+            let task_prompt = [
+                "Complete the following task:".to_string(),
+                format!("<task>{}</task>", self.prompt),
+                format!("CRITICAL INSTRUCTIONS: when working on this task, you MUST only operate within this directory: {}", self.working_directory.path().display())
+            ].join("\n");
 
-            let (tx, rx, _handle) = agent_builder.spawn().await?;
+            let config = AgentConfig {
+                working_directory: self.working_directory.path(),
+                system_prompt,
+                task_prompt: &task_prompt,
+            };
 
-            tx.send(UserMessage::Text {
-                content: [
-                    "Complete the following task:".to_string(),
-                    format!("<task>{}</task>", self.prompt.to_string()),
-                    format!("CRITICAL INSTRUCTIONS: when working on this task, you MUST only operate within this directory: {}", self.working_directory.path().display())].join("\n"),
-            })
-            .await?;
-            to_eval_messages(rx).await
+            // Run the runner and collect messages concurrently
+            let runner_task = runner.run(config, tx);
+            let message_task = async {
+                let mut messages = Vec::new();
+                while let Some(msg) = rx.recv().await {
+                    if matches!(msg, AgentRunnerMessage::Done) {
+                        messages.push(msg);
+                        break;
+                    }
+                    messages.push(msg);
+                }
+                messages
+            };
+
+            let (run_result, messages) = tokio::join!(runner_task, message_task);
+            run_result?;
+            messages
         };
 
         for (i, hook) in self.before_assertions_hooks.iter().enumerate() {
