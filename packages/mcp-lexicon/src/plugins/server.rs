@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tracing::error;
 
 use super::files::{AgentFile, PromptFile, SkillsFile};
 use crate::coding::CodingMcp;
@@ -167,9 +168,20 @@ impl ServerHandler for PluginsMcp {
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, McpError> {
-        let command_files_with_paths = PromptFile::from_dir(&self.commands_dir)
-            .await
-            .map_err(|e| McpError::internal_error(format!("Failed to load commands: {e}"), None))?;
+        let command_files_with_paths = match PromptFile::from_dir(&self.commands_dir).await {
+            Ok(files) => files,
+            Err(e) => {
+                error!(
+                    "Failed to load prompt files from {:?}: {}",
+                    self.commands_dir, e
+                );
+
+                return Ok(ListPromptsResult {
+                    prompts: Vec::new(),
+                    next_cursor: None,
+                });
+            }
+        };
 
         let commands = command_files_with_paths
             .iter()
@@ -178,6 +190,7 @@ impl ServerHandler for PluginsMcp {
                 Some(file.to_prompt(name))
             })
             .collect();
+
         Ok(ListPromptsResult {
             prompts: commands,
             next_cursor: None,
@@ -226,9 +239,17 @@ Returns an array of skills, each with:
 Use this to discover available skills before loading their full content with get_skills."
     )]
     pub async fn list_skills(&self) -> Result<Json<ListSkillsOutput>, String> {
-        let skills_with_dirs = SkillsFile::from_nested_dirs(&self.skills_dir, "SKILL.md")
-            .await
-            .map_err(|e| format!("Failed to load skills: {e}"))?;
+        let skills_with_dirs =
+            match SkillsFile::from_nested_dirs(&self.skills_dir, "SKILL.md").await {
+                Ok(skills) => skills,
+                Err(e) => {
+                    error!(
+                        "Failed to load skill files from {:?}: {}",
+                        self.skills_dir, e
+                    );
+                    return Ok(Json(ListSkillsOutput { skills: Vec::new() }));
+                }
+            };
 
         let skills = skills_with_dirs
             .iter()
