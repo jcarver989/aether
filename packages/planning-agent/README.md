@@ -117,7 +117,7 @@ With a specific model:
 
 ```bash
 # Using OpenRouter
-cargo run -p planning-agent -- --model openrouter:anthropic/claude-3-5-sonnet-20241022
+cargo run -p planning-agent -- --model openrouter:anthropic/claude-sonnet-4-5-20250929
 
 # Using Ollama (local)
 cargo run -p planning-agent -- --model ollama:llama3.3
@@ -128,13 +128,13 @@ Advanced options:
 ```bash
 # Custom batch size and delay
 cargo run -p planning-agent -- \
-  --model openrouter:anthropic/claude-3-5-sonnet-20241022 \
+  --model openrouter:anthropic/claude-sonnet-4-5-20250929 \
   --batch-size 5 \
   --batch-delay 3
 
 # Use different models for agent and judge
 cargo run -p planning-agent -- \
-  --model openrouter:anthropic/claude-3-5-sonnet-20241022 \
+  --model openrouter:anthropic/claude-sonnet-4-5-20250929 \
   --judge-model openrouter:openai/gpt-4-turbo
 
 # Custom directories

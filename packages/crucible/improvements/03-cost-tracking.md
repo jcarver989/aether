@@ -140,7 +140,7 @@ impl PricingRegistry {
 
         // Anthropic pricing (as of Nov 2024)
         models.insert(
-            "anthropic/claude-3-5-sonnet-20241022".to_string(),
+            "anthropic/claude-sonnet-4-5-20250929".to_string(),
             ModelPricing {
                 input_cost_per_million: 3.0,
                 output_cost_per_million: 15.0,

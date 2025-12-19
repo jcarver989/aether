@@ -2,6 +2,7 @@
 mod integration_tests {
     use super::super::provider::AnthropicProvider;
     use super::super::types::{Role, SystemContent};
+    use crate::auth::ProviderCredentials;
     use crate::llm::provider::Context;
     use crate::types::{ChatMessage, IsoString, LlmResponse, ToolCallRequest, ToolDefinition};
     use futures::StreamExt;
@@ -9,9 +10,9 @@ mod integration_tests {
     use tokio_stream;
 
     fn create_test_provider() -> AnthropicProvider {
-        AnthropicProvider::new("test-key".to_string())
+        AnthropicProvider::new(ProviderCredentials::api_key("test-key"))
             .unwrap()
-            .with_model("claude-3-5-sonnet-20241022".to_string())
+            .with_model("claude-sonnet-4-5-20250929".to_string())
             .with_base_url("http://localhost:8080".to_string())
             .with_temperature(0.7)
             .with_max_tokens(1000)
@@ -20,7 +21,7 @@ mod integration_tests {
 
     #[tokio::test]
     async fn test_provider_creation() {
-        let provider = AnthropicProvider::new("test-key".to_string());
+        let provider = AnthropicProvider::new(ProviderCredentials::api_key("test-key"));
         assert!(provider.is_ok(), "Provider creation should succeed");
     }
 
@@ -118,7 +119,7 @@ mod integration_tests {
 
     #[tokio::test]
     async fn test_prompt_caching_enabled() {
-        let provider = AnthropicProvider::new("test-key".to_string()).unwrap(); // Caching enabled by default
+        let provider = AnthropicProvider::new(ProviderCredentials::api_key("test-key")).unwrap(); // Caching enabled by default
 
         let context = Context {
             messages: vec![ChatMessage::User {
@@ -184,7 +185,7 @@ mod integration_tests {
 
     #[tokio::test]
     async fn test_temperature_and_max_tokens() {
-        let provider = AnthropicProvider::new("test-key".to_string())
+        let provider = AnthropicProvider::new(ProviderCredentials::api_key("test-key"))
             .unwrap()
             .with_temperature(0.9)
             .with_max_tokens(2048);

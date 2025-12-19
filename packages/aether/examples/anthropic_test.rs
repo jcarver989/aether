@@ -25,7 +25,7 @@ struct Args {
     no_cache: bool,
 
     /// Claude model to use
-    #[arg(short = 'm', long, default_value = "claude-3-5-sonnet-20241022")]
+    #[arg(short = 'm', long, default_value = "claude-sonnet-4-5-20250929")]
     model: String,
 
     /// Maximum tokens
