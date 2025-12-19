@@ -6,7 +6,7 @@
 /// # Usage
 ///
 /// ```bash
-/// cargo run --example basic -- --model openrouter:anthropic/claude-3-5-sonnet-20241022
+/// cargo run --example basic -- --model openrouter:anthropic/claude-sonnet-4-5-20250929
 /// cargo run --example basic -- --model ollama:llama3.3 --judge-model ollama:llama3.3
 /// ```
 use aether::llm::parser::ModelProviderParser;
@@ -23,7 +23,7 @@ struct Cli {
     #[arg(
         short = 'm',
         long = "model",
-        help = "Model spec for the agent (e.g., 'openrouter:anthropic/claude-3-5-sonnet-20241022', 'ollama:llama3.3')",
+        help = "Model spec for the agent (e.g., 'openrouter:anthropic/claude-sonnet-4-5-20250929', 'ollama:llama3.3')",
         default_value = "zai:GLM-4.6"
     )]
     model: String,

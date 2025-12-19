@@ -9,7 +9,7 @@
 /// # Usage
 ///
 /// ```bash
-/// cargo run --example advanced -- --model openrouter:anthropic/claude-3-5-sonnet-20241022
+/// cargo run --example advanced -- --model openrouter:anthropic/claude-sonnet-4-5-20250929
 /// cargo run --example advanced -- --model ollama:llama3.3 --batch-size 2
 /// ```
 ///
@@ -32,7 +32,7 @@ struct Cli {
         short = 'm',
         long = "model",
         help = "Model spec for the agent",
-        default_value = "openrouter:anthropic/claude-3-5-sonnet-20241022"
+        default_value = "openrouter:anthropic/claude-sonnet-4-5-20250929"
     )]
     model: String,
 

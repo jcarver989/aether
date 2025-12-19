@@ -6,7 +6,7 @@
 /// # Usage
 ///
 /// ```bash
-/// cargo run -p planning-agent -- --model openrouter:anthropic/claude-3-5-sonnet-20241022
+/// cargo run -p planning-agent -- --model openrouter:anthropic/claude-sonnet-4-5-20250929
 /// cargo run -p planning-agent -- --model ollama:llama3.3 --batch-size 2
 /// ```
 ///

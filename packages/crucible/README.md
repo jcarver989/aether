@@ -10,8 +10,8 @@ use aether::llm::openrouter::OpenRouter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let llm = OpenRouter::new("anthropic/claude-3-5-sonnet-20241022")?;
-    let judge_llm = OpenRouter::new("anthropic/claude-3-5-sonnet-20241022")?;
+    let llm = OpenRouter::new("anthropic/claude-sonnet-4-5-20250929")?;
+    let judge_llm = OpenRouter::new("anthropic/claude-sonnet-4-5-20250929")?;
 
     let config = EvalsConfig::new(llm, judge_llm)
         .with_batch_size(3)

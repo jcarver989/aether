@@ -20,7 +20,7 @@ pub fn substitute_parameters(
                 .replace_all(template, |caps: &Captures| {
                     let text = caps[0].to_string();
                     let param_name = &caps[1];
-                    args.get(param_name).cloned().unwrap_or_else(|| text)
+                    args.get(param_name).cloned().unwrap_or(text)
                 })
                 .to_string()
         })
