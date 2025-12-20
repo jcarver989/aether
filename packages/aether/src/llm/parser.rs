@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::llm::{
-    ProviderFactory, StreamingModelProvider,
+    LlmError, ProviderFactory, StreamingModelProvider,
     alloyed::AlloyedModelProvider,
     anthropic::AnthropicProvider,
     local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
@@ -56,13 +56,10 @@ impl ModelProviderParser {
     /// - `"provider:model"` - Single provider (e.g., "anthropic:claude-3.5-sonnet")
     /// - `"provider1:model1,provider2:model2"` - Multiple providers create an AlloyedModelProvider
     ///
-    pub fn parse(
-        &self,
-        models_str: &str,
-    ) -> Result<Box<dyn StreamingModelProvider>, Box<dyn std::error::Error>> {
+    pub fn parse(&self, models_str: &str) -> crate::llm::Result<Box<dyn StreamingModelProvider>> {
         let provider_model_pairs: Vec<&str> = models_str.split(',').map(|s| s.trim()).collect();
         if provider_model_pairs.is_empty() {
-            return Err("No models provided".into());
+            return Err(LlmError::Other("No models provided".to_string()));
         }
 
         let mut providers = Vec::new();
@@ -77,7 +74,7 @@ impl ModelProviderParser {
             let factory = self
                 .factories
                 .get(provider_name)
-                .ok_or_else(|| format!("Unknown provider: {provider_name}"))?;
+                .ok_or_else(|| LlmError::Other(format!("Unknown provider: {provider_name}")))?;
 
             providers.push(factory(model)?);
         }
@@ -95,11 +92,8 @@ impl ModelProviderParser {
 /// Factory function type for creating model providers
 ///
 /// Takes a model name and returns a boxed StreamingModelProvider
-pub type CreateProviderFn = Box<
-    dyn Fn(&str) -> Result<Box<dyn StreamingModelProvider>, Box<dyn std::error::Error>>
-        + Send
-        + Sync,
->;
+pub type CreateProviderFn =
+    Box<dyn Fn(&str) -> crate::llm::Result<Box<dyn StreamingModelProvider>> + Send + Sync>;
 
 #[cfg(test)]
 mod tests {

@@ -57,7 +57,7 @@ impl Cli {
         &self,
     ) -> Result<Box<dyn StreamingModelProvider>, Box<dyn std::error::Error>> {
         let parser = ModelProviderParser::default();
-        parser.parse(&self.model)
+        Ok(parser.parse(&self.model)?)
     }
 }
 
