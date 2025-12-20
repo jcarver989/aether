@@ -1,8 +1,6 @@
-use async_openai::types::CreateChatCompletionRequest;
 use async_openai::{Client, config::OpenAIConfig};
 
-use crate::llm::openai::mappers::{map_messages, map_tools};
-use crate::llm::openai_compatible::create_custom_stream;
+use crate::llm::openai_compatible::{build_chat_request, create_custom_stream};
 use crate::llm::{
     Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider,
 };
@@ -40,7 +38,7 @@ impl OpenRouterProvider {
 }
 
 impl ProviderFactory for OpenRouterProvider {
-    fn from_env() -> std::result::Result<Self, Box<dyn std::error::Error>> {
+    fn from_env() -> Result<Self> {
         let api_key = std::env::var("OPENROUTER_API_KEY")
             .map_err(|_| LlmError::MissingApiKey("OPENROUTER_API_KEY".to_string()))?;
 
@@ -64,21 +62,7 @@ impl ProviderFactory for OpenRouterProvider {
 
 impl StreamingModelProvider for OpenRouterProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        let messages = map_messages(context.messages());
-        let tools = if context.tools().is_empty() {
-            None
-        } else {
-            Some(map_tools(context.tools()))
-        };
-
-        let request = CreateChatCompletionRequest {
-            model: self.model.clone(),
-            messages,
-            stream: Some(true),
-            tools,
-            ..Default::default()
-        };
-
+        let request = build_chat_request(&self.model, context);
         create_custom_stream(&self.client, request)
     }
 

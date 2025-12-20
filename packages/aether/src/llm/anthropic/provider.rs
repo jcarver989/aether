@@ -239,22 +239,20 @@ impl AnthropicProvider {
 }
 
 impl ProviderFactory for AnthropicProvider {
-    fn from_env() -> std::result::Result<Self, Box<dyn std::error::Error>> {
+    fn from_env() -> Result<Self> {
         if let Ok(api_key) = env::var("ANTHROPIC_API_KEY") {
-            return Self::new(ProviderCredentials::api_key(&api_key))
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>);
+            return Self::new(ProviderCredentials::api_key(&api_key));
         }
 
-        let store = load_credentials().map_err(auth_error_to_boxed)?;
+        let store = load_credentials().map_err(auth_error_to_llm)?;
         if let Some(credentials) = store.providers.get("anthropic") {
-            return Self::new(credentials.clone())
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>);
+            return Self::new(credentials.clone());
         }
 
-        Err(Box::new(LlmError::Other(
+        Err(LlmError::Other(
             "No Anthropic credentials found. Run `wisp auth anthropic` or set ANTHROPIC_API_KEY."
                 .to_string(),
-        )))
+        ))
     }
 
     fn with_model(self, model: &str) -> Self {
@@ -346,10 +344,6 @@ fn format_headers(headers: &header::HeaderMap) -> String {
 
 fn auth_error_to_llm(error: AuthError) -> LlmError {
     LlmError::Other(error.to_string())
-}
-
-fn auth_error_to_boxed(error: AuthError) -> Box<dyn std::error::Error> {
-    Box::new(LlmError::Other(error.to_string()))
 }
 
 fn now_millis() -> u64 {

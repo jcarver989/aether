@@ -1,7 +1,8 @@
-use crate::llm::openai::mappers::{map_messages, map_tools};
-use crate::llm::openai_compatible::create_custom_stream;
-use crate::llm::{Context, LlmError, LlmResponseStream, ProviderFactory, StreamingModelProvider};
-use async_openai::{Client, config::OpenAIConfig, types::CreateChatCompletionRequest};
+use crate::llm::openai_compatible::{build_chat_request, create_custom_stream};
+use crate::llm::{
+    Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider,
+};
+use async_openai::{Client, config::OpenAIConfig};
 
 pub struct ZAiProvider {
     client: Client<OpenAIConfig>,
@@ -27,7 +28,7 @@ impl ZAiProvider {
 }
 
 impl ProviderFactory for ZAiProvider {
-    fn from_env() -> std::result::Result<Self, Box<dyn std::error::Error>> {
+    fn from_env() -> Result<Self> {
         let api_key = std::env::var("ZAI_API_KEY")
             .map_err(|_| LlmError::MissingApiKey("ZAI_API_KEY".to_string()))?;
         Ok(Self::new(api_key))
@@ -40,21 +41,7 @@ impl ProviderFactory for ZAiProvider {
 
 impl StreamingModelProvider for ZAiProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        let messages = map_messages(context.messages());
-        let tools = if context.tools().is_empty() {
-            None
-        } else {
-            Some(map_tools(context.tools()))
-        };
-
-        let request = CreateChatCompletionRequest {
-            model: self.model.clone(),
-            messages,
-            stream: Some(true),
-            tools,
-            ..Default::default()
-        };
-
+        let request = build_chat_request(&self.model, context);
         create_custom_stream(&self.client, request)
     }
 

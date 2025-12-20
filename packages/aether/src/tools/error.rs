@@ -1,29 +1,20 @@
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ToolError {
     /// Tool execution failed
+    #[error("Tool execution failed: {0}")]
     ExecutionFailed(String),
     /// Tool configuration error
+    #[error("Tool configuration error: {0}")]
     ConfigurationError(String),
     /// IO error during tool operation
+    #[error("IO error: {0}")]
     IoError(String),
     /// Generic error for other cases
+    #[error("{0}")]
     Other(String),
 }
-
-impl fmt::Display for ToolError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ToolError::ExecutionFailed(msg) => write!(f, "Tool execution failed: {msg}"),
-            ToolError::ConfigurationError(msg) => write!(f, "Tool configuration error: {msg}"),
-            ToolError::IoError(msg) => write!(f, "IO error: {msg}"),
-            ToolError::Other(msg) => write!(f, "{msg}"),
-        }
-    }
-}
-
-impl std::error::Error for ToolError {}
 
 impl From<std::io::Error> for ToolError {
     fn from(error: std::io::Error) -> Self {
