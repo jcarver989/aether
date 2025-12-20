@@ -14,7 +14,7 @@ pub type LlmResponseStream = Pin<Box<dyn Stream<Item = LlmResult<LlmResponse>> +
 /// (Box<dyn StreamingModelProvider>) to work without construction methods.
 pub trait ProviderFactory: Sized {
     /// Create provider from environment variables and default configuration
-    fn from_env() -> Result<Self, Box<dyn std::error::Error>>;
+    fn from_env() -> super::Result<Self>;
 
     /// Set or update the model for this provider (builder pattern)
     fn with_model(self, model: &str) -> Self;

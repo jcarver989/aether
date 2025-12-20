@@ -1,4 +1,6 @@
-use crate::llm::{ProviderFactory, local::util::get_local_config, openai::OpenAiChatProvider};
+use crate::llm::{
+    ProviderFactory, Result, local::util::get_local_config, openai::OpenAiChatProvider,
+};
 use async_openai::{Client, config::OpenAIConfig};
 
 pub struct LlamaCppProvider {
@@ -22,7 +24,7 @@ impl Default for LlamaCppProvider {
 }
 
 impl ProviderFactory for LlamaCppProvider {
-    fn from_env() -> std::result::Result<Self, Box<dyn std::error::Error>> {
+    fn from_env() -> Result<Self> {
         Ok(Self::default())
     }
 
