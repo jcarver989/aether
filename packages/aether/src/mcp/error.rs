@@ -1,74 +1,54 @@
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum McpError {
     /// Tool not found in the registry
+    #[error("Tool not found: {0}")]
     ToolNotFound(String),
     /// Invalid tool name format (should be server__tool)
+    #[error("Invalid tool name format: {0}")]
     InvalidToolNameFormat(String),
     /// MCP server not found
+    #[error("Server not found: {0}")]
     ServerNotFound(String),
     /// Failed to execute tool on MCP server
+    #[error("Failed to execute tool {tool_name} on server {server_name}: {error}")]
     ToolExecutionFailed {
         tool_name: String,
         server_name: String,
         error: String,
     },
     /// Tool execution returned an error
+    #[error("Tool execution failed: {0}")]
     ToolExecutionError(String),
     /// Tool discovery failed
+    #[error("Tool discovery failed: {0}")]
     ToolDiscoveryFailed(String),
     /// Prompt not found in the registry
+    #[error("Prompt not found: {0}")]
     PromptNotFound(String),
     /// Prompt listing failed
+    #[error("Prompt listing failed: {0}")]
     PromptListFailed(String),
     /// Prompt retrieval failed
+    #[error("Prompt retrieval failed: {0}")]
     PromptGetFailed(String),
     /// Server connection failed
+    #[error("Connection failed: {0}")]
     ConnectionFailed(String),
     /// Server startup failed
+    #[error("Server startup failed: {0}")]
     ServerStartupFailed(String),
     /// Transport error
+    #[error("Transport error: {0}")]
     TransportError(String),
     /// JSON serialization/deserialization error
+    #[error("JSON error: {0}")]
     JsonError(String),
     /// Generic error for other cases
+    #[error("{0}")]
     Other(String),
 }
-
-impl fmt::Display for McpError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            McpError::ToolNotFound(tool) => write!(f, "Tool not found: {tool}"),
-            McpError::InvalidToolNameFormat(name) => {
-                write!(f, "Invalid tool name format: {name}")
-            }
-            McpError::ServerNotFound(server) => write!(f, "Server not found: {server}"),
-            McpError::ToolExecutionFailed {
-                tool_name,
-                server_name,
-                error,
-            } => {
-                write!(
-                    f,
-                    "Failed to execute tool {tool_name} on server {server_name}: {error}"
-                )
-            }
-            McpError::ToolExecutionError(msg) => write!(f, "Tool execution failed: {msg}"),
-            McpError::ToolDiscoveryFailed(msg) => write!(f, "Tool discovery failed: {msg}"),
-            McpError::PromptNotFound(prompt) => write!(f, "Prompt not found: {prompt}"),
-            McpError::PromptListFailed(msg) => write!(f, "Prompt listing failed: {msg}"),
-            McpError::PromptGetFailed(msg) => write!(f, "Prompt retrieval failed: {msg}"),
-            McpError::ConnectionFailed(msg) => write!(f, "Connection failed: {msg}"),
-            McpError::ServerStartupFailed(msg) => write!(f, "Server startup failed: {msg}"),
-            McpError::TransportError(msg) => write!(f, "Transport error: {msg}"),
-            McpError::JsonError(msg) => write!(f, "JSON error: {msg}"),
-            McpError::Other(msg) => write!(f, "{msg}"),
-        }
-    }
-}
-
-impl std::error::Error for McpError {}
 
 impl From<serde_json::Error> for McpError {
     fn from(error: serde_json::Error) -> Self {

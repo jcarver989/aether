@@ -1,4 +1,4 @@
-use std::fmt;
+use thiserror::Error;
 
 pub mod anthropic;
 pub mod store;
@@ -9,30 +9,21 @@ pub use anthropic::{
 };
 pub use store::{CredentialsStore, ProviderCredentials};
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum AuthError {
+    #[error("Home directory not set")]
     MissingHomeDir,
+    #[error("Auth IO error: {0}")]
     Io(String),
+    #[error("Auth JSON error: {0}")]
     Json(String),
+    #[error("Auth HTTP error: {0}")]
     Http(String),
+    #[error("Auth response error: {0}")]
     InvalidResponse(String),
+    #[error("{0}")]
     Other(String),
 }
-
-impl fmt::Display for AuthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AuthError::MissingHomeDir => write!(f, "Home directory not set"),
-            AuthError::Io(msg) => write!(f, "Auth IO error: {msg}"),
-            AuthError::Json(msg) => write!(f, "Auth JSON error: {msg}"),
-            AuthError::Http(msg) => write!(f, "Auth HTTP error: {msg}"),
-            AuthError::InvalidResponse(msg) => write!(f, "Auth response error: {msg}"),
-            AuthError::Other(msg) => write!(f, "{msg}"),
-        }
-    }
-}
-
-impl std::error::Error for AuthError {}
 
 impl From<std::io::Error> for AuthError {
     fn from(error: std::io::Error) -> Self {

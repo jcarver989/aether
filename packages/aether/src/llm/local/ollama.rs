@@ -1,4 +1,6 @@
-use crate::llm::{ProviderFactory, local::util::get_local_config, openai::OpenAiChatProvider};
+use crate::llm::{
+    ProviderFactory, Result, local::util::get_local_config, openai::OpenAiChatProvider,
+};
 use async_openai::{Client, config::OpenAIConfig};
 
 pub struct OllamaProvider {
@@ -23,7 +25,7 @@ impl OllamaProvider {
 }
 
 impl ProviderFactory for OllamaProvider {
-    fn from_env() -> std::result::Result<Self, Box<dyn std::error::Error>> {
+    fn from_env() -> Result<Self> {
         Ok(Self {
             model: String::new(),
             client: Client::with_config(get_local_config("http://localhost:11434/v1")),
