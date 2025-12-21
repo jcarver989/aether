@@ -24,6 +24,8 @@ crucible = { path = "../crucible" }
 clap = { workspace = true, features = ["env"] }
 tracing-subscriber = { workspace = true, features = ["registry", "fmt", "json"] }
 tracing-appender = { workspace = true }
+thiserror = { workspace = true }
+lsp-types = "0.97"
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -31,3 +33,7 @@ tempfile = { workspace = true }
 [[bin]]
 name = "mcp-lexicon"
 path = "src/main.rs"
+
+[[example]]
+name = "lsp_diagnostics"
+path = "examples/lsp_diagnostics.rs"
