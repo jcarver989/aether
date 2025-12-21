@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting rust-analyzer for: {}", project_path.display());
 
     // Spawn rust-analyzer
-    let mut client = match LspClient::spawn("rust-analyzer", &[]) {
+    let mut client = match LspClient::spawn("rust-analyzer", &[]).await {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Failed to spawn rust-analyzer: {}", e);

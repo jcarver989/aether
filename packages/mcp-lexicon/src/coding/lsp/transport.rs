@@ -4,11 +4,10 @@
 //! - Headers: `Content-Length: <number>\r\n\r\n`
 //! - Body: JSON-RPC message
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{ChildStdin, ChildStdout};
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{ChildStdin, ChildStdout};
 
 use super::error::{LspError, Result};
 
@@ -96,13 +95,13 @@ impl IncomingMessage {
 /// Read a single LSP message from the server's stdout
 ///
 /// This parses the Content-Length header and reads the JSON body.
-pub fn read_message(reader: &mut BufReader<ChildStdout>) -> Result<IncomingMessage> {
-    // Read headers until we find Content-Length
+pub async fn read_message(reader: &mut BufReader<ChildStdout>) -> Result<IncomingMessage> {
     let mut content_length: Option<usize> = None;
 
+    // Read headers until we find Content-Length
     loop {
         let mut header = String::new();
-        let bytes_read = reader.read_line(&mut header)?;
+        let bytes_read = reader.read_line(&mut header).await?;
 
         if bytes_read == 0 {
             return Err(LspError::Transport("Server closed connection".into()));
@@ -121,7 +120,6 @@ pub fn read_message(reader: &mut BufReader<ChildStdout>) -> Result<IncomingMessa
                 LspError::InvalidMessage(format!("Invalid Content-Length: {}", value))
             })?);
         }
-        // Ignore other headers (like Content-Type)
     }
 
     let content_length = content_length
@@ -129,33 +127,36 @@ pub fn read_message(reader: &mut BufReader<ChildStdout>) -> Result<IncomingMessa
 
     // Read the JSON body
     let mut content = vec![0u8; content_length];
-    reader.read_exact(&mut content)?;
+    reader.read_exact(&mut content).await?;
 
     let message: IncomingMessage = serde_json::from_slice(&content)?;
     Ok(message)
 }
 
 /// Write a JSON-RPC request to the server's stdin
-pub fn write_request<P: Serialize>(writer: &mut ChildStdin, request: &JsonRpcRequest<P>) -> Result<()> {
+pub async fn write_request<P: Serialize>(
+    writer: &mut ChildStdin,
+    request: &JsonRpcRequest<P>,
+) -> Result<()> {
     let content = serde_json::to_string(request)?;
-    write_raw_message(writer, &content)
+    write_raw_message(writer, &content).await
 }
 
 /// Write a JSON-RPC notification to the server's stdin
-pub fn write_notification<P: Serialize>(
+pub async fn write_notification<P: Serialize>(
     writer: &mut ChildStdin,
     notification: &JsonRpcNotification<P>,
 ) -> Result<()> {
     let content = serde_json::to_string(notification)?;
-    write_raw_message(writer, &content)
+    write_raw_message(writer, &content).await
 }
 
-/// Write a raw message with LSP framing (Content-Length header)
-fn write_raw_message(writer: &mut ChildStdin, content: &str) -> Result<()> {
+/// Write a raw message with LSP framing
+async fn write_raw_message(writer: &mut ChildStdin, content: &str) -> Result<()> {
     let header = format!("Content-Length: {}\r\n\r\n", content.len());
-    writer.write_all(header.as_bytes())?;
-    writer.write_all(content.as_bytes())?;
-    writer.flush()?;
+    writer.write_all(header.as_bytes()).await?;
+    writer.write_all(content.as_bytes()).await?;
+    writer.flush().await?;
     Ok(())
 }
 

@@ -4,12 +4,9 @@
 //! process and handles JSON-RPC communication over stdio.
 
 use std::collections::HashMap;
-use std::io::BufReader;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread;
 
 use lsp_types::{
     ClientCapabilities, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
@@ -21,16 +18,16 @@ use lsp_types::{
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde_json::Value;
+use tokio::io::BufReader;
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 
 use super::error::{LspError, Result};
 use super::transport::{
-    read_message, write_notification, write_request, JsonRpcNotification,
-    JsonRpcRequest,
+    read_message, write_notification, write_request, JsonRpcNotification, JsonRpcRequest,
 };
-
-/// Callback type for handling notifications from the server
-type NotificationHandler = Box<dyn Fn(&str, serde_json::Value) + Send + Sync>;
 
 /// Notifications received from the LSP server
 #[derive(Debug, Clone)]
@@ -41,6 +38,20 @@ pub enum LspNotification {
     Progress(ProgressParams),
 }
 
+/// Commands sent to the handler task
+enum LspCommand {
+    SendRequest {
+        id: i64,
+        method: String,
+        params: Value,
+        response_tx: oneshot::Sender<Result<Value>>,
+    },
+    SendNotification {
+        method: String,
+        params: Value,
+    },
+}
+
 /// An LSP client that manages a language server process
 ///
 /// The client handles:
@@ -49,23 +60,16 @@ pub enum LspNotification {
 /// - Notification dispatch (e.g., diagnostics)
 /// - LSP lifecycle (initialize, initialized, shutdown)
 pub struct LspClient {
-    /// The language server process
-    process: Child,
     /// Counter for generating unique request IDs
     request_id: AtomicI64,
-    /// Pending requests waiting for responses
-    pending_requests: Arc<Mutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>>,
+    /// Channel to send commands to the handler task
+    command_tx: mpsc::Sender<LspCommand>,
     /// Channel to receive notifications (diagnostics, progress, etc.)
     notification_rx: mpsc::Receiver<LspNotification>,
-    /// Sender for notifications (kept alive to prevent channel closure)
-    #[allow(dead_code)]
-    notification_tx: mpsc::Sender<LspNotification>,
-    /// Custom notification handlers
-    notification_handlers: Arc<Mutex<Vec<NotificationHandler>>>,
     /// Whether the client has been initialized
     initialized: bool,
-    /// Handle to the message reader thread
-    _reader_handle: thread::JoinHandle<()>,
+    /// Handle to the handler task
+    _task_handle: JoinHandle<()>,
 }
 
 impl LspClient {
@@ -77,9 +81,9 @@ impl LspClient {
     ///
     /// # Example
     /// ```ignore
-    /// let client = LspClient::spawn("rust-analyzer", &[])?;
+    /// let client = LspClient::spawn("rust-analyzer", &[]).await?;
     /// ```
-    pub fn spawn(command: &str, args: &[&str]) -> Result<Self> {
+    pub async fn spawn(command: &str, args: &[&str]) -> Result<Self> {
         let mut process = Command::new(command)
             .args(args)
             .stdin(Stdio::piped())
@@ -87,95 +91,33 @@ impl LspClient {
             .stderr(Stdio::inherit())
             .spawn()?;
 
+        let stdin = process
+            .stdin
+            .take()
+            .ok_or_else(|| LspError::Transport("Failed to capture stdin".into()))?;
+
         let stdout = process
             .stdout
             .take()
             .ok_or_else(|| LspError::Transport("Failed to capture stdout".into()))?;
 
+        let (command_tx, command_rx) = mpsc::channel(100);
         let (notification_tx, notification_rx) = mpsc::channel(200);
-        let pending_requests: Arc<Mutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let notification_handlers: Arc<Mutex<Vec<NotificationHandler>>> =
-            Arc::new(Mutex::new(Vec::new()));
 
-        // Clone for the reader thread
-        let pending_requests_clone = Arc::clone(&pending_requests);
-        let notification_tx_clone = notification_tx.clone();
-        let notification_handlers_clone = Arc::clone(&notification_handlers);
-
-        // Spawn a thread to read messages from the server
-        let reader_handle = thread::spawn(move || {
-            let mut reader = BufReader::new(stdout);
-
-            loop {
-                match read_message(&mut reader) {
-                    Ok(message) => {
-                        if message.is_response() {
-                            // Handle response to a request
-                            if let Some(id) = message.id {
-                                let sender = pending_requests_clone.lock().unwrap().remove(&id);
-                                if let Some(sender) = sender {
-                                    if let Some(error) = message.error {
-                                        // Send error as a JSON value for the caller to handle
-                                        let _ = sender.send(serde_json::json!({
-                                            "__lsp_error": true,
-                                            "code": error.code,
-                                            "message": error.message
-                                        }));
-                                    } else if let Some(result) = message.result {
-                                        let _ = sender.send(result);
-                                    }
-                                }
-                            }
-                        } else if message.is_notification() {
-                            // Handle notification from server
-                            let method = message.method.as_deref().unwrap_or("");
-                            let params = message.params.unwrap_or(serde_json::Value::Null);
-
-                            // Route notifications through the unified channel
-                            if method == "textDocument/publishDiagnostics" {
-                                if let Ok(diag_params) =
-                                    serde_json::from_value::<PublishDiagnosticsParams>(params.clone())
-                                {
-                                    let _ = notification_tx_clone
-                                        .blocking_send(LspNotification::Diagnostics(diag_params));
-                                }
-                            } else if method == "$/progress" {
-                                if let Ok(progress_params) =
-                                    serde_json::from_value::<ProgressParams>(params.clone())
-                                {
-                                    let _ = notification_tx_clone
-                                        .blocking_send(LspNotification::Progress(progress_params));
-                                }
-                            }
-
-                            // Call custom notification handlers
-                            let handlers = notification_handlers_clone.lock().unwrap();
-                            for handler in handlers.iter() {
-                                handler(method, params.clone());
-                            }
-                        }
-                    }
-                    Err(LspError::Transport(msg)) if msg.contains("closed connection") => {
-                        // Server shut down, exit the loop
-                        break;
-                    }
-                    Err(e) => {
-                        tracing::warn!("Error reading LSP message: {}", e);
-                    }
-                }
-            }
-        });
+        let task_handle = tokio::spawn(run_handler(
+            command_rx,
+            stdin,
+            stdout,
+            notification_tx,
+            process,
+        ));
 
         Ok(Self {
-            process,
             request_id: AtomicI64::new(1),
-            pending_requests,
+            command_tx,
             notification_rx,
-            notification_tx,
-            notification_handlers,
             initialized: false,
-            _reader_handle: reader_handle,
+            _task_handle: task_handle,
         })
     }
 
@@ -195,7 +137,6 @@ impl LspClient {
             root_uri: Some(root_uri.clone()),
             capabilities: ClientCapabilities {
                 general: Some(GeneralClientCapabilities {
-                    // Declare support for server-initiated progress
                     ..Default::default()
                 }),
                 window: Some(WindowClientCapabilities {
@@ -231,7 +172,7 @@ impl LspClient {
     /// * `uri` - The file URI
     /// * `language_id` - The language identifier (e.g., "rust", "python")
     /// * `text` - The file contents
-    pub fn did_open(&mut self, uri: Uri, language_id: &str, text: String) -> Result<()> {
+    pub fn did_open(&self, uri: Uri, language_id: &str, text: String) -> Result<()> {
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
                 uri,
@@ -251,7 +192,7 @@ impl LspClient {
     /// * `uri` - The file URI
     /// * `version` - The new document version (should be incremented each change)
     /// * `text` - The new file contents
-    pub fn did_change(&mut self, uri: Uri, version: i32, text: String) -> Result<()> {
+    pub fn did_change(&self, uri: Uri, version: i32, text: String) -> Result<()> {
         let params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier { uri, version },
             content_changes: vec![TextDocumentContentChangeEvent {
@@ -267,7 +208,7 @@ impl LspClient {
     ///
     /// # Arguments
     /// * `uri` - The file URI
-    pub fn did_save(&mut self, uri: Uri) -> Result<()> {
+    pub fn did_save(&self, uri: Uri) -> Result<()> {
         let params = DidSaveTextDocumentParams {
             text_document: TextDocumentIdentifier { uri },
             text: None,
@@ -313,7 +254,6 @@ impl LspClient {
         let mut active_tokens: HashSet<String> = HashSet::new();
 
         loop {
-            // Check if we have any notifications
             match tokio::time::timeout(
                 std::time::Duration::from_millis(500),
                 self.recv_notification(),
@@ -327,19 +267,17 @@ impl LspClient {
                     };
 
                     match progress.value {
-                        lsp_types::ProgressParamsValue::WorkDone(work_done) => {
-                            match work_done {
-                                lsp_types::WorkDoneProgress::Begin(_) => {
-                                    active_tokens.insert(token);
-                                }
-                                lsp_types::WorkDoneProgress::End(_) => {
-                                    active_tokens.remove(&token);
-                                }
-                                lsp_types::WorkDoneProgress::Report(_) => {
-                                    // Still in progress
-                                }
+                        lsp_types::ProgressParamsValue::WorkDone(work_done) => match work_done {
+                            lsp_types::WorkDoneProgress::Begin(_) => {
+                                active_tokens.insert(token);
                             }
-                        }
+                            lsp_types::WorkDoneProgress::End(_) => {
+                                active_tokens.remove(&token);
+                            }
+                            lsp_types::WorkDoneProgress::Report(_) => {
+                                // Still in progress
+                            }
+                        },
                     }
                 }
                 Ok(Some(_)) => {
@@ -356,32 +294,16 @@ impl LspClient {
         }
     }
 
-    /// Add a custom notification handler
-    ///
-    /// The handler will be called for all notifications from the server.
-    pub fn on_notification<F>(&mut self, handler: F)
-    where
-        F: Fn(&str, serde_json::Value) + Send + Sync + 'static,
-    {
-        self.notification_handlers
-            .lock()
-            .unwrap()
-            .push(Box::new(handler));
-    }
-
     /// Shutdown the language server gracefully
     ///
     /// This sends the `shutdown` request followed by the `exit` notification,
     /// then waits for the process to terminate.
     pub async fn shutdown(&mut self) -> Result<()> {
         // Send shutdown request
-        let _: serde_json::Value = self.send_request("shutdown", ()).await?;
+        let _: Value = self.send_request("shutdown", ()).await?;
 
         // Send exit notification
         self.send_notification("exit", ())?;
-
-        // Wait for process to exit
-        self.process.wait()?;
 
         Ok(())
     }
@@ -392,57 +314,39 @@ impl LspClient {
     }
 
     /// Send a request and wait for the response
-    async fn send_request<P: Serialize, R: DeserializeOwned>(
-        &mut self,
+    pub async fn send_request<P: Serialize, R: DeserializeOwned>(
+        &self,
         method: &str,
         params: P,
     ) -> Result<R> {
         let id = self.next_request_id();
-        let request = JsonRpcRequest::new(id, method, params);
+        let (response_tx, response_rx) = oneshot::channel();
 
-        // Create a oneshot channel for the response
-        let (tx, rx) = oneshot::channel();
-
-        // Register the pending request
-        self.pending_requests.lock().unwrap().insert(id, tx);
-
-        // Write the request
-        let stdin = self
-            .process
-            .stdin
-            .as_mut()
-            .ok_or_else(|| LspError::Transport("stdin not available".into()))?;
-        write_request(stdin, &request)?;
-
-        // Wait for the response
-        let response = rx
+        self.command_tx
+            .send(LspCommand::SendRequest {
+                id,
+                method: method.to_string(),
+                params: serde_json::to_value(&params)?,
+                response_tx,
+            })
             .await
-            .map_err(|_| LspError::Transport("Response channel closed".into()))?;
+            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
 
-        // Check for error response
-        if response.get("__lsp_error").is_some() {
-            let code = response["code"].as_i64().unwrap_or(-1) as i32;
-            let message = response["message"]
-                .as_str()
-                .unwrap_or("Unknown error")
-                .to_string();
-            return Err(LspError::ServerError { code, message });
-        }
+        let result = response_rx
+            .await
+            .map_err(|_| LspError::Transport("Response channel closed".into()))??;
 
-        // Deserialize the result
-        serde_json::from_value(response).map_err(LspError::from)
+        serde_json::from_value(result).map_err(LspError::from)
     }
 
     /// Send a notification (no response expected)
-    fn send_notification<P: Serialize>(&mut self, method: &str, params: P) -> Result<()> {
-        let notification = JsonRpcNotification::new(method, params);
-
-        let stdin = self
-            .process
-            .stdin
-            .as_mut()
-            .ok_or_else(|| LspError::Transport("stdin not available".into()))?;
-        write_notification(stdin, &notification)
+    fn send_notification<P: Serialize>(&self, method: &str, params: P) -> Result<()> {
+        self.command_tx
+            .try_send(LspCommand::SendNotification {
+                method: method.to_string(),
+                params: serde_json::to_value(&params)?,
+            })
+            .map_err(|_| LspError::Transport("Handler task closed".into()))
     }
 
     /// Generate the next unique request ID
@@ -451,10 +355,103 @@ impl LspClient {
     }
 }
 
-impl Drop for LspClient {
-    fn drop(&mut self) {
-        // Try to kill the process if it's still running
-        let _ = self.process.kill();
+/// The handler task that owns stdin, stdout, and the pending requests map
+async fn run_handler(
+    mut command_rx: mpsc::Receiver<LspCommand>,
+    mut stdin: ChildStdin,
+    stdout: ChildStdout,
+    notification_tx: mpsc::Sender<LspNotification>,
+    mut process: Child,
+) {
+    let mut reader = BufReader::new(stdout);
+    let mut pending: HashMap<i64, oneshot::Sender<Result<Value>>> = HashMap::new();
+
+    loop {
+        tokio::select! {
+            // Handle outgoing commands
+            Some(cmd) = command_rx.recv() => {
+                match cmd {
+                    LspCommand::SendRequest { id, method, params, response_tx } => {
+                        pending.insert(id, response_tx);
+                        let request = JsonRpcRequest::new(id, &method, params);
+                        if let Err(e) = write_request(&mut stdin, &request).await {
+                            // If write fails, notify the caller
+                            if let Some(tx) = pending.remove(&id) {
+                                let _ = tx.send(Err(e));
+                            }
+                        }
+                    }
+                    LspCommand::SendNotification { method, params } => {
+                        let notification = JsonRpcNotification::new(&method, params);
+                        let _ = write_notification(&mut stdin, &notification).await;
+                    }
+                }
+            }
+
+            // Handle incoming LSP messages
+            msg = read_message(&mut reader) => {
+                match msg {
+                    Ok(msg) if msg.is_response() => {
+                        if let Some(id) = msg.id {
+                            if let Some(tx) = pending.remove(&id) {
+                                let result = match msg.error {
+                                    Some(e) => Err(LspError::ServerError {
+                                        code: e.code,
+                                        message: e.message,
+                                    }),
+                                    None => Ok(msg.result.unwrap_or(Value::Null)),
+                                };
+                                let _ = tx.send(result);
+                            }
+                        }
+                    }
+                    Ok(msg) if msg.is_notification() => {
+                        let method = msg.method.as_deref().unwrap_or("");
+                        let params = msg.params.unwrap_or(Value::Null);
+                        route_notification(method, params, &notification_tx);
+                    }
+                    Ok(_) => {
+                        // Unknown message type, ignore
+                    }
+                    Err(LspError::Transport(ref s)) if s.contains("closed") => {
+                        // Server closed connection, exit
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Error reading LSP message: {}", e);
+                    }
+                }
+            }
+
+            // Handle process exit
+            _ = process.wait() => {
+                break;
+            }
+        }
+    }
+
+    // Notify any remaining pending requests that the handler is closing
+    for (_, tx) in pending {
+        let _ = tx.send(Err(LspError::Transport("Handler task closed".into())));
+    }
+}
+
+/// Route a notification to the appropriate channel
+fn route_notification(method: &str, params: Value, notification_tx: &mpsc::Sender<LspNotification>) {
+    match method {
+        "textDocument/publishDiagnostics" => {
+            if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params) {
+                let _ = notification_tx.try_send(LspNotification::Diagnostics(diag_params));
+            }
+        }
+        "$/progress" => {
+            if let Ok(progress_params) = serde_json::from_value::<ProgressParams>(params) {
+                let _ = notification_tx.try_send(LspNotification::Progress(progress_params));
+            }
+        }
+        _ => {
+            // Unknown notification, ignore
+        }
     }
 }
 
@@ -477,9 +474,7 @@ pub fn path_to_uri(path: &Path) -> Result<Uri> {
     let uri_str = if cfg!(windows) {
         format!(
             "file:///{}",
-            absolute_path
-                .to_string_lossy()
-                .replace('\\', "/")
+            absolute_path.to_string_lossy().replace('\\', "/")
         )
     } else {
         format!("file://{}", absolute_path.display())
