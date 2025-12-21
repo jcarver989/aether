@@ -16,8 +16,8 @@ use lsp_types::{
     TextDocumentIdentifier, TextDocumentItem, Uri, VersionedTextDocumentIdentifier,
     WindowClientCapabilities,
 };
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::io::BufReader;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -26,7 +26,7 @@ use tokio::task::JoinHandle;
 
 use super::error::{LspError, Result};
 use super::transport::{
-    read_message, write_notification, write_request, JsonRpcNotification, JsonRpcRequest,
+    JsonRpcNotification, JsonRpcRequest, read_message, write_notification, write_request,
 };
 
 /// Notifications received from the LSP server
@@ -261,23 +261,21 @@ impl LspClient {
             .await
             {
                 Ok(Some(LspNotification::Progress(progress))) => {
-                    let token = match &progress.token {
-                        lsp_types::NumberOrString::Number(n) => n.to_string(),
-                        lsp_types::NumberOrString::String(s) => s.clone(),
+                    use lsp_types::NumberOrString::{Number, String};
+                    let token = match progress.token {
+                        Number(n) => n.to_string(),
+                        String(s) => s,
                     };
+                    let lsp_types::ProgressParamsValue::WorkDone(work_done) = progress.value;
 
-                    match progress.value {
-                        lsp_types::ProgressParamsValue::WorkDone(work_done) => match work_done {
-                            lsp_types::WorkDoneProgress::Begin(_) => {
-                                active_tokens.insert(token);
-                            }
-                            lsp_types::WorkDoneProgress::End(_) => {
-                                active_tokens.remove(&token);
-                            }
-                            lsp_types::WorkDoneProgress::Report(_) => {
-                                // Still in progress
-                            }
-                        },
+                    match work_done {
+                        lsp_types::WorkDoneProgress::Begin(_) => {
+                            active_tokens.insert(token);
+                        }
+                        lsp_types::WorkDoneProgress::End(_) => {
+                            active_tokens.remove(&token);
+                        }
+                        lsp_types::WorkDoneProgress::Report(_) => {}
                     }
                 }
                 Ok(Some(_)) => {
@@ -392,17 +390,12 @@ async fn run_handler(
             msg = read_message(&mut reader) => {
                 match msg {
                     Ok(msg) if msg.is_response() => {
-                        if let Some(id) = msg.id {
-                            if let Some(tx) = pending.remove(&id) {
-                                let result = match msg.error {
-                                    Some(e) => Err(LspError::ServerError {
-                                        code: e.code,
-                                        message: e.message,
-                                    }),
-                                    None => Ok(msg.result.unwrap_or(Value::Null)),
-                                };
-                                let _ = tx.send(result);
-                            }
+                        if let Some(tx) = msg.id.and_then(|id| pending.remove(&id)) {
+                            let result = msg.error.map_or_else(
+                                || Ok(msg.result.unwrap_or(Value::Null)),
+                                |e| Err(LspError::ServerError { code: e.code, message: e.message }),
+                            );
+                            let _ = tx.send(result);
                         }
                     }
                     Ok(msg) if msg.is_notification() => {
@@ -437,7 +430,11 @@ async fn run_handler(
 }
 
 /// Route a notification to the appropriate channel
-fn route_notification(method: &str, params: Value, notification_tx: &mpsc::Sender<LspNotification>) {
+fn route_notification(
+    method: &str,
+    params: Value,
+    notification_tx: &mpsc::Sender<LspNotification>,
+) {
     match method {
         "textDocument/publishDiagnostics" => {
             if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params) {

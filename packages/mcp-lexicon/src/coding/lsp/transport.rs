@@ -187,10 +187,9 @@ mod tests {
 
     #[test]
     fn test_incoming_message_is_response() {
-        let response: IncomingMessage = serde_json::from_str(
-            r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#,
-        )
-        .unwrap();
+        let response: IncomingMessage =
+            serde_json::from_str(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#)
+                .unwrap();
 
         assert!(response.is_response());
         assert!(!response.is_notification());
@@ -206,6 +205,9 @@ mod tests {
 
         assert!(!notification.is_response());
         assert!(notification.is_notification());
-        assert_eq!(notification.method.as_deref(), Some("textDocument/publishDiagnostics"));
+        assert_eq!(
+            notification.method.as_deref(),
+            Some("textDocument/publishDiagnostics")
+        );
     }
 }

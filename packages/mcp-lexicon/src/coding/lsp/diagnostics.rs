@@ -119,7 +119,10 @@ pub fn filter_by_severity(
             matches!(
                 (d.severity, min_severity),
                 (Severity::Error, _)
-                    | (Severity::Warning, Severity::Warning | Severity::Info | Severity::Hint)
+                    | (
+                        Severity::Warning,
+                        Severity::Warning | Severity::Info | Severity::Hint
+                    )
                     | (Severity::Info, Severity::Info | Severity::Hint)
                     | (Severity::Hint, Severity::Hint)
             )
@@ -183,7 +186,11 @@ fn uri_to_path_string(uri: &Uri) -> String {
     if let Some(path) = uri_str.strip_prefix("file://") {
         // On Windows, file URIs look like file:///C:/path
         // On Unix, file URIs look like file:///path
-        if cfg!(windows) && path.starts_with('/') && path.len() > 2 && path.chars().nth(2) == Some(':') {
+        if cfg!(windows)
+            && path.starts_with('/')
+            && path.len() > 2
+            && path.chars().nth(2) == Some(':')
+        {
             // Remove leading slash for Windows paths like /C:/path -> C:/path
             path[1..].to_string()
         } else {
@@ -285,10 +292,16 @@ mod tests {
     #[test]
     fn test_uri_to_path_string() {
         // Unix-style path
-        assert_eq!(uri_to_path_string(&make_uri("/path/to/file.rs")), "/path/to/file.rs");
+        assert_eq!(
+            uri_to_path_string(&make_uri("/path/to/file.rs")),
+            "/path/to/file.rs"
+        );
 
         // Non-file URI
         let non_file_uri: Uri = "https://example.com/file.rs".parse().unwrap();
-        assert_eq!(uri_to_path_string(&non_file_uri), "https://example.com/file.rs");
+        assert_eq!(
+            uri_to_path_string(&non_file_uri),
+            "https://example.com/file.rs"
+        );
     }
 }
