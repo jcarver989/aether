@@ -7,10 +7,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use lsp_types::{
-    ClientCapabilities, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+    ClientCapabilities, Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, GeneralClientCapabilities, InitializeParams, InitializeResult,
     InitializedParams, NumberOrString, ProgressParams, ProgressParamsValue,
     PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, TextDocumentClientCapabilities,
@@ -53,6 +54,9 @@ enum LspCommand {
     },
 }
 
+/// Shared diagnostics cache that can be accessed from both the handler and client
+pub type DiagnosticsCache = Arc<RwLock<HashMap<Uri, Vec<Diagnostic>>>>;
+
 /// An LSP client that manages a language server process
 ///
 /// The client handles:
@@ -60,6 +64,8 @@ enum LspCommand {
 /// - JSON-RPC request/response correlation
 /// - Notification dispatch (e.g., diagnostics)
 /// - LSP lifecycle (initialize, initialized, shutdown)
+/// - Caching latest diagnostics per file
+#[derive(Debug)]
 pub struct LspClient {
     /// Counter for generating unique request IDs
     request_id: AtomicI64,
@@ -71,6 +77,8 @@ pub struct LspClient {
     initialized: bool,
     /// Handle to the handler task
     _task_handle: JoinHandle<()>,
+    /// Cache of latest diagnostics per URI (updated by handler task)
+    diagnostics_cache: DiagnosticsCache,
 }
 
 impl LspClient {
@@ -104,6 +112,7 @@ impl LspClient {
 
         let (command_tx, command_rx) = mpsc::channel(100);
         let (notification_tx, notification_rx) = mpsc::channel(200);
+        let diagnostics_cache: DiagnosticsCache = Arc::new(RwLock::new(HashMap::new()));
 
         let task_handle = tokio::spawn(run_handler(
             command_rx,
@@ -111,6 +120,7 @@ impl LspClient {
             stdout,
             notification_tx,
             process,
+            diagnostics_cache.clone(),
         ));
 
         Ok(Self {
@@ -119,6 +129,7 @@ impl LspClient {
             notification_rx,
             initialized: false,
             _task_handle: task_handle,
+            diagnostics_cache,
         })
     }
 
@@ -309,6 +320,33 @@ impl LspClient {
         self.initialized
     }
 
+    /// Get cached diagnostics for a specific URI
+    ///
+    /// Returns the latest diagnostics published by the server for this file,
+    /// or an empty vector if no diagnostics have been received.
+    pub fn get_diagnostics(&self, uri: &Uri) -> Vec<Diagnostic> {
+        self.diagnostics_cache
+            .read()
+            .unwrap()
+            .get(uri)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Get all cached diagnostics
+    ///
+    /// Returns a snapshot of all diagnostics currently cached, keyed by URI.
+    pub fn get_all_diagnostics(&self) -> HashMap<Uri, Vec<Diagnostic>> {
+        self.diagnostics_cache.read().unwrap().clone()
+    }
+
+    /// Clear diagnostics for a specific URI
+    ///
+    /// This can be called when a file is closed to free memory.
+    pub fn clear_diagnostics(&self, uri: &Uri) {
+        self.diagnostics_cache.write().unwrap().remove(uri);
+    }
+
     /// Send a request and wait for the response
     pub async fn send_request<P: Serialize, R: DeserializeOwned>(
         &self,
@@ -358,6 +396,7 @@ async fn run_handler(
     stdout: ChildStdout,
     notification_tx: mpsc::Sender<LspNotification>,
     mut process: Child,
+    diagnostics_cache: DiagnosticsCache,
 ) {
     let mut reader = BufReader::new(stdout);
     let mut pending: HashMap<i64, oneshot::Sender<Result<Value>>> = HashMap::new();
@@ -399,7 +438,7 @@ async fn run_handler(
                     Ok(msg) if msg.is_notification() => {
                         let method = msg.method.as_deref().unwrap_or("");
                         let params = msg.params.unwrap_or(Value::Null);
-                        route_notification(method, params, &notification_tx);
+                        route_notification(method, params, &notification_tx, &diagnostics_cache);
                     }
                     Ok(_) => {
                         // Unknown message type, ignore
@@ -427,15 +466,21 @@ async fn run_handler(
     }
 }
 
-/// Route a notification to the appropriate channel
+/// Route a notification to the appropriate channel and update caches
 fn route_notification(
     method: &str,
     params: Value,
     notification_tx: &mpsc::Sender<LspNotification>,
+    diagnostics_cache: &DiagnosticsCache,
 ) {
     match method {
         "textDocument/publishDiagnostics" => {
             if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params) {
+                // Update the diagnostics cache with latest diagnostics for this URI
+                {
+                    let mut cache = diagnostics_cache.write().unwrap();
+                    cache.insert(diag_params.uri.clone(), diag_params.diagnostics.clone());
+                }
                 let _ = notification_tx.try_send(LspNotification::Diagnostics(diag_params));
             }
         }
