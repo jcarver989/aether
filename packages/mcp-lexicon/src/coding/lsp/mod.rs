@@ -50,7 +50,7 @@ pub mod diagnostics;
 pub mod error;
 pub mod transport;
 
-pub use client::{LspClient, LspNotification, path_to_uri};
+pub use client::{DiagnosticsCache, LspClient, LspNotification, path_to_uri};
 pub use diagnostics::{
     DiagnosticCounts, FormattedDiagnostic, Severity, count_by_severity, filter_by_severity,
     format_diagnostics,
