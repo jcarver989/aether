@@ -3,18 +3,19 @@
 //! This module provides `LspClient`, which manages the lifecycle of a language server
 //! process and handles JSON-RPC communication over stdio.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::time::Duration;
 
 use lsp_types::{
     ClientCapabilities, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, GeneralClientCapabilities, InitializeParams, InitializeResult,
-    InitializedParams, ProgressParams, PublishDiagnosticsClientCapabilities,
-    PublishDiagnosticsParams, TextDocumentClientCapabilities, TextDocumentContentChangeEvent,
-    TextDocumentIdentifier, TextDocumentItem, Uri, VersionedTextDocumentIdentifier,
-    WindowClientCapabilities,
+    InitializedParams, NumberOrString, ProgressParams, ProgressParamsValue,
+    PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, TextDocumentClientCapabilities,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem, Uri,
+    VersionedTextDocumentIdentifier, WindowClientCapabilities, WorkDoneProgress,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -249,33 +250,30 @@ impl LspClient {
     ///
     /// Note: Non-progress notifications (like diagnostics) received during this wait are discarded.
     pub async fn wait_for_indexing(&mut self) {
-        use std::collections::HashSet;
-
         let mut active_tokens: HashSet<String> = HashSet::new();
 
         loop {
             match tokio::time::timeout(
-                std::time::Duration::from_millis(500),
+                Duration::from_millis(500),
                 self.recv_notification(),
             )
             .await
             {
                 Ok(Some(LspNotification::Progress(progress))) => {
-                    use lsp_types::NumberOrString::{Number, String};
                     let token = match progress.token {
-                        Number(n) => n.to_string(),
-                        String(s) => s,
+                        NumberOrString::Number(n) => n.to_string(),
+                        NumberOrString::String(s) => s,
                     };
-                    let lsp_types::ProgressParamsValue::WorkDone(work_done) = progress.value;
+                    let ProgressParamsValue::WorkDone(work_done) = progress.value;
 
                     match work_done {
-                        lsp_types::WorkDoneProgress::Begin(_) => {
+                        WorkDoneProgress::Begin(_) => {
                             active_tokens.insert(token);
                         }
-                        lsp_types::WorkDoneProgress::End(_) => {
+                        WorkDoneProgress::End(_) => {
                             active_tokens.remove(&token);
                         }
-                        lsp_types::WorkDoneProgress::Report(_) => {}
+                        WorkDoneProgress::Report(_) => {}
                     }
                 }
                 Ok(Some(_)) => {
