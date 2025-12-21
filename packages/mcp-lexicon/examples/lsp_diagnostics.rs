@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use mcp_lexicon::coding::lsp::{
-    count_by_severity, format_diagnostics, path_to_uri, LspClient, LspNotification,
+    LspClient, LspNotification, count_by_severity, format_diagnostics, path_to_uri,
 };
 use tokio::time::timeout;
 
@@ -141,7 +141,7 @@ async fn wait_for_diagnostics(
                 Some(LspNotification::Diagnostics(diag))
                     if diag.uri.as_str() == target_uri.as_str() =>
                 {
-                    return Some(diag)
+                    return Some(diag);
                 }
                 Some(_) => continue, // Other notification or different file, keep waiting
                 None => return None, // Channel closed
