@@ -32,6 +32,15 @@ use super::transport::{
 /// Callback type for handling notifications from the server
 type NotificationHandler = Box<dyn Fn(&str, serde_json::Value) + Send + Sync>;
 
+/// Notifications received from the LSP server
+#[derive(Debug, Clone)]
+pub enum LspNotification {
+    /// Diagnostics published for a document (errors, warnings, etc.)
+    Diagnostics(PublishDiagnosticsParams),
+    /// Progress updates (indexing, loading workspace, etc.)
+    Progress(ProgressParams),
+}
+
 /// An LSP client that manages a language server process
 ///
 /// The client handles:
@@ -46,16 +55,11 @@ pub struct LspClient {
     request_id: AtomicI64,
     /// Pending requests waiting for responses
     pending_requests: Arc<Mutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>>,
-    /// Channel to receive diagnostics
-    diagnostics_rx: mpsc::Receiver<PublishDiagnosticsParams>,
-    /// Sender for diagnostics (kept alive to prevent channel closure)
+    /// Channel to receive notifications (diagnostics, progress, etc.)
+    notification_rx: mpsc::Receiver<LspNotification>,
+    /// Sender for notifications (kept alive to prevent channel closure)
     #[allow(dead_code)]
-    diagnostics_tx: mpsc::Sender<PublishDiagnosticsParams>,
-    /// Channel to receive progress notifications
-    progress_rx: mpsc::Receiver<ProgressParams>,
-    /// Sender for progress (kept alive to prevent channel closure)
-    #[allow(dead_code)]
-    progress_tx: mpsc::Sender<ProgressParams>,
+    notification_tx: mpsc::Sender<LspNotification>,
     /// Custom notification handlers
     notification_handlers: Arc<Mutex<Vec<NotificationHandler>>>,
     /// Whether the client has been initialized
@@ -88,8 +92,7 @@ impl LspClient {
             .take()
             .ok_or_else(|| LspError::Transport("Failed to capture stdout".into()))?;
 
-        let (diagnostics_tx, diagnostics_rx) = mpsc::channel(100);
-        let (progress_tx, progress_rx) = mpsc::channel(100);
+        let (notification_tx, notification_rx) = mpsc::channel(200);
         let pending_requests: Arc<Mutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let notification_handlers: Arc<Mutex<Vec<NotificationHandler>>> =
@@ -97,8 +100,7 @@ impl LspClient {
 
         // Clone for the reader thread
         let pending_requests_clone = Arc::clone(&pending_requests);
-        let diagnostics_tx_clone = diagnostics_tx.clone();
-        let progress_tx_clone = progress_tx.clone();
+        let notification_tx_clone = notification_tx.clone();
         let notification_handlers_clone = Arc::clone(&notification_handlers);
 
         // Spawn a thread to read messages from the server
@@ -130,21 +132,20 @@ impl LspClient {
                             let method = message.method.as_deref().unwrap_or("");
                             let params = message.params.unwrap_or(serde_json::Value::Null);
 
-                            // Handle diagnostics specially
+                            // Route notifications through the unified channel
                             if method == "textDocument/publishDiagnostics" {
                                 if let Ok(diag_params) =
                                     serde_json::from_value::<PublishDiagnosticsParams>(params.clone())
                                 {
-                                    let _ = diagnostics_tx_clone.blocking_send(diag_params);
+                                    let _ = notification_tx_clone
+                                        .blocking_send(LspNotification::Diagnostics(diag_params));
                                 }
-                            }
-
-                            // Handle progress notifications
-                            if method == "$/progress" {
+                            } else if method == "$/progress" {
                                 if let Ok(progress_params) =
                                     serde_json::from_value::<ProgressParams>(params.clone())
                                 {
-                                    let _ = progress_tx_clone.blocking_send(progress_params);
+                                    let _ = notification_tx_clone
+                                        .blocking_send(LspNotification::Progress(progress_params));
                                 }
                             }
 
@@ -170,10 +171,8 @@ impl LspClient {
             process,
             request_id: AtomicI64::new(1),
             pending_requests,
-            diagnostics_rx,
-            diagnostics_tx,
-            progress_rx,
-            progress_tx,
+            notification_rx,
+            notification_tx,
             notification_handlers,
             initialized: false,
             _reader_handle: reader_handle,
@@ -276,63 +275,52 @@ impl LspClient {
         self.send_notification("textDocument/didSave", params)
     }
 
-    /// Receive the next diagnostics notification
+    /// Receive the next notification from the server
     ///
-    /// This returns the next `PublishDiagnosticsParams` received from the server.
+    /// Returns the next [`LspNotification`] received from the server.
     /// Returns `None` if the channel is closed.
-    pub async fn recv_diagnostics(&mut self) -> Option<PublishDiagnosticsParams> {
-        self.diagnostics_rx.recv().await
+    pub async fn recv_notification(&mut self) -> Option<LspNotification> {
+        self.notification_rx.recv().await
     }
 
-    /// Try to receive diagnostics without blocking
+    /// Try to receive a notification without blocking
     ///
-    /// Returns `Some(diagnostics)` if available, `None` otherwise.
-    pub fn try_recv_diagnostics(&mut self) -> Option<PublishDiagnosticsParams> {
-        self.diagnostics_rx.try_recv().ok()
+    /// Returns `Some(notification)` if available, `None` otherwise.
+    pub fn try_recv_notification(&mut self) -> Option<LspNotification> {
+        self.notification_rx.try_recv().ok()
     }
 
-    /// Drain all pending diagnostics
+    /// Drain all pending notifications
     ///
-    /// Returns all diagnostics that have been received but not yet consumed.
-    pub fn drain_diagnostics(&mut self) -> Vec<PublishDiagnosticsParams> {
-        let mut diagnostics = Vec::new();
-        while let Some(diag) = self.try_recv_diagnostics() {
-            diagnostics.push(diag);
+    /// Returns all notifications that have been received but not yet consumed.
+    pub fn drain_notifications(&mut self) -> Vec<LspNotification> {
+        let mut notifications = Vec::new();
+        while let Some(notification) = self.try_recv_notification() {
+            notifications.push(notification);
         }
-        diagnostics
-    }
-
-    /// Receive the next progress notification
-    ///
-    /// Returns the next `ProgressParams` received from the server.
-    /// Returns `None` if the channel is closed.
-    pub async fn recv_progress(&mut self) -> Option<ProgressParams> {
-        self.progress_rx.recv().await
-    }
-
-    /// Try to receive progress without blocking
-    pub fn try_recv_progress(&mut self) -> Option<ProgressParams> {
-        self.progress_rx.try_recv().ok()
+        notifications
     }
 
     /// Wait for the server to finish indexing/loading the workspace
     ///
     /// This waits for all in-progress work to complete by tracking $/progress notifications.
     /// Returns when no progress tokens have active work.
+    ///
+    /// Note: Non-progress notifications (like diagnostics) received during this wait are discarded.
     pub async fn wait_for_indexing(&mut self) {
         use std::collections::HashSet;
 
         let mut active_tokens: HashSet<String> = HashSet::new();
 
         loop {
-            // Check if we have any progress notifications
+            // Check if we have any notifications
             match tokio::time::timeout(
                 std::time::Duration::from_millis(500),
-                self.recv_progress(),
+                self.recv_notification(),
             )
             .await
             {
-                Ok(Some(progress)) => {
+                Ok(Some(LspNotification::Progress(progress))) => {
                     let token = match &progress.token {
                         lsp_types::NumberOrString::Number(n) => n.to_string(),
                         lsp_types::NumberOrString::String(s) => s.clone(),
@@ -353,6 +341,9 @@ impl LspClient {
                             }
                         }
                     }
+                }
+                Ok(Some(_)) => {
+                    // Ignore non-progress notifications during indexing wait
                 }
                 Ok(None) => break, // Channel closed
                 Err(_) => {
