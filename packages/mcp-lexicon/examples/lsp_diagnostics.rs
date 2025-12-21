@@ -17,7 +17,9 @@ use std::env;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use mcp_lexicon::coding::lsp::{count_by_severity, format_diagnostics, path_to_uri, LspClient};
+use mcp_lexicon::coding::lsp::{
+    count_by_severity, format_diagnostics, path_to_uri, LspClient, LspNotification,
+};
 use tokio::time::timeout;
 
 #[tokio::main]
@@ -135,9 +137,13 @@ async fn wait_for_diagnostics(
     // Wait for diagnostics for our specific file
     match timeout(safety_timeout, async {
         loop {
-            match client.recv_diagnostics().await {
-                Some(diag) if diag.uri.as_str() == target_uri.as_str() => return Some(diag),
-                Some(_) => continue, // Diagnostics for a different file, keep waiting
+            match client.recv_notification().await {
+                Some(LspNotification::Diagnostics(diag))
+                    if diag.uri.as_str() == target_uri.as_str() =>
+                {
+                    return Some(diag)
+                }
+                Some(_) => continue, // Other notification or different file, keep waiting
                 None => return None, // Channel closed
             }
         }
