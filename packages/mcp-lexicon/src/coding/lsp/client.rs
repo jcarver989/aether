@@ -4,9 +4,12 @@ use super::transport::{
     send_notification, send_request,
 };
 use lsp_types::{
-    ClientCapabilities, GeneralClientCapabilities, InitializeParams, NumberOrString,
-    ProgressParams, PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams,
-    TextDocumentClientCapabilities, Uri, WindowClientCapabilities, WorkDoneProgress,
+    ClientCapabilities, DynamicRegistrationClientCapabilities, GeneralClientCapabilities,
+    GotoCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverClientCapabilities,
+    HoverParams, InitializeParams, Location, MarkupKind, NumberOrString, Position, ProgressParams,
+    PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, ReferenceContext,
+    ReferenceParams, TextDocumentClientCapabilities, TextDocumentIdentifier,
+    TextDocumentPositionParams, Uri, WindowClientCapabilities, WorkDoneProgress,
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -124,12 +127,30 @@ enum Request {
         id: i64,
         response_tx: oneshot::Sender<Result<()>>,
     },
+    GotoDefinition {
+        id: i64,
+        params: GotoDefinitionParams,
+        response_tx: oneshot::Sender<Result<GotoDefinitionResponse>>,
+    },
+    FindReferences {
+        id: i64,
+        params: ReferenceParams,
+        response_tx: oneshot::Sender<Result<Vec<Location>>>,
+    },
+    Hover {
+        id: i64,
+        params: HoverParams,
+        response_tx: oneshot::Sender<Result<Option<Hover>>>,
+    },
 }
 
 /// Pending response channels, keyed by request ID
 enum PendingResponse {
     Initialize(oneshot::Sender<Result<()>>),
     Shutdown(oneshot::Sender<Result<()>>),
+    GotoDefinition(oneshot::Sender<Result<GotoDefinitionResponse>>),
+    FindReferences(oneshot::Sender<Result<Vec<Location>>>),
+    Hover(oneshot::Sender<Result<Option<Hover>>>),
 }
 
 /// An LSP client that manages a language server process
@@ -241,8 +262,28 @@ impl LspClient {
             ..Default::default()
         };
 
+        // Declare support for definition capability
+        let definition_capability = GotoCapability {
+            dynamic_registration: Some(false),
+            link_support: Some(true),
+        };
+
+        // Declare support for references capability
+        let references_capability = DynamicRegistrationClientCapabilities {
+            dynamic_registration: Some(false),
+        };
+
+        // Declare support for hover capability
+        let hover_capability = HoverClientCapabilities {
+            dynamic_registration: Some(false),
+            content_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]),
+        };
+
         let text_document_capabilities = TextDocumentClientCapabilities {
             publish_diagnostics: Some(pub_diagnostic_capabilities),
+            definition: Some(definition_capability),
+            references: Some(references_capability),
+            hover: Some(hover_capability),
             ..Default::default()
         };
 
@@ -307,6 +348,129 @@ impl LspClient {
         Ok(())
     }
 
+    /// Go to the definition of a symbol at a position
+    ///
+    /// # Arguments
+    /// * `uri` - The URI of the document
+    /// * `line` - Line number (0-indexed)
+    /// * `character` - Character offset (0-indexed)
+    ///
+    /// # Returns
+    /// The definition response, which may be a single location, multiple locations,
+    /// or location links depending on the server.
+    pub async fn goto_definition(
+        &self,
+        uri: Uri,
+        line: u32,
+        character: u32,
+    ) -> Result<GotoDefinitionResponse> {
+        let params = GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position { line, character },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::GotoDefinition {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+
+        response_rx
+            .await
+            .map_err(|_| LspError::Transport("Response channel closed".into()))?
+    }
+
+    /// Find all references to a symbol at a position
+    ///
+    /// # Arguments
+    /// * `uri` - The URI of the document
+    /// * `line` - Line number (0-indexed)
+    /// * `character` - Character offset (0-indexed)
+    /// * `include_declaration` - Whether to include the declaration in the results
+    ///
+    /// # Returns
+    /// A list of locations where the symbol is referenced.
+    pub async fn find_references(
+        &self,
+        uri: Uri,
+        line: u32,
+        character: u32,
+        include_declaration: bool,
+    ) -> Result<Vec<Location>> {
+        let params = ReferenceParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position { line, character },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: ReferenceContext {
+                include_declaration,
+            },
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::FindReferences {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+
+        response_rx
+            .await
+            .map_err(|_| LspError::Transport("Response channel closed".into()))?
+    }
+
+    /// Get hover information (type, documentation) for a symbol at a position
+    ///
+    /// # Arguments
+    /// * `uri` - The URI of the document
+    /// * `line` - Line number (0-indexed)
+    /// * `character` - Character offset (0-indexed)
+    ///
+    /// # Returns
+    /// Hover information if available, or None if no information at the position.
+    pub async fn hover(&self, uri: Uri, line: u32, character: u32) -> Result<Option<Hover>> {
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position { line, character },
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::Hover {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+
+        response_rx
+            .await
+            .map_err(|_| LspError::Transport("Response channel closed".into()))?
+    }
+
     /// Generate the next unique request ID
     fn next_request_id(&self) -> i64 {
         self.request_id.fetch_add(1, Ordering::SeqCst)
@@ -364,6 +528,18 @@ async fn run_handler(
                         ClientRequest::Shutdown(id),
                         PendingResponse::Shutdown(response_tx),
                     ),
+                    Request::GotoDefinition { id, params, response_tx } => (
+                        ClientRequest::GotoDefinition(id, params),
+                        PendingResponse::GotoDefinition(response_tx),
+                    ),
+                    Request::FindReferences { id, params, response_tx } => (
+                        ClientRequest::FindReferences(id, params),
+                        PendingResponse::FindReferences(response_tx),
+                    ),
+                    Request::Hover { id, params, response_tx } => (
+                        ClientRequest::Hover(id, params),
+                        PendingResponse::Hover(response_tx),
+                    ),
                 };
 
                 let id = client_request.id();
@@ -413,21 +589,71 @@ async fn run_handler(
 }
 
 /// Send a successful response to the appropriate typed channel
-fn send_response(pending: PendingResponse, _value: Value) {
-    let tx = match pending {
-        PendingResponse::Initialize(tx) => tx,
-        PendingResponse::Shutdown(tx) => tx,
-    };
-    let _ = tx.send(Ok(()));
+fn send_response(pending: PendingResponse, value: Value) {
+    match pending {
+        PendingResponse::Initialize(tx) => {
+            let _ = tx.send(Ok(()));
+        }
+        PendingResponse::Shutdown(tx) => {
+            let _ = tx.send(Ok(()));
+        }
+        PendingResponse::GotoDefinition(tx) => {
+            // Parse the response - can be null, Location, Location[], or LocationLink[]
+            let result = if value.is_null() {
+                Ok(GotoDefinitionResponse::Array(vec![]))
+            } else {
+                serde_json::from_value::<GotoDefinitionResponse>(value).map_err(|e| {
+                    LspError::InvalidMessage(format!("Failed to parse definition response: {}", e))
+                })
+            };
+            let _ = tx.send(result);
+        }
+        PendingResponse::FindReferences(tx) => {
+            // Parse the response - can be null or Location[]
+            let result = if value.is_null() {
+                Ok(vec![])
+            } else {
+                serde_json::from_value::<Vec<Location>>(value).map_err(|e| {
+                    LspError::InvalidMessage(format!("Failed to parse references response: {}", e))
+                })
+            };
+            let _ = tx.send(result);
+        }
+        PendingResponse::Hover(tx) => {
+            // Parse the response - can be null or Hover
+            let result = if value.is_null() {
+                Ok(None)
+            } else {
+                serde_json::from_value::<Hover>(value)
+                    .map(Some)
+                    .map_err(|e| {
+                        LspError::InvalidMessage(format!("Failed to parse hover response: {}", e))
+                    })
+            };
+            let _ = tx.send(result);
+        }
+    }
 }
 
 /// Send an error to the appropriate typed channel
 fn send_error(pending: PendingResponse, err: LspError) {
-    let tx = match pending {
-        PendingResponse::Initialize(tx) => tx,
-        PendingResponse::Shutdown(tx) => tx,
-    };
-    let _ = tx.send(Err(err));
+    match pending {
+        PendingResponse::Initialize(tx) => {
+            let _ = tx.send(Err(err));
+        }
+        PendingResponse::Shutdown(tx) => {
+            let _ = tx.send(Err(err));
+        }
+        PendingResponse::GotoDefinition(tx) => {
+            let _ = tx.send(Err(err));
+        }
+        PendingResponse::FindReferences(tx) => {
+            let _ = tx.send(Err(err));
+        }
+        PendingResponse::Hover(tx) => {
+            let _ = tx.send(Err(err));
+        }
+    }
 }
 
 /// Handle a response from the server, matching it to a pending request

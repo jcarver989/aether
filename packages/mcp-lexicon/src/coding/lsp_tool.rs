@@ -3,12 +3,13 @@
 //! This module provides an MCP tool that exposes LSP functionality to LLMs,
 //! starting with diagnostics queries and extensible for future operations.
 
-use lsp_types::{Diagnostic, Uri};
+use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, Uri};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::lsp::{FormattedDiagnostic, format_diagnostics};
+use super::tools_trait::CodingTools;
 
 /// LSP operations that can be performed via the tool
 ///
@@ -22,10 +23,40 @@ pub enum LspOperation {
         /// Optional: filter to specific file path. If not provided, returns all diagnostics.
         file_path: Option<String>,
     },
-    // Future operations:
-    // Hover { file_path: String, line: u32, column: u32 },
-    // GoToDefinition { file_path: String, line: u32, column: u32 },
-    // FindReferences { file_path: String, line: u32, column: u32 },
+    /// Go to the definition of a symbol at a position
+    GoToDefinition {
+        /// The file path containing the symbol
+        file_path: String,
+        /// Line number (1-indexed, as shown in editors)
+        line: u32,
+        /// Column number (1-indexed, as shown in editors)
+        column: u32,
+    },
+    /// Find all references to a symbol at a position
+    FindReferences {
+        /// The file path containing the symbol
+        file_path: String,
+        /// Line number (1-indexed, as shown in editors)
+        line: u32,
+        /// Column number (1-indexed, as shown in editors)
+        column: u32,
+        /// Whether to include the declaration in the results (default: true)
+        #[serde(default = "default_include_declaration")]
+        include_declaration: bool,
+    },
+    /// Get hover information (type, documentation) for a symbol at a position
+    Hover {
+        /// The file path containing the symbol
+        file_path: String,
+        /// Line number (1-indexed, as shown in editors)
+        line: u32,
+        /// Column number (1-indexed, as shown in editors)
+        column: u32,
+    },
+}
+
+fn default_include_declaration() -> bool {
+    true
 }
 
 /// Input for the LSP tool
@@ -99,28 +130,212 @@ pub struct DiagnosticsSummary {
     pub total: usize,
 }
 
+/// A location in source code (file path with range)
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LocationResult {
+    /// The file path
+    pub file_path: String,
+    /// Start line (1-indexed)
+    pub start_line: u32,
+    /// Start column (1-indexed)
+    pub start_column: u32,
+    /// End line (1-indexed)
+    pub end_line: u32,
+    /// End column (1-indexed)
+    pub end_column: u32,
+}
+
+impl LocationResult {
+    /// Create from an LSP Location
+    fn from_location(loc: &Location) -> Self {
+        let file_path = uri_to_path(&loc.uri);
+        Self {
+            file_path,
+            // Convert from 0-indexed to 1-indexed
+            start_line: loc.range.start.line + 1,
+            start_column: loc.range.start.character + 1,
+            end_line: loc.range.end.line + 1,
+            end_column: loc.range.end.character + 1,
+        }
+    }
+}
+
+/// Output from the go_to_definition operation
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GoToDefinitionOutput {
+    /// List of definition locations (usually 1, but can be multiple for overloaded symbols)
+    pub locations: Vec<LocationResult>,
+}
+
+/// Output from the find_references operation
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FindReferencesOutput {
+    /// List of reference locations
+    pub references: Vec<LocationResult>,
+    /// Total count of references found
+    pub total_count: usize,
+}
+
+/// Output from the hover operation
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverOutput {
+    /// The hover contents (type info, documentation, etc.)
+    pub contents: String,
+    /// The range of the symbol being hovered (if available)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range: Option<LocationResult>,
+}
+
 /// Output from the LSP tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum LspOutput {
     /// Diagnostics output
     Diagnostics(GetDiagnosticsOutput),
+    /// Go to definition output
+    GoToDefinition(GoToDefinitionOutput),
+    /// Find references output
+    FindReferences(FindReferencesOutput),
+    /// Hover output
+    Hover(HoverOutput),
 }
 
-/// Execute an LSP operation using the provided diagnostics cache
+/// Convert an LSP URI to a file path string
+fn uri_to_path(uri: &Uri) -> String {
+    let uri_str = uri.as_str();
+    // Strip file:// prefix and decode
+    if let Some(path) = uri_str.strip_prefix("file://") {
+        // Handle Windows paths (file:///C:/...)
+        if path.starts_with('/') && path.len() > 2 && path.chars().nth(2) == Some(':') {
+            path[1..].to_string()
+        } else {
+            path.to_string()
+        }
+    } else {
+        uri_str.to_string()
+    }
+}
+
+/// Execute an LSP operation using the provided tools
 ///
 /// # Arguments
 /// * `operation` - The LSP operation to perform
-/// * `diagnostics_cache` - Current diagnostics from the LSP client
+/// * `tools` - The CodingTools implementation (used for LSP requests)
 ///
 /// # Returns
 /// The result of the operation
-pub fn execute_lsp_operation(
+pub async fn execute_lsp_operation<T: CodingTools>(
     operation: LspOperation,
-    diagnostics_cache: &HashMap<Uri, Vec<Diagnostic>>,
+    tools: &T,
 ) -> Result<LspOutput, String> {
     match operation {
-        LspOperation::GetDiagnostics { file_path } => get_diagnostics(file_path, diagnostics_cache),
+        LspOperation::GetDiagnostics { file_path } => {
+            let diagnostics_cache = tools.get_lsp_diagnostics().await?;
+            get_diagnostics(file_path, &diagnostics_cache)
+        }
+        LspOperation::GoToDefinition {
+            file_path,
+            line,
+            column,
+        } => {
+            let response = tools.goto_definition(&file_path, line, column).await?;
+            let locations = definition_response_to_locations(response);
+            Ok(LspOutput::GoToDefinition(GoToDefinitionOutput { locations }))
+        }
+        LspOperation::FindReferences {
+            file_path,
+            line,
+            column,
+            include_declaration,
+        } => {
+            let lsp_locations = tools
+                .find_references(&file_path, line, column, include_declaration)
+                .await?;
+            let references: Vec<LocationResult> = lsp_locations
+                .iter()
+                .map(LocationResult::from_location)
+                .collect();
+            let total_count = references.len();
+            Ok(LspOutput::FindReferences(FindReferencesOutput {
+                references,
+                total_count,
+            }))
+        }
+        LspOperation::Hover {
+            file_path,
+            line,
+            column,
+        } => {
+            let hover = tools.hover(&file_path, line, column).await?;
+            let output = match hover {
+                Some(h) => {
+                    let contents = hover_contents_to_string(&h);
+                    let range = h.range.map(|r| LocationResult {
+                        file_path: file_path.clone(),
+                        start_line: r.start.line + 1,
+                        start_column: r.start.character + 1,
+                        end_line: r.end.line + 1,
+                        end_column: r.end.character + 1,
+                    });
+                    HoverOutput { contents, range }
+                }
+                None => HoverOutput {
+                    contents: String::new(),
+                    range: None,
+                },
+            };
+            Ok(LspOutput::Hover(output))
+        }
+    }
+}
+
+/// Convert GotoDefinitionResponse to a list of LocationResult
+fn definition_response_to_locations(response: GotoDefinitionResponse) -> Vec<LocationResult> {
+    match response {
+        GotoDefinitionResponse::Scalar(loc) => vec![LocationResult::from_location(&loc)],
+        GotoDefinitionResponse::Array(locs) => {
+            locs.iter().map(LocationResult::from_location).collect()
+        }
+        GotoDefinitionResponse::Link(links) => links
+            .iter()
+            .map(|link| {
+                let file_path = uri_to_path(&link.target_uri);
+                LocationResult {
+                    file_path,
+                    start_line: link.target_selection_range.start.line + 1,
+                    start_column: link.target_selection_range.start.character + 1,
+                    end_line: link.target_selection_range.end.line + 1,
+                    end_column: link.target_selection_range.end.character + 1,
+                }
+            })
+            .collect(),
+    }
+}
+
+/// Convert Hover contents to a string
+fn hover_contents_to_string(hover: &Hover) -> String {
+    match &hover.contents {
+        lsp_types::HoverContents::Scalar(marked_string) => marked_string_to_string(marked_string),
+        lsp_types::HoverContents::Array(marked_strings) => marked_strings
+            .iter()
+            .map(marked_string_to_string)
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+        lsp_types::HoverContents::Markup(markup) => markup.value.clone(),
+    }
+}
+
+/// Convert a MarkedString to a plain string
+fn marked_string_to_string(ms: &lsp_types::MarkedString) -> String {
+    match ms {
+        lsp_types::MarkedString::String(s) => s.clone(),
+        lsp_types::MarkedString::LanguageString(ls) => {
+            format!("```{}\n{}\n```", ls.language, ls.value)
+        }
     }
 }
 
@@ -252,9 +467,7 @@ mod tests {
             )],
         );
 
-        let result =
-            execute_lsp_operation(LspOperation::GetDiagnostics { file_path: None }, &cache)
-                .unwrap();
+        let result = get_diagnostics(None, &cache).unwrap();
 
         match result {
             LspOutput::Diagnostics(output) => {
@@ -263,6 +476,7 @@ mod tests {
                 assert_eq!(output.summary.warnings, 1);
                 assert_eq!(output.summary.total, 3);
             }
+            _ => panic!("Expected Diagnostics output"),
         }
     }
 
@@ -287,13 +501,7 @@ mod tests {
             )],
         );
 
-        let result = execute_lsp_operation(
-            LspOperation::GetDiagnostics {
-                file_path: Some("main.rs".to_string()),
-            },
-            &cache,
-        )
-        .unwrap();
+        let result = get_diagnostics(Some("main.rs".to_string()), &cache).unwrap();
 
         match result {
             LspOutput::Diagnostics(output) => {
@@ -301,6 +509,7 @@ mod tests {
                 assert!(output.diagnostics[0].file.contains("main.rs"));
                 assert_eq!(output.diagnostics[0].message, "type mismatch");
             }
+            _ => panic!("Expected Diagnostics output"),
         }
     }
 
@@ -308,15 +517,14 @@ mod tests {
     fn test_empty_diagnostics() {
         let cache: HashMap<Uri, Vec<Diagnostic>> = HashMap::new();
 
-        let result =
-            execute_lsp_operation(LspOperation::GetDiagnostics { file_path: None }, &cache)
-                .unwrap();
+        let result = get_diagnostics(None, &cache).unwrap();
 
         match result {
             LspOutput::Diagnostics(output) => {
                 assert_eq!(output.diagnostics.len(), 0);
                 assert_eq!(output.summary.total, 0);
             }
+            _ => panic!("Expected Diagnostics output"),
         }
     }
 
@@ -333,9 +541,7 @@ mod tests {
             vec![make_diagnostic(DiagnosticSeverity::ERROR, "error in a", 10)],
         );
 
-        let result =
-            execute_lsp_operation(LspOperation::GetDiagnostics { file_path: None }, &cache)
-                .unwrap();
+        let result = get_diagnostics(None, &cache).unwrap();
 
         match result {
             LspOutput::Diagnostics(output) => {
@@ -343,6 +549,7 @@ mod tests {
                 assert!(output.diagnostics[0].file.contains("a.rs"));
                 assert!(output.diagnostics[1].file.contains("b.rs"));
             }
+            _ => panic!("Expected Diagnostics output"),
         }
     }
 }
