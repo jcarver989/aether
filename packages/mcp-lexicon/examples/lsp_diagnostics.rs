@@ -18,11 +18,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use lsp_types::{Diagnostic, Uri};
-use mcp_lexicon::coding::lsp::{
-    FormattedDiagnostic, LspClient, count_by_severity, path_to_uri,
-};
+use mcp_lexicon::coding::lsp::{FormattedDiagnostic, LspClient, count_by_severity, path_to_uri};
 use mcp_lexicon::coding::{
-    CodingTools, DefaultCodingTools, LspAwareCodingTools, ReadFileArgs, WriteFileArgs,
+    CodingTools, DefaultCodingTools, LspCodingTools, ReadFileArgs, WriteFileArgs,
 };
 use tokio::time::sleep;
 
@@ -56,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create LspAwareCodingTools wrapping DefaultCodingTools
     // The LSP client internally buffers notifications until indexing completes
-    let tools = LspAwareCodingTools::new(DefaultCodingTools::new(), tx, rx);
+    let tools = LspCodingTools::new(DefaultCodingTools::new(), tx, rx);
 
     // Find target file
     let lib_rs = project_path.join("src/lib.rs");

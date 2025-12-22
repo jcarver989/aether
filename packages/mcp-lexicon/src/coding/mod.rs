@@ -21,7 +21,7 @@ pub mod find;
 pub mod grep;
 pub mod list_files;
 pub mod lsp;
-pub mod lsp_aware_tools;
+pub mod lsp_coding_tools;
 pub mod lsp_tool;
 pub mod read_file;
 pub mod todo_write;
@@ -33,11 +33,11 @@ pub use bash::{
     ReadBackgroundBashOutput, execute_command, read_background_bash,
 };
 pub use default_tools::DefaultCodingTools;
-pub use lsp_aware_tools::LspAwareCodingTools;
 pub use edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
 pub use find::{FindInput, FindOutput, find_files_by_name};
 pub use grep::{GrepInput, GrepOutput, perform_grep};
 pub use list_files::{ListFilesArgs, ListFilesResult, list_files};
+pub use lsp_coding_tools::LspCodingTools;
 pub use lsp_tool::{LspInput, LspOperation, LspOutput, execute_lsp_operation};
 pub use read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 pub use todo_write::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, process_todo_write};
