@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use lsp_types::{Diagnostic, Uri};
-use mcp_lexicon::coding::lsp::{FormattedDiagnostic, LspClient, count_by_severity, path_to_uri};
+use mcp_lexicon::coding::lsp::{FormattedDiagnostic, count_by_severity, path_to_uri};
 use mcp_lexicon::coding::{
     CodingTools, DefaultCodingTools, LspCodingTools, ReadFileArgs, WriteFileArgs,
 };
@@ -41,9 +41,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Starting rust-analyzer for: {}", project_path.display());
 
-    // Spawn the LSP client
-    let (tx, rx, mut client) = match LspClient::spawn("rust-analyzer", &[], &project_path).await {
-        Ok(c) => c,
+    // Spawn LspCodingTools which internally spawns rust-analyzer
+    let tools = match LspCodingTools::spawn(
+        DefaultCodingTools::new(),
+        "rust-analyzer",
+        &[],
+        &project_path,
+    )
+    .await
+    {
+        Ok(t) => t,
         Err(e) => {
             eprintln!("Failed to spawn rust-analyzer: {}", e);
             std::process::exit(1);
@@ -51,11 +58,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Language server initialized.");
-
-    // Create LspCodingTools wrapping DefaultCodingTools
-    // The LSP client internally buffers notifications until indexing completes
-    // We pass None for lsp_client since this example only uses diagnostics (not requests)
-    let tools = LspCodingTools::new(DefaultCodingTools::new(), tx, rx, None);
 
     // Find target file
     let lib_rs = project_path.join("src/lib.rs");
@@ -123,10 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fixed_diagnostics = wait_for_diagnostics(&tools, &file_uri).await;
     print_diagnostics_summary(&fixed_diagnostics, &file_uri);
 
-    // Shutdown
-    println!("\nShutting down...");
-    client.shutdown().await?;
-    println!("Done!");
+    println!("\nDone!");
 
     Ok(())
 }
