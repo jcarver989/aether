@@ -4,9 +4,9 @@ use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
 use mcp_lexicon::coding::lsp::LspClient;
-use mcp_lexicon::{CodingMcp, DefaultCodingTools, LspAwareCodingTools, PluginsMcp, ServiceExt};
-use std::sync::{Arc, Mutex};
+use mcp_lexicon::{CodingMcp, DefaultCodingTools, LspCodingTools, PluginsMcp, ServiceExt};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
@@ -16,7 +16,14 @@ use crate::acp_coding_tools::AcpCodingTools;
 use crate::mappers::map_mcp_prompt_to_available_command;
 
 /// LSP channels wrapped for single-use in factory closures
-type LspChannels = Arc<Mutex<Option<(mcp_lexicon::coding::lsp::NotificationSender, mcp_lexicon::coding::lsp::NotificationReceiver)>>>;
+type LspChannels = Arc<
+    Mutex<
+        Option<(
+            mcp_lexicon::coding::lsp::NotificationSender,
+            mcp_lexicon::coding::lsp::NotificationReceiver,
+        )>,
+    >,
+>;
 
 /// Represents an active Aether agent session
 pub struct Session {
@@ -53,7 +60,10 @@ impl Session {
                     (Some(client), Arc::new(Mutex::new(Some((tx, rx)))))
                 }
                 Err(e) => {
-                    warn!("Failed to spawn LSP client (diagnostics will be unavailable): {}", e);
+                    warn!(
+                        "Failed to spawn LSP client (diagnostics will be unavailable): {}",
+                        e
+                    );
                     (None, Arc::new(Mutex::new(None)))
                 }
             };
@@ -72,7 +82,7 @@ impl Session {
                     Box::new(move |_args| {
                         let inner = AcpCodingTools::new(actor_handle.clone(), session_id.clone());
                         if let Some((tx, rx)) = lsp_channels_clone.lock().unwrap().take() {
-                            CodingMcp::with_tools(LspAwareCodingTools::new(inner, tx, rx)).into_dyn()
+                            CodingMcp::with_tools(LspCodingTools::new(inner, tx, rx)).into_dyn()
                         } else {
                             CodingMcp::with_tools(inner).into_dyn()
                         }
@@ -100,7 +110,7 @@ impl Session {
                     Box::new(move |_args| {
                         let inner = DefaultCodingTools::new();
                         if let Some((tx, rx)) = lsp_channels_clone.lock().unwrap().take() {
-                            CodingMcp::with_tools(LspAwareCodingTools::new(inner, tx, rx)).into_dyn()
+                            CodingMcp::with_tools(LspCodingTools::new(inner, tx, rx)).into_dyn()
                         } else {
                             CodingMcp::with_tools(inner).into_dyn()
                         }

@@ -120,9 +120,7 @@ pub fn execute_lsp_operation(
     diagnostics_cache: &HashMap<Uri, Vec<Diagnostic>>,
 ) -> Result<LspOutput, String> {
     match operation {
-        LspOperation::GetDiagnostics { file_path } => {
-            get_diagnostics(file_path, diagnostics_cache)
-        }
+        LspOperation::GetDiagnostics { file_path } => get_diagnostics(file_path, diagnostics_cache),
     }
 }
 
@@ -144,7 +142,11 @@ fn get_diagnostics(
                     diagnostics: diagnostics.clone(),
                     version: None,
                 };
-                all_diagnostics.extend(format_diagnostics(&params).into_iter().map(LspDiagnostic::from));
+                all_diagnostics.extend(
+                    format_diagnostics(&params)
+                        .into_iter()
+                        .map(LspDiagnostic::from),
+                );
             }
         }
     } else {
@@ -155,13 +157,18 @@ fn get_diagnostics(
                 diagnostics: diagnostics.clone(),
                 version: None,
             };
-            all_diagnostics.extend(format_diagnostics(&params).into_iter().map(LspDiagnostic::from));
+            all_diagnostics.extend(
+                format_diagnostics(&params)
+                    .into_iter()
+                    .map(LspDiagnostic::from),
+            );
         }
     }
 
     // Sort diagnostics by file, then line, then column for consistent output
     all_diagnostics.sort_by(|a, b| {
-        a.file.cmp(&b.file)
+        a.file
+            .cmp(&b.file)
             .then(a.line.cmp(&b.line))
             .then(a.column.cmp(&b.column))
     });
@@ -209,7 +216,10 @@ mod tests {
         Diagnostic {
             range: Range {
                 start: Position { line, character: 0 },
-                end: Position { line, character: 10 },
+                end: Position {
+                    line,
+                    character: 10,
+                },
             },
             severity: Some(severity),
             code: Some(lsp_types::NumberOrString::String("E0308".to_string())),
@@ -235,15 +245,16 @@ mod tests {
         );
         cache.insert(
             make_uri("/project/src/lib.rs"),
-            vec![
-                make_diagnostic(DiagnosticSeverity::ERROR, "missing field", 5),
-            ],
+            vec![make_diagnostic(
+                DiagnosticSeverity::ERROR,
+                "missing field",
+                5,
+            )],
         );
 
-        let result = execute_lsp_operation(
-            LspOperation::GetDiagnostics { file_path: None },
-            &cache,
-        ).unwrap();
+        let result =
+            execute_lsp_operation(LspOperation::GetDiagnostics { file_path: None }, &cache)
+                .unwrap();
 
         match result {
             LspOutput::Diagnostics(output) => {
@@ -261,21 +272,28 @@ mod tests {
 
         cache.insert(
             make_uri("/project/src/main.rs"),
-            vec![
-                make_diagnostic(DiagnosticSeverity::ERROR, "type mismatch", 10),
-            ],
+            vec![make_diagnostic(
+                DiagnosticSeverity::ERROR,
+                "type mismatch",
+                10,
+            )],
         );
         cache.insert(
             make_uri("/project/src/lib.rs"),
-            vec![
-                make_diagnostic(DiagnosticSeverity::ERROR, "missing field", 5),
-            ],
+            vec![make_diagnostic(
+                DiagnosticSeverity::ERROR,
+                "missing field",
+                5,
+            )],
         );
 
         let result = execute_lsp_operation(
-            LspOperation::GetDiagnostics { file_path: Some("main.rs".to_string()) },
+            LspOperation::GetDiagnostics {
+                file_path: Some("main.rs".to_string()),
+            },
             &cache,
-        ).unwrap();
+        )
+        .unwrap();
 
         match result {
             LspOutput::Diagnostics(output) => {
@@ -290,10 +308,9 @@ mod tests {
     fn test_empty_diagnostics() {
         let cache: HashMap<Uri, Vec<Diagnostic>> = HashMap::new();
 
-        let result = execute_lsp_operation(
-            LspOperation::GetDiagnostics { file_path: None },
-            &cache,
-        ).unwrap();
+        let result =
+            execute_lsp_operation(LspOperation::GetDiagnostics { file_path: None }, &cache)
+                .unwrap();
 
         match result {
             LspOutput::Diagnostics(output) => {
@@ -316,10 +333,9 @@ mod tests {
             vec![make_diagnostic(DiagnosticSeverity::ERROR, "error in a", 10)],
         );
 
-        let result = execute_lsp_operation(
-            LspOperation::GetDiagnostics { file_path: None },
-            &cache,
-        ).unwrap();
+        let result =
+            execute_lsp_operation(LspOperation::GetDiagnostics { file_path: None }, &cache)
+                .unwrap();
 
         match result {
             LspOutput::Diagnostics(output) => {

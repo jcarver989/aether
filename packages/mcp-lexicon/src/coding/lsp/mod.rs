@@ -56,10 +56,12 @@ pub mod diagnostics;
 pub mod error;
 pub mod transport;
 
-pub use client::{LspClient, NotificationReceiver, NotificationSender, ServerNotification, path_to_uri};
-pub use transport::{ClientNotification, LanguageId};
+pub use client::{
+    LspClient, NotificationReceiver, NotificationSender, ServerNotification, path_to_uri,
+};
 pub use diagnostics::{
     DiagnosticCounts, FormattedDiagnostic, Severity, count_by_severity, filter_by_severity,
     format_diagnostics,
 };
 pub use error::{LspError, Result};
+pub use transport::{ClientNotification, LanguageId};

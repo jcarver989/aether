@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::path::Path;
-use std::sync::Mutex;
-
 use lsp_types::{
     Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     TextDocumentContentChangeEvent, TextDocumentItem, Uri, VersionedTextDocumentIdentifier,
 };
+use std::collections::HashMap;
+use std::fmt::Debug;
+use std::path::Path;
+use std::sync::Mutex;
 use tokio::spawn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -36,7 +35,7 @@ type DiagnosticsQuery = oneshot::Sender<HashMap<Uri, Vec<Diagnostic>>>;
 /// let (tx, rx, client) = LspClient::spawn("rust-analyzer", &[], &project_path).await?;
 /// let tools = LspAwareCodingTools::new(DefaultCodingTools::new(), tx, rx);
 /// ```
-pub struct LspAwareCodingTools<T: CodingTools> {
+pub struct LspCodingTools<T: CodingTools> {
     inner: T,
     /// Notification sender for the LSP client
     lsp_tx: NotificationSender,
@@ -48,7 +47,7 @@ pub struct LspAwareCodingTools<T: CodingTools> {
     _listener_task: JoinHandle<()>,
 }
 
-impl<T: CodingTools> Debug for LspAwareCodingTools<T> {
+impl<T: CodingTools> Debug for LspCodingTools<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LspAwareCodingTools")
             .field("inner", &self.inner)
@@ -56,7 +55,7 @@ impl<T: CodingTools> Debug for LspAwareCodingTools<T> {
     }
 }
 
-impl<T: CodingTools> LspAwareCodingTools<T> {
+impl<T: CodingTools> LspCodingTools<T> {
     /// Create a new LspAwareCodingTools wrapping the given implementation.
     ///
     /// The caller retains ownership of `LspClient` and is responsible for
@@ -87,7 +86,9 @@ impl<T: CodingTools> LspAwareCodingTools<T> {
                 text: content.to_string(),
             },
         };
-        let _ = self.lsp_tx.try_send(ClientNotification::TextDocumentOpened(params));
+        let _ = self
+            .lsp_tx
+            .try_send(ClientNotification::TextDocumentOpened(params));
     }
 
     /// Notify the LSP that a file was changed
@@ -109,41 +110,32 @@ impl<T: CodingTools> LspAwareCodingTools<T> {
                 text: content.to_string(),
             }],
         };
-        let _ = self.lsp_tx.try_send(ClientNotification::TextDocumentChanged(params));
+        let _ = self
+            .lsp_tx
+            .try_send(ClientNotification::TextDocumentChanged(params));
     }
 }
 
-impl<T: CodingTools> CodingTools for LspAwareCodingTools<T> {
+impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, String> {
         let file_path = args.file_path.clone();
         let result = self.inner.read_file(args).await?;
-
-        // Notify LSP that file was opened
         self.notify_lsp_did_open(&file_path, &result.raw_content);
-
         Ok(result)
     }
 
     async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, String> {
         let file_path = args.file_path.clone();
         let content = args.content.clone();
-
         let result = self.inner.write_file(args).await?;
-
-        // Notify LSP that file changed
         self.notify_lsp_did_change(&file_path, &content);
-
         Ok(result)
     }
 
     async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, String> {
         let file_path = args.file_path.clone();
-
         let result = self.inner.edit_file(args).await?;
-
-        // Notify LSP that file changed
         self.notify_lsp_did_change(&file_path, &result.content);
-
         Ok(result)
     }
 
@@ -165,7 +157,6 @@ impl<T: CodingTools> CodingTools for LspAwareCodingTools<T> {
 
     async fn get_lsp_diagnostics(&self) -> Result<HashMap<Uri, Vec<Diagnostic>>, String> {
         let (response_tx, response_rx) = oneshot::channel();
-
         if self.diagnostics_query_tx.send(response_tx).await.is_err() {
             return Err(
                 "Failed to query diagnostics cache - listener task may have stopped".to_string(),
@@ -197,4 +188,3 @@ async fn run_cache_actor(
         }
     }
 }
-
