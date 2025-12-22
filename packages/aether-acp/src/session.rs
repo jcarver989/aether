@@ -1,10 +1,12 @@
 use aether::agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent};
 use aether::llm::provider::StreamingModelProvider;
+use aether::mcp::config::{RawMcpConfig, RawMcpServerConfig};
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
 use mcp_lexicon::coding::lsp::LspClient;
-use mcp_lexicon::{CodingMcp, DefaultCodingTools, LspCodingTools, PluginsMcp, ServiceExt};
+use mcp_lexicon::{CodingMcp, CodingMcpArgs, DefaultCodingTools, LspCodingTools, PluginsMcp, ServiceExt};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
@@ -50,9 +52,10 @@ impl Session {
         debug!("Creating new session: {}", id);
         debug!("Loading MCP configuration from: {:?}", mcp_config_path);
 
-        // Spawn LSP client for diagnostics support
-        // Use current working directory as the project root
-        let project_path = std::env::current_dir().unwrap_or_default();
+        // Parse root_dir from mcp.json coding server args
+        let project_path = parse_coding_root_dir(&mcp_config_path)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        debug!("Using project root for LSP: {:?}", project_path);
         let (lsp_client, lsp_channels): (Option<LspClient>, LspChannels) =
             match LspClient::spawn("rust-analyzer", &[], &project_path).await {
                 Ok((tx, rx, client)) => {
@@ -290,6 +293,23 @@ fn parse_slash_command_arguments(
         }
 
         Some(arg_map)
+    }
+}
+
+/// Parse the root directory from the mcp.json coding server args.
+///
+/// Looks for the "coding" server entry and parses its args for `--root-dir`.
+/// Returns None if the config doesn't exist, doesn't have a coding server,
+/// or the coding server doesn't specify a root-dir.
+fn parse_coding_root_dir(mcp_config_path: &std::path::Path) -> Option<PathBuf> {
+    let raw_config = RawMcpConfig::from_json_file(mcp_config_path).ok()?;
+    let coding_config = raw_config.servers.get("coding")?;
+
+    if let RawMcpServerConfig::InMemory { args } = coding_config {
+        let parsed_args = CodingMcpArgs::from_args(args.clone()).ok()?;
+        parsed_args.root_dir
+    } else {
+        None
     }
 }
 

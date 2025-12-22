@@ -1,3 +1,4 @@
+use clap::Parser;
 use rmcp::{
     ServerHandler,
     handler::server::{
@@ -7,6 +8,7 @@ use rmcp::{
     model::{Implementation, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router,
 };
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::{
     collections::{HashMap, HashSet},
@@ -43,6 +45,25 @@ pub use read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 pub use todo_write::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, process_todo_write};
 pub use tools_trait::CodingTools;
 pub use write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
+
+/// CLI arguments for CodingMcp server
+#[derive(Debug, Clone, Parser)]
+pub struct CodingMcpArgs {
+    /// Root directory for the workspace (used for LSP initialization)
+    #[arg(long = "root-dir")]
+    pub root_dir: Option<PathBuf>,
+}
+
+impl CodingMcpArgs {
+    pub fn from_args(args: Vec<String>) -> Result<Self, String> {
+        // Prepend a dummy program name since clap expects it
+        let mut full_args = vec!["coding-mcp".to_string()];
+        full_args.extend(args);
+
+        Self::try_parse_from(full_args)
+            .map_err(|e| format!("Failed to parse CodingMcp arguments: {e}"))
+    }
+}
 
 #[derive(Debug)]
 pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
