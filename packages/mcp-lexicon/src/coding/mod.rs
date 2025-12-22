@@ -21,6 +21,7 @@ pub mod find;
 pub mod grep;
 pub mod list_files;
 pub mod lsp;
+pub mod lsp_aware_tools;
 pub mod lsp_tool;
 pub mod read_file;
 pub mod todo_write;
@@ -32,6 +33,7 @@ pub use bash::{
     ReadBackgroundBashOutput, execute_command, read_background_bash,
 };
 pub use default_tools::DefaultCodingTools;
+pub use lsp_aware_tools::LspAwareCodingTools;
 pub use edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
 pub use find::{FindInput, FindOutput, find_files_by_name};
 pub use grep::{GrepInput, GrepOutput, perform_grep};
@@ -444,14 +446,11 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_lsp_tool_without_client_returns_error() {
+    async fn test_lsp_tool_without_wrapper_returns_error() {
         let mcp = CodingMcp::new();
         let result = mcp.tools.get_lsp_diagnostics().await;
 
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "LSP not configured for this CodingTools instance"
-        );
+        assert!(result.unwrap_err().contains("LSP not configured"));
     }
 }
