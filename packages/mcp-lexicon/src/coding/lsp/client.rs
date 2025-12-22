@@ -1,19 +1,18 @@
 use super::error::{LspError, Result};
 use super::transport::{
-    ClientNotification, JsonRpcNotification, JsonRpcRequest, ParsedMessage, ParsedNotification,
-    read_message, write_notification, write_request,
+    ClientNotification, ClientRequest, ParsedMessage, ParsedNotification, read_message,
+    send_notification, send_request,
 };
 use lsp_types::{
-    ClientCapabilities, Diagnostic, GeneralClientCapabilities, InitializeParams, InitializeResult,
-    ProgressParams, PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams,
-    TextDocumentClientCapabilities, Uri, WindowClientCapabilities,
+    ClientCapabilities, GeneralClientCapabilities, InitializeParams, ProgressParams,
+    PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, TextDocumentClientCapabilities,
+    Uri, WindowClientCapabilities,
 };
-use serde_json::{from_value, to_value, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Stdio, id};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, RwLock};
 use tokio::io::BufReader;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::spawn;
@@ -35,7 +34,7 @@ enum Request {
     Initialize {
         id: i64,
         params: InitializeParams,
-        response_tx: oneshot::Sender<Result<InitializeResult>>,
+        response_tx: oneshot::Sender<Result<()>>,
     },
     Shutdown {
         id: i64,
@@ -45,12 +44,9 @@ enum Request {
 
 /// Pending response channels, keyed by request ID
 enum PendingResponse {
-    Initialize(oneshot::Sender<Result<InitializeResult>>),
+    Initialize(oneshot::Sender<Result<()>>),
     Shutdown(oneshot::Sender<Result<()>>),
 }
-
-/// Shared diagnostics cache that can be accessed from both the handler and client
-pub type DiagnosticsCache = Arc<RwLock<HashMap<Uri, Vec<Diagnostic>>>>;
 
 /// An LSP client that manages a language server process
 ///
@@ -58,9 +54,10 @@ pub type DiagnosticsCache = Arc<RwLock<HashMap<Uri, Vec<Diagnostic>>>>;
 /// - Spawning and managing the server process
 /// - JSON-RPC request/response correlation
 /// - LSP lifecycle (initialize, initialized, shutdown)
-/// - Caching latest diagnostics per file
 ///
 /// Use the notification channels returned from `spawn()` for sending/receiving notifications.
+/// Diagnostics caching is the caller's responsibility - listen to `NotificationReceiver` for
+/// `ServerNotification::Diagnostics` events and cache them as needed.
 #[derive(Debug)]
 pub struct LspClient {
     /// Counter for generating unique request IDs
@@ -69,12 +66,8 @@ pub struct LspClient {
     request_tx: Sender<Request>,
     /// Channel to send notifications (internal clone)
     notification_tx: Sender<ClientNotification>,
-    /// Whether the client has been initialized
-    initialized: bool,
     /// Handle to the handler task
     _task_handle: JoinHandle<()>,
-    /// Cache of latest diagnostics per URI (updated by handler task)
-    diagnostics_cache: DiagnosticsCache,
 }
 
 /// Sender for client-to-server notifications
@@ -83,7 +76,7 @@ pub type NotificationSender = Sender<ClientNotification>;
 pub type NotificationReceiver = Receiver<ServerNotification>;
 
 impl LspClient {
-    /// Spawn a new language server process
+    /// Spawn and initialize a new language server process
     ///
     /// Returns a tuple of:
     /// - `NotificationSender`: Send notifications to the server (didOpen, didChange, etc.)
@@ -93,16 +86,17 @@ impl LspClient {
     /// # Arguments
     /// * `command` - The command to run (e.g., "rust-analyzer")
     /// * `args` - Arguments to pass to the command
+    /// * `root_path` - The root directory of the project
     ///
     /// # Example
     /// ```ignore
-    /// let (tx, rx, client) = LspClient::spawn("rust-analyzer", &[]).await?;
-    /// client.initialize(&root_path).await?;
+    /// let (tx, rx, client) = LspClient::spawn("rust-analyzer", &[], &root_path).await?;
     /// tx.send(ClientNotification::TextDocumentOpened(params)).await?;
     /// ```
     pub async fn spawn(
         command: &str,
         args: &[&str],
+        root_path: &Path,
     ) -> Result<(NotificationSender, NotificationReceiver, Self)> {
         let mut process = Command::new(command)
             .args(args)
@@ -124,7 +118,6 @@ impl LspClient {
         let (request_tx, request_rx) = channel(100);
         let (client_notif_tx, client_notif_rx) = channel(100);
         let (server_notif_tx, server_notif_rx) = channel(200);
-        let diagnostics_cache: DiagnosticsCache = Arc::new(RwLock::new(HashMap::new()));
 
         let task_handle = spawn(run_handler(
             process,
@@ -133,29 +126,22 @@ impl LspClient {
             request_rx,
             client_notif_rx,
             server_notif_tx,
-            diagnostics_cache.clone(),
         ));
 
-        let client = Self {
+        let mut client = Self {
             request_id: AtomicI64::new(1),
             request_tx,
             notification_tx: client_notif_tx.clone(),
-            initialized: false,
             _task_handle: task_handle,
-            diagnostics_cache,
         };
+
+        client.initialize(root_path).await?;
 
         Ok((client_notif_tx, server_notif_rx, client))
     }
 
-    /// Initialize the language server
-    ///
-    /// This must be called before using any other LSP functionality.
-    /// It sends the `initialize` request and `initialized` notification.
-    ///
-    /// # Arguments
-    /// * `root_path` - The root directory of the project
-    pub async fn initialize(&mut self, root_path: &Path) -> Result<InitializeResult> {
+    /// Initialize the language server (called internally by spawn)
+    async fn initialize(&mut self, root_path: &Path) -> Result<()> {
         let root_uri = path_to_uri(root_path)?;
         let general_capabilities = GeneralClientCapabilities {
             ..Default::default()
@@ -203,16 +189,15 @@ impl LspClient {
             .await
             .map_err(|_| LspError::Transport("Handler task closed".into()))?;
 
-        let result = response_rx
+        response_rx
             .await
             .map_err(|_| LspError::Transport("Response channel closed".into()))??;
 
         self.notification_tx
             .try_send(ClientNotification::Initialized)
             .map_err(|_| LspError::Transport("Handler task closed".into()))?;
-        self.initialized = true;
 
-        Ok(result)
+        Ok(())
     }
 
     /// Shutdown the language server gracefully
@@ -238,38 +223,6 @@ impl LspClient {
         Ok(())
     }
 
-    /// Check if the client has been initialized
-    pub fn is_initialized(&self) -> bool {
-        self.initialized
-    }
-
-    /// Get cached diagnostics for a specific URI
-    ///
-    /// Returns the latest diagnostics published by the server for this file,
-    /// or an empty vector if no diagnostics have been received.
-    pub fn get_diagnostics(&self, uri: &Uri) -> Vec<Diagnostic> {
-        self.diagnostics_cache
-            .read()
-            .unwrap()
-            .get(uri)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    /// Get all cached diagnostics
-    ///
-    /// Returns a snapshot of all diagnostics currently cached, keyed by URI.
-    pub fn get_all_diagnostics(&self) -> HashMap<Uri, Vec<Diagnostic>> {
-        self.diagnostics_cache.read().unwrap().clone()
-    }
-
-    /// Clear diagnostics for a specific URI
-    ///
-    /// This can be called when a file is closed to free memory.
-    pub fn clear_diagnostics(&self, uri: &Uri) {
-        self.diagnostics_cache.write().unwrap().remove(uri);
-    }
-
     /// Generate the next unique request ID
     fn next_request_id(&self) -> i64 {
         self.request_id.fetch_add(1, Ordering::SeqCst)
@@ -284,75 +237,47 @@ async fn run_handler(
     mut request_rx: Receiver<Request>,
     mut notification_rx: Receiver<ClientNotification>,
     server_notif_tx: Sender<ServerNotification>,
-    diagnostics_cache: DiagnosticsCache,
 ) {
     let mut reader = BufReader::new(stdout);
     let mut pending: HashMap<i64, PendingResponse> = HashMap::new();
 
     loop {
         tokio::select! {
-            // Send req to LSP
             Some(req) = request_rx.recv() => {
-                let (id, method, params, pending_response) = match req {
+                let (client_request, pending_response) = match req {
                     Request::Initialize { id, params, response_tx } => (
-                        id,
-                        "initialize",
-                        to_value(&params).unwrap_or(Value::Null),
+                        ClientRequest::Initialize(id, params),
                         PendingResponse::Initialize(response_tx),
                     ),
                     Request::Shutdown { id, response_tx } => (
-                        id,
-                        "shutdown",
-                        Value::Null,
+                        ClientRequest::Shutdown(id),
                         PendingResponse::Shutdown(response_tx),
                     ),
                 };
 
+                let id = client_request.id();
                 pending.insert(id, pending_response);
-                let request = JsonRpcRequest::new(id, method, params);
-                if let Err(e) = write_request(&mut stdin, &request).await {
+                if let Err(e) = send_request(&mut stdin, &client_request).await {
                     if let Some(p) = pending.remove(&id) {
                         send_error(p, e);
                     }
                 }
             }
 
-            // Send notification to LSP
             Some(notif) = notification_rx.recv() => {
-                let (method, params) = notif.to_json_rpc();
-                let notification = JsonRpcNotification::new(method, params);
-                let _ = write_notification(&mut stdin, &notification).await;
+                let _ = send_notification(&mut stdin, &notif).await;
             }
 
             // Handle message from LSP
             msg = read_message(&mut reader) => {
                 match msg {
-                    Ok(raw_msg) => match raw_msg.parse() {
-                        Some(ParsedMessage::Response(resp)) => {
-                            if let Some(pending_response) = pending.remove(&resp.id) {
-                                if let Some(e) = resp.error {
-                                    let err = LspError::ServerError { code: e.code, message: e.message };
-                                    send_error(pending_response, err);
-                                } else {
-                                    let result = resp.result.unwrap_or(Value::Null);
-                                    send_response(pending_response, result);
-                                }
-                            }
-                        }
-                        Some(ParsedMessage::Notification(notif)) => {
-                            handle_server_notification(notif, &server_notif_tx, &diagnostics_cache);
-                        }
-                        None => {
-                            // Unknown message type (e.g., server request), ignore
-                        }
+                    Ok(Some(ParsedMessage::Response(resp))) => handle_response(resp, &mut pending),
+                    Ok(Some(ParsedMessage::Notification(notif))) => {
+                        handle_server_notification(notif, &server_notif_tx);
                     }
-                    Err(LspError::Transport(ref s)) if s.contains("closed") => {
-                        // Server closed connection, exit
-                        break;
-                    }
-                    Err(e) => {
-                        tracing::warn!("Error reading LSP message: {}", e);
-                    }
+                    Ok(None) => {}
+                    Err(LspError::Transport(ref s)) if s.contains("closed") => break,
+                    Err(e) => tracing::warn!("Error reading LSP message: {}", e),
                 }
             }
 
@@ -370,43 +295,51 @@ async fn run_handler(
 }
 
 /// Send a successful response to the appropriate typed channel
-fn send_response(pending: PendingResponse, value: Value) {
-    match pending {
-        PendingResponse::Initialize(tx) => {
-            let result = from_value(value).map_err(LspError::from);
-            let _ = tx.send(result);
-        }
-        PendingResponse::Shutdown(tx) => {
-            let _ = tx.send(Ok(()));
-        }
-    }
+fn send_response(pending: PendingResponse, _value: Value) {
+    let tx = match pending {
+        PendingResponse::Initialize(tx) => tx,
+        PendingResponse::Shutdown(tx) => tx,
+    };
+    let _ = tx.send(Ok(()));
 }
 
 /// Send an error to the appropriate typed channel
 fn send_error(pending: PendingResponse, err: LspError) {
-    match pending {
-        PendingResponse::Initialize(tx) => {
-            let _ = tx.send(Err(err));
-        }
-        PendingResponse::Shutdown(tx) => {
-            let _ = tx.send(Err(err));
-        }
+    let tx = match pending {
+        PendingResponse::Initialize(tx) => tx,
+        PendingResponse::Shutdown(tx) => tx,
+    };
+    let _ = tx.send(Err(err));
+}
+
+/// Handle a response from the server, matching it to a pending request
+fn handle_response(
+    resp: super::transport::ResponseMessage,
+    pending: &mut HashMap<i64, PendingResponse>,
+) {
+    let Some(pending_response) = pending.remove(&resp.id) else {
+        return;
+    };
+
+    match resp.error {
+        Some(e) => send_error(
+            pending_response,
+            LspError::ServerError {
+                code: e.code,
+                message: e.message,
+            },
+        ),
+        None => send_response(pending_response, resp.result.unwrap_or(Value::Null)),
     }
 }
 
-/// Handle a typed server notification, updating caches and forwarding to channels
+/// Handle a typed server notification, forwarding to the notification channel
 fn handle_server_notification(
     notification: ParsedNotification,
     notification_tx: &mpsc::Sender<ServerNotification>,
-    diagnostics_cache: &DiagnosticsCache,
 ) {
     match notification {
         ParsedNotification::Diagnostics(params) => {
-            // Update the diagnostics cache with latest diagnostics for this URI
-            {
-                let mut cache = diagnostics_cache.write().unwrap();
-                cache.insert(params.uri.clone(), params.diagnostics.clone());
-            }
             let _ = notification_tx.try_send(ServerNotification::Diagnostics(params));
         }
         ParsedNotification::Progress(params) => {

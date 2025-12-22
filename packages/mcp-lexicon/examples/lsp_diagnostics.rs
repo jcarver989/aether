@@ -13,24 +13,29 @@
 //! - rust-analyzer must be installed and in PATH
 //! - The target project must be a valid Rust project with Cargo.toml
 
+use std::collections::HashSet;
 use std::env;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use lsp_types::{
+    DidChangeTextDocumentParams, DidOpenTextDocumentParams, NumberOrString, ProgressParamsValue,
+    TextDocumentContentChangeEvent, TextDocumentItem, VersionedTextDocumentIdentifier,
+    WorkDoneProgress,
+};
 use mcp_lexicon::coding::lsp::{
-    LspClient, LspNotification, count_by_severity, format_diagnostics, path_to_uri,
+    ClientNotification, LspClient, NotificationReceiver, ServerNotification, count_by_severity,
+    format_diagnostics, path_to_uri,
 };
 use tokio::time::timeout;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse command line arguments
     let project_path = env::args()
         .nth(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| env::current_dir().expect("Failed to get current directory"));
 
-    // Verify it's a Rust project
     if !project_path.join("Cargo.toml").exists() {
         eprintln!(
             "Error: {} is not a Rust project (no Cargo.toml found)",
@@ -41,32 +46,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Starting rust-analyzer for: {}", project_path.display());
 
-    // Spawn rust-analyzer
-    let mut client = match LspClient::spawn("rust-analyzer", &[]).await {
+    let (tx, mut rx, mut client) = match LspClient::spawn("rust-analyzer", &[], &project_path).await
+    {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Failed to spawn rust-analyzer: {}", e);
-            eprintln!("Make sure rust-analyzer is installed and in your PATH.");
-            eprintln!("Install with: rustup component add rust-analyzer");
             std::process::exit(1);
         }
     };
 
-    println!("Initializing language server...");
-
-    // Initialize the server
-    let init_result = client.initialize(&project_path).await?;
-    println!(
-        "Server initialized: {}",
-        init_result.server_info.map(|i| i.name).unwrap_or_default()
-    );
-
-    // Wait for rust-analyzer to finish loading the workspace
+    println!("Language server initialized.");
     println!("Waiting for workspace indexing to complete...");
-    client.wait_for_indexing().await;
+
+    wait_for_indexing(&mut rx).await;
     println!("Indexing complete!");
 
-    // Find a Rust file to analyze
     let lib_rs = project_path.join("src/lib.rs");
     let main_rs = project_path.join("src/main.rs");
 
@@ -81,40 +75,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Opening file: {}", target_file.display());
 
-    // Read the file content
     let original_content = std::fs::read_to_string(&target_file)?;
     let file_uri = path_to_uri(&target_file)?;
 
-    // Open the file in the language server
-    client.did_open(file_uri.clone(), "rust", original_content.clone())?;
+    // Open the file in the language server via the tx channel
+    tx.send(ClientNotification::TextDocumentOpened(
+        DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: file_uri.clone(),
+                language_id: "rust".to_string(),
+                version: 1,
+                text: original_content.clone(),
+            },
+        },
+    ))
+    .await?;
 
     // Wait for initial diagnostics
     println!("\nWaiting for initial diagnostics...");
     let initial_diagnostics =
-        wait_for_diagnostics(&mut client, &file_uri, Duration::from_secs(60)).await;
+        wait_for_diagnostics(&mut rx, &file_uri, Duration::from_secs(60)).await;
 
     print_diagnostics_summary(initial_diagnostics.as_ref());
 
     // Introduce a syntax error by appending garbage
     println!("\n--- Introducing a syntax error ---");
     let broken_content = format!("{}\n\nthis_is_not_valid_rust_code!!!", original_content);
-    client.did_change(file_uri.clone(), 2, broken_content)?;
+    tx.send(ClientNotification::TextDocumentChanged(
+        DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: file_uri.clone(),
+                version: 2,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: broken_content,
+            }],
+        },
+    ))
+    .await?;
 
     // Wait for new diagnostics
     println!("Waiting for error diagnostics...");
-    let error_diagnostics =
-        wait_for_diagnostics(&mut client, &file_uri, Duration::from_secs(60)).await;
+    let error_diagnostics = wait_for_diagnostics(&mut rx, &file_uri, Duration::from_secs(60)).await;
 
     print_diagnostics_summary(error_diagnostics.as_ref());
 
     // Fix the file by restoring original content
     println!("\n--- Restoring original content ---");
-    client.did_change(file_uri.clone(), 3, original_content)?;
+    tx.send(ClientNotification::TextDocumentChanged(
+        DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: file_uri.clone(),
+                version: 3,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: original_content,
+            }],
+        },
+    ))
+    .await?;
 
     // Wait for diagnostics to clear
     println!("Waiting for diagnostics after fix...");
-    let fixed_diagnostics =
-        wait_for_diagnostics(&mut client, &file_uri, Duration::from_secs(60)).await;
+    let fixed_diagnostics = wait_for_diagnostics(&mut rx, &file_uri, Duration::from_secs(60)).await;
 
     print_diagnostics_summary(fixed_diagnostics.as_ref());
 
@@ -126,19 +153,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Wait for the server to finish indexing/loading the workspace
+///
+/// This waits for all in-progress work to complete by tracking $/progress notifications.
+async fn wait_for_indexing(rx: &mut NotificationReceiver) {
+    let mut active_tokens: HashSet<String> = HashSet::new();
+
+    loop {
+        match timeout(Duration::from_millis(500), rx.recv()).await {
+            Ok(Some(ServerNotification::Progress(progress))) => {
+                let token = match progress.token {
+                    NumberOrString::Number(n) => n.to_string(),
+                    NumberOrString::String(s) => s,
+                };
+                let ProgressParamsValue::WorkDone(work_done) = progress.value;
+
+                match work_done {
+                    WorkDoneProgress::Begin(_) => {
+                        active_tokens.insert(token);
+                    }
+                    WorkDoneProgress::End(_) => {
+                        active_tokens.remove(&token);
+                    }
+                    WorkDoneProgress::Report(_) => {}
+                }
+            }
+            Ok(Some(_)) => {
+                // Ignore non-progress notifications during indexing wait
+            }
+            Ok(None) => break, // Channel closed
+            Err(_) => {
+                // Timeout - if no active tokens, we're done
+                if active_tokens.is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// Wait for diagnostics for a specific file URI
 ///
 /// Blocks until we receive diagnostics for the target file, with a safety timeout.
 async fn wait_for_diagnostics(
-    client: &mut LspClient,
+    rx: &mut NotificationReceiver,
     target_uri: &lsp_types::Uri,
     safety_timeout: Duration,
 ) -> Option<lsp_types::PublishDiagnosticsParams> {
     // Wait for diagnostics for our specific file
     match timeout(safety_timeout, async {
         loop {
-            match client.recv_notification().await {
-                Some(LspNotification::Diagnostics(diag))
+            match rx.recv().await {
+                Some(ServerNotification::Diagnostics(diag))
                     if diag.uri.as_str() == target_uri.as_str() =>
                 {
                     return Some(diag);

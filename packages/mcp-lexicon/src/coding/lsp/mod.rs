@@ -21,12 +21,10 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     // Spawn rust-analyzer and get notification channels
-//!     let (tx, mut rx, mut client) = LspClient::spawn("rust-analyzer", &[]).await?;
-//!
-//!     // Initialize with project root
 //!     let root = Path::new("/path/to/rust/project");
-//!     client.initialize(root).await?;
+//!
+//!     // Spawn and initialize rust-analyzer
+//!     let (tx, mut rx, mut client) = LspClient::spawn("rust-analyzer", &[], root).await?;
 //!
 //!     // Open a file via the notification sender
 //!     tx.send(ClientNotification::TextDocumentOpened(DidOpenTextDocumentParams {
@@ -58,11 +56,8 @@ pub mod diagnostics;
 pub mod error;
 pub mod transport;
 
-pub use client::{
-    DiagnosticsCache, LspClient, NotificationReceiver, NotificationSender, ServerNotification,
-    path_to_uri,
-};
-pub use transport::ClientNotification;
+pub use client::{LspClient, NotificationReceiver, NotificationSender, ServerNotification, path_to_uri};
+pub use transport::{ClientNotification, LanguageId};
 pub use diagnostics::{
     DiagnosticCounts, FormattedDiagnostic, Severity, count_by_severity, filter_by_severity,
     format_diagnostics,

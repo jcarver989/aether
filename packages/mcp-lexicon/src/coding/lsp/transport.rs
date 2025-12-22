@@ -1,19 +1,116 @@
-//! JSON-RPC transport layer for LSP communication over stdio
-//!
-//! LSP uses a simple framing protocol:
-//! - Headers: `Content-Length: <number>\r\n\r\n`
-//! - Body: JSON-RPC message
-
+use super::error::{LspError, Result};
 use lsp_types::{
     DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    ProgressParams, PublishDiagnosticsParams,
+    InitializeParams, ProgressParams, PublishDiagnosticsParams,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, to_value};
+use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout};
 
-use super::error::{LspError, Result};
+/// LSP language identifier for a file type
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum LanguageId {
+    Rust,
+    Python,
+    JavaScript,
+    JavaScriptReact,
+    TypeScript,
+    TypeScriptReact,
+    Go,
+    Java,
+    C,
+    Cpp,
+    CSharp,
+    Ruby,
+    Php,
+    Swift,
+    Kotlin,
+    Scala,
+    Html,
+    Css,
+    Json,
+    Yaml,
+    Toml,
+    Markdown,
+    Xml,
+    Sql,
+    ShellScript,
+    PlainText,
+}
+
+impl LanguageId {
+    /// Get the LSP language ID string for this language
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LanguageId::Rust => "rust",
+            LanguageId::Python => "python",
+            LanguageId::JavaScript => "javascript",
+            LanguageId::JavaScriptReact => "javascriptreact",
+            LanguageId::TypeScript => "typescript",
+            LanguageId::TypeScriptReact => "typescriptreact",
+            LanguageId::Go => "go",
+            LanguageId::Java => "java",
+            LanguageId::C => "c",
+            LanguageId::Cpp => "cpp",
+            LanguageId::CSharp => "csharp",
+            LanguageId::Ruby => "ruby",
+            LanguageId::Php => "php",
+            LanguageId::Swift => "swift",
+            LanguageId::Kotlin => "kotlin",
+            LanguageId::Scala => "scala",
+            LanguageId::Html => "html",
+            LanguageId::Css => "css",
+            LanguageId::Json => "json",
+            LanguageId::Yaml => "yaml",
+            LanguageId::Toml => "toml",
+            LanguageId::Markdown => "markdown",
+            LanguageId::Xml => "xml",
+            LanguageId::Sql => "sql",
+            LanguageId::ShellScript => "shellscript",
+            LanguageId::PlainText => "plaintext",
+        }
+    }
+
+    /// Detect language ID from file path
+    pub fn from_path(path: &Path) -> Self {
+        match path.extension().and_then(|e| e.to_str()) {
+            Some("rs") => LanguageId::Rust,
+            Some("py" | "pyi" | "pyw") => LanguageId::Python,
+            Some("js" | "mjs") => LanguageId::JavaScript,
+            Some("jsx") => LanguageId::JavaScriptReact,
+            Some("ts") => LanguageId::TypeScript,
+            Some("tsx") => LanguageId::TypeScriptReact,
+            Some("go") => LanguageId::Go,
+            Some("java") => LanguageId::Java,
+            Some("c" | "h") => LanguageId::C,
+            Some("cpp" | "cxx" | "cc" | "hpp" | "hxx" | "hh") => LanguageId::Cpp,
+            Some("cs") => LanguageId::CSharp,
+            Some("rb") => LanguageId::Ruby,
+            Some("php") => LanguageId::Php,
+            Some("swift") => LanguageId::Swift,
+            Some("kt" | "kts") => LanguageId::Kotlin,
+            Some("scala") => LanguageId::Scala,
+            Some("html" | "htm") => LanguageId::Html,
+            Some("css") => LanguageId::Css,
+            Some("json") => LanguageId::Json,
+            Some("yaml" | "yml") => LanguageId::Yaml,
+            Some("toml") => LanguageId::Toml,
+            Some("md" | "markdown") => LanguageId::Markdown,
+            Some("xml") => LanguageId::Xml,
+            Some("sql") => LanguageId::Sql,
+            Some("sh" | "bash" | "zsh") => LanguageId::ShellScript,
+            _ => LanguageId::PlainText,
+        }
+    }
+}
+
+impl std::fmt::Display for LanguageId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
 
 /// A parsed incoming message from the LSP server
 #[derive(Debug)]
@@ -60,7 +157,7 @@ pub enum ClientNotification {
 
 impl ClientNotification {
     /// Convert to JSON-RPC method name and params
-    pub fn to_json_rpc(&self) -> (&'static str, Value) {
+    fn to_json_rpc(&self) -> (&'static str, Value) {
         match self {
             ClientNotification::Initialized => ("initialized", Value::Object(Default::default())),
             ClientNotification::Exit => ("exit", Value::Null),
@@ -80,9 +177,28 @@ impl ClientNotification {
     }
 }
 
+/// Requests sent from client to server (expects a response)
+#[derive(Debug, Clone)]
+pub enum ClientRequest {
+    /// Initialize the language server
+    Initialize(i64, InitializeParams),
+    /// Shutdown the language server
+    Shutdown(i64),
+}
+
+impl ClientRequest {
+    /// Get the request ID
+    pub fn id(&self) -> i64 {
+        match self {
+            ClientRequest::Initialize(id, _) => *id,
+            ClientRequest::Shutdown(id) => *id,
+        }
+    }
+}
+
 /// A JSON-RPC request message
 #[derive(Debug, Serialize)]
-pub struct JsonRpcRequest<P: Serialize> {
+struct JsonRpcRequest<P: Serialize> {
     pub jsonrpc: &'static str,
     pub id: i64,
     pub method: String,
@@ -102,7 +218,7 @@ impl<P: Serialize> JsonRpcRequest<P> {
 
 /// A JSON-RPC notification message (no id, no response expected)
 #[derive(Debug, Serialize)]
-pub struct JsonRpcNotification<P: Serialize> {
+struct JsonRpcNotification<P: Serialize> {
     pub jsonrpc: &'static str,
     pub method: String,
     pub params: P,
@@ -118,16 +234,6 @@ impl<P: Serialize> JsonRpcNotification<P> {
     }
 }
 
-/// A JSON-RPC response message
-#[derive(Debug, Deserialize)]
-pub struct JsonRpcResponse {
-    #[allow(dead_code)]
-    pub jsonrpc: String,
-    pub id: Option<i64>,
-    pub result: Option<Value>,
-    pub error: Option<JsonRpcError>,
-}
-
 /// A JSON-RPC error object
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcError {
@@ -139,7 +245,7 @@ pub struct JsonRpcError {
 
 /// An incoming message from the LSP server (could be response or notification)
 #[derive(Debug, Deserialize)]
-pub struct IncomingMessage {
+struct IncomingMessage {
     #[allow(dead_code)]
     pub jsonrpc: String,
     pub id: Option<i64>,
@@ -149,26 +255,23 @@ pub struct IncomingMessage {
     pub error: Option<JsonRpcError>,
 }
 
-impl IncomingMessage {
-    /// Parse the raw message into a typed `ParsedMessage`
-    ///
-    /// Returns `None` for messages that don't match expected patterns (e.g., requests from server).
-    pub fn parse(self) -> Option<ParsedMessage> {
+impl From<IncomingMessage> for Option<ParsedMessage> {
+    fn from(msg: IncomingMessage) -> Self {
         // Check if this is a response (has id and result/error)
-        if let Some(id) = self.id {
-            if self.result.is_some() || self.error.is_some() {
+        if let Some(id) = msg.id {
+            if msg.result.is_some() || msg.error.is_some() {
                 return Some(ParsedMessage::Response(ResponseMessage {
                     id,
-                    result: self.result,
-                    error: self.error,
+                    result: msg.result,
+                    error: msg.error,
                 }));
             }
         }
 
         // Check if this is a notification (has method but no id)
-        if let Some(method) = self.method {
-            if self.id.is_none() {
-                let notification = parse_notification(&method, self.params.unwrap_or(Value::Null));
+        if let Some(method) = msg.method {
+            if msg.id.is_none() {
+                let notification = parse_notification(&method, msg.params.unwrap_or(Value::Null));
                 return Some(ParsedMessage::Notification(notification));
             }
         }
@@ -177,27 +280,10 @@ impl IncomingMessage {
     }
 }
 
-/// Parse a notification method and params into a typed `ParsedNotification`
-fn parse_notification(method: &str, params: Value) -> ParsedNotification {
-    match method {
-        "textDocument/publishDiagnostics" => {
-            match serde_json::from_value::<PublishDiagnosticsParams>(params) {
-                Ok(diag_params) => ParsedNotification::Diagnostics(diag_params),
-                Err(_) => ParsedNotification::Unknown(method.to_string()),
-            }
-        }
-        "$/progress" => match serde_json::from_value::<ProgressParams>(params) {
-            Ok(progress_params) => ParsedNotification::Progress(progress_params),
-            Err(_) => ParsedNotification::Unknown(method.to_string()),
-        },
-        _ => ParsedNotification::Unknown(method.to_string()),
-    }
-}
-
-/// Read a single LSP message from the server's stdout
+/// Read and parse a single LSP message from the server's stdout
 ///
-/// This parses the Content-Length header and reads the JSON body.
-pub async fn read_message(reader: &mut BufReader<ChildStdout>) -> Result<IncomingMessage> {
+/// Returns `None` for unknown message types (e.g., server requests).
+pub async fn read_message(reader: &mut BufReader<ChildStdout>) -> Result<Option<ParsedMessage>> {
     let mut content_length: Option<usize> = None;
 
     // Read headers until we find Content-Length
@@ -232,25 +318,49 @@ pub async fn read_message(reader: &mut BufReader<ChildStdout>) -> Result<Incomin
     reader.read_exact(&mut content).await?;
 
     let message: IncomingMessage = serde_json::from_slice(&content)?;
-    Ok(message)
+    Ok(message.into())
 }
 
-/// Write a JSON-RPC request to the server's stdin
-pub async fn write_request<P: Serialize>(
-    writer: &mut ChildStdin,
-    request: &JsonRpcRequest<P>,
-) -> Result<()> {
-    let content = serde_json::to_string(request)?;
+/// Send a client request to the server
+pub async fn send_request(writer: &mut ChildStdin, request: &ClientRequest) -> Result<()> {
+    let (id, method, params) = match request {
+        ClientRequest::Initialize(id, params) => {
+            (*id, "initialize", to_value(params).unwrap_or(Value::Null))
+        }
+        ClientRequest::Shutdown(id) => (*id, "shutdown", Value::Null),
+    };
+
+    let json_request = JsonRpcRequest::new(id, method, params);
+    let content = serde_json::to_string(&json_request)?;
     write_raw_message(writer, &content).await
 }
 
-/// Write a JSON-RPC notification to the server's stdin
-pub async fn write_notification<P: Serialize>(
+/// Send a client notification to the server
+pub async fn send_notification(
     writer: &mut ChildStdin,
-    notification: &JsonRpcNotification<P>,
+    notification: &ClientNotification,
 ) -> Result<()> {
-    let content = serde_json::to_string(notification)?;
+    let (method, params) = notification.to_json_rpc();
+    let json_notification = JsonRpcNotification::new(method, params);
+    let content = serde_json::to_string(&json_notification)?;
     write_raw_message(writer, &content).await
+}
+
+/// Parse a notification method and params into a typed `ParsedNotification`
+fn parse_notification(method: &str, params: Value) -> ParsedNotification {
+    match method {
+        "textDocument/publishDiagnostics" => {
+            match serde_json::from_value::<PublishDiagnosticsParams>(params) {
+                Ok(diag_params) => ParsedNotification::Diagnostics(diag_params),
+                Err(_) => ParsedNotification::Unknown(method.to_string()),
+            }
+        }
+        "$/progress" => match serde_json::from_value::<ProgressParams>(params) {
+            Ok(progress_params) => ParsedNotification::Progress(progress_params),
+            Err(_) => ParsedNotification::Unknown(method.to_string()),
+        },
+        _ => ParsedNotification::Unknown(method.to_string()),
+    }
 }
 
 /// Write a raw message with LSP framing
@@ -293,7 +403,8 @@ mod tests {
             serde_json::from_str(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#)
                 .unwrap();
 
-        match msg.parse() {
+        let parsed: Option<ParsedMessage> = msg.into();
+        match parsed {
             Some(ParsedMessage::Response(resp)) => {
                 assert_eq!(resp.id, 1);
                 assert!(resp.result.is_some());
@@ -310,7 +421,8 @@ mod tests {
         )
         .unwrap();
 
-        match msg.parse() {
+        let parsed: Option<ParsedMessage> = msg.into();
+        match parsed {
             Some(ParsedMessage::Notification(ParsedNotification::Diagnostics(params))) => {
                 assert_eq!(params.uri.as_str(), "file:///test.rs");
                 assert!(params.diagnostics.is_empty());
@@ -326,7 +438,8 @@ mod tests {
         )
         .unwrap();
 
-        match msg.parse() {
+        let parsed: Option<ParsedMessage> = msg.into();
+        match parsed {
             Some(ParsedMessage::Notification(ParsedNotification::Unknown(method))) => {
                 assert_eq!(method, "window/logMessage");
             }

@@ -26,6 +26,9 @@ pub struct EditFileResponse {
     pub total_lines: usize,
     /// Number of replacements made
     pub replacements_made: usize,
+    /// The new file content after editing (used internally for LSP sync)
+    #[serde(skip_serializing)]
+    pub content: String,
 }
 
 pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, String> {
@@ -79,5 +82,6 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
         file_path: args.file_path,
         total_lines,
         replacements_made,
+        content: updated_content,
     })
 }

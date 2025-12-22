@@ -28,6 +28,9 @@ pub struct ReadFileResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
     pub size: usize,
+    /// Raw file content without line numbers (used internally for LSP sync)
+    #[serde(skip_serializing)]
+    pub raw_content: String,
 }
 
 pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, String> {
@@ -90,6 +93,7 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, St
                 offset,
                 limit: Some(limit),
                 size: content.len(),
+                raw_content: content,
             })
         }
         Err(e) => Err(format!("Failed to read file {}: {}", args.file_path, e)),
