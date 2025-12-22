@@ -1,17 +1,19 @@
 use std::future::Future;
+use std::{collections::HashMap, fmt::Debug};
 
 use super::{
     BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, ListFilesArgs,
     ListFilesResult, ReadBackgroundBashOutput, ReadFileArgs, ReadFileResult, WriteFileArgs,
     WriteFileResponse,
 };
+use lsp_types::{Diagnostic, Uri};
 
 /// Trait defining the underlying implementation for coding tool operations.
 ///
 /// This trait allows CodingMcp to be used in different contexts:
 /// - DefaultCodingTools: Uses local filesystem (default behavior)
 /// - AcpCodingTools: Delegates to ACP client for editor integration
-pub trait CodingTools: Send + Sync + std::fmt::Debug {
+pub trait CodingTools: Send + Sync + Debug {
     /// Read a file's contents
     fn read_file(
         &self,
@@ -47,4 +49,14 @@ pub trait CodingTools: Send + Sync + std::fmt::Debug {
     ) -> impl Future<
         Output = Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String>,
     > + Send;
+
+    /// Get all cached LSP diagnostics (errors, warnings, etc.).
+    ///
+    /// Returns diagnostics keyed by file URI.
+    /// Returns an error if LSP is not configured for this instance.
+    fn get_lsp_diagnostics(
+        &self,
+    ) -> impl Future<Output = Result<HashMap<Uri, Vec<Diagnostic>>, String>> + Send {
+        async { Ok(HashMap::new()) }
+    }
 }

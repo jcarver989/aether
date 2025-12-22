@@ -80,6 +80,7 @@ impl CodingTools for AcpCodingTools {
             offset,
             limit: args.limit,
             size: response.content.len(),
+            raw_content: response.content,
         })
     }
 
@@ -159,6 +160,7 @@ impl CodingTools for AcpCodingTools {
             file_path: args.file_path,
             total_lines,
             replacements_made,
+            content: new_content,
         })
     }
 

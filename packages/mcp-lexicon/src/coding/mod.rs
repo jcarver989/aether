@@ -1,4 +1,3 @@
-use lsp_types::Uri;
 use rmcp::{
     ServerHandler,
     handler::server::{
@@ -8,10 +7,11 @@ use rmcp::{
     model::{Implementation, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router,
 };
-use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-
-use lsp::{LspClient, path_to_uri};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 pub mod bash;
 pub mod common;
@@ -36,11 +36,11 @@ pub use edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
 pub use find::{FindInput, FindOutput, find_files_by_name};
 pub use grep::{GrepInput, GrepOutput, perform_grep};
 pub use list_files::{ListFilesArgs, ListFilesResult, list_files};
+pub use lsp_tool::{LspInput, LspOperation, LspOutput, execute_lsp_operation};
 pub use read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 pub use todo_write::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, process_todo_write};
 pub use tools_trait::CodingTools;
 pub use write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
-pub use lsp_tool::{LspInput, LspOperation, LspOutput, execute_lsp_operation};
 
 #[derive(Debug)]
 pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
@@ -49,10 +49,6 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     todos: Mutex<Vec<TodoItem>>,
     /// Track files that have been read to enforce read-before-edit safety
     files_read: Mutex<HashSet<String>>,
-    /// Track document versions for LSP (URI -> version)
-    document_versions: Mutex<HashMap<Uri, i32>>,
-    /// Optional LSP client for code intelligence
-    lsp_client: Mutex<Option<LspClient>>,
     tools: T,
 }
 
@@ -84,9 +80,7 @@ impl CodingMcp<DefaultCodingTools> {
             background_processes: Mutex::new(HashMap::new()),
             todos: Mutex::new(Vec::new()),
             files_read: Mutex::new(HashSet::new()),
-            document_versions: Mutex::new(HashMap::new()),
-            lsp_client: Mutex::new(None),
-            tools: DefaultCodingTools,
+            tools: DefaultCodingTools::new(),
         }
     }
 }
@@ -100,55 +94,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             background_processes: Mutex::new(HashMap::new()),
             todos: Mutex::new(Vec::new()),
             files_read: Mutex::new(HashSet::new()),
-            document_versions: Mutex::new(HashMap::new()),
-            lsp_client: Mutex::new(None),
             tools,
-        }
-    }
-
-    /// Set the LSP client for code intelligence features
-    ///
-    /// This enables diagnostics querying and keeps the LSP in sync with file operations.
-    /// The client should already be initialized before calling this method.
-    pub fn set_lsp_client(&self, client: LspClient) {
-        *self.lsp_client.lock().unwrap() = Some(client);
-    }
-
-    /// Remove the LSP client
-    pub fn clear_lsp_client(&self) -> Option<LspClient> {
-        self.lsp_client.lock().unwrap().take()
-    }
-
-    /// Notify the LSP client that a file was opened
-    fn notify_lsp_did_open(&self, file_path: &str) {
-        let client_guard = self.lsp_client.lock().unwrap();
-        if let Some(client) = &*client_guard {
-            // Read file content for LSP
-            if let Ok(content) = std::fs::read_to_string(file_path) {
-                if let Ok(uri) = path_to_uri(std::path::Path::new(file_path)) {
-                    let language_id = detect_language_id(file_path);
-                    // Ignore errors - LSP notifications are fire-and-forget
-                    let _ = client.did_open(uri, language_id, content);
-                }
-            }
-        }
-    }
-
-    /// Notify the LSP client that a file was changed
-    fn notify_lsp_did_change(&self, file_path: &str, content: &str) {
-        let client_guard = self.lsp_client.lock().unwrap();
-        if let Some(client) = &*client_guard {
-            if let Ok(uri) = path_to_uri(std::path::Path::new(file_path)) {
-                // Get and increment version for this document
-                let version = {
-                    let mut versions = self.document_versions.lock().unwrap();
-                    let version = versions.entry(uri.clone()).or_insert(0);
-                    *version += 1;
-                    *version
-                };
-                // Ignore errors - LSP notifications are fire-and-forget
-                let _ = client.did_change(uri, version, content.to_string());
-            }
         }
     }
 
@@ -215,15 +161,8 @@ IMPORTANT - Safety Tracking:
     ) -> Result<Json<ReadFileResult>, String> {
         let Parameters(args) = request;
         let file_path = args.file_path.clone();
-
-        // Delegate to the tools implementation
         let result = self.tools.read_file(args).await?;
-
-        // Track that this file has been read (safety check)
-        self.files_read.lock().unwrap().insert(file_path.clone());
-
-        // Notify LSP client if available (did_open)
-        self.notify_lsp_did_open(&file_path);
+        self.files_read.lock().unwrap().insert(file_path);
 
         Ok(Json(result))
     }
@@ -252,7 +191,7 @@ IMPORTANT - Safety Requirements:
         let Parameters(args) = request;
 
         // Safety check: if file exists, ensure it has been read first
-        if std::path::Path::new(&args.file_path).exists() {
+        if Path::new(&args.file_path).exists() {
             let files_read = self.files_read.lock().unwrap();
             if !files_read.contains(&args.file_path) {
                 return Err(format!(
@@ -262,11 +201,7 @@ IMPORTANT - Safety Requirements:
             }
         }
 
-        // Delegate to the tools implementation
-        let response = self.tools.write_file(args.clone()).await?;
-
-        // Notify LSP client if available (did_change)
-        self.notify_lsp_did_change(&args.file_path, &args.content);
+        let response = self.tools.write_file(args).await?;
 
         Ok(Json(response))
     }
@@ -299,14 +234,7 @@ Usage:
             }
         }
 
-        // Delegate to the tools implementation
-        let file_path = args.file_path.clone();
         let response = self.tools.edit_file(args).await?;
-
-        // Notify LSP client if available (did_change) - read new content
-        if let Ok(content) = std::fs::read_to_string(&file_path) {
-            self.notify_lsp_did_change(&file_path, &content);
-        }
 
         Ok(Json(response))
     }
@@ -500,16 +428,7 @@ Example usage:
     )]
     pub async fn lsp(&self, request: Parameters<LspInput>) -> Result<Json<LspOutput>, String> {
         let Parameters(input) = request;
-
-        // Get diagnostics from the LSP client if available
-        let diagnostics_cache = {
-            let client_guard = self.lsp_client.lock().unwrap();
-            match &*client_guard {
-                Some(client) => client.get_all_diagnostics(),
-                None => HashMap::new(),
-            }
-        };
-
+        let diagnostics_cache = self.tools.get_lsp_diagnostics().await?;
         execute_lsp_operation(input.operation, &diagnostics_cache).map(Json)
     }
 }
@@ -520,81 +439,19 @@ impl Default for CodingMcp<DefaultCodingTools> {
     }
 }
 
-/// Detect language ID from file extension for LSP
-fn detect_language_id(file_path: &str) -> &'static str {
-    let path = std::path::Path::new(file_path);
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("rs") => "rust",
-        Some("py" | "pyi" | "pyw") => "python",
-        Some("js" | "mjs") => "javascript",
-        Some("jsx") => "javascriptreact",
-        Some("ts") => "typescript",
-        Some("tsx") => "typescriptreact",
-        Some("go") => "go",
-        Some("java") => "java",
-        Some("c" | "h") => "c",
-        Some("cpp" | "cxx" | "cc" | "hpp" | "hxx" | "hh") => "cpp",
-        Some("cs") => "csharp",
-        Some("rb") => "ruby",
-        Some("php") => "php",
-        Some("swift") => "swift",
-        Some("kt" | "kts") => "kotlin",
-        Some("scala") => "scala",
-        Some("html" | "htm") => "html",
-        Some("css") => "css",
-        Some("json") => "json",
-        Some("yaml" | "yml") => "yaml",
-        Some("toml") => "toml",
-        Some("md" | "markdown") => "markdown",
-        Some("xml") => "xml",
-        Some("sql") => "sql",
-        Some("sh" | "bash" | "zsh") => "shellscript",
-        _ => "plaintext",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_detect_language_id() {
-        assert_eq!(detect_language_id("/path/to/file.rs"), "rust");
-        assert_eq!(detect_language_id("main.py"), "python");
-        assert_eq!(detect_language_id("script.js"), "javascript");
-        assert_eq!(detect_language_id("component.tsx"), "typescriptreact");
-        assert_eq!(detect_language_id("main.go"), "go");
-        assert_eq!(detect_language_id("config.yaml"), "yaml");
-        assert_eq!(detect_language_id("config.yml"), "yaml");
-        assert_eq!(detect_language_id("unknown.xyz"), "plaintext");
-        assert_eq!(detect_language_id("noextension"), "plaintext");
-    }
-
     #[tokio::test]
-    async fn test_lsp_tool_without_client_returns_empty() {
-        use lsp_tool::LspOperation;
-
+    async fn test_lsp_tool_without_client_returns_error() {
         let mcp = CodingMcp::new();
+        let result = mcp.tools.get_lsp_diagnostics().await;
 
-        // Without an LSP client, get_diagnostics should return empty
-        let diagnostics_cache = {
-            let client_guard = mcp.lsp_client.lock().unwrap();
-            match &*client_guard {
-                Some(client) => client.get_all_diagnostics(),
-                None => HashMap::new(),
-            }
-        };
-
-        let result = execute_lsp_operation(
-            LspOperation::GetDiagnostics { file_path: None },
-            &diagnostics_cache,
-        ).unwrap();
-
-        match result {
-            LspOutput::Diagnostics(output) => {
-                assert_eq!(output.diagnostics.len(), 0);
-                assert_eq!(output.summary.total, 0);
-            }
-        }
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "LSP not configured for this CodingTools instance"
+        );
     }
 }
