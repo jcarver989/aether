@@ -52,9 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Language server initialized.");
 
-    // Create LspAwareCodingTools wrapping DefaultCodingTools
+    // Create LspCodingTools wrapping DefaultCodingTools
     // The LSP client internally buffers notifications until indexing completes
-    let tools = LspCodingTools::new(DefaultCodingTools::new(), tx, rx);
+    // We pass None for lsp_client since this example only uses diagnostics (not requests)
+    let tools = LspCodingTools::new(DefaultCodingTools::new(), tx, rx, None);
 
     // Find target file
     let lib_rs = project_path.join("src/lib.rs");

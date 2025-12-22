@@ -6,7 +6,7 @@ use super::{
     ListFilesResult, ReadBackgroundBashOutput, ReadFileArgs, ReadFileResult, WriteFileArgs,
     WriteFileResponse,
 };
-use lsp_types::{Diagnostic, Uri};
+use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, Uri};
 
 /// Trait defining the underlying implementation for coding tool operations.
 ///
@@ -58,5 +58,64 @@ pub trait CodingTools: Send + Sync + Debug {
         &self,
     ) -> impl Future<Output = Result<HashMap<Uri, Vec<Diagnostic>>, String>> + Send {
         async { Ok(HashMap::new()) }
+    }
+
+    /// Go to the definition of a symbol at a position.
+    ///
+    /// # Arguments
+    /// * `file_path` - The path to the file
+    /// * `line` - Line number (1-indexed, as shown in editors)
+    /// * `column` - Column number (1-indexed, as shown in editors)
+    ///
+    /// # Returns
+    /// The definition response, which may contain locations where the symbol is defined.
+    /// Returns an error if LSP is not configured for this instance.
+    fn goto_definition(
+        &self,
+        _file_path: &str,
+        _line: u32,
+        _column: u32,
+    ) -> impl Future<Output = Result<GotoDefinitionResponse, String>> + Send {
+        async { Err("LSP not configured".to_string()) }
+    }
+
+    /// Find all references to a symbol at a position.
+    ///
+    /// # Arguments
+    /// * `file_path` - The path to the file
+    /// * `line` - Line number (1-indexed, as shown in editors)
+    /// * `column` - Column number (1-indexed, as shown in editors)
+    /// * `include_declaration` - Whether to include the declaration in the results
+    ///
+    /// # Returns
+    /// A list of locations where the symbol is referenced.
+    /// Returns an error if LSP is not configured for this instance.
+    fn find_references(
+        &self,
+        _file_path: &str,
+        _line: u32,
+        _column: u32,
+        _include_declaration: bool,
+    ) -> impl Future<Output = Result<Vec<Location>, String>> + Send {
+        async { Err("LSP not configured".to_string()) }
+    }
+
+    /// Get hover information (type, documentation) for a symbol at a position.
+    ///
+    /// # Arguments
+    /// * `file_path` - The path to the file
+    /// * `line` - Line number (1-indexed, as shown in editors)
+    /// * `column` - Column number (1-indexed, as shown in editors)
+    ///
+    /// # Returns
+    /// Hover information if available, or None if no information at the position.
+    /// Returns an error if LSP is not configured for this instance.
+    fn hover(
+        &self,
+        _file_path: &str,
+        _line: u32,
+        _column: u32,
+    ) -> impl Future<Output = Result<Option<Hover>, String>> + Send {
+        async { Err("LSP not configured".to_string()) }
     }
 }

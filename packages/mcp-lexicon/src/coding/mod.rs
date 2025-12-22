@@ -439,20 +439,29 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
     #[tool(
         description = "Query language server information for code intelligence.
 
-This tool provides access to LSP (Language Server Protocol) features like diagnostics (errors, warnings).
+This tool provides access to LSP (Language Server Protocol) features for semantic code navigation and analysis.
 The language server must be initialized separately before using this tool.
 
 Operations:
 - get_diagnostics: Get compiler errors and warnings. Optionally filter by file_path.
+- go_to_definition: Jump to the definition of a symbol at a specific position.
+- find_references: Find all usages of a symbol across the codebase.
+- hover: Get type information and documentation for a symbol.
 
 Example usage:
 - Get all diagnostics: {\"operation\": \"get_diagnostics\"}
-- Get diagnostics for a file: {\"operation\": \"get_diagnostics\", \"file_path\": \"src/main.rs\"}"
+- Get diagnostics for a file: {\"operation\": \"get_diagnostics\", \"file_path\": \"src/main.rs\"}
+- Go to definition: {\"operation\": \"go_to_definition\", \"file_path\": \"src/main.rs\", \"line\": 10, \"column\": 5}
+- Find references: {\"operation\": \"find_references\", \"file_path\": \"src/main.rs\", \"line\": 10, \"column\": 5}
+- Get hover info: {\"operation\": \"hover\", \"file_path\": \"src/main.rs\", \"line\": 10, \"column\": 5}
+
+Note: Line and column numbers are 1-indexed (matching what you see in editors and read_file output)."
     )]
     pub async fn lsp(&self, request: Parameters<LspInput>) -> Result<Json<LspOutput>, String> {
         let Parameters(input) = request;
-        let diagnostics_cache = self.tools.get_lsp_diagnostics().await?;
-        execute_lsp_operation(input.operation, &diagnostics_cache).map(Json)
+        execute_lsp_operation(input.operation, &self.tools)
+            .await
+            .map(Json)
     }
 }
 

@@ -1,7 +1,8 @@
 use super::error::{LspError, Result};
 use lsp_types::{
     DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    InitializeParams, ProgressParams, PublishDiagnosticsParams,
+    GotoDefinitionParams, HoverParams, InitializeParams, ProgressParams, PublishDiagnosticsParams,
+    ReferenceParams,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, to_value};
@@ -184,6 +185,12 @@ pub enum ClientRequest {
     Initialize(i64, InitializeParams),
     /// Shutdown the language server
     Shutdown(i64),
+    /// Go to definition
+    GotoDefinition(i64, GotoDefinitionParams),
+    /// Find references
+    FindReferences(i64, ReferenceParams),
+    /// Hover (get type/documentation info)
+    Hover(i64, HoverParams),
 }
 
 impl ClientRequest {
@@ -192,6 +199,9 @@ impl ClientRequest {
         match self {
             ClientRequest::Initialize(id, _) => *id,
             ClientRequest::Shutdown(id) => *id,
+            ClientRequest::GotoDefinition(id, _) => *id,
+            ClientRequest::FindReferences(id, _) => *id,
+            ClientRequest::Hover(id, _) => *id,
         }
     }
 }
@@ -328,6 +338,21 @@ pub async fn send_request(writer: &mut ChildStdin, request: &ClientRequest) -> R
             (*id, "initialize", to_value(params).unwrap_or(Value::Null))
         }
         ClientRequest::Shutdown(id) => (*id, "shutdown", Value::Null),
+        ClientRequest::GotoDefinition(id, params) => (
+            *id,
+            "textDocument/definition",
+            to_value(params).unwrap_or(Value::Null),
+        ),
+        ClientRequest::FindReferences(id, params) => (
+            *id,
+            "textDocument/references",
+            to_value(params).unwrap_or(Value::Null),
+        ),
+        ClientRequest::Hover(id, params) => (
+            *id,
+            "textDocument/hover",
+            to_value(params).unwrap_or(Value::Null),
+        ),
     };
 
     let json_request = JsonRpcRequest::new(id, method, params);

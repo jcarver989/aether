@@ -1,12 +1,12 @@
 use lsp_types::{
     Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem, Uri,
-    VersionedTextDocumentIdentifier,
+    GotoDefinitionResponse, Hover, Location, TextDocumentContentChangeEvent, TextDocumentIdentifier,
+    TextDocumentItem, Uri, VersionedTextDocumentIdentifier,
 };
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tokio::spawn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -14,8 +14,8 @@ use tokio::task::JoinHandle;
 #[cfg(test)]
 use super::BashOutput;
 use super::lsp::{
-    ClientNotification, LanguageId, NotificationReceiver, NotificationSender, ServerNotification,
-    path_to_uri,
+    ClientNotification, LanguageId, LspClient, NotificationReceiver, NotificationSender,
+    ServerNotification, path_to_uri,
 };
 use super::{
     BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, ListFilesArgs,
@@ -46,7 +46,7 @@ struct DocumentState {
 /// ```ignore
 /// // Wrap DefaultCodingTools with LSP
 /// let (tx, rx, client) = LspClient::spawn("rust-analyzer", &[], &project_path).await?;
-/// let tools = LspAwareCodingTools::new(DefaultCodingTools::new(), tx, rx);
+/// let tools = LspCodingTools::new(DefaultCodingTools::new(), tx, rx, Arc::new(client));
 /// ```
 pub struct LspCodingTools<T: CodingTools> {
     inner: T,
@@ -58,6 +58,9 @@ pub struct LspCodingTools<T: CodingTools> {
     diagnostics_query_tx: mpsc::Sender<DiagnosticsQuery>,
     /// Handle to the notification listener task (kept alive)
     _listener_task: JoinHandle<()>,
+    /// The LSP client for making requests (definition, references, hover)
+    /// None if LSP request features are not available (e.g., in tests)
+    lsp_client: Option<Arc<LspClient>>,
 }
 
 impl<T: CodingTools> Debug for LspCodingTools<T> {
@@ -69,12 +72,22 @@ impl<T: CodingTools> Debug for LspCodingTools<T> {
 }
 
 impl<T: CodingTools> LspCodingTools<T> {
-    /// Create a new LspAwareCodingTools wrapping the given implementation.
+    /// Create a new LspCodingTools wrapping the given implementation.
     ///
-    /// The caller retains ownership of `LspClient` and is responsible for
-    /// calling `client.shutdown()` when done. This struct only needs the
-    /// notification channels.
-    pub fn new(inner: T, lsp_tx: NotificationSender, lsp_rx: NotificationReceiver) -> Self {
+    /// The caller is responsible for calling `client.shutdown()` when done.
+    ///
+    /// # Arguments
+    /// * `inner` - The underlying CodingTools implementation to wrap
+    /// * `lsp_tx` - Channel for sending notifications to the LSP server
+    /// * `lsp_rx` - Channel for receiving notifications from the LSP server
+    /// * `lsp_client` - Optional LSP client for making requests. If None, request operations
+    ///                  (goto_definition, find_references, hover) will return errors.
+    pub fn new(
+        inner: T,
+        lsp_tx: NotificationSender,
+        lsp_rx: NotificationReceiver,
+        lsp_client: Option<Arc<LspClient>>,
+    ) -> Self {
         let (query_tx, query_rx) = mpsc::channel(16);
         Self {
             inner,
@@ -82,6 +95,7 @@ impl<T: CodingTools> LspCodingTools<T> {
             open_documents: Mutex::new(HashMap::new()),
             diagnostics_query_tx: query_tx,
             _listener_task: spawn(run_cache_actor(lsp_rx, query_rx)),
+            lsp_client,
         }
     }
 
@@ -158,6 +172,34 @@ impl<T: CodingTools> LspCodingTools<T> {
             .lsp_tx
             .try_send(ClientNotification::TextDocumentSaved(params));
     }
+
+    /// Ensure a file is open with the LSP before making a request.
+    /// If the file is not already open, reads it and sends didOpen.
+    async fn ensure_file_open_for_request(&self, file_path: &str) -> Result<(), String> {
+        let uri = path_to_uri(Path::new(file_path))
+            .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
+
+        // Check if already open
+        {
+            let docs = self.open_documents.lock().unwrap();
+            if docs.contains_key(&uri) {
+                return Ok(());
+            }
+        }
+
+        // Not open, need to read the file and open it
+        let result = self
+            .inner
+            .read_file(ReadFileArgs {
+                file_path: file_path.to_string(),
+                offset: None,
+                limit: None,
+            })
+            .await?;
+
+        self.ensure_open(file_path, &result.raw_content);
+        Ok(())
+    }
 }
 
 impl<T: CodingTools> CodingTools for LspCodingTools<T> {
@@ -224,6 +266,84 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         }
 
         Ok(response_rx.await.unwrap_or_default())
+    }
+
+    async fn goto_definition(
+        &self,
+        file_path: &str,
+        line: u32,
+        column: u32,
+    ) -> Result<GotoDefinitionResponse, String> {
+        let lsp_client = self
+            .lsp_client
+            .as_ref()
+            .ok_or_else(|| "LSP client not available for requests".to_string())?;
+
+        // Ensure file is open (read it if necessary)
+        self.ensure_file_open_for_request(file_path).await?;
+
+        // Convert to LSP params (1-indexed to 0-indexed)
+        let uri = path_to_uri(Path::new(file_path))
+            .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
+
+        lsp_client
+            .goto_definition(uri, line.saturating_sub(1), column.saturating_sub(1))
+            .await
+            .map_err(|e| format!("LSP goto_definition failed: {}", e))
+    }
+
+    async fn find_references(
+        &self,
+        file_path: &str,
+        line: u32,
+        column: u32,
+        include_declaration: bool,
+    ) -> Result<Vec<Location>, String> {
+        let lsp_client = self
+            .lsp_client
+            .as_ref()
+            .ok_or_else(|| "LSP client not available for requests".to_string())?;
+
+        // Ensure file is open (read it if necessary)
+        self.ensure_file_open_for_request(file_path).await?;
+
+        // Convert to LSP params (1-indexed to 0-indexed)
+        let uri = path_to_uri(Path::new(file_path))
+            .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
+
+        lsp_client
+            .find_references(
+                uri,
+                line.saturating_sub(1),
+                column.saturating_sub(1),
+                include_declaration,
+            )
+            .await
+            .map_err(|e| format!("LSP find_references failed: {}", e))
+    }
+
+    async fn hover(
+        &self,
+        file_path: &str,
+        line: u32,
+        column: u32,
+    ) -> Result<Option<Hover>, String> {
+        let lsp_client = self
+            .lsp_client
+            .as_ref()
+            .ok_or_else(|| "LSP client not available for requests".to_string())?;
+
+        // Ensure file is open (read it if necessary)
+        self.ensure_file_open_for_request(file_path).await?;
+
+        // Convert to LSP params (1-indexed to 0-indexed)
+        let uri = path_to_uri(Path::new(file_path))
+            .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
+
+        lsp_client
+            .hover(uri, line.saturating_sub(1), column.saturating_sub(1))
+            .await
+            .map_err(|e| format!("LSP hover failed: {}", e))
     }
 }
 
@@ -356,7 +476,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("file content", "");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx);
+        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
 
         // First read should send didOpen
         let _ = tools
@@ -394,7 +514,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("", "");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx);
+        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
 
         // Write to a file that hasn't been read (opened) yet
         let _ = tools
@@ -426,7 +546,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("original content", "");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx);
+        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
 
         // First read the file (opens it)
         let _ = tools
@@ -470,7 +590,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("original content", "edited content");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx);
+        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
 
         // First read the file (opens it)
         let _ = tools
@@ -516,7 +636,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("content", "edited");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx);
+        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
 
         // Read file (version 1)
         let _ = tools
