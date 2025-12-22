@@ -15,27 +15,35 @@
 //! # Example
 //!
 //! ```ignore
-//! use mcp_lexicon::coding::lsp::LspClient;
+//! use mcp_lexicon::coding::lsp::{LspClient, ClientNotification, ServerNotification};
+//! use lsp_types::DidOpenTextDocumentParams;
 //! use std::path::Path;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     // Spawn rust-analyzer
-//!     let mut client = LspClient::spawn("rust-analyzer", &[])?;
+//!     // Spawn rust-analyzer and get notification channels
+//!     let (tx, mut rx, mut client) = LspClient::spawn("rust-analyzer", &[]).await?;
 //!
 //!     // Initialize with project root
 //!     let root = Path::new("/path/to/rust/project");
 //!     client.initialize(root).await?;
 //!
-//!     // Open a file and wait for diagnostics
-//!     let uri = lsp_types::Url::from_file_path(root.join("src/main.rs")).unwrap();
-//!     let content = std::fs::read_to_string(root.join("src/main.rs"))?;
-//!     client.did_open(uri, "rust", content)?;
+//!     // Open a file via the notification sender
+//!     tx.send(ClientNotification::TextDocumentOpened(DidOpenTextDocumentParams {
+//!         text_document: lsp_types::TextDocumentItem {
+//!             uri: lsp_types::Url::from_file_path(root.join("src/main.rs")).unwrap(),
+//!             language_id: "rust".into(),
+//!             version: 1,
+//!             text: std::fs::read_to_string(root.join("src/main.rs"))?,
+//!         },
+//!     })).await?;
 //!
-//!     // Wait for diagnostics
-//!     while let Some(diag) = client.recv_diagnostics().await {
-//!         for d in &diag.diagnostics {
-//!             println!("{}: {}", d.severity.unwrap_or(lsp_types::DiagnosticSeverity::ERROR), d.message);
+//!     // Receive diagnostics from the notification receiver
+//!     while let Some(notif) = rx.recv().await {
+//!         if let ServerNotification::Diagnostics(diag) = notif {
+//!             for d in &diag.diagnostics {
+//!                 println!("{:?}: {}", d.severity, d.message);
+//!             }
 //!         }
 //!     }
 //!
@@ -50,7 +58,11 @@ pub mod diagnostics;
 pub mod error;
 pub mod transport;
 
-pub use client::{DiagnosticsCache, LspClient, LspNotification, path_to_uri};
+pub use client::{
+    DiagnosticsCache, LspClient, NotificationReceiver, NotificationSender, ServerNotification,
+    path_to_uri,
+};
+pub use transport::ClientNotification;
 pub use diagnostics::{
     DiagnosticCounts, FormattedDiagnostic, Severity, count_by_severity, filter_by_severity,
     format_diagnostics,
