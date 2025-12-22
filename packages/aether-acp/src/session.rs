@@ -3,16 +3,20 @@ use aether::llm::provider::StreamingModelProvider;
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
-use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt};
-use std::sync::Arc;
+use mcp_lexicon::coding::lsp::LspClient;
+use mcp_lexicon::{CodingMcp, DefaultCodingTools, LspAwareCodingTools, PluginsMcp, ServiceExt};
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::acp_actor::AcpActorHandle;
 use crate::acp_coding_tools::AcpCodingTools;
 use crate::mappers::map_mcp_prompt_to_available_command;
+
+/// LSP channels wrapped for single-use in factory closures
+type LspChannels = Arc<Mutex<Option<(mcp_lexicon::coding::lsp::NotificationSender, mcp_lexicon::coding::lsp::NotificationReceiver)>>>;
 
 /// Represents an active Aether agent session
 pub struct Session {
@@ -23,6 +27,8 @@ pub struct Session {
     pub _mcp_handle: JoinHandle<()>,
     pub cancel_flag: Arc<AtomicBool>,
     pub mcp_tx: mpsc::Sender<McpCommand>,
+    /// LSP client kept alive for the session duration
+    _lsp_client: Option<LspClient>,
 }
 
 impl Session {
@@ -37,19 +43,39 @@ impl Session {
         debug!("Creating new session: {}", id);
         debug!("Loading MCP configuration from: {:?}", mcp_config_path);
 
+        // Spawn LSP client for diagnostics support
+        // Use current working directory as the project root
+        let project_path = std::env::current_dir().unwrap_or_default();
+        let (lsp_client, lsp_channels): (Option<LspClient>, LspChannels) =
+            match LspClient::spawn("rust-analyzer", &[], &project_path).await {
+                Ok((tx, rx, client)) => {
+                    debug!("LSP client spawned successfully for: {:?}", project_path);
+                    (Some(client), Arc::new(Mutex::new(Some((tx, rx)))))
+                }
+                Err(e) => {
+                    warn!("Failed to spawn LSP client (diagnostics will be unavailable): {}", e);
+                    (None, Arc::new(Mutex::new(None)))
+                }
+            };
+
         // Register the coding and slash-commands server factories
         let config_str = mcp_config_path.to_str().ok_or("Invalid MCP config path")?;
 
         let (tools, mcp_tx, mcp_handle) = if let Some((actor_handle, session_id)) = acp_info {
-            // Use ACP-enabled CodingMcp
+            // Use ACP-enabled CodingMcp, optionally with LSP wrapper
             debug!("Creating ACP-enabled CodingMcp and PluginsMcp");
+            let lsp_channels_clone = lsp_channels.clone();
 
             mcp()
                 .register_in_memory_server(
                     "coding",
                     Box::new(move |_args| {
-                        let tools = AcpCodingTools::new(actor_handle.clone(), session_id.clone());
-                        CodingMcp::with_tools(tools).into_dyn()
+                        let inner = AcpCodingTools::new(actor_handle.clone(), session_id.clone());
+                        if let Some((tx, rx)) = lsp_channels_clone.lock().unwrap().take() {
+                            CodingMcp::with_tools(LspAwareCodingTools::new(inner, tx, rx)).into_dyn()
+                        } else {
+                            CodingMcp::with_tools(inner).into_dyn()
+                        }
                     }),
                 )
                 .register_in_memory_server(
@@ -64,10 +90,22 @@ impl Session {
                 .spawn()
                 .await?
         } else {
-            // Use default (local filesystem) CodingMcp
+            // Use default (local filesystem) CodingMcp, optionally with LSP wrapper
             debug!("Creating default CodingMcp and PluginsMcp");
+            let lsp_channels_clone = lsp_channels.clone();
+
             mcp()
-                .register_in_memory_server("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
+                .register_in_memory_server(
+                    "coding",
+                    Box::new(move |_args| {
+                        let inner = DefaultCodingTools::new();
+                        if let Some((tx, rx)) = lsp_channels_clone.lock().unwrap().take() {
+                            CodingMcp::with_tools(LspAwareCodingTools::new(inner, tx, rx)).into_dyn()
+                        } else {
+                            CodingMcp::with_tools(inner).into_dyn()
+                        }
+                    }),
+                )
                 .register_in_memory_server(
                     "plugins",
                     Box::new(|args| {
@@ -106,6 +144,7 @@ impl Session {
             _mcp_handle: mcp_handle,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             mcp_tx,
+            _lsp_client: lsp_client,
         })
     }
 

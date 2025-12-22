@@ -1,9 +1,9 @@
-//! Example: Connect to rust-analyzer and get diagnostics using DefaultCodingTools
+//! Example: Connect to rust-analyzer and get diagnostics using LspAwareCodingTools
 //!
 //! This example demonstrates how to:
 //! 1. Spawn rust-analyzer for a Rust project
-//! 2. Use DefaultCodingTools to read files (which notifies the LSP)
-//! 3. Use DefaultCodingTools to write files (which notifies the LSP of changes)
+//! 2. Wrap DefaultCodingTools with LspAwareCodingTools for LSP integration
+//! 3. Read/write files (which automatically notifies the LSP)
 //! 4. Query diagnostics through the tools abstraction
 //!
 //! Usage:
@@ -21,7 +21,9 @@ use lsp_types::{Diagnostic, Uri};
 use mcp_lexicon::coding::lsp::{
     FormattedDiagnostic, LspClient, count_by_severity, path_to_uri,
 };
-use mcp_lexicon::coding::{CodingTools, DefaultCodingTools, ReadFileArgs, WriteFileArgs};
+use mcp_lexicon::coding::{
+    CodingTools, DefaultCodingTools, LspAwareCodingTools, ReadFileArgs, WriteFileArgs,
+};
 use tokio::time::sleep;
 
 #[tokio::main]
@@ -52,9 +54,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Language server initialized.");
 
-    // Create DefaultCodingTools with LSP integration
+    // Create LspAwareCodingTools wrapping DefaultCodingTools
     // The LSP client internally buffers notifications until indexing completes
-    let tools = DefaultCodingTools::new().with_lsp(tx, rx);
+    let tools = LspAwareCodingTools::new(DefaultCodingTools::new(), tx, rx);
 
     // Find target file
     let lib_rs = project_path.join("src/lib.rs");
@@ -131,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Wait for diagnostics by polling until the cache has an entry for our file
-async fn wait_for_diagnostics(tools: &DefaultCodingTools, target_uri: &Uri) -> Vec<Diagnostic> {
+async fn wait_for_diagnostics<T: CodingTools>(tools: &T, target_uri: &Uri) -> Vec<Diagnostic> {
     loop {
         sleep(Duration::from_millis(500)).await;
 
