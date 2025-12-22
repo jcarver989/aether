@@ -1,57 +1,52 @@
-//! LSP client for communicating with language servers
-//!
-//! This module provides `LspClient`, which manages the lifecycle of a language server
-//! process and handles JSON-RPC communication over stdio.
-
-use std::collections::{HashMap, HashSet};
+use super::error::{LspError, Result};
+use super::transport::{
+    ClientNotification, JsonRpcNotification, JsonRpcRequest, ParsedMessage, ParsedNotification,
+    read_message, write_notification, write_request,
+};
+use lsp_types::{
+    ClientCapabilities, Diagnostic, GeneralClientCapabilities, InitializeParams, InitializeResult,
+    ProgressParams, PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams,
+    TextDocumentClientCapabilities, Uri, WindowClientCapabilities,
+};
+use serde_json::{from_value, to_value, Value};
+use std::collections::HashMap;
 use std::path::Path;
-use std::process::Stdio;
+use std::process::{Stdio, id};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
-
-use lsp_types::{
-    ClientCapabilities, Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
-    DidSaveTextDocumentParams, GeneralClientCapabilities, InitializeParams, InitializeResult,
-    InitializedParams, NumberOrString, ProgressParams, ProgressParamsValue,
-    PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, TextDocumentClientCapabilities,
-    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem, Uri,
-    VersionedTextDocumentIdentifier, WindowClientCapabilities, WorkDoneProgress,
-};
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 use tokio::io::BufReader;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::spawn;
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use super::error::{LspError, Result};
-use super::transport::{
-    JsonRpcNotification, JsonRpcRequest, read_message, write_notification, write_request,
-};
-
-/// Notifications received from the LSP server
+/// Notifications sent from server to client
 #[derive(Debug, Clone)]
-pub enum LspNotification {
+pub enum ServerNotification {
     /// Diagnostics published for a document (errors, warnings, etc.)
     Diagnostics(PublishDiagnosticsParams),
     /// Progress updates (indexing, loading workspace, etc.)
     Progress(ProgressParams),
 }
 
-/// Commands sent to the handler task
-enum LspCommand {
-    SendRequest {
+/// Requests sent from client to server (expects a response)
+enum Request {
+    Initialize {
         id: i64,
-        method: String,
-        params: Value,
-        response_tx: oneshot::Sender<Result<Value>>,
+        params: InitializeParams,
+        response_tx: oneshot::Sender<Result<InitializeResult>>,
     },
-    SendNotification {
-        method: String,
-        params: Value,
+    Shutdown {
+        id: i64,
+        response_tx: oneshot::Sender<Result<()>>,
     },
+}
+
+/// Pending response channels, keyed by request ID
+enum PendingResponse {
+    Initialize(oneshot::Sender<Result<InitializeResult>>),
+    Shutdown(oneshot::Sender<Result<()>>),
 }
 
 /// Shared diagnostics cache that can be accessed from both the handler and client
@@ -62,17 +57,18 @@ pub type DiagnosticsCache = Arc<RwLock<HashMap<Uri, Vec<Diagnostic>>>>;
 /// The client handles:
 /// - Spawning and managing the server process
 /// - JSON-RPC request/response correlation
-/// - Notification dispatch (e.g., diagnostics)
 /// - LSP lifecycle (initialize, initialized, shutdown)
 /// - Caching latest diagnostics per file
+///
+/// Use the notification channels returned from `spawn()` for sending/receiving notifications.
 #[derive(Debug)]
 pub struct LspClient {
     /// Counter for generating unique request IDs
     request_id: AtomicI64,
-    /// Channel to send commands to the handler task
-    command_tx: mpsc::Sender<LspCommand>,
-    /// Channel to receive notifications (diagnostics, progress, etc.)
-    notification_rx: mpsc::Receiver<LspNotification>,
+    /// Channel to send requests to the handler task
+    request_tx: Sender<Request>,
+    /// Channel to send notifications (internal clone)
+    notification_tx: Sender<ClientNotification>,
     /// Whether the client has been initialized
     initialized: bool,
     /// Handle to the handler task
@@ -81,8 +77,18 @@ pub struct LspClient {
     diagnostics_cache: DiagnosticsCache,
 }
 
+/// Sender for client-to-server notifications
+pub type NotificationSender = Sender<ClientNotification>;
+/// Receiver for server-to-client notifications
+pub type NotificationReceiver = Receiver<ServerNotification>;
+
 impl LspClient {
     /// Spawn a new language server process
+    ///
+    /// Returns a tuple of:
+    /// - `NotificationSender`: Send notifications to the server (didOpen, didChange, etc.)
+    /// - `NotificationReceiver`: Receive notifications from the server (diagnostics, progress)
+    /// - `LspClient`: Handle for requests and accessing the diagnostics cache
     ///
     /// # Arguments
     /// * `command` - The command to run (e.g., "rust-analyzer")
@@ -90,9 +96,14 @@ impl LspClient {
     ///
     /// # Example
     /// ```ignore
-    /// let client = LspClient::spawn("rust-analyzer", &[]).await?;
+    /// let (tx, rx, client) = LspClient::spawn("rust-analyzer", &[]).await?;
+    /// client.initialize(&root_path).await?;
+    /// tx.send(ClientNotification::TextDocumentOpened(params)).await?;
     /// ```
-    pub async fn spawn(command: &str, args: &[&str]) -> Result<Self> {
+    pub async fn spawn(
+        command: &str,
+        args: &[&str],
+    ) -> Result<(NotificationSender, NotificationReceiver, Self)> {
         let mut process = Command::new(command)
             .args(args)
             .stdin(Stdio::piped())
@@ -110,27 +121,31 @@ impl LspClient {
             .take()
             .ok_or_else(|| LspError::Transport("Failed to capture stdout".into()))?;
 
-        let (command_tx, command_rx) = mpsc::channel(100);
-        let (notification_tx, notification_rx) = mpsc::channel(200);
+        let (request_tx, request_rx) = channel(100);
+        let (client_notif_tx, client_notif_rx) = channel(100);
+        let (server_notif_tx, server_notif_rx) = channel(200);
         let diagnostics_cache: DiagnosticsCache = Arc::new(RwLock::new(HashMap::new()));
 
-        let task_handle = tokio::spawn(run_handler(
-            command_rx,
+        let task_handle = spawn(run_handler(
+            process,
             stdin,
             stdout,
-            notification_tx,
-            process,
+            request_rx,
+            client_notif_rx,
+            server_notif_tx,
             diagnostics_cache.clone(),
         ));
 
-        Ok(Self {
+        let client = Self {
             request_id: AtomicI64::new(1),
-            command_tx,
-            notification_rx,
+            request_tx,
+            notification_tx: client_notif_tx.clone(),
             initialized: false,
             _task_handle: task_handle,
             diagnostics_cache,
-        })
+        };
+
+        Ok((client_notif_tx, server_notif_rx, client))
     }
 
     /// Initialize the language server
@@ -142,163 +157,62 @@ impl LspClient {
     /// * `root_path` - The root directory of the project
     pub async fn initialize(&mut self, root_path: &Path) -> Result<InitializeResult> {
         let root_uri = path_to_uri(root_path)?;
-
-        let params = InitializeParams {
-            process_id: Some(std::process::id()),
-            #[allow(deprecated)]
-            root_uri: Some(root_uri.clone()),
-            capabilities: ClientCapabilities {
-                general: Some(GeneralClientCapabilities {
-                    ..Default::default()
-                }),
-                window: Some(WindowClientCapabilities {
-                    work_done_progress: Some(true),
-                    ..Default::default()
-                }),
-                text_document: Some(TextDocumentClientCapabilities {
-                    publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
-                        related_information: Some(true),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
+        let general_capabilities = GeneralClientCapabilities {
             ..Default::default()
         };
 
-        let result: InitializeResult = self.send_request("initialize", params).await?;
+        let window_capabilities = WindowClientCapabilities {
+            work_done_progress: Some(true),
+            ..Default::default()
+        };
 
-        // Send initialized notification
-        self.send_notification("initialized", InitializedParams {})?;
+        let pub_diagnostic_capabilities = PublishDiagnosticsClientCapabilities {
+            related_information: Some(true),
+            ..Default::default()
+        };
+
+        let text_document_capabilities = TextDocumentClientCapabilities {
+            publish_diagnostics: Some(pub_diagnostic_capabilities),
+            ..Default::default()
+        };
+
+        let capabilities = ClientCapabilities {
+            general: Some(general_capabilities),
+            window: Some(window_capabilities),
+            text_document: Some(text_document_capabilities),
+            ..Default::default()
+        };
+
+        let params = InitializeParams {
+            process_id: Some(id()),
+            #[allow(deprecated)]
+            root_uri: Some(root_uri.clone()),
+            capabilities,
+            ..Default::default()
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::Initialize {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+
+        let result = response_rx
+            .await
+            .map_err(|_| LspError::Transport("Response channel closed".into()))??;
+
+        self.notification_tx
+            .try_send(ClientNotification::Initialized)
+            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
         self.initialized = true;
 
         Ok(result)
-    }
-
-    /// Open a text document in the language server
-    ///
-    /// This notifies the server about a new file being opened for editing.
-    ///
-    /// # Arguments
-    /// * `uri` - The file URI
-    /// * `language_id` - The language identifier (e.g., "rust", "python")
-    /// * `text` - The file contents
-    pub fn did_open(&self, uri: Uri, language_id: &str, text: String) -> Result<()> {
-        let params = DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri,
-                language_id: language_id.to_string(),
-                version: 1,
-                text,
-            },
-        };
-        self.send_notification("textDocument/didOpen", params)
-    }
-
-    /// Notify the server that a document has changed
-    ///
-    /// This sends the full new content of the file (full sync mode).
-    ///
-    /// # Arguments
-    /// * `uri` - The file URI
-    /// * `version` - The new document version (should be incremented each change)
-    /// * `text` - The new file contents
-    pub fn did_change(&self, uri: Uri, version: i32, text: String) -> Result<()> {
-        let params = DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier { uri, version },
-            content_changes: vec![TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text,
-            }],
-        };
-        self.send_notification("textDocument/didChange", params)
-    }
-
-    /// Notify the server that a document was saved
-    ///
-    /// # Arguments
-    /// * `uri` - The file URI
-    pub fn did_save(&self, uri: Uri) -> Result<()> {
-        let params = DidSaveTextDocumentParams {
-            text_document: TextDocumentIdentifier { uri },
-            text: None,
-        };
-        self.send_notification("textDocument/didSave", params)
-    }
-
-    /// Receive the next notification from the server
-    ///
-    /// Returns the next [`LspNotification`] received from the server.
-    /// Returns `None` if the channel is closed.
-    pub async fn recv_notification(&mut self) -> Option<LspNotification> {
-        self.notification_rx.recv().await
-    }
-
-    /// Try to receive a notification without blocking
-    ///
-    /// Returns `Some(notification)` if available, `None` otherwise.
-    pub fn try_recv_notification(&mut self) -> Option<LspNotification> {
-        self.notification_rx.try_recv().ok()
-    }
-
-    /// Drain all pending notifications
-    ///
-    /// Returns all notifications that have been received but not yet consumed.
-    pub fn drain_notifications(&mut self) -> Vec<LspNotification> {
-        let mut notifications = Vec::new();
-        while let Some(notification) = self.try_recv_notification() {
-            notifications.push(notification);
-        }
-        notifications
-    }
-
-    /// Wait for the server to finish indexing/loading the workspace
-    ///
-    /// This waits for all in-progress work to complete by tracking $/progress notifications.
-    /// Returns when no progress tokens have active work.
-    ///
-    /// Note: Non-progress notifications (like diagnostics) received during this wait are discarded.
-    pub async fn wait_for_indexing(&mut self) {
-        let mut active_tokens: HashSet<String> = HashSet::new();
-
-        loop {
-            match tokio::time::timeout(
-                Duration::from_millis(500),
-                self.recv_notification(),
-            )
-            .await
-            {
-                Ok(Some(LspNotification::Progress(progress))) => {
-                    let token = match progress.token {
-                        NumberOrString::Number(n) => n.to_string(),
-                        NumberOrString::String(s) => s,
-                    };
-                    let ProgressParamsValue::WorkDone(work_done) = progress.value;
-
-                    match work_done {
-                        WorkDoneProgress::Begin(_) => {
-                            active_tokens.insert(token);
-                        }
-                        WorkDoneProgress::End(_) => {
-                            active_tokens.remove(&token);
-                        }
-                        WorkDoneProgress::Report(_) => {}
-                    }
-                }
-                Ok(Some(_)) => {
-                    // Ignore non-progress notifications during indexing wait
-                }
-                Ok(None) => break, // Channel closed
-                Err(_) => {
-                    // Timeout - if no active tokens, we're done
-                    if active_tokens.is_empty() {
-                        break;
-                    }
-                }
-            }
-        }
     }
 
     /// Shutdown the language server gracefully
@@ -306,12 +220,21 @@ impl LspClient {
     /// This sends the `shutdown` request followed by the `exit` notification,
     /// then waits for the process to terminate.
     pub async fn shutdown(&mut self) -> Result<()> {
-        // Send shutdown request
-        let _: Value = self.send_request("shutdown", ()).await?;
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
 
-        // Send exit notification
-        self.send_notification("exit", ())?;
+        self.request_tx
+            .send(Request::Shutdown { id, response_tx })
+            .await
+            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
 
+        response_rx
+            .await
+            .map_err(|_| LspError::Transport("Response channel closed".into()))??;
+
+        self.notification_tx
+            .try_send(ClientNotification::Exit)
+            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
         Ok(())
     }
 
@@ -347,42 +270,6 @@ impl LspClient {
         self.diagnostics_cache.write().unwrap().remove(uri);
     }
 
-    /// Send a request and wait for the response
-    pub async fn send_request<P: Serialize, R: DeserializeOwned>(
-        &self,
-        method: &str,
-        params: P,
-    ) -> Result<R> {
-        let id = self.next_request_id();
-        let (response_tx, response_rx) = oneshot::channel();
-
-        self.command_tx
-            .send(LspCommand::SendRequest {
-                id,
-                method: method.to_string(),
-                params: serde_json::to_value(&params)?,
-                response_tx,
-            })
-            .await
-            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
-
-        let result = response_rx
-            .await
-            .map_err(|_| LspError::Transport("Response channel closed".into()))??;
-
-        serde_json::from_value(result).map_err(LspError::from)
-    }
-
-    /// Send a notification (no response expected)
-    fn send_notification<P: Serialize>(&self, method: &str, params: P) -> Result<()> {
-        self.command_tx
-            .try_send(LspCommand::SendNotification {
-                method: method.to_string(),
-                params: serde_json::to_value(&params)?,
-            })
-            .map_err(|_| LspError::Transport("Handler task closed".into()))
-    }
-
     /// Generate the next unique request ID
     fn next_request_id(&self) -> i64 {
         self.request_id.fetch_add(1, Ordering::SeqCst)
@@ -391,57 +278,73 @@ impl LspClient {
 
 /// The handler task that owns stdin, stdout, and the pending requests map
 async fn run_handler(
-    mut command_rx: mpsc::Receiver<LspCommand>,
+    mut process: Child,
     mut stdin: ChildStdin,
     stdout: ChildStdout,
-    notification_tx: mpsc::Sender<LspNotification>,
-    mut process: Child,
+    mut request_rx: Receiver<Request>,
+    mut notification_rx: Receiver<ClientNotification>,
+    server_notif_tx: Sender<ServerNotification>,
     diagnostics_cache: DiagnosticsCache,
 ) {
     let mut reader = BufReader::new(stdout);
-    let mut pending: HashMap<i64, oneshot::Sender<Result<Value>>> = HashMap::new();
+    let mut pending: HashMap<i64, PendingResponse> = HashMap::new();
 
     loop {
         tokio::select! {
-            // Handle outgoing commands
-            Some(cmd) = command_rx.recv() => {
-                match cmd {
-                    LspCommand::SendRequest { id, method, params, response_tx } => {
-                        pending.insert(id, response_tx);
-                        let request = JsonRpcRequest::new(id, &method, params);
-                        if let Err(e) = write_request(&mut stdin, &request).await {
-                            // If write fails, notify the caller
-                            if let Some(tx) = pending.remove(&id) {
-                                let _ = tx.send(Err(e));
-                            }
-                        }
-                    }
-                    LspCommand::SendNotification { method, params } => {
-                        let notification = JsonRpcNotification::new(&method, params);
-                        let _ = write_notification(&mut stdin, &notification).await;
+            // Send req to LSP
+            Some(req) = request_rx.recv() => {
+                let (id, method, params, pending_response) = match req {
+                    Request::Initialize { id, params, response_tx } => (
+                        id,
+                        "initialize",
+                        to_value(&params).unwrap_or(Value::Null),
+                        PendingResponse::Initialize(response_tx),
+                    ),
+                    Request::Shutdown { id, response_tx } => (
+                        id,
+                        "shutdown",
+                        Value::Null,
+                        PendingResponse::Shutdown(response_tx),
+                    ),
+                };
+
+                pending.insert(id, pending_response);
+                let request = JsonRpcRequest::new(id, method, params);
+                if let Err(e) = write_request(&mut stdin, &request).await {
+                    if let Some(p) = pending.remove(&id) {
+                        send_error(p, e);
                     }
                 }
             }
 
-            // Handle incoming LSP messages
+            // Send notification to LSP
+            Some(notif) = notification_rx.recv() => {
+                let (method, params) = notif.to_json_rpc();
+                let notification = JsonRpcNotification::new(method, params);
+                let _ = write_notification(&mut stdin, &notification).await;
+            }
+
+            // Handle message from LSP
             msg = read_message(&mut reader) => {
                 match msg {
-                    Ok(msg) if msg.is_response() => {
-                        if let Some(tx) = msg.id.and_then(|id| pending.remove(&id)) {
-                            let result = msg.error.map_or_else(
-                                || Ok(msg.result.unwrap_or(Value::Null)),
-                                |e| Err(LspError::ServerError { code: e.code, message: e.message }),
-                            );
-                            let _ = tx.send(result);
+                    Ok(raw_msg) => match raw_msg.parse() {
+                        Some(ParsedMessage::Response(resp)) => {
+                            if let Some(pending_response) = pending.remove(&resp.id) {
+                                if let Some(e) = resp.error {
+                                    let err = LspError::ServerError { code: e.code, message: e.message };
+                                    send_error(pending_response, err);
+                                } else {
+                                    let result = resp.result.unwrap_or(Value::Null);
+                                    send_response(pending_response, result);
+                                }
+                            }
                         }
-                    }
-                    Ok(msg) if msg.is_notification() => {
-                        let method = msg.method.as_deref().unwrap_or("");
-                        let params = msg.params.unwrap_or(Value::Null);
-                        route_notification(method, params, &notification_tx, &diagnostics_cache);
-                    }
-                    Ok(_) => {
-                        // Unknown message type, ignore
+                        Some(ParsedMessage::Notification(notif)) => {
+                            handle_server_notification(notif, &server_notif_tx, &diagnostics_cache);
+                        }
+                        None => {
+                            // Unknown message type (e.g., server request), ignore
+                        }
                     }
                     Err(LspError::Transport(ref s)) if s.contains("closed") => {
                         // Server closed connection, exit
@@ -461,35 +364,55 @@ async fn run_handler(
     }
 
     // Notify any remaining pending requests that the handler is closing
-    for (_, tx) in pending {
-        let _ = tx.send(Err(LspError::Transport("Handler task closed".into())));
+    for (_, p) in pending {
+        send_error(p, LspError::Transport("Handler task closed".into()));
     }
 }
 
-/// Route a notification to the appropriate channel and update caches
-fn route_notification(
-    method: &str,
-    params: Value,
-    notification_tx: &mpsc::Sender<LspNotification>,
+/// Send a successful response to the appropriate typed channel
+fn send_response(pending: PendingResponse, value: Value) {
+    match pending {
+        PendingResponse::Initialize(tx) => {
+            let result = from_value(value).map_err(LspError::from);
+            let _ = tx.send(result);
+        }
+        PendingResponse::Shutdown(tx) => {
+            let _ = tx.send(Ok(()));
+        }
+    }
+}
+
+/// Send an error to the appropriate typed channel
+fn send_error(pending: PendingResponse, err: LspError) {
+    match pending {
+        PendingResponse::Initialize(tx) => {
+            let _ = tx.send(Err(err));
+        }
+        PendingResponse::Shutdown(tx) => {
+            let _ = tx.send(Err(err));
+        }
+    }
+}
+
+/// Handle a typed server notification, updating caches and forwarding to channels
+fn handle_server_notification(
+    notification: ParsedNotification,
+    notification_tx: &mpsc::Sender<ServerNotification>,
     diagnostics_cache: &DiagnosticsCache,
 ) {
-    match method {
-        "textDocument/publishDiagnostics" => {
-            if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params) {
-                // Update the diagnostics cache with latest diagnostics for this URI
-                {
-                    let mut cache = diagnostics_cache.write().unwrap();
-                    cache.insert(diag_params.uri.clone(), diag_params.diagnostics.clone());
-                }
-                let _ = notification_tx.try_send(LspNotification::Diagnostics(diag_params));
+    match notification {
+        ParsedNotification::Diagnostics(params) => {
+            // Update the diagnostics cache with latest diagnostics for this URI
+            {
+                let mut cache = diagnostics_cache.write().unwrap();
+                cache.insert(params.uri.clone(), params.diagnostics.clone());
             }
+            let _ = notification_tx.try_send(ServerNotification::Diagnostics(params));
         }
-        "$/progress" => {
-            if let Ok(progress_params) = serde_json::from_value::<ProgressParams>(params) {
-                let _ = notification_tx.try_send(LspNotification::Progress(progress_params));
-            }
+        ParsedNotification::Progress(params) => {
+            let _ = notification_tx.try_send(ServerNotification::Progress(params));
         }
-        _ => {
+        ParsedNotification::Unknown(_method) => {
             // Unknown notification, ignore
         }
     }
