@@ -23,40 +23,47 @@ pub enum LspOperation {
         /// Optional: filter to specific file path. If not provided, returns all diagnostics.
         file_path: Option<String>,
     },
-    /// Go to the definition of a symbol at a position
+    /// Go to the definition of a symbol
     GoToDefinition {
         /// The file path containing the symbol
         file_path: String,
-        /// Line number (1-indexed, as shown in editors)
-        line: u32,
-        /// Column number (1-indexed, as shown in editors)
-        column: u32,
+        /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
+        symbol: String,
+        /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
+        line: String,
     },
-    /// Find all references to a symbol at a position
+    /// Find all references to a symbol
     FindReferences {
         /// The file path containing the symbol
         file_path: String,
-        /// Line number (1-indexed, as shown in editors)
-        line: u32,
-        /// Column number (1-indexed, as shown in editors)
-        column: u32,
+        /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
+        symbol: String,
+        /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
+        line: String,
         /// Whether to include the declaration in the results (default: true)
         #[serde(default = "default_include_declaration")]
         include_declaration: bool,
     },
-    /// Get hover information (type, documentation) for a symbol at a position
+    /// Get hover information (type, documentation) for a symbol
     Hover {
         /// The file path containing the symbol
         file_path: String,
-        /// Line number (1-indexed, as shown in editors)
-        line: u32,
-        /// Column number (1-indexed, as shown in editors)
-        column: u32,
+        /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
+        symbol: String,
+        /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
+        line: String,
     },
 }
 
 fn default_include_declaration() -> bool {
     true
+}
+
+/// Parse a line number string to u32
+fn parse_line(s: &str) -> Result<u32, String> {
+    s.trim()
+        .parse()
+        .map_err(|_| format!("Invalid line number: {}", s))
 }
 
 /// Input for the LSP tool
@@ -239,21 +246,23 @@ pub async fn execute_lsp_operation<T: CodingTools>(
         }
         LspOperation::GoToDefinition {
             file_path,
+            symbol,
             line,
-            column,
         } => {
-            let response = tools.goto_definition(&file_path, line, column).await?;
+            let line = parse_line(&line)?;
+            let response = tools.goto_definition(&file_path, &symbol, line).await?;
             let locations = definition_response_to_locations(response);
             Ok(LspOutput::GoToDefinition(GoToDefinitionOutput { locations }))
         }
         LspOperation::FindReferences {
             file_path,
+            symbol,
             line,
-            column,
             include_declaration,
         } => {
+            let line = parse_line(&line)?;
             let lsp_locations = tools
-                .find_references(&file_path, line, column, include_declaration)
+                .find_references(&file_path, &symbol, line, include_declaration)
                 .await?;
             let references: Vec<LocationResult> = lsp_locations
                 .iter()
@@ -267,10 +276,11 @@ pub async fn execute_lsp_operation<T: CodingTools>(
         }
         LspOperation::Hover {
             file_path,
+            symbol,
             line,
-            column,
         } => {
-            let hover = tools.hover(&file_path, line, column).await?;
+            let line = parse_line(&line)?;
+            let hover = tools.hover(&file_path, &symbol, line).await?;
             let output = match hover {
                 Some(h) => {
                     let contents = hover_contents_to_string(&h);

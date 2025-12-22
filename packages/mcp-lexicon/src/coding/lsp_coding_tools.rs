@@ -39,14 +39,19 @@ struct DocumentState {
 /// A wrapper that adds LSP integration to any CodingTools implementation.
 ///
 /// This wrapper intercepts file operations and notifies the language server,
-/// enabling diagnostics (errors, warnings) to be tracked for the agent.
+/// enabling diagnostics (errors, warnings) and code intelligence (goto definition,
+/// find references, hover) to be available to the agent.
 ///
 /// # Usage
 ///
 /// ```ignore
-/// // Wrap DefaultCodingTools with LSP
-/// let (tx, rx, client) = LspClient::spawn("rust-analyzer", &[], &project_path).await?;
-/// let tools = LspCodingTools::new(DefaultCodingTools::new(), tx, rx, Arc::new(client));
+/// // Spawn LSP-enabled coding tools for a Rust project
+/// let tools = LspCodingTools::spawn(
+///     DefaultCodingTools::new(),
+///     "rust-analyzer",
+///     &[],
+///     &project_path,
+/// ).await?;
 /// ```
 pub struct LspCodingTools<T: CodingTools> {
     inner: T,
@@ -59,43 +64,73 @@ pub struct LspCodingTools<T: CodingTools> {
     /// Handle to the notification listener task (kept alive)
     _listener_task: JoinHandle<()>,
     /// The LSP client for making requests (definition, references, hover)
-    /// None if LSP request features are not available (e.g., in tests)
-    lsp_client: Option<Arc<LspClient>>,
+    lsp_client: Arc<LspClient>,
 }
 
 impl<T: CodingTools> Debug for LspCodingTools<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LspAwareCodingTools")
+        f.debug_struct("LspCodingTools")
             .field("inner", &self.inner)
             .finish()
     }
 }
 
 impl<T: CodingTools> LspCodingTools<T> {
-    /// Create a new LspCodingTools wrapping the given implementation.
-    ///
-    /// The caller is responsible for calling `client.shutdown()` when done.
+    /// Spawn an LSP server and wrap the given CodingTools implementation with LSP integration.
     ///
     /// # Arguments
     /// * `inner` - The underlying CodingTools implementation to wrap
-    /// * `lsp_tx` - Channel for sending notifications to the LSP server
-    /// * `lsp_rx` - Channel for receiving notifications from the LSP server
-    /// * `lsp_client` - Optional LSP client for making requests. If None, request operations
-    ///                  (goto_definition, find_references, hover) will return errors.
-    pub fn new(
+    /// * `command` - The LSP server command (e.g., "rust-analyzer")
+    /// * `args` - Arguments to pass to the LSP server
+    /// * `project_root` - The root directory of the project
+    ///
+    /// # Returns
+    /// A new LspCodingTools instance with full LSP integration, or an error if
+    /// the LSP server failed to spawn.
+    pub async fn spawn(
+        inner: T,
+        command: &str,
+        args: &[&str],
+        project_root: &Path,
+    ) -> Result<Self, String> {
+        let (lsp_tx, lsp_rx, lsp_client) = LspClient::spawn(command, args, project_root)
+            .await
+            .map_err(|e| format!("Failed to spawn LSP server '{}': {}", command, e))?;
+
+        let (query_tx, query_rx) = mpsc::channel(16);
+        Ok(Self {
+            inner,
+            lsp_tx,
+            open_documents: Mutex::new(HashMap::new()),
+            diagnostics_query_tx: query_tx,
+            _listener_task: spawn(run_cache_actor(lsp_rx, query_rx)),
+            lsp_client: Arc::new(lsp_client),
+        })
+    }
+
+    /// Create LspCodingTools for testing without a real LSP server.
+    ///
+    /// This is only available in test builds. The returned instance will have
+    /// diagnostics support but LSP requests will fail.
+    #[cfg(test)]
+    pub(crate) fn new_for_testing(
         inner: T,
         lsp_tx: NotificationSender,
         lsp_rx: NotificationReceiver,
-        lsp_client: Option<Arc<LspClient>>,
     ) -> Self {
+        // We need a real channel for the cache actor
         let (query_tx, query_rx) = mpsc::channel(16);
+
+        // Create a fake client - requests will fail but that's fine for notification tests
+        let fake_client = Arc::new(LspClient::new_for_testing(lsp_tx.clone()));
+
         Self {
             inner,
             lsp_tx,
             open_documents: Mutex::new(HashMap::new()),
             diagnostics_query_tx: query_tx,
             _listener_task: spawn(run_cache_actor(lsp_rx, query_rx)),
-            lsp_client,
+            lsp_client: fake_client,
         }
     }
 
@@ -173,21 +208,10 @@ impl<T: CodingTools> LspCodingTools<T> {
             .try_send(ClientNotification::TextDocumentSaved(params));
     }
 
-    /// Ensure a file is open with the LSP before making a request.
+    /// Ensure a file is open with the LSP and return its content.
     /// If the file is not already open, reads it and sends didOpen.
-    async fn ensure_file_open_for_request(&self, file_path: &str) -> Result<(), String> {
-        let uri = path_to_uri(Path::new(file_path))
-            .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
-
-        // Check if already open
-        {
-            let docs = self.open_documents.lock().unwrap();
-            if docs.contains_key(&uri) {
-                return Ok(());
-            }
-        }
-
-        // Not open, need to read the file and open it
+    async fn ensure_file_open_and_get_content(&self, file_path: &str) -> Result<String, String> {
+        // Always read the file to get current content (needed for symbol lookup)
         let result = self
             .inner
             .read_file(ReadFileArgs {
@@ -198,7 +222,7 @@ impl<T: CodingTools> LspCodingTools<T> {
             .await?;
 
         self.ensure_open(file_path, &result.raw_content);
-        Ok(())
+        Ok(result.raw_content)
     }
 }
 
@@ -271,23 +295,21 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     async fn goto_definition(
         &self,
         file_path: &str,
+        symbol: &str,
         line: u32,
-        column: u32,
     ) -> Result<GotoDefinitionResponse, String> {
-        let lsp_client = self
-            .lsp_client
-            .as_ref()
-            .ok_or_else(|| "LSP client not available for requests".to_string())?;
+        // Read file to get content and ensure it's open
+        let content = self.ensure_file_open_and_get_content(file_path).await?;
 
-        // Ensure file is open (read it if necessary)
-        self.ensure_file_open_for_request(file_path).await?;
+        // Find the symbol on the specified line
+        let column = find_symbol_column(&content, symbol, line)?;
 
-        // Convert to LSP params (1-indexed to 0-indexed)
         let uri = path_to_uri(Path::new(file_path))
             .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
 
-        lsp_client
-            .goto_definition(uri, line.saturating_sub(1), column.saturating_sub(1))
+        // LSP uses 0-indexed line/column
+        self.lsp_client
+            .goto_definition(uri, line - 1, column)
             .await
             .map_err(|e| format!("LSP goto_definition failed: {}", e))
     }
@@ -295,29 +317,22 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     async fn find_references(
         &self,
         file_path: &str,
+        symbol: &str,
         line: u32,
-        column: u32,
         include_declaration: bool,
     ) -> Result<Vec<Location>, String> {
-        let lsp_client = self
-            .lsp_client
-            .as_ref()
-            .ok_or_else(|| "LSP client not available for requests".to_string())?;
+        // Read file to get content and ensure it's open
+        let content = self.ensure_file_open_and_get_content(file_path).await?;
 
-        // Ensure file is open (read it if necessary)
-        self.ensure_file_open_for_request(file_path).await?;
+        // Find the symbol on the specified line
+        let column = find_symbol_column(&content, symbol, line)?;
 
-        // Convert to LSP params (1-indexed to 0-indexed)
         let uri = path_to_uri(Path::new(file_path))
             .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
 
-        lsp_client
-            .find_references(
-                uri,
-                line.saturating_sub(1),
-                column.saturating_sub(1),
-                include_declaration,
-            )
+        // LSP uses 0-indexed line/column
+        self.lsp_client
+            .find_references(uri, line - 1, column, include_declaration)
             .await
             .map_err(|e| format!("LSP find_references failed: {}", e))
     }
@@ -325,26 +340,70 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     async fn hover(
         &self,
         file_path: &str,
+        symbol: &str,
         line: u32,
-        column: u32,
     ) -> Result<Option<Hover>, String> {
-        let lsp_client = self
-            .lsp_client
-            .as_ref()
-            .ok_or_else(|| "LSP client not available for requests".to_string())?;
+        // Read file to get content and ensure it's open
+        let content = self.ensure_file_open_and_get_content(file_path).await?;
 
-        // Ensure file is open (read it if necessary)
-        self.ensure_file_open_for_request(file_path).await?;
+        // Find the symbol on the specified line
+        let column = find_symbol_column(&content, symbol, line)?;
 
-        // Convert to LSP params (1-indexed to 0-indexed)
         let uri = path_to_uri(Path::new(file_path))
             .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
 
-        lsp_client
-            .hover(uri, line.saturating_sub(1), column.saturating_sub(1))
+        // LSP uses 0-indexed line/column
+        self.lsp_client
+            .hover(uri, line - 1, column)
             .await
             .map_err(|e| format!("LSP hover failed: {}", e))
     }
+}
+
+/// Find the column position of a symbol on a specific line.
+///
+/// # Arguments
+/// * `content` - The full file content
+/// * `symbol` - The symbol name to find
+/// * `line` - Line number (1-indexed)
+///
+/// # Returns
+/// The column position (0-indexed) of the first occurrence of the symbol on that line.
+fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, String> {
+    let line_idx = line.checked_sub(1).ok_or_else(|| "Line number must be >= 1".to_string())?;
+
+    let line_content = content
+        .lines()
+        .nth(line_idx as usize)
+        .ok_or_else(|| format!("Line {} not found in file", line))?;
+
+    // Find the symbol on the line - match word boundaries to avoid partial matches
+    let mut search_start = 0;
+    while let Some(pos) = line_content[search_start..].find(symbol) {
+        let abs_pos = search_start + pos;
+        let before_ok = abs_pos == 0
+            || !line_content[..abs_pos]
+                .chars()
+                .last()
+                .map(|c| c.is_alphanumeric() || c == '_')
+                .unwrap_or(false);
+        let after_ok = abs_pos + symbol.len() >= line_content.len()
+            || !line_content[abs_pos + symbol.len()..]
+                .chars()
+                .next()
+                .map(|c| c.is_alphanumeric() || c == '_')
+                .unwrap_or(false);
+
+        if before_ok && after_ok {
+            return Ok(abs_pos as u32);
+        }
+        search_start = abs_pos + 1;
+    }
+
+    Err(format!(
+        "Symbol '{}' not found on line {}",
+        symbol, line
+    ))
 }
 
 /// Actor task that owns the diagnostics cache and responds to queries
@@ -476,7 +535,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("file content", "");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
+        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
 
         // First read should send didOpen
         let _ = tools
@@ -514,7 +573,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("", "");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
+        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
 
         // Write to a file that hasn't been read (opened) yet
         let _ = tools
@@ -546,7 +605,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("original content", "");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
+        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
 
         // First read the file (opens it)
         let _ = tools
@@ -590,7 +649,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("original content", "edited content");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
+        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
 
         // First read the file (opens it)
         let _ = tools
@@ -636,7 +695,7 @@ mod tests {
         let (_server_tx, server_rx) = channel(100);
 
         let inner = FakeCodingTools::new("content", "edited");
-        let tools = LspCodingTools::new(inner, client_tx, server_rx, None);
+        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
 
         // Read file (version 1)
         let _ = tools
@@ -684,5 +743,70 @@ mod tests {
             &notifications[0],
             ClientNotification::TextDocumentChanged(params) if params.text_document.version == 3
         ));
+    }
+
+    #[test]
+    fn test_find_symbol_column_basic() {
+        let content = "fn main() {\n    let x = HashMap::new();\n}";
+        // "HashMap" is on line 2, starting at column 12 (0-indexed)
+        assert_eq!(find_symbol_column(content, "HashMap", 2).unwrap(), 12);
+    }
+
+    #[test]
+    fn test_find_symbol_column_first_line() {
+        let content = "use std::collections::HashMap;";
+        assert_eq!(find_symbol_column(content, "HashMap", 1).unwrap(), 22);
+    }
+
+    #[test]
+    fn test_find_symbol_column_word_boundary() {
+        // Should not match "HashMapExtra" when looking for "HashMap"
+        let content = "let x = HashMapExtra::new();";
+        assert!(find_symbol_column(content, "HashMap", 1).is_err());
+    }
+
+    #[test]
+    fn test_find_symbol_column_word_boundary_prefix() {
+        // Should not match "MyHashMap" when looking for "HashMap"
+        let content = "let x = MyHashMap::new();";
+        assert!(find_symbol_column(content, "HashMap", 1).is_err());
+    }
+
+    #[test]
+    fn test_find_symbol_column_underscore_boundary() {
+        // Underscores are part of identifiers, so "hash_map" should not match "hash"
+        let content = "let hash_map = 1;";
+        assert!(find_symbol_column(content, "hash", 1).is_err());
+    }
+
+    #[test]
+    fn test_find_symbol_column_not_found() {
+        let content = "fn main() {}";
+        let result = find_symbol_column(content, "HashMap", 1);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found on line"));
+    }
+
+    #[test]
+    fn test_find_symbol_column_line_out_of_range() {
+        let content = "fn main() {}";
+        let result = find_symbol_column(content, "main", 99);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found in file"));
+    }
+
+    #[test]
+    fn test_find_symbol_column_zero_line() {
+        let content = "fn main() {}";
+        let result = find_symbol_column(content, "main", 0);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be >= 1"));
+    }
+
+    #[test]
+    fn test_find_symbol_column_multiple_on_line() {
+        // When there are multiple occurrences on a line, we return the first one
+        let content = "let x = foo + foo;";
+        assert_eq!(find_symbol_column(content, "foo", 1).unwrap(), 8);
     }
 }

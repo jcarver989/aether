@@ -60,61 +60,61 @@ pub trait CodingTools: Send + Sync + Debug {
         async { Ok(HashMap::new()) }
     }
 
-    /// Go to the definition of a symbol at a position.
+    /// Go to the definition of a symbol.
     ///
     /// # Arguments
-    /// * `file_path` - The path to the file
-    /// * `line` - Line number (1-indexed, as shown in editors)
-    /// * `column` - Column number (1-indexed, as shown in editors)
+    /// * `file_path` - The path to the file containing the symbol
+    /// * `symbol` - The symbol name to look up (e.g., "LspClient", "spawn", "HashMap")
+    /// * `line` - Line number where the symbol appears (1-indexed, as shown by Read tool)
     ///
     /// # Returns
     /// The definition response, which may contain locations where the symbol is defined.
-    /// Returns an error if LSP is not configured for this instance.
+    /// Returns an error if LSP is not configured or the symbol is not found on that line.
     fn goto_definition(
         &self,
         _file_path: &str,
+        _symbol: &str,
         _line: u32,
-        _column: u32,
     ) -> impl Future<Output = Result<GotoDefinitionResponse, String>> + Send {
         async { Err("LSP not configured".to_string()) }
     }
 
-    /// Find all references to a symbol at a position.
+    /// Find all references to a symbol.
     ///
     /// # Arguments
-    /// * `file_path` - The path to the file
-    /// * `line` - Line number (1-indexed, as shown in editors)
-    /// * `column` - Column number (1-indexed, as shown in editors)
+    /// * `file_path` - The path to the file containing the symbol
+    /// * `symbol` - The symbol name to look up (e.g., "LspClient", "spawn", "HashMap")
+    /// * `line` - Line number where the symbol appears (1-indexed, as shown by Read tool)
     /// * `include_declaration` - Whether to include the declaration in the results
     ///
     /// # Returns
     /// A list of locations where the symbol is referenced.
-    /// Returns an error if LSP is not configured for this instance.
+    /// Returns an error if LSP is not configured or the symbol is not found on that line.
     fn find_references(
         &self,
         _file_path: &str,
+        _symbol: &str,
         _line: u32,
-        _column: u32,
         _include_declaration: bool,
     ) -> impl Future<Output = Result<Vec<Location>, String>> + Send {
         async { Err("LSP not configured".to_string()) }
     }
 
-    /// Get hover information (type, documentation) for a symbol at a position.
+    /// Get hover information (type, documentation) for a symbol.
     ///
     /// # Arguments
-    /// * `file_path` - The path to the file
-    /// * `line` - Line number (1-indexed, as shown in editors)
-    /// * `column` - Column number (1-indexed, as shown in editors)
+    /// * `file_path` - The path to the file containing the symbol
+    /// * `symbol` - The symbol name to look up (e.g., "LspClient", "spawn", "HashMap")
+    /// * `line` - Line number where the symbol appears (1-indexed, as shown by Read tool)
     ///
     /// # Returns
     /// Hover information if available, or None if no information at the position.
-    /// Returns an error if LSP is not configured for this instance.
+    /// Returns an error if LSP is not configured or the symbol is not found on that line.
     fn hover(
         &self,
         _file_path: &str,
+        _symbol: &str,
         _line: u32,
-        _column: u32,
     ) -> impl Future<Output = Result<Option<Hover>, String>> + Send {
         async { Err("LSP not configured".to_string()) }
     }
