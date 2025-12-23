@@ -122,20 +122,14 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     #[tool]
     pub async fn grep(&self, request: Parameters<GrepInput>) -> Result<Json<GrepOutput>, String> {
         let Parameters(args) = request;
-        match perform_grep(args).await {
-            Ok(result) => Ok(Json(result)),
-            Err(e) => Err(format!("Grep error: {e}")),
-        }
+        self.tools.grep(args).await.map(Json)
     }
 
     #[doc = include_str!("tools/find/description.md")]
     #[tool]
     pub async fn find(&self, request: Parameters<FindInput>) -> Result<Json<FindOutput>, String> {
         let Parameters(args) = request;
-        match find_files_by_name(args).await {
-            Ok(result) => Ok(Json(result)),
-            Err(e) => Err(format!("Find error: {e}")),
-        }
+        self.tools.find(args).await.map(Json)
     }
 
     #[doc = include_str!("tools/read_file/description.md")]
