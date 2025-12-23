@@ -460,16 +460,14 @@ Example usage:
         execute_lsp_diagnostics(input, &self.tools).await.map(Json)
     }
 
-    #[tool(
-        description = "Go to the definition of a symbol.
+    #[tool(description = "Go to the definition of a symbol.
 
 Find where a symbol (function, type, variable, etc.) is defined.
 Requires reading the file first to know the line number.
 
 Example: After reading a file that has `let client = LspClient::new()` on line 42,
 use {\"file_path\": \"/path/to/file.rs\", \"symbol\": \"LspClient\", \"line\": \"42\"}
-to find where LspClient is defined."
-    )]
+to find where LspClient is defined.")]
     pub async fn lsp_goto_definition(
         &self,
         request: Parameters<LspGotoDefinitionInput>,
@@ -480,15 +478,13 @@ to find where LspClient is defined."
             .map(Json)
     }
 
-    #[tool(
-        description = "Find all references to a symbol across the codebase.
+    #[tool(description = "Find all references to a symbol across the codebase.
 
 Find everywhere a symbol is used. Useful for understanding impact before refactoring.
 Requires reading the file first to know the line number.
 
 Example: To find all usages of a function `spawn` that appears on line 15,
-use {\"file_path\": \"/path/to/file.rs\", \"symbol\": \"spawn\", \"line\": \"15\"}"
-    )]
+use {\"file_path\": \"/path/to/file.rs\", \"symbol\": \"spawn\", \"line\": \"15\"}")]
     pub async fn lsp_find_references(
         &self,
         request: Parameters<LspFindReferencesInput>,

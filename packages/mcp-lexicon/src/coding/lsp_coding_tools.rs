@@ -377,7 +377,9 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
 /// # Returns
 /// The column position (0-indexed) of the first occurrence of the symbol on that line.
 fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, String> {
-    let line_idx = line.checked_sub(1).ok_or_else(|| "Line number must be >= 1".to_string())?;
+    let line_idx = line
+        .checked_sub(1)
+        .ok_or_else(|| "Line number must be >= 1".to_string())?;
 
     let line_content = content
         .lines()
@@ -407,10 +409,7 @@ fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, Str
         search_start = abs_pos + 1;
     }
 
-    Err(format!(
-        "Symbol '{}' not found on line {}",
-        symbol, line
-    ))
+    Err(format!("Symbol '{}' not found on line {}", symbol, line))
 }
 
 /// Actor task that owns the diagnostics cache and responds to queries
