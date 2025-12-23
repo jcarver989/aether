@@ -1,9 +1,12 @@
 use agent_client_protocol as acp;
-use mcp_lexicon::coding::{
-    BackgroundProcessHandle, BashInput, BashOutput, BashResult, CodingTools, EditFileArgs,
-    EditFileResponse, ListFilesArgs, ListFilesResult, ReadBackgroundBashOutput, ReadFileArgs,
-    ReadFileResult, WriteFileArgs, WriteFileResponse,
+use mcp_lexicon::coding::tools::bash::{
+    BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashOutput,
 };
+use mcp_lexicon::coding::tools::edit_file::{EditFileArgs, EditFileResponse};
+use mcp_lexicon::coding::tools::list_files::{ListFilesArgs, ListFilesResult};
+use mcp_lexicon::coding::tools::read_file::{ReadFileArgs, ReadFileResult};
+use mcp_lexicon::coding::tools::write_file::{WriteFileArgs, WriteFileResponse};
+use mcp_lexicon::coding::CodingTools;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tracing::{debug, warn};
@@ -172,7 +175,7 @@ impl CodingTools for AcpCodingTools {
         warn!("ACP doesn't support list_files, falling back to local filesystem");
 
         // Use the default implementation
-        mcp_lexicon::coding::list_files(args)
+        mcp_lexicon::coding::tools::list_files::list_files(args)
             .await
             .map_err(|e| format!("List files error: {e}"))
     }

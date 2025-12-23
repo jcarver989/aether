@@ -1,13 +1,15 @@
 use std::future::Future;
 use std::{collections::HashMap, fmt::Debug};
 
-use super::{
-    BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, FindInput,
-    FindOutput, GrepInput, GrepOutput, ListFilesArgs, ListFilesResult, ReadBackgroundBashOutput,
-    ReadFileArgs, ReadFileResult, WriteFileArgs, WriteFileResponse, find_files_by_name,
-    perform_grep,
-};
 use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, SymbolInformation};
+
+use super::tools::bash::{BackgroundProcessHandle, BashInput, BashResult, ReadBackgroundBashOutput};
+use super::tools::edit_file::{EditFileArgs, EditFileResponse};
+use super::tools::find::{find_files_by_name, FindInput, FindOutput};
+use super::tools::grep::{perform_grep, GrepInput, GrepOutput};
+use super::tools::list_files::{ListFilesArgs, ListFilesResult};
+use super::tools::read_file::{ReadFileArgs, ReadFileResult};
+use super::tools::write_file::{WriteFileArgs, WriteFileResponse};
 
 /// Trait defining the underlying implementation for coding tool operations.
 ///

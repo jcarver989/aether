@@ -11,7 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout};
 
 /// LSP language identifier for a file type
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum LanguageId {
     Rust,
     Python,
@@ -103,6 +103,40 @@ impl LanguageId {
             Some("sql") => LanguageId::Sql,
             Some("sh" | "bash" | "zsh") => LanguageId::ShellScript,
             _ => LanguageId::PlainText,
+        }
+    }
+
+    /// Get the primary file extension for this language (reverse of from_path)
+    ///
+    /// Returns None for PlainText since it has no specific extension.
+    pub fn extension(&self) -> Option<&'static str> {
+        match self {
+            LanguageId::Rust => Some("rs"),
+            LanguageId::Python => Some("py"),
+            LanguageId::JavaScript => Some("js"),
+            LanguageId::JavaScriptReact => Some("jsx"),
+            LanguageId::TypeScript => Some("ts"),
+            LanguageId::TypeScriptReact => Some("tsx"),
+            LanguageId::Go => Some("go"),
+            LanguageId::Java => Some("java"),
+            LanguageId::C => Some("c"),
+            LanguageId::Cpp => Some("cpp"),
+            LanguageId::CSharp => Some("cs"),
+            LanguageId::Ruby => Some("rb"),
+            LanguageId::Php => Some("php"),
+            LanguageId::Swift => Some("swift"),
+            LanguageId::Kotlin => Some("kt"),
+            LanguageId::Scala => Some("scala"),
+            LanguageId::Html => Some("html"),
+            LanguageId::Css => Some("css"),
+            LanguageId::Json => Some("json"),
+            LanguageId::Yaml => Some("yaml"),
+            LanguageId::Toml => Some("toml"),
+            LanguageId::Markdown => Some("md"),
+            LanguageId::Xml => Some("xml"),
+            LanguageId::Sql => Some("sql"),
+            LanguageId::ShellScript => Some("sh"),
+            LanguageId::PlainText => None,
         }
     }
 }

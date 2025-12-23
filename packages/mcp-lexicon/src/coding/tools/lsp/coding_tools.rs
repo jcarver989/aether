@@ -1,3 +1,9 @@
+//! Multi-language LSP support for CodingTools
+//!
+//! This module provides `LspCodingTools`, a wrapper that extends any `CodingTools`
+//! implementation with LSP support. It uses an `LspRegistry` to lazily spawn and manage
+//! multiple LSP servers based on file type.
+
 use lsp_types::{
     Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     GotoDefinitionResponse, Hover, Location, SymbolInformation, TextDocumentContentChangeEvent,
@@ -5,68 +11,69 @@ use lsp_types::{
 };
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tokio::spawn;
-use tokio::sync::{mpsc, oneshot};
-use tokio::task::JoinHandle;
 
-#[cfg(test)]
-use crate::coding::tools::bash::BashOutput;
-use crate::coding::lsp::{
-    ClientNotification, LanguageId, LspClient, NotificationReceiver, NotificationSender,
-    ServerNotification, path_to_uri,
-};
+use crate::coding::lsp::config::{LspConfig, default_lsp_configs};
+use crate::coding::lsp::registry::{LspClientHandle, LspRegistry};
+use crate::coding::lsp::{ClientNotification, LanguageId, path_to_uri};
+use crate::coding::tools::bash::ReadBackgroundBashOutput;
 use crate::coding::tools::bash::{BackgroundProcessHandle, BashInput, BashResult};
 use crate::coding::tools::edit_file::{EditFileArgs, EditFileResponse};
 use crate::coding::tools::list_files::{ListFilesArgs, ListFilesResult};
-use crate::coding::tools::bash::ReadBackgroundBashOutput;
 use crate::coding::tools::read_file::{ReadFileArgs, ReadFileResult};
 use crate::coding::tools::write_file::{WriteFileArgs, WriteFileResponse};
 use crate::coding::tools_trait::CodingTools;
-
-/// Request to query the diagnostics cache (keyed by URI string)
-type DiagnosticsQuery = oneshot::Sender<HashMap<String, Vec<Diagnostic>>>;
 
 /// State for a document tracked by the LSP wrapper
 #[derive(Debug, Clone)]
 struct DocumentState {
     /// Current version number (incremented on each change)
     version: i32,
-    /// Language ID for this document (detected from extension)
-    #[allow(dead_code)]
-    language_id: LanguageId,
+    /// Whether an LSP is handling this document
+    has_lsp: bool,
 }
 
-/// A wrapper that adds LSP integration to any CodingTools implementation.
+/// A CodingTools wrapper that provides multi-language LSP support.
 ///
-/// This wrapper intercepts file operations and notifies the language server,
+/// This wrapper intercepts file operations and notifies the appropriate language server,
 /// enabling diagnostics (errors, warnings) and code intelligence (goto definition,
 /// find references, hover) to be available to the agent.
 ///
-/// # Usage
+/// LSP servers are spawned lazily on first file access for each language type,
+/// which provides efficient resource usage and fast startup.
+///
+/// # Supported Languages (by default)
+///
+/// - Rust (`rust-analyzer`)
+/// - TypeScript/JavaScript (`typescript-language-server`)
+/// - Python (`pyright-langserver`)
+/// - Go (`gopls`)
+/// - C/C++ (`clangd`)
+///
+/// # Example
 ///
 /// ```ignore
-/// // Spawn LSP-enabled coding tools for a Rust project
-/// let tools = LspCodingTools::spawn(
+/// use mcp_lexicon::coding::default_tools::DefaultCodingTools;
+/// use mcp_lexicon::coding::tools::lsp::LspCodingTools;
+///
+/// let tools = LspCodingTools::new(
 ///     DefaultCodingTools::new(),
-///     "rust-analyzer",
-///     &[],
-///     &project_path,
-/// ).await?;
+///     PathBuf::from("/path/to/project"),
+/// );
+///
+/// // When reading a .rs file, rust-analyzer will be spawned lazily
+/// let result = tools.read_file(ReadFileArgs {
+///     file_path: "/path/to/project/src/main.rs".to_string(),
+///     offset: None,
+///     limit: None,
+/// }).await?;
 /// ```
 pub struct LspCodingTools<T: CodingTools> {
     inner: T,
-    /// Notification sender for the LSP client
-    lsp_tx: NotificationSender,
+    registry: Arc<LspRegistry>,
     /// Track open documents with their state (URI -> DocumentState)
     open_documents: Mutex<HashMap<Uri, DocumentState>>,
-    /// Channel to query diagnostics from the listener task
-    diagnostics_query_tx: mpsc::Sender<DiagnosticsQuery>,
-    /// Handle to the notification listener task (kept alive)
-    _listener_task: JoinHandle<()>,
-    /// The LSP client for making requests (definition, references, hover)
-    lsp_client: Arc<LspClient>,
 }
 
 impl<T: CodingTools> Debug for LspCodingTools<T> {
@@ -78,143 +85,139 @@ impl<T: CodingTools> Debug for LspCodingTools<T> {
 }
 
 impl<T: CodingTools> LspCodingTools<T> {
-    /// Spawn an LSP server and wrap the given CodingTools implementation with LSP integration.
+    /// Create with default LSP configurations.
     ///
-    /// # Arguments
-    /// * `inner` - The underlying CodingTools implementation to wrap
-    /// * `command` - The LSP server command (e.g., "rust-analyzer")
-    /// * `args` - Arguments to pass to the LSP server
-    /// * `project_root` - The root directory of the project
+    /// Uses default configurations for common languages:
+    /// - rust-analyzer for Rust
+    /// - typescript-language-server for TypeScript/JavaScript
+    /// - pyright-langserver for Python
+    /// - gopls for Go
+    /// - clangd for C/C++
     ///
-    /// # Returns
-    /// A new LspCodingTools instance with full LSP integration, or an error if
-    /// the LSP server failed to spawn.
-    pub async fn spawn(
-        inner: T,
-        command: &str,
-        args: &[&str],
-        project_root: &Path,
-    ) -> Result<Self, String> {
-        let (lsp_tx, lsp_rx, lsp_client) = LspClient::spawn(command, args, project_root)
-            .await
-            .map_err(|e| format!("Failed to spawn LSP server '{}': {}", command, e))?;
-
-        let (query_tx, query_rx) = mpsc::channel(16);
-        Ok(Self {
-            inner,
-            lsp_tx,
-            open_documents: Mutex::new(HashMap::new()),
-            diagnostics_query_tx: query_tx,
-            _listener_task: spawn(run_cache_actor(lsp_rx, query_rx)),
-            lsp_client: Arc::new(lsp_client),
-        })
+    /// LSP servers for detected project languages are spawned immediately in the background.
+    pub fn new(inner: T, root_path: PathBuf) -> Self {
+        Self::with_configs(inner, root_path, default_lsp_configs())
     }
 
-    /// Create LspCodingTools for testing without a real LSP server.
+    /// Create with custom LSP configurations.
     ///
-    /// This is only available in test builds. The returned instance will have
-    /// diagnostics support but LSP requests will fail.
-    #[cfg(test)]
-    pub(crate) fn new_for_testing(
-        inner: T,
-        lsp_tx: NotificationSender,
-        lsp_rx: NotificationReceiver,
-    ) -> Self {
-        // We need a real channel for the cache actor
-        let (query_tx, query_rx) = mpsc::channel(16);
+    /// Use this to specify custom LSP servers or override defaults.
+    /// LSP servers for detected project languages are spawned immediately in the background.
+    pub fn with_configs(inner: T, root_path: PathBuf, configs: Vec<LspConfig>) -> Self {
+        let registry = Arc::new(LspRegistry::new(root_path, configs));
 
-        // Create a fake client - requests will fail but that's fine for notification tests
-        let fake_client = Arc::new(LspClient::new_for_testing(lsp_tx.clone()));
+        // Spawn LSPs for detected project languages in background
+        // This allows LSPs like rust-analyzer to start indexing immediately
+        let registry_clone = Arc::clone(&registry);
+        tokio::spawn(async move {
+            registry_clone.spawn_project_lsps().await;
+        });
 
         Self {
             inner,
-            lsp_tx,
+            registry,
             open_documents: Mutex::new(HashMap::new()),
-            diagnostics_query_tx: query_tx,
-            _listener_task: spawn(run_cache_actor(lsp_rx, query_rx)),
-            lsp_client: fake_client,
         }
     }
 
-    /// Ensure a document is open with the LSP, sending didOpen if needed.
+    /// Ensure a document is open with its LSP, sending didOpen if needed.
     /// Returns the current version number (1 if just opened, or incremented if already open).
-    fn ensure_open(&self, file_path: &str, content: &str) -> Option<i32> {
-        let Ok(uri) = path_to_uri(Path::new(file_path)) else {
+    async fn ensure_open(
+        &self,
+        file_path: &str,
+        content: &str,
+    ) -> Option<(i32, Arc<LspClientHandle>)> {
+        let path = Path::new(file_path);
+        let Ok(uri) = path_to_uri(path) else {
             return None;
         };
 
-        {
-            let mut docs = self.open_documents.lock().unwrap();
-            if let Some(state) = docs.get_mut(&uri) {
+        let existing_state = match self.open_documents.lock().unwrap().get_mut(&uri) {
+            Some(state) => {
                 state.version += 1;
-                return Some(state.version);
+                Some((state.version, state.has_lsp))
             }
-        }
-
-        let language_id = LanguageId::from_path(Path::new(file_path));
-        let version = 1;
-        let params = DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: uri.clone(),
-                language_id: language_id.to_string(),
-                version,
-                text: content.to_string(),
-            },
+            None => None,
         };
 
-        let _ = self
-            .lsp_tx
-            .try_send(ClientNotification::TextDocumentOpened(params));
+        match existing_state {
+            Some((version, true)) => {
+                return self.registry.get_or_spawn(path).await.map(|h| (version, h));
+            }
+            Some(_) => return None,
+            None => {}
+        }
 
-        self.open_documents.lock().unwrap().insert(
-            uri,
-            DocumentState {
-                version,
-                language_id,
-            },
-        );
+        let handle = self.registry.get_or_spawn(path).await;
+        let language_id = LanguageId::from_path(path);
+        let version = 1;
 
-        Some(version)
+        if let Some(ref handle) = handle {
+            let params = DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: language_id.to_string(),
+                    version,
+                    text: content.to_string(),
+                },
+            };
+
+            let _ = handle
+                .notification_tx
+                .try_send(ClientNotification::TextDocumentOpened(params));
+        }
+
+        let has_lsp = handle.is_some();
+        self.open_documents
+            .lock()
+            .unwrap()
+            .insert(uri, DocumentState { version, has_lsp });
+
+        handle.map(|h| (version, h))
     }
 
     /// Notify the LSP that a document was changed (requires document to be open)
-    fn notify_did_change(&self, file_path: &str, content: &str, version: i32) {
-        let Ok(uri) = path_to_uri(Path::new(file_path)) else {
+    async fn notify_did_change(&self, file_path: &str, content: &str, version: i32) {
+        let path = Path::new(file_path);
+        let Ok(uri) = path_to_uri(path) else {
             return;
         };
 
-        let params = DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier { uri, version },
-            content_changes: vec![TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text: content.to_string(),
-            }],
-        };
-        let _ = self
-            .lsp_tx
-            .try_send(ClientNotification::TextDocumentChanged(params));
+        if let Some(handle) = self.registry.get_or_spawn(path).await {
+            let params = DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier { uri, version },
+                content_changes: vec![TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: content.to_string(),
+                }],
+            };
+            let _ = handle
+                .notification_tx
+                .try_send(ClientNotification::TextDocumentChanged(params));
+        }
     }
 
     /// Notify the LSP that a document was saved
-    fn notify_did_save(&self, file_path: &str, content: Option<&str>) {
-        let Ok(uri) = path_to_uri(Path::new(file_path)) else {
+    async fn notify_did_save(&self, file_path: &str, content: Option<&str>) {
+        let path = Path::new(file_path);
+        let Ok(uri) = path_to_uri(path) else {
             return;
         };
 
-        let params = DidSaveTextDocumentParams {
-            text_document: TextDocumentIdentifier { uri },
-            text: content.map(|s| s.to_string()),
-        };
-        let _ = self
-            .lsp_tx
-            .try_send(ClientNotification::TextDocumentSaved(params));
+        if let Some(handle) = self.registry.get_or_spawn(path).await {
+            let params = DidSaveTextDocumentParams {
+                text_document: TextDocumentIdentifier { uri },
+                text: content.map(|s| s.to_string()),
+            };
+            let _ = handle
+                .notification_tx
+                .try_send(ClientNotification::TextDocumentSaved(params));
+        }
     }
 
     /// Ensure a file is open with the LSP and return its content.
-    /// If the file is not already open, reads it and sends didOpen.
     async fn ensure_file_open_and_get_content(&self, file_path: &str) -> Result<String, String> {
-        // Always read the file to get current content (needed for symbol lookup)
         let result = self
             .inner
             .read_file(ReadFileArgs {
@@ -224,7 +227,7 @@ impl<T: CodingTools> LspCodingTools<T> {
             })
             .await?;
 
-        self.ensure_open(file_path, &result.raw_content);
+        self.ensure_open(file_path, &result.raw_content).await;
         Ok(result.raw_content)
     }
 }
@@ -233,8 +236,8 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, String> {
         let file_path = args.file_path.clone();
         let result = self.inner.read_file(args).await?;
-        // Ensure document is open (sends didOpen if first time, idempotent otherwise)
-        self.ensure_open(&file_path, &result.raw_content);
+        // Ensure document is open (sends didOpen if first time)
+        self.ensure_open(&file_path, &result.raw_content).await;
         Ok(result)
     }
 
@@ -242,12 +245,12 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         let file_path = args.file_path.clone();
         let content = args.content.clone();
         let result = self.inner.write_file(args).await?;
-        if let Some(version) = self.ensure_open(&file_path, &content) {
-            if version > 1 {
-                self.notify_did_change(&file_path, &content, version);
-            }
 
-            self.notify_did_save(&file_path, Some(&content));
+        if let Some((version, _)) = self.ensure_open(&file_path, &content).await {
+            if version > 1 {
+                self.notify_did_change(&file_path, &content, version).await;
+            }
+            self.notify_did_save(&file_path, Some(&content)).await;
         }
 
         Ok(result)
@@ -257,12 +260,13 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         let file_path = args.file_path.clone();
         let result = self.inner.edit_file(args).await?;
 
-        if let Some(version) = self.ensure_open(&file_path, &result.content) {
+        if let Some((version, _)) = self.ensure_open(&file_path, &result.content).await {
             if version > 1 {
-                self.notify_did_change(&file_path, &result.content, version);
+                self.notify_did_change(&file_path, &result.content, version)
+                    .await;
             }
-
-            self.notify_did_save(&file_path, Some(&result.content));
+            self.notify_did_save(&file_path, Some(&result.content))
+                .await;
         }
 
         Ok(result)
@@ -285,14 +289,14 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     }
 
     async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, String> {
-        let (response_tx, response_rx) = oneshot::channel();
-        if self.diagnostics_query_tx.send(response_tx).await.is_err() {
-            return Err(
-                "Failed to query diagnostics cache - listener task may have stopped".to_string(),
-            );
+        // Aggregate diagnostics from all active LSP clients
+        let mut all_diagnostics = HashMap::new();
+        for handle in self.registry.active_clients().await {
+            if let Ok(diags) = handle.get_diagnostics().await {
+                all_diagnostics.extend(diags);
+            }
         }
-
-        Ok(response_rx.await.unwrap_or_default())
+        Ok(all_diagnostics)
     }
 
     async fn goto_definition(
@@ -307,7 +311,14 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         let uri = path_to_uri(Path::new(file_path))
             .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
 
-        self.lsp_client
+        let handle = self
+            .registry
+            .get_or_spawn(Path::new(file_path))
+            .await
+            .ok_or_else(|| "No LSP configured for this file type".to_string())?;
+
+        handle
+            .client
             .goto_definition(uri, line - 1, column)
             .await
             .map_err(|e| format!("LSP goto_definition failed: {}", e))
@@ -322,10 +333,18 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     ) -> Result<Vec<Location>, String> {
         let content = self.ensure_file_open_and_get_content(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
+
         let uri = path_to_uri(Path::new(file_path))
             .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
 
-        self.lsp_client
+        let handle = self
+            .registry
+            .get_or_spawn(Path::new(file_path))
+            .await
+            .ok_or_else(|| "No LSP configured for this file type".to_string())?;
+
+        handle
+            .client
             .find_references(uri, line - 1, column, include_declaration)
             .await
             .map_err(|e| format!("LSP find_references failed: {}", e))
@@ -339,20 +358,32 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     ) -> Result<Option<Hover>, String> {
         let content = self.ensure_file_open_and_get_content(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
+
         let uri = path_to_uri(Path::new(file_path))
             .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
 
-        self.lsp_client
+        let handle = self
+            .registry
+            .get_or_spawn(Path::new(file_path))
+            .await
+            .ok_or_else(|| "No LSP configured for this file type".to_string())?;
+
+        handle
+            .client
             .hover(uri, line - 1, column)
             .await
             .map_err(|e| format!("LSP hover failed: {}", e))
     }
 
     async fn workspace_symbol(&self, query: &str) -> Result<Vec<SymbolInformation>, String> {
-        self.lsp_client
-            .workspace_symbol(query.to_string())
-            .await
-            .map_err(|e| format!("LSP workspace_symbol failed: {}", e))
+        // For workspace symbol, we query all active LSPs and aggregate results
+        let mut all_symbols = Vec::new();
+        for handle in self.registry.active_clients().await {
+            if let Ok(symbols) = handle.client.workspace_symbol(query.to_string()).await {
+                all_symbols.extend(symbols);
+            }
+        }
+        Ok(all_symbols)
     }
 }
 
@@ -401,344 +432,9 @@ fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, Str
     Err(format!("Symbol '{}' not found on line {}", symbol, line))
 }
 
-/// Actor task that owns the diagnostics cache and responds to queries
-async fn run_cache_actor(
-    mut notification_rx: NotificationReceiver,
-    mut query_rx: mpsc::Receiver<DiagnosticsQuery>,
-) {
-    let mut cache: HashMap<String, Vec<Diagnostic>> = HashMap::new();
-
-    loop {
-        tokio::select! {
-            Some(notification) = notification_rx.recv() => {
-                if let ServerNotification::Diagnostics(params) = notification {
-                    cache.insert(params.uri.to_string(), params.diagnostics);
-                }
-            }
-            Some(response_tx) = query_rx.recv() => {
-                let _ = response_tx.send(cache.clone());
-            }
-            else => break,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::mpsc::channel;
-
-    /// A fake CodingTools implementation for testing
-    #[derive(Debug)]
-    struct FakeCodingTools {
-        /// Content to return from read_file
-        read_content: String,
-        /// Content to return from edit_file
-        edit_content: String,
-    }
-
-    impl FakeCodingTools {
-        fn new(read_content: &str, edit_content: &str) -> Self {
-            Self {
-                read_content: read_content.to_string(),
-                edit_content: edit_content.to_string(),
-            }
-        }
-    }
-
-    impl CodingTools for FakeCodingTools {
-        async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, String> {
-            Ok(ReadFileResult {
-                status: "success".to_string(),
-                file_path: args.file_path,
-                content: self.read_content.clone(),
-                total_lines: 1,
-                lines_shown: 1,
-                offset: 0,
-                limit: None,
-                size: self.read_content.len(),
-                raw_content: self.read_content.clone(),
-            })
-        }
-
-        async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, String> {
-            Ok(WriteFileResponse {
-                message: "File written".to_string(),
-                bytes_written: args.content.len(),
-                file_path: args.file_path,
-            })
-        }
-
-        async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, String> {
-            Ok(EditFileResponse {
-                status: "edited".to_string(),
-                file_path: args.file_path,
-                total_lines: 10,
-                replacements_made: 1,
-                content: self.edit_content.clone(),
-            })
-        }
-
-        async fn list_files(&self, args: ListFilesArgs) -> Result<ListFilesResult, String> {
-            Ok(ListFilesResult {
-                status: "success".to_string(),
-                directory: args.path.unwrap_or_default(),
-                files: vec![],
-                total_count: 0,
-            })
-        }
-
-        async fn bash(&self, _args: BashInput) -> Result<BashResult, String> {
-            Ok(BashResult::Completed(BashOutput {
-                output: String::new(),
-                exit_code: 0,
-                killed: None,
-                shell_id: None,
-            }))
-        }
-
-        async fn read_background_bash(
-            &self,
-            handle: BackgroundProcessHandle,
-            _filter: Option<String>,
-        ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String> {
-            Ok((
-                ReadBackgroundBashOutput {
-                    output: String::new(),
-                    status: "completed".to_string(),
-                    exit_code: Some(0),
-                },
-                Some(handle),
-            ))
-        }
-    }
-
-    /// Helper to collect notifications from a channel
-    fn collect_notifications(
-        rx: &mut mpsc::Receiver<ClientNotification>,
-    ) -> Vec<ClientNotification> {
-        let mut notifications = Vec::new();
-        while let Ok(notif) = rx.try_recv() {
-            notifications.push(notif);
-        }
-        notifications
-    }
-
-    #[tokio::test]
-    async fn test_read_file_sends_did_open_once() {
-        let (client_tx, mut client_rx) = channel(100);
-        let (_server_tx, server_rx) = channel(100);
-
-        let inner = FakeCodingTools::new("file content", "");
-        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
-
-        // First read should send didOpen
-        let _ = tools
-            .read_file(ReadFileArgs {
-                file_path: "/test/file.rs".to_string(),
-                offset: None,
-                limit: None,
-            })
-            .await;
-
-        let notifications = collect_notifications(&mut client_rx);
-        assert_eq!(notifications.len(), 1);
-        assert!(matches!(
-            &notifications[0],
-            ClientNotification::TextDocumentOpened(params) if params.text_document.version == 1
-        ));
-
-        // Second read should NOT send another didOpen (just increments version internally)
-        let _ = tools
-            .read_file(ReadFileArgs {
-                file_path: "/test/file.rs".to_string(),
-                offset: None,
-                limit: None,
-            })
-            .await;
-
-        let notifications = collect_notifications(&mut client_rx);
-        // No new notifications - file is already open
-        assert_eq!(notifications.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_write_file_sends_did_open_and_did_save_for_new_file() {
-        let (client_tx, mut client_rx) = channel(100);
-        let (_server_tx, server_rx) = channel(100);
-
-        let inner = FakeCodingTools::new("", "");
-        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
-
-        // Write to a file that hasn't been read (opened) yet
-        let _ = tools
-            .write_file(WriteFileArgs {
-                file_path: "/test/new_file.rs".to_string(),
-                content: "new content".to_string(),
-            })
-            .await;
-
-        let notifications = collect_notifications(&mut client_rx);
-        assert_eq!(notifications.len(), 2);
-
-        // First notification should be didOpen
-        assert!(matches!(
-            &notifications[0],
-            ClientNotification::TextDocumentOpened(params) if params.text_document.version == 1
-        ));
-
-        // Second notification should be didSave
-        assert!(matches!(
-            &notifications[1],
-            ClientNotification::TextDocumentSaved(_)
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_write_file_sends_did_change_and_did_save_for_open_file() {
-        let (client_tx, mut client_rx) = channel(100);
-        let (_server_tx, server_rx) = channel(100);
-
-        let inner = FakeCodingTools::new("original content", "");
-        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
-
-        // First read the file (opens it)
-        let _ = tools
-            .read_file(ReadFileArgs {
-                file_path: "/test/file.rs".to_string(),
-                offset: None,
-                limit: None,
-            })
-            .await;
-
-        // Clear the didOpen notification
-        let _ = collect_notifications(&mut client_rx);
-
-        // Now write to the file
-        let _ = tools
-            .write_file(WriteFileArgs {
-                file_path: "/test/file.rs".to_string(),
-                content: "modified content".to_string(),
-            })
-            .await;
-
-        let notifications = collect_notifications(&mut client_rx);
-        assert_eq!(notifications.len(), 2);
-
-        // First should be didChange with version 2
-        assert!(matches!(
-            &notifications[0],
-            ClientNotification::TextDocumentChanged(params) if params.text_document.version == 2
-        ));
-
-        // Second should be didSave
-        assert!(matches!(
-            &notifications[1],
-            ClientNotification::TextDocumentSaved(_)
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_edit_file_sends_did_change_and_did_save() {
-        let (client_tx, mut client_rx) = channel(100);
-        let (_server_tx, server_rx) = channel(100);
-
-        let inner = FakeCodingTools::new("original content", "edited content");
-        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
-
-        // First read the file (opens it)
-        let _ = tools
-            .read_file(ReadFileArgs {
-                file_path: "/test/file.rs".to_string(),
-                offset: None,
-                limit: None,
-            })
-            .await;
-
-        // Clear the didOpen notification
-        let _ = collect_notifications(&mut client_rx);
-
-        // Now edit the file
-        let _ = tools
-            .edit_file(EditFileArgs {
-                file_path: "/test/file.rs".to_string(),
-                old_string: "original".to_string(),
-                new_string: "edited".to_string(),
-                replace_all: false,
-            })
-            .await;
-
-        let notifications = collect_notifications(&mut client_rx);
-        assert_eq!(notifications.len(), 2);
-
-        // First should be didChange with version 2
-        assert!(matches!(
-            &notifications[0],
-            ClientNotification::TextDocumentChanged(params) if params.text_document.version == 2
-        ));
-
-        // Second should be didSave
-        assert!(matches!(
-            &notifications[1],
-            ClientNotification::TextDocumentSaved(_)
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_version_increments_correctly() {
-        let (client_tx, mut client_rx) = channel(100);
-        let (_server_tx, server_rx) = channel(100);
-
-        let inner = FakeCodingTools::new("content", "edited");
-        let tools = LspCodingTools::new_for_testing(inner, client_tx, server_rx);
-
-        // Read file (version 1)
-        let _ = tools
-            .read_file(ReadFileArgs {
-                file_path: "/test/file.rs".to_string(),
-                offset: None,
-                limit: None,
-            })
-            .await;
-
-        let notifications = collect_notifications(&mut client_rx);
-        assert!(matches!(
-            &notifications[0],
-            ClientNotification::TextDocumentOpened(params) if params.text_document.version == 1
-        ));
-
-        // Edit file (version 2)
-        let _ = tools
-            .edit_file(EditFileArgs {
-                file_path: "/test/file.rs".to_string(),
-                old_string: "a".to_string(),
-                new_string: "b".to_string(),
-                replace_all: false,
-            })
-            .await;
-
-        let notifications = collect_notifications(&mut client_rx);
-        assert!(matches!(
-            &notifications[0],
-            ClientNotification::TextDocumentChanged(params) if params.text_document.version == 2
-        ));
-
-        // Another edit (version 3)
-        let _ = tools
-            .edit_file(EditFileArgs {
-                file_path: "/test/file.rs".to_string(),
-                old_string: "b".to_string(),
-                new_string: "c".to_string(),
-                replace_all: false,
-            })
-            .await;
-
-        let notifications = collect_notifications(&mut client_rx);
-        assert!(matches!(
-            &notifications[0],
-            ClientNotification::TextDocumentChanged(params) if params.text_document.version == 3
-        ));
-    }
 
     #[test]
     fn test_find_symbol_column_basic() {
