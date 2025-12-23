@@ -11,6 +11,8 @@
 //! - [`transport`] - JSON-RPC over stdio transport layer
 //! - [`diagnostics`] - Utilities for working with LSP diagnostics
 //! - [`error`] - Error types for LSP operations
+//! - [`config`] - LSP server configuration types
+//! - [`registry`] - Multi-LSP registry for managing multiple language servers
 //!
 //! # Example
 //!
@@ -53,17 +55,21 @@
 
 pub mod client;
 pub mod common;
+pub mod config;
 pub mod diagnostics;
 pub mod error;
+pub mod registry;
 pub mod transport;
 
 pub use client::{
     LspClient, NotificationReceiver, NotificationSender, ServerNotification, path_to_uri,
 };
 pub use common::{LocationResult, parse_line, symbol_kind_to_string, uri_to_path};
+pub use config::{LspConfig, default_lsp_configs};
 pub use diagnostics::{
     DiagnosticCounts, FormattedDiagnostic, Severity, count_by_severity, filter_by_severity,
     format_diagnostics,
 };
 pub use error::{LspError, Result};
+pub use registry::{LspClientHandle, LspRegistry};
 pub use transport::{ClientNotification, LanguageId};

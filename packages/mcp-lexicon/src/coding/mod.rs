@@ -15,38 +15,47 @@ use std::{
     path::Path,
 };
 
+// Submodules - import types from their source modules directly
 pub mod default_tools;
 pub mod lsp;
 pub mod tools;
 pub mod tools_trait;
 
-// Re-export from tools module for backwards compatibility
-pub use tools::{
-    BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,
-    ReadBackgroundBashOutput, execute_command, read_background_bash,
-};
+// =============================================================================
+// Public API exports
+// =============================================================================
+// These are the stable public types for external consumers.
+// Import other types directly from their submodules (e.g., tools::bash::BashInput).
+
 pub use default_tools::DefaultCodingTools;
-pub use tools::{EditFileArgs, EditFileResponse, edit_file_contents};
-pub use tools::{FindInput, FindOutput, find_files_by_name};
-pub use tools::{GrepInput, GrepOutput, perform_grep};
-pub use tools::{ListFilesArgs, ListFilesResult, list_files};
-pub use tools::LspCodingTools;
-pub use tools::{
-    DiagnosticsSummary, LocationResult, LspDiagnostic, LspDiagnosticsInput, LspDiagnosticsOutput,
-    LspFindReferencesInput, LspFindReferencesOutput, LspGotoDefinitionInput,
-    LspGotoDefinitionOutput, LspHoverInput, LspHoverOutput, LspWorkspaceSymbolInput,
-    LspWorkspaceSymbolOutput, SymbolResult, execute_lsp_diagnostics, execute_lsp_find_references,
-    execute_lsp_goto_definition, execute_lsp_hover, execute_lsp_workspace_symbol,
-};
-pub use tools::{ReadFileArgs, ReadFileResult, read_file_contents};
-pub use tools::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, process_todo_write};
 pub use tools_trait::CodingTools;
-pub use tools::{WriteFileArgs, WriteFileResponse, write_file_contents};
+pub use tools::lsp::LspCodingTools;
+
+// =============================================================================
+// Internal imports (used by CodingMcp implementation below)
+// =============================================================================
+
+use tools::bash::{
+    execute_command, read_background_bash, BackgroundProcessHandle, BashInput, BashOutput,
+    BashResult, ReadBackgroundBashInput, ReadBackgroundBashOutput,
+};
+use tools::edit_file::{edit_file_contents, EditFileArgs, EditFileResponse};
+use tools::find::{find_files_by_name, FindInput, FindOutput};
+use tools::grep::{perform_grep, GrepInput, GrepOutput};
+use tools::list_files::{list_files, ListFilesArgs, ListFilesResult};
+use tools::read_file::{read_file_contents, ReadFileArgs, ReadFileResult};
+use tools::todo_write::{process_todo_write, TodoItem, TodoWriteInput, TodoWriteOutput};
+use tools::write_file::{write_file_contents, WriteFileArgs, WriteFileResponse};
+use tools::lsp::diagnostics::{execute_lsp_diagnostics, LspDiagnosticsInput, LspDiagnosticsOutput};
+use tools::lsp::find_references::{execute_lsp_find_references, LspFindReferencesInput, LspFindReferencesOutput};
+use tools::lsp::goto_definition::{execute_lsp_goto_definition, LspGotoDefinitionInput, LspGotoDefinitionOutput};
+use tools::lsp::hover::{execute_lsp_hover, LspHoverInput, LspHoverOutput};
+use tools::lsp::workspace_symbol::{execute_lsp_workspace_symbol, LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput};
 
 /// CLI arguments for CodingMcp server
 #[derive(Debug, Clone, Parser)]
 pub struct CodingMcpArgs {
-    /// Root directory for the workspace (used for LSP initialization)
+    /// Root directory for workspace (used for LSP initialization)
     #[arg(long = "root-dir")]
     pub root_dir: Option<PathBuf>,
 }
@@ -208,7 +217,9 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     #[tool]
     pub async fn bash(&self, request: Parameters<BashInput>) -> Result<Json<BashOutput>, String> {
         let Parameters(args) = request;
-        match self.tools.bash(args).await? {
+        let result = self.tools.bash(args).await?;
+
+        match result {
             BashResult::Completed(output) => Ok(Json(output)),
             BashResult::Background(handle) => {
                 let shell_id = handle.shell_id.clone();

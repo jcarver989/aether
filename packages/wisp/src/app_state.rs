@@ -1,13 +1,14 @@
-use std::error::Error;
-
 use crate::cli::Cli;
 use aether::mcp::McpServerConfig;
 use aether::{
     agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent},
     mcp::mcp,
 };
-use mcp_lexicon::CodingMcp;
-use mcp_lexicon::ServiceExt;
+use mcp_lexicon::coding::{DefaultCodingTools, LspCodingTools};
+use mcp_lexicon::{CodingMcp, ServiceExt};
+use std::env::current_dir;
+use std::error::Error;
+use std::path::PathBuf;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 
@@ -37,11 +38,12 @@ impl AppState {
         };
 
         let agent_builder = agent(llm).system(&system_prompt);
-
+        let root_path = current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let lsp_tools = LspCodingTools::new(DefaultCodingTools::new(), root_path);
         let (tools, tx, mcp_handle) = mcp()
             .with_servers(vec![McpServerConfig::InMemory {
                 name: "coding".to_string(),
-                server: CodingMcp::new().into_dyn(),
+                server: CodingMcp::with_tools(lsp_tools).into_dyn(),
             }])
             .spawn()
             .await?;

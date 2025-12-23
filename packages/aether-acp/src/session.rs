@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::acp_actor::AcpActorHandle;
 use crate::acp_coding_tools::AcpCodingTools;
@@ -58,22 +58,9 @@ impl Session {
                     async move {
                         let acp_tools =
                             AcpCodingTools::new(actor_handle.clone(), acp_session_id.clone());
-                        match LspCodingTools::spawn(acp_tools, "rust-analyzer", &[], &project_path)
-                            .await
-                        {
-                            Ok(lsp_tools) => {
-                                debug!("LSP tools spawned successfully");
-                                CodingMcp::with_tools(lsp_tools).into_dyn()
-                            }
-                            Err(e) => {
-                                warn!("Failed to spawn LSP (code intelligence unavailable): {}", e);
-                                CodingMcp::with_tools(AcpCodingTools::new(
-                                    actor_handle,
-                                    acp_session_id,
-                                ))
-                                .into_dyn()
-                            }
-                        }
+                        let lsp_tools = LspCodingTools::new(acp_tools, project_path);
+                        debug!("LspCodingTools created with lazy LSP spawning");
+                        CodingMcp::with_tools(lsp_tools).into_dyn()
                     }
                     .boxed()
                 }),

@@ -502,21 +502,6 @@ impl LspClient {
     fn next_request_id(&self) -> i64 {
         self.request_id.fetch_add(1, Ordering::SeqCst)
     }
-
-    /// Create a fake LspClient for testing purposes.
-    ///
-    /// This creates a client that won't actually communicate with any server.
-    /// Requests will fail, but the client can be used for testing notification behavior.
-    #[cfg(test)]
-    pub(crate) fn new_for_testing(notification_tx: Sender<ClientNotification>) -> Self {
-        let (request_tx, _request_rx) = channel(1);
-        Self {
-            request_id: AtomicI64::new(1),
-            request_tx,
-            notification_tx,
-            _task_handle: spawn(async { /* dummy task */ }),
-        }
-    }
 }
 
 /// The handler task that owns stdin, stdout, and the pending requests map

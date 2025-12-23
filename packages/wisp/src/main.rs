@@ -1,13 +1,9 @@
-// Mr. BotBot - SOTA coding agent
 mod cli;
 mod colors;
 mod components;
 mod output_formatters;
 mod render_context;
 mod renderer;
-
-use std::io;
-
 use clap::Parser;
 use crossterm::cursor::{MoveTo, position};
 use crossterm::event::{Event, KeyEventKind, poll, read};
@@ -15,9 +11,10 @@ use crossterm::queue;
 use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode, size};
 use render_context::RenderContext;
 use renderer::LoopAction;
+use std::io;
 use std::time::Duration;
+use tokio::{select, time};
 mod app_state;
-
 use crate::app_state::AppState;
 use crate::cli::Cli;
 use crate::components::commands::ExecuteCommands;
@@ -27,7 +24,6 @@ use crate::renderer::Renderer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize tracing - set RUST_LOG env var to control log level
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -55,14 +51,14 @@ async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Erro
 
     loop {
         renderer.update_render_context();
-        tokio::select! {
+        select! {
             Some(message) = agent_msg_rx.recv() => {
                 if let Err(e) = renderer.on_agent_message(message).await {
                     eprintln!("Error handling agent message: {e}");
                 }
             }
 
-            _ = tokio::time::sleep(Duration::from_millis(50)) => {
+            _ = time::sleep(Duration::from_millis(50)) => {
                 if let Ok(true) = poll(Duration::from_millis(0)) {
                     match read() {
                         Ok(Event::Key(key_event)) => {

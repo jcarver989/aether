@@ -1,4 +1,4 @@
-use mcp_lexicon::coding::{TodoItem, TodoStatus, TodoWriteInput, process_todo_write};
+use mcp_lexicon::coding::tools::todo_write::{process_todo_write, TodoItem, TodoStatus, TodoWriteInput};
 
 #[test]
 fn test_todo_write_empty_list() {

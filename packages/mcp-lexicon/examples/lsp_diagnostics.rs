@@ -1,16 +1,15 @@
-//! Example: Connect to rust-analyzer and get diagnostics using LspAwareCodingTools
+//! Example: Get diagnostics using LspCodingTools
 //!
 //! This example demonstrates how to:
-//! 1. Spawn rust-analyzer for a Rust project
-//! 2. Wrap DefaultCodingTools with LspAwareCodingTools for LSP integration
-//! 3. Read/write files (which automatically notifies the LSP)
-//! 4. Query diagnostics through the tools abstraction
+//! 1. Wrap DefaultCodingTools with LspCodingTools for multi-language LSP integration
+//! 2. Read/write files (which automatically spawns the appropriate LSP and notifies it)
+//! 3. Query diagnostics through the tools abstraction
 //!
 //! Usage:
 //!   cargo run -p mcp_lexicon --example lsp_diagnostics -- /path/to/rust/project
 //!
 //! Requirements:
-//! - rust-analyzer must be installed and in PATH
+//! - rust-analyzer must be installed and in PATH (for Rust projects)
 //! - The target project must be a valid Rust project with Cargo.toml
 
 use std::env;
@@ -18,10 +17,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use lsp_types::{Diagnostic, Uri};
-use mcp_lexicon::coding::lsp::{FormattedDiagnostic, count_by_severity, path_to_uri};
-use mcp_lexicon::coding::{
-    CodingTools, DefaultCodingTools, LspCodingTools, ReadFileArgs, WriteFileArgs,
-};
+use mcp_lexicon::coding::lsp::{count_by_severity, path_to_uri, FormattedDiagnostic};
+use mcp_lexicon::coding::tools::read_file::ReadFileArgs;
+use mcp_lexicon::coding::tools::write_file::WriteFileArgs;
+use mcp_lexicon::coding::{CodingTools, DefaultCodingTools, LspCodingTools};
 use tokio::time::sleep;
 
 #[tokio::main]
@@ -39,24 +38,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
 
-    println!("Starting rust-analyzer for: {}", project_path.display());
+    println!("Creating LspCodingTools for: {}", project_path.display());
 
-    let tools = match LspCodingTools::spawn(
-        DefaultCodingTools::new(),
-        "rust-analyzer",
-        &[],
-        &project_path,
-    )
-    .await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("Failed to spawn rust-analyzer: {}", e);
-            std::process::exit(1);
-        }
-    };
+    // LspCodingTools automatically detects and spawns the appropriate LSP
+    // based on file extension (e.g., rust-analyzer for .rs files)
+    let tools = LspCodingTools::new(DefaultCodingTools::new(), project_path.clone());
 
-    println!("Language server initialized.");
+    println!("LspCodingTools created (LSP will be spawned lazily on first file access).");
 
     // Find target file
     let lib_rs = project_path.join("src/lib.rs");
@@ -76,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Opening file: {}", target_file.display());
 
-    // Read the file - this automatically notifies the LSP that the file is opened
+    // Read the file - this automatically spawns rust-analyzer and notifies it
     let read_result = tools
         .read_file(ReadFileArgs {
             file_path: target_file_str.clone(),

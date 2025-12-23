@@ -1,4 +1,4 @@
-use mcp_lexicon::coding::{BashInput, BashResult, execute_command, read_background_bash};
+use mcp_lexicon::coding::tools::bash::{execute_command, read_background_bash, BashInput, BashResult};
 use std::time::Duration;
 
 #[tokio::test]
