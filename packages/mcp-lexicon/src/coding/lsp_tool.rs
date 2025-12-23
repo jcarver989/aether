@@ -11,10 +11,6 @@ use std::collections::HashMap;
 use super::lsp::{FormattedDiagnostic, format_diagnostics};
 use super::tools_trait::CodingTools;
 
-// ============================================================================
-// Input types - one per tool
-// ============================================================================
-
 /// Input for the lsp_diagnostics tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -74,10 +70,6 @@ pub struct LspWorkspaceSymbolInput {
     /// The search query (fuzzy matching is used by most language servers)
     pub query: String,
 }
-
-// ============================================================================
-// Output types - shared where appropriate
-// ============================================================================
 
 /// A diagnostic formatted for LLM consumption
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -226,10 +218,6 @@ pub struct LspWorkspaceSymbolOutput {
     pub total_count: usize,
 }
 
-// ============================================================================
-// Execute functions - one per tool
-// ============================================================================
-
 /// Execute the lsp_diagnostics operation
 pub async fn execute_lsp_diagnostics<T: CodingTools>(
     input: LspDiagnosticsInput,
@@ -325,10 +313,6 @@ pub async fn execute_lsp_workspace_symbol<T: CodingTools>(
         total_count,
     })
 }
-
-// ============================================================================
-// Helper functions
-// ============================================================================
 
 /// Parse a line number string to u32
 fn parse_line(s: &str) -> Result<u32, String> {
