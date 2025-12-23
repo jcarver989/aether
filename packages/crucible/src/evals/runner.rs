@@ -17,6 +17,27 @@ use crate::evals::eval::{Eval, WorkingDirectory};
 use crate::server;
 use crate::storage::{EvalResult, ResultsStore};
 
+/// Result of running a single eval task
+type EvalTaskResult = Result<
+    Vec<(EvalAssertion, EvalAssertionResult)>,
+    Box<dyn std::error::Error + Send + Sync>,
+>;
+
+/// Output from a spawned eval task
+type EvalTaskOutput = (
+    Eval,
+    Uuid,
+    EvalTaskResult,
+    Duration,
+    Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
+);
+
+/// Server handles returned from start_axum_server
+type ServerHandles = (
+    Option<JoinHandle<()>>,
+    Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
+);
+
 /// Configure and run AI agent evaluations
 pub struct EvalRunner<R, T>
 where
@@ -207,6 +228,7 @@ where
     }
 
     /// Spawn a single eval task with tracing instrumentation
+    #[allow(clippy::too_many_arguments)]
     fn spawn_eval_task<J>(
         eval: Eval,
         eval_id: Uuid,
@@ -216,13 +238,7 @@ where
         judge_llm: Arc<J>,
         sse_tx: Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
         results_store: Arc<T>,
-    ) -> JoinHandle<(
-        Eval,
-        Uuid,
-        Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>,
-        Duration,
-        Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
-    )>
+    ) -> JoinHandle<EvalTaskOutput>
     where
         J: StreamingModelProvider + 'static,
     {
@@ -259,19 +275,7 @@ where
 
     /// Handle the result of a single eval task
     async fn on_eval_result(
-        task_result: Result<
-            (
-                Eval,
-                Uuid,
-                Result<
-                    Vec<(EvalAssertion, EvalAssertionResult)>,
-                    Box<dyn std::error::Error + Send + Sync>,
-                >,
-                Duration,
-                Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
-            ),
-            JoinError,
-        >,
+        task_result: Result<EvalTaskOutput, JoinError>,
         results_store: &Arc<T>,
         run_id: Uuid,
     ) {
@@ -308,13 +312,7 @@ where
         results_store: &Arc<T>,
         run_id: Uuid,
         serve: bool,
-    ) -> Result<
-        (
-            Option<JoinHandle<()>>,
-            Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
-        ),
-        Box<dyn std::error::Error>,
-    > {
+    ) -> Result<ServerHandles, Box<dyn std::error::Error>> {
         if serve {
             let state = Arc::new(server::AppState::new(results_store.clone(), run_id));
             let sse_tx = Some(state.sse_tx.clone());

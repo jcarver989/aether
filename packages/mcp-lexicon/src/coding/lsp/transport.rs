@@ -182,7 +182,7 @@ impl ClientNotification {
 #[derive(Debug, Clone)]
 pub enum ClientRequest {
     /// Initialize the language server
-    Initialize(i64, InitializeParams),
+    Initialize(i64, Box<InitializeParams>),
     /// Shutdown the language server
     Shutdown(i64),
     /// Go to definition

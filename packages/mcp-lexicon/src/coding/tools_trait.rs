@@ -6,7 +6,7 @@ use super::{
     ListFilesResult, ReadBackgroundBashOutput, ReadFileArgs, ReadFileResult, WriteFileArgs,
     WriteFileResponse,
 };
-use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, SymbolInformation, Uri};
+use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, SymbolInformation};
 
 /// Trait defining the underlying implementation for coding tool operations.
 ///
@@ -52,11 +52,11 @@ pub trait CodingTools: Send + Sync + Debug {
 
     /// Get all cached LSP diagnostics (errors, warnings, etc.).
     ///
-    /// Returns diagnostics keyed by file URI.
+    /// Returns diagnostics keyed by file URI string.
     /// Returns an error if LSP is not configured for this instance.
     fn get_lsp_diagnostics(
         &self,
-    ) -> impl Future<Output = Result<HashMap<Uri, Vec<Diagnostic>>, String>> + Send {
+    ) -> impl Future<Output = Result<HashMap<String, Vec<Diagnostic>>, String>> + Send {
         async { Ok(HashMap::new()) }
     }
 

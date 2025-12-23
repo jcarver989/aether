@@ -435,19 +435,20 @@ fn marked_string_to_string(ms: &lsp_types::MarkedString) -> String {
 
 fn get_diagnostics(
     file_path: Option<String>,
-    diagnostics_cache: &HashMap<Uri, Vec<Diagnostic>>,
+    diagnostics_cache: &HashMap<String, Vec<Diagnostic>>,
 ) -> Result<LspDiagnosticsOutput, String> {
     let mut all_diagnostics: Vec<LspDiagnostic> = Vec::new();
 
     // If a specific file path is requested, filter to that file
     if let Some(path) = file_path {
         // Try to find the URI that matches this path
-        for (uri, diagnostics) in diagnostics_cache {
-            let uri_path = uri.as_str();
+        for (uri_str, diagnostics) in diagnostics_cache {
             // Check if the URI ends with the requested path or matches exactly
-            if uri_path.ends_with(&path) || uri_path.contains(&path) {
+            if (uri_str.ends_with(&path) || uri_str.contains(&path))
+                && let Ok(uri) = uri_str.parse()
+            {
                 let params = lsp_types::PublishDiagnosticsParams {
-                    uri: uri.clone(),
+                    uri,
                     diagnostics: diagnostics.clone(),
                     version: None,
                 };
@@ -460,17 +461,19 @@ fn get_diagnostics(
         }
     } else {
         // Return all diagnostics
-        for (uri, diagnostics) in diagnostics_cache {
-            let params = lsp_types::PublishDiagnosticsParams {
-                uri: uri.clone(),
-                diagnostics: diagnostics.clone(),
-                version: None,
-            };
-            all_diagnostics.extend(
-                format_diagnostics(&params)
-                    .into_iter()
-                    .map(LspDiagnostic::from),
-            );
+        for (uri_str, diagnostics) in diagnostics_cache {
+            if let Ok(uri) = uri_str.parse() {
+                let params = lsp_types::PublishDiagnosticsParams {
+                    uri,
+                    diagnostics: diagnostics.clone(),
+                    version: None,
+                };
+                all_diagnostics.extend(
+                    format_diagnostics(&params)
+                        .into_iter()
+                        .map(LspDiagnostic::from),
+                );
+            }
         }
     }
 
@@ -517,8 +520,8 @@ mod tests {
     use super::*;
     use lsp_types::{DiagnosticSeverity, Position, Range};
 
-    fn make_uri(path: &str) -> Uri {
-        format!("file://{}", path).parse().unwrap()
+    fn make_uri_string(path: &str) -> String {
+        format!("file://{}", path)
     }
 
     fn make_diagnostic(severity: DiagnosticSeverity, message: &str, line: u32) -> Diagnostic {
@@ -543,17 +546,17 @@ mod tests {
 
     #[test]
     fn test_get_all_diagnostics() {
-        let mut cache: HashMap<Uri, Vec<Diagnostic>> = HashMap::new();
+        let mut cache: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
         cache.insert(
-            make_uri("/project/src/main.rs"),
+            make_uri_string("/project/src/main.rs"),
             vec![
                 make_diagnostic(DiagnosticSeverity::ERROR, "type mismatch", 10),
                 make_diagnostic(DiagnosticSeverity::WARNING, "unused variable", 20),
             ],
         );
         cache.insert(
-            make_uri("/project/src/lib.rs"),
+            make_uri_string("/project/src/lib.rs"),
             vec![make_diagnostic(
                 DiagnosticSeverity::ERROR,
                 "missing field",
@@ -571,10 +574,10 @@ mod tests {
 
     #[test]
     fn test_get_diagnostics_for_file() {
-        let mut cache: HashMap<Uri, Vec<Diagnostic>> = HashMap::new();
+        let mut cache: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
         cache.insert(
-            make_uri("/project/src/main.rs"),
+            make_uri_string("/project/src/main.rs"),
             vec![make_diagnostic(
                 DiagnosticSeverity::ERROR,
                 "type mismatch",
@@ -582,7 +585,7 @@ mod tests {
             )],
         );
         cache.insert(
-            make_uri("/project/src/lib.rs"),
+            make_uri_string("/project/src/lib.rs"),
             vec![make_diagnostic(
                 DiagnosticSeverity::ERROR,
                 "missing field",
@@ -599,7 +602,7 @@ mod tests {
 
     #[test]
     fn test_empty_diagnostics() {
-        let cache: HashMap<Uri, Vec<Diagnostic>> = HashMap::new();
+        let cache: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
         let result = get_diagnostics(None, &cache).unwrap();
 
@@ -609,14 +612,14 @@ mod tests {
 
     #[test]
     fn test_diagnostics_sorted() {
-        let mut cache: HashMap<Uri, Vec<Diagnostic>> = HashMap::new();
+        let mut cache: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
         cache.insert(
-            make_uri("/project/src/b.rs"),
+            make_uri_string("/project/src/b.rs"),
             vec![make_diagnostic(DiagnosticSeverity::ERROR, "error in b", 5)],
         );
         cache.insert(
-            make_uri("/project/src/a.rs"),
+            make_uri_string("/project/src/a.rs"),
             vec![make_diagnostic(DiagnosticSeverity::ERROR, "error in a", 10)],
         );
 
