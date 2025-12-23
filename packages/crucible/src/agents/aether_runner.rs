@@ -68,7 +68,7 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
         self
     }
 
-    fn create_mcp_builder(&self) -> Result<McpBuilder, RunError> {
+    async fn create_mcp_builder(&self) -> Result<McpBuilder, RunError> {
         let mut mcp_builder = mcp();
 
         // Clone the Arc, not the factory itself
@@ -84,6 +84,7 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
                 .from_json_file(mcp_json_path.to_str().ok_or_else(|| {
                     RunError::ConfigurationError("Invalid mcp.json path".to_string())
                 })?)
+                .await
                 .map_err(|e| {
                     RunError::ConfigurationError(format!("Failed to load mcp.json: {}", e))
                 })?;
@@ -225,7 +226,7 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
         config: AgentConfig<'_>,
         tx: Sender<AgentRunnerMessage>,
     ) -> Result<(), RunError> {
-        let mcp_builder = self.create_mcp_builder()?;
+        let mcp_builder = self.create_mcp_builder().await?;
         let (tool_definitions, mcp_tx, _mcp_handle) = mcp_builder
             .spawn()
             .await

@@ -1,7 +1,8 @@
 use aether::llm::parser::ModelProviderParser;
 use clap::{Parser, Subcommand};
 use crucible::{AetherRunner, EvalRunner, EvalsConfig};
-use mcp_lexicon::CodingMcp;
+use futures::FutureExt;
+use mcp_lexicon::{CodingMcp, ServiceExt};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -100,7 +101,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|e| format!("Failed to create results store: {e}"))?;
 
             let runner = AetherRunner::new(Arc::new(agent_llm))
-                .with_mcp_server_factory("coding", Box::new(|_args| Box::new(CodingMcp::new())));
+                .with_mcp_server_factory(
+                    "coding",
+                    Box::new(|_args| async move { CodingMcp::new().into_dyn() }.boxed()),
+                );
 
             let crucible = EvalRunner::new(runner, results_store);
 

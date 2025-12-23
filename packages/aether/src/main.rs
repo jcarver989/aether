@@ -52,7 +52,7 @@ pub async fn main() {
     };
 
     let mcp_configs = match RawMcpConfig::from_json_file("mcp.json") {
-        Ok(raw_config) => match raw_config.into_configs(&Default::default()) {
+        Ok(raw_config) => match raw_config.into_configs(&Default::default()).await {
             Ok(configs) => configs,
             Err(_) => {
                 println!("No MCP servers loaded");

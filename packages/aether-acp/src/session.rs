@@ -4,11 +4,11 @@ use aether::mcp::config::{RawMcpConfig, RawMcpServerConfig};
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
-use mcp_lexicon::{CodingMcp, CodingMcpArgs, DefaultCodingTools, LspCodingTools, PluginsMcp, ServiceExt};
-use rmcp::{RoleServer, service::DynService};
+use futures::FutureExt;
+use mcp_lexicon::{CodingMcp, CodingMcpArgs, LspCodingTools, PluginsMcp, ServiceExt};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
@@ -35,98 +35,64 @@ impl Session {
         llm: T,
         system_prompt: Option<String>,
         mcp_config_path: std::path::PathBuf,
-        acp_info: Option<(AcpActorHandle, acp::SessionId)>,
+        actor_handle: AcpActorHandle,
+        acp_session_id: acp::SessionId,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         debug!("Creating new session: {}", id);
         debug!("Loading MCP configuration from: {:?}", mcp_config_path);
 
-        // Parse root_dir from mcp.json coding server args
         let project_path = parse_coding_root_dir(&mcp_config_path)
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
         debug!("Using project root for LSP: {:?}", project_path);
 
-        // Register the coding and slash-commands server factories
         let config_str = mcp_config_path.to_str().ok_or("Invalid MCP config path")?;
 
-        let (tools, mcp_tx, mcp_handle) = if let Some((actor_handle, session_id)) = acp_info {
-            // Use ACP-enabled CodingMcp with LSP wrapper
-            debug!("Creating ACP-enabled CodingMcp and PluginsMcp");
-            let inner = AcpCodingTools::new(actor_handle.clone(), session_id.clone());
-            let coding_service: Arc<Mutex<Option<Box<dyn DynService<RoleServer>>>>> = Arc::new(Mutex::new(Some(
-                match LspCodingTools::spawn(inner, "rust-analyzer", &[], &project_path).await {
-                    Ok(lsp_tools) => {
-                        debug!("LSP tools spawned successfully");
-                        CodingMcp::with_tools(lsp_tools).into_dyn()
+        debug!("Creating ACP-enabled CodingMcp and PluginsMcp");
+        let (tools, mcp_tx, mcp_handle) = mcp()
+            .register_in_memory_server(
+                "coding",
+                Box::new(move |_args| {
+                    let actor_handle = actor_handle.clone();
+                    let acp_session_id = acp_session_id.clone();
+                    let project_path = project_path.clone();
+                    async move {
+                        let acp_tools =
+                            AcpCodingTools::new(actor_handle.clone(), acp_session_id.clone());
+                        match LspCodingTools::spawn(acp_tools, "rust-analyzer", &[], &project_path)
+                            .await
+                        {
+                            Ok(lsp_tools) => {
+                                debug!("LSP tools spawned successfully");
+                                CodingMcp::with_tools(lsp_tools).into_dyn()
+                            }
+                            Err(e) => {
+                                warn!("Failed to spawn LSP (code intelligence unavailable): {}", e);
+                                CodingMcp::with_tools(AcpCodingTools::new(
+                                    actor_handle,
+                                    acp_session_id,
+                                ))
+                                .into_dyn()
+                            }
+                        }
                     }
-                    Err(e) => {
-                        warn!("Failed to spawn LSP (code intelligence unavailable): {}", e);
-                        CodingMcp::with_tools(AcpCodingTools::new(actor_handle, session_id)).into_dyn()
-                    }
-                },
-            )));
-
-            mcp()
-                .register_in_memory_server(
-                    "coding",
-                    Box::new(move |_args| {
-                        coding_service
-                            .lock()
-                            .unwrap()
-                            .take()
-                            .expect("coding service already taken")
-                    }),
-                )
-                .register_in_memory_server(
-                    "plugins",
-                    Box::new(|args| {
+                    .boxed()
+                }),
+            )
+            .register_in_memory_server(
+                "plugins",
+                Box::new(|args| {
+                    async move {
                         PluginsMcp::from_args(args)
                             .expect("Failed to parse PluginsMcp args")
                             .into_dyn()
-                    }),
-                )
-                .from_json_file(config_str)?
-                .spawn()
-                .await?
-        } else {
-            // Use default (local filesystem) CodingMcp with LSP wrapper
-            debug!("Creating default CodingMcp and PluginsMcp");
-            let inner = DefaultCodingTools::new();
-            let coding_service: Arc<Mutex<Option<Box<dyn DynService<RoleServer>>>>> = Arc::new(Mutex::new(Some(
-                match LspCodingTools::spawn(inner, "rust-analyzer", &[], &project_path).await {
-                    Ok(lsp_tools) => {
-                        debug!("LSP tools spawned successfully");
-                        CodingMcp::with_tools(lsp_tools).into_dyn()
                     }
-                    Err(e) => {
-                        warn!("Failed to spawn LSP (code intelligence unavailable): {}", e);
-                        CodingMcp::with_tools(DefaultCodingTools::new()).into_dyn()
-                    }
-                },
-            )));
-
-            mcp()
-                .register_in_memory_server(
-                    "coding",
-                    Box::new(move |_args| {
-                        coding_service
-                            .lock()
-                            .unwrap()
-                            .take()
-                            .expect("coding service already taken")
-                    }),
-                )
-                .register_in_memory_server(
-                    "plugins",
-                    Box::new(|args| {
-                        PluginsMcp::from_args(args)
-                            .expect("Failed to parse PluginsMcp args")
-                            .into_dyn()
-                    }),
-                )
-                .from_json_file(config_str)?
-                .spawn()
-                .await?
-        };
+                    .boxed()
+                }),
+            )
+            .from_json_file(config_str)
+            .await?
+            .spawn()
+            .await?;
 
         // Build system prompt from AGENTS.md and optional custom prompt
         let mut prompts = vec![Prompt::agents_md()];

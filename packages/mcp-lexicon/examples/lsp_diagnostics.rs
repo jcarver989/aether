@@ -41,7 +41,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Starting rust-analyzer for: {}", project_path.display());
 
-    // Spawn LspCodingTools which internally spawns rust-analyzer
     let tools = match LspCodingTools::spawn(
         DefaultCodingTools::new(),
         "rust-analyzer",

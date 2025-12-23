@@ -120,7 +120,8 @@ impl acp::Agent for SessionManager {
             llm,
             self.system_prompt.clone(),
             self.mcp_config_path.clone(),
-            Some((self.actor_handle.clone(), acp_session_id.clone())),
+            self.actor_handle.clone(),
+            acp_session_id.clone(),
         )
         .await
         .map_err(|e| {

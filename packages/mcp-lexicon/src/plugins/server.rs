@@ -3,6 +3,7 @@ use aether::{
     llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser},
     mcp::{mcp, run_mcp_task::McpCommand},
 };
+use futures::FutureExt;
 use clap::Parser;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
@@ -466,8 +467,12 @@ the parent agent's context. When complete, returns the agent's final output as t
         let mcp_config_path = agent_dir.join("mcp.json");
 
         mcp()
-            .register_in_memory_server("coding", Box::new(|_args| CodingMcp::new().into_dyn()))
+            .register_in_memory_server(
+                "coding",
+                Box::new(|_args| async move { CodingMcp::new().into_dyn() }.boxed()),
+            )
             .from_json_file(mcp_config_path.to_str().unwrap_or(""))
+            .await
             .map_err(|e| format!("Failed to load mcp.json: {}", e))?
             .spawn()
             .await

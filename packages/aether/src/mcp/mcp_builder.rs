@@ -50,9 +50,9 @@ impl McpBuilder {
         self
     }
 
-    pub fn from_json_file(mut self, path: &str) -> Result<Self, ParseError> {
+    pub async fn from_json_file(mut self, path: &str) -> Result<Self, ParseError> {
         let raw_config = RawMcpConfig::from_json_file(path)?;
-        let mcp_configs = raw_config.into_configs(&self.factories)?;
+        let mcp_configs = raw_config.into_configs(&self.factories).await?;
         self.mcp_configs.extend(mcp_configs);
         Ok(self)
     }

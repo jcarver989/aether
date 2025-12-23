@@ -1,3 +1,4 @@
+use futures::future::BoxFuture;
 use rmcp::{
     RoleServer, service::DynService,
     transport::streamable_http_client::StreamableHttpClientTransportConfig,
@@ -109,9 +110,10 @@ impl std::fmt::Debug for McpServerConfig {
     }
 }
 
-/// Factory function that creates an MCP server instance
+/// Factory function that creates an MCP server instance asynchronously
 /// The factory receives parsed CLI arguments from the configuration
-pub type ServerFactory = Box<dyn Fn(Vec<String>) -> Box<dyn DynService<RoleServer>> + Send + Sync>;
+pub type ServerFactory =
+    Box<dyn Fn(Vec<String>) -> BoxFuture<'static, Box<dyn DynService<RoleServer>>> + Send + Sync>;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -167,20 +169,21 @@ impl RawMcpConfig {
     }
 
     /// Convert to runtime configuration with the provided factory registry
-    pub fn into_configs(
+    pub async fn into_configs(
         self,
         factories: &HashMap<String, ServerFactory>,
     ) -> Result<Vec<McpServerConfig>, ParseError> {
-        self.servers
-            .into_iter()
-            .map(|(name, raw_config)| raw_config.into_config(name, factories))
-            .collect()
+        let mut configs = Vec::with_capacity(self.servers.len());
+        for (name, raw_config) in self.servers {
+            configs.push(raw_config.into_config(name, factories).await?);
+        }
+        Ok(configs)
     }
 }
 
 impl RawMcpServerConfig {
     /// Convert to runtime configuration with the provided factory registry
-    pub fn into_config(
+    pub async fn into_config(
         self,
         name: String,
         factories: &HashMap<String, ServerFactory>,
@@ -227,7 +230,7 @@ impl RawMcpServerConfig {
                     .map(|a| expand_env_vars(&a))
                     .collect::<Result<Vec<_>, VarError>>()?;
 
-                let server = server_factory(expanded_args);
+                let server = server_factory(expanded_args).await;
                 Ok(McpServerConfig::InMemory { name, server })
             }
         }
