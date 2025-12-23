@@ -4,7 +4,7 @@ use lsp_types::GotoDefinitionResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::common::{LocationResult, parse_line, uri_to_path};
+use crate::coding::lsp::common::{LocationResult, parse_line, uri_to_path};
 use crate::coding::tools_trait::CodingTools;
 
 /// Input for the lsp_goto_definition tool

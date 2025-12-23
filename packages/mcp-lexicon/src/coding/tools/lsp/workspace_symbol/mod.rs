@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::common::{LocationResult, symbol_kind_to_string};
+use crate::coding::lsp::common::{LocationResult, symbol_kind_to_string};
 use crate::coding::tools_trait::CodingTools;
 
 /// Input for the lsp_workspace_symbol tool

@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::diagnostics::{FormattedDiagnostic, format_diagnostics};
+use crate::coding::lsp::diagnostics::{FormattedDiagnostic, format_diagnostics};
 use crate::coding::tools_trait::CodingTools;
 
 /// Input for the lsp_diagnostics tool

@@ -13,7 +13,7 @@ use lsp_types::{
     WorkspaceSymbolParams,
 };
 use serde_json::Value;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::{Stdio, id};
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -28,11 +28,9 @@ use tokio::time::{MissedTickBehavior, interval};
 
 /// Tracks LSP server readiness by monitoring progress notifications.
 ///
-/// Buffers document notifications until the server finishes indexing.
 /// Ready when: no active progress tokens AND settling period has elapsed.
 struct LspReadyTracker {
     active_tokens: HashSet<String>,
-    buffered: VecDeque<ClientNotification>,
     settle_deadline: Option<Instant>,
     is_ready: bool,
 }
@@ -43,7 +41,6 @@ impl LspReadyTracker {
     fn new() -> Self {
         Self {
             active_tokens: HashSet::new(),
-            buffered: VecDeque::new(),
             // Start with a settle deadline - if no progress activity, we'll be ready after this
             settle_deadline: Some(Instant::now() + Self::SETTLE_DURATION),
             is_ready: false,
@@ -75,8 +72,8 @@ impl LspReadyTracker {
     }
 
     /// Check if we've become ready. Call periodically.
-    /// Returns true if we just transitioned to ready (drain buffer after this).
-    fn is_ready(&mut self) -> bool {
+    /// Returns true if we just transitioned to ready.
+    fn check_ready(&mut self) -> bool {
         if self.is_ready {
             return false;
         }
@@ -90,21 +87,6 @@ impl LspReadyTracker {
         }
 
         false
-    }
-
-    /// Buffer a notification if not ready, returns Some(notif) if should send immediately
-    fn process_notification(&mut self, notif: ClientNotification) -> Option<ClientNotification> {
-        if self.is_ready {
-            Some(notif)
-        } else {
-            self.buffered.push_back(notif);
-            None
-        }
-    }
-
-    /// Drain all buffered notifications (call after check_ready returns true)
-    fn drain_buffered(&mut self) -> impl Iterator<Item = ClientNotification> + '_ {
-        self.buffered.drain(..)
     }
 }
 
@@ -230,6 +212,7 @@ impl LspClient {
         let (request_tx, request_rx) = channel(100);
         let (client_notif_tx, client_notif_rx) = channel(100);
         let (server_notif_tx, server_notif_rx) = channel(200);
+        let (ready_tx, ready_rx) = oneshot::channel();
 
         let task_handle = spawn(run_handler(
             process,
@@ -238,6 +221,7 @@ impl LspClient {
             request_rx,
             client_notif_rx,
             server_notif_tx,
+            ready_tx,
         ));
 
         let mut client = Self {
@@ -248,6 +232,11 @@ impl LspClient {
         };
 
         client.initialize(root_path).await?;
+
+        // Wait for the server to finish indexing before returning
+        ready_rx
+            .await
+            .map_err(|_| LspError::Transport("Server closed before ready".into()))?;
 
         Ok((client_notif_tx, server_notif_rx, client))
     }
@@ -532,8 +521,7 @@ impl LspClient {
 
 /// The handler task that owns stdin, stdout, and the pending requests map
 ///
-/// This handler buffers client document notifications (didOpen, didChange, etc.) until
-/// the language server has finished indexing. See `ReadinessTracker` for the readiness logic.
+/// Signals readiness via `ready_tx` when the language server has finished indexing.
 async fn run_handler(
     mut process: Child,
     mut stdin: ChildStdin,
@@ -541,10 +529,12 @@ async fn run_handler(
     mut request_rx: Receiver<Request>,
     mut notification_rx: Receiver<ClientNotification>,
     server_notif_tx: Sender<ServerNotification>,
+    ready_tx: oneshot::Sender<()>,
 ) {
     let mut reader = BufReader::new(stdout);
     let mut pending: HashMap<i64, PendingResponse> = HashMap::new();
     let mut readiness = LspReadyTracker::new();
+    let mut ready_tx = Some(ready_tx);
     let mut ready_check = {
         let mut check = interval(Duration::from_millis(100));
         check.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -608,26 +598,15 @@ async fn run_handler(
             }
 
             Some(notif) = notification_rx.recv() => {
-                // Lifecycle notifications (Initialized, Exit) always go through immediately
-                // Document notifications are buffered until the server is ready
-                match &notif {
-                    ClientNotification::Initialized | ClientNotification::Exit => {
-                        let _ = send_notification(&mut stdin, &notif).await;
-                    }
-                    _ => {
-                        if let Some(notif) = readiness.process_notification(notif) {
-                            let _ = send_notification(&mut stdin, &notif).await;
-                        }
-                    }
-                }
+                let _ = send_notification(&mut stdin, &notif).await;
             }
 
             // Periodic check to see if we've become ready
-            _ = ready_check.tick(), if !readiness.is_ready => {
-                if readiness.is_ready() {
-                    for notif in readiness.drain_buffered() {
-                        let _ = send_notification(&mut stdin, &notif).await;
-                    }
+            _ = ready_check.tick(), if ready_tx.is_some() => {
+                if readiness.check_ready()
+                    && let Some(tx) = ready_tx.take()
+                {
+                    let _ = tx.send(());
                 }
             }
 
@@ -828,40 +807,6 @@ mod tests {
     fn test_readiness_tracker_initially_not_ready() {
         let tracker = LspReadyTracker::new();
         assert!(!tracker.is_ready);
-    }
-
-    #[test]
-    fn test_readiness_tracker_buffers_when_not_ready() {
-        let mut tracker = LspReadyTracker::new();
-        let notif = ClientNotification::TextDocumentOpened(lsp_types::DidOpenTextDocumentParams {
-            text_document: lsp_types::TextDocumentItem {
-                uri: "file:///test.rs".parse().unwrap(),
-                language_id: "rust".to_string(),
-                version: 1,
-                text: "".to_string(),
-            },
-        });
-
-        assert!(tracker.process_notification(notif).is_none());
-        assert_eq!(tracker.buffered.len(), 1);
-    }
-
-    #[test]
-    fn test_readiness_tracker_passes_through_when_ready() {
-        let mut tracker = LspReadyTracker::new();
-        tracker.is_ready = true;
-
-        let notif = ClientNotification::TextDocumentOpened(lsp_types::DidOpenTextDocumentParams {
-            text_document: lsp_types::TextDocumentItem {
-                uri: "file:///test.rs".parse().unwrap(),
-                language_id: "rust".to_string(),
-                version: 1,
-                text: "".to_string(),
-            },
-        });
-
-        assert!(tracker.process_notification(notif).is_some());
-        assert!(tracker.buffered.is_empty());
     }
 
     #[test]

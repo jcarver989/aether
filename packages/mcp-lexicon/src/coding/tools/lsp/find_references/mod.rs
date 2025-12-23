@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::common::{LocationResult, parse_line};
+use crate::coding::lsp::common::{LocationResult, parse_line};
 use crate::coding::tools_trait::CodingTools;
 
 /// Input for the lsp_find_references tool

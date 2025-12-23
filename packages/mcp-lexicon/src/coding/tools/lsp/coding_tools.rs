@@ -12,16 +12,18 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 #[cfg(test)]
-use super::BashOutput;
-use super::lsp::{
+use crate::coding::tools::bash::BashOutput;
+use crate::coding::lsp::{
     ClientNotification, LanguageId, LspClient, NotificationReceiver, NotificationSender,
     ServerNotification, path_to_uri,
 };
-use super::{
-    BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, ListFilesArgs,
-    ListFilesResult, ReadBackgroundBashOutput, ReadFileArgs, ReadFileResult, WriteFileArgs,
-    WriteFileResponse, tools_trait::CodingTools,
-};
+use crate::coding::tools::bash::{BackgroundProcessHandle, BashInput, BashResult};
+use crate::coding::tools::edit_file::{EditFileArgs, EditFileResponse};
+use crate::coding::tools::list_files::{ListFilesArgs, ListFilesResult};
+use crate::coding::tools::bash::ReadBackgroundBashOutput;
+use crate::coding::tools::read_file::{ReadFileArgs, ReadFileResult};
+use crate::coding::tools::write_file::{WriteFileArgs, WriteFileResponse};
+use crate::coding::tools_trait::CodingTools;
 
 /// Request to query the diagnostics cache (keyed by URI string)
 type DiagnosticsQuery = oneshot::Sender<HashMap<String, Vec<Diagnostic>>>;
