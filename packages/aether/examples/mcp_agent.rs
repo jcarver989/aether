@@ -10,7 +10,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let llm = OpenRouterProvider::default("z-ai/glm-4.5-air")?;
-    let (tools, mcp_tx, _mcp_handle) = mcp().from_json_file("examples/mcp.json")?.spawn().await?;
+    let (tools, mcp_tx, _mcp_handle) = mcp()
+        .from_json_file("examples/mcp.json")
+        .await?
+        .spawn()
+        .await?;
     let (tx, mut rx, _handle) = agent(llm)
         .system("You are a helpful assistant with access to web browsing tools via Playwright.")
         .tools(mcp_tx, tools)
