@@ -299,16 +299,12 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         symbol: &str,
         line: u32,
     ) -> Result<GotoDefinitionResponse, String> {
-        // Read file to get content and ensure it's open
         let content = self.ensure_file_open_and_get_content(file_path).await?;
-
-        // Find the symbol on the specified line
         let column = find_symbol_column(&content, symbol, line)?;
 
         let uri = path_to_uri(Path::new(file_path))
             .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
 
-        // LSP uses 0-indexed line/column
         self.lsp_client
             .goto_definition(uri, line - 1, column)
             .await
@@ -322,16 +318,11 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         line: u32,
         include_declaration: bool,
     ) -> Result<Vec<Location>, String> {
-        // Read file to get content and ensure it's open
         let content = self.ensure_file_open_and_get_content(file_path).await?;
-
-        // Find the symbol on the specified line
         let column = find_symbol_column(&content, symbol, line)?;
-
         let uri = path_to_uri(Path::new(file_path))
             .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
 
-        // LSP uses 0-indexed line/column
         self.lsp_client
             .find_references(uri, line - 1, column, include_declaration)
             .await
@@ -344,16 +335,11 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         symbol: &str,
         line: u32,
     ) -> Result<Option<Hover>, String> {
-        // Read file to get content and ensure it's open
         let content = self.ensure_file_open_and_get_content(file_path).await?;
-
-        // Find the symbol on the specified line
         let column = find_symbol_column(&content, symbol, line)?;
-
         let uri = path_to_uri(Path::new(file_path))
             .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
 
-        // LSP uses 0-indexed line/column
         self.lsp_client
             .hover(uri, line - 1, column)
             .await
