@@ -59,18 +59,18 @@ pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, String> {
                 let path = entry.path();
 
                 // Only process files (not directories)
-                if let Some(file_type) = entry.file_type() {
-                    if !file_type.is_file() {
-                        return ignore::WalkState::Continue;
-                    }
+                if let Some(file_type) = entry.file_type()
+                    && !file_type.is_file()
+                {
+                    return ignore::WalkState::Continue;
                 }
 
                 // Check glob pattern matching against the full path
                 let path_str = path.to_string_lossy();
-                if glob_pattern.matches(&path_str) {
-                    if let Ok(mut files) = matching_files.lock() {
-                        files.push(path_str.to_string());
-                    }
+                if glob_pattern.matches(&path_str)
+                    && let Ok(mut files) = matching_files.lock()
+                {
+                    files.push(path_str.to_string());
                 }
             }
             ignore::WalkState::Continue

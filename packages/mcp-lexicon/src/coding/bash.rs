@@ -196,10 +196,10 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, String> {
     }
 
     // Validate timeout is within bounds
-    if let Some(timeout_ms) = args.timeout {
-        if timeout_ms > 600000 {
-            return Err("Timeout cannot exceed 600000ms (10 minutes)".to_string());
-        }
+    if let Some(timeout_ms) = args.timeout
+        && timeout_ms > 600000
+    {
+        return Err("Timeout cannot exceed 600000ms (10 minutes)".to_string());
     }
 
     let run_in_background = args.run_in_background.unwrap_or(false);

@@ -67,10 +67,10 @@ impl Sink for MatchCollectorSink {
         mat: &SinkMatch<'_>,
     ) -> Result<bool, Self::Error> {
         // Check if we've hit the max results limit
-        if let Some(max) = self.max_results {
-            if self.matches.len() >= max {
-                return Ok(false); // Stop searching
-            }
+        if let Some(max) = self.max_results
+            && self.matches.len() >= max
+        {
+            return Ok(false); // Stop searching
         }
 
         let line_str = std::str::from_utf8(mat.bytes()).unwrap_or("<invalid utf8>");

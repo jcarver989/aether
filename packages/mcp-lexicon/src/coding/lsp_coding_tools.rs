@@ -155,7 +155,7 @@ impl<T: CodingTools> LspCodingTools<T> {
             text_document: TextDocumentItem {
                 uri: uri.clone(),
                 language_id: language_id.to_string(),
-                version: version.clone(),
+                version,
                 text: content.to_string(),
             },
         };
@@ -167,7 +167,7 @@ impl<T: CodingTools> LspCodingTools<T> {
         self.open_documents.lock().unwrap().insert(
             uri,
             DocumentState {
-                version: version.clone(),
+                version,
                 language_id,
             },
         );

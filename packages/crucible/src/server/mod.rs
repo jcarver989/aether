@@ -224,9 +224,7 @@ async fn eval_sse_handler<T: ResultsStore>(
     let event_stream = stream.filter_map(move |result| {
         result
             .ok()
-            .filter(|event| {
-                event.run_id() == run_id && event.eval_id().map_or(false, |eid| eid == eval_id)
-            })
+            .filter(|event| event.run_id() == run_id && (event.eval_id() == Some(eval_id)))
             .and_then(|event| {
                 serde_json::to_string(&event)
                     .map(|json| Event::default().data(json))

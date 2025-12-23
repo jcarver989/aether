@@ -117,12 +117,11 @@ impl ResultsStore for FileSystemStore {
         if let Ok(entries) = fs::read_dir(&runs_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() {
-                    if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                        if let Ok(uuid) = Uuid::parse_str(dir_name) {
-                            run_ids.push(uuid);
-                        }
-                    }
+                if path.is_dir()
+                    && let Some(dir_name) = path.file_name().and_then(|n| n.to_str())
+                    && let Ok(uuid) = Uuid::parse_str(dir_name)
+                {
+                    run_ids.push(uuid);
                 }
             }
         }
@@ -146,8 +145,8 @@ impl ResultsStore for FileSystemStore {
         if let Some(parent) = result_file.parent() {
             fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string_pretty(report).map_err(|e| Box::new(e))?;
-        fs::write(result_file, json).map_err(|e| Box::new(e))?;
+        let json = serde_json::to_string_pretty(report).map_err(Box::new)?;
+        fs::write(result_file, json).map_err(Box::new)?;
         Ok(())
     }
 

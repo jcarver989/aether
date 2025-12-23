@@ -17,8 +17,8 @@ use std::collections::HashMap;
 
 use crate::{mcp::client::McpClient, transport::create_in_memory_transport};
 use std::sync::Arc;
-use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
+use tokio::{process::Command, task::JoinHandle};
 
 const SERVERNAME_DELIMITER: &str = "__";
 
@@ -390,7 +390,7 @@ pub struct Tool {
 struct McpServerConnection {
     _name: String,
     client: Arc<RunningService<RoleClient, McpClient>>,
-    server_task: Option<tokio::task::JoinHandle<()>>,
+    server_task: Option<JoinHandle<()>>,
 }
 
 impl From<RmcpTool> for Tool {
