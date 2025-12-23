@@ -55,11 +55,6 @@ pub mod client;
 pub mod common;
 pub mod diagnostics;
 pub mod error;
-pub mod lsp_diagnostics;
-pub mod lsp_find_references;
-pub mod lsp_goto_definition;
-pub mod lsp_hover;
-pub mod lsp_workspace_symbol;
 pub mod transport;
 
 pub use client::{
@@ -71,18 +66,4 @@ pub use diagnostics::{
     format_diagnostics,
 };
 pub use error::{LspError, Result};
-pub use lsp_diagnostics::{
-    DiagnosticsSummary, LspDiagnostic, LspDiagnosticsInput, LspDiagnosticsOutput,
-    execute_lsp_diagnostics,
-};
-pub use lsp_find_references::{
-    LspFindReferencesInput, LspFindReferencesOutput, execute_lsp_find_references,
-};
-pub use lsp_goto_definition::{
-    LspGotoDefinitionInput, LspGotoDefinitionOutput, execute_lsp_goto_definition,
-};
-pub use lsp_hover::{LspHoverInput, LspHoverOutput, execute_lsp_hover};
-pub use lsp_workspace_symbol::{
-    LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput, SymbolResult, execute_lsp_workspace_symbol,
-};
 pub use transport::{ClientNotification, LanguageId};

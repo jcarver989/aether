@@ -15,42 +15,33 @@ use std::{
     path::Path,
 };
 
-pub mod bash;
-pub mod common;
 pub mod default_tools;
-pub mod edit_file;
-pub mod find;
-pub mod grep;
-pub mod list_files;
 pub mod lsp;
-pub mod lsp_coding_tools;
-pub mod lsp_tool;
-pub mod read_file;
-pub mod todo_write;
+pub mod tools;
 pub mod tools_trait;
-pub mod write_file;
 
-pub use bash::{
+// Re-export from tools module for backwards compatibility
+pub use tools::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,
     ReadBackgroundBashOutput, execute_command, read_background_bash,
 };
 pub use default_tools::DefaultCodingTools;
-pub use edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
-pub use find::{FindInput, FindOutput, find_files_by_name};
-pub use grep::{GrepInput, GrepOutput, perform_grep};
-pub use list_files::{ListFilesArgs, ListFilesResult, list_files};
-pub use lsp_coding_tools::LspCodingTools;
-pub use lsp_tool::{
-    LspDiagnosticsInput, LspDiagnosticsOutput, LspFindReferencesInput, LspFindReferencesOutput,
-    LspGotoDefinitionInput, LspGotoDefinitionOutput, LspHoverInput, LspHoverOutput,
-    LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput, execute_lsp_diagnostics,
-    execute_lsp_find_references, execute_lsp_goto_definition, execute_lsp_hover,
-    execute_lsp_workspace_symbol,
+pub use tools::{EditFileArgs, EditFileResponse, edit_file_contents};
+pub use tools::{FindInput, FindOutput, find_files_by_name};
+pub use tools::{GrepInput, GrepOutput, perform_grep};
+pub use tools::{ListFilesArgs, ListFilesResult, list_files};
+pub use tools::LspCodingTools;
+pub use tools::{
+    DiagnosticsSummary, LocationResult, LspDiagnostic, LspDiagnosticsInput, LspDiagnosticsOutput,
+    LspFindReferencesInput, LspFindReferencesOutput, LspGotoDefinitionInput,
+    LspGotoDefinitionOutput, LspHoverInput, LspHoverOutput, LspWorkspaceSymbolInput,
+    LspWorkspaceSymbolOutput, SymbolResult, execute_lsp_diagnostics, execute_lsp_find_references,
+    execute_lsp_goto_definition, execute_lsp_hover, execute_lsp_workspace_symbol,
 };
-pub use read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
-pub use todo_write::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, process_todo_write};
+pub use tools::{ReadFileArgs, ReadFileResult, read_file_contents};
+pub use tools::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, process_todo_write};
 pub use tools_trait::CodingTools;
-pub use write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
+pub use tools::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
 /// CLI arguments for CodingMcp server
 #[derive(Debug, Clone, Parser)]
@@ -127,7 +118,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         }
     }
 
-    #[doc = include_str!("tool_descriptions/grep.md")]
+    #[doc = include_str!("tools/grep/description.md")]
     #[tool]
     pub async fn grep(&self, request: Parameters<GrepInput>) -> Result<Json<GrepOutput>, String> {
         let Parameters(args) = request;
@@ -137,7 +128,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         }
     }
 
-    #[doc = include_str!("tool_descriptions/find.md")]
+    #[doc = include_str!("tools/find/description.md")]
     #[tool]
     pub async fn find(&self, request: Parameters<FindInput>) -> Result<Json<FindOutput>, String> {
         let Parameters(args) = request;
@@ -147,7 +138,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         }
     }
 
-    #[doc = include_str!("tool_descriptions/read_file.md")]
+    #[doc = include_str!("tools/read_file/description.md")]
     #[tool]
     pub async fn read_file(
         &self,
@@ -161,7 +152,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         Ok(Json(result))
     }
 
-    #[doc = include_str!("tool_descriptions/write_file.md")]
+    #[doc = include_str!("tools/write_file/description.md")]
     #[tool]
     pub async fn write_file(
         &self,
@@ -185,7 +176,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         Ok(Json(response))
     }
 
-    #[doc = include_str!("tool_descriptions/edit_file.md")]
+    #[doc = include_str!("tools/edit_file/description.md")]
     #[tool]
     pub async fn edit_file(
         &self,
@@ -209,7 +200,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         Ok(Json(response))
     }
 
-    #[doc = include_str!("tool_descriptions/list_files.md")]
+    #[doc = include_str!("tools/list_files/description.md")]
     #[tool]
     pub async fn list_files(
         &self,
@@ -219,7 +210,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         self.tools.list_files(args).await.map(Json)
     }
 
-    #[doc = include_str!("tool_descriptions/bash.md")]
+    #[doc = include_str!("tools/bash/description.md")]
     #[tool]
     pub async fn bash(&self, request: Parameters<BashInput>) -> Result<Json<BashOutput>, String> {
         let Parameters(args) = request;
@@ -245,7 +236,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         }
     }
 
-    #[doc = include_str!("tool_descriptions/read_background_bash.md")]
+    #[doc = include_str!("tools/bash/read_background_description.md")]
     #[tool]
     pub async fn read_background_bash(
         &self,
@@ -273,7 +264,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         Ok(Json(result))
     }
 
-    #[doc = include_str!("tool_descriptions/todo_write.md")]
+    #[doc = include_str!("tools/todo_write/description.md")]
     #[tool]
     pub async fn todo_write(
         &self,
@@ -290,7 +281,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         Ok(Json(output))
     }
 
-    #[doc = include_str!("tool_descriptions/lsp_diagnostics.md")]
+    #[doc = include_str!("tools/lsp/diagnostics/description.md")]
     #[tool]
     pub async fn lsp_diagnostics(
         &self,
@@ -300,7 +291,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         execute_lsp_diagnostics(input, &self.tools).await.map(Json)
     }
 
-    #[doc = include_str!("tool_descriptions/lsp_goto_definition.md")]
+    #[doc = include_str!("tools/lsp/goto_definition/description.md")]
     #[tool]
     pub async fn lsp_goto_definition(
         &self,
@@ -312,7 +303,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             .map(Json)
     }
 
-    #[doc = include_str!("tool_descriptions/lsp_find_references.md")]
+    #[doc = include_str!("tools/lsp/find_references/description.md")]
     #[tool]
     pub async fn lsp_find_references(
         &self,
@@ -324,7 +315,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             .map(Json)
     }
 
-    #[doc = include_str!("tool_descriptions/lsp_hover.md")]
+    #[doc = include_str!("tools/lsp/hover/description.md")]
     #[tool]
     pub async fn lsp_hover(
         &self,
@@ -334,7 +325,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         execute_lsp_hover(input, &self.tools).await.map(Json)
     }
 
-    #[doc = include_str!("tool_descriptions/lsp_workspace_symbol.md")]
+    #[doc = include_str!("tools/lsp/workspace_symbol/description.md")]
     #[tool]
     pub async fn lsp_workspace_symbol(
         &self,

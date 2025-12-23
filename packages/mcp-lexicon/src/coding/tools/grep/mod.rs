@@ -1,3 +1,5 @@
+pub mod common;
+
 use globset::{Glob, GlobSetBuilder};
 use grep::{
     regex::RegexMatcherBuilder,
@@ -8,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use super::common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
+use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
