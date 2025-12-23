@@ -6,7 +6,7 @@ use super::{
     ListFilesResult, ReadBackgroundBashOutput, ReadFileArgs, ReadFileResult, WriteFileArgs,
     WriteFileResponse,
 };
-use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, Uri};
+use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, SymbolInformation, Uri};
 
 /// Trait defining the underlying implementation for coding tool operations.
 ///
@@ -116,6 +116,22 @@ pub trait CodingTools: Send + Sync + Debug {
         _symbol: &str,
         _line: u32,
     ) -> impl Future<Output = Result<Option<Hover>, String>> + Send {
+        async { Err("LSP not configured".to_string()) }
+    }
+
+    /// Search for symbols across the workspace.
+    ///
+    /// # Arguments
+    /// * `query` - The search query (fuzzy matching is used by most language servers)
+    ///
+    /// # Returns
+    /// A list of symbols matching the query, including their names, kinds, locations,
+    /// and container names. Returns an empty vector if no matches are found.
+    /// Returns an error if LSP is not configured.
+    fn workspace_symbol(
+        &self,
+        _query: &str,
+    ) -> impl Future<Output = Result<Vec<SymbolInformation>, String>> + Send {
         async { Err("LSP not configured".to_string()) }
     }
 }
