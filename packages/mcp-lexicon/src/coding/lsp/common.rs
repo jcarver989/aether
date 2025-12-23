@@ -1,0 +1,93 @@
+//! Common types and utilities shared across LSP tools
+
+use lsp_types::{Location, SymbolKind, Uri};
+use schemars::JsonSchema;
+use serde::Serialize;
+
+/// A location in source code (file path with range)
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LocationResult {
+    /// The file path
+    pub file_path: String,
+    /// Start line (1-indexed)
+    pub start_line: u32,
+    /// Start column (1-indexed)
+    pub start_column: u32,
+    /// End line (1-indexed)
+    pub end_line: u32,
+    /// End column (1-indexed)
+    pub end_column: u32,
+}
+
+impl LocationResult {
+    /// Create from an LSP Location
+    pub fn from_location(loc: &Location) -> Self {
+        let file_path = uri_to_path(&loc.uri);
+        Self {
+            file_path,
+            // Convert from 0-indexed to 1-indexed
+            start_line: loc.range.start.line + 1,
+            start_column: loc.range.start.character + 1,
+            end_line: loc.range.end.line + 1,
+            end_column: loc.range.end.character + 1,
+        }
+    }
+}
+
+/// Parse a line number string to u32
+pub fn parse_line(s: &str) -> Result<u32, String> {
+    s.trim()
+        .parse()
+        .map_err(|_| format!("Invalid line number: {}", s))
+}
+
+/// Convert an LSP URI to a file path string
+pub fn uri_to_path(uri: &Uri) -> String {
+    let uri_str = uri.as_str();
+    // Strip file:// prefix and decode
+    if let Some(path) = uri_str.strip_prefix("file://") {
+        // Handle Windows paths (file:///C:/...)
+        if path.starts_with('/') && path.len() > 2 && path.chars().nth(2) == Some(':') {
+            path[1..].to_string()
+        } else {
+            path.to_string()
+        }
+    } else {
+        uri_str.to_string()
+    }
+}
+
+/// Convert SymbolKind to a human-readable string
+pub fn symbol_kind_to_string(kind: SymbolKind) -> String {
+    match kind {
+        SymbolKind::FILE => "file",
+        SymbolKind::MODULE => "module",
+        SymbolKind::NAMESPACE => "namespace",
+        SymbolKind::PACKAGE => "package",
+        SymbolKind::CLASS => "class",
+        SymbolKind::METHOD => "method",
+        SymbolKind::PROPERTY => "property",
+        SymbolKind::FIELD => "field",
+        SymbolKind::CONSTRUCTOR => "constructor",
+        SymbolKind::ENUM => "enum",
+        SymbolKind::INTERFACE => "interface",
+        SymbolKind::FUNCTION => "function",
+        SymbolKind::VARIABLE => "variable",
+        SymbolKind::CONSTANT => "constant",
+        SymbolKind::STRING => "string",
+        SymbolKind::NUMBER => "number",
+        SymbolKind::BOOLEAN => "boolean",
+        SymbolKind::ARRAY => "array",
+        SymbolKind::OBJECT => "object",
+        SymbolKind::KEY => "key",
+        SymbolKind::NULL => "null",
+        SymbolKind::ENUM_MEMBER => "enum_member",
+        SymbolKind::STRUCT => "struct",
+        SymbolKind::EVENT => "event",
+        SymbolKind::OPERATOR => "operator",
+        SymbolKind::TYPE_PARAMETER => "type_parameter",
+        _ => "unknown",
+    }
+    .to_string()
+}
