@@ -23,8 +23,8 @@ use super::{
     WriteFileResponse, tools_trait::CodingTools,
 };
 
-/// Request to query the diagnostics cache
-type DiagnosticsQuery = oneshot::Sender<HashMap<Uri, Vec<Diagnostic>>>;
+/// Request to query the diagnostics cache (keyed by URI string)
+type DiagnosticsQuery = oneshot::Sender<HashMap<String, Vec<Diagnostic>>>;
 
 /// State for a document tracked by the LSP wrapper
 #[derive(Debug, Clone)]
@@ -282,7 +282,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         self.inner.read_background_bash(handle, filter).await
     }
 
-    async fn get_lsp_diagnostics(&self) -> Result<HashMap<Uri, Vec<Diagnostic>>, String> {
+    async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, String> {
         let (response_tx, response_rx) = oneshot::channel();
         if self.diagnostics_query_tx.send(response_tx).await.is_err() {
             return Err(
@@ -418,13 +418,13 @@ async fn run_cache_actor(
     mut notification_rx: NotificationReceiver,
     mut query_rx: mpsc::Receiver<DiagnosticsQuery>,
 ) {
-    let mut cache: HashMap<Uri, Vec<Diagnostic>> = HashMap::new();
+    let mut cache: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
     loop {
         tokio::select! {
             Some(notification) = notification_rx.recv() => {
                 if let ServerNotification::Diagnostics(params) = notification {
-                    cache.insert(params.uri, params.diagnostics);
+                    cache.insert(params.uri.to_string(), params.diagnostics);
                 }
             }
             Some(response_tx) = query_rx.recv() => {

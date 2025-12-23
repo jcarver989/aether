@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use lsp_types::{Diagnostic, Uri};
+use lsp_types::Diagnostic;
 
 use super::{
     BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, ListFilesArgs,
@@ -64,7 +64,7 @@ impl CodingTools for DefaultCodingTools {
             .map_err(|e| format!("Failed to get output: {e}"))
     }
 
-    async fn get_lsp_diagnostics(&self) -> Result<HashMap<Uri, Vec<Diagnostic>>, String> {
+    async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, String> {
         // DefaultCodingTools without wrapper has no LSP
         // Wrap with LspAwareCodingTools to enable LSP
         Err("LSP not configured. Wrap DefaultCodingTools with LspAwareCodingTools to enable LSP integration.".to_string())

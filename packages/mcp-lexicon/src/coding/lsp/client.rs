@@ -121,7 +121,7 @@ pub enum ServerNotification {
 enum Request {
     Initialize {
         id: i64,
-        params: InitializeParams,
+        params: Box<InitializeParams>,
         response_tx: oneshot::Sender<Result<()>>,
     },
     Shutdown {
@@ -315,7 +315,7 @@ impl LspClient {
         self.request_tx
             .send(Request::Initialize {
                 id,
-                params,
+                params: Box::new(params),
                 response_tx,
             })
             .await

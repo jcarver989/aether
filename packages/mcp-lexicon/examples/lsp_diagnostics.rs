@@ -131,11 +131,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Wait for diagnostics by polling until the cache has an entry for our file
 async fn wait_for_diagnostics<T: CodingTools>(tools: &T, target_uri: &Uri) -> Vec<Diagnostic> {
+    let target_uri_str = target_uri.to_string();
     loop {
         sleep(Duration::from_millis(500)).await;
 
         if let Ok(cache) = tools.get_lsp_diagnostics().await {
-            if let Some(diagnostics) = cache.get(target_uri) {
+            if let Some(diagnostics) = cache.get(&target_uri_str) {
                 return diagnostics.clone();
             }
         }

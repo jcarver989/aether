@@ -19,7 +19,7 @@ use planning_agent::PrInfo;
 use regex::Regex;
 use serde::Deserialize;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Parser)]
@@ -284,7 +284,7 @@ fn create_eval_directory(
     Ok(eval_dir)
 }
 
-fn write_prompt_file(eval_dir: &PathBuf, issue: &IssueData) -> Result<()> {
+fn write_prompt_file(eval_dir: &Path, issue: &IssueData) -> Result<()> {
     let prompt_path = eval_dir.join("prompt.md");
     let body = issue.body.as_deref().unwrap_or("");
     let content = format!("# {}\n\n{}\n", issue.title, body);
@@ -294,7 +294,7 @@ fn write_prompt_file(eval_dir: &PathBuf, issue: &IssueData) -> Result<()> {
     Ok(())
 }
 
-fn write_pr_json(eval_dir: &PathBuf, before_sha: &str, after_sha: &str, pr: &PrData) -> Result<()> {
+fn write_pr_json(eval_dir: &Path, before_sha: &str, after_sha: &str, pr: &PrData) -> Result<()> {
     let pr_info = PrInfo {
         pr_number: pr.number,
         base_branch: pr.base_ref_name.clone(),
