@@ -40,7 +40,13 @@ pub use find::{FindInput, FindOutput, find_files_by_name};
 pub use grep::{GrepInput, GrepOutput, perform_grep};
 pub use list_files::{ListFilesArgs, ListFilesResult, list_files};
 pub use lsp_coding_tools::LspCodingTools;
-pub use lsp_tool::{LspInput, LspOperation, LspOutput, execute_lsp_operation};
+pub use lsp_tool::{
+    LspDiagnosticsInput, LspDiagnosticsOutput, LspFindReferencesInput, LspFindReferencesOutput,
+    LspGotoDefinitionInput, LspGotoDefinitionOutput, LspHoverInput, LspHoverOutput,
+    LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput, execute_lsp_diagnostics,
+    execute_lsp_find_references, execute_lsp_goto_definition, execute_lsp_hover,
+    execute_lsp_workspace_symbol,
+};
 pub use read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 pub use todo_write::{TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput, process_todo_write};
 pub use tools_trait::CodingTools;
@@ -437,29 +443,93 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
     }
 
     #[tool(
-        description = "Query language server information for code intelligence.
+        description = "Get compiler diagnostics (errors, warnings) from the language server.
 
-This tool provides access to LSP (Language Server Protocol) features for semantic code navigation and analysis.
-The language server must be initialized separately before using this tool.
-
-Operations:
-- get_diagnostics: Get compiler errors and warnings. Optionally filter by file_path.
-- go_to_definition: Jump to the definition of a symbol at a specific position.
-- find_references: Find all usages of a symbol across the codebase.
-- hover: Get type information and documentation for a symbol.
+Returns all diagnostics across the workspace, or filter to a specific file.
+Useful for checking if your code changes introduced any errors before committing.
 
 Example usage:
-- Get all diagnostics: {\"operation\": \"get_diagnostics\"}
-- Get diagnostics for a file: {\"operation\": \"get_diagnostics\", \"file_path\": \"src/main.rs\"}
-- Go to definition: {\"operation\": \"go_to_definition\", \"file_path\": \"src/main.rs\", \"line\": 10, \"column\": 5}
-- Find references: {\"operation\": \"find_references\", \"file_path\": \"src/main.rs\", \"line\": 10, \"column\": 5}
-- Get hover info: {\"operation\": \"hover\", \"file_path\": \"src/main.rs\", \"line\": 10, \"column\": 5}
-
-Note: Line and column numbers are 1-indexed (matching what you see in editors and read_file output)."
+- Get all diagnostics: {}
+- Get diagnostics for a file: {\"file_path\": \"src/main.rs\"}"
     )]
-    pub async fn lsp(&self, request: Parameters<LspInput>) -> Result<Json<LspOutput>, String> {
+    pub async fn lsp_diagnostics(
+        &self,
+        request: Parameters<LspDiagnosticsInput>,
+    ) -> Result<Json<LspDiagnosticsOutput>, String> {
         let Parameters(input) = request;
-        execute_lsp_operation(input.operation, &self.tools)
+        execute_lsp_diagnostics(input, &self.tools).await.map(Json)
+    }
+
+    #[tool(
+        description = "Go to the definition of a symbol.
+
+Find where a symbol (function, type, variable, etc.) is defined.
+Requires reading the file first to know the line number.
+
+Example: After reading a file that has `let client = LspClient::new()` on line 42,
+use {\"file_path\": \"/path/to/file.rs\", \"symbol\": \"LspClient\", \"line\": \"42\"}
+to find where LspClient is defined."
+    )]
+    pub async fn lsp_goto_definition(
+        &self,
+        request: Parameters<LspGotoDefinitionInput>,
+    ) -> Result<Json<LspGotoDefinitionOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_goto_definition(input, &self.tools)
+            .await
+            .map(Json)
+    }
+
+    #[tool(
+        description = "Find all references to a symbol across the codebase.
+
+Find everywhere a symbol is used. Useful for understanding impact before refactoring.
+Requires reading the file first to know the line number.
+
+Example: To find all usages of a function `spawn` that appears on line 15,
+use {\"file_path\": \"/path/to/file.rs\", \"symbol\": \"spawn\", \"line\": \"15\"}"
+    )]
+    pub async fn lsp_find_references(
+        &self,
+        request: Parameters<LspFindReferencesInput>,
+    ) -> Result<Json<LspFindReferencesOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_find_references(input, &self.tools)
+            .await
+            .map(Json)
+    }
+
+    #[tool(
+        description = "Get hover information (type signature, documentation) for a symbol.
+
+Shows what you'd see when hovering over a symbol in an IDE - type info and docs.
+Requires reading the file first to know the line number.
+
+Example: To get type info for `HashMap` on line 5,
+use {\"file_path\": \"/path/to/file.rs\", \"symbol\": \"HashMap\", \"line\": \"5\"}"
+    )]
+    pub async fn lsp_hover(
+        &self,
+        request: Parameters<LspHoverInput>,
+    ) -> Result<Json<LspHoverOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_hover(input, &self.tools).await.map(Json)
+    }
+
+    #[tool(
+        description = "Search for symbols (functions, types, etc.) across the workspace.
+
+Fuzzy search for symbols by name. Useful for finding where something is defined
+when you don't know which file it's in.
+
+Example: {\"query\": \"LspClient\"} finds all symbols matching 'LspClient'"
+    )]
+    pub async fn lsp_workspace_symbol(
+        &self,
+        request: Parameters<LspWorkspaceSymbolInput>,
+    ) -> Result<Json<LspWorkspaceSymbolOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_workspace_symbol(input, &self.tools)
             .await
             .map(Json)
     }

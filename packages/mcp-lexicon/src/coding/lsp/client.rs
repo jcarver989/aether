@@ -8,8 +8,9 @@ use lsp_types::{
     GotoCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverClientCapabilities,
     HoverParams, InitializeParams, Location, MarkupKind, NumberOrString, Position, ProgressParams,
     PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, ReferenceContext,
-    ReferenceParams, TextDocumentClientCapabilities, TextDocumentIdentifier,
+    ReferenceParams, SymbolInformation, TextDocumentClientCapabilities, TextDocumentIdentifier,
     TextDocumentPositionParams, Uri, WindowClientCapabilities, WorkDoneProgress,
+    WorkspaceSymbolParams,
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -142,6 +143,11 @@ enum Request {
         params: HoverParams,
         response_tx: oneshot::Sender<Result<Option<Hover>>>,
     },
+    WorkspaceSymbol {
+        id: i64,
+        params: WorkspaceSymbolParams,
+        response_tx: oneshot::Sender<Result<Vec<SymbolInformation>>>,
+    },
 }
 
 /// Pending response channels, keyed by request ID
@@ -151,6 +157,7 @@ enum PendingResponse {
     GotoDefinition(oneshot::Sender<Result<GotoDefinitionResponse>>),
     FindReferences(oneshot::Sender<Result<Vec<Location>>>),
     Hover(oneshot::Sender<Result<Option<Hover>>>),
+    WorkspaceSymbol(oneshot::Sender<Result<Vec<SymbolInformation>>>),
 }
 
 /// An LSP client that manages a language server process
@@ -471,6 +478,37 @@ impl LspClient {
             .map_err(|_| LspError::Transport("Response channel closed".into()))?
     }
 
+    /// Search for symbols across the workspace
+    ///
+    /// # Arguments
+    /// * `query` - The search query (fuzzy matching is used by most language servers)
+    ///
+    /// # Returns
+    /// A list of symbols matching the query, including their locations and kinds.
+    pub async fn workspace_symbol(&self, query: String) -> Result<Vec<SymbolInformation>> {
+        let params = WorkspaceSymbolParams {
+            query,
+            partial_result_params: Default::default(),
+            work_done_progress_params: Default::default(),
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::WorkspaceSymbol {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+
+        response_rx
+            .await
+            .map_err(|_| LspError::Transport("Response channel closed".into()))?
+    }
+
     /// Generate the next unique request ID
     fn next_request_id(&self) -> i64 {
         self.request_id.fetch_add(1, Ordering::SeqCst)
@@ -554,6 +592,10 @@ async fn run_handler(
                     Request::Hover { id, params, response_tx } => (
                         ClientRequest::Hover(id, params),
                         PendingResponse::Hover(response_tx),
+                    ),
+                    Request::WorkspaceSymbol { id, params, response_tx } => (
+                        ClientRequest::WorkspaceSymbol(id, params),
+                        PendingResponse::WorkspaceSymbol(response_tx),
                     ),
                 };
 
@@ -647,6 +689,20 @@ fn send_response(pending: PendingResponse, value: Value) {
             };
             let _ = tx.send(result);
         }
+        PendingResponse::WorkspaceSymbol(tx) => {
+            // Parse the response - can be null or SymbolInformation[]
+            let result = if value.is_null() {
+                Ok(vec![])
+            } else {
+                serde_json::from_value::<Vec<SymbolInformation>>(value).map_err(|e| {
+                    LspError::InvalidMessage(format!(
+                        "Failed to parse workspace symbol response: {}",
+                        e
+                    ))
+                })
+            };
+            let _ = tx.send(result);
+        }
     }
 }
 
@@ -666,6 +722,9 @@ fn send_error(pending: PendingResponse, err: LspError) {
             let _ = tx.send(Err(err));
         }
         PendingResponse::Hover(tx) => {
+            let _ = tx.send(Err(err));
+        }
+        PendingResponse::WorkspaceSymbol(tx) => {
             let _ = tx.send(Err(err));
         }
     }

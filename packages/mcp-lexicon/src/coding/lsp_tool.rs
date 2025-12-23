@@ -1,9 +1,9 @@
-//! LSP tool for querying language server information
+//! LSP tools for querying language server information
 //!
-//! This module provides an MCP tool that exposes LSP functionality to LLMs,
-//! starting with diagnostics queries and extensible for future operations.
+//! This module provides MCP tools that expose LSP functionality to LLMs,
+//! with separate tools for each operation type for clear, self-documenting schemas.
 
-use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, Uri};
+use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, SymbolKind, Uri};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -11,69 +11,73 @@ use std::collections::HashMap;
 use super::lsp::{FormattedDiagnostic, format_diagnostics};
 use super::tools_trait::CodingTools;
 
-/// LSP operations that can be performed via the tool
-///
-/// Uses `#[serde(tag = "operation")]` for extensibility - new operations
-/// can be added without breaking existing callers.
+// ============================================================================
+// Input types - one per tool
+// ============================================================================
+
+/// Input for the lsp_diagnostics tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(tag = "operation", rename_all = "snake_case")]
-pub enum LspOperation {
-    /// Get diagnostics (errors, warnings) from the language server
-    GetDiagnostics {
-        /// Optional: filter to specific file path. If not provided, returns all diagnostics.
-        file_path: Option<String>,
-    },
-    /// Go to the definition of a symbol
-    GoToDefinition {
-        /// The file path containing the symbol
-        file_path: String,
-        /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
-        symbol: String,
-        /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
-        line: String,
-    },
-    /// Find all references to a symbol
-    FindReferences {
-        /// The file path containing the symbol
-        file_path: String,
-        /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
-        symbol: String,
-        /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
-        line: String,
-        /// Whether to include the declaration in the results (default: true)
-        #[serde(default = "default_include_declaration")]
-        include_declaration: bool,
-    },
-    /// Get hover information (type, documentation) for a symbol
-    Hover {
-        /// The file path containing the symbol
-        file_path: String,
-        /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
-        symbol: String,
-        /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
-        line: String,
-    },
+#[serde(rename_all = "snake_case")]
+pub struct LspDiagnosticsInput {
+    /// Optional: filter to specific file path. If not provided, returns all diagnostics.
+    #[serde(default)]
+    pub file_path: Option<String>,
+}
+
+/// Input for the lsp_goto_definition tool
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct LspGotoDefinitionInput {
+    /// The file path containing the symbol
+    pub file_path: String,
+    /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
+    pub symbol: String,
+    /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
+    pub line: String,
+}
+
+/// Input for the lsp_find_references tool
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct LspFindReferencesInput {
+    /// The file path containing the symbol
+    pub file_path: String,
+    /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
+    pub symbol: String,
+    /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
+    pub line: String,
+    /// Whether to include the declaration in the results (default: true)
+    #[serde(default = "default_include_declaration")]
+    pub include_declaration: bool,
 }
 
 fn default_include_declaration() -> bool {
     true
 }
 
-/// Parse a line number string to u32
-fn parse_line(s: &str) -> Result<u32, String> {
-    s.trim()
-        .parse()
-        .map_err(|_| format!("Invalid line number: {}", s))
+/// Input for the lsp_hover tool
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct LspHoverInput {
+    /// The file path containing the symbol
+    pub file_path: String,
+    /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
+    pub symbol: String,
+    /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
+    pub line: String,
 }
 
-/// Input for the LSP tool
+/// Input for the lsp_workspace_symbol tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LspInput {
-    /// The LSP operation to perform
-    #[serde(flatten)]
-    pub operation: LspOperation,
+#[serde(rename_all = "snake_case")]
+pub struct LspWorkspaceSymbolInput {
+    /// The search query (fuzzy matching is used by most language servers)
+    pub query: String,
 }
+
+// ============================================================================
+// Output types - shared where appropriate
+// ============================================================================
 
 /// A diagnostic formatted for LLM consumption
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -111,16 +115,6 @@ impl From<FormattedDiagnostic> for LspDiagnostic {
     }
 }
 
-/// Output from the get_diagnostics operation
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetDiagnosticsOutput {
-    /// List of diagnostics
-    pub diagnostics: Vec<LspDiagnostic>,
-    /// Summary counts
-    pub summary: DiagnosticsSummary,
-}
-
 /// Summary of diagnostic counts
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -135,6 +129,16 @@ pub struct DiagnosticsSummary {
     pub hints: usize,
     /// Total number of diagnostics
     pub total: usize,
+}
+
+/// Output from the lsp_diagnostics tool
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LspDiagnosticsOutput {
+    /// List of diagnostics
+    pub diagnostics: Vec<LspDiagnostic>,
+    /// Summary counts
+    pub summary: DiagnosticsSummary,
 }
 
 /// A location in source code (file path with range)
@@ -168,28 +172,28 @@ impl LocationResult {
     }
 }
 
-/// Output from the go_to_definition operation
+/// Output from the lsp_goto_definition tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct GoToDefinitionOutput {
+pub struct LspGotoDefinitionOutput {
     /// List of definition locations (usually 1, but can be multiple for overloaded symbols)
     pub locations: Vec<LocationResult>,
 }
 
-/// Output from the find_references operation
+/// Output from the lsp_find_references tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct FindReferencesOutput {
+pub struct LspFindReferencesOutput {
     /// List of reference locations
     pub references: Vec<LocationResult>,
     /// Total count of references found
     pub total_count: usize,
 }
 
-/// Output from the hover operation
+/// Output from the lsp_hover tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct HoverOutput {
+pub struct LspHoverOutput {
     /// The hover contents (type info, documentation, etc.)
     pub contents: String,
     /// The range of the symbol being hovered (if available)
@@ -197,18 +201,135 @@ pub struct HoverOutput {
     pub range: Option<LocationResult>,
 }
 
-/// Output from the LSP tool
+/// A symbol found in the workspace
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-#[serde(untagged)]
-pub enum LspOutput {
-    /// Diagnostics output
-    Diagnostics(GetDiagnosticsOutput),
-    /// Go to definition output
-    GoToDefinition(GoToDefinitionOutput),
-    /// Find references output
-    FindReferences(FindReferencesOutput),
-    /// Hover output
-    Hover(HoverOutput),
+#[serde(rename_all = "camelCase")]
+pub struct SymbolResult {
+    /// Symbol name (e.g., "LspClient", "spawn")
+    pub name: String,
+    /// Symbol kind (e.g., "function", "struct", "enum", "method")
+    pub kind: String,
+    /// Container name (e.g., the struct a method belongs to)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container_name: Option<String>,
+    /// Location in source code
+    pub location: LocationResult,
+}
+
+/// Output from the lsp_workspace_symbol tool
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LspWorkspaceSymbolOutput {
+    /// List of symbols matching the query
+    pub symbols: Vec<SymbolResult>,
+    /// Total count of symbols found
+    pub total_count: usize,
+}
+
+// ============================================================================
+// Execute functions - one per tool
+// ============================================================================
+
+/// Execute the lsp_diagnostics operation
+pub async fn execute_lsp_diagnostics<T: CodingTools>(
+    input: LspDiagnosticsInput,
+    tools: &T,
+) -> Result<LspDiagnosticsOutput, String> {
+    let diagnostics_cache = tools.get_lsp_diagnostics().await?;
+    get_diagnostics(input.file_path, &diagnostics_cache)
+}
+
+/// Execute the lsp_goto_definition operation
+pub async fn execute_lsp_goto_definition<T: CodingTools>(
+    input: LspGotoDefinitionInput,
+    tools: &T,
+) -> Result<LspGotoDefinitionOutput, String> {
+    let line = parse_line(&input.line)?;
+    let response = tools
+        .goto_definition(&input.file_path, &input.symbol, line)
+        .await?;
+    let locations = definition_response_to_locations(response);
+    Ok(LspGotoDefinitionOutput { locations })
+}
+
+/// Execute the lsp_find_references operation
+pub async fn execute_lsp_find_references<T: CodingTools>(
+    input: LspFindReferencesInput,
+    tools: &T,
+) -> Result<LspFindReferencesOutput, String> {
+    let line = parse_line(&input.line)?;
+    let lsp_locations = tools
+        .find_references(&input.file_path, &input.symbol, line, input.include_declaration)
+        .await?;
+    let references: Vec<LocationResult> = lsp_locations
+        .iter()
+        .map(LocationResult::from_location)
+        .collect();
+    let total_count = references.len();
+    Ok(LspFindReferencesOutput {
+        references,
+        total_count,
+    })
+}
+
+/// Execute the lsp_hover operation
+pub async fn execute_lsp_hover<T: CodingTools>(
+    input: LspHoverInput,
+    tools: &T,
+) -> Result<LspHoverOutput, String> {
+    let line = parse_line(&input.line)?;
+    let hover = tools.hover(&input.file_path, &input.symbol, line).await?;
+    let output = match hover {
+        Some(h) => {
+            let contents = hover_contents_to_string(&h);
+            let range = h.range.map(|r| LocationResult {
+                file_path: input.file_path.clone(),
+                start_line: r.start.line + 1,
+                start_column: r.start.character + 1,
+                end_line: r.end.line + 1,
+                end_column: r.end.character + 1,
+            });
+            LspHoverOutput { contents, range }
+        }
+        None => LspHoverOutput {
+            contents: String::new(),
+            range: None,
+        },
+    };
+    Ok(output)
+}
+
+/// Execute the lsp_workspace_symbol operation
+pub async fn execute_lsp_workspace_symbol<T: CodingTools>(
+    input: LspWorkspaceSymbolInput,
+    tools: &T,
+) -> Result<LspWorkspaceSymbolOutput, String> {
+    let lsp_symbols = tools.workspace_symbol(&input.query).await?;
+    let symbols: Vec<SymbolResult> = lsp_symbols
+        .iter()
+        .map(|s| SymbolResult {
+            name: s.name.clone(),
+            kind: symbol_kind_to_string(s.kind),
+            container_name: s.container_name.clone(),
+            location: LocationResult::from_location(&s.location),
+        })
+        .collect();
+    let total_count = symbols.len();
+    Ok(LspWorkspaceSymbolOutput {
+        symbols,
+        total_count,
+    })
+}
+
+// ============================================================================
+// Helper functions
+// ============================================================================
+
+/// Parse a line number string to u32
+fn parse_line(s: &str) -> Result<u32, String> {
+    s.trim()
+        .parse()
+        .map_err(|_| format!("Invalid line number: {}", s))
 }
 
 /// Convert an LSP URI to a file path string
@@ -227,80 +348,38 @@ fn uri_to_path(uri: &Uri) -> String {
     }
 }
 
-/// Execute an LSP operation using the provided tools
-///
-/// # Arguments
-/// * `operation` - The LSP operation to perform
-/// * `tools` - The CodingTools implementation (used for LSP requests)
-///
-/// # Returns
-/// The result of the operation
-pub async fn execute_lsp_operation<T: CodingTools>(
-    operation: LspOperation,
-    tools: &T,
-) -> Result<LspOutput, String> {
-    match operation {
-        LspOperation::GetDiagnostics { file_path } => {
-            let diagnostics_cache = tools.get_lsp_diagnostics().await?;
-            get_diagnostics(file_path, &diagnostics_cache)
-        }
-        LspOperation::GoToDefinition {
-            file_path,
-            symbol,
-            line,
-        } => {
-            let line = parse_line(&line)?;
-            let response = tools.goto_definition(&file_path, &symbol, line).await?;
-            let locations = definition_response_to_locations(response);
-            Ok(LspOutput::GoToDefinition(GoToDefinitionOutput { locations }))
-        }
-        LspOperation::FindReferences {
-            file_path,
-            symbol,
-            line,
-            include_declaration,
-        } => {
-            let line = parse_line(&line)?;
-            let lsp_locations = tools
-                .find_references(&file_path, &symbol, line, include_declaration)
-                .await?;
-            let references: Vec<LocationResult> = lsp_locations
-                .iter()
-                .map(LocationResult::from_location)
-                .collect();
-            let total_count = references.len();
-            Ok(LspOutput::FindReferences(FindReferencesOutput {
-                references,
-                total_count,
-            }))
-        }
-        LspOperation::Hover {
-            file_path,
-            symbol,
-            line,
-        } => {
-            let line = parse_line(&line)?;
-            let hover = tools.hover(&file_path, &symbol, line).await?;
-            let output = match hover {
-                Some(h) => {
-                    let contents = hover_contents_to_string(&h);
-                    let range = h.range.map(|r| LocationResult {
-                        file_path: file_path.clone(),
-                        start_line: r.start.line + 1,
-                        start_column: r.start.character + 1,
-                        end_line: r.end.line + 1,
-                        end_column: r.end.character + 1,
-                    });
-                    HoverOutput { contents, range }
-                }
-                None => HoverOutput {
-                    contents: String::new(),
-                    range: None,
-                },
-            };
-            Ok(LspOutput::Hover(output))
-        }
+/// Convert SymbolKind to a human-readable string
+fn symbol_kind_to_string(kind: SymbolKind) -> String {
+    match kind {
+        SymbolKind::FILE => "file",
+        SymbolKind::MODULE => "module",
+        SymbolKind::NAMESPACE => "namespace",
+        SymbolKind::PACKAGE => "package",
+        SymbolKind::CLASS => "class",
+        SymbolKind::METHOD => "method",
+        SymbolKind::PROPERTY => "property",
+        SymbolKind::FIELD => "field",
+        SymbolKind::CONSTRUCTOR => "constructor",
+        SymbolKind::ENUM => "enum",
+        SymbolKind::INTERFACE => "interface",
+        SymbolKind::FUNCTION => "function",
+        SymbolKind::VARIABLE => "variable",
+        SymbolKind::CONSTANT => "constant",
+        SymbolKind::STRING => "string",
+        SymbolKind::NUMBER => "number",
+        SymbolKind::BOOLEAN => "boolean",
+        SymbolKind::ARRAY => "array",
+        SymbolKind::OBJECT => "object",
+        SymbolKind::KEY => "key",
+        SymbolKind::NULL => "null",
+        SymbolKind::ENUM_MEMBER => "enum_member",
+        SymbolKind::STRUCT => "struct",
+        SymbolKind::EVENT => "event",
+        SymbolKind::OPERATOR => "operator",
+        SymbolKind::TYPE_PARAMETER => "type_parameter",
+        _ => "unknown",
     }
+    .to_string()
 }
 
 /// Convert GotoDefinitionResponse to a list of LocationResult
@@ -352,7 +431,7 @@ fn marked_string_to_string(ms: &lsp_types::MarkedString) -> String {
 fn get_diagnostics(
     file_path: Option<String>,
     diagnostics_cache: &HashMap<Uri, Vec<Diagnostic>>,
-) -> Result<LspOutput, String> {
+) -> Result<LspDiagnosticsOutput, String> {
     let mut all_diagnostics: Vec<LspDiagnostic> = Vec::new();
 
     // If a specific file path is requested, filter to that file
@@ -416,7 +495,7 @@ fn get_diagnostics(
 
     let total = all_diagnostics.len();
 
-    Ok(LspOutput::Diagnostics(GetDiagnosticsOutput {
+    Ok(LspDiagnosticsOutput {
         diagnostics: all_diagnostics,
         summary: DiagnosticsSummary {
             errors,
@@ -425,7 +504,7 @@ fn get_diagnostics(
             hints,
             total,
         },
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -479,15 +558,10 @@ mod tests {
 
         let result = get_diagnostics(None, &cache).unwrap();
 
-        match result {
-            LspOutput::Diagnostics(output) => {
-                assert_eq!(output.diagnostics.len(), 3);
-                assert_eq!(output.summary.errors, 2);
-                assert_eq!(output.summary.warnings, 1);
-                assert_eq!(output.summary.total, 3);
-            }
-            _ => panic!("Expected Diagnostics output"),
-        }
+        assert_eq!(result.diagnostics.len(), 3);
+        assert_eq!(result.summary.errors, 2);
+        assert_eq!(result.summary.warnings, 1);
+        assert_eq!(result.summary.total, 3);
     }
 
     #[test]
@@ -513,14 +587,9 @@ mod tests {
 
         let result = get_diagnostics(Some("main.rs".to_string()), &cache).unwrap();
 
-        match result {
-            LspOutput::Diagnostics(output) => {
-                assert_eq!(output.diagnostics.len(), 1);
-                assert!(output.diagnostics[0].file.contains("main.rs"));
-                assert_eq!(output.diagnostics[0].message, "type mismatch");
-            }
-            _ => panic!("Expected Diagnostics output"),
-        }
+        assert_eq!(result.diagnostics.len(), 1);
+        assert!(result.diagnostics[0].file.contains("main.rs"));
+        assert_eq!(result.diagnostics[0].message, "type mismatch");
     }
 
     #[test]
@@ -529,13 +598,8 @@ mod tests {
 
         let result = get_diagnostics(None, &cache).unwrap();
 
-        match result {
-            LspOutput::Diagnostics(output) => {
-                assert_eq!(output.diagnostics.len(), 0);
-                assert_eq!(output.summary.total, 0);
-            }
-            _ => panic!("Expected Diagnostics output"),
-        }
+        assert_eq!(result.diagnostics.len(), 0);
+        assert_eq!(result.summary.total, 0);
     }
 
     #[test]
@@ -553,13 +617,8 @@ mod tests {
 
         let result = get_diagnostics(None, &cache).unwrap();
 
-        match result {
-            LspOutput::Diagnostics(output) => {
-                // Should be sorted by file path
-                assert!(output.diagnostics[0].file.contains("a.rs"));
-                assert!(output.diagnostics[1].file.contains("b.rs"));
-            }
-            _ => panic!("Expected Diagnostics output"),
-        }
+        // Should be sorted by file path
+        assert!(result.diagnostics[0].file.contains("a.rs"));
+        assert!(result.diagnostics[1].file.contains("b.rs"));
     }
 }

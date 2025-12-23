@@ -1,7 +1,7 @@
 use lsp_types::{
     Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    GotoDefinitionResponse, Hover, Location, TextDocumentContentChangeEvent, TextDocumentIdentifier,
-    TextDocumentItem, Uri, VersionedTextDocumentIdentifier,
+    GotoDefinitionResponse, Hover, Location, SymbolInformation, TextDocumentContentChangeEvent,
+    TextDocumentIdentifier, TextDocumentItem, Uri, VersionedTextDocumentIdentifier,
 };
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -357,6 +357,13 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
             .hover(uri, line - 1, column)
             .await
             .map_err(|e| format!("LSP hover failed: {}", e))
+    }
+
+    async fn workspace_symbol(&self, query: &str) -> Result<Vec<SymbolInformation>, String> {
+        self.lsp_client
+            .workspace_symbol(query.to_string())
+            .await
+            .map_err(|e| format!("LSP workspace_symbol failed: {}", e))
     }
 }
 

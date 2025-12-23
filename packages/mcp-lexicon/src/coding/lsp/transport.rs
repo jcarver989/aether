@@ -2,7 +2,7 @@ use super::error::{LspError, Result};
 use lsp_types::{
     DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     GotoDefinitionParams, HoverParams, InitializeParams, ProgressParams, PublishDiagnosticsParams,
-    ReferenceParams,
+    ReferenceParams, WorkspaceSymbolParams,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, to_value};
@@ -191,6 +191,8 @@ pub enum ClientRequest {
     FindReferences(i64, ReferenceParams),
     /// Hover (get type/documentation info)
     Hover(i64, HoverParams),
+    /// Workspace symbol search
+    WorkspaceSymbol(i64, WorkspaceSymbolParams),
 }
 
 impl ClientRequest {
@@ -202,6 +204,7 @@ impl ClientRequest {
             ClientRequest::GotoDefinition(id, _) => *id,
             ClientRequest::FindReferences(id, _) => *id,
             ClientRequest::Hover(id, _) => *id,
+            ClientRequest::WorkspaceSymbol(id, _) => *id,
         }
     }
 }
@@ -351,6 +354,11 @@ pub async fn send_request(writer: &mut ChildStdin, request: &ClientRequest) -> R
         ClientRequest::Hover(id, params) => (
             *id,
             "textDocument/hover",
+            to_value(params).unwrap_or(Value::Null),
+        ),
+        ClientRequest::WorkspaceSymbol(id, params) => (
+            *id,
+            "workspace/symbol",
             to_value(params).unwrap_or(Value::Null),
         ),
     };
