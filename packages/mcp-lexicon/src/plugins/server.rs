@@ -3,8 +3,8 @@ use aether::{
     llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser},
     mcp::{mcp, run_mcp_task::McpCommand},
 };
-use futures::FutureExt;
 use clap::Parser;
+use futures::FutureExt;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
     handler::server::{

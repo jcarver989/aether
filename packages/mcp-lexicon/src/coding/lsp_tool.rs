@@ -259,7 +259,12 @@ pub async fn execute_lsp_find_references<T: CodingTools>(
 ) -> Result<LspFindReferencesOutput, String> {
     let line = parse_line(&input.line)?;
     let lsp_locations = tools
-        .find_references(&input.file_path, &input.symbol, line, input.include_declaration)
+        .find_references(
+            &input.file_path,
+            &input.symbol,
+            line,
+            input.include_declaration,
+        )
         .await?;
     let references: Vec<LocationResult> = lsp_locations
         .iter()

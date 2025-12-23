@@ -2,8 +2,8 @@ use aether::mcp::{McpServerConfig, ParseError, RawMcpConfig};
 use std::collections::HashMap;
 use std::env;
 
-#[test]
-fn test_parse_stdio_config() {
+#[tokio::test]
+async fn test_parse_stdio_config() {
     unsafe { env::set_var("GITHUB_TOKEN", "test_token") };
 
     let json = r#"
@@ -22,7 +22,7 @@ fn test_parse_stdio_config() {
     "#;
 
     let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
@@ -45,8 +45,8 @@ fn test_parse_stdio_config() {
     unsafe { env::remove_var("GITHUB_TOKEN") };
 }
 
-#[test]
-fn test_parse_http_config() {
+#[tokio::test]
+async fn test_parse_http_config() {
     unsafe { env::set_var("API_TOKEN", "secret_token") };
 
     let json = r#"
@@ -64,7 +64,7 @@ fn test_parse_http_config() {
     "#;
 
     let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
@@ -79,8 +79,8 @@ fn test_parse_http_config() {
     unsafe { env::remove_var("API_TOKEN") };
 }
 
-#[test]
-fn test_parse_sse_config() {
+#[tokio::test]
+async fn test_parse_sse_config() {
     let json = r#"
     {
         "servers": {
@@ -94,7 +94,7 @@ fn test_parse_sse_config() {
     "#;
 
     let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
 
     assert_eq!(configs.len(), 1);
     // SSE maps to HTTP internally
@@ -111,8 +111,8 @@ fn test_parse_sse_config() {
 // and is better tested in integration tests with actual server implementations.
 // Skipping this test for now as it requires too much boilerplate.
 
-#[test]
-fn test_missing_env_var_error() {
+#[tokio::test]
+async fn test_missing_env_var_error() {
     let json = r#"
     {
         "servers": {
@@ -126,7 +126,7 @@ fn test_missing_env_var_error() {
     "#;
 
     let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let result = raw_config.into_configs(&HashMap::new());
+    let result = raw_config.into_configs(&HashMap::new()).await;
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -135,8 +135,8 @@ fn test_missing_env_var_error() {
     }
 }
 
-#[test]
-fn test_factory_not_found_error() {
+#[tokio::test]
+async fn test_factory_not_found_error() {
     let json = r#"
     {
         "servers": {
@@ -148,7 +148,7 @@ fn test_factory_not_found_error() {
     "#;
 
     let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let result = raw_config.into_configs(&HashMap::new());
+    let result = raw_config.into_configs(&HashMap::new()).await;
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -172,8 +172,8 @@ fn test_invalid_json() {
     }
 }
 
-#[test]
-fn test_multiple_servers() {
+#[tokio::test]
+async fn test_multiple_servers() {
     unsafe { env::set_var("TOKEN", "test") };
 
     let json = r#"
@@ -196,15 +196,15 @@ fn test_multiple_servers() {
     "#;
 
     let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
 
     assert_eq!(configs.len(), 2);
 
     unsafe { env::remove_var("TOKEN") };
 }
 
-#[test]
-fn test_env_var_in_url() {
+#[tokio::test]
+async fn test_env_var_in_url() {
     unsafe {
         env::set_var("HOST", "localhost");
         env::set_var("PORT", "8080");
@@ -222,7 +222,7 @@ fn test_env_var_in_url() {
     "#;
 
     let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
 
     match &configs[0] {
         McpServerConfig::Http { config, .. } => {

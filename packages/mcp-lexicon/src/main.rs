@@ -100,11 +100,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let results_store = crucible::FileSystemStore::new(output_dir_path)
                 .map_err(|e| format!("Failed to create results store: {e}"))?;
 
-            let runner = AetherRunner::new(Arc::new(agent_llm))
-                .with_mcp_server_factory(
-                    "coding",
-                    Box::new(|_args| async move { CodingMcp::new().into_dyn() }.boxed()),
-                );
+            let runner = AetherRunner::new(Arc::new(agent_llm)).with_mcp_server_factory(
+                "coding",
+                Box::new(|_args| async move { CodingMcp::new().into_dyn() }.boxed()),
+            );
 
             let crucible = EvalRunner::new(runner, results_store);
 
