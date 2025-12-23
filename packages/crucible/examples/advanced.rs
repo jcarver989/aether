@@ -20,6 +20,7 @@ use clap::Parser;
 use crucible::{
     AetherRunner, BinaryMetric, Eval, EvalAssertion, EvalRunner, EvalsConfig, WorkingDirectory,
 };
+use futures::FutureExt;
 use mcp_lexicon::{CodingMcp, ServiceExt};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -112,8 +113,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     // Create agent runner with MCP server
-    let runner = AetherRunner::new(llm)
-        .with_mcp_server_factory("coding", Box::new(|_args| CodingMcp::new().into_dyn()));
+    let runner = AetherRunner::new(llm).with_mcp_server_factory(
+        "coding",
+        Box::new(|_args| async move { CodingMcp::new().into_dyn() }.boxed()),
+    );
 
     // Create configuration with all features enabled
     let config = EvalsConfig::new(judge_llm)

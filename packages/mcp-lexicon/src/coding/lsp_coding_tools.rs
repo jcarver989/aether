@@ -141,37 +141,38 @@ impl<T: CodingTools> LspCodingTools<T> {
             return None;
         };
 
-        let mut docs = self.open_documents.lock().unwrap();
-
-        if let Some(state) = docs.get_mut(&uri) {
-            // Already open, just increment and return version
-            state.version += 1;
-            Some(state.version)
-        } else {
-            // Not open yet, send didOpen
-            let language_id = LanguageId::from_path(Path::new(file_path));
-            let params = DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri: uri.clone(),
-                    language_id: language_id.to_string(),
-                    version: 1,
-                    text: content.to_string(),
-                },
-            };
-
-            let _ = self
-                .lsp_tx
-                .try_send(ClientNotification::TextDocumentOpened(params));
-
-            docs.insert(
-                uri,
-                DocumentState {
-                    version: 1,
-                    language_id,
-                },
-            );
-            Some(1)
+        {
+            let mut docs = self.open_documents.lock().unwrap();
+            if let Some(state) = docs.get_mut(&uri) {
+                state.version += 1;
+                return Some(state.version);
+            }
         }
+
+        let language_id = LanguageId::from_path(Path::new(file_path));
+        let version = 1;
+        let params = DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: uri.clone(),
+                language_id: language_id.to_string(),
+                version: version.clone(),
+                text: content.to_string(),
+            },
+        };
+
+        let _ = self
+            .lsp_tx
+            .try_send(ClientNotification::TextDocumentOpened(params));
+
+        self.open_documents.lock().unwrap().insert(
+            uri,
+            DocumentState {
+                version: version.clone(),
+                language_id,
+            },
+        );
+
+        Some(version)
     }
 
     /// Notify the LSP that a document was changed (requires document to be open)

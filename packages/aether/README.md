@@ -140,7 +140,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1. Connect to MCP servers
     let (tools, mcp_tx, _mcp_handle) = mcp()
-        .from_json_file("mcp.json")? // <-- Load MCP servers from JSON
+        .from_json_file("mcp.json") // <-- Load MCP servers from JSON
+        .await?
         .spawn() // <-- Spawn the MCP client into a tokio task (multiple agents can use it)
         .await?;
 
