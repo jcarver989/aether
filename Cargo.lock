@@ -1986,6 +1986,7 @@ dependencies = [
  "anyhow",
  "clap",
  "crucible",
+ "futures",
  "mcp_lexicon",
  "regex",
  "reqwest",
