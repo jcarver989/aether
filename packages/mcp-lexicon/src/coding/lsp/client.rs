@@ -601,11 +601,10 @@ async fn run_handler(
 
                 let id = client_request.id();
                 pending.insert(id, pending_response);
-                if let Err(e) = send_request(&mut stdin, &client_request).await {
-                    if let Some(p) = pending.remove(&id) {
+                if let Err(e) = send_request(&mut stdin, &client_request).await
+                    && let Some(p) = pending.remove(&id) {
                         send_error(p, e);
                     }
-                }
             }
 
             Some(notif) = notification_rx.recv() => {

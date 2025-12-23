@@ -25,8 +25,8 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                     if let Some(choice) = response.choices.pop() {
                         let delta = choice.delta;
 
-                        if let Some(content) = delta.content {
-                            if !content.is_empty() {
+                        if let Some(content) = delta.content
+                            && !content.is_empty() {
                                 // If we have pending tool calls and now we're getting content,
                                 // complete all tool calls first
                                 for tool_call in tool_collector.complete_all_tool_calls() {
@@ -34,7 +34,6 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                                 }
                                 yield Ok(LlmResponse::Text { chunk: content });
                             }
-                        }
 
                         if let Some(tool_calls) = delta.tool_calls {
                             for tool_call in tool_calls {
@@ -100,15 +99,14 @@ impl ToolCallCollector {
                 responses.push(LlmResponse::ToolRequestStart { id, name });
             }
 
-            if let Some(arguments) = function.arguments {
-                if !arguments.is_empty() {
-                    if let Some(id) = self.add_arguments(index, &arguments) {
-                        responses.push(LlmResponse::ToolRequestArg {
-                            id,
-                            chunk: arguments,
-                        });
-                    }
-                }
+            if let Some(arguments) = function.arguments
+                && !arguments.is_empty()
+                && let Some(id) = self.add_arguments(index, &arguments)
+            {
+                responses.push(LlmResponse::ToolRequestArg {
+                    id,
+                    chunk: arguments,
+                });
             }
         }
 

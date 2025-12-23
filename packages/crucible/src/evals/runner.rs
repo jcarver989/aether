@@ -4,7 +4,7 @@ use owo_colors::OwoColorize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinError, JoinHandle};
 use tracing::Instrument;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -216,7 +216,7 @@ where
         judge_llm: Arc<J>,
         sse_tx: Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
         results_store: Arc<T>,
-    ) -> tokio::task::JoinHandle<(
+    ) -> JoinHandle<(
         Eval,
         Uuid,
         Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>,
@@ -270,7 +270,7 @@ where
                 Duration,
                 Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
             ),
-            tokio::task::JoinError,
+            JoinError,
         >,
         results_store: &Arc<T>,
         run_id: Uuid,

@@ -26,13 +26,13 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
     let file_path = Path::new(&args.file_path);
 
     // Create parent directories if needed
-    if let Some(parent) = file_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return Err(format!(
-                "Failed to create directories for {}: {}",
-                args.file_path, e
-            ));
-        }
+    if let Some(parent) = file_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return Err(format!(
+            "Failed to create directories for {}: {}",
+            args.file_path, e
+        ));
     }
 
     // Write content to file

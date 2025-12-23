@@ -271,22 +271,22 @@ struct IncomingMessage {
 impl From<IncomingMessage> for Option<ParsedMessage> {
     fn from(msg: IncomingMessage) -> Self {
         // Check if this is a response (has id and result/error)
-        if let Some(id) = msg.id {
-            if msg.result.is_some() || msg.error.is_some() {
-                return Some(ParsedMessage::Response(ResponseMessage {
-                    id,
-                    result: msg.result,
-                    error: msg.error,
-                }));
-            }
+        if let Some(id) = msg.id
+            && (msg.result.is_some() || msg.error.is_some())
+        {
+            return Some(ParsedMessage::Response(ResponseMessage {
+                id,
+                result: msg.result,
+                error: msg.error,
+            }));
         }
 
         // Check if this is a notification (has method but no id)
-        if let Some(method) = msg.method {
-            if msg.id.is_none() {
-                let notification = parse_notification(&method, msg.params.unwrap_or(Value::Null));
-                return Some(ParsedMessage::Notification(notification));
-            }
+        if let Some(method) = msg.method
+            && msg.id.is_none()
+        {
+            let notification = parse_notification(&method, msg.params.unwrap_or(Value::Null));
+            return Some(ParsedMessage::Notification(notification));
         }
 
         None

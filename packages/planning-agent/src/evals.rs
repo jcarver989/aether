@@ -66,7 +66,7 @@ fn eval(eval_path: &str, repo_url: &str) -> Result<Eval, Box<dyn std::error::Err
     let pr_json_path = eval_dir.join("pr.json");
     let pr_json_content = fs::read_to_string(&pr_json_path)?;
     let pr_info: PrInfo = serde_json::from_str(&pr_json_content)?;
-    let eval_name = eval_path.replace('/', "_").replace('-', "_");
+    let eval_name = eval_path.replace(['/', '-'], "_");
 
     Ok(Eval::new(
         &eval_name,
