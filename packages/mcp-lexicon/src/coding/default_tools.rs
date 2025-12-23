@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use lsp_types::Diagnostic;
 
 use super::{
-    BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, ListFilesArgs,
-    ListFilesResult, ReadBackgroundBashOutput, ReadFileArgs, ReadFileResult, WriteFileArgs,
-    WriteFileResponse, edit_file_contents, execute_command, list_files, read_background_bash,
+    BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, FindInput,
+    FindOutput, GrepInput, GrepOutput, ListFilesArgs, ListFilesResult, ReadBackgroundBashOutput,
+    ReadFileArgs, ReadFileResult, WriteFileArgs, WriteFileResponse, edit_file_contents,
+    execute_command, find_files_by_name, list_files, perform_grep, read_background_bash,
     read_file_contents, tools_trait::CodingTools, write_file_contents,
 };
 
@@ -62,6 +63,14 @@ impl CodingTools for DefaultCodingTools {
         read_background_bash(handle, filter)
             .await
             .map_err(|e| format!("Failed to get output: {e}"))
+    }
+
+    async fn grep(&self, args: GrepInput) -> Result<GrepOutput, String> {
+        perform_grep(args).await
+    }
+
+    async fn find(&self, args: FindInput) -> Result<FindOutput, String> {
+        find_files_by_name(args).await
     }
 
     async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, String> {

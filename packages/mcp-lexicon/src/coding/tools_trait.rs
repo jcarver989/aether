@@ -2,9 +2,10 @@ use std::future::Future;
 use std::{collections::HashMap, fmt::Debug};
 
 use super::{
-    BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, ListFilesArgs,
-    ListFilesResult, ReadBackgroundBashOutput, ReadFileArgs, ReadFileResult, WriteFileArgs,
-    WriteFileResponse,
+    BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, FindInput,
+    FindOutput, GrepInput, GrepOutput, ListFilesArgs, ListFilesResult, ReadBackgroundBashOutput,
+    ReadFileArgs, ReadFileResult, WriteFileArgs, WriteFileResponse, find_files_by_name,
+    perform_grep,
 };
 use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, SymbolInformation};
 
@@ -49,6 +50,27 @@ pub trait CodingTools: Send + Sync + Debug {
     ) -> impl Future<
         Output = Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String>,
     > + Send;
+
+    /// Search file contents using regex patterns.
+    ///
+    /// Searches for a pattern in files within a directory, with support for
+    /// glob filtering, file type filtering, and various output modes.
+    fn grep(
+        &self,
+        args: GrepInput,
+    ) -> impl Future<Output = Result<GrepOutput, String>> + Send {
+        async move { perform_grep(args).await }
+    }
+
+    /// Find files by name using glob patterns.
+    ///
+    /// Searches for files matching a glob pattern within a directory.
+    fn find(
+        &self,
+        args: FindInput,
+    ) -> impl Future<Output = Result<FindOutput, String>> + Send {
+        async move { find_files_by_name(args).await }
+    }
 
     /// Get all cached LSP diagnostics (errors, warnings, etc.).
     ///
