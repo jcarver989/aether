@@ -4,6 +4,7 @@ use crate::llm::{
     LlmError, ProviderFactory, StreamingModelProvider,
     alloyed::AlloyedModelProvider,
     anthropic::AnthropicProvider,
+    gemini::GeminiProvider,
     local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
     openrouter::OpenRouterProvider,
     z_ai::ZAiProvider,
@@ -28,6 +29,7 @@ impl Default for ModelProviderParser {
     fn default() -> Self {
         Self::new(HashMap::new())
             .with_provider::<AnthropicProvider>("anthropic")
+            .with_provider::<GeminiProvider>("gemini")
             .with_provider::<OpenRouterProvider>("openrouter")
             .with_provider::<OllamaProvider>("ollama")
             .with_provider::<ZAiProvider>("zai")
@@ -136,6 +138,20 @@ mod tests {
             let err = e.to_string();
             assert!(
                 err.contains("API") || err.contains("OPENROUTER"),
+                "Should fail on API key, not parsing"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_gemini() {
+        let parser = ModelProviderParser::default();
+        let result = parser.parse("gemini:gemini-2.5-flash");
+        // Will fail without API key, but should parse successfully
+        if let Err(e) = result {
+            let err = e.to_string();
+            assert!(
+                err.contains("API") || err.contains("GEMINI"),
                 "Should fail on API key, not parsing"
             );
         }
