@@ -1,5 +1,6 @@
 use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{AgentMessage, UserMessage};
+use crate::context::TokenTracker;
 use crate::llm::{
     ChatMessage, StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult,
 };
@@ -33,6 +34,7 @@ pub struct Agent<T: StreamingModelProvider> {
     streams: StreamMap<String, EventStream>,
     middleware: Middleware,
     tool_timeout: Duration,
+    token_tracker: TokenTracker,
 }
 
 impl<T: StreamingModelProvider + 'static> Agent<T> {
@@ -59,11 +61,17 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             streams,
             middleware,
             tool_timeout,
+            token_tracker: TokenTracker::new(200_000), // Default to Claude's 200k context limit
         }
     }
 
     pub fn current_model_display_name(&self) -> String {
         self.llm.display_name()
+    }
+
+    /// Get a reference to the token tracker
+    pub fn token_tracker(&self) -> &TokenTracker {
+        &self.token_tracker
     }
 
     pub async fn run(mut self) {
@@ -305,12 +313,14 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 input_tokens,
                 output_tokens,
             } => {
-                // Token usage information from API response
-                // This is tracked for context management but doesn't require action in the agent loop
+                // Record token usage for context management
+                self.token_tracker.record_usage(input_tokens, output_tokens);
                 tracing::debug!(
-                    "Token usage - input: {}, output: {}",
+                    "Token usage - input: {}, output: {}, ratio: {:.2}%, remaining: {}",
                     input_tokens,
-                    output_tokens
+                    output_tokens,
+                    self.token_tracker.usage_ratio() * 100.0,
+                    self.token_tracker.tokens_remaining()
                 );
             }
         }
