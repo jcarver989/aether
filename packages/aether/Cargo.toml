@@ -3,10 +3,6 @@ name = "aether"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-default = []
-mcp-oauth = []
-
 [dependencies]
 futures = { workspace = true }
 serde = { workspace = true }

@@ -1,5 +1,7 @@
 use super::error::OAuthError;
+use async_trait::async_trait;
 use rmcp::transport::auth::{CredentialStore, StoredCredentials};
+use rmcp::transport::AuthError;
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -34,51 +36,47 @@ impl FileCredentialStore {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl CredentialStore for FileCredentialStore {
-    async fn load(&self) -> Result<Option<StoredCredentials>, rmcp::transport::AuthError> {
+    async fn load(&self) -> Result<Option<StoredCredentials>, AuthError> {
         match fs::read_to_string(&self.path).await {
             Ok(content) => {
                 let credentials = serde_json::from_str(&content).map_err(|e| {
-                    rmcp::transport::AuthError::InternalError(format!(
-                        "Failed to parse credentials: {e}"
-                    ))
+                    AuthError::InternalError(format!("Failed to parse credentials: {e}"))
                 })?;
                 Ok(Some(credentials))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(rmcp::transport::AuthError::InternalError(format!(
+            Err(e) => Err(AuthError::InternalError(format!(
                 "Failed to read credentials: {e}"
             ))),
         }
     }
 
-    async fn save(&self, credentials: StoredCredentials) -> Result<(), rmcp::transport::AuthError> {
+    async fn save(&self, credentials: StoredCredentials) -> Result<(), AuthError> {
         let content = serde_json::to_string_pretty(&credentials).map_err(|e| {
-            rmcp::transport::AuthError::InternalError(format!("Failed to serialize credentials: {e}"))
+            AuthError::InternalError(format!("Failed to serialize credentials: {e}"))
         })?;
 
         // Ensure parent directory exists
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
-                rmcp::transport::AuthError::InternalError(format!(
-                    "Failed to create credentials directory: {e}"
-                ))
+                AuthError::InternalError(format!("Failed to create credentials directory: {e}"))
             })?;
         }
 
         fs::write(&self.path, content).await.map_err(|e| {
-            rmcp::transport::AuthError::InternalError(format!("Failed to write credentials: {e}"))
+            AuthError::InternalError(format!("Failed to write credentials: {e}"))
         })?;
 
         Ok(())
     }
 
-    async fn clear(&self) -> Result<(), rmcp::transport::AuthError> {
+    async fn clear(&self) -> Result<(), AuthError> {
         match fs::remove_file(&self.path).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(rmcp::transport::AuthError::InternalError(format!(
+            Err(e) => Err(AuthError::InternalError(format!(
                 "Failed to clear credentials: {e}"
             ))),
         }
