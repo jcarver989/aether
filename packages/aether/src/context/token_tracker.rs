@@ -87,13 +87,6 @@ impl TokenTracker {
     pub fn total_output_tokens(&self) -> u64 {
         self.total_output_tokens
     }
-
-    /// Reset the last input tokens (e.g., after compaction)
-    /// Note: This doesn't truly reset - the next API call will provide real usage
-    pub fn reset_for_compaction(&mut self) {
-        // We don't actually reset last_input_tokens here because
-        // the next API call will give us the real post-compaction usage
-    }
 }
 
 #[cfg(test)]
