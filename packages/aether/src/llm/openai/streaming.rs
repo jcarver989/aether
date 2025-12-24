@@ -22,6 +22,14 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
         while let Some(result) = stream.next().await {
             match result {
                 Ok(mut response) => {
+                    // Emit usage information if available
+                    if let Some(usage) = response.usage {
+                        yield Ok(LlmResponse::Usage {
+                            input_tokens: usage.prompt_tokens,
+                            output_tokens: usage.completion_tokens,
+                        });
+                    }
+
                     if let Some(choice) = response.choices.pop() {
                         let delta = choice.delta;
 

@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod auth;
+pub mod context;
 pub mod fs;
 pub mod llm;
 pub mod mcp;
