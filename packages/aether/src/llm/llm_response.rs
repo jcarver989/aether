@@ -12,6 +12,7 @@ pub enum LlmResponse {
     ToolRequestComplete { tool_call: ToolCallRequest },
     Done,
     Error { message: String },
+    Usage { input_tokens: u32, output_tokens: u32 },
 }
 
 impl LlmResponse {
@@ -48,6 +49,13 @@ impl LlmResponse {
                 name: name.to_string(),
                 arguments: arguments.to_string(),
             },
+        }
+    }
+
+    pub fn usage(input_tokens: u32, output_tokens: u32) -> Self {
+        Self::Usage {
+            input_tokens,
+            output_tokens,
         }
     }
 }
