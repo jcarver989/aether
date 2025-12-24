@@ -180,6 +180,7 @@ impl ServerHandler for PluginsMcp {
                 return Ok(ListPromptsResult {
                     prompts: Vec::new(),
                     next_cursor: None,
+                    meta: None,
                 });
             }
         };
@@ -195,6 +196,7 @@ impl ServerHandler for PluginsMcp {
         Ok(ListPromptsResult {
             prompts: commands,
             next_cursor: None,
+            meta: None,
         })
     }
 

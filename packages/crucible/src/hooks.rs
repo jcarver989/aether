@@ -1,5 +1,6 @@
-use std::{path::PathBuf, pin::Pin};
+use std::path::PathBuf;
 
+use async_trait::async_trait;
 use crate::AgentRunnerMessage;
 
 pub struct HookInput {
@@ -10,17 +11,19 @@ pub struct HookInput {
 pub type HookResult = Result<(), Box<dyn std::error::Error>>;
 
 /// Trait for eval lifecycle hooks (useful for running setup functions)
+#[async_trait]
 pub trait Hook: Send + Sync {
-    fn run(&self, input: HookInput) -> Pin<Box<dyn Future<Output = HookResult> + Send>>;
+    async fn run(&self, input: HookInput) -> HookResult;
 }
 
 // Implement for closures that return futures
+#[async_trait]
 impl<F, Fut> Hook for F
 where
     F: Fn(HookInput) -> Fut + Send + Sync,
-    Fut: Future<Output = HookResult> + Send + 'static,
+    Fut: std::future::Future<Output = HookResult> + Send + 'static,
 {
-    fn run(&self, input: HookInput) -> Pin<Box<dyn Future<Output = HookResult> + Send>> {
-        Box::pin(self(input))
+    async fn run(&self, input: HookInput) -> HookResult {
+        self(input).await
     }
 }

@@ -2,7 +2,7 @@ use crate::tools::Result;
 use std::future::Future;
 
 pub trait Summarizer {
-    fn summarize(&self, text: &str) -> impl Future<Output = Result<String>>;
+    fn summarize(&self, text: &str) -> impl Future<Output = Result<String>> + Send;
 }
 
 #[derive(Clone)]
