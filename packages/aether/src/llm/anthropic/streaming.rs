@@ -70,14 +70,9 @@ fn process_stream_event(
 ) -> Result<Option<LlmResponse>> {
     use StreamEvent::*;
     match event {
-        MessageStart { data: start_data } => {
+        MessageStart { data: _start_data } => {
             debug!("Message started");
-            // Emit usage from message_start event
-            let usage = &start_data.message.usage;
-            Ok(Some(LlmResponse::Usage {
-                input_tokens: usage.input_tokens,
-                output_tokens: usage.output_tokens,
-            }))
+            Ok(None)
         }
 
         ContentBlockStart { data: start_data } => match start_data.content_block {
@@ -147,10 +142,10 @@ fn process_stream_event(
 
         MessageDelta { data: delta_data } => {
             debug!("Message delta received");
-            // Emit cumulative output_tokens if available
+            // Emit complete usage at message completion
             if let Some(usage) = &delta_data.delta.usage {
                 Ok(Some(LlmResponse::Usage {
-                    input_tokens: 0, // Already reported in message_start
+                    input_tokens: usage.input_tokens,
                     output_tokens: usage.output_tokens,
                 }))
             } else {
@@ -188,6 +183,7 @@ mod tests {
             "data: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Hello\"}}".to_string(),
             "data: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \" world\"}}".to_string(),
             "data: {\"type\": \"content_block_stop\", \"index\": 0}".to_string(),
+            "data: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 25}}}".to_string(),
             "data: {\"type\": \"message_stop\"}".to_string(),
         ];
 
@@ -200,9 +196,9 @@ mod tests {
         }
 
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
-        assert!(matches!(responses[1], LlmResponse::Usage { input_tokens: 10, output_tokens: 0 }));
-        assert!(matches!(responses[2], LlmResponse::Text { ref chunk } if chunk == "Hello"));
-        assert!(matches!(responses[3], LlmResponse::Text { ref chunk } if chunk == " world"));
+        assert!(matches!(responses[1], LlmResponse::Text { ref chunk } if chunk == "Hello"));
+        assert!(matches!(responses[2], LlmResponse::Text { ref chunk } if chunk == " world"));
+        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 25 }));
         assert!(matches!(responses[4], LlmResponse::Done));
     }
 
@@ -213,6 +209,7 @@ mod tests {
             "data: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"tool_123\", \"name\": \"search\"}}".to_string(),
             "data: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\":\\\"test\\\"}\"}".to_string(),
             "data: {\"type\": \"content_block_stop\", \"index\": 0}".to_string(),
+            "data: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 15}}}".to_string(),
             "data: {\"type\": \"message_stop\"}".to_string(),
         ];
 
@@ -225,13 +222,13 @@ mod tests {
         }
 
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
-        assert!(matches!(responses[1], LlmResponse::Usage { input_tokens: 10, output_tokens: 0 }));
         assert!(
-            matches!(responses[2], LlmResponse::ToolRequestStart { ref id, ref name } if id == "tool_123" && name == "search")
+            matches!(responses[1], LlmResponse::ToolRequestStart { ref id, ref name } if id == "tool_123" && name == "search")
         );
         assert!(
-            matches!(responses[3], LlmResponse::ToolRequestComplete { ref tool_call } if tool_call.id == "tool_123" && tool_call.name == "search")
+            matches!(responses[2], LlmResponse::ToolRequestComplete { ref tool_call } if tool_call.id == "tool_123" && tool_call.name == "search")
         );
+        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 15 }));
         assert!(matches!(responses[4], LlmResponse::Done));
     }
 
