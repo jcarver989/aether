@@ -1,50 +1,25 @@
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum OAuthError {
+    #[error("OAuth authorization required for {server_id}")]
     AuthorizationRequired { server_id: String },
+
+    #[error("User cancelled authorization")]
     UserCancelled,
+
+    #[error("Token exchange failed: {0}")]
     TokenExchange(String),
+
+    #[error("Credential storage error: {0}")]
     CredentialStore(String),
+
+    #[error("rmcp auth error: {0}")]
     Rmcp(String),
-    Io(std::io::Error),
-    SerdeJson(serde_json::Error),
-}
 
-impl fmt::Display for OAuthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AuthorizationRequired { server_id } => {
-                write!(f, "OAuth authorization required for {server_id}")
-            }
-            Self::UserCancelled => write!(f, "User cancelled authorization"),
-            Self::TokenExchange(msg) => write!(f, "Token exchange failed: {msg}"),
-            Self::CredentialStore(msg) => write!(f, "Credential storage error: {msg}"),
-            Self::Rmcp(msg) => write!(f, "rmcp auth error: {msg}"),
-            Self::Io(e) => write!(f, "IO error: {e}"),
-            Self::SerdeJson(e) => write!(f, "JSON error: {e}"),
-        }
-    }
-}
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 
-impl std::error::Error for OAuthError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io(e) => Some(e),
-            Self::SerdeJson(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for OAuthError {
-    fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-
-impl From<serde_json::Error> for OAuthError {
-    fn from(e: serde_json::Error) -> Self {
-        Self::SerdeJson(e)
-    }
+    #[error("JSON error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
 }

@@ -1,17 +1,12 @@
-#[cfg(feature = "mcp-oauth")]
 use crate::mcp::auth::{FileCredentialStore, OAuthError, OAuthHandler};
-#[cfg(feature = "mcp-oauth")]
 use rmcp::transport::auth::{AuthorizationManager, CredentialStore, OAuthState};
-#[cfg(feature = "mcp-oauth")]
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
-#[cfg(feature = "mcp-oauth")]
 pub struct OAuthHelperResult {
     pub access_token: String,
     pub auth_header: String,
 }
 
-#[cfg(feature = "mcp-oauth")]
 pub async fn perform_oauth_flow<H: OAuthHandler>(
     server_id: &str,
     base_url: &str,
@@ -102,8 +97,10 @@ pub async fn perform_oauth_flow<H: OAuthHandler>(
     })
 }
 
-#[cfg(feature = "mcp-oauth")]
-pub async fn get_access_token_for_server(server_id: &str, base_url: &str) -> Result<Option<String>, OAuthError> {
+pub async fn get_access_token_for_server(
+    server_id: &str,
+    base_url: &str,
+) -> Result<Option<String>, OAuthError> {
     // Create credential store
     let credential_store = FileCredentialStore::new(server_id)?;
 
@@ -122,20 +119,17 @@ pub async fn get_access_token_for_server(server_id: &str, base_url: &str) -> Res
                 .map_err(|e| OAuthError::Rmcp(e.to_string()))?;
 
             // Try to get access token (will refresh if needed)
-            match auth_manager.get_access_token().await {
-                Ok(access_token) => return Ok(Some(access_token)),
-                Err(_) => {
-                    // Token might be expired and refresh failed
-                    return Ok(None);
-                }
+            if let Ok(access_token) = auth_manager.get_access_token().await {
+                return Ok(Some(access_token));
             }
+            // Token might be expired and refresh failed
+            return Ok(None);
         }
     }
 
     Ok(None)
 }
 
-#[cfg(feature = "mcp-oauth")]
 pub fn update_config_with_auth(
     mut config: StreamableHttpClientTransportConfig,
     auth_header: String,
