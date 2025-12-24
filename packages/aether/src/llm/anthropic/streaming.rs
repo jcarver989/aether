@@ -70,9 +70,14 @@ fn process_stream_event(
 ) -> Result<Option<LlmResponse>> {
     use StreamEvent::*;
     match event {
-        MessageStart { data: _start_data } => {
+        MessageStart { data: start_data } => {
             debug!("Message started");
-            Ok(None)
+            // Emit usage from message_start event
+            let usage = &start_data.message.usage;
+            Ok(Some(LlmResponse::Usage {
+                input_tokens: usage.input_tokens,
+                output_tokens: usage.output_tokens,
+            }))
         }
 
         ContentBlockStart { data: start_data } => match start_data.content_block {
@@ -140,9 +145,17 @@ fn process_stream_event(
             }
         }
 
-        MessageDelta { data: _delta_data } => {
+        MessageDelta { data: delta_data } => {
             debug!("Message delta received");
-            Ok(None)
+            // Emit cumulative output_tokens if available
+            if let Some(usage) = &delta_data.delta.usage {
+                Ok(Some(LlmResponse::Usage {
+                    input_tokens: 0, // Already reported in message_start
+                    output_tokens: usage.output_tokens,
+                }))
+            } else {
+                Ok(None)
+            }
         }
 
         MessageStop { data: _stop_data } => {
@@ -187,9 +200,10 @@ mod tests {
         }
 
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
-        assert!(matches!(responses[1], LlmResponse::Text { ref chunk } if chunk == "Hello"));
-        assert!(matches!(responses[2], LlmResponse::Text { ref chunk } if chunk == " world"));
-        assert!(matches!(responses[3], LlmResponse::Done));
+        assert!(matches!(responses[1], LlmResponse::Usage { input_tokens: 10, output_tokens: 0 }));
+        assert!(matches!(responses[2], LlmResponse::Text { ref chunk } if chunk == "Hello"));
+        assert!(matches!(responses[3], LlmResponse::Text { ref chunk } if chunk == " world"));
+        assert!(matches!(responses[4], LlmResponse::Done));
     }
 
     #[tokio::test]
@@ -211,13 +225,14 @@ mod tests {
         }
 
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
+        assert!(matches!(responses[1], LlmResponse::Usage { input_tokens: 10, output_tokens: 0 }));
         assert!(
-            matches!(responses[1], LlmResponse::ToolRequestStart { ref id, ref name } if id == "tool_123" && name == "search")
+            matches!(responses[2], LlmResponse::ToolRequestStart { ref id, ref name } if id == "tool_123" && name == "search")
         );
         assert!(
-            matches!(responses[2], LlmResponse::ToolRequestComplete { ref tool_call } if tool_call.id == "tool_123" && tool_call.name == "search")
+            matches!(responses[3], LlmResponse::ToolRequestComplete { ref tool_call } if tool_call.id == "tool_123" && tool_call.name == "search")
         );
-        assert!(matches!(responses[3], LlmResponse::Done));
+        assert!(matches!(responses[4], LlmResponse::Done));
     }
 
     #[tokio::test]

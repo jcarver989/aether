@@ -300,6 +300,19 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     .send(AgentMessage::Error { message })
                     .await;
             }
+
+            Usage {
+                input_tokens,
+                output_tokens,
+            } => {
+                // Token usage information from API response
+                // This is tracked for context management but doesn't require action in the agent loop
+                tracing::debug!(
+                    "Token usage - input: {}, output: {}",
+                    input_tokens,
+                    output_tokens
+                );
+            }
         }
     }
 
