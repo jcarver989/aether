@@ -3,6 +3,7 @@ pub mod anthropic;
 mod chat_message;
 mod context;
 pub mod error;
+pub mod gemini;
 mod llm_response;
 pub mod local;
 pub mod openai;
