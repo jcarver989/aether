@@ -260,6 +260,7 @@ impl McpManager {
                                 arguments: prompt.arguments,
                                 title: prompt.title,
                                 icons: prompt.icons,
+                                meta: prompt.meta,
                             }
                         })
                         .collect();
