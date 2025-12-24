@@ -1,8 +1,11 @@
 mod client;
+pub mod auth;
 pub mod config;
 pub mod error;
 pub mod manager;
 pub mod mcp_builder;
+#[cfg(feature = "mcp-oauth")]
+pub mod oauth_integration;
 pub mod run_mcp_task;
 pub mod variables;
 
