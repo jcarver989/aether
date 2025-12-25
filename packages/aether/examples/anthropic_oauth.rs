@@ -16,10 +16,6 @@ struct Args {
     /// OAuth mode: "pro" (claude.ai) or "console" (console.anthropic.com)
     #[arg(long, default_value = "console")]
     mode: String,
-
-    /// Create and store an API key instead of OAuth tokens
-    #[arg(long)]
-    create_api_key: bool,
 }
 
 #[tokio::main]
@@ -43,19 +39,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut code = String::new();
     io::stdin().read_line(&mut code)?;
     let code = code.trim();
-
     let tokens = exchange_code(code, &init.verifier).await?;
-
     let store = FileCredentialStore::new()?;
-
-    if args.create_api_key {
-        let api_key = create_api_key(&tokens.access).await?;
-        store
-            .set_provider("anthropic", ProviderCredential::api_key(&api_key))
-            .await?;
-
-        return Ok(());
-    }
 
     store
         .set_provider(
