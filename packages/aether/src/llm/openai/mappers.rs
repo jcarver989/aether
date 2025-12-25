@@ -1,9 +1,10 @@
-use async_openai::types::{
-    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
-    ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
-    ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
-    ChatCompletionRequestToolMessageContent, ChatCompletionRequestUserMessage, ChatCompletionTool,
-    ChatCompletionToolType, FunctionCall, FunctionObject,
+use async_openai::types::chat::{
+    ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
+    ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
+    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
+    ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
+    ChatCompletionRequestUserMessage, ChatCompletionTool, ChatCompletionTools, FunctionCall,
+    FunctionObject,
 };
 
 use crate::llm::{ChatMessage, ToolDefinition};
@@ -30,13 +31,14 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
             } => {
                 let openai_tool_calls: Vec<_> = tool_calls
                     .into_iter()
-                    .map(|call| ChatCompletionMessageToolCall {
-                        id: call.id,
-                        r#type: ChatCompletionToolType::Function,
-                        function: FunctionCall {
-                            name: call.name,
-                            arguments: call.arguments,
-                        },
+                    .map(|call| {
+                        ChatCompletionMessageToolCalls::Function(ChatCompletionMessageToolCall {
+                            id: call.id,
+                            function: FunctionCall {
+                                name: call.name,
+                                arguments: call.arguments,
+                            },
+                        })
                     })
                     .collect();
 
@@ -84,21 +86,20 @@ impl From<&ChatMessage> for Option<ChatCompletionRequestMessage> {
     }
 }
 
-impl From<ToolDefinition> for ChatCompletionTool {
+impl From<ToolDefinition> for ChatCompletionTools {
     fn from(tool: ToolDefinition) -> Self {
-        ChatCompletionTool {
-            r#type: ChatCompletionToolType::Function,
+        ChatCompletionTools::Function(ChatCompletionTool {
             function: FunctionObject {
                 name: tool.name,
                 description: Some(tool.description),
                 parameters: Some(serde_json::from_str(&tool.parameters).unwrap_or_default()),
                 strict: Some(false),
             },
-        }
+        })
     }
 }
 
-impl From<&ToolDefinition> for ChatCompletionTool {
+impl From<&ToolDefinition> for ChatCompletionTools {
     fn from(tool: &ToolDefinition) -> Self {
         tool.clone().into()
     }
@@ -108,6 +109,6 @@ pub fn map_messages(messages: &[ChatMessage]) -> Vec<ChatCompletionRequestMessag
     messages.iter().filter_map(Into::into).collect()
 }
 
-pub fn map_tools(tools: &[ToolDefinition]) -> Vec<ChatCompletionTool> {
+pub fn map_tools(tools: &[ToolDefinition]) -> Vec<ChatCompletionTools> {
     tools.iter().map(Into::into).collect()
 }

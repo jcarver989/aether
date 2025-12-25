@@ -1,7 +1,7 @@
 use crate::llm::openai::process_completion_stream;
 use crate::llm::openai_compatible::types::ChatCompletionStreamResponse;
 use crate::llm::{LlmError, LlmResponseStream};
-use async_openai::{Client, config::OpenAIConfig, types::CreateChatCompletionRequest};
+use async_openai::{Client, config::OpenAIConfig, types::chat::CreateChatCompletionRequest};
 use async_stream;
 use tokio_stream::StreamExt;
 
