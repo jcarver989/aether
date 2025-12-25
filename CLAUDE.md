@@ -49,7 +49,7 @@ Instead, write them like this:
 
 ```rust
 trait Foo {
-    fn bar(&self) -> impl Future<Output = Result>> + Send
+    async fn bar(&self) -> Resul<()>
 }
 ```
 
@@ -73,11 +73,11 @@ trait Foo {
 
 ### Imports
 
-1. Prefer using just the type's name vs the qualified module + type name, e.g. `fn foo() -> Boo` vs `fn foo() -> some::module::that_makes_it_hard_to_read::Boo`
+1. Use the type's name `fn foo() -> Boo` over the fully qualified name `fn foo() -> some::module::that_makes_it_hard_to_read::Boo`
 
 ## Best Practices
 
-This codebase has documented best-practices in @best-practices/ . When working on a task, look through the files in this directory and (if applicable) read the best-practices that might be help you complete your task.
+Be sure to consult your skills to check for relevant best practices.
 
 ## CRITICAL - ALWAYS FOLLOW THIS WORKFLOW
 
