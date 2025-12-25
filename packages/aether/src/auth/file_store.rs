@@ -89,7 +89,6 @@ impl FileCredentialStore {
 
     /// Save the credentials file to disk
     async fn save_file(&self, file: &CredentialsFile) -> Result<()> {
-        // Ensure parent directory exists
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).await?;
         }
