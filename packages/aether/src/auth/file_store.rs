@@ -1,9 +1,8 @@
 use crate::auth::credentials::{CredentialsFile, McpCredential, ProviderCredential};
 use crate::auth::{AuthError, Result};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tokio::fs;
-use tokio::sync::RwLock;
 
 /// Async file-based credential store
 ///
@@ -73,26 +72,17 @@ impl FileCredentialStore {
 
     /// Load the credentials file
     async fn load_file(&self) -> Result<CredentialsFile> {
-        // Check cache first
-        {
-            let cache = self.cache.read().await;
-            if let Some(ref file) = *cache {
-                return Ok(file.clone());
-            }
+        if let Some(file) = self.cache.read().unwrap().clone() {
+            return Ok(file);
         }
 
-        // Load from disk
         let file = match fs::read_to_string(&self.path).await {
             Ok(content) => serde_json::from_str(&content)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => CredentialsFile::default(),
             Err(e) => return Err(AuthError::Io(e.to_string())),
         };
 
-        // Update cache
-        {
-            let mut cache = self.cache.write().await;
-            *cache = Some(file.clone());
-        }
+        *self.cache.write().unwrap() = Some(file.clone());
 
         Ok(file)
     }
@@ -113,19 +103,9 @@ impl FileCredentialStore {
         fs::rename(&temp_path, &self.path).await?;
         set_permissions(&self.path).await?;
 
-        // Update cache
-        {
-            let mut cache = self.cache.write().await;
-            *cache = Some(file.clone());
-        }
+        *self.cache.write().unwrap() = Some(file.clone());
 
         Ok(())
-    }
-
-    /// Invalidate the cache, forcing a reload from disk on next access
-    pub async fn invalidate_cache(&self) {
-        let mut cache = self.cache.write().await;
-        *cache = None;
     }
 }
 
