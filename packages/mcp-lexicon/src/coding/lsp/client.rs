@@ -6,89 +6,22 @@ use super::transport::{
 use lsp_types::{
     ClientCapabilities, DynamicRegistrationClientCapabilities, GeneralClientCapabilities,
     GotoCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverClientCapabilities,
-    HoverParams, InitializeParams, Location, MarkupKind, NumberOrString, Position, ProgressParams,
+    HoverParams, InitializeParams, Location, MarkupKind, Position, ProgressParams,
     PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, ReferenceContext,
     ReferenceParams, SymbolInformation, TextDocumentClientCapabilities, TextDocumentIdentifier,
-    TextDocumentPositionParams, Uri, WindowClientCapabilities, WorkDoneProgress,
-    WorkspaceSymbolParams,
+    TextDocumentPositionParams, Uri, WindowClientCapabilities, WorkspaceSymbolParams,
 };
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Stdio, id};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::time::{Duration, Instant};
 use tokio::io::BufReader;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tokio::time::{MissedTickBehavior, interval};
-
-/// Tracks LSP server readiness by monitoring progress notifications.
-///
-/// Ready when: no active progress tokens AND settling period has elapsed.
-struct LspReadyTracker {
-    active_tokens: HashSet<String>,
-    settle_deadline: Option<Instant>,
-    is_ready: bool,
-}
-
-impl LspReadyTracker {
-    const SETTLE_DURATION: Duration = Duration::from_millis(500);
-
-    fn new() -> Self {
-        Self {
-            active_tokens: HashSet::new(),
-            // Start with a settle deadline - if no progress activity, we'll be ready after this
-            settle_deadline: Some(Instant::now() + Self::SETTLE_DURATION),
-            is_ready: false,
-        }
-    }
-
-    /// Update state based on a progress notification
-    fn on_progress(&mut self, params: &ProgressParams) {
-        let token = match &params.token {
-            NumberOrString::Number(n) => n.to_string(),
-            NumberOrString::String(s) => s.clone(),
-        };
-
-        let lsp_types::ProgressParamsValue::WorkDone(ref work_done) = params.value;
-
-        match work_done {
-            WorkDoneProgress::Begin(_) => {
-                self.active_tokens.insert(token);
-                self.settle_deadline = None;
-            }
-            WorkDoneProgress::End(_) => {
-                self.active_tokens.remove(&token);
-                if self.active_tokens.is_empty() {
-                    self.settle_deadline = Some(Instant::now() + Self::SETTLE_DURATION);
-                }
-            }
-            WorkDoneProgress::Report(_) => {}
-        }
-    }
-
-    /// Check if we've become ready. Call periodically.
-    /// Returns true if we just transitioned to ready.
-    fn check_ready(&mut self) -> bool {
-        if self.is_ready {
-            return false;
-        }
-
-        if let Some(deadline) = self.settle_deadline
-            && Instant::now() >= deadline
-            && self.active_tokens.is_empty()
-        {
-            self.is_ready = true;
-            return true;
-        }
-
-        false
-    }
-}
 
 /// Notifications sent from server to client
 #[derive(Debug, Clone)]
@@ -212,7 +145,6 @@ impl LspClient {
         let (request_tx, request_rx) = channel(100);
         let (client_notif_tx, client_notif_rx) = channel(100);
         let (server_notif_tx, server_notif_rx) = channel(200);
-        let (ready_tx, ready_rx) = oneshot::channel();
 
         let task_handle = spawn(run_handler(
             process,
@@ -221,7 +153,6 @@ impl LspClient {
             request_rx,
             client_notif_rx,
             server_notif_tx,
-            ready_tx,
         ));
 
         let mut client = Self {
@@ -232,11 +163,6 @@ impl LspClient {
         };
 
         client.initialize(root_path).await?;
-
-        // Wait for the server to finish indexing before returning
-        ready_rx
-            .await
-            .map_err(|_| LspError::Transport("Server closed before ready".into()))?;
 
         Ok((client_notif_tx, server_notif_rx, client))
     }
@@ -505,8 +431,6 @@ impl LspClient {
 }
 
 /// The handler task that owns stdin, stdout, and the pending requests map
-///
-/// Signals readiness via `ready_tx` when the language server has finished indexing.
 async fn run_handler(
     mut process: Child,
     mut stdin: ChildStdin,
@@ -514,30 +438,17 @@ async fn run_handler(
     mut request_rx: Receiver<Request>,
     mut notification_rx: Receiver<ClientNotification>,
     server_notif_tx: Sender<ServerNotification>,
-    ready_tx: oneshot::Sender<()>,
 ) {
     let mut reader = BufReader::new(stdout);
     let mut pending: HashMap<i64, PendingResponse> = HashMap::new();
-    let mut readiness = LspReadyTracker::new();
-    let mut ready_tx = Some(ready_tx);
-    let mut ready_check = {
-        let mut check = interval(Duration::from_millis(100));
-        check.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        check
-    };
 
     loop {
         tokio::select! {
-            biased; // Prioritize server messages for accurate progress tracking
-
-            // Handle message from LSP (priority for progress tracking)
+            // Handle message from LSP
             msg = read_message(&mut reader) => {
                 match msg {
                     Ok(Some(ParsedMessage::Response(resp))) => handle_response(resp, &mut pending),
                     Ok(Some(ParsedMessage::Notification(notif))) => {
-                        if let ParsedNotification::Progress(ref params) = notif {
-                            readiness.on_progress(params);
-                        }
                         handle_server_notification(notif, &server_notif_tx);
                     }
                     Ok(None) => {}
@@ -584,15 +495,6 @@ async fn run_handler(
 
             Some(notif) = notification_rx.recv() => {
                 let _ = send_notification(&mut stdin, &notif).await;
-            }
-
-            // Periodic check to see if we've become ready
-            _ = ready_check.tick(), if ready_tx.is_some() => {
-                if readiness.check_ready()
-                    && let Some(tx) = ready_tx.take()
-                {
-                    let _ = tx.send(());
-                }
             }
 
             // Handle process exit
@@ -765,77 +667,3 @@ pub fn path_to_uri(path: &Path) -> Result<Uri> {
         .map_err(|e| LspError::Transport(format!("Failed to parse URI: {}", e)))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use lsp_types::{ProgressParamsValue, WorkDoneProgressBegin, WorkDoneProgressEnd};
-
-    fn make_progress_begin(token: &str) -> ProgressParams {
-        ProgressParams {
-            token: NumberOrString::String(token.to_string()),
-            value: ProgressParamsValue::WorkDone(WorkDoneProgress::Begin(WorkDoneProgressBegin {
-                title: "test".to_string(),
-                cancellable: None,
-                message: None,
-                percentage: None,
-            })),
-        }
-    }
-
-    fn make_progress_end(token: &str) -> ProgressParams {
-        ProgressParams {
-            token: NumberOrString::String(token.to_string()),
-            value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
-                message: None,
-            })),
-        }
-    }
-
-    #[test]
-    fn test_readiness_tracker_initially_not_ready() {
-        let tracker = LspReadyTracker::new();
-        assert!(!tracker.is_ready);
-    }
-
-    #[test]
-    fn test_readiness_tracker_progress_begin_clears_deadline() {
-        let mut tracker = LspReadyTracker::new();
-        assert!(tracker.settle_deadline.is_some());
-
-        tracker.on_progress(&make_progress_begin("token1"));
-
-        assert!(tracker.settle_deadline.is_none());
-        assert!(tracker.active_tokens.contains("token1"));
-    }
-
-    #[test]
-    fn test_readiness_tracker_progress_end_sets_deadline() {
-        let mut tracker = LspReadyTracker::new();
-        tracker.on_progress(&make_progress_begin("token1"));
-        assert!(tracker.settle_deadline.is_none());
-
-        tracker.on_progress(&make_progress_end("token1"));
-
-        assert!(tracker.settle_deadline.is_some());
-        assert!(tracker.active_tokens.is_empty());
-    }
-
-    #[test]
-    fn test_readiness_tracker_multiple_tokens() {
-        let mut tracker = LspReadyTracker::new();
-
-        tracker.on_progress(&make_progress_begin("token1"));
-        tracker.on_progress(&make_progress_begin("token2"));
-        assert_eq!(tracker.active_tokens.len(), 2);
-
-        tracker.on_progress(&make_progress_end("token1"));
-        // Still one active, no deadline yet
-        assert!(tracker.settle_deadline.is_none());
-        assert_eq!(tracker.active_tokens.len(), 1);
-
-        tracker.on_progress(&make_progress_end("token2"));
-        // All done, deadline set
-        assert!(tracker.settle_deadline.is_some());
-        assert!(tracker.active_tokens.is_empty());
-    }
-}
