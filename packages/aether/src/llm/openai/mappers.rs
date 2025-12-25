@@ -42,11 +42,7 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
                     })
                     .collect();
 
-                let tool_calls = if openai_tool_calls.is_empty() {
-                    None
-                } else {
-                    Some(openai_tool_calls)
-                };
+                let tool_calls = (!openai_tool_calls.is_empty()).then_some(openai_tool_calls);
 
                 Some(ChatCompletionRequestMessage::Assistant(
                     ChatCompletionRequestAssistantMessage {
@@ -60,20 +56,18 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
                     },
                 ))
             }
-            ChatMessage::ToolCallResult(result) => match result {
-                Ok(tool_result) => Some(ChatCompletionRequestMessage::Tool(
+            ChatMessage::ToolCallResult(result) => {
+                let (content, id) = match result {
+                    Ok(r) => (r.result, r.id),
+                    Err(e) => (e.error, e.id),
+                };
+                Some(ChatCompletionRequestMessage::Tool(
                     ChatCompletionRequestToolMessage {
-                        content: ChatCompletionRequestToolMessageContent::Text(tool_result.result),
-                        tool_call_id: tool_result.id,
+                        content: ChatCompletionRequestToolMessageContent::Text(content),
+                        tool_call_id: id,
                     },
-                )),
-                Err(tool_error) => Some(ChatCompletionRequestMessage::Tool(
-                    ChatCompletionRequestToolMessage {
-                        content: ChatCompletionRequestToolMessageContent::Text(tool_error.error),
-                        tool_call_id: tool_error.id,
-                    },
-                )),
-            },
+                ))
+            }
 
             ChatMessage::Error { .. } => None,
         }

@@ -9,5 +9,3 @@ argument-hint: [linear task id]
 2. Create a new git branch for this task, using this naming convention: `[feat|chore|refactor|fix|docs]/<task_id>-<few-word-description>`
 3. Implement the task
 4. Ensure to write tests where applicable (it's a good idea to write these first, before implementing other tings, so you get feedback)
-5. Create semantaic commits with clear descriptions
-6. When your done ensure all tests pass, push your work up to Github, and open a PR.

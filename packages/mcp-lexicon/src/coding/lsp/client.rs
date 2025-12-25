@@ -234,15 +234,15 @@ impl LspClient {
                 response_tx,
             })
             .await
-            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+            .map_err(|_| LspError::handler_closed())?;
 
         response_rx
             .await
-            .map_err(|_| LspError::Transport("Response channel closed".into()))??;
+            .map_err(|_| LspError::response_closed())??;
 
         self.notification_tx
             .try_send(ClientNotification::Initialized)
-            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+            .map_err(|_| LspError::handler_closed())?;
 
         Ok(())
     }
@@ -258,15 +258,15 @@ impl LspClient {
         self.request_tx
             .send(Request::Shutdown { id, response_tx })
             .await
-            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+            .map_err(|_| LspError::handler_closed())?;
 
         response_rx
             .await
-            .map_err(|_| LspError::Transport("Response channel closed".into()))??;
+            .map_err(|_| LspError::response_closed())??;
 
         self.notification_tx
             .try_send(ClientNotification::Exit)
-            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+            .map_err(|_| LspError::handler_closed())?;
         Ok(())
     }
 
@@ -305,11 +305,11 @@ impl LspClient {
                 response_tx,
             })
             .await
-            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+            .map_err(|_| LspError::handler_closed())?;
 
         response_rx
             .await
-            .map_err(|_| LspError::Transport("Response channel closed".into()))?
+            .map_err(|_| LspError::response_closed())?
     }
 
     /// Find all references to a symbol at a position
@@ -351,11 +351,11 @@ impl LspClient {
                 response_tx,
             })
             .await
-            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+            .map_err(|_| LspError::handler_closed())?;
 
         response_rx
             .await
-            .map_err(|_| LspError::Transport("Response channel closed".into()))?
+            .map_err(|_| LspError::response_closed())?
     }
 
     /// Get hover information (type, documentation) for a symbol at a position
@@ -386,11 +386,11 @@ impl LspClient {
                 response_tx,
             })
             .await
-            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+            .map_err(|_| LspError::handler_closed())?;
 
         response_rx
             .await
-            .map_err(|_| LspError::Transport("Response channel closed".into()))?
+            .map_err(|_| LspError::response_closed())?
     }
 
     /// Search for symbols across the workspace
@@ -417,11 +417,11 @@ impl LspClient {
                 response_tx,
             })
             .await
-            .map_err(|_| LspError::Transport("Handler task closed".into()))?;
+            .map_err(|_| LspError::handler_closed())?;
 
         response_rx
             .await
-            .map_err(|_| LspError::Transport("Response channel closed".into()))?
+            .map_err(|_| LspError::response_closed())?
     }
 
     /// Generate the next unique request ID
