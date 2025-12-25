@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.7.1", features = ["router"] }
+dioxus = { version = "0.7.2", features = ["router"] }
 agent-client-protocol = "0.5.0"
 uuid = { version = "1.10", features = ["v4"] }
 tokio = { version = "1.40", features = ["full"] }
