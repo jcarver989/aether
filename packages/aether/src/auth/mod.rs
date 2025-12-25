@@ -3,6 +3,8 @@ use thiserror::Error;
 pub mod anthropic;
 pub mod credentials;
 pub mod file_store;
+pub mod google;
+pub mod oauth_handler;
 pub mod rmcp_adapter;
 
 pub use anthropic::{

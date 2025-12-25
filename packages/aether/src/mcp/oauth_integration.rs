@@ -24,8 +24,7 @@ pub async fn perform_oauth_flow<H: OAuthHandler>(
             .load()
             .await
             .map_err(|e| OAuthError::CredentialStore(format!("Failed to load credentials: {e}")))?
-        {
-            if stored_creds.token_response.is_some() {
+            && stored_creds.token_response.is_some() {
                 // We have stored credentials, try to use them
                 let mut auth_manager = AuthorizationManager::new(base_url)
                     .await
@@ -45,7 +44,6 @@ pub async fn perform_oauth_flow<H: OAuthHandler>(
                 }
                 // If we get here, token might be expired and refresh failed, continue to new auth flow
             }
-        }
     }
 
     // No stored credentials or they're invalid, start new OAuth flow
@@ -114,8 +112,7 @@ pub async fn get_access_token_for_server(
         .load()
         .await
         .map_err(|e| OAuthError::CredentialStore(format!("Failed to load credentials: {e}")))?
-    {
-        if stored_creds.token_response.is_some() {
+        && stored_creds.token_response.is_some() {
             let mut auth_manager = AuthorizationManager::new(base_url)
                 .await
                 .map_err(|e| OAuthError::Rmcp(e.to_string()))?;
@@ -132,7 +129,6 @@ pub async fn get_access_token_for_server(
             // Token might be expired and refresh failed
             return Ok(None);
         }
-    }
 
     Ok(None)
 }

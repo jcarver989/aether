@@ -38,5 +38,17 @@ pub enum LspError {
     Cancelled,
 }
 
+impl LspError {
+    /// Create a transport error for when the handler task is closed
+    pub fn handler_closed() -> Self {
+        Self::Transport("Handler task closed".into())
+    }
+
+    /// Create a transport error for when the response channel is closed
+    pub fn response_closed() -> Self {
+        Self::Transport("Response channel closed".into())
+    }
+}
+
 /// Result type alias for LSP operations
 pub type Result<T> = std::result::Result<T, LspError>;

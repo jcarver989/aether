@@ -83,20 +83,17 @@ pub struct Usage {
 }
 
 impl From<ChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {
+    #[allow(deprecated)]
     fn from(response: ChatCompletionStreamResponse) -> Self {
         CreateChatCompletionStreamResponse {
             id: response.id,
-            choices: response
-                .choices
-                .into_iter()
-                .map(|choice| choice.into())
-                .collect(),
+            choices: response.choices.into_iter().map(Into::into).collect(),
             created: response.created as u32,
             model: response.model,
             service_tier: None,
             system_fingerprint: response.system_fingerprint,
             object: response.object,
-            usage: response.usage.map(|u| u.into()),
+            usage: response.usage.map(Into::into),
         }
     }
 }
@@ -133,7 +130,7 @@ impl From<ChatCompletionStreamResponseDelta> for OpenAiDelta {
             refusal: None,
             tool_calls: delta
                 .tool_calls
-                .map(|calls| calls.into_iter().map(|call| call.into()).collect()),
+                .map(|calls| calls.into_iter().map(Into::into).collect()),
             #[allow(deprecated)]
             function_call: None,
         }
@@ -145,11 +142,11 @@ impl From<ToolCallDelta> for ChatCompletionMessageToolCallChunk {
         ChatCompletionMessageToolCallChunk {
             index: call.index as u32,
             id: call.id,
-            r#type: call.tool_type.and_then(|t| match t.as_str() {
-                "function" => Some(FunctionType::Function),
-                _ => None,
-            }),
-            function: call.function.map(|f| f.into()),
+            r#type: call
+                .tool_type
+                .filter(|t| t == "function")
+                .map(|_| FunctionType::Function),
+            function: call.function.map(Into::into),
         }
     }
 }
