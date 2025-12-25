@@ -606,6 +606,9 @@ async fn run_handler(
     for (_, p) in pending {
         send_error(p, LspError::Transport("Handler task closed".into()));
     }
+
+    // Explicitly kill the process to avoid orphaned LSP processes.
+    let _ = process.kill().await;
 }
 
 /// Send a successful response to the appropriate typed channel
