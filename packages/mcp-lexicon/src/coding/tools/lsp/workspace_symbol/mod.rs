@@ -44,7 +44,10 @@ pub async fn execute_lsp_workspace_symbol<T: CodingTools>(
     input: LspWorkspaceSymbolInput,
     tools: &T,
 ) -> Result<LspWorkspaceSymbolOutput, String> {
-    let lsp_symbols = tools.workspace_symbol(&input.query).await?;
+    let lsp_symbols = tools
+        .workspace_symbol(&input.query)
+        .await
+        .map_err(|e| e.to_string())?;
     let symbols: Vec<SymbolResult> = lsp_symbols
         .iter()
         .map(|s| SymbolResult {

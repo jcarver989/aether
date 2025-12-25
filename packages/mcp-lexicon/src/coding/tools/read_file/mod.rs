@@ -2,6 +2,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::coding::error::FileError;
+
 const MAX_LINE_LENGTH: usize = 2000;
 const DEFAULT_LINE_LIMIT: usize = 2000;
 
@@ -33,10 +35,12 @@ pub struct ReadFileResult {
     pub raw_content: String,
 }
 
-pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, String> {
+pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, FileError> {
     // Check if file exists
     if !Path::new(&args.file_path).exists() {
-        return Err(format!("File does not exist: {}", args.file_path));
+        return Err(FileError::NotFound {
+            path: args.file_path,
+        });
     }
 
     // Read file contents
@@ -50,10 +54,9 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, St
 
             // Validate offset is 1-indexed
             if offset == 0 {
-                return Err(format!(
-                    "Invalid offset for file {}: offset must be 1-indexed (start from 1)",
-                    args.file_path
-                ));
+                return Err(FileError::InvalidOffset {
+                    path: args.file_path,
+                });
             }
 
             let start_idx = (offset - 1).min(total_lines);
@@ -96,7 +99,10 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, St
                 raw_content: content,
             })
         }
-        Err(e) => Err(format!("Failed to read file {}: {}", args.file_path, e)),
+        Err(e) => Err(FileError::ReadFailed {
+            path: args.file_path,
+            reason: e.to_string(),
+        }),
     }
 }
 
@@ -225,8 +231,7 @@ mod tests {
         })
         .await;
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("offset must be 1-indexed"));
+        assert!(matches!(result, Err(FileError::InvalidOffset { .. })));
     }
 
     #[tokio::test]
@@ -241,7 +246,6 @@ mod tests {
         })
         .await;
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("does not exist"));
+        assert!(matches!(result, Err(FileError::NotFound { .. })));
     }
 }

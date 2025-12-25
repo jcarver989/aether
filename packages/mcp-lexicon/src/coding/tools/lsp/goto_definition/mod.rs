@@ -35,7 +35,8 @@ pub async fn execute_lsp_goto_definition<T: CodingTools>(
     let line = parse_line(&input.line)?;
     let response = tools
         .goto_definition(&input.file_path, &input.symbol, line)
-        .await?;
+        .await
+        .map_err(|e| e.to_string())?;
     let locations = definition_response_to_locations(response);
     Ok(LspGotoDefinitionOutput { locations })
 }

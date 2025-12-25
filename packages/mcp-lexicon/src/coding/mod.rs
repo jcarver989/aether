@@ -17,6 +17,7 @@ use std::{
 
 // Submodules - import types from their source modules directly
 pub mod default_tools;
+pub mod error;
 pub mod lsp;
 pub mod tools;
 pub mod tools_trait;
@@ -131,14 +132,22 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     #[tool]
     pub async fn grep(&self, request: Parameters<GrepInput>) -> Result<Json<GrepOutput>, String> {
         let Parameters(args) = request;
-        self.tools.grep(args).await.map(Json)
+        self.tools
+            .grep(args)
+            .await
+            .map(Json)
+            .map_err(|e| e.to_string())
     }
 
     #[doc = include_str!("tools/find/description.md")]
     #[tool]
     pub async fn find(&self, request: Parameters<FindInput>) -> Result<Json<FindOutput>, String> {
         let Parameters(args) = request;
-        self.tools.find(args).await.map(Json)
+        self.tools
+            .find(args)
+            .await
+            .map(Json)
+            .map_err(|e| e.to_string())
     }
 
     #[doc = include_str!("tools/read_file/description.md")]
@@ -149,7 +158,11 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     ) -> Result<Json<ReadFileResult>, String> {
         let Parameters(args) = request;
         let file_path = args.file_path.clone();
-        let result = self.tools.read_file(args).await?;
+        let result = self
+            .tools
+            .read_file(args)
+            .await
+            .map_err(|e| e.to_string())?;
         self.files_read.lock().unwrap().insert(file_path);
 
         Ok(Json(result))
@@ -174,7 +187,11 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             }
         }
 
-        let response = self.tools.write_file(args).await?;
+        let response = self
+            .tools
+            .write_file(args)
+            .await
+            .map_err(|e| e.to_string())?;
 
         Ok(Json(response))
     }
@@ -198,7 +215,11 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             }
         }
 
-        let response = self.tools.edit_file(args).await?;
+        let response = self
+            .tools
+            .edit_file(args)
+            .await
+            .map_err(|e| e.to_string())?;
 
         Ok(Json(response))
     }
@@ -210,14 +231,18 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         request: Parameters<ListFilesArgs>,
     ) -> Result<Json<ListFilesResult>, String> {
         let Parameters(args) = request;
-        self.tools.list_files(args).await.map(Json)
+        self.tools
+            .list_files(args)
+            .await
+            .map(Json)
+            .map_err(|e| e.to_string())
     }
 
     #[doc = include_str!("tools/bash/description.md")]
     #[tool]
     pub async fn bash(&self, request: Parameters<BashInput>) -> Result<Json<BashOutput>, String> {
         let Parameters(args) = request;
-        let result = self.tools.bash(args).await?;
+        let result = self.tools.bash(args).await.map_err(|e| e.to_string())?;
 
         match result {
             BashResult::Completed(output) => Ok(Json(output)),
@@ -256,7 +281,11 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             .remove(&args.bash_id)
             .ok_or_else(|| format!("Shell ID not found: {}", args.bash_id))?;
 
-        let (result, handle_opt) = self.tools.read_background_bash(handle, args.filter).await?;
+        let (result, handle_opt) = self
+            .tools
+            .read_background_bash(handle, args.filter)
+            .await
+            .map_err(|e| e.to_string())?;
 
         // Put handle back if still running
         if let Some(handle) = handle_opt {
@@ -359,6 +388,9 @@ mod tests {
         let result = mcp.tools.get_lsp_diagnostics().await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("LSP not configured"));
+        assert!(matches!(
+            result.unwrap_err(),
+            error::CodingError::NotConfigured(_)
+        ));
     }
 }

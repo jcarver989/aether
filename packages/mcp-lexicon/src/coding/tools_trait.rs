@@ -3,6 +3,7 @@ use std::{collections::HashMap, fmt::Debug};
 
 use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, SymbolInformation};
 
+use super::error::CodingError;
 use super::tools::bash::{BackgroundProcessHandle, BashInput, BashResult, ReadBackgroundBashOutput};
 use super::tools::edit_file::{EditFileArgs, EditFileResponse};
 use super::tools::find::{find_files_by_name, FindInput, FindOutput};
@@ -21,28 +22,29 @@ pub trait CodingTools: Send + Sync + Debug {
     fn read_file(
         &self,
         args: ReadFileArgs,
-    ) -> impl Future<Output = Result<ReadFileResult, String>> + Send;
+    ) -> impl Future<Output = Result<ReadFileResult, CodingError>> + Send;
 
     /// Write content to a file
     fn write_file(
         &self,
         args: WriteFileArgs,
-    ) -> impl Future<Output = Result<WriteFileResponse, String>> + Send;
+    ) -> impl Future<Output = Result<WriteFileResponse, CodingError>> + Send;
 
     /// Edit a file using string replacement
     fn edit_file(
         &self,
         args: EditFileArgs,
-    ) -> impl Future<Output = Result<EditFileResponse, String>> + Send;
+    ) -> impl Future<Output = Result<EditFileResponse, CodingError>> + Send;
 
     /// List files in a directory
     fn list_files(
         &self,
         args: ListFilesArgs,
-    ) -> impl Future<Output = Result<ListFilesResult, String>> + Send;
+    ) -> impl Future<Output = Result<ListFilesResult, CodingError>> + Send;
 
     /// Execute a bash command
-    fn bash(&self, args: BashInput) -> impl Future<Output = Result<BashResult, String>> + Send;
+    fn bash(&self, args: BashInput)
+        -> impl Future<Output = Result<BashResult, CodingError>> + Send;
 
     /// Read output from a background bash process
     fn read_background_bash(
@@ -50,7 +52,7 @@ pub trait CodingTools: Send + Sync + Debug {
         handle: BackgroundProcessHandle,
         filter: Option<String>,
     ) -> impl Future<
-        Output = Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String>,
+        Output = Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), CodingError>,
     > + Send;
 
     /// Search file contents using regex patterns.
@@ -60,8 +62,8 @@ pub trait CodingTools: Send + Sync + Debug {
     fn grep(
         &self,
         args: GrepInput,
-    ) -> impl Future<Output = Result<GrepOutput, String>> + Send {
-        async move { perform_grep(args).await }
+    ) -> impl Future<Output = Result<GrepOutput, CodingError>> + Send {
+        async move { perform_grep(args).await.map_err(CodingError::from) }
     }
 
     /// Find files by name using glob patterns.
@@ -70,8 +72,8 @@ pub trait CodingTools: Send + Sync + Debug {
     fn find(
         &self,
         args: FindInput,
-    ) -> impl Future<Output = Result<FindOutput, String>> + Send {
-        async move { find_files_by_name(args).await }
+    ) -> impl Future<Output = Result<FindOutput, CodingError>> + Send {
+        async move { find_files_by_name(args).await.map_err(CodingError::from) }
     }
 
     /// Get all cached LSP diagnostics (errors, warnings, etc.).
@@ -80,7 +82,7 @@ pub trait CodingTools: Send + Sync + Debug {
     /// Returns an error if LSP is not configured for this instance.
     fn get_lsp_diagnostics(
         &self,
-    ) -> impl Future<Output = Result<HashMap<String, Vec<Diagnostic>>, String>> + Send {
+    ) -> impl Future<Output = Result<HashMap<String, Vec<Diagnostic>>, CodingError>> + Send {
         async { Ok(HashMap::new()) }
     }
 
@@ -99,8 +101,8 @@ pub trait CodingTools: Send + Sync + Debug {
         _file_path: &str,
         _symbol: &str,
         _line: u32,
-    ) -> impl Future<Output = Result<GotoDefinitionResponse, String>> + Send {
-        async { Err("LSP not configured".to_string()) }
+    ) -> impl Future<Output = Result<GotoDefinitionResponse, CodingError>> + Send {
+        async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
     }
 
     /// Find all references to a symbol.
@@ -120,8 +122,8 @@ pub trait CodingTools: Send + Sync + Debug {
         _symbol: &str,
         _line: u32,
         _include_declaration: bool,
-    ) -> impl Future<Output = Result<Vec<Location>, String>> + Send {
-        async { Err("LSP not configured".to_string()) }
+    ) -> impl Future<Output = Result<Vec<Location>, CodingError>> + Send {
+        async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
     }
 
     /// Get hover information (type, documentation) for a symbol.
@@ -139,8 +141,8 @@ pub trait CodingTools: Send + Sync + Debug {
         _file_path: &str,
         _symbol: &str,
         _line: u32,
-    ) -> impl Future<Output = Result<Option<Hover>, String>> + Send {
-        async { Err("LSP not configured".to_string()) }
+    ) -> impl Future<Output = Result<Option<Hover>, CodingError>> + Send {
+        async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
     }
 
     /// Search for symbols across the workspace.
@@ -155,7 +157,7 @@ pub trait CodingTools: Send + Sync + Debug {
     fn workspace_symbol(
         &self,
         _query: &str,
-    ) -> impl Future<Output = Result<Vec<SymbolInformation>, String>> + Send {
-        async { Err("LSP not configured".to_string()) }
+    ) -> impl Future<Output = Result<Vec<SymbolInformation>, CodingError>> + Send {
+        async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
     }
 }

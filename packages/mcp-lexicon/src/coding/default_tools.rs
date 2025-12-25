@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use lsp_types::Diagnostic;
 
+use super::error::CodingError;
 use super::{
     BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, FindInput,
     FindOutput, GrepInput, GrepOutput, ListFilesArgs, ListFilesResult, ReadBackgroundBashOutput,
@@ -25,57 +26,47 @@ impl DefaultCodingTools {
 }
 
 impl CodingTools for DefaultCodingTools {
-    async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, String> {
-        read_file_contents(args)
-            .await
-            .map_err(|e| format!("Read file error: {e}"))
+    async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, CodingError> {
+        read_file_contents(args).await.map_err(CodingError::from)
     }
 
-    async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, String> {
-        write_file_contents(args)
-            .await
-            .map_err(|e| format!("Write file error: {e}"))
+    async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, CodingError> {
+        write_file_contents(args).await.map_err(CodingError::from)
     }
 
-    async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, String> {
-        edit_file_contents(args)
-            .await
-            .map_err(|e| format!("Edit file error: {e}"))
+    async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, CodingError> {
+        edit_file_contents(args).await.map_err(CodingError::from)
     }
 
-    async fn list_files(&self, args: ListFilesArgs) -> Result<ListFilesResult, String> {
-        list_files(args)
-            .await
-            .map_err(|e| format!("List files error: {e}"))
+    async fn list_files(&self, args: ListFilesArgs) -> Result<ListFilesResult, CodingError> {
+        list_files(args).await.map_err(CodingError::from)
     }
 
-    async fn bash(&self, args: BashInput) -> Result<BashResult, String> {
-        execute_command(args)
-            .await
-            .map_err(|e| format!("Bash command error: {e}"))
+    async fn bash(&self, args: BashInput) -> Result<BashResult, CodingError> {
+        execute_command(args).await.map_err(CodingError::from)
     }
 
     async fn read_background_bash(
         &self,
         handle: BackgroundProcessHandle,
         filter: Option<String>,
-    ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String> {
+    ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), CodingError> {
         read_background_bash(handle, filter)
             .await
-            .map_err(|e| format!("Failed to get output: {e}"))
+            .map_err(CodingError::from)
     }
 
-    async fn grep(&self, args: GrepInput) -> Result<GrepOutput, String> {
-        perform_grep(args).await
+    async fn grep(&self, args: GrepInput) -> Result<GrepOutput, CodingError> {
+        perform_grep(args).await.map_err(CodingError::from)
     }
 
-    async fn find(&self, args: FindInput) -> Result<FindOutput, String> {
-        find_files_by_name(args).await
+    async fn find(&self, args: FindInput) -> Result<FindOutput, CodingError> {
+        find_files_by_name(args).await.map_err(CodingError::from)
     }
 
-    async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, String> {
+    async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, CodingError> {
         // DefaultCodingTools without wrapper has no LSP
         // Wrap with LspAwareCodingTools to enable LSP
-        Err("LSP not configured. Wrap DefaultCodingTools with LspAwareCodingTools to enable LSP integration.".to_string())
+        Err(CodingError::NotConfigured("LSP not configured. Wrap DefaultCodingTools with LspAwareCodingTools to enable LSP integration.".to_string()))
     }
 }

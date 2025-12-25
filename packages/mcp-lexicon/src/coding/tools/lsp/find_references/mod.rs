@@ -48,7 +48,8 @@ pub async fn execute_lsp_find_references<T: CodingTools>(
             line,
             input.include_declaration,
         )
-        .await?;
+        .await
+        .map_err(|e| e.to_string())?;
     let references: Vec<LocationResult> = lsp_locations
         .iter()
         .map(LocationResult::from_location)

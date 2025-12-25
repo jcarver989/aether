@@ -84,7 +84,10 @@ pub async fn execute_lsp_diagnostics<T: CodingTools>(
     input: LspDiagnosticsInput,
     tools: &T,
 ) -> Result<LspDiagnosticsOutput, String> {
-    let diagnostics_cache = tools.get_lsp_diagnostics().await?;
+    let diagnostics_cache = tools
+        .get_lsp_diagnostics()
+        .await
+        .map_err(|e| e.to_string())?;
     get_diagnostics(input.file_path, &diagnostics_cache)
 }
 
