@@ -7,6 +7,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use crate::coding::error::BashError;
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BashInput {
@@ -70,7 +72,7 @@ pub struct ReadBackgroundBashOutput {
 pub async fn read_background_bash(
     handle: BackgroundProcessHandle,
     filter: Option<String>,
-) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String> {
+) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), BashError> {
     let BackgroundProcessHandle {
         shell_id,
         mut output_rx,
@@ -80,7 +82,7 @@ pub async fn read_background_bash(
     // Collect all available output
     let mut output = String::new();
     let filter_regex = if let Some(pattern) = filter {
-        Some(regex::Regex::new(&pattern).map_err(|e| format!("Invalid regex: {e}"))?)
+        Some(regex::Regex::new(&pattern).map_err(|e| BashError::InvalidRegex(e.to_string()))?)
     } else {
         None
     };
@@ -99,7 +101,7 @@ pub async fn read_background_bash(
     if task_handle.is_finished() {
         let (exit_code, killed) = task_handle
             .await
-            .map_err(|e| format!("Failed to join task: {e}"))?;
+            .map_err(|e| BashError::JoinFailed(e.to_string()))?;
 
         let status = if killed {
             "failed".to_string()
@@ -190,16 +192,18 @@ async fn run_command_with_timeout(
     }
 }
 
-pub async fn execute_command(args: BashInput) -> Result<BashResult, String> {
+pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
     if args.command.trim() == "rm" {
-        return Err("No you can't fucking delete files".to_string());
+        return Err(BashError::Forbidden(
+            "No you can't fucking delete files".to_string(),
+        ));
     }
 
     // Validate timeout is within bounds
     if let Some(timeout_ms) = args.timeout
         && timeout_ms > 600000
     {
-        return Err("Timeout cannot exceed 600000ms (10 minutes)".to_string());
+        return Err(BashError::TimeoutTooLarge);
     }
 
     let run_in_background = args.run_in_background.unwrap_or(false);
@@ -258,10 +262,10 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, String> {
                     shell_id: None,
                 }))
             }
-            Ok(Err(e)) => Err(format!(
-                "Failed to execute command '{}': {}",
-                args.command, e
-            )),
+            Ok(Err(e)) => Err(BashError::SpawnFailed {
+                command: args.command,
+                reason: e.to_string(),
+            }),
             Err(_) => {
                 // Timeout occurred
                 let timeout_ms = timeout.map(|d| d.as_millis()).unwrap_or(120000);

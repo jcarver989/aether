@@ -10,6 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::coding::error::GrepError;
 use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -141,18 +142,18 @@ fn should_include_file(
     true
 }
 
-pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, String> {
+pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
     // Build glob set if glob pattern is provided
     let glob_set = if let Some(glob_pattern) = &args.glob {
         let mut builder = GlobSetBuilder::new();
-        builder.add(
-            Glob::new(glob_pattern)
-                .map_err(|e| format!("Invalid glob pattern '{glob_pattern}': {e}"))?,
-        );
+        builder.add(Glob::new(glob_pattern).map_err(|e| GrepError::InvalidGlobPattern {
+            pattern: glob_pattern.clone(),
+            reason: e.to_string(),
+        })?);
         Some(
             builder
                 .build()
-                .map_err(|e| format!("Failed to build glob set: {e}"))?,
+                .map_err(|e| GrepError::GlobSetBuildFailed(e.to_string()))?,
         )
     } else {
         None
@@ -168,7 +169,7 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, String> {
 
     let matcher = matcher_builder
         .build(&args.pattern)
-        .map_err(|e| format!("Invalid regex pattern: {e}"))?;
+        .map_err(|e| GrepError::InvalidRegex(e.to_string()))?;
 
     let output_mode = args.output_mode.unwrap_or(OutputMode::Content);
 
@@ -237,14 +238,14 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, String> {
                 );
                 searcher
                     .search_path(&matcher, path_obj, &mut sink)
-                    .map_err(|e| format!("Search error: {e}"))?;
+                    .map_err(|e| GrepError::SearchFailed(e.to_string()))?;
                 all_matches = sink.matches;
             }
             OutputMode::FilesWithMatches => {
                 let mut sink = HasMatchSink::new();
                 searcher
                     .search_path(&matcher, path_obj, &mut sink)
-                    .map_err(|e| format!("Search error: {e}"))?;
+                    .map_err(|e| GrepError::SearchFailed(e.to_string()))?;
                 if sink.has_match {
                     files_with_matches.push(search_path.to_string());
                 }
@@ -253,7 +254,7 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, String> {
                 let mut sink = CountSink::new();
                 searcher
                     .search_path(&matcher, path_obj, &mut sink)
-                    .map_err(|e| format!("Search error: {e}"))?;
+                    .map_err(|e| GrepError::SearchFailed(e.to_string()))?;
                 if sink.count > 0 {
                     file_counts.push(GrepFileCount {
                         file: search_path.to_string(),

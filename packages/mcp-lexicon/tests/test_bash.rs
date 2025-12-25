@@ -1,3 +1,4 @@
+use mcp_lexicon::coding::error::BashError;
 use mcp_lexicon::coding::tools::bash::{execute_command, read_background_bash, BashInput, BashResult};
 use std::time::Duration;
 
@@ -95,11 +96,7 @@ async fn test_timeout_validation() {
 
     let result = execute_command(args).await;
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Timeout cannot exceed 600000ms")
-    );
+    assert!(matches!(result.unwrap_err(), BashError::TimeoutTooLarge));
 }
 
 #[tokio::test]
@@ -176,7 +173,7 @@ async fn test_rm_command_blocked() {
 
     let result = execute_command(args).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("delete files"));
+    assert!(matches!(result.unwrap_err(), BashError::Forbidden(_)));
 }
 
 #[tokio::test]

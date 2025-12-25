@@ -4,6 +4,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::coding::error::FindError;
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FindInput {
     /// The glob pattern to match files against
@@ -23,18 +25,23 @@ pub struct FindOutput {
     pub search_path: String,
 }
 
-pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, String> {
+pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError> {
     let search_path = args.path.as_deref().unwrap_or(".");
 
     // Validate path exists
     if !Path::new(search_path).exists() {
-        return Err(format!("Search path does not exist: {search_path}"));
+        return Err(FindError::PathNotFound(search_path.to_string()));
     }
 
     // Compile glob pattern
     let glob_pattern = match Pattern::new(&args.pattern) {
         Ok(pattern) => pattern,
-        Err(e) => return Err(format!("Invalid glob pattern '{}': {e}", args.pattern)),
+        Err(e) => {
+            return Err(FindError::InvalidGlobPattern {
+                pattern: args.pattern,
+                reason: e.to_string(),
+            })
+        }
     };
 
     // Build walker with configuration
@@ -84,7 +91,7 @@ pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, String> {
     // Extract results using the remaining Arc reference
     let mut matches = matching_files
         .lock()
-        .map_err(|_| "Failed to lock results")?
+        .map_err(|_| FindError::LockFailed)?
         .clone();
 
     // Sort results by path
@@ -162,8 +169,7 @@ mod tests {
         };
 
         let result = find_files_by_name(args).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Search path does not exist"));
+        assert!(matches!(result, Err(FindError::PathNotFound(_))));
     }
 
     #[tokio::test]

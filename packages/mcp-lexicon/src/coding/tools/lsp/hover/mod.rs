@@ -36,7 +36,10 @@ pub async fn execute_lsp_hover<T: CodingTools>(
     tools: &T,
 ) -> Result<LspHoverOutput, String> {
     let line = parse_line(&input.line)?;
-    let hover = tools.hover(&input.file_path, &input.symbol, line).await?;
+    let hover = tools
+        .hover(&input.file_path, &input.symbol, line)
+        .await
+        .map_err(|e| e.to_string())?;
     let output = match hover {
         Some(h) => {
             let contents = hover_contents_to_string(&h);

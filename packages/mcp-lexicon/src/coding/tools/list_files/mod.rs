@@ -2,6 +2,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
+use crate::coding::error::ListFilesError;
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ListFilesArgs {
@@ -38,7 +40,7 @@ pub struct ListFilesResult {
     pub total_count: usize,
 }
 
-pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> {
+pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFilesError> {
     use std::os::unix::fs::PermissionsExt;
 
     let target_path = args.path.as_deref().unwrap_or(".");
@@ -47,15 +49,15 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, String> 
     let mut files = Vec::new();
 
     // Read directory entries
-    let entries =
-        std::fs::read_dir(target_path).map_err(|e| format!("Failed to read directory: {e}"))?;
+    let entries = std::fs::read_dir(target_path)
+        .map_err(|e| ListFilesError::ReadDirFailed(e.to_string()))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
+        let entry = entry.map_err(|e| ListFilesError::ReadEntryFailed(e.to_string()))?;
         let path = entry.path();
         let metadata = entry
             .metadata()
-            .map_err(|e| format!("Failed to read metadata: {e}"))?;
+            .map_err(|e| ListFilesError::MetadataFailed(e.to_string()))?;
 
         let name = entry.file_name().to_string_lossy().to_string();
 

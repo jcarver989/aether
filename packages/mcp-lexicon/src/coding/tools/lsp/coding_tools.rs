@@ -14,6 +14,7 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::coding::error::CodingError;
 use crate::coding::lsp::config::{LspConfig, default_lsp_configs};
 use crate::coding::lsp::registry::{LspClientHandle, LspRegistry};
 use crate::coding::lsp::{ClientNotification, LanguageId, path_to_uri};
@@ -217,7 +218,7 @@ impl<T: CodingTools> LspCodingTools<T> {
     }
 
     /// Ensure a file is open with the LSP and return its content.
-    async fn ensure_file_open_and_get_content(&self, file_path: &str) -> Result<String, String> {
+    async fn ensure_file_open_and_get_content(&self, file_path: &str) -> Result<String, CodingError> {
         let result = self
             .inner
             .read_file(ReadFileArgs {
@@ -233,7 +234,7 @@ impl<T: CodingTools> LspCodingTools<T> {
 }
 
 impl<T: CodingTools> CodingTools for LspCodingTools<T> {
-    async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, String> {
+    async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, CodingError> {
         let file_path = args.file_path.clone();
         let result = self.inner.read_file(args).await?;
         // Ensure document is open (sends didOpen if first time)
@@ -241,7 +242,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         Ok(result)
     }
 
-    async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, String> {
+    async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, CodingError> {
         let file_path = args.file_path.clone();
         let content = args.content.clone();
         let result = self.inner.write_file(args).await?;
@@ -256,7 +257,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         Ok(result)
     }
 
-    async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, String> {
+    async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, CodingError> {
         let file_path = args.file_path.clone();
         let result = self.inner.edit_file(args).await?;
 
@@ -272,11 +273,11 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         Ok(result)
     }
 
-    async fn list_files(&self, args: ListFilesArgs) -> Result<ListFilesResult, String> {
+    async fn list_files(&self, args: ListFilesArgs) -> Result<ListFilesResult, CodingError> {
         self.inner.list_files(args).await
     }
 
-    async fn bash(&self, args: BashInput) -> Result<BashResult, String> {
+    async fn bash(&self, args: BashInput) -> Result<BashResult, CodingError> {
         self.inner.bash(args).await
     }
 
@@ -284,11 +285,11 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         &self,
         handle: BackgroundProcessHandle,
         filter: Option<String>,
-    ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String> {
+    ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), CodingError> {
         self.inner.read_background_bash(handle, filter).await
     }
 
-    async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, String> {
+    async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, CodingError> {
         // Aggregate diagnostics from all active LSP clients
         let mut all_diagnostics = HashMap::new();
         for handle in self.registry.active_clients().await {
@@ -304,24 +305,24 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         file_path: &str,
         symbol: &str,
         line: u32,
-    ) -> Result<GotoDefinitionResponse, String> {
+    ) -> Result<GotoDefinitionResponse, CodingError> {
         let content = self.ensure_file_open_and_get_content(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
 
         let uri = path_to_uri(Path::new(file_path))
-            .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
+            .map_err(CodingError::from)?;
 
         let handle = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
-            .ok_or_else(|| "No LSP configured for this file type".to_string())?;
+            .ok_or_else(|| CodingError::NotConfigured("No LSP configured for this file type".to_string()))?;
 
         handle
             .client
             .goto_definition(uri, line - 1, column)
             .await
-            .map_err(|e| format!("LSP goto_definition failed: {}", e))
+            .map_err(CodingError::from)
     }
 
     async fn find_references(
@@ -330,24 +331,24 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         symbol: &str,
         line: u32,
         include_declaration: bool,
-    ) -> Result<Vec<Location>, String> {
+    ) -> Result<Vec<Location>, CodingError> {
         let content = self.ensure_file_open_and_get_content(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
 
         let uri = path_to_uri(Path::new(file_path))
-            .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
+            .map_err(CodingError::from)?;
 
         let handle = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
-            .ok_or_else(|| "No LSP configured for this file type".to_string())?;
+            .ok_or_else(|| CodingError::NotConfigured("No LSP configured for this file type".to_string()))?;
 
         handle
             .client
             .find_references(uri, line - 1, column, include_declaration)
             .await
-            .map_err(|e| format!("LSP find_references failed: {}", e))
+            .map_err(CodingError::from)
     }
 
     async fn hover(
@@ -355,27 +356,27 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         file_path: &str,
         symbol: &str,
         line: u32,
-    ) -> Result<Option<Hover>, String> {
+    ) -> Result<Option<Hover>, CodingError> {
         let content = self.ensure_file_open_and_get_content(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
 
         let uri = path_to_uri(Path::new(file_path))
-            .map_err(|e| format!("Failed to convert path to URI: {}", e))?;
+            .map_err(CodingError::from)?;
 
         let handle = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
-            .ok_or_else(|| "No LSP configured for this file type".to_string())?;
+            .ok_or_else(|| CodingError::NotConfigured("No LSP configured for this file type".to_string()))?;
 
         handle
             .client
             .hover(uri, line - 1, column)
             .await
-            .map_err(|e| format!("LSP hover failed: {}", e))
+            .map_err(CodingError::from)
     }
 
-    async fn workspace_symbol(&self, query: &str) -> Result<Vec<SymbolInformation>, String> {
+    async fn workspace_symbol(&self, query: &str) -> Result<Vec<SymbolInformation>, CodingError> {
         // For workspace symbol, we query all active LSPs and aggregate results
         let mut all_symbols = Vec::new();
         for handle in self.registry.active_clients().await {
@@ -396,15 +397,15 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
 ///
 /// # Returns
 /// The column position (0-indexed) of the first occurrence of the symbol on that line.
-fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, String> {
+fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, CodingError> {
     let line_idx = line
         .checked_sub(1)
-        .ok_or_else(|| "Line number must be >= 1".to_string())?;
+        .ok_or_else(|| CodingError::NotConfigured("Line number must be >= 1".to_string()))?;
 
     let line_content = content
         .lines()
         .nth(line_idx as usize)
-        .ok_or_else(|| format!("Line {} not found in file", line))?;
+        .ok_or_else(|| CodingError::NotConfigured(format!("Line {} not found in file", line)))?;
 
     // Find the symbol on the line - match word boundaries to avoid partial matches
     let mut search_start = 0;
@@ -429,7 +430,10 @@ fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, Str
         search_start = abs_pos + 1;
     }
 
-    Err(format!("Symbol '{}' not found on line {}", symbol, line))
+    Err(CodingError::NotConfigured(format!(
+        "Symbol '{}' not found on line {}",
+        symbol, line
+    )))
 }
 
 #[cfg(test)]
@@ -475,7 +479,7 @@ mod tests {
         let content = "fn main() {}";
         let result = find_symbol_column(content, "HashMap", 1);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not found on line"));
+        assert!(result.unwrap_err().to_string().contains("not found on line"));
     }
 
     #[test]
@@ -483,7 +487,7 @@ mod tests {
         let content = "fn main() {}";
         let result = find_symbol_column(content, "main", 99);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not found in file"));
+        assert!(result.unwrap_err().to_string().contains("not found in file"));
     }
 
     #[test]
@@ -491,7 +495,7 @@ mod tests {
         let content = "fn main() {}";
         let result = find_symbol_column(content, "main", 0);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("must be >= 1"));
+        assert!(result.unwrap_err().to_string().contains("must be >= 1"));
     }
 
     #[test]

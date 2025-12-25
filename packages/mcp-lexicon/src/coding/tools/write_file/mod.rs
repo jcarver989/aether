@@ -2,6 +2,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::coding::error::FileError;
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WriteFileArgs {
@@ -22,22 +24,25 @@ pub struct WriteFileResponse {
     pub file_path: String,
 }
 
-pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileResponse, String> {
+pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileResponse, FileError> {
     let file_path = Path::new(&args.file_path);
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
-        return Err(format!(
-            "Failed to create directories for {}: {}",
-            args.file_path, e
-        ));
+        return Err(FileError::CreateDirFailed {
+            path: args.file_path,
+            reason: e.to_string(),
+        });
     }
 
     // Write content to file
     if let Err(e) = std::fs::write(&args.file_path, &args.content) {
-        return Err(format!("Failed to write to file {}: {}", args.file_path, e));
+        return Err(FileError::WriteFailed {
+            path: args.file_path,
+            reason: e.to_string(),
+        });
     }
 
     // Count bytes for response

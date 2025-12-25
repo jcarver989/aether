@@ -2,6 +2,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::coding::error::FileError;
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EditFileArgs {
@@ -31,17 +33,22 @@ pub struct EditFileResponse {
     pub content: String,
 }
 
-pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, String> {
+pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, FileError> {
     // File must exist for editing
     if !Path::new(&args.file_path).exists() {
-        return Err(format!("File does not exist: {}", args.file_path));
+        return Err(FileError::NotFound {
+            path: args.file_path,
+        });
     }
 
     // Read current file content
     let current_content = match std::fs::read_to_string(&args.file_path) {
         Ok(content) => content,
         Err(e) => {
-            return Err(format!("Failed to read file {}: {}", args.file_path, e));
+            return Err(FileError::ReadFailed {
+                path: args.file_path,
+                reason: e.to_string(),
+            });
         }
     };
 
@@ -63,15 +70,18 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
 
     // Check if any replacement actually occurred
     if replacements_made == 0 {
-        return Err(format!(
-            "String replacement failed for file {}: string '{}' not found",
-            args.file_path, args.old_string
-        ));
+        return Err(FileError::PatternNotFound {
+            path: args.file_path,
+            pattern: args.old_string,
+        });
     }
 
     // Write back to file
     if let Err(e) = std::fs::write(&args.file_path, &updated_content) {
-        return Err(format!("Failed to write to file {}: {}", args.file_path, e));
+        return Err(FileError::WriteFailed {
+            path: args.file_path,
+            reason: e.to_string(),
+        });
     }
 
     // Count lines for response
