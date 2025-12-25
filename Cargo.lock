@@ -1040,7 +1040,6 @@ dependencies = [
  "clap",
  "color-eyre",
  "futures",
- "mcp_lexicon",
  "owo-colors",
  "schemars",
  "serde",
