@@ -1,6 +1,6 @@
-use aether::auth::store;
 use aether::auth::{
-    AnthropicAuthMode, ProviderCredentials, authorize_url, create_api_key, exchange_code,
+    AnthropicAuthMode, FileCredentialStore, ProviderCredential, authorize_url, create_api_key,
+    exchange_code,
 };
 use clap::Parser;
 use std::error::Error;
@@ -46,31 +46,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let tokens = exchange_code(code, &init.verifier).await?;
 
-    let mut store_data = store::load()?;
+    let store = FileCredentialStore::new()?;
+
     if args.create_api_key {
         let api_key = create_api_key(&tokens.access).await?;
-        store_data.providers.insert(
-            "anthropic".to_string(),
-            ProviderCredentials::api_key(&api_key),
-        );
-        store::save(&store_data)?;
-        println!("Saved Anthropic API key to {}", store::path()?.display());
+        store
+            .set_provider("anthropic", ProviderCredential::api_key(&api_key))
+            .await?;
+
         return Ok(());
     }
 
-    store_data.providers.insert(
-        "anthropic".to_string(),
-        ProviderCredentials::OAuth {
-            access: tokens.access,
-            refresh: tokens.refresh,
-            expires: tokens.expires,
-        },
-    );
-    store::save(&store_data)?;
-    println!(
-        "Saved Anthropic OAuth tokens to {}",
-        store::path()?.display()
-    );
+    store
+        .set_provider(
+            "anthropic",
+            ProviderCredential::oauth(tokens.access, tokens.refresh, tokens.expires),
+        )
+        .await?;
 
     Ok(())
 }

@@ -1,5 +1,5 @@
-mod client;
 pub mod auth;
+mod client;
 pub mod config;
 pub mod error;
 pub mod manager;
