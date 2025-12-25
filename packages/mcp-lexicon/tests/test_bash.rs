@@ -1,5 +1,7 @@
 use mcp_lexicon::coding::error::BashError;
-use mcp_lexicon::coding::tools::bash::{execute_command, read_background_bash, BashInput, BashResult};
+use mcp_lexicon::coding::tools::bash::{
+    BashInput, BashResult, execute_command, read_background_bash,
+};
 use std::time::Duration;
 
 #[tokio::test]

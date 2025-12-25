@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use lsp_types::{Diagnostic, Uri};
-use mcp_lexicon::coding::lsp::{count_by_severity, path_to_uri, FormattedDiagnostic};
+use mcp_lexicon::coding::lsp::{FormattedDiagnostic, count_by_severity, path_to_uri};
 use mcp_lexicon::coding::tools::read_file::ReadFileArgs;
 use mcp_lexicon::coding::tools::write_file::WriteFileArgs;
 use mcp_lexicon::coding::{CodingTools, DefaultCodingTools, LspCodingTools};

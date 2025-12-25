@@ -218,7 +218,10 @@ impl<T: CodingTools> LspCodingTools<T> {
     }
 
     /// Ensure a file is open with the LSP and return its content.
-    async fn ensure_file_open_and_get_content(&self, file_path: &str) -> Result<String, CodingError> {
+    async fn ensure_file_open_and_get_content(
+        &self,
+        file_path: &str,
+    ) -> Result<String, CodingError> {
         let result = self
             .inner
             .read_file(ReadFileArgs {
@@ -309,14 +312,15 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         let content = self.ensure_file_open_and_get_content(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
 
-        let uri = path_to_uri(Path::new(file_path))
-            .map_err(CodingError::from)?;
+        let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
 
         let handle = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
-            .ok_or_else(|| CodingError::NotConfigured("No LSP configured for this file type".to_string()))?;
+            .ok_or_else(|| {
+                CodingError::NotConfigured("No LSP configured for this file type".to_string())
+            })?;
 
         handle
             .client
@@ -335,14 +339,15 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         let content = self.ensure_file_open_and_get_content(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
 
-        let uri = path_to_uri(Path::new(file_path))
-            .map_err(CodingError::from)?;
+        let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
 
         let handle = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
-            .ok_or_else(|| CodingError::NotConfigured("No LSP configured for this file type".to_string()))?;
+            .ok_or_else(|| {
+                CodingError::NotConfigured("No LSP configured for this file type".to_string())
+            })?;
 
         handle
             .client
@@ -360,14 +365,15 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
         let content = self.ensure_file_open_and_get_content(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
 
-        let uri = path_to_uri(Path::new(file_path))
-            .map_err(CodingError::from)?;
+        let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
 
         let handle = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
-            .ok_or_else(|| CodingError::NotConfigured("No LSP configured for this file type".to_string()))?;
+            .ok_or_else(|| {
+                CodingError::NotConfigured("No LSP configured for this file type".to_string())
+            })?;
 
         handle
             .client
@@ -479,7 +485,12 @@ mod tests {
         let content = "fn main() {}";
         let result = find_symbol_column(content, "HashMap", 1);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found on line"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not found on line")
+        );
     }
 
     #[test]
@@ -487,7 +498,12 @@ mod tests {
         let content = "fn main() {}";
         let result = find_symbol_column(content, "main", 99);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found in file"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not found in file")
+        );
     }
 
     #[test]

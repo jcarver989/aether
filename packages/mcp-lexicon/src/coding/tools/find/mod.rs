@@ -40,7 +40,7 @@ pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError
             return Err(FindError::InvalidGlobPattern {
                 pattern: args.pattern,
                 reason: e.to_string(),
-            })
+            });
         }
     };
 

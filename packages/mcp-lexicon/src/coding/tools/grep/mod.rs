@@ -146,10 +146,12 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
     // Build glob set if glob pattern is provided
     let glob_set = if let Some(glob_pattern) = &args.glob {
         let mut builder = GlobSetBuilder::new();
-        builder.add(Glob::new(glob_pattern).map_err(|e| GrepError::InvalidGlobPattern {
-            pattern: glob_pattern.clone(),
-            reason: e.to_string(),
-        })?);
+        builder.add(
+            Glob::new(glob_pattern).map_err(|e| GrepError::InvalidGlobPattern {
+                pattern: glob_pattern.clone(),
+                reason: e.to_string(),
+            })?,
+        );
         Some(
             builder
                 .build()

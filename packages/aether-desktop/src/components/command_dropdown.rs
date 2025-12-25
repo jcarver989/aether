@@ -20,9 +20,7 @@ pub fn CommandDropdown(
     // Filter commands based on current filter text
     let filtered_commands: Vec<&SlashCommand> = commands
         .iter()
-        .filter(|cmd| {
-            filter.is_empty() || cmd.name.to_lowercase().contains(&filter.to_lowercase())
-        })
+        .filter(|cmd| filter.is_empty() || cmd.name.to_lowercase().contains(&filter.to_lowercase()))
         .collect();
 
     if filtered_commands.is_empty() {
@@ -64,11 +62,7 @@ pub fn CommandDropdown(
 }
 
 #[component]
-fn CommandItem(
-    command: SlashCommand,
-    is_selected: bool,
-    on_click: EventHandler<()>,
-) -> Element {
+fn CommandItem(command: SlashCommand, is_selected: bool, on_click: EventHandler<()>) -> Element {
     let class_str = if is_selected {
         "px-3 py-2 cursor-pointer transition-colors bg-blue-600"
     } else {

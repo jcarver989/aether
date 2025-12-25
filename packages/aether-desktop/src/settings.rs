@@ -40,7 +40,6 @@ impl AgentServerConfig {
 
     /// Adds an environment variable.
 
-
     /// Converts to a command line string for display.
     pub fn to_command_line(&self) -> String {
         let mut parts = vec![self.command.clone()];
