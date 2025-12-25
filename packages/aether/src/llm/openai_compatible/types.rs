@@ -1,7 +1,8 @@
-use async_openai::types::{
+use async_openai::types::chat::{
     ChatChoiceStream, ChatCompletionMessageToolCallChunk,
     ChatCompletionStreamResponseDelta as OpenAiDelta, CreateChatCompletionStreamResponse,
-    FunctionCallStream, Role,
+    FunctionCallStream, Role, FunctionType, FinishReason as OpenAiFinishReason,
+    CompletionUsage,
 };
 use serde::{Deserialize, Serialize};
 
@@ -100,15 +101,15 @@ impl From<ChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {
     }
 }
 
-impl From<FinishReason> for async_openai::types::FinishReason {
+impl From<FinishReason> for OpenAiFinishReason {
     fn from(reason: FinishReason) -> Self {
         match reason {
-            FinishReason::Stop => async_openai::types::FinishReason::Stop,
-            FinishReason::Length => async_openai::types::FinishReason::Length,
-            FinishReason::ToolCalls => async_openai::types::FinishReason::ToolCalls,
-            FinishReason::ContentFilter => async_openai::types::FinishReason::ContentFilter,
-            FinishReason::FunctionCall => async_openai::types::FinishReason::FunctionCall,
-            FinishReason::Error => async_openai::types::FinishReason::Stop,
+            FinishReason::Stop => OpenAiFinishReason::Stop,
+            FinishReason::Length => OpenAiFinishReason::Length,
+            FinishReason::ToolCalls => OpenAiFinishReason::ToolCalls,
+            FinishReason::ContentFilter => OpenAiFinishReason::ContentFilter,
+            FinishReason::FunctionCall => OpenAiFinishReason::FunctionCall,
+            FinishReason::Error => OpenAiFinishReason::Stop,
         }
     }
 }
@@ -145,7 +146,7 @@ impl From<ToolCallDelta> for ChatCompletionMessageToolCallChunk {
             index: call.index as u32,
             id: call.id,
             r#type: call.tool_type.and_then(|t| match t.as_str() {
-                "function" => Some(async_openai::types::ChatCompletionToolType::Function),
+                "function" => Some(FunctionType::Function),
                 _ => None,
             }),
             function: call.function.map(|f| f.into()),
@@ -162,9 +163,9 @@ impl From<FunctionCallDelta> for FunctionCallStream {
     }
 }
 
-impl From<Usage> for async_openai::types::CompletionUsage {
+impl From<Usage> for CompletionUsage {
     fn from(u: Usage) -> Self {
-        async_openai::types::CompletionUsage {
+        CompletionUsage {
             prompt_tokens: u.prompt_tokens.max(0) as u32,
             completion_tokens: u.completion_tokens.max(0) as u32,
             total_tokens: u.total_tokens.max(0) as u32,

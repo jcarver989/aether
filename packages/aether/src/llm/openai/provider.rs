@@ -1,4 +1,4 @@
-use async_openai::{Client, config::Config, types::CreateChatCompletionRequest};
+use async_openai::{Client, config::Config, types::chat::CreateChatCompletionRequest};
 use async_stream;
 use std::error::Error;
 use tokio_stream::StreamExt;

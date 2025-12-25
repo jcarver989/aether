@@ -9,7 +9,7 @@
 pub mod streaming;
 pub mod types;
 
-use async_openai::types::CreateChatCompletionRequest;
+use async_openai::types::chat::CreateChatCompletionRequest;
 
 use crate::llm::Context;
 use crate::llm::openai::mappers::{map_messages, map_tools};
