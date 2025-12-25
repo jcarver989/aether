@@ -198,7 +198,13 @@ mod tests {
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
         assert!(matches!(responses[1], LlmResponse::Text { ref chunk } if chunk == "Hello"));
         assert!(matches!(responses[2], LlmResponse::Text { ref chunk } if chunk == " world"));
-        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 25 }));
+        assert!(matches!(
+            responses[3],
+            LlmResponse::Usage {
+                input_tokens: 10,
+                output_tokens: 25
+            }
+        ));
         assert!(matches!(responses[4], LlmResponse::Done));
     }
 
@@ -228,7 +234,13 @@ mod tests {
         assert!(
             matches!(responses[2], LlmResponse::ToolRequestComplete { ref tool_call } if tool_call.id == "tool_123" && tool_call.name == "search")
         );
-        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 15 }));
+        assert!(matches!(
+            responses[3],
+            LlmResponse::Usage {
+                input_tokens: 10,
+                output_tokens: 15
+            }
+        ));
         assert!(matches!(responses[4], LlmResponse::Done));
     }
 

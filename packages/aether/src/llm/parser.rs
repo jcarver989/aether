@@ -112,12 +112,15 @@ mod tests {
     fn test_parse_anthropic() {
         let parser = ModelProviderParser::default();
         let result = parser.parse("anthropic:claude-3.5-sonnet");
-        // Will fail without API key, but should parse successfully
+        // Will fail without API key or credentials, but should parse successfully
         if let Err(e) = result {
             let err = e.to_string();
             assert!(
-                err.contains("API") || err.contains("ANTHROPIC"),
-                "Should fail on API key, not parsing"
+                err.contains("API")
+                    || err.contains("ANTHROPIC")
+                    || err.contains("credentials")
+                    || err.contains("JSON"),
+                "Should fail on API key or credentials, not parsing. Got: {err}"
             );
         }
     }

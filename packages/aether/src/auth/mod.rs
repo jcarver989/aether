@@ -1,13 +1,17 @@
 use thiserror::Error;
 
 pub mod anthropic;
-pub mod store;
+pub mod credentials;
+pub mod file_store;
+pub mod rmcp_adapter;
 
 pub use anthropic::{
     AnthropicAuthMode, AuthorizeInit, OAuthTokens, authorize_url, create_api_key, exchange_code,
     refresh,
 };
-pub use store::{CredentialsStore, ProviderCredentials};
+pub use credentials::{CredentialsFile, McpCredential, ProviderCredential};
+pub use file_store::FileCredentialStore;
+pub use rmcp_adapter::RmcpCredentialStoreAdapter;
 
 #[derive(Debug, Error)]
 pub enum AuthError {

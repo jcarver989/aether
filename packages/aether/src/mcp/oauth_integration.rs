@@ -1,4 +1,5 @@
-use crate::mcp::auth::{FileCredentialStore, OAuthError, OAuthHandler};
+use crate::auth::{FileCredentialStore, RmcpCredentialStoreAdapter};
+use crate::mcp::auth::{OAuthError, OAuthHandler};
 use rmcp::transport::auth::{AuthorizationManager, CredentialStore, OAuthState};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
@@ -15,11 +16,15 @@ pub async fn perform_oauth_flow<H: OAuthHandler>(
     scopes: &[&str],
 ) -> Result<OAuthHelperResult, OAuthError> {
     // Try to load existing credentials first
+    let store = FileCredentialStore::new()
+        .map_err(|e| OAuthError::CredentialStore(format!("Failed to create store: {e}")))?;
     {
-        let credential_store = FileCredentialStore::new(server_id)?;
-        if let Some(stored_creds) = credential_store.load().await.map_err(|e| {
-            OAuthError::CredentialStore(format!("Failed to load credentials: {e}"))
-        })? {
+        let credential_store = RmcpCredentialStoreAdapter::new(store.clone(), server_id);
+        if let Some(stored_creds) = credential_store
+            .load()
+            .await
+            .map_err(|e| OAuthError::CredentialStore(format!("Failed to load credentials: {e}")))?
+        {
             if stored_creds.token_response.is_some() {
                 // We have stored credentials, try to use them
                 let mut auth_manager = AuthorizationManager::new(base_url)
@@ -44,7 +49,7 @@ pub async fn perform_oauth_flow<H: OAuthHandler>(
     }
 
     // No stored credentials or they're invalid, start new OAuth flow
-    let credential_store = FileCredentialStore::new(server_id)?;
+    let credential_store = RmcpCredentialStoreAdapter::new(store, server_id);
     let mut oauth_state = OAuthState::new(base_url, None)
         .await
         .map_err(|e| OAuthError::Rmcp(e.to_string()))?;
@@ -55,9 +60,7 @@ pub async fn perform_oauth_flow<H: OAuthHandler>(
             manager.set_credential_store(credential_store);
         }
         _ => {
-            return Err(OAuthError::Rmcp(
-                "Expected Unauthorized state".to_string(),
-            ));
+            return Err(OAuthError::Rmcp("Expected Unauthorized state".to_string()));
         }
     }
 
@@ -102,12 +105,16 @@ pub async fn get_access_token_for_server(
     base_url: &str,
 ) -> Result<Option<String>, OAuthError> {
     // Create credential store
-    let credential_store = FileCredentialStore::new(server_id)?;
+    let store = FileCredentialStore::new()
+        .map_err(|e| OAuthError::CredentialStore(format!("Failed to create store: {e}")))?;
+    let credential_store = RmcpCredentialStoreAdapter::new(store, server_id);
 
     // Try to load existing credentials
-    if let Some(stored_creds) = credential_store.load().await.map_err(|e| {
-        OAuthError::CredentialStore(format!("Failed to load credentials: {e}"))
-    })? {
+    if let Some(stored_creds) = credential_store
+        .load()
+        .await
+        .map_err(|e| OAuthError::CredentialStore(format!("Failed to load credentials: {e}")))?
+    {
         if stored_creds.token_response.is_some() {
             let mut auth_manager = AuthorizationManager::new(base_url)
                 .await

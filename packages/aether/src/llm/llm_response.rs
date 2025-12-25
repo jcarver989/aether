@@ -5,14 +5,31 @@ use super::ToolCallRequest;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum LlmResponse {
-    Start { message_id: String },
-    Text { chunk: String },
-    ToolRequestStart { id: String, name: String },
-    ToolRequestArg { id: String, chunk: String },
-    ToolRequestComplete { tool_call: ToolCallRequest },
+    Start {
+        message_id: String,
+    },
+    Text {
+        chunk: String,
+    },
+    ToolRequestStart {
+        id: String,
+        name: String,
+    },
+    ToolRequestArg {
+        id: String,
+        chunk: String,
+    },
+    ToolRequestComplete {
+        tool_call: ToolCallRequest,
+    },
     Done,
-    Error { message: String },
-    Usage { input_tokens: u32, output_tokens: u32 },
+    Error {
+        message: String,
+    },
+    Usage {
+        input_tokens: u32,
+        output_tokens: u32,
+    },
 }
 
 impl LlmResponse {
