@@ -4,10 +4,12 @@ use std::{collections::HashMap, fmt::Debug};
 use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, SymbolInformation};
 
 use super::error::CodingError;
-use super::tools::bash::{BackgroundProcessHandle, BashInput, BashResult, ReadBackgroundBashOutput};
+use super::tools::bash::{
+    BackgroundProcessHandle, BashInput, BashResult, ReadBackgroundBashOutput,
+};
 use super::tools::edit_file::{EditFileArgs, EditFileResponse};
-use super::tools::find::{find_files_by_name, FindInput, FindOutput};
-use super::tools::grep::{perform_grep, GrepInput, GrepOutput};
+use super::tools::find::{FindInput, FindOutput, find_files_by_name};
+use super::tools::grep::{GrepInput, GrepOutput, perform_grep};
 use super::tools::list_files::{ListFilesArgs, ListFilesResult};
 use super::tools::read_file::{ReadFileArgs, ReadFileResult};
 use super::tools::write_file::{WriteFileArgs, WriteFileResponse};
@@ -44,7 +46,7 @@ pub trait CodingTools: Send + Sync + Debug {
 
     /// Execute a bash command
     fn bash(&self, args: BashInput)
-        -> impl Future<Output = Result<BashResult, CodingError>> + Send;
+    -> impl Future<Output = Result<BashResult, CodingError>> + Send;
 
     /// Read output from a background bash process
     fn read_background_bash(

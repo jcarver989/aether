@@ -18,10 +18,8 @@ use crate::server;
 use crate::storage::{EvalResult, ResultsStore};
 
 /// Result of running a single eval task
-type EvalTaskResult = Result<
-    Vec<(EvalAssertion, EvalAssertionResult)>,
-    Box<dyn std::error::Error + Send + Sync>,
->;
+type EvalTaskResult =
+    Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Output from a spawned eval task
 type EvalTaskOutput = (

@@ -49,8 +49,8 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
     let mut files = Vec::new();
 
     // Read directory entries
-    let entries = std::fs::read_dir(target_path)
-        .map_err(|e| ListFilesError::ReadDirFailed(e.to_string()))?;
+    let entries =
+        std::fs::read_dir(target_path).map_err(|e| ListFilesError::ReadDirFailed(e.to_string()))?;
 
     for entry in entries {
         let entry = entry.map_err(|e| ListFilesError::ReadEntryFailed(e.to_string()))?;

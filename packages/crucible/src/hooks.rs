@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use async_trait::async_trait;
 use crate::AgentRunnerMessage;
+use async_trait::async_trait;
 
 pub struct HookInput {
     pub working_directory: PathBuf,

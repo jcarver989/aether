@@ -29,29 +29,35 @@ pub mod tools_trait;
 // Import other types directly from their submodules (e.g., tools::bash::BashInput).
 
 pub use default_tools::DefaultCodingTools;
-pub use tools_trait::CodingTools;
 pub use tools::lsp::LspCodingTools;
+pub use tools_trait::CodingTools;
 
 // =============================================================================
 // Internal imports (used by CodingMcp implementation below)
 // =============================================================================
 
 use tools::bash::{
-    execute_command, read_background_bash, BackgroundProcessHandle, BashInput, BashOutput,
-    BashResult, ReadBackgroundBashInput, ReadBackgroundBashOutput,
+    BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,
+    ReadBackgroundBashOutput, execute_command, read_background_bash,
 };
-use tools::edit_file::{edit_file_contents, EditFileArgs, EditFileResponse};
-use tools::find::{find_files_by_name, FindInput, FindOutput};
-use tools::grep::{perform_grep, GrepInput, GrepOutput};
-use tools::list_files::{list_files, ListFilesArgs, ListFilesResult};
-use tools::read_file::{read_file_contents, ReadFileArgs, ReadFileResult};
-use tools::todo_write::{process_todo_write, TodoItem, TodoWriteInput, TodoWriteOutput};
-use tools::write_file::{write_file_contents, WriteFileArgs, WriteFileResponse};
-use tools::lsp::diagnostics::{execute_lsp_diagnostics, LspDiagnosticsInput, LspDiagnosticsOutput};
-use tools::lsp::find_references::{execute_lsp_find_references, LspFindReferencesInput, LspFindReferencesOutput};
-use tools::lsp::goto_definition::{execute_lsp_goto_definition, LspGotoDefinitionInput, LspGotoDefinitionOutput};
-use tools::lsp::hover::{execute_lsp_hover, LspHoverInput, LspHoverOutput};
-use tools::lsp::workspace_symbol::{execute_lsp_workspace_symbol, LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput};
+use tools::edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
+use tools::find::{FindInput, FindOutput, find_files_by_name};
+use tools::grep::{GrepInput, GrepOutput, perform_grep};
+use tools::list_files::{ListFilesArgs, ListFilesResult, list_files};
+use tools::lsp::diagnostics::{LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics};
+use tools::lsp::find_references::{
+    LspFindReferencesInput, LspFindReferencesOutput, execute_lsp_find_references,
+};
+use tools::lsp::goto_definition::{
+    LspGotoDefinitionInput, LspGotoDefinitionOutput, execute_lsp_goto_definition,
+};
+use tools::lsp::hover::{LspHoverInput, LspHoverOutput, execute_lsp_hover};
+use tools::lsp::workspace_symbol::{
+    LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput, execute_lsp_workspace_symbol,
+};
+use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
+use tools::todo_write::{TodoItem, TodoWriteInput, TodoWriteOutput, process_todo_write};
+use tools::write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
 /// CLI arguments for CodingMcp server
 #[derive(Debug, Clone, Parser)]

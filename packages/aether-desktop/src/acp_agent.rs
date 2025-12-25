@@ -3,8 +3,8 @@ use crate::state::{AgentStatus, SendError};
 use agent_client_protocol::{
     Agent, AvailableCommand, ClientSideConnection, ContentBlock, InitializeRequest,
     NewSessionRequest, NewSessionResponse, PromptRequest, RequestPermissionRequest,
-    RequestPermissionResponse, SessionId, SessionUpdate, ToolCall, ToolCallContent,
-    ToolCallStatus, ToolCallUpdateFields, VERSION,
+    RequestPermissionResponse, SessionId, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus,
+    ToolCallUpdateFields, VERSION,
 };
 use futures::Stream;
 use std::pin::Pin;
@@ -100,14 +100,9 @@ impl AgentHandle {
 #[derive(Debug)]
 pub enum AgentEvent {
     /// Append text chunk to the current streaming message
-    MessageChunk {
-        agent_id: String,
-        text: String,
-    },
+    MessageChunk { agent_id: String, text: String },
     /// Mark current streaming message as complete
-    MessageComplete {
-        agent_id: String,
-    },
+    MessageComplete { agent_id: String },
     /// A new tool call started
     ToolCallStarted {
         agent_id: String,
@@ -145,15 +140,10 @@ pub enum AgentEvent {
         response_tx: oneshot::Sender<RequestPermissionResponse>,
     },
     /// Agent disconnected
-    Disconnected {
-        agent_id: String,
-    },
+    Disconnected { agent_id: String },
     /// Error occurred
     #[allow(dead_code)]
-    Error {
-        agent_id: String,
-        error: String,
-    },
+    Error { agent_id: String, error: String },
     /// Available slash commands updated
     AvailableCommandsUpdate {
         agent_id: String,
@@ -324,7 +314,10 @@ async fn run_agent(
 
                 streams.insert(
                     "prompt",
-                    Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx).map(LoopEvent::PromptComplete)),
+                    Box::pin(
+                        tokio_stream::wrappers::ReceiverStream::new(rx)
+                            .map(LoopEvent::PromptComplete),
+                    ),
                 );
             }
 

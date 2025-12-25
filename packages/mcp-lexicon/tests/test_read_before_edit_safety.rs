@@ -1,7 +1,7 @@
+use mcp_lexicon::CodingMcp;
 use mcp_lexicon::coding::tools::edit_file::EditFileArgs;
 use mcp_lexicon::coding::tools::read_file::ReadFileArgs;
 use mcp_lexicon::coding::tools::write_file::WriteFileArgs;
-use mcp_lexicon::CodingMcp;
 use rmcp::handler::server::wrapper::Parameters;
 use std::fs;
 use tempfile::TempDir;
