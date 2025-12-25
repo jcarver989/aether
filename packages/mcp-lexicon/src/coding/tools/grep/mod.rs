@@ -48,7 +48,8 @@ pub struct GrepCountOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[schemars(extend("type" = "object"))]
 pub enum GrepOutput {
     Content(GrepContentOutput),
     Files(GrepFilesOutput),
