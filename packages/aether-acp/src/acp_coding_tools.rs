@@ -1,4 +1,5 @@
 use agent_client_protocol as acp;
+use mcp_lexicon::coding::CodingTools;
 use mcp_lexicon::coding::error::{BashError, CodingError, FileError};
 use mcp_lexicon::coding::tools::bash::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashOutput,
@@ -7,7 +8,6 @@ use mcp_lexicon::coding::tools::edit_file::{EditFileArgs, EditFileResponse};
 use mcp_lexicon::coding::tools::list_files::{ListFilesArgs, ListFilesResult};
 use mcp_lexicon::coding::tools::read_file::{ReadFileArgs, ReadFileResult};
 use mcp_lexicon::coding::tools::write_file::{WriteFileArgs, WriteFileResponse};
-use mcp_lexicon::coding::CodingTools;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tracing::{debug, warn};

@@ -307,9 +307,7 @@ impl LspClient {
             .await
             .map_err(|_| LspError::handler_closed())?;
 
-        response_rx
-            .await
-            .map_err(|_| LspError::response_closed())?
+        response_rx.await.map_err(|_| LspError::response_closed())?
     }
 
     /// Find all references to a symbol at a position
@@ -353,9 +351,7 @@ impl LspClient {
             .await
             .map_err(|_| LspError::handler_closed())?;
 
-        response_rx
-            .await
-            .map_err(|_| LspError::response_closed())?
+        response_rx.await.map_err(|_| LspError::response_closed())?
     }
 
     /// Get hover information (type, documentation) for a symbol at a position
@@ -388,9 +384,7 @@ impl LspClient {
             .await
             .map_err(|_| LspError::handler_closed())?;
 
-        response_rx
-            .await
-            .map_err(|_| LspError::response_closed())?
+        response_rx.await.map_err(|_| LspError::response_closed())?
     }
 
     /// Search for symbols across the workspace
@@ -419,9 +413,7 @@ impl LspClient {
             .await
             .map_err(|_| LspError::handler_closed())?;
 
-        response_rx
-            .await
-            .map_err(|_| LspError::response_closed())?
+        response_rx.await.map_err(|_| LspError::response_closed())?
     }
 
     /// Generate the next unique request ID
@@ -666,4 +658,3 @@ pub fn path_to_uri(path: &Path) -> Result<Uri> {
         .parse()
         .map_err(|e| LspError::Transport(format!("Failed to parse URI: {}", e)))
 }
-

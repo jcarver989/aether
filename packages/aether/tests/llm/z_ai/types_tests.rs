@@ -91,7 +91,8 @@ fn test_convert_to_openai_type() {
     let response: ChatCompletionStreamResponse = serde_json::from_str(json).unwrap();
 
     // Convert to standard OpenAI type
-    let openai_response: async_openai::types::chat::CreateChatCompletionStreamResponse = response.into();
+    let openai_response: async_openai::types::chat::CreateChatCompletionStreamResponse =
+        response.into();
 
     assert_eq!(openai_response.id, "test123");
     assert_eq!(openai_response.model, "glm-4.6");
