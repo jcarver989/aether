@@ -1,5 +1,5 @@
 use agent_client_protocol as acp;
-use mcp_lexicon::coding::CodingTools;
+use mcp_lexicon::coding::error::{BashError, CodingError, FileError};
 use mcp_lexicon::coding::tools::bash::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashOutput,
 };
@@ -7,6 +7,7 @@ use mcp_lexicon::coding::tools::edit_file::{EditFileArgs, EditFileResponse};
 use mcp_lexicon::coding::tools::list_files::{ListFilesArgs, ListFilesResult};
 use mcp_lexicon::coding::tools::read_file::{ReadFileArgs, ReadFileResult};
 use mcp_lexicon::coding::tools::write_file::{WriteFileArgs, WriteFileResponse};
+use mcp_lexicon::coding::CodingTools;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tracing::{debug, warn};
@@ -41,7 +42,7 @@ impl AcpCodingTools {
 }
 
 impl CodingTools for AcpCodingTools {
-    async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, String> {
+    async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, CodingError> {
         debug!("ACP read_file: {}", args.file_path);
 
         let response = self
@@ -53,7 +54,11 @@ impl CodingTools for AcpCodingTools {
                 limit: args.limit.map(|l| l as u32),
                 meta: None,
             })
-            .await?;
+            .await
+            .map_err(|e| FileError::ReadFailed {
+                path: args.file_path.clone(),
+                reason: e,
+            })?;
 
         // Parse the content to add line numbers similar to read_file_contents format
         let lines: Vec<&str> = response.content.lines().collect();
@@ -87,7 +92,7 @@ impl CodingTools for AcpCodingTools {
         })
     }
 
-    async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, String> {
+    async fn write_file(&self, args: WriteFileArgs) -> Result<WriteFileResponse, CodingError> {
         debug!("ACP write_file: {}", args.file_path);
 
         let bytes_written = args.content.len();
@@ -99,7 +104,11 @@ impl CodingTools for AcpCodingTools {
                 content: args.content,
                 meta: None,
             })
-            .await?;
+            .await
+            .map_err(|e| FileError::WriteFailed {
+                path: args.file_path.clone(),
+                reason: e,
+            })?;
 
         Ok(WriteFileResponse {
             message: format!("Successfully wrote to {}", args.file_path),
@@ -108,7 +117,7 @@ impl CodingTools for AcpCodingTools {
         })
     }
 
-    async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, String> {
+    async fn edit_file(&self, args: EditFileArgs) -> Result<EditFileResponse, CodingError> {
         debug!("ACP edit_file: {} (via read+write)", args.file_path);
 
         // ACP doesn't have a native "edit" operation, so we:
@@ -125,7 +134,11 @@ impl CodingTools for AcpCodingTools {
                 limit: None,
                 meta: None,
             })
-            .await?;
+            .await
+            .map_err(|e| FileError::ReadFailed {
+                path: args.file_path.clone(),
+                reason: e,
+            })?;
 
         let content = read_response.content;
 
@@ -137,11 +150,15 @@ impl CodingTools for AcpCodingTools {
             // Single replacement - check uniqueness
             let count = content.matches(&args.old_string).count();
             if count == 0 {
-                return Err(format!("String not found in file: '{}'", args.old_string));
+                return Err(FileError::PatternNotFound {
+                    path: args.file_path.clone(),
+                    pattern: args.old_string.clone(),
+                }
+                .into());
             } else if count > 1 {
-                return Err(format!(
+                return Err(CodingError::NotConfigured(format!(
                     "String appears {count} times in file. Use replace_all=true or provide more context to make it unique."
-                ));
+                )));
             }
             (content.replacen(&args.old_string, &args.new_string, 1), 1)
         };
@@ -154,7 +171,11 @@ impl CodingTools for AcpCodingTools {
                 content: new_content.clone(),
                 meta: None,
             })
-            .await?;
+            .await
+            .map_err(|e| FileError::WriteFailed {
+                path: args.file_path.clone(),
+                reason: e,
+            })?;
 
         let total_lines = new_content.lines().count();
 
@@ -167,7 +188,7 @@ impl CodingTools for AcpCodingTools {
         })
     }
 
-    async fn list_files(&self, args: ListFilesArgs) -> Result<ListFilesResult, String> {
+    async fn list_files(&self, args: ListFilesArgs) -> Result<ListFilesResult, CodingError> {
         debug!("ACP list_files: {:?}", args.path);
 
         // ACP doesn't have a list_files method, so fall back to local filesystem
@@ -177,10 +198,10 @@ impl CodingTools for AcpCodingTools {
         // Use the default implementation
         mcp_lexicon::coding::tools::list_files::list_files(args)
             .await
-            .map_err(|e| format!("List files error: {e}"))
+            .map_err(CodingError::from)
     }
 
-    async fn bash(&self, args: BashInput) -> Result<BashResult, String> {
+    async fn bash(&self, args: BashInput) -> Result<BashResult, CodingError> {
         debug!("ACP bash: {}", args.command);
 
         let response = self
@@ -194,7 +215,11 @@ impl CodingTools for AcpCodingTools {
                 output_byte_limit: None,
                 meta: None,
             })
-            .await?;
+            .await
+            .map_err(|e| BashError::SpawnFailed {
+                command: args.command.clone(),
+                reason: e,
+            })?;
 
         let terminal_id = response.terminal_id;
 
@@ -230,7 +255,8 @@ impl CodingTools for AcpCodingTools {
                     terminal_id: terminal_id.clone(),
                     meta: None,
                 })
-                .await?;
+                .await
+                .map_err(|e| BashError::WaitFailed(e))?;
 
             // Get the output
             let output_response = self
@@ -240,7 +266,8 @@ impl CodingTools for AcpCodingTools {
                     terminal_id: terminal_id.clone(),
                     meta: None,
                 })
-                .await?;
+                .await
+                .map_err(|e| BashError::WaitFailed(e))?;
 
             // Release the terminal
             let _ = self
@@ -265,7 +292,7 @@ impl CodingTools for AcpCodingTools {
         &self,
         handle: BackgroundProcessHandle,
         _filter: Option<String>,
-    ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), String> {
+    ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), CodingError> {
         debug!("ACP read_background_bash: {}", handle.shell_id);
 
         // Look up the terminal_id
@@ -275,7 +302,7 @@ impl CodingTools for AcpCodingTools {
             .unwrap()
             .get(&handle.shell_id)
             .cloned()
-            .ok_or_else(|| format!("Unknown shell_id: {}", handle.shell_id))?;
+            .ok_or_else(|| BashError::ShellNotFound(handle.shell_id.clone()))?;
 
         // Get output
         let output_response = self
@@ -285,7 +312,8 @@ impl CodingTools for AcpCodingTools {
                 terminal_id: terminal_id.clone(),
                 meta: None,
             })
-            .await?;
+            .await
+            .map_err(|e| BashError::WaitFailed(e))?;
 
         // Check if it's still running
         let is_running = output_response.exit_status.is_none();
