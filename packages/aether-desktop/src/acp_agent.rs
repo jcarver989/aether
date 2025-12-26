@@ -191,7 +191,7 @@ async fn start_session(
     };
 
     let _ = conn.initialize(init_req).await.map_err(|e| {
-        return ActorError::InitError(e.to_string());
+        ActorError::InitError(e.to_string())
     })?;
 
     let session_req = NewSessionRequest {
