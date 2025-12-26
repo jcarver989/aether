@@ -192,9 +192,10 @@ async fn start_session(
         meta: None,
     };
 
-    let _ = conn.initialize(init_req).await.map_err(|e| {
-        ActorError::Init(e.to_string())
-    })?;
+    let _ = conn
+        .initialize(init_req)
+        .await
+        .map_err(|e| ActorError::Init(e.to_string()))?;
 
     let session_req = NewSessionRequest {
         cwd,

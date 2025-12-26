@@ -1,4 +1,6 @@
-use async_openai::types::chat::{ChatCompletionMessageToolCallChunk, CreateChatCompletionStreamResponse};
+use async_openai::types::chat::{
+    ChatCompletionMessageToolCallChunk, CreateChatCompletionStreamResponse,
+};
 use async_stream;
 use std::collections::HashMap;
 use tokio_stream::{Stream, StreamExt};
