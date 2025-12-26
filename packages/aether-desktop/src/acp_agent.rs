@@ -7,9 +7,11 @@ use agent_client_protocol::{
     ToolCallUpdateFields, VERSION,
 };
 use futures::Stream;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::process::Stdio;
 use std::rc::Rc;
-use std::{path::PathBuf, process::Stdio, thread::JoinHandle};
+use std::thread::JoinHandle;
 use tokio::{
     process::{Child, ChildStdin, ChildStdout, Command},
     sync::{mpsc, oneshot},
@@ -42,7 +44,7 @@ impl AgentHandle {
     /// Awaits until the session is established before returning.
     pub async fn spawn(
         cmd_ref: &str,
-        cwd: &PathBuf,
+        cwd: &Path,
         event_tx: mpsc::UnboundedSender<AgentEvent>,
     ) -> Result<Self, ActorError> {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
@@ -53,7 +55,7 @@ impl AgentHandle {
         let agent_id_for_thread = agent_id.clone();
 
         let cmd = cmd_ref.to_string();
-        let cwd = cwd.clone();
+        let cwd = cwd.to_path_buf();
 
         let thread = std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -72,7 +74,7 @@ impl AgentHandle {
         // Await initialization (non-blocking)
         let acp_session_id = init_rx
             .await
-            .map_err(|_| ActorError::InitError("Agent thread terminated during init".into()))??;
+            .map_err(|_| ActorError::Init("Agent thread terminated during init".into()))??;
 
         Ok(Self {
             id: agent_id,
@@ -154,17 +156,17 @@ pub enum AgentEvent {
 /// Error types for actor operations.
 #[derive(Debug)]
 pub enum ActorError {
-    SpawnError(String),
-    InitError(String),
-    SessionError(String),
+    Spawn(String),
+    Init(String),
+    Session(String),
 }
 
 impl std::fmt::Display for ActorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ActorError::SpawnError(e) => write!(f, "Failed to spawn agent: {}", e),
-            ActorError::InitError(e) => write!(f, "Failed to initialize: {}", e),
-            ActorError::SessionError(e) => write!(f, "Failed to create session: {}", e),
+            ActorError::Spawn(e) => write!(f, "Failed to spawn agent: {}", e),
+            ActorError::Init(e) => write!(f, "Failed to initialize: {}", e),
+            ActorError::Session(e) => write!(f, "Failed to create session: {}", e),
         }
     }
 }
@@ -191,7 +193,7 @@ async fn start_session(
     };
 
     let _ = conn.initialize(init_req).await.map_err(|e| {
-        ActorError::InitError(e.to_string())
+        ActorError::Init(e.to_string())
     })?;
 
     let session_req = NewSessionRequest {
@@ -203,7 +205,7 @@ async fn start_session(
     let result = conn
         .new_session(session_req)
         .await
-        .map_err(|e| ActorError::SessionError(e.to_string()))?;
+        .map_err(|e| ActorError::Session(e.to_string()))?;
 
     Ok(result)
 }
@@ -212,7 +214,7 @@ async fn start_session(
 #[derive(Debug)]
 enum LoopEvent {
     Command(AgentCommand),
-    RawEvent(RawAgentEvent),
+    RawEvent(Box<RawAgentEvent>),
     PromptComplete(Result<agent_client_protocol::PromptResponse, agent_client_protocol::Error>),
 }
 
@@ -287,7 +289,7 @@ async fn run_agent(
     // Add raw event stream
     streams.insert(
         "raw",
-        Box::pin(UnboundedReceiverStream::new(raw_rx).map(LoopEvent::RawEvent)),
+        Box::pin(UnboundedReceiverStream::new(raw_rx).map(|e| LoopEvent::RawEvent(Box::new(e)))),
     );
 
     // Main event loop - polls all streams concurrently
@@ -345,7 +347,7 @@ async fn run_agent(
             }
 
             LoopEvent::RawEvent(raw_event) => {
-                let events = transform_raw_event(&agent_id, raw_event);
+                let events = transform_raw_event(&agent_id, *raw_event);
                 for event in events {
                     let _ = event_tx.send(event);
                 }
@@ -361,7 +363,7 @@ async fn run_agent(
 fn spawn_child_process(cmd: &str) -> Result<(Child, ChildStdin, ChildStdout), ActorError> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     if parts.is_empty() {
-        return Err(ActorError::SpawnError("Empty command line".to_string()));
+        return Err(ActorError::Spawn("Empty command line".to_string()));
     }
 
     let (command, args) = (parts[0], &parts[1..]);
@@ -373,17 +375,17 @@ fn spawn_child_process(cmd: &str) -> Result<(Child, ChildStdin, ChildStdout), Ac
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|e| ActorError::SpawnError(e.to_string()))?;
+        .map_err(|e| ActorError::Spawn(e.to_string()))?;
 
     let stdin = child
         .stdin
         .take()
-        .ok_or(ActorError::SpawnError("Failed to get stdin".to_string()))?;
+        .ok_or(ActorError::Spawn("Failed to get stdin".to_string()))?;
 
     let stdout = child
         .stdout
         .take()
-        .ok_or(ActorError::SpawnError("Failed to get stdout".to_string()))?;
+        .ok_or(ActorError::Spawn("Failed to get stdout".to_string()))?;
 
     Ok((child, stdin, stdout))
 }

@@ -335,7 +335,7 @@ async fn create_agent(
     // Send initial prompt via handle (before storing)
     handle
         .send_prompt(initial_message.clone())
-        .map_err(|e| ActorError::SessionError(e.to_string()))?;
+        .map_err(|e| ActorError::Session(e.to_string()))?;
 
     // Create UI state
     let session = AgentSession::new(agent_id.clone(), acp_session_id, config, initial_message);
