@@ -5,7 +5,7 @@ use aether::{
     mcp::mcp,
 };
 use mcp_lexicon::coding::{DefaultCodingTools, LspCodingTools};
-use mcp_lexicon::{CodingMcp, ServiceExt};
+use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt};
 use std::env::current_dir;
 use std::error::Error;
 use std::path::PathBuf;
@@ -40,11 +40,23 @@ impl AppState {
         let agent_builder = agent(llm).system(&system_prompt);
         let root_path = current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let lsp_tools = LspCodingTools::new(DefaultCodingTools::new(), root_path);
+
+        // Get ~/.aether path for plugins
+        let aether_dir = dirs::home_dir()
+            .map(|h| h.join(".aether"))
+            .unwrap_or_else(|| PathBuf::from(".aether"));
+
         let (tools, tx, mcp_handle) = mcp()
-            .with_servers(vec![McpServerConfig::InMemory {
-                name: "coding".to_string(),
-                server: CodingMcp::with_tools(lsp_tools).into_dyn(),
-            }])
+            .with_servers(vec![
+                McpServerConfig::InMemory {
+                    name: "coding".to_string(),
+                    server: CodingMcp::with_tools(lsp_tools).into_dyn(),
+                },
+                McpServerConfig::InMemory {
+                    name: "plugins".to_string(),
+                    server: PluginsMcp::new(aether_dir).into_dyn(),
+                },
+            ])
             .spawn()
             .await?;
 
