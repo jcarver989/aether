@@ -20,7 +20,7 @@ struct DropdownState {
 
 #[component]
 pub fn AgentView(agent_id: String) -> Element {
-    let mut input_val = use_signal(|| String::new());
+    let mut input_val = use_signal(String::new);
     let dropdown_state = use_signal(DropdownState::default);
     let agent_id_for_send = agent_id.clone();
     let agent_id_for_handlers = agent_id.clone();
@@ -36,7 +36,7 @@ pub fn AgentView(agent_id: String) -> Element {
     };
 
     let mut do_send = {
-        let mut dropdown_state = dropdown_state.clone();
+        let mut dropdown_state = dropdown_state;
         move || {
             let content = input_val.read().clone();
             if content.trim().is_empty() {
@@ -77,8 +77,8 @@ pub fn AgentView(agent_id: String) -> Element {
 
     // Handle command selection from dropdown
     let on_command_select = {
-        let mut input_val = input_val.clone();
-        let mut dropdown_state = dropdown_state.clone();
+        let mut input_val = input_val;
+        let mut dropdown_state = dropdown_state;
         move |cmd: SlashCommand| {
             // Replace input with "/{command} "
             input_val.set(format!("/{} ", cmd.name));
@@ -88,7 +88,7 @@ pub fn AgentView(agent_id: String) -> Element {
 
     // Handle input changes - detect "/" for dropdown
     let on_input_change = {
-        let mut dropdown_state = dropdown_state.clone();
+        let mut dropdown_state = dropdown_state;
         let commands = available_commands.clone();
         move |e: Event<FormData>| {
             let value = e.value();
@@ -111,9 +111,9 @@ pub fn AgentView(agent_id: String) -> Element {
     // Enhanced keyboard handling
     let on_keydown = {
         let mut do_send = do_send.clone();
-        let mut dropdown_state = dropdown_state.clone();
+        let mut dropdown_state = dropdown_state;
         let commands = available_commands.clone();
-        let mut input_val = input_val.clone();
+        let mut input_val = input_val;
 
         move |e: KeyboardEvent| {
             let state = dropdown_state.read().clone();

@@ -256,7 +256,7 @@ impl CodingTools for AcpCodingTools {
                     meta: None,
                 })
                 .await
-                .map_err(|e| BashError::WaitFailed(e))?;
+                .map_err(BashError::WaitFailed)?;
 
             // Get the output
             let output_response = self
@@ -267,7 +267,7 @@ impl CodingTools for AcpCodingTools {
                     meta: None,
                 })
                 .await
-                .map_err(|e| BashError::WaitFailed(e))?;
+                .map_err(BashError::WaitFailed)?;
 
             // Release the terminal
             let _ = self
@@ -313,7 +313,7 @@ impl CodingTools for AcpCodingTools {
                 meta: None,
             })
             .await
-            .map_err(|e| BashError::WaitFailed(e))?;
+            .map_err(BashError::WaitFailed)?;
 
         // Check if it's still running
         let is_running = output_response.exit_status.is_none();

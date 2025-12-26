@@ -29,7 +29,7 @@ pub fn NewAgentForm(
             .unwrap_or_else(|| CUSTOM_SERVER.to_string())
     });
     let custom_command_line = use_signal(|| AgentConfig::default().command_line);
-    let mut initial_message = use_signal(|| String::new());
+    let mut initial_message = use_signal(String::new);
 
     // Helper to get the actual command line from selection
     let get_command_line = move || {

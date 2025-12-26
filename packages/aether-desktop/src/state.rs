@@ -91,8 +91,8 @@ pub struct SlashCommand {
 
 impl From<AvailableCommand> for SlashCommand {
     fn from(cmd: AvailableCommand) -> Self {
-        let input_hint = cmd.input.and_then(|input| match input {
-            AvailableCommandInput::Unstructured { hint } => Some(hint),
+        let input_hint = cmd.input.map(|input| match input {
+            AvailableCommandInput::Unstructured { hint } => hint,
         });
         Self {
             name: cmd.name,
