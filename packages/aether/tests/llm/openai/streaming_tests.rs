@@ -1,6 +1,6 @@
-use async_openai::types::{
+use async_openai::types::chat::{
     ChatChoiceStream, ChatCompletionMessageToolCallChunk, ChatCompletionStreamResponseDelta,
-    ChatCompletionToolType, CreateChatCompletionStreamResponse, FinishReason, FunctionCallStream,
+    CreateChatCompletionStreamResponse, FinishReason, FunctionCallStream,
 };
 use tokio_stream::StreamExt;
 
@@ -20,7 +20,7 @@ async fn test_parallel_tool_calls() {
                         tool_calls: Some(vec![ChatCompletionMessageToolCallChunk {
                             index: 0,
                             id: Some("call_1".to_string()),
-                            r#type: Some(ChatCompletionToolType::Function),
+                            r#type: None,
                             function: Some(FunctionCallStream {
                                 name: Some("function_a".to_string()),
                                 arguments: None,
@@ -53,7 +53,7 @@ async fn test_parallel_tool_calls() {
                         tool_calls: Some(vec![ChatCompletionMessageToolCallChunk {
                             index: 1,
                             id: Some("call_2".to_string()),
-                            r#type: Some(ChatCompletionToolType::Function),
+                            r#type: None,
                             function: Some(FunctionCallStream {
                                 name: Some("function_b".to_string()),
                                 arguments: None,
@@ -299,7 +299,7 @@ async fn test_tool_call_followed_by_content() {
                         tool_calls: Some(vec![ChatCompletionMessageToolCallChunk {
                             index: 0,
                             id: Some("call_1".to_string()),
-                            r#type: Some(ChatCompletionToolType::Function),
+                            r#type: None,
                             function: Some(FunctionCallStream {
                                 name: Some("test_func".to_string()),
                                 arguments: None,
