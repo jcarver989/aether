@@ -30,15 +30,11 @@ impl AgentServerConfig {
         }
     }
 
-    /// Adds an argument.
-
     /// Adds multiple arguments.
     pub fn with_args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.args.extend(args.into_iter().map(|a| a.into()));
         self
     }
-
-    /// Adds an environment variable.
 
     /// Converts to a command line string for display.
     pub fn to_command_line(&self) -> String {

@@ -29,8 +29,8 @@ pub fn process_codeassist_stream<T: Stream<Item = Result<String>> + Send + Unpin
         while let Some(result) = stream.next().await {
             match result {
                 Ok(line) => {
-                    if line.starts_with("data: ") {
-                        buffered_lines.push(line[6..].trim().to_string());
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        buffered_lines.push(data.trim().to_string());
                     } else if line.is_empty() && !buffered_lines.is_empty() {
                         let json_str = buffered_lines.join("\n");
                         buffered_lines.clear();
