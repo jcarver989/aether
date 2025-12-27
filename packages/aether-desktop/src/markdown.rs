@@ -1,33 +1,7 @@
 use dioxus::prelude::*;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
-use std::sync::LazyLock;
-use syntect::highlighting::{Theme, ThemeSet};
-use syntect::html::highlighted_html_for_string;
-use syntect::parsing::SyntaxSet;
 
-// Load syntax highlighting resources once at startup
-static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
-static THEME: LazyLock<Theme> = LazyLock::new(|| {
-    let theme_set = ThemeSet::load_defaults();
-    theme_set.themes["base16-ocean.dark"].clone()
-});
-
-fn highlight_code(code: &str, language: &str) -> String {
-    let syntax = SYNTAX_SET
-        .find_syntax_by_token(language)
-        .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
-
-    highlighted_html_for_string(code, &SYNTAX_SET, syntax, &THEME)
-        .unwrap_or_else(|_| html_escape(code))
-}
-
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
+use crate::syntax::{highlight_code, html_escape};
 
 #[component]
 pub fn Markdown(content: String, is_streaming: bool) -> Element {
