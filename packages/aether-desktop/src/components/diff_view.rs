@@ -3,6 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::state::{DiffState, FileDiff, FileStatus};
+use crate::syntax::language_from_path;
 
 use super::diff_line::{DiffLineRow, HunkHeader};
 use super::file_drawer::FileDrawer;
@@ -58,6 +59,9 @@ fn FileDiffContent(file: FileDiff) -> Element {
         FileStatus::Renamed => ("Renamed", "text-purple-400 bg-purple-500/10"),
     };
 
+    // Derive language from file extension for syntax highlighting
+    let language = language_from_path(&file.path).to_string();
+
     rsx! {
         // File header
         div {
@@ -111,6 +115,7 @@ fn FileDiffContent(file: FileDiff) -> Element {
                             key: "{hunk_idx}-{line_idx}",
                             line: line.clone(),
                             show_line_numbers: true,
+                            language: language.clone(),
                         }
                     }
                 }

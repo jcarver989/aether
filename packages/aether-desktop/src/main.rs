@@ -15,6 +15,7 @@ mod file_watcher;
 mod markdown;
 mod settings;
 mod state;
+mod syntax;
 mod views;
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
