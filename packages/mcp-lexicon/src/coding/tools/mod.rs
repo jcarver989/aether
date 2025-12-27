@@ -11,4 +11,5 @@ pub mod list_files;
 pub mod lsp;
 pub mod read_file;
 pub mod todo_write;
+pub mod web_fetch;
 pub mod write_file;

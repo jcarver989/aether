@@ -34,6 +34,10 @@ pub enum CodingError {
     #[error(transparent)]
     Lsp(#[from] LspError),
 
+    /// Web fetch errors
+    #[error(transparent)]
+    WebFetch(#[from] WebFetchError),
+
     /// Tool not configured/available
     #[error("{0}")]
     NotConfigured(String),
@@ -153,4 +157,28 @@ pub enum ListFilesError {
     /// Failed to read metadata
     #[error("Failed to read metadata: {0}")]
     MetadataFailed(String),
+}
+
+/// Errors related to web fetch operations
+#[derive(Debug, Error)]
+pub enum WebFetchError {
+    /// Invalid URL format
+    #[error("Invalid URL: {0}")]
+    InvalidUrl(String),
+
+    /// HTTP request failed
+    #[error("Request failed: {0}")]
+    RequestFailed(String),
+
+    /// Request timed out
+    #[error("Request timed out after {0}ms")]
+    Timeout(u64),
+
+    /// Response too large
+    #[error("Response too large: {size} bytes exceeds limit of {limit} bytes")]
+    ResponseTooLarge { size: usize, limit: usize },
+
+    /// Failed to parse HTML content
+    #[error("Failed to parse HTML: {0}")]
+    ParseFailed(String),
 }

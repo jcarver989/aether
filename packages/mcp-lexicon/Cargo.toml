@@ -26,6 +26,8 @@ tracing-subscriber = { workspace = true, features = ["registry", "fmt", "json"] 
 tracing-appender = { workspace = true }
 thiserror = { workspace = true }
 lsp-types = "0.97"
+reqwest = { workspace = true }
+htmd = "0.5"
 
 [dev-dependencies]
 tempfile = { workspace = true }
