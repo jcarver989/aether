@@ -1,5 +1,7 @@
 use crate::acp_client::{AcpClient, RawAgentEvent};
-use crate::state::{AgentStatus, SendError};
+use crate::diff_engine::compute_diff;
+use crate::file_watcher::{FileWatchEvent, FileWatcher};
+use crate::state::{AgentStatus, DiffState, SendError};
 use agent_client_protocol::{
     Agent, AvailableCommand, ClientSideConnection, ContentBlock, InitializeRequest,
     NewSessionRequest, NewSessionResponse, PromptRequest, RequestPermissionRequest,
@@ -170,6 +172,11 @@ pub enum AgentEvent {
         agent_id: String,
         commands: Vec<AvailableCommand>,
     },
+    /// Git diff state updated
+    DiffUpdate {
+        agent_id: String,
+        diff_state: DiffState,
+    },
 }
 
 /// Error types for actor operations.
@@ -236,6 +243,7 @@ enum LoopEvent {
     Command(AgentCommand),
     RawEvent(Box<RawAgentEvent>),
     PromptComplete(Result<agent_client_protocol::PromptResponse, agent_client_protocol::Error>),
+    FileWatchEvent(FileWatchEvent),
 }
 
 type EventStream = Pin<Box<dyn Stream<Item = LoopEvent> + Send>>;
@@ -280,7 +288,7 @@ async fn run_agent(
         }
     });
 
-    let session = match start_session(&conn, cwd).await {
+    let session = match start_session(&conn, cwd.clone()).await {
         Ok(session) => session,
         Err(e) => {
             let _ = init_tx.send(Err(e));
@@ -317,6 +325,21 @@ async fn run_agent(
         "raw",
         Box::pin(UnboundedReceiverStream::new(raw_rx).map(|e| LoopEvent::RawEvent(Box::new(e)))),
     );
+
+    // Set up file watcher for the agent's working directory
+    let (file_watch_tx, file_watch_rx) = mpsc::unbounded_channel();
+    let _file_watcher = FileWatcher::new(cwd.clone(), file_watch_tx);
+    streams.insert(
+        "file_watch",
+        Box::pin(UnboundedReceiverStream::new(file_watch_rx).map(LoopEvent::FileWatchEvent)),
+    );
+
+    // Send initial diff state
+    let initial_diff = compute_diff_state(&cwd);
+    let _ = event_tx.send(AgentEvent::DiffUpdate {
+        agent_id: agent_id.clone(),
+        diff_state: initial_diff,
+    });
 
     // Main event loop - polls all streams concurrently
     while let Some((_, event)) = streams.next().await {
@@ -378,6 +401,20 @@ async fn run_agent(
                     let _ = event_tx.send(event);
                 }
             }
+
+            LoopEvent::FileWatchEvent(file_event) => match file_event {
+                FileWatchEvent::Changed => {
+                    debug!(agent_id = %agent_id, "File change detected, recomputing diff");
+                    let diff_state = compute_diff_state(&cwd);
+                    let _ = event_tx.send(AgentEvent::DiffUpdate {
+                        agent_id: agent_id.clone(),
+                        diff_state,
+                    });
+                }
+                FileWatchEvent::Error(err) => {
+                    warn!(agent_id = %agent_id, "File watcher error: {}", err);
+                }
+            },
         }
     }
 
@@ -556,4 +593,22 @@ fn extract_tool_content(fields: &ToolCallUpdateFields) -> Option<String> {
             _ => None,
         })
     })
+}
+
+/// Compute diff state for a given working directory.
+fn compute_diff_state(cwd: &Path) -> DiffState {
+    match compute_diff(cwd) {
+        Ok(files) => DiffState {
+            files,
+            selected_file: None,
+            loading: false,
+            error: None,
+        },
+        Err(e) => DiffState {
+            files: Vec::new(),
+            selected_file: None,
+            loading: false,
+            error: Some(e.to_string()),
+        },
+    }
 }

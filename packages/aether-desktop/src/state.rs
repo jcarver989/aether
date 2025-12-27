@@ -6,6 +6,7 @@
 use crate::acp_agent::AgentHandle;
 use agent_client_protocol::{AvailableCommand, AvailableCommandInput, SessionId, ToolCall};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum AgentStatus {
@@ -128,6 +129,10 @@ pub struct AgentSession {
     pub tool_calls: HashMap<String, ToolCall>,
     /// Available slash commands for this agent
     pub available_commands: Vec<SlashCommand>,
+    /// Working directory for this agent
+    pub cwd: PathBuf,
+    /// Git diff state for this agent
+    pub diff_state: DiffState,
 }
 
 /// Error returned when attempting to send to a disconnected agent.
@@ -158,6 +163,7 @@ impl AgentSession {
         acp_session_id: SessionId,
         config: AgentConfig,
         initial_message: String,
+        cwd: PathBuf,
     ) -> Self {
         let name = config.name.clone();
         Self {
@@ -169,6 +175,8 @@ impl AgentSession {
             messages: vec![Message::user_text(initial_message)],
             tool_calls: HashMap::new(),
             available_commands: Vec::new(),
+            cwd,
+            diff_state: DiffState::default(),
         }
     }
 
@@ -227,4 +235,62 @@ impl Default for AgentHandles {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ============================================================================
+// Git Diff Types
+// ============================================================================
+
+/// Status of a file in the git diff.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FileStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+}
+
+/// Origin/type of a diff line.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LineOrigin {
+    Context,
+    Addition,
+    Deletion,
+}
+
+/// A single line in a diff hunk.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct DiffLine {
+    pub origin: LineOrigin,
+    pub old_lineno: Option<u32>,
+    pub new_lineno: Option<u32>,
+    pub content: String,
+}
+
+/// A contiguous section of changes in a file.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct DiffHunk {
+    pub old_start: u32,
+    pub old_lines: u32,
+    pub new_start: u32,
+    pub new_lines: u32,
+    pub lines: Vec<DiffLine>,
+}
+
+/// Diff information for a single file.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct FileDiff {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub status: FileStatus,
+    pub hunks: Vec<DiffHunk>,
+}
+
+/// State for the git diff view.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct DiffState {
+    pub files: Vec<FileDiff>,
+    pub selected_file: Option<String>,
+    pub loading: bool,
+    pub error: Option<String>,
 }

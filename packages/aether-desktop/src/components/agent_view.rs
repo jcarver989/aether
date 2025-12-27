@@ -8,7 +8,9 @@ use crate::state::{now_iso, AgentStatus, Message, MessageKind, Role, SlashComman
 use crate::{AGENTS, HANDLES};
 
 use super::command_dropdown::CommandDropdown;
+use super::diff_view::DiffView;
 use super::message_bubble::MessageBubble;
+use super::view_tabs::{AgentViewTab, ViewTabs};
 
 /// State for the command dropdown
 #[derive(Clone, PartialEq, Default)]
@@ -22,8 +24,10 @@ struct DropdownState {
 pub fn AgentView(agent_id: String) -> Element {
     let mut input_val = use_signal(String::new);
     let dropdown_state = use_signal(DropdownState::default);
+    let mut active_tab = use_signal(|| AgentViewTab::Chat);
     let agent_id_for_send = agent_id.clone();
     let agent_id_for_handlers = agent_id.clone();
+    let agent_id_for_diff = agent_id.clone();
 
     // Get available commands for this agent (read once per render)
     let available_commands: Vec<SlashCommand> = {
@@ -208,16 +212,26 @@ pub fn AgentView(agent_id: String) -> Element {
     let dropdown_selected = dropdown_state.read().selected_index;
     let dropdown_filter = dropdown_state.read().filter_text.clone();
 
+    // Get diff state for this agent
+    let diff_state = agent.diff_state.clone();
+
     rsx! {
         div {
-            class: "flex-1 flex flex-col h-full bg-[#0f1116]",
+            class: "flex-1 flex flex-col h-full bg-[#0f1116] overflow-hidden",
 
-            // Header with agent name and status
+            // Header with agent name, status, and tabs
             div {
                 class: "p-4 border-b border-[#2d313a] flex items-center justify-between",
                 div {
-                    h2 { class: "text-lg font-semibold text-white tracking-tight", "{agent.name}" }
-                    p { class: "text-sm text-gray-500 font-mono truncate max-w-xs", "{agent.config.command_line}" }
+                    class: "flex items-center gap-4",
+                    div {
+                        h2 { class: "text-lg font-semibold text-white tracking-tight", "{agent.name}" }
+                        p { class: "text-sm text-gray-500 font-mono truncate max-w-xs", "{agent.config.command_line}" }
+                    }
+                    ViewTabs {
+                        active: active_tab(),
+                        on_change: move |tab| active_tab.set(tab),
+                    }
                 }
                 span {
                     class: "px-3 py-1.5 rounded-full text-xs font-medium {status_color}",
@@ -225,70 +239,93 @@ pub fn AgentView(agent_id: String) -> Element {
                 }
             }
 
-            // Message list
-            div {
-                class: "flex-1 overflow-y-auto p-4 space-y-4",
-                id: "message-list",
-
-                if agent.messages.is_empty() {
+            // Content area - either Chat or Diff view
+            match active_tab() {
+                AgentViewTab::Chat => rsx! {
+                    // Message list
                     div {
-                        class: "h-full flex items-center justify-center text-gray-500",
-                        "Send a message to start the conversation"
-                    }
-                }
+                        class: "flex-1 overflow-y-auto p-4 space-y-4",
+                        id: "message-list",
 
-                for msg in agent.messages.iter() {
-                    MessageBubble {
-                        key: "{msg.id}",
-                        message: msg.clone(),
-                    }
-                }
-
-                // Scroll anchor
-                div { id: "message-end" }
-            }
-
-            // Input area with dropdown
-            div {
-                class: "p-4 border-t border-[#2d313a] bg-[#1a1d23]",
-
-                // Relative container for dropdown positioning
-                div {
-                    class: "relative",
-
-                    // Command dropdown (positioned above input)
-                    if dropdown_visible {
-                        CommandDropdown {
-                            commands: available_commands.clone(),
-                            filter: dropdown_filter,
-                            selected_index: dropdown_selected,
-                            on_select: on_command_select,
+                        if agent.messages.is_empty() {
+                            div {
+                                class: "h-full flex items-center justify-center text-gray-500",
+                                "Send a message to start the conversation"
+                            }
                         }
+
+                        for msg in agent.messages.iter() {
+                            MessageBubble {
+                                key: "{msg.id}",
+                                message: msg.clone(),
+                            }
+                        }
+
+                        // Scroll anchor
+                        div { id: "message-end" }
                     }
 
+                    // Input area with dropdown
                     div {
-                        class: "flex gap-3",
-                        textarea {
-                            class: "input-field flex-1 rounded-xl px-4 py-3 resize-none",
-                            value: "{input_val}",
-                            oninput: on_input_change,
-                            onkeydown: on_keydown,
-                            placeholder: "Type a message or / for commands... (Enter to send)",
-                            disabled: is_running,
-                            rows: "2",
-                        }
-                        button {
-                            class: "btn-primary px-6 py-3 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
-                            onclick: move |_| do_send(),
-                            disabled: is_running,
-                            if is_running {
-                                "Working..."
-                            } else {
-                                "Send"
+                        class: "p-4 border-t border-[#2d313a] bg-[#1a1d23]",
+
+                        // Relative container for dropdown positioning
+                        div {
+                            class: "relative",
+
+                            // Command dropdown (positioned above input)
+                            if dropdown_visible {
+                                CommandDropdown {
+                                    commands: available_commands.clone(),
+                                    filter: dropdown_filter,
+                                    selected_index: dropdown_selected,
+                                    on_select: on_command_select,
+                                }
+                            }
+
+                            div {
+                                class: "flex gap-3",
+                                textarea {
+                                    class: "input-field flex-1 rounded-xl px-4 py-3 resize-none",
+                                    value: "{input_val}",
+                                    oninput: on_input_change,
+                                    onkeydown: on_keydown,
+                                    placeholder: "Type a message or / for commands... (Enter to send)",
+                                    disabled: is_running,
+                                    rows: "2",
+                                }
+                                button {
+                                    class: "btn-primary px-6 py-3 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
+                                    onclick: move |_| do_send(),
+                                    disabled: is_running,
+                                    if is_running {
+                                        "Working..."
+                                    } else {
+                                        "Send"
+                                    }
+                                }
                             }
                         }
                     }
-                }
+                },
+                AgentViewTab::Diff => {
+                    let agent_id_for_select = agent_id_for_diff.clone();
+                    rsx! {
+                        div {
+                            class: "flex-1 overflow-hidden",
+                            DiffView {
+                                diff_state: diff_state,
+                                on_file_select: move |path: String| {
+                                    // Update the selected file in the agent's diff state
+                                    let mut list = AGENTS.write();
+                                    if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id_for_select) {
+                                        agent.diff_state.selected_file = Some(path);
+                                    }
+                                },
+                            }
+                        }
+                    }
+                },
             }
         }
     }
