@@ -59,6 +59,17 @@ use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 use tools::todo_write::{TodoItem, TodoWriteInput, TodoWriteOutput, process_todo_write};
 use tools::write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
+/// Extension trait for converting tool results to MCP format
+trait IntoMcpResult<T> {
+    fn into_mcp(self) -> Result<Json<T>, String>;
+}
+
+impl<T, E: std::fmt::Display> IntoMcpResult<T> for Result<T, E> {
+    fn into_mcp(self) -> Result<Json<T>, String> {
+        self.map(Json).map_err(|e| e.to_string())
+    }
+}
+
 /// CLI arguments for CodingMcp server
 #[derive(Debug, Clone, Parser)]
 pub struct CodingMcpArgs {
@@ -138,22 +149,14 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     #[tool]
     pub async fn grep(&self, request: Parameters<GrepInput>) -> Result<Json<GrepOutput>, String> {
         let Parameters(args) = request;
-        self.tools
-            .grep(args)
-            .await
-            .map(Json)
-            .map_err(|e| e.to_string())
+        self.tools.grep(args).await.into_mcp()
     }
 
     #[doc = include_str!("tools/find/description.md")]
     #[tool]
     pub async fn find(&self, request: Parameters<FindInput>) -> Result<Json<FindOutput>, String> {
         let Parameters(args) = request;
-        self.tools
-            .find(args)
-            .await
-            .map(Json)
-            .map_err(|e| e.to_string())
+        self.tools.find(args).await.into_mcp()
     }
 
     #[doc = include_str!("tools/read_file/description.md")]
@@ -237,11 +240,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         request: Parameters<ListFilesArgs>,
     ) -> Result<Json<ListFilesResult>, String> {
         let Parameters(args) = request;
-        self.tools
-            .list_files(args)
-            .await
-            .map(Json)
-            .map_err(|e| e.to_string())
+        self.tools.list_files(args).await.into_mcp()
     }
 
     #[doc = include_str!("tools/bash/description.md")]
