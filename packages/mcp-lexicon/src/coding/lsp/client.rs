@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Stdio, id};
 use std::sync::atomic::{AtomicI64, Ordering};
-use tokio::io::BufReader;
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::sync::{mpsc, oneshot};
@@ -188,7 +188,7 @@ impl LspClient {
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()?;
 
         let stdin = process
@@ -201,9 +201,17 @@ impl LspClient {
             .take()
             .ok_or_else(|| LspError::Transport("Failed to capture stdout".into()))?;
 
+        let stderr = process
+            .stderr
+            .take()
+            .ok_or_else(|| LspError::Transport("Failed to capture stderr".into()))?;
+
         let (request_tx, request_rx) = channel(100);
         let (client_notif_tx, client_notif_rx) = channel(100);
         let (server_notif_tx, server_notif_rx) = channel(200);
+
+        // Spawn stderr reader task
+        spawn_stderr_reader(stderr);
 
         let task_handle = spawn(run_handler(
             process,
@@ -481,7 +489,7 @@ impl LspClient {
     }
 }
 
-/// The handler task that owns stdin, stdout, and the pending requests map
+/// The handler task that owns stdin, stdout, and pending requests map
 async fn run_handler(
     mut process: Child,
     mut stdin: ChildStdin,
@@ -564,6 +572,24 @@ async fn run_handler(
     let _ = process.kill().await;
 }
 
+/// Spawn a background task to read and filter LSP stderr
+///
+/// This task reads stderr from the LSP process and logs lines at DEBUG level,
+/// filtering out common non-critical warnings.
+fn spawn_stderr_reader(stderr: ChildStderr) -> JoinHandle<()> {
+    spawn(async move {
+        let reader = BufReader::new(stderr);
+        let mut lines = reader.lines();
+
+        while let Ok(Some(line)) = lines.next_line().await {
+            // Filter out common non-critical warnings
+            if !line.trim().is_empty() && !is_filtered_stderr(&line) {
+                tracing::debug!("LSP stderr: {}", line.trim());
+            }
+        }
+    })
+}
+
 /// Handle a response from the server, matching it to a pending request
 fn handle_response(
     resp: super::transport::ResponseMessage,
@@ -600,6 +626,30 @@ fn handle_server_notification(
     }
 }
 
+/// Check if stderr line should be filtered out (not logged)
+///
+/// This filters out common non-critical warnings from LSP servers:
+/// - rust-analyzer's "notify error" about missing config files
+/// - Other benign warnings that don't indicate real problems
+fn is_filtered_stderr(line: &str) -> bool {
+    let lower = line.to_lowercase();
+
+    // Filter rust-analyzer's notify error about missing config
+    if lower.contains("notify error") && lower.contains("no path was found") {
+        return true;
+    }
+
+    // Filter other non-critical warnings
+    if lower.contains("warn") && (
+        lower.contains("application support") ||
+        lower.contains("config") && lower.contains("not found")
+    ) {
+        return true;
+    }
+
+    false
+}
+
 /// Convert a file path to an LSP URI
 ///
 /// This creates a `file://` URI from an absolute path.
@@ -628,4 +678,54 @@ pub fn path_to_uri(path: &Path) -> Result<Uri> {
     uri_str
         .parse()
         .map_err(|e| LspError::Transport(format!("Failed to parse URI: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_filtered_stderr_filters_notify_error() {
+        // The exact message from rust-analyzer about missing config
+        let msg = "2025-12-27T13:30:41.405378-08:00  WARN notify error: No path was found. about [\"/Users/jj/Library/Application Support/rust-analyzer/rust-analyzer.toml\"]";
+        assert!(is_filtered_stderr(msg), "Should filter rust-analyzer notify error");
+    }
+
+    #[test]
+    fn test_is_filtered_stderr_filters_config_warnings() {
+        // Config-related warnings with "application support"
+        assert!(is_filtered_stderr("WARN: Config file not found at /Users/foo/Library/Application Support/rust-analyzer/config.toml"));
+        assert!(is_filtered_stderr("WARN: application support directory missing"));
+        // Note: simple "config not found" warnings are not filtered - only specific patterns
+    }
+
+    #[test]
+    fn test_is_filtered_stderr_does_not_filter_errors() {
+        // Actual errors should not be filtered
+        assert!(!is_filtered_stderr("error: Failed to parse file"));
+        assert!(!is_filtered_stderr("ERROR: Connection refused"));
+        assert!(!is_filtered_stderr("Error: Invalid token"));
+    }
+
+    #[test]
+    fn test_is_filtered_stderr_does_not_filter_normal_output() {
+        // Normal output should not be filtered
+        assert!(!is_filtered_stderr("Loading workspace..."));
+        assert!(!is_filtered_stderr("Indexing 123 files"));
+        assert!(!is_filtered_stderr("info: Server started"));
+    }
+
+    #[test]
+    fn test_is_filtered_stderr_case_insensitive() {
+        // Should work regardless of case
+        assert!(is_filtered_stderr("WARN notify error: No path was found"));
+        assert!(is_filtered_stderr("warn Notify Error: No path was found"));
+    }
+
+    #[test]
+    fn test_is_filtered_stderr_empty_lines() {
+        // Empty lines are filtered separately but should return false here
+        assert!(!is_filtered_stderr(""));
+        assert!(!is_filtered_stderr("   "));
+    }
 }
