@@ -58,6 +58,7 @@ use tools::lsp::workspace_symbol::{
 };
 use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 use tools::todo_write::{TodoItem, TodoWriteInput, TodoWriteOutput, process_todo_write};
+use tools::web_fetch::{WebFetchInput, WebFetchOutput, WebFetcher};
 use tools::write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
 /// Extension trait for converting tool results to MCP format
@@ -98,6 +99,7 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     /// Track files that have been read to enforce read-before-edit safety
     files_read: RwLock<HashSet<String>>,
     tools: T,
+    web_fetcher: WebFetcher,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -129,6 +131,7 @@ impl CodingMcp<DefaultCodingTools> {
             todos: Mutex::new(Vec::new()),
             files_read: RwLock::new(HashSet::new()),
             tools: DefaultCodingTools::new(),
+            web_fetcher: WebFetcher::new(),
         }
     }
 }
@@ -143,6 +146,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             todos: Mutex::new(Vec::new()),
             files_read: RwLock::new(HashSet::new()),
             tools,
+            web_fetcher: WebFetcher::new(),
         }
     }
 
@@ -375,6 +379,16 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         execute_lsp_workspace_symbol(input, &self.tools)
             .await
             .map(Json)
+    }
+
+    #[doc = include_str!("tools/web_fetch/description.md")]
+    #[tool]
+    pub async fn web_fetch(
+        &self,
+        request: Parameters<WebFetchInput>,
+    ) -> Result<Json<WebFetchOutput>, String> {
+        let Parameters(args) = request;
+        self.web_fetcher.fetch(args).await.into_mcp()
     }
 }
 
