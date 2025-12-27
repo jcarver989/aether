@@ -75,6 +75,65 @@ enum PendingResponse {
     WorkspaceSymbol(oneshot::Sender<Result<Vec<SymbolInformation>>>),
 }
 
+impl PendingResponse {
+    /// Send an error to the appropriate typed channel
+    fn send_error(self, err: LspError) {
+        match self {
+            Self::Initialize(tx) => { let _ = tx.send(Err(err)); }
+            Self::Shutdown(tx) => { let _ = tx.send(Err(err)); }
+            Self::GotoDefinition(tx) => { let _ = tx.send(Err(err)); }
+            Self::FindReferences(tx) => { let _ = tx.send(Err(err)); }
+            Self::Hover(tx) => { let _ = tx.send(Err(err)); }
+            Self::WorkspaceSymbol(tx) => { let _ = tx.send(Err(err)); }
+        }
+    }
+
+    /// Send a successful response to the appropriate typed channel
+    fn send_response(self, value: Value) {
+        match self {
+            Self::Initialize(tx) => { let _ = tx.send(Ok(())); }
+            Self::Shutdown(tx) => { let _ = tx.send(Ok(())); }
+            Self::GotoDefinition(tx) => {
+                let result = parse_lsp_response(value, GotoDefinitionResponse::Array(vec![]), "definition");
+                let _ = tx.send(result);
+            }
+            Self::FindReferences(tx) => {
+                let result = parse_lsp_response(value, vec![], "references");
+                let _ = tx.send(result);
+            }
+            Self::Hover(tx) => {
+                // Hover uses Option<Hover>, needs explicit .map(Some)
+                let result = if value.is_null() {
+                    Ok(None)
+                } else {
+                    serde_json::from_value::<Hover>(value)
+                        .map(Some)
+                        .map_err(|e| LspError::InvalidMessage(format!("Failed to parse hover response: {}", e)))
+                };
+                let _ = tx.send(result);
+            }
+            Self::WorkspaceSymbol(tx) => {
+                let result = parse_lsp_response(value, vec![], "workspace symbol");
+                let _ = tx.send(result);
+            }
+        }
+    }
+}
+
+/// Parse an LSP JSON response with null-handling
+fn parse_lsp_response<T: serde::de::DeserializeOwned>(
+    value: Value,
+    null_default: T,
+    type_name: &str,
+) -> Result<T> {
+    if value.is_null() {
+        Ok(null_default)
+    } else {
+        serde_json::from_value(value)
+            .map_err(|e| LspError::InvalidMessage(format!("Failed to parse {} response: {}", type_name, e)))
+    }
+}
+
 /// An LSP client that manages a language server process
 ///
 /// The client handles:
@@ -481,7 +540,7 @@ async fn run_handler(
                 pending.insert(id, pending_response);
                 if let Err(e) = send_request(&mut stdin, &client_request).await
                     && let Some(p) = pending.remove(&id) {
-                        send_error(p, e);
+                        p.send_error(e);
                     }
             }
 
@@ -498,96 +557,11 @@ async fn run_handler(
 
     // Notify any remaining pending requests that the handler is closing
     for (_, p) in pending {
-        send_error(p, LspError::Transport("Handler task closed".into()));
+        p.send_error(LspError::Transport("Handler task closed".into()));
     }
 
     // Explicitly kill the process to avoid orphaned LSP processes.
     let _ = process.kill().await;
-}
-
-/// Send a successful response to the appropriate typed channel
-fn send_response(pending: PendingResponse, value: Value) {
-    match pending {
-        PendingResponse::Initialize(tx) => {
-            let _ = tx.send(Ok(()));
-        }
-        PendingResponse::Shutdown(tx) => {
-            let _ = tx.send(Ok(()));
-        }
-        PendingResponse::GotoDefinition(tx) => {
-            // Parse the response - can be null, Location, Location[], or LocationLink[]
-            let result = if value.is_null() {
-                Ok(GotoDefinitionResponse::Array(vec![]))
-            } else {
-                serde_json::from_value::<GotoDefinitionResponse>(value).map_err(|e| {
-                    LspError::InvalidMessage(format!("Failed to parse definition response: {}", e))
-                })
-            };
-            let _ = tx.send(result);
-        }
-        PendingResponse::FindReferences(tx) => {
-            // Parse the response - can be null or Location[]
-            let result = if value.is_null() {
-                Ok(vec![])
-            } else {
-                serde_json::from_value::<Vec<Location>>(value).map_err(|e| {
-                    LspError::InvalidMessage(format!("Failed to parse references response: {}", e))
-                })
-            };
-            let _ = tx.send(result);
-        }
-        PendingResponse::Hover(tx) => {
-            // Parse the response - can be null or Hover
-            let result = if value.is_null() {
-                Ok(None)
-            } else {
-                serde_json::from_value::<Hover>(value)
-                    .map(Some)
-                    .map_err(|e| {
-                        LspError::InvalidMessage(format!("Failed to parse hover response: {}", e))
-                    })
-            };
-            let _ = tx.send(result);
-        }
-        PendingResponse::WorkspaceSymbol(tx) => {
-            // Parse the response - can be null or SymbolInformation[]
-            let result = if value.is_null() {
-                Ok(vec![])
-            } else {
-                serde_json::from_value::<Vec<SymbolInformation>>(value).map_err(|e| {
-                    LspError::InvalidMessage(format!(
-                        "Failed to parse workspace symbol response: {}",
-                        e
-                    ))
-                })
-            };
-            let _ = tx.send(result);
-        }
-    }
-}
-
-/// Send an error to the appropriate typed channel
-fn send_error(pending: PendingResponse, err: LspError) {
-    match pending {
-        PendingResponse::Initialize(tx) => {
-            let _ = tx.send(Err(err));
-        }
-        PendingResponse::Shutdown(tx) => {
-            let _ = tx.send(Err(err));
-        }
-        PendingResponse::GotoDefinition(tx) => {
-            let _ = tx.send(Err(err));
-        }
-        PendingResponse::FindReferences(tx) => {
-            let _ = tx.send(Err(err));
-        }
-        PendingResponse::Hover(tx) => {
-            let _ = tx.send(Err(err));
-        }
-        PendingResponse::WorkspaceSymbol(tx) => {
-            let _ = tx.send(Err(err));
-        }
-    }
 }
 
 /// Handle a response from the server, matching it to a pending request
@@ -600,14 +574,11 @@ fn handle_response(
     };
 
     match resp.error {
-        Some(e) => send_error(
-            pending_response,
-            LspError::ServerError {
-                code: e.code,
-                message: e.message,
-            },
-        ),
-        None => send_response(pending_response, resp.result.unwrap_or(Value::Null)),
+        Some(e) => pending_response.send_error(LspError::ServerError {
+            code: e.code,
+            message: e.message,
+        }),
+        None => pending_response.send_response(resp.result.unwrap_or(Value::Null)),
     }
 }
 
