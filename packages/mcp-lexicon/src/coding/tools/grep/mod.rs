@@ -1,17 +1,18 @@
 pub mod common;
 
+use crate::coding::error::GrepError;
+use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 use globset::{Glob, GlobSetBuilder};
 use grep::{
     regex::RegexMatcherBuilder,
     searcher::{BinaryDetection, SearcherBuilder},
 };
-use ignore::WalkBuilder;
+use ignore::{WalkBuilder, WalkState};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-
-use crate::coding::error::GrepError;
-use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -89,6 +90,29 @@ pub struct GrepInput {
     pub head_limit: Option<usize>,
     /// Enable multiline mode
     pub multiline: Option<bool>,
+}
+
+/// Thread-safe state for parallel grep execution
+struct ParallelGrepState {
+    matches: Mutex<Vec<MatchData>>,
+    files_with_matches: Mutex<Vec<String>>,
+    file_counts: Mutex<Vec<GrepFileCount>>,
+    total_items: AtomicUsize,
+    max_items: usize,
+    limit_reached: AtomicBool,
+}
+
+impl ParallelGrepState {
+    fn new(max_items: usize) -> Self {
+        Self {
+            matches: Mutex::new(Vec::new()),
+            files_with_matches: Mutex::new(Vec::new()),
+            file_counts: Mutex::new(Vec::new()),
+            total_items: AtomicUsize::new(0),
+            max_items,
+            limit_reached: AtomicBool::new(false),
+        }
+    }
 }
 
 // File type mappings for common languages
@@ -267,76 +291,118 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
             }
         }
     } else {
-        // Directory search
+        // Parallel directory search
         let walker = WalkBuilder::new(search_path)
             .hidden(false)
             .git_ignore(true)
-            .build();
+            .build_parallel();
 
-        let mut total_items = 0;
         let max_items = args.head_limit.unwrap_or(usize::MAX);
+        let state = Arc::new(ParallelGrepState::new(max_items));
+        let matcher = Arc::new(matcher);
+        let glob_set = Arc::new(glob_set);
+        let file_type = args.file_type.clone();
+        let line_numbers = args.line_numbers.unwrap_or(true);
 
-        for result in walker {
-            // Check if we've reached the limit
-            if total_items >= max_items {
-                break;
-            }
+        walker.run(|| {
+            let state = state.clone();
+            let matcher = matcher.clone();
+            let glob_set = glob_set.clone();
+            let file_type = file_type.clone();
+            let mut thread_searcher = searcher_builder.build();
 
-            match result {
-                Ok(entry) => {
-                    if entry.file_type().is_some_and(|ft| ft.is_file()) {
-                        // Check file filtering
-                        if !should_include_file(entry.path(), &args.file_type, &glob_set) {
-                            continue;
+            Box::new(move |result| {
+                if state.limit_reached.load(Ordering::Relaxed) {
+                    return WalkState::Quit;
+                }
+
+                let entry = match result {
+                    Ok(entry) => entry,
+                    Err(_) => return WalkState::Continue,
+                };
+
+                if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    return WalkState::Continue;
+                }
+
+                if !should_include_file(entry.path(), &file_type, &glob_set) {
+                    return WalkState::Continue;
+                }
+
+                match output_mode {
+                    OutputMode::Content => {
+                        let mut sink =
+                            MatchCollectorSink::with_max_results(entry.path(), line_numbers, None);
+                        if thread_searcher
+                            .search_path(&*matcher, entry.path(), &mut sink)
+                            .is_ok()
+                            && !sink.matches.is_empty()
+                        {
+                            let new_count = state
+                                .total_items
+                                .fetch_add(sink.matches.len(), Ordering::SeqCst)
+                                + sink.matches.len();
+                            if new_count >= state.max_items {
+                                state.limit_reached.store(true, Ordering::Release);
+                            }
+                            if let Ok(mut matches) = state.matches.lock() {
+                                matches.extend(sink.matches);
+                            }
                         }
-
-                        match output_mode {
-                            OutputMode::Content => {
-                                let remaining = max_items.saturating_sub(total_items);
-                                let mut sink = MatchCollectorSink::with_max_results(
-                                    entry.path(),
-                                    args.line_numbers.unwrap_or(true),
-                                    Some(remaining),
-                                );
-                                if searcher
-                                    .search_path(&matcher, entry.path(), &mut sink)
-                                    .is_ok()
-                                {
-                                    total_items += sink.matches.len();
-                                    all_matches.extend(sink.matches);
-                                }
+                    }
+                    OutputMode::FilesWithMatches => {
+                        let mut sink = HasMatchSink::new();
+                        if thread_searcher
+                            .search_path(&*matcher, entry.path(), &mut sink)
+                            .is_ok()
+                            && sink.has_match
+                        {
+                            let new_count = state.total_items.fetch_add(1, Ordering::SeqCst) + 1;
+                            if new_count >= state.max_items {
+                                state.limit_reached.store(true, Ordering::Release);
                             }
-                            OutputMode::FilesWithMatches => {
-                                let mut sink = HasMatchSink::new();
-                                if searcher
-                                    .search_path(&matcher, entry.path(), &mut sink)
-                                    .is_ok()
-                                    && sink.has_match
-                                {
-                                    files_with_matches
-                                        .push(entry.path().to_string_lossy().to_string());
-                                    total_items += 1;
-                                }
+                            if let Ok(mut files) = state.files_with_matches.lock() {
+                                files.push(entry.path().to_string_lossy().to_string());
                             }
-                            OutputMode::Count => {
-                                let mut sink = CountSink::new();
-                                if searcher
-                                    .search_path(&matcher, entry.path(), &mut sink)
-                                    .is_ok()
-                                    && sink.count > 0
-                                {
-                                    file_counts.push(GrepFileCount {
-                                        file: entry.path().to_string_lossy().to_string(),
-                                        count: sink.count,
-                                    });
-                                    total_items += 1;
-                                }
+                        }
+                    }
+                    OutputMode::Count => {
+                        let mut sink = CountSink::new();
+                        if thread_searcher
+                            .search_path(&*matcher, entry.path(), &mut sink)
+                            .is_ok()
+                            && sink.count > 0
+                        {
+                            let new_count = state.total_items.fetch_add(1, Ordering::SeqCst) + 1;
+                            if new_count >= state.max_items {
+                                state.limit_reached.store(true, Ordering::Release);
+                            }
+                            if let Ok(mut counts) = state.file_counts.lock() {
+                                counts.push(GrepFileCount {
+                                    file: entry.path().to_string_lossy().to_string(),
+                                    count: sink.count,
+                                });
                             }
                         }
                     }
                 }
-                Err(_) => continue,
-            }
+
+                WalkState::Continue
+            })
+        });
+
+        all_matches = state.matches.lock().unwrap().clone();
+        files_with_matches = state.files_with_matches.lock().unwrap().clone();
+        file_counts = state.file_counts.lock().unwrap().clone();
+
+        all_matches.sort_by(|a, b| a.file.cmp(&b.file));
+        files_with_matches.sort();
+        file_counts.sort_by(|a, b| a.file.cmp(&b.file));
+
+        if let Some(limit) = args.head_limit {
+            all_matches.truncate(limit);
+            files_with_matches.truncate(limit);
+            file_counts.truncate(limit);
         }
     }
 
