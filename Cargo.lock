@@ -7281,6 +7281,7 @@ dependencies = [
  "aether",
  "clap",
  "crossterm",
+ "dirs 6.0.0",
  "futures",
  "mcp_lexicon",
  "serde_json",
