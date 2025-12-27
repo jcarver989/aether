@@ -9,7 +9,7 @@ use rmcp::{
     tool, tool_handler, tool_router,
 };
 use std::path::PathBuf;
-use std::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -95,7 +95,7 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     background_processes: Mutex<HashMap<String, BackgroundProcessHandle>>,
     todos: Mutex<Vec<TodoItem>>,
     /// Track files that have been read to enforce read-before-edit safety
-    files_read: Mutex<HashSet<String>>,
+    files_read: RwLock<HashSet<String>>,
     tools: T,
 }
 
@@ -126,7 +126,7 @@ impl CodingMcp<DefaultCodingTools> {
             tool_router: Self::tool_router(),
             background_processes: Mutex::new(HashMap::new()),
             todos: Mutex::new(Vec::new()),
-            files_read: Mutex::new(HashSet::new()),
+            files_read: RwLock::new(HashSet::new()),
             tools: DefaultCodingTools::new(),
         }
     }
@@ -140,7 +140,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             tool_router: Self::tool_router(),
             background_processes: Mutex::new(HashMap::new()),
             todos: Mutex::new(Vec::new()),
-            files_read: Mutex::new(HashSet::new()),
+            files_read: RwLock::new(HashSet::new()),
             tools,
         }
     }
@@ -172,7 +172,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             .read_file(args)
             .await
             .map_err(|e| e.to_string())?;
-        self.files_read.lock().unwrap().insert(file_path);
+        self.files_read.write().await.insert(file_path);
 
         Ok(Json(result))
     }
@@ -187,7 +187,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 
         // Safety check: if file exists, ensure it has been read first
         if Path::new(&args.file_path).exists() {
-            let files_read = self.files_read.lock().unwrap();
+            let files_read = self.files_read.read().await;
             if !files_read.contains(&args.file_path) {
                 return Err(format!(
                     "Safety check failed: File '{}' already exists. You must use read_file on it before overwriting. This prevents accidental data loss.",
@@ -215,7 +215,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 
         // Safety check: ensure file has been read first
         {
-            let files_read = self.files_read.lock().unwrap();
+            let files_read = self.files_read.read().await;
             if !files_read.contains(&args.file_path) {
                 return Err(format!(
                     "Safety check failed: You must use read_file on '{}' before editing it. This ensures you understand the current file contents before making changes.",
@@ -257,7 +257,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
                 // Store the background process
                 self.background_processes
                     .lock()
-                    .unwrap()
+                    .await
                     .insert(shell_id.clone(), handle);
 
                 // Return immediate response with shell_id
@@ -282,7 +282,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         let handle = self
             .background_processes
             .lock()
-            .unwrap()
+            .await
             .remove(&args.bash_id)
             .ok_or_else(|| format!("Shell ID not found: {}", args.bash_id))?;
 
@@ -296,7 +296,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         if let Some(handle) = handle_opt {
             self.background_processes
                 .lock()
-                .unwrap()
+                .await
                 .insert(args.bash_id, handle);
         }
 
@@ -312,7 +312,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         let Parameters(input) = request;
 
         {
-            let mut todos = self.todos.lock().unwrap();
+            let mut todos = self.todos.lock().await;
             *todos = input.todos.clone();
         };
 
