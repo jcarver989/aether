@@ -216,11 +216,11 @@ impl Session {
     }
 }
 
-/// Parse slash command arguments into a map with both positional and special variables
+/// Parse slash command arguments into a map with both positional and special variables.
 ///
 /// Creates an argument map with:
 /// - "ARGUMENTS": The full argument string
-/// - "0", "1", "2", etc.: Individual positional arguments
+/// - "1", "2", "3", etc.: Individual positional arguments (1-based)
 fn parse_slash_command_arguments(
     args_text: &str,
 ) -> Option<serde_json::Map<String, serde_json::Value>> {
@@ -235,9 +235,12 @@ fn parse_slash_command_arguments(
             serde_json::Value::String(args_text.to_string()),
         );
 
-        // Add positional parameters
+        // Add positional parameters (1-based)
         for (i, arg) in args_text.split_whitespace().enumerate() {
-            arg_map.insert(i.to_string(), serde_json::Value::String(arg.to_string()));
+            arg_map.insert(
+                (i + 1).to_string(),
+                serde_json::Value::String(arg.to_string()),
+            );
         }
 
         Some(arg_map)
@@ -277,12 +280,12 @@ mod tests {
                 "ARGUMENTS".to_string(),
                 Value::String("do a thing that has spaces".to_string()),
             ),
-            ("0".to_string(), Value::String("do".to_string())),
-            ("1".to_string(), Value::String("a".to_string())),
-            ("2".to_string(), Value::String("thing".to_string())),
-            ("3".to_string(), Value::String("that".to_string())),
-            ("4".to_string(), Value::String("has".to_string())),
-            ("5".to_string(), Value::String("spaces".to_string())),
+            ("1".to_string(), Value::String("do".to_string())),
+            ("2".to_string(), Value::String("a".to_string())),
+            ("3".to_string(), Value::String("thing".to_string())),
+            ("4".to_string(), Value::String("that".to_string())),
+            ("5".to_string(), Value::String("has".to_string())),
+            ("6".to_string(), Value::String("spaces".to_string())),
         ]);
 
         assert_eq!(arg_map, expected);
