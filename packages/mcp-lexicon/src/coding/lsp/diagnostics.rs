@@ -2,6 +2,7 @@
 //!
 //! This module provides helper functions for formatting and filtering diagnostics.
 
+use super::common::uri_to_path;
 use lsp_types::{Diagnostic, DiagnosticSeverity, PublishDiagnosticsParams, Uri};
 
 /// A simplified diagnostic representation for display
@@ -60,7 +61,7 @@ impl FormattedDiagnostic {
     /// Create a formatted diagnostic from a raw diagnostic and URI
     pub fn from_diagnostic(uri: &Uri, diagnostic: &Diagnostic) -> Self {
         // Extract file path from URI, falling back to the URI string if not a file URI
-        let file = uri_to_path_string(uri);
+        let file = uri_to_path(uri);
 
         let code = diagnostic.code.as_ref().map(|c| match c {
             lsp_types::NumberOrString::Number(n) => n.to_string(),
@@ -175,32 +176,6 @@ impl std::fmt::Display for DiagnosticCounts {
     }
 }
 
-/// Convert a URI to a displayable path string
-///
-/// For file:// URIs, extracts the path component.
-/// For other URIs, returns the full URI string.
-fn uri_to_path_string(uri: &Uri) -> String {
-    let uri_str = uri.as_str();
-
-    // Handle file:// URIs
-    if let Some(path) = uri_str.strip_prefix("file://") {
-        // On Windows, file URIs look like file:///C:/path
-        // On Unix, file URIs look like file:///path
-        if cfg!(windows)
-            && path.starts_with('/')
-            && path.len() > 2
-            && path.chars().nth(2) == Some(':')
-        {
-            // Remove leading slash for Windows paths like /C:/path -> C:/path
-            path[1..].to_string()
-        } else {
-            path.to_string()
-        }
-    } else {
-        uri_str.to_string()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,18 +265,12 @@ mod tests {
     }
 
     #[test]
-    fn test_uri_to_path_string() {
+    fn test_uri_to_path() {
         // Unix-style path
-        assert_eq!(
-            uri_to_path_string(&make_uri("/path/to/file.rs")),
-            "/path/to/file.rs"
-        );
+        assert_eq!(uri_to_path(&make_uri("/path/to/file.rs")), "/path/to/file.rs");
 
         // Non-file URI
         let non_file_uri: Uri = "https://example.com/file.rs".parse().unwrap();
-        assert_eq!(
-            uri_to_path_string(&non_file_uri),
-            "https://example.com/file.rs"
-        );
+        assert_eq!(uri_to_path(&non_file_uri), "https://example.com/file.rs");
     }
 }
