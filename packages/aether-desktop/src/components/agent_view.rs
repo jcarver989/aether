@@ -89,7 +89,6 @@ pub fn AgentView(agent_id: String) -> Element {
     // Handle input changes - detect "/" for dropdown
     let on_input_change = {
         let mut dropdown_state = dropdown_state;
-        let commands = available_commands.clone();
         move |e: Event<FormData>| {
             let value = e.value();
             input_val.set(value.clone());
@@ -99,7 +98,7 @@ pub fn AgentView(agent_id: String) -> Element {
                 // Show dropdown, filter by text after "/"
                 let filter = value.trim_start_matches('/').to_string();
                 let mut state = dropdown_state.write();
-                state.visible = !commands.is_empty();
+                state.visible = true;
                 state.filter_text = filter;
                 state.selected_index = 0;
             } else {
@@ -258,7 +257,7 @@ pub fn AgentView(agent_id: String) -> Element {
                     class: "relative",
 
                     // Command dropdown (positioned above input)
-                    if dropdown_visible && !available_commands.is_empty() {
+                    if dropdown_visible {
                         CommandDropdown {
                             commands: available_commands.clone(),
                             filter: dropdown_filter,
