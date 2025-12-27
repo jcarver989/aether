@@ -36,6 +36,12 @@ impl AgentServerConfig {
         self
     }
 
+    /// Adds a single environment variable.
+    pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env.insert(key.into(), value.into());
+        self
+    }
+
     /// Converts to a command line string for display.
     pub fn to_command_line(&self) -> String {
         let mut parts = vec![self.command.clone()];
