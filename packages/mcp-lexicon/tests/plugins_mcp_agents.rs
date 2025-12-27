@@ -293,20 +293,18 @@ async fn test_spawn_subagents_task_id_assignment() {
     // Create MCP server and client
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;
 
-    // Call spawn_subagent with explicit task_id and without
+    // Call spawn_subagent - task IDs are auto-generated
     let mut args = serde_json::Map::new();
     args.insert(
         "tasks".to_string(),
         serde_json::json!([
             {
                 "agentName": "test-agent",
-                "prompt": "First task",
-                "taskId": "custom-id-1"
+                "prompt": "First task"
             },
             {
                 "agentName": "test-agent",
                 "prompt": "Second task"
-                // no taskId - should be auto-generated
             }
         ]),
     );
@@ -328,11 +326,10 @@ async fn test_spawn_subagents_task_id_assignment() {
                 .expect("Expected results array");
             assert_eq!(results.len(), 2);
 
-            // First task should have custom ID
+            // Task IDs are auto-generated based on index
             let first_result = &results[0];
-            assert_eq!(first_result["taskId"], "custom-id-1");
+            assert_eq!(first_result["taskId"], "task_0");
 
-            // Second task should have auto-generated ID
             let second_result = &results[1];
             assert_eq!(second_result["taskId"], "task_1");
         } else {
