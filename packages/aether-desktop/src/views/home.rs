@@ -186,10 +186,15 @@ fn apply_agent_event(
                     }
                 }
                 // Create tool call message
+                let input_content = tool_call
+                    .raw_input
+                    .as_ref()
+                    .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
+                    .unwrap_or_default();
                 agent.messages.push(Message {
                     id: tool_id.clone(),
                     role: Role::Assistant,
-                    content: tool_call.title.clone(),
+                    content: input_content,
                     kind: MessageKind::ToolCall {
                         name: tool_call.title.clone(),
                         status: ToolCallStatus::Pending,

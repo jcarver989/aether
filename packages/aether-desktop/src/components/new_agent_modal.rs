@@ -31,7 +31,7 @@ pub fn NewAgentForm(
     let custom_command_line = use_signal(|| AgentConfig::default().command_line);
     let mut initial_message = use_signal(String::new);
 
-    // Helper to get the actual command line from selection
+    // Helper to get command line from selection
     let get_command_line = move || {
         let server_name = selected_server.read();
         if *server_name == CUSTOM_SERVER {
@@ -46,8 +46,19 @@ pub fn NewAgentForm(
         }
     };
 
+    // Helper to get display name from selection
+    let get_display_name = move || {
+        let server_name = selected_server.read();
+        if *server_name == CUSTOM_SERVER {
+            command_basename(&custom_command_line.read())
+        } else {
+            capitalize(&server_name)
+        }
+    };
+
     let do_submit = move || {
         let config = AgentConfig {
+            name: get_display_name(),
             command_line: get_command_line(),
         };
         on_create.call((config, initial_message.read().clone()));
@@ -132,5 +143,21 @@ pub fn NewAgentForm(
                 }
             }
         }
+    }
+}
+
+/// Extract basename from a command line (first word, last path component).
+fn command_basename(cmd: &str) -> String {
+    let first_word = cmd.split_whitespace().next().unwrap_or(cmd);
+    let basename = first_word.rsplit('/').next().unwrap_or(first_word);
+    capitalize(basename)
+}
+
+/// Capitalize the first letter of a string.
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().chain(chars).collect(),
     }
 }
