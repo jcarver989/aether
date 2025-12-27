@@ -1,6 +1,7 @@
 pub mod common;
 
 use crate::coding::error::GrepError;
+use crate::coding::file_types::extensions_for_type;
 use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 use globset::{Glob, GlobSetBuilder};
 use grep::{
@@ -115,36 +116,6 @@ impl ParallelGrepState {
     }
 }
 
-// File type mappings for common languages
-fn get_file_extensions_for_type(file_type: &str) -> Vec<&'static str> {
-    match file_type.to_lowercase().as_str() {
-        "rust" | "rs" => vec!["rs"],
-        "python" | "py" => vec!["py", "pyi", "pyw"],
-        "javascript" | "js" => vec!["js", "jsx", "mjs"],
-        "typescript" | "ts" => vec!["ts", "tsx"],
-        "go" => vec!["go"],
-        "java" => vec!["java"],
-        "c" => vec!["c", "h"],
-        "cpp" | "c++" => vec!["cpp", "cxx", "cc", "hpp", "hxx", "hh"],
-        "csharp" | "cs" => vec!["cs"],
-        "php" => vec!["php"],
-        "ruby" | "rb" => vec!["rb"],
-        "swift" => vec!["swift"],
-        "kotlin" => vec!["kt", "kts"],
-        "scala" => vec!["scala"],
-        "html" => vec!["html", "htm"],
-        "css" => vec!["css"],
-        "json" => vec!["json"],
-        "yaml" | "yml" => vec!["yaml", "yml"],
-        "toml" => vec!["toml"],
-        "markdown" | "md" => vec!["md", "markdown"],
-        "xml" => vec!["xml"],
-        "sql" => vec!["sql"],
-        "sh" | "shell" => vec!["sh", "bash", "zsh"],
-        _ => vec![],
-    }
-}
-
 fn should_include_file(
     path: &Path,
     file_type: &Option<String>,
@@ -158,7 +129,7 @@ fn should_include_file(
     // Check file type filter
     if let Some(ftype) = file_type {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            let extensions = get_file_extensions_for_type(ftype);
+            let extensions = extensions_for_type(ftype);
             return extensions.contains(&ext);
         }
         return false;

@@ -1,4 +1,5 @@
 use super::error::{LspError, Result};
+use crate::coding::file_types::lsp_id_from_path;
 use lsp_types::{
     DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     GotoDefinitionParams, HoverParams, InitializeParams, ProgressParams, PublishDiagnosticsParams,
@@ -76,32 +77,37 @@ impl LanguageId {
 
     /// Detect language ID from file path
     pub fn from_path(path: &Path) -> Self {
-        match path.extension().and_then(|e| e.to_str()) {
-            Some("rs") => LanguageId::Rust,
-            Some("py" | "pyi" | "pyw") => LanguageId::Python,
-            Some("js" | "mjs") => LanguageId::JavaScript,
-            Some("jsx") => LanguageId::JavaScriptReact,
-            Some("ts") => LanguageId::TypeScript,
-            Some("tsx") => LanguageId::TypeScriptReact,
-            Some("go") => LanguageId::Go,
-            Some("java") => LanguageId::Java,
-            Some("c" | "h") => LanguageId::C,
-            Some("cpp" | "cxx" | "cc" | "hpp" | "hxx" | "hh") => LanguageId::Cpp,
-            Some("cs") => LanguageId::CSharp,
-            Some("rb") => LanguageId::Ruby,
-            Some("php") => LanguageId::Php,
-            Some("swift") => LanguageId::Swift,
-            Some("kt" | "kts") => LanguageId::Kotlin,
-            Some("scala") => LanguageId::Scala,
-            Some("html" | "htm") => LanguageId::Html,
-            Some("css") => LanguageId::Css,
-            Some("json") => LanguageId::Json,
-            Some("yaml" | "yml") => LanguageId::Yaml,
-            Some("toml") => LanguageId::Toml,
-            Some("md" | "markdown") => LanguageId::Markdown,
-            Some("xml") => LanguageId::Xml,
-            Some("sql") => LanguageId::Sql,
-            Some("sh" | "bash" | "zsh") => LanguageId::ShellScript,
+        Self::from_lsp_id(lsp_id_from_path(path))
+    }
+
+    /// Convert an LSP language ID string to a LanguageId enum variant
+    fn from_lsp_id(lsp_id: &str) -> Self {
+        match lsp_id {
+            "rust" => LanguageId::Rust,
+            "python" => LanguageId::Python,
+            "javascript" => LanguageId::JavaScript,
+            "javascriptreact" => LanguageId::JavaScriptReact,
+            "typescript" => LanguageId::TypeScript,
+            "typescriptreact" => LanguageId::TypeScriptReact,
+            "go" => LanguageId::Go,
+            "java" => LanguageId::Java,
+            "c" => LanguageId::C,
+            "cpp" => LanguageId::Cpp,
+            "csharp" => LanguageId::CSharp,
+            "ruby" => LanguageId::Ruby,
+            "php" => LanguageId::Php,
+            "swift" => LanguageId::Swift,
+            "kotlin" => LanguageId::Kotlin,
+            "scala" => LanguageId::Scala,
+            "html" => LanguageId::Html,
+            "css" => LanguageId::Css,
+            "json" => LanguageId::Json,
+            "yaml" => LanguageId::Yaml,
+            "toml" => LanguageId::Toml,
+            "markdown" => LanguageId::Markdown,
+            "xml" => LanguageId::Xml,
+            "sql" => LanguageId::Sql,
+            "shellscript" => LanguageId::ShellScript,
             _ => LanguageId::PlainText,
         }
     }
