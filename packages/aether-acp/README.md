@@ -130,7 +130,7 @@ Create a detailed, actionable specification that a senior engineer can use to im
 
 **Parameter Syntax:**
 - `$ARGUMENTS` - The full argument string (e.g., `/plan add user auth` → "add user auth")
-- `$0`, `$1`, `$2`, etc. - Individual positional arguments (e.g., `/plan add user auth` → $0="add", $1="user", $2="auth")
+- `$1`, `$2`, `$3`, etc. - Individual positional arguments (e.g., `/plan add user auth` → $1="add", $2="user", $3="auth")
 
 **Usage in Zed:**
 Type `/plan add user authentication` in the agent panel to expand the command with your task description.
