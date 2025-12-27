@@ -34,6 +34,12 @@ pub struct Cli {
         default_value = "llamacpp"
     )]
     pub model: String,
+
+    #[arg(
+        long = "log-dir",
+        help = "Path to log file directory (default: /tmp/wisp-logs)"
+    )]
+    pub log_dir: Option<String>,
 }
 
 impl Cli {

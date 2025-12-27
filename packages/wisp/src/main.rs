@@ -24,11 +24,23 @@ use crate::renderer::Renderer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
-
     let cli = Cli::parse();
+
+    let log_dir = cli
+        .log_dir
+        .clone()
+        .unwrap_or_else(|| "/tmp/wisp-logs".to_string());
+    std::fs::create_dir_all(&log_dir).ok();
+
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "wisp.log");
+    tracing_subscriber::fmt()
+        .with_writer(file_appender)
+        .with_ansi(false)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
     let state = AppState::from_cli(&cli).await?;
 
     run_terminal_ui(state).await?;
