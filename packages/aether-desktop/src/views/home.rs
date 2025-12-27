@@ -325,6 +325,23 @@ fn apply_agent_event(
                 );
             }
         }
+
+        AgentEvent::DiffUpdate {
+            agent_id,
+            diff_state,
+        } => {
+            let mut list = agents.write();
+            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
+                // Preserve the selected file if it still exists in the new diff
+                let selected_file = agent
+                    .diff_state
+                    .selected_file
+                    .clone()
+                    .filter(|path| diff_state.files.iter().any(|f| &f.path == path));
+                agent.diff_state = diff_state;
+                agent.diff_state.selected_file = selected_file;
+            }
+        }
     }
 }
 
@@ -345,7 +362,13 @@ async fn create_agent(
         .send_prompt(initial_message.clone())
         .map_err(|e| ActorError::Session(e.to_string()))?;
 
-    let session = AgentSession::new(agent_id.clone(), acp_session_id, config, initial_message);
+    let session = AgentSession::new(
+        agent_id.clone(),
+        acp_session_id,
+        config,
+        initial_message,
+        cwd,
+    );
     agents.write().push(session);
     handle.mark_ready();
     handles.write().insert(handle);
