@@ -11,10 +11,25 @@ pub fn ToolCallDisplay(
 ) -> Element {
     let mut expanded = use_signal(|| false);
 
-    let (icon, header_color, label) = match status {
-        ToolCallStatus::Pending => (">", "text-blue-400", "Calling"),
-        ToolCallStatus::Completed => ("*", "text-green-400", "Result"),
-        ToolCallStatus::Failed => ("!", "text-red-400", "Error"),
+    let (icon, header_color, label, bg_color) = match status {
+        ToolCallStatus::Pending => (
+            ">",
+            "text-blue-400",
+            "Calling",
+            "bg-blue-500/10 border-blue-500/20",
+        ),
+        ToolCallStatus::Completed => (
+            "✓",
+            "text-green-400",
+            "Result",
+            "bg-green-500/10 border-green-500/20",
+        ),
+        ToolCallStatus::Failed => (
+            "✕",
+            "text-red-400",
+            "Error",
+            "bg-red-500/10 border-red-500/20",
+        ),
     };
 
     // Content to display in expandable area
@@ -26,27 +41,36 @@ pub fn ToolCallDisplay(
 
     rsx! {
         div {
-            class: "font-mono text-sm",
+            class: "font-mono text-sm rounded-lg {bg_color} border transition-all duration-200",
 
             // Header (always visible)
             button {
-                class: "flex items-center gap-2 w-full text-left {header_color} hover:opacity-80 transition-opacity",
+                class: "tool-call-header flex items-center gap-2 w-full text-left p-3 hover:opacity-90",
                 onclick: move |_| {
                     let current = *expanded.read();
                     expanded.set(!current);
                 },
 
                 span {
-                    class: "transform transition-transform text-xs",
-                    if *expanded.read() { "v" } else { ">" }
+                    class: "transform transition-transform text-xs text-gray-400",
+                    if *expanded.read() { "▼" } else { "▶" }
                 }
-                span { class: "font-semibold", "{icon}" }
-                span { class: "text-gray-400", "{label}:" }
-                span { class: "truncate", "{tool_name}" }
+                span {
+                    class: "font-semibold text-base {header_color}",
+                    "{icon}"
+                }
+                span {
+                    class: "text-gray-400 text-sm",
+                    "{label}:"
+                }
+                span {
+                    class: "truncate text-gray-300 font-medium",
+                    "{tool_name}"
+                }
                 // Truncated arguments preview
                 if !input.is_empty() {
                     span {
-                        class: "text-gray-500 truncate ml-1",
+                        class: "text-gray-500 truncate ml-2 text-xs",
                         "{truncate_preview(&input, 50)}"
                     }
                 }
@@ -55,9 +79,9 @@ pub fn ToolCallDisplay(
             // Expandable content
             if *expanded.read() {
                 div {
-                    class: "mt-2 pl-4 border-l-2 border-gray-700",
+                    class: "px-3 pb-3 border-t border-white/5",
                     pre {
-                        class: "text-xs text-gray-400 whitespace-pre-wrap overflow-x-auto max-h-64 overflow-y-auto",
+                        class: "text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto max-h-64 overflow-y-auto bg-black/20 rounded p-3",
                         "{display_content}"
                     }
                 }

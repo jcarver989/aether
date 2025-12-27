@@ -26,7 +26,7 @@ pub fn CommandDropdown(
     if filtered_commands.is_empty() {
         return rsx! {
             div {
-                class: "absolute bottom-full left-0 right-0 mb-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-3 text-gray-400 text-sm",
+                class: "absolute bottom-full left-0 right-0 mb-2 bg-[#1a1d23] border border-[#373b47] rounded-xl shadow-2xl p-4 text-gray-400 text-sm",
                 "No matching commands"
             }
         };
@@ -37,11 +37,11 @@ pub fn CommandDropdown(
 
     rsx! {
         div {
-            class: "absolute bottom-full left-0 right-0 mb-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden max-h-64 overflow-y-auto",
+            class: "absolute bottom-full left-0 right-0 mb-2 bg-[#1a1d23] border border-[#373b47] rounded-xl shadow-2xl overflow-hidden max-h-80 overflow-y-auto z-50",
 
             // Header
             div {
-                class: "px-3 py-2 border-b border-gray-700 text-xs text-gray-500 font-medium uppercase tracking-wide",
+                class: "px-4 py-3 border-b border-[#2d313a] bg-[#252830] text-xs text-gray-500 font-semibold uppercase tracking-wide",
                 "Slash Commands"
             }
 
@@ -64,9 +64,9 @@ pub fn CommandDropdown(
 #[component]
 fn CommandItem(command: SlashCommand, is_selected: bool, on_click: EventHandler<()>) -> Element {
     let class_str = if is_selected {
-        "px-3 py-2 cursor-pointer transition-colors bg-blue-600"
+        "px-4 py-3 cursor-pointer transition-colors bg-blue-600 border-l-2 border-blue-400"
     } else {
-        "px-3 py-2 cursor-pointer transition-colors hover:bg-gray-700"
+        "px-4 py-3 cursor-pointer transition-colors hover:bg-[#252830] border-l-2 border-transparent"
     };
 
     let command_display = format!("/{}", command.name);
@@ -78,21 +78,21 @@ fn CommandItem(command: SlashCommand, is_selected: bool, on_click: EventHandler<
             onclick: move |_| on_click.call(()),
 
             div {
-                class: "flex items-center gap-2",
+                class: "flex items-center gap-3",
                 span {
-                    class: "text-blue-400 font-mono text-sm",
+                    class: "text-blue-400 font-mono text-sm font-medium",
                     "{command_display}"
                 }
                 if let Some(hint) = &hint_display {
                     span {
-                        class: "text-gray-500 text-xs italic",
+                        class: "text-gray-500 text-xs font-mono",
                         "{hint}"
                     }
                 }
             }
 
             div {
-                class: "text-gray-400 text-xs mt-0.5 truncate",
+                class: "text-gray-400 text-xs mt-1 leading-relaxed",
                 "{command.description}"
             }
         }
