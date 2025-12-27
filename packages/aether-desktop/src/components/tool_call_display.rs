@@ -1,5 +1,6 @@
 use crate::state::ToolCallStatus;
 use dioxus::prelude::*;
+use serde_json::Value;
 
 #[component]
 pub fn ToolCallDisplay(
@@ -42,6 +43,13 @@ pub fn ToolCallDisplay(
                 span { class: "font-semibold", "{icon}" }
                 span { class: "text-gray-400", "{label}:" }
                 span { class: "truncate", "{tool_name}" }
+                // Truncated arguments preview
+                if !input.is_empty() {
+                    span {
+                        class: "text-gray-500 truncate ml-1",
+                        "{truncate_preview(&input, 50)}"
+                    }
+                }
             }
 
             // Expandable content
@@ -55,5 +63,35 @@ pub fn ToolCallDisplay(
                 }
             }
         }
+    }
+}
+
+/// Format JSON input as key=value pairs for preview
+fn format_input_preview(input: &str) -> String {
+    serde_json::from_str::<Value>(input)
+        .ok()
+        .and_then(|json| json.as_object().cloned())
+        .map(|obj| {
+            obj.iter()
+                .map(|(k, v)| {
+                    let val = match v {
+                        Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    format!("{}={}", k, val)
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_else(|| input.to_string())
+}
+
+/// Truncate preview with ellipsis
+fn truncate_preview(input: &str, max_len: usize) -> String {
+    let preview = format_input_preview(input);
+    if preview.len() <= max_len {
+        preview
+    } else {
+        format!("{}...", &preview[..max_len])
     }
 }

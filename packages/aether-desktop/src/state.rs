@@ -64,6 +64,8 @@ impl Message {
 /// Configuration for creating a new agent session.
 #[derive(Clone, PartialEq, Debug)]
 pub struct AgentConfig {
+    /// Display name for the agent (e.g., "Claude", "Aether", or command basename)
+    pub name: String,
     /// Full command line for the agent (e.g., "aether-acp --model anthropic:claude-sonnet-4")
     pub command_line: String,
 }
@@ -71,6 +73,7 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
+            name: "Aether".to_string(),
             command_line:
                 "aether-acp --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json"
                     .to_string(),
@@ -156,10 +159,11 @@ impl AgentSession {
         config: AgentConfig,
         initial_message: String,
     ) -> Self {
+        let name = config.name.clone();
         Self {
             id,
             acp_session_id,
-            name: generate_agent_name(),
+            name,
             config,
             status: AgentStatus::Running,
             messages: vec![Message::user_text(initial_message)],
@@ -167,30 +171,17 @@ impl AgentSession {
             available_commands: Vec::new(),
         }
     }
+
+    /// Get the first user message content, if any.
+    pub fn first_user_message(&self) -> Option<&str> {
+        self.messages.first().map(|m| m.content.as_str())
+    }
 }
 
 pub fn now_iso() -> String {
     chrono::Utc::now()
         .format("%Y-%m-%dT%H:%M:%S%.3fZ")
         .to_string()
-}
-
-static AGENT_NAMES: &[&str] = &[
-    "Atlas", "Nova", "Cipher", "Echo", "Flux", "Helix", "Iris", "Jade", "Kite", "Luna", "Mist",
-    "Nexus", "Onyx", "Pulse", "Quark", "Raven", "Sage", "Terra", "Unity", "Vortex", "Wave",
-    "Xenon", "Zephyr", "Aura",
-];
-
-static AGENT_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-pub fn generate_agent_name() -> String {
-    let count = AGENT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let name = AGENT_NAMES[count % AGENT_NAMES.len()];
-    if count >= AGENT_NAMES.len() {
-        format!("{} {}", name, count / AGENT_NAMES.len() + 1)
-    } else {
-        name.to_string()
-    }
 }
 
 /// Collection of agent runtime handles.

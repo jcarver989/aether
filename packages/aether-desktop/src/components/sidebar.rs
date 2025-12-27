@@ -112,10 +112,10 @@ fn AgentListItem(agent: AgentSession, is_selected: bool, on_select: EventHandler
                 div { class: "font-medium text-gray-200 truncate flex-1", "{agent.name}" }
             }
 
-            // Agent command
+            // First message preview
             div {
-                class: "text-xs text-gray-500 mt-1 truncate font-mono",
-                "{agent.config.command_line}"
+                class: "text-xs text-gray-500 mt-1 truncate",
+                {agent.first_user_message().map(|m| truncate(m, 50)).unwrap_or_default()}
             }
 
             // Message count
@@ -124,5 +124,15 @@ fn AgentListItem(agent: AgentSession, is_selected: bool, on_select: EventHandler
                 "{agent.messages.len()} messages"
             }
         }
+    }
+}
+
+/// Truncate a string to the specified length, adding "..." if truncated.
+fn truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_chars.saturating_sub(3)).collect();
+        format!("{}...", truncated.trim_end())
     }
 }
