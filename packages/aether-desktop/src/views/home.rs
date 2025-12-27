@@ -318,6 +318,11 @@ fn apply_agent_event(
                     count = agent.available_commands.len(),
                     "Updated available commands"
                 );
+            } else {
+                info!(
+                    agent_id = %agent_id,
+                    "Received available commands before agent session was ready"
+                );
             }
         }
     }
@@ -332,24 +337,18 @@ async fn create_agent(
     initial_message: String,
 ) -> Result<String, ActorError> {
     let cwd = current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    let handle = AgentHandle::spawn(&config.command_line, &cwd, event_tx).await?;
-
+    let mut handle = AgentHandle::spawn(&config.command_line, &cwd, event_tx).await?;
     let agent_id = handle.id.clone();
     let acp_session_id = handle.acp_session_id.clone();
 
-    // Send initial prompt via handle (before storing)
     handle
         .send_prompt(initial_message.clone())
         .map_err(|e| ActorError::Session(e.to_string()))?;
 
-    // Create UI state
     let session = AgentSession::new(agent_id.clone(), acp_session_id, config, initial_message);
     agents.write().push(session);
-
-    // Store handle for future communication
+    handle.mark_ready();
     handles.write().insert(handle);
-
     info!(agent_id = %agent_id, "Agent spawned on dedicated thread");
-
     Ok(agent_id)
 }

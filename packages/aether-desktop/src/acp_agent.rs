@@ -19,7 +19,7 @@ use tokio::{
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::{StreamExt, StreamMap};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Runtime handle for an agent process.
 ///
@@ -35,6 +35,8 @@ pub struct AgentHandle {
     thread: JoinHandle<()>,
     /// Command sender for communicating with the agent
     cmd_tx: mpsc::UnboundedSender<AgentCommand>,
+    /// Gate for deferring ACP event forwarding until the UI is ready
+    ready_tx: Option<oneshot::Sender<()>>,
 }
 
 impl AgentHandle {
@@ -49,6 +51,7 @@ impl AgentHandle {
     ) -> Result<Self, ActorError> {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let (init_tx, init_rx) = oneshot::channel();
+        let (ready_tx, ready_rx) = oneshot::channel();
 
         // Generate UUID locally before spawning thread
         let agent_id = uuid::Uuid::new_v4().to_string();
@@ -67,7 +70,15 @@ impl AgentHandle {
             let local = tokio::task::LocalSet::new();
             local.block_on(
                 &rt,
-                run_agent(agent_id_for_thread, cmd, cwd, cmd_rx, event_tx, init_tx),
+                run_agent(
+                    agent_id_for_thread,
+                    cmd,
+                    cwd,
+                    cmd_rx,
+                    event_tx,
+                    init_tx,
+                    ready_rx,
+                ),
             );
         });
 
@@ -81,6 +92,7 @@ impl AgentHandle {
             acp_session_id,
             thread,
             cmd_tx,
+            ready_tx: Some(ready_tx),
         })
     }
 
@@ -92,6 +104,13 @@ impl AgentHandle {
                 message,
             })
             .map_err(|_| SendError::ChannelClosed)
+    }
+
+    /// Allow the agent loop to begin forwarding ACP events.
+    pub fn mark_ready(&mut self) {
+        if let Some(tx) = self.ready_tx.take() {
+            let _ = tx.send(());
+        }
     }
 }
 
@@ -231,6 +250,7 @@ async fn run_agent(
     cmd_rx: mpsc::UnboundedReceiver<AgentCommand>,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
     init_tx: oneshot::Sender<Result<SessionId, ActorError>>,
+    ready_rx: oneshot::Receiver<()>,
 ) {
     // Separate channel for raw events from AcpClient
     let (raw_tx, raw_rx) = mpsc::unbounded_channel::<RawAgentEvent>();
@@ -272,6 +292,11 @@ async fn run_agent(
     // Send acp_session_id back to spawner so it can return
     if init_tx.send(Ok(acp_session_id.clone())).is_err() {
         // Spawner dropped, no point continuing
+        return;
+    }
+
+    if ready_rx.await.is_err() {
+        warn!(agent_id = %agent_id, "Ready signal dropped; stopping agent loop");
         return;
     }
 
