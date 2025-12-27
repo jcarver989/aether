@@ -12,17 +12,17 @@ pub fn Sidebar(
 ) -> Element {
     rsx! {
         div {
-            class: "w-72 bg-gray-900 h-full flex flex-col border-r border-gray-800",
+            class: "w-72 bg-[#1a1d23] h-full flex flex-col border-r border-[#373b47]",
 
             // Header with title and settings gear
             div {
-                class: "p-4 border-b border-gray-800 flex items-center justify-between",
+                class: "p-4 border-b border-[#2d313a] flex items-center justify-between",
                 h1 {
-                    class: "text-lg font-semibold text-white",
+                    class: "text-lg font-semibold text-white tracking-tight",
                     "Aether Agents"
                 }
                 button {
-                    class: "text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-gray-800",
+                    class: "text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10 hover:shadow-md",
                     onclick: move |_| on_settings.call(()),
                     title: "Settings",
                     svg {
@@ -50,7 +50,7 @@ pub fn Sidebar(
 
             // Agent list
             div {
-                class: "flex-1 overflow-y-auto",
+                class: "flex-1 overflow-y-auto space-y-1 p-2",
                 for agent in agents.read().iter() {
                     AgentListItem {
                         key: "{agent.id}",
@@ -73,9 +73,9 @@ pub fn Sidebar(
 
             // New agent button at bottom
             div {
-                class: "p-4 border-t border-gray-800",
+                class: "p-4 border-t border-[#2d313a]",
                 button {
-                    class: "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors",
+                    class: "w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]",
                     onclick: move |_| on_new_agent.call(()),
                     span { class: "text-xl", "+" }
                     span { "New Agent" }
@@ -87,40 +87,53 @@ pub fn Sidebar(
 
 #[component]
 fn AgentListItem(agent: AgentSession, is_selected: bool, on_select: EventHandler<()>) -> Element {
-    let status_color = match &agent.status {
+    let status_color_class = match &agent.status {
         AgentStatus::Idle => "bg-gray-500",
-        AgentStatus::Running => "bg-green-500 animate-pulse",
+        AgentStatus::Running => "bg-green-500",
         AgentStatus::Error(_) => "bg-red-500",
     };
 
+    let status_class = format!(
+        "status-dot w-2.5 h-2.5 rounded-full {} {}",
+        status_color_class,
+        if matches!(agent.status, AgentStatus::Running) {
+            "status-dot-running"
+        } else {
+            "status-dot-idle"
+        }
+    );
+
     let selected_class = if is_selected {
-        "bg-gray-800 border-l-4 border-blue-500"
+        "sidebar-item-selected"
     } else {
-        "border-l-4 border-transparent hover:bg-gray-800/50"
+        "sidebar-item hover:bg-white/5"
     };
 
     rsx! {
         div {
-            class: "p-3 cursor-pointer transition-all duration-150 {selected_class}",
+            class: "p-3 cursor-pointer transition-all duration-200 rounded-lg {selected_class}",
             onclick: move |_| on_select.call(()),
 
             div {
-                class: "flex items-center gap-2",
+                class: "flex items-center gap-3",
                 // Status indicator
-                div { class: "w-2 h-2 rounded-full {status_color}" }
+                div { class: "{status_class}" }
                 // Agent name
-                div { class: "font-medium text-gray-200 truncate flex-1", "{agent.name}" }
+                div {
+                    class: "font-medium text-gray-100 truncate flex-1 text-sm",
+                    "{agent.name}"
+                }
             }
 
             // First message preview
             div {
-                class: "text-xs text-gray-500 mt-1 truncate",
+                class: "text-xs text-gray-500 mt-1 truncate ml-5",
                 {agent.first_user_message().map(|m| truncate(m, 50)).unwrap_or_default()}
             }
 
             // Message count
             div {
-                class: "text-xs text-gray-600 mt-0.5",
+                class: "text-xs text-gray-600 mt-0.5 ml-5",
                 "{agent.messages.len()} messages"
             }
         }

@@ -70,13 +70,13 @@ pub fn NewAgentForm(
 
     rsx! {
         div {
-            class: "flex-1 flex flex-col h-full bg-gray-950",
+            class: "flex-1 flex flex-col h-full bg-[#0f1116]",
 
             // Top bar with close button
             div {
                 class: "flex justify-end p-3",
                 button {
-                    class: "text-gray-500 hover:text-white transition-colors p-1",
+                    class: "text-gray-500 hover:text-white transition-all p-1.5 rounded-lg hover:bg-white/10 hover:shadow-md",
                     onclick: move |_| on_cancel.call(()),
                     "X"
                 }
@@ -91,11 +91,11 @@ pub fn NewAgentForm(
 
                     // Main prompt box
                     div {
-                        class: "bg-gray-900 border border-gray-700 rounded-xl",
+                        class: "bg-[#1a1d23] border border-[#373b47] rounded-2xl shadow-xl",
 
                         // Textarea
                         textarea {
-                            class: "w-full bg-transparent text-white px-4 pt-4 pb-2 resize-none focus:outline-none text-base placeholder-gray-500",
+                            class: "w-full bg-transparent text-white px-5 pt-5 pb-3 resize-none focus:outline-none text-base placeholder-gray-500 leading-relaxed",
                             rows: "4",
                             placeholder: "What would you like to work on?",
                             value: "{initial_message}",
@@ -110,11 +110,11 @@ pub fn NewAgentForm(
 
                         // Bottom toolbar
                         div {
-                            class: "flex items-center justify-end px-3 py-2 border-t border-gray-800 gap-2",
+                            class: "flex items-center justify-end px-4 py-3 border-t border-[#2d313a] gap-3",
 
                             // Agent server dropdown
                             select {
-                                class: "bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500 text-sm",
+                                class: "bg-[#252830] text-white border border-[#373b47] rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
                                 value: "{selected_server}",
                                 onchange: move |e| selected_server.set(e.value()),
 
@@ -133,7 +133,7 @@ pub fn NewAgentForm(
 
                             // Submit button
                             button {
-                                class: "bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-4 py-1.5 rounded-lg transition-colors text-sm font-medium",
+                                class: "btn-primary px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
                                 disabled: initial_message.read().trim().is_empty(),
                                 onclick: move |_| do_submit(),
                                 "Start"

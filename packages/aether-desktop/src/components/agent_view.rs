@@ -200,9 +200,9 @@ pub fn AgentView(agent_id: String) -> Element {
         AgentStatus::Error(_) => "Error",
     };
     let status_color = match &agent.status {
-        AgentStatus::Idle => "bg-gray-600",
-        AgentStatus::Running => "bg-green-600",
-        AgentStatus::Error(_) => "bg-red-600",
+        AgentStatus::Idle => "bg-gray-600 text-gray-300",
+        AgentStatus::Running => "bg-green-600/20 text-green-400 border border-green-600/30",
+        AgentStatus::Error(_) => "bg-red-600/20 text-red-400 border border-red-600/30",
     };
 
     let dropdown_visible = dropdown_state.read().visible;
@@ -211,17 +211,17 @@ pub fn AgentView(agent_id: String) -> Element {
 
     rsx! {
         div {
-            class: "flex-1 flex flex-col h-full bg-gray-950",
+            class: "flex-1 flex flex-col h-full bg-[#0f1116]",
 
             // Header with agent name and status
             div {
-                class: "p-4 border-b border-gray-800 flex items-center justify-between",
+                class: "p-4 border-b border-[#2d313a] flex items-center justify-between",
                 div {
-                    h2 { class: "text-lg font-semibold text-white", "{agent.name}" }
+                    h2 { class: "text-lg font-semibold text-white tracking-tight", "{agent.name}" }
                     p { class: "text-sm text-gray-500 font-mono truncate max-w-xs", "{agent.config.command_line}" }
                 }
                 span {
-                    class: "px-3 py-1 rounded-full text-xs font-medium {status_color}",
+                    class: "px-3 py-1.5 rounded-full text-xs font-medium {status_color}",
                     "{status_text}"
                 }
             }
@@ -251,7 +251,7 @@ pub fn AgentView(agent_id: String) -> Element {
 
             // Input area with dropdown
             div {
-                class: "p-4 border-t border-gray-800 bg-gray-900",
+                class: "p-4 border-t border-[#2d313a] bg-[#1a1d23]",
 
                 // Relative container for dropdown positioning
                 div {
@@ -270,7 +270,7 @@ pub fn AgentView(agent_id: String) -> Element {
                     div {
                         class: "flex gap-3",
                         textarea {
-                            class: "flex-1 bg-gray-800 text-white border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 resize-none",
+                            class: "input-field flex-1 rounded-xl px-4 py-3 resize-none",
                             value: "{input_val}",
                             oninput: on_input_change,
                             onkeydown: on_keydown,
@@ -279,7 +279,7 @@ pub fn AgentView(agent_id: String) -> Element {
                             rows: "2",
                         }
                         button {
-                            class: "bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg transition-colors font-medium",
+                            class: "btn-primary px-6 py-3 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
                             onclick: move |_| do_send(),
                             disabled: is_running,
                             if is_running {
@@ -299,12 +299,26 @@ pub fn AgentView(agent_id: String) -> Element {
 pub fn EmptyState() -> Element {
     rsx! {
         div {
-            class: "flex-1 flex flex-col items-center justify-center text-gray-500 bg-gray-950",
+            class: "flex-1 flex flex-col items-center justify-center text-gray-500 bg-[#0f1116]",
             div {
-                class: "text-6xl mb-4 opacity-50",
-                "+"
+                class: "w-20 h-20 mb-6 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center",
+                svg {
+                    xmlns: "http://www.w3.org/2000/svg",
+                    width: "40",
+                    height: "40",
+                    view_box: "0 0 24 24",
+                    fill: "none",
+                    stroke: "currentColor",
+                    stroke_width: "2",
+                    stroke_linecap: "round",
+                    stroke_linejoin: "round",
+                    class: "text-gray-400",
+                    path {
+                        d: "M12 5v14M5 12h14"
+                    }
+                }
             }
-            p { class: "text-lg", "Create a new agent to get started" }
+            p { class: "text-lg font-medium text-gray-400", "Create a new agent to get started" }
             p { class: "text-sm mt-2 text-gray-600", "Click the \"New Agent\" button in the sidebar" }
         }
     }

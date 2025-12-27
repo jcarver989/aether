@@ -16,12 +16,17 @@ pub fn MessageBubble(message: Message) -> Element {
         "justify-start"
     };
     let bubble_style = if is_user {
-        "bg-blue-600 text-white"
+        "message-bubble-user"
     } else if is_tool {
-        "bg-gray-800/50 text-gray-300 border border-gray-700"
+        "message-bubble-tool"
     } else {
-        "bg-gray-800 text-gray-100"
+        "message-bubble-assistant"
     };
+
+    let bubble_classes = format!(
+        "message-bubble {} rounded-2xl p-4 {} animate-fade-in",
+        bubble_style, bubble_style
+    );
 
     let max_width = if is_user { "max-w-xl" } else { "max-w-3xl" };
 
@@ -29,13 +34,16 @@ pub fn MessageBubble(message: Message) -> Element {
         div {
             class: "flex {alignment}",
             div {
-                class: "{max_width} rounded-lg p-4 {bubble_style}",
+                class: "{max_width} {bubble_classes}",
 
                 match &message.kind {
                     MessageKind::Text => {
                         if is_user {
                             rsx! {
-                                p { class: "whitespace-pre-wrap", "{message.content}" }
+                                p {
+                                    class: "text-white leading-relaxed",
+                                    "{message.content}"
+                                }
                             }
                         } else {
                             rsx! {

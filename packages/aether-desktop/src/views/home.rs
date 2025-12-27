@@ -61,7 +61,7 @@ pub fn Home() -> Element {
 
     rsx! {
         div {
-            class: "flex h-screen bg-gray-950 text-white font-sans",
+            class: "flex h-screen bg-[#0f1116] text-white font-sans",
 
             Sidebar {
                 agents: AGENTS.signal(),
@@ -90,16 +90,16 @@ pub fn Home() -> Element {
             // Error toast
             if let Some(err) = error_message.read().as_ref() {
                 div {
-                    class: "fixed bottom-4 right-4 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg max-w-md",
+                    class: "fixed bottom-4 right-4 bg-[#1a1d23] border border-red-500/30 text-white px-5 py-4 rounded-xl shadow-2xl max-w-md animate-fade-in z-50",
                     div { class: "flex items-center gap-3",
-                        span { class: "font-medium", "Error" }
+                        span { class: "font-semibold text-red-400", "Error" }
                         button {
-                            class: "ml-auto text-white/80 hover:text-white",
+                            class: "ml-auto text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-white/10",
                             onclick: move |_| error_message.set(None),
-                            "X"
+                            "✕"
                         }
                     }
-                    p { class: "mt-1 text-sm", "{err}" }
+                    p { class: "mt-2 text-sm text-gray-200 leading-relaxed", "{err}" }
                 }
             }
         }
