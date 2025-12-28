@@ -89,7 +89,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     self.on_user_cancel(&mut state).await;
                 }
 
-                StreamEvent::UserMessage(Text { content }) => {
+                StreamEvent::UserMessage(Text { content, .. }) => {
                     self.on_user_text(content).await;
                 }
 
