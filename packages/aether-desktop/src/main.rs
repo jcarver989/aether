@@ -15,6 +15,7 @@ mod file_watcher;
 mod markdown;
 mod settings;
 mod state;
+mod state_machine;
 mod syntax;
 mod views;
 

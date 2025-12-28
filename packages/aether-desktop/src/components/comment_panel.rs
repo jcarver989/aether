@@ -21,9 +21,8 @@ pub fn CommentPanel(
         return rsx! { EmptyState {} };
     }
 
-    let by_file: HashMap<&str, Vec<&DiffComment>> = comments
-        .values()
-        .fold(HashMap::new(), |mut acc, comment| {
+    let by_file: HashMap<&str, Vec<&DiffComment>> =
+        comments.values().fold(HashMap::new(), |mut acc, comment| {
             acc.entry(&comment.file_path).or_default().push(comment);
             acc
         });
@@ -204,4 +203,3 @@ fn CommentItem(comment: DiffComment, on_remove: EventHandler<CommentKey>) -> Ele
         }
     }
 }
-

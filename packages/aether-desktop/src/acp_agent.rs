@@ -86,9 +86,9 @@ impl AgentHandle {
         });
 
         // Await initialization (non-blocking)
-        let acp_session_id = init_rx
-            .await
-            .map_err(|_| AetherDesktopError::ActorInit("Agent thread terminated during init".into()))??;
+        let acp_session_id = init_rx.await.map_err(|_| {
+            AetherDesktopError::ActorInit("Agent thread terminated during init".into())
+        })??;
 
         Ok(Self {
             id: agent_id,
@@ -178,6 +178,26 @@ pub enum AgentEvent {
         agent_id: String,
         diff_state: DiffState,
     },
+}
+
+impl AgentEvent {
+    /// Extract the agent_id from this event.
+    pub fn agent_id(&self) -> &str {
+        match self {
+            AgentEvent::MessageChunk { agent_id, .. } => agent_id,
+            AgentEvent::MessageComplete { agent_id } => agent_id,
+            AgentEvent::ToolCallStarted { agent_id, .. } => agent_id,
+            AgentEvent::ToolCallUpdated { agent_id, .. } => agent_id,
+            AgentEvent::ToolCallCompleted { agent_id, .. } => agent_id,
+            AgentEvent::ToolCallFailed { agent_id, .. } => agent_id,
+            AgentEvent::StatusChange { agent_id, .. } => agent_id,
+            AgentEvent::PermissionRequest { agent_id, .. } => agent_id,
+            AgentEvent::Disconnected { agent_id } => agent_id,
+            AgentEvent::Error { agent_id, .. } => agent_id,
+            AgentEvent::AvailableCommandsUpdate { agent_id, .. } => agent_id,
+            AgentEvent::DiffUpdate { agent_id, .. } => agent_id,
+        }
+    }
 }
 
 /// Commands that can be sent to the ACP actor.
@@ -407,7 +427,9 @@ async fn run_agent(
 fn spawn_child_process(cmd: &str) -> Result<(Child, ChildStdin, ChildStdout), AetherDesktopError> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     if parts.is_empty() {
-        return Err(AetherDesktopError::ActorSpawn("Empty command line".to_string()));
+        return Err(AetherDesktopError::ActorSpawn(
+            "Empty command line".to_string(),
+        ));
     }
 
     let (command, args) = (parts[0], &parts[1..]);
@@ -421,15 +443,13 @@ fn spawn_child_process(cmd: &str) -> Result<(Child, ChildStdin, ChildStdout), Ae
         .spawn()
         .map_err(|e| AetherDesktopError::ActorSpawn(e.to_string()))?;
 
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or(AetherDesktopError::ActorSpawn("Failed to get stdin".to_string()))?;
+    let stdin = child.stdin.take().ok_or(AetherDesktopError::ActorSpawn(
+        "Failed to get stdin".to_string(),
+    ))?;
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or(AetherDesktopError::ActorSpawn("Failed to get stdout".to_string()))?;
+    let stdout = child.stdout.take().ok_or(AetherDesktopError::ActorSpawn(
+        "Failed to get stdout".to_string(),
+    ))?;
 
     Ok((child, stdin, stdout))
 }
