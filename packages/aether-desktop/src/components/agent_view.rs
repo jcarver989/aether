@@ -35,8 +35,7 @@ pub fn AgentView(agent_id: String) -> Element {
     let available_commands: Vec<SlashCommand> = {
         let agents = AGENTS.read();
         agents
-            .iter()
-            .find(|a| a.id == agent_id_for_handlers)
+            .get(&agent_id_for_handlers)
             .map(|a| a.available_commands.clone())
             .unwrap_or_default()
     };
@@ -53,28 +52,24 @@ pub fn AgentView(agent_id: String) -> Element {
             dropdown_state.write().visible = false;
 
             // Add user message to state
-            {
-                let mut list = AGENTS.write();
-                if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id_for_send) {
-                    agent.messages.push(Message {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        role: Role::User,
-                        content: content.clone(),
-                        kind: MessageKind::Text,
-                        timestamp: now_iso(),
-                        is_streaming: false,
-                    });
-                    agent.status = AgentStatus::Running;
-                }
-            }
+            with_agent_mut(&agent_id_for_send, |agent| {
+                agent.messages.push(Message {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    role: Role::User,
+                    content: content.clone(),
+                    kind: MessageKind::Text,
+                    timestamp: now_iso(),
+                    is_streaming: false,
+                });
+                agent.status = AgentStatus::Running;
+            });
 
             // Send via handles (separate from UI state)
             if let Err(e) = HANDLES.read().send_prompt(&agent_id_for_send, content) {
                 tracing::error!("Failed to send message: {}", e);
-                let mut list = AGENTS.write();
-                if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id_for_send) {
+                with_agent_mut(&agent_id_for_send, |agent| {
                     agent.status = AgentStatus::Error(e.to_string());
-                }
+                });
             }
 
             input_val.set(String::new());
@@ -189,7 +184,7 @@ pub fn AgentView(agent_id: String) -> Element {
     // to AGENTS changes for reactive re-renders when messages stream in
     let agents = AGENTS.read();
     tracing::debug!("AgentView rendering, agents count: {}", agents.len());
-    let Some(agent) = agents.iter().find(|a| a.id == agent_id) else {
+    let Some(agent) = agents.get(&agent_id) else {
         return rsx! {
             div {
                 class: "flex-1 flex items-center justify-center text-gray-500",
