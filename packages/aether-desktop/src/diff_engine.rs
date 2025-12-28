@@ -35,9 +35,9 @@ pub fn compute_diff(repo_path: &Path) -> Result<Vec<FileDiff>, AetherDesktopErro
     let num_deltas = diff.deltas().len();
 
     for idx in 0..num_deltas {
-        let delta = diff
-            .get_delta(idx)
-            .ok_or_else(|| AetherDesktopError::DiffGit(git2::Error::from_str("Delta index out of bounds")))?;
+        let delta = diff.get_delta(idx).ok_or_else(|| {
+            AetherDesktopError::DiffGit(git2::Error::from_str("Delta index out of bounds"))
+        })?;
 
         let status = match delta.status() {
             Delta::Added | Delta::Untracked => FileStatus::Added,

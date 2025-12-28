@@ -6,10 +6,7 @@ use crate::acp_agent::{AgentEvent, AgentHandle};
 use crate::components::{AgentView, EmptyState, NewAgentForm, SettingsEditor, Sidebar};
 use crate::error::AetherDesktopError;
 use crate::settings::Settings;
-use crate::state::{
-    now_iso, AgentConfig, AgentHandles, AgentSession, AgentStatus, Message, MessageKind, Role,
-    SlashCommand, ToolCallStatus,
-};
+use crate::state::{AgentConfig, AgentHandles, AgentSession, AgentStatus};
 use crate::{EventChannel, AGENTS, HANDLES};
 use agent_client_protocol::{RequestPermissionOutcome, RequestPermissionResponse};
 use dioxus::prelude::*;
@@ -131,219 +128,124 @@ fn apply_agent_event(
     handles: &GlobalSignal<AgentHandles>,
     event: AgentEvent,
 ) {
-    match event {
-        AgentEvent::MessageChunk { agent_id, text } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                // Append to existing streaming message or create new one
-                if let Some(last_msg) = agent.messages.last_mut() {
-                    if last_msg.is_streaming && matches!(last_msg.kind, MessageKind::Text) {
-                        last_msg.content.push_str(&text);
-                        return;
-                    }
-                }
-                // Create new streaming message
-                agent.messages.push(Message {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    role: Role::Assistant,
-                    content: text,
-                    kind: MessageKind::Text,
-                    timestamp: now_iso(),
-                    is_streaming: true,
-                });
+    let agent_id = event.agent_id().to_string();
+
+    // Handle events that need side effects (like PermissionRequest)
+    if let AgentEvent::PermissionRequest {
+        request,
+        response_tx,
+        ..
+    } = event
+    {
+        // TODO: Show permission dialog in UI
+        warn!("Auto-approving permission request: {:?}", request.tool_call);
+        let response = RequestPermissionResponse {
+            outcome: RequestPermissionOutcome::Selected {
+                option_id: request
+                    .options
+                    .first()
+                    .map(|o| o.id.clone())
+                    .unwrap_or_else(|| "allow".into()),
+            },
+            meta: None,
+        };
+        let _ = response_tx.send(response);
+        return;
+    }
+
+    // Handle events that modify both session state and handles
+    if let AgentEvent::Disconnected { agent_id: id } = event {
+        let mut list = agents.write();
+        if let Some(agent) = list.iter_mut().find(|a| a.id == id) {
+            if matches!(agent.status, AgentStatus::Running) {
+                agent.status = AgentStatus::Idle;
             }
         }
+        handles.write().remove(&id);
+        return;
+    }
 
-        AgentEvent::MessageComplete { agent_id } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                if let Some(last_msg) = agent.messages.last_mut() {
-                    if last_msg.is_streaming {
-                        last_msg.is_streaming = false;
-                    }
-                }
-            }
+    // Handle Error event separately since it doesn't implement Clone
+    if let AgentEvent::Error {
+        agent_id: id,
+        error,
+    } = event
+    {
+        let mut list = agents.write();
+        if let Some(agent) = list.iter_mut().find(|a| a.id == id) {
+            agent.status = AgentStatus::Error(error);
         }
+        return;
+    }
 
+    // Apply state machine transition to the matching agent
+    // Note: We use a workaround by cloning after extracting the variant
+    let event_clone = match event {
+        AgentEvent::MessageChunk { agent_id, text } => AgentEvent::MessageChunk { agent_id, text },
+        AgentEvent::MessageComplete { agent_id } => AgentEvent::MessageComplete { agent_id },
         AgentEvent::ToolCallStarted {
             agent_id,
             tool_id,
             tool_call,
-        } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                // Skip if we already have this tool call
-                if agent.tool_calls.contains_key(&tool_id) {
-                    return;
-                }
-                // Skip if message with this ID already exists
-                if agent.messages.iter().any(|m| m.id == tool_id) {
-                    return;
-                }
-                // Mark any streaming message as complete
-                if let Some(last_msg) = agent.messages.last_mut() {
-                    if last_msg.is_streaming {
-                        last_msg.is_streaming = false;
-                    }
-                }
-                // Create tool call message
-                let input_content = tool_call
-                    .raw_input
-                    .as_ref()
-                    .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
-                    .unwrap_or_default();
-                agent.messages.push(Message {
-                    id: tool_id.clone(),
-                    role: Role::Assistant,
-                    content: input_content,
-                    kind: MessageKind::ToolCall {
-                        name: tool_call.title.clone(),
-                        status: ToolCallStatus::Pending,
-                        result: None,
-                    },
-                    timestamp: now_iso(),
-                    is_streaming: false,
-                });
-                // Store tool call for later updates
-                agent.tool_calls.insert(tool_id, tool_call);
-            }
-        }
-
+        } => AgentEvent::ToolCallStarted {
+            agent_id,
+            tool_id,
+            tool_call,
+        },
         AgentEvent::ToolCallUpdated {
             agent_id,
             tool_id,
             fields,
-        } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                if let Some(tc) = agent.tool_calls.get_mut(&tool_id) {
-                    tc.update(fields);
-                }
-            }
-        }
-
+        } => AgentEvent::ToolCallUpdated {
+            agent_id,
+            tool_id,
+            fields,
+        },
         AgentEvent::ToolCallCompleted {
             agent_id,
             tool_id,
             result,
-        } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                // Find and update existing tool call message
-                if let Some(msg) = agent.messages.iter_mut().find(|m| m.id == tool_id) {
-                    if let MessageKind::ToolCall {
-                        ref mut status,
-                        result: ref mut res,
-                        ..
-                    } = msg.kind
-                    {
-                        *status = ToolCallStatus::Completed;
-                        *res = Some(result);
-                    }
-                }
-            }
-        }
-
+        } => AgentEvent::ToolCallCompleted {
+            agent_id,
+            tool_id,
+            result,
+        },
         AgentEvent::ToolCallFailed {
             agent_id,
             tool_id,
             error,
-        } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                // Find and update existing tool call message
-                if let Some(msg) = agent.messages.iter_mut().find(|m| m.id == tool_id) {
-                    if let MessageKind::ToolCall {
-                        ref mut status,
-                        result: ref mut res,
-                        ..
-                    } = msg.kind
-                    {
-                        *status = ToolCallStatus::Failed;
-                        *res = Some(error);
-                    }
-                }
-            }
-        }
-
+        } => AgentEvent::ToolCallFailed {
+            agent_id,
+            tool_id,
+            error,
+        },
         AgentEvent::StatusChange { agent_id, status } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                agent.status = status;
-            }
+            AgentEvent::StatusChange { agent_id, status }
         }
-
-        AgentEvent::PermissionRequest {
-            agent_id: _,
-            request,
-            response_tx,
-        } => {
-            // TODO: Show permission dialog in UI
-            warn!("Auto-approving permission request: {:?}", request.tool_call);
-            let response = RequestPermissionResponse {
-                outcome: RequestPermissionOutcome::Selected {
-                    option_id: request
-                        .options
-                        .first()
-                        .map(|o| o.id.clone())
-                        .unwrap_or_else(|| "allow".into()),
-                },
-                meta: None,
-            };
-            let _ = response_tx.send(response);
-        }
-
-        AgentEvent::Disconnected { agent_id } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                if matches!(agent.status, AgentStatus::Running) {
-                    agent.status = AgentStatus::Idle;
-                }
-            }
-            handles.write().remove(&agent_id);
-        }
-
-        AgentEvent::Error { agent_id, error } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                agent.status = AgentStatus::Error(error);
-            }
-        }
-
         AgentEvent::AvailableCommandsUpdate { agent_id, commands } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                agent.available_commands = commands.into_iter().map(SlashCommand::from).collect();
-                info!(
-                    agent_id = %agent_id,
-                    count = agent.available_commands.len(),
-                    "Updated available commands"
-                );
-            } else {
-                info!(
-                    agent_id = %agent_id,
-                    "Received available commands before agent session was ready"
-                );
-            }
+            AgentEvent::AvailableCommandsUpdate { agent_id, commands }
         }
-
         AgentEvent::DiffUpdate {
             agent_id,
             diff_state,
-        } => {
-            let mut list = agents.write();
-            if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-                // Preserve the selected file if it still exists in the new diff
-                let selected_file = agent
-                    .diff_state
-                    .selected_file
-                    .clone()
-                    .filter(|path| diff_state.files.iter().any(|f| &f.path == path));
-                agent.diff_state = diff_state;
-                agent.diff_state.selected_file = selected_file;
-            }
+        } => AgentEvent::DiffUpdate {
+            agent_id,
+            diff_state,
+        },
+        AgentEvent::PermissionRequest { .. }
+        | AgentEvent::Disconnected { .. }
+        | AgentEvent::Error { .. } => {
+            // These are handled above
+            return;
         }
-    }
+    };
+
+    agents.write().retain_mut(|agent| {
+        if agent.id == agent_id {
+            *agent = agent.clone().apply_event(&event_clone);
+        }
+        true
+    });
 }
 
 /// Spawn a new agent on a dedicated thread
@@ -359,8 +261,7 @@ async fn create_agent(
     let agent_id = handle.id.clone();
     let acp_session_id = handle.acp_session_id.clone();
 
-    handle
-        .send_prompt(initial_message.clone())?;
+    handle.send_prompt(initial_message.clone())?;
 
     let session = AgentSession::new(
         agent_id.clone(),
