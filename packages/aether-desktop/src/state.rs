@@ -25,15 +25,14 @@ pub enum AutocompleteMode {
 /// State for the unified autocomplete dropdown.
 ///
 /// Supports both slash commands (`/`) and file mentions (`@`).
+/// Visibility is derived from `mode` - when mode is not `None`, the dropdown is visible.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct AutocompleteState {
-    /// Whether the dropdown is visible
-    pub visible: bool,
     /// Currently selected index in the filtered list
     pub selected_index: usize,
     /// Current filter text (text after the trigger character)
     pub filter_text: String,
-    /// Current autocomplete mode
+    /// Current autocomplete mode (also determines visibility)
     pub mode: AutocompleteMode,
 }
 
@@ -41,7 +40,6 @@ impl AutocompleteState {
     /// Create a new autocomplete state for slash commands.
     pub fn slash_command(filter_text: String) -> Self {
         Self {
-            visible: true,
             selected_index: 0,
             filter_text,
             mode: AutocompleteMode::SlashCommand,
@@ -51,16 +49,19 @@ impl AutocompleteState {
     /// Create a new autocomplete state for file mentions.
     pub fn file_mention(filter_text: String) -> Self {
         Self {
-            visible: true,
             selected_index: 0,
             filter_text,
             mode: AutocompleteMode::FileMention,
         }
     }
 
+    /// Whether the dropdown is visible (derived from mode).
+    pub fn is_visible(&self) -> bool {
+        self.mode != AutocompleteMode::None
+    }
+
     /// Hide the dropdown and reset state.
     pub fn hide(&mut self) {
-        self.visible = false;
         self.selected_index = 0;
         self.filter_text.clear();
         self.mode = AutocompleteMode::None;
@@ -73,9 +74,7 @@ impl AutocompleteState {
 
     /// Move selection down in the list, clamped to max_index.
     pub fn select_next(&mut self, max_index: usize) {
-        if self.selected_index < max_index {
-            self.selected_index += 1;
-        }
+        self.selected_index = (self.selected_index + 1).min(max_index);
     }
 }
 
@@ -735,7 +734,7 @@ mod tests {
     #[test]
     fn test_autocomplete_state_default() {
         let state = AutocompleteState::default();
-        assert!(!state.visible);
+        assert!(!state.is_visible());
         assert_eq!(state.selected_index, 0);
         assert!(state.filter_text.is_empty());
         assert_eq!(state.mode, AutocompleteMode::None);
@@ -744,7 +743,7 @@ mod tests {
     #[test]
     fn test_autocomplete_state_slash_command() {
         let state = AutocompleteState::slash_command("hel".to_string());
-        assert!(state.visible);
+        assert!(state.is_visible());
         assert_eq!(state.selected_index, 0);
         assert_eq!(state.filter_text, "hel");
         assert_eq!(state.mode, AutocompleteMode::SlashCommand);
@@ -753,7 +752,7 @@ mod tests {
     #[test]
     fn test_autocomplete_state_file_mention() {
         let state = AutocompleteState::file_mention("main".to_string());
-        assert!(state.visible);
+        assert!(state.is_visible());
         assert_eq!(state.selected_index, 0);
         assert_eq!(state.filter_text, "main");
         assert_eq!(state.mode, AutocompleteMode::FileMention);
@@ -766,7 +765,7 @@ mod tests {
 
         state.hide();
 
-        assert!(!state.visible);
+        assert!(!state.is_visible());
         assert_eq!(state.selected_index, 0);
         assert!(state.filter_text.is_empty());
         assert_eq!(state.mode, AutocompleteMode::None);
