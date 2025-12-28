@@ -10,12 +10,8 @@ use crate::state::{
 use agent_client_protocol::AvailableCommand;
 
 impl AgentSession {
-    /// Pure function: apply event and return new state.
-    ///
-    /// This method implements the state machine for handling agent events.
-    /// It takes ownership of self and returns a new AgentSession with the
-    /// event applied, making it easy to test without Dioxus signals.
-    pub fn apply_event(mut self, event: &AgentEvent) -> Self {
+    /// Apply an event to this agent session, mutating in place.
+    pub fn apply_event(&mut self, event: &AgentEvent) {
         match event {
             AgentEvent::MessageChunk { text, .. } => self.append_to_streaming_message(text.clone()),
             AgentEvent::MessageComplete { .. } => self.complete_streaming_message(),
@@ -42,7 +38,6 @@ impl AgentSession {
                 // These events are handled by the UI consumer directly
             }
         }
-        self
     }
 
     fn append_to_streaming_message(&mut self, text: String) {
@@ -203,25 +198,25 @@ mod tests {
             agent_id: "test-id".to_string(),
             text: " text".to_string(),
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        assert_eq!(updated.messages.last().unwrap().content, "Initial text");
-        assert!(updated.messages.last().unwrap().is_streaming);
+        assert_eq!(session.messages.last().unwrap().content, "Initial text");
+        assert!(session.messages.last().unwrap().is_streaming);
     }
 
     #[test]
     fn test_message_chunk_creates_new_message() {
-        let session = create_test_session();
+        let mut session = create_test_session();
 
         let event = AgentEvent::MessageChunk {
             agent_id: "test-id".to_string(),
             text: "New message".to_string(),
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        assert_eq!(updated.messages.len(), 2); // User message + new message
-        assert_eq!(updated.messages.last().unwrap().content, "New message");
-        assert!(updated.messages.last().unwrap().is_streaming);
+        assert_eq!(session.messages.len(), 2); // User message + new message
+        assert_eq!(session.messages.last().unwrap().content, "New message");
+        assert!(session.messages.last().unwrap().is_streaming);
     }
 
     #[test]
@@ -239,21 +234,26 @@ mod tests {
         let event = AgentEvent::MessageComplete {
             agent_id: "test-id".to_string(),
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        assert!(!updated.messages.last().unwrap().is_streaming);
+        assert!(!session.messages.last().unwrap().is_streaming);
     }
 
     #[test]
     fn test_tool_call_started() {
-        let session = create_test_session();
+        let mut session = create_test_session();
 
         let dummy_tool_id = "tool-call-12345".to_string();
         let tool_call = ToolCall {
             id: dummy_tool_id.clone().into(),
             title: "Test Tool".to_string(),
-            arguments: None,
+            kind: Default::default(),
+            status: agent_client_protocol::ToolCallStatus::Pending,
+            content: vec![],
+            locations: vec![],
             raw_input: Some(serde_json::json!({"test": "data"})),
+            raw_output: None,
+            meta: None,
         };
 
         let event = AgentEvent::ToolCallStarted {
@@ -261,15 +261,15 @@ mod tests {
             tool_id: "tool-1".to_string(),
             tool_call: tool_call.clone(),
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        assert_eq!(updated.messages.len(), 2);
-        assert_eq!(updated.messages.last().unwrap().id, "tool-1");
+        assert_eq!(session.messages.len(), 2);
+        assert_eq!(session.messages.last().unwrap().id, "tool-1");
         assert!(matches!(
-            updated.messages.last().unwrap().kind,
+            session.messages.last().unwrap().kind,
             MessageKind::ToolCall { .. }
         ));
-        assert!(updated.tool_calls.contains_key("tool-1"));
+        assert!(session.tool_calls.contains_key("tool-1"));
     }
 
     #[test]
@@ -295,9 +295,9 @@ mod tests {
             tool_id: tool_id.clone(),
             result: "Success!".to_string(),
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        if let MessageKind::ToolCall { status, result, .. } = &updated.messages.last().unwrap().kind
+        if let MessageKind::ToolCall { status, result, .. } = &session.messages.last().unwrap().kind
         {
             assert_eq!(*status, ToolCallStatus::Completed);
             assert_eq!(result, &Some("Success!".to_string()));
@@ -329,9 +329,9 @@ mod tests {
             tool_id: tool_id.clone(),
             error: "Error!".to_string(),
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        if let MessageKind::ToolCall { status, result, .. } = &updated.messages.last().unwrap().kind
+        if let MessageKind::ToolCall { status, result, .. } = &session.messages.last().unwrap().kind
         {
             assert_eq!(*status, ToolCallStatus::Failed);
             assert_eq!(result, &Some("Error!".to_string()));
@@ -342,35 +342,36 @@ mod tests {
 
     #[test]
     fn test_status_change() {
-        let session = create_test_session();
+        let mut session = create_test_session();
 
         let event = AgentEvent::StatusChange {
             agent_id: "test-id".to_string(),
             status: AgentStatus::Error("Test error".to_string()),
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        assert!(matches!(updated.status, AgentStatus::Error(_)));
+        assert!(matches!(session.status, AgentStatus::Error(_)));
     }
 
     #[test]
     fn test_available_commands_update() {
-        let session = create_test_session();
+        let mut session = create_test_session();
 
         let commands = vec![AvailableCommand {
             name: "test-command".to_string(),
             description: "Test description".to_string(),
             input: None,
+            meta: None,
         }];
 
         let event = AgentEvent::AvailableCommandsUpdate {
             agent_id: "test-id".to_string(),
             commands,
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        assert_eq!(updated.available_commands.len(), 1);
-        assert_eq!(updated.available_commands[0].name, "test-command");
+        assert_eq!(session.available_commands.len(), 1);
+        assert_eq!(session.available_commands[0].name, "test-command");
     }
 
     #[test]
@@ -390,10 +391,10 @@ mod tests {
             agent_id: "test-id".to_string(),
             diff_state: new_diff,
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
         assert_eq!(
-            updated.diff_state.selected_file,
+            session.diff_state.selected_file,
             Some("file1.rs".to_string())
         );
     }
@@ -409,24 +410,23 @@ mod tests {
             agent_id: "test-id".to_string(),
             diff_state: new_diff,
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        assert!(updated.diff_state.selected_file.is_none());
+        assert!(session.diff_state.selected_file.is_none());
     }
 
     #[test]
-    fn test_pure_function_behavior() {
-        let session = create_test_session();
+    fn test_mutation_behavior() {
+        let mut session = create_test_session();
+        assert!(matches!(session.status, AgentStatus::Running));
 
         let event = AgentEvent::StatusChange {
             agent_id: "test-id".to_string(),
             status: AgentStatus::Idle,
         };
-        let updated = session.apply_event(&event);
+        session.apply_event(&event);
 
-        // Original session should not be modified
-        assert!(matches!(session.status, AgentStatus::Running));
-        // Updated session should have new status
-        assert!(matches!(updated.status, AgentStatus::Idle));
+        // Session should be mutated in place
+        assert!(matches!(session.status, AgentStatus::Idle));
     }
 }

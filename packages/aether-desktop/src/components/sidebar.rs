@@ -10,6 +10,8 @@ pub fn Sidebar(
     on_select_agent: EventHandler<String>,
     on_settings: EventHandler<()>,
 ) -> Element {
+    let registry = agents.read();
+
     rsx! {
         div {
             class: "w-72 bg-[#1a1d23] h-full flex flex-col border-r border-[#373b47]",
@@ -48,22 +50,28 @@ pub fn Sidebar(
                 }
             }
 
-            // Agent list
             div {
                 class: "flex-1 overflow-y-auto space-y-1 p-2",
-                for agent in agents.read().iter_ordered() {
-                    AgentListItem {
-                        key: "{agent.id}",
-                        agent: agent.clone(),
-                        is_selected: selected_id.as_ref() == Some(&agent.id),
-                        on_select: {
-                            let id = agent.id.clone();
-                            move |_| on_select_agent.call(id.clone())
-                        },
+                for agent_signal in registry.iter_ordered() {
+                    {
+                        let agent = agent_signal.read();
+                        let agent_id = agent.id.clone();
+                        let is_selected = selected_id.as_ref() == Some(&agent_id);
+                        rsx! {
+                            AgentListItem {
+                                key: "{agent_id}",
+                                agent: agent_signal,
+                                is_selected: is_selected,
+                                on_select: {
+                                    let id = agent_id.clone();
+                                    move |_| on_select_agent.call(id.clone())
+                                },
+                            }
+                        }
                     }
                 }
 
-                if agents.read().is_empty() {
+                if registry.is_empty() {
                     div {
                         class: "p-4 text-gray-500 text-sm text-center",
                         "No agents yet. Create one to get started."
@@ -86,7 +94,13 @@ pub fn Sidebar(
 }
 
 #[component]
-fn AgentListItem(agent: AgentSession, is_selected: bool, on_select: EventHandler<()>) -> Element {
+fn AgentListItem(
+    agent: Signal<AgentSession>,
+    is_selected: bool,
+    on_select: EventHandler<()>,
+) -> Element {
+    let agent = agent.read();
+
     let status_color_class = match &agent.status {
         AgentStatus::Idle => "bg-gray-500",
         AgentStatus::Running => "bg-green-500",

@@ -28,13 +28,17 @@ const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 pub static AGENTS: GlobalSignal<AgentRegistry> = Signal::global(AgentRegistry::new);
 pub static HANDLES: GlobalSignal<AgentHandles> = Signal::global(AgentHandles::new);
 
-/// Helper to mutate an agent by ID. Reduces boilerplate for the common pattern of
-/// acquiring a write lock and mutating an agent. Uses O(1) HashMap lookup.
+/// Helper to mutate an agent by ID.
+///
+/// Gets the agent's signal (read lock on registry) and applies the mutation
+/// (write lock on single agent).
 pub fn with_agent_mut<F>(agent_id: &str, f: F)
 where
     F: FnOnce(&mut AgentSession),
 {
-    AGENTS.write().with_agent_mut(agent_id, f);
+    if let Some(mut agent_signal) = AGENTS.read().get(agent_id) {
+        f(&mut agent_signal.write());
+    }
 }
 
 fn main() {

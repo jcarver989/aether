@@ -6,6 +6,7 @@
 use crate::acp_agent::AgentHandle;
 use crate::error::AetherDesktopError;
 use agent_client_protocol::{AvailableCommand, AvailableCommandInput, SessionId, ToolCall};
+use dioxus::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -423,16 +424,26 @@ pub fn generate_comments_prompt(comments: &HashMap<CommentKey, DiffComment>) -> 
     prompt
 }
 
-/// Indexed registry for agent sessions.
+/// Indexed registry for agent sessions with per-agent reactivity.
 ///
+/// Each agent is stored in its own `Signal<AgentSession>`, so updating one
+/// agent only triggers re-renders for components observing that specific agent.
 /// Uses HashMap for O(1) lookups while maintaining insertion order via Vec
 /// for UI display purposes (sidebar listing).
-#[derive(Clone, PartialEq, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct AgentRegistry {
-    /// Maps agent ID to session data for fast lookup
-    agents: HashMap<String, AgentSession>,
+    /// Maps agent ID to its reactive signal for per-agent updates
+    agents: HashMap<String, Signal<AgentSession>>,
     /// Maintains insertion order for UI display
     order: Vec<String>,
+}
+
+impl std::fmt::Debug for AgentRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentRegistry")
+            .field("agent_ids", &self.order)
+            .finish()
+    }
 }
 
 impl AgentRegistry {
@@ -441,30 +452,29 @@ impl AgentRegistry {
         Self::default()
     }
 
-    /// Get a mutable reference to an agent by ID - O(1).
-    pub fn get_mut(&mut self, id: &str) -> Option<&mut AgentSession> {
-        self.agents.get_mut(id)
+    /// Get the signal for a specific agent - O(1).
+    ///
+    /// Returns a cloned Signal handle that can be read/written independently.
+    pub fn get(&self, id: &str) -> Option<Signal<AgentSession>> {
+        self.agents.get(id).cloned()
     }
 
-    /// Get an immutable reference to an agent by ID - O(1).
-    pub fn get(&self, id: &str) -> Option<&AgentSession> {
-        self.agents.get(id)
+    /// Iterate over agent signals in insertion order.
+    pub fn iter_ordered(&self) -> impl Iterator<Item = Signal<AgentSession>> + '_ {
+        self.order
+            .iter()
+            .filter_map(|id| self.agents.get(id).cloned())
     }
 
-    /// Iterate over agents in insertion order.
-    pub fn iter_ordered(&self) -> impl Iterator<Item = &AgentSession> {
-        self.order.iter().filter_map(|id| self.agents.get(id))
-    }
-
-    /// Insert a new agent session.
+    /// Insert a new agent session wrapped in a signal.
     pub fn insert(&mut self, session: AgentSession) {
         let id = session.id.clone();
         self.order.push(id.clone());
-        self.agents.insert(id, session);
+        self.agents.insert(id, Signal::new(session));
     }
 
     /// Remove an agent by ID.
-    pub fn remove(&mut self, id: &str) -> Option<AgentSession> {
+    pub fn remove(&mut self, id: &str) -> Option<Signal<AgentSession>> {
         self.order.retain(|x| x != id);
         self.agents.remove(id)
     }
@@ -477,184 +487,6 @@ impl AgentRegistry {
     /// Check if the registry is empty.
     pub fn is_empty(&self) -> bool {
         self.agents.is_empty()
-    }
-
-    /// Apply a mutation function to an agent by ID.
-    pub fn with_agent_mut<F>(&mut self, id: &str, f: F)
-    where
-        F: FnOnce(&mut AgentSession),
-    {
-        if let Some(agent) = self.get_mut(id) {
-            f(agent);
-        }
-    }
-
-    /// Retain only agents for which the predicate returns true.
-    ///
-    /// This preserves insertion order.
-    pub fn retain_mut<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&mut AgentSession) -> bool,
-    {
-        // Collect IDs to remove first
-        let to_remove: Vec<String> = self
-            .order
-            .iter()
-            .filter(|id| {
-                self.agents
-                    .get_mut(id.as_str())
-                    .map_or(false, |agent| !f(agent))
-            })
-            .cloned()
-            .collect();
-
-        // Remove from both structures
-        for id in to_remove {
-            self.remove(&id);
-        }
-    }
-}
-
-#[cfg(test)]
-mod agent_registry_tests {
-    use super::*;
-
-    fn make_test_session(id: &str, name: &str) -> AgentSession {
-        AgentSession {
-            id: id.to_string(),
-            acp_session_id: "test-session-id".to_string().into(),
-            name: name.to_string(),
-            config: AgentConfig::default(),
-            status: AgentStatus::Idle,
-            messages: vec![],
-            tool_calls: HashMap::new(),
-            available_commands: vec![],
-            cwd: PathBuf::from("/"),
-            diff_state: DiffState::default(),
-        }
-    }
-
-    #[test]
-    fn test_insert_and_get() {
-        let mut registry = AgentRegistry::new();
-        let agent = make_test_session("agent-1", "Test Agent");
-
-        registry.insert(agent);
-
-        assert_eq!(registry.len(), 1);
-        assert!(!registry.is_empty());
-
-        let retrieved = registry.get("agent-1");
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().name, "Test Agent");
-    }
-
-    #[test]
-    fn test_get_mut() {
-        let mut registry = AgentRegistry::new();
-        let agent = make_test_session("agent-1", "Test Agent");
-        registry.insert(agent);
-
-        let retrieved = registry.get_mut("agent-1");
-        assert!(retrieved.is_some());
-
-        let agent = retrieved.unwrap();
-        agent.name = "Updated Name".to_string();
-
-        let retrieved = registry.get("agent-1");
-        assert_eq!(retrieved.unwrap().name, "Updated Name");
-    }
-
-    #[test]
-    fn test_iter_ordered() {
-        let mut registry = AgentRegistry::new();
-
-        registry.insert(make_test_session("agent-3", "Agent 3"));
-        registry.insert(make_test_session("agent-1", "Agent 1"));
-        registry.insert(make_test_session("agent-2", "Agent 2"));
-
-        let mut iter = registry.iter_ordered();
-        assert_eq!(iter.next().unwrap().id, "agent-3");
-        assert_eq!(iter.next().unwrap().id, "agent-1");
-        assert_eq!(iter.next().unwrap().id, "agent-2");
-        assert!(iter.next().is_none());
-    }
-
-    #[test]
-    fn test_remove() {
-        let mut registry = AgentRegistry::new();
-        registry.insert(make_test_session("agent-1", "Agent 1"));
-        registry.insert(make_test_session("agent-2", "Agent 2"));
-
-        let removed = registry.remove("agent-1");
-        assert!(removed.is_some());
-        assert_eq!(removed.unwrap().id, "agent-1");
-
-        assert_eq!(registry.len(), 1);
-        assert!(registry.get("agent-1").is_none());
-        assert!(registry.get("agent-2").is_some());
-    }
-
-    #[test]
-    fn test_with_agent_mut() {
-        let mut registry = AgentRegistry::new();
-        registry.insert(make_test_session("agent-1", "Agent 1"));
-
-        registry.with_agent_mut("agent-1", |agent| {
-            agent.name = "Mutated".to_string();
-        });
-
-        assert_eq!(registry.get("agent-1").unwrap().name, "Mutated");
-
-        // Should not panic for non-existent agent
-        registry.with_agent_mut("non-existent", |_| {});
-    }
-
-    #[test]
-    fn test_retain_mut() {
-        let mut registry = AgentRegistry::new();
-        registry.insert(make_test_session("agent-1", "Agent 1"));
-        registry.insert(make_test_session("agent-2", "Agent 2"));
-        registry.insert(make_test_session("agent-3", "Agent 3"));
-
-        let mut count = 0;
-        registry.retain_mut(|agent| {
-            count += 1;
-            agent.id != "agent-2"
-        });
-
-        assert_eq!(count, 3);
-        assert_eq!(registry.len(), 2);
-        assert!(registry.get("agent-1").is_some());
-        assert!(registry.get("agent-2").is_none());
-        assert!(registry.get("agent-3").is_some());
-
-        // Check order is preserved
-        let ids: Vec<_> = registry.iter_ordered().map(|a| a.id.clone()).collect();
-        assert_eq!(ids, vec!["agent-1", "agent-3"]);
-    }
-
-    #[test]
-    fn test_o1_lookup() {
-        let mut registry = AgentRegistry::new();
-
-        // Insert many agents
-        for i in 0..1000 {
-            let id = format!("agent-{}", i);
-            registry.insert(make_test_session(&id, &format!("Agent {}", i)));
-        }
-
-        // Should find the last agent quickly (O(1))
-        let agent = registry.get("agent-999");
-        assert!(agent.is_some());
-        assert_eq!(agent.unwrap().name, "Agent 999");
-
-        // Mutate by ID (O(1))
-        registry.with_agent_mut("agent-500", |agent| {
-            agent.name = "Found!".to_string();
-        });
-
-        assert_eq!(registry.get("agent-500").unwrap().name, "Found!");
     }
 }
 

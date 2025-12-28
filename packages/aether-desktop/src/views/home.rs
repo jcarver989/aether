@@ -122,7 +122,6 @@ pub async fn run_ui_consumer(
     info!("UI consumer stopped");
 }
 
-/// Apply an agent event to the agents signal
 fn apply_agent_event(
     agents: &GlobalSignal<AgentRegistry>,
     handles: &GlobalSignal<AgentHandles>,
@@ -153,97 +152,35 @@ fn apply_agent_event(
         return;
     }
 
-    // Handle events that modify both session state and handles
     if let AgentEvent::Disconnected { agent_id: id } = event {
-        agents.write().with_agent_mut(&id, |agent| {
+        if let Some(mut agent_signal) = agents.read().get(&id) {
+            let mut agent = agent_signal.write();
             if matches!(agent.status, AgentStatus::Running) {
                 agent.status = AgentStatus::Idle;
             }
-        });
+        }
+        agents.write().remove(&id);
         handles.write().remove(&id);
         return;
     }
 
-    // Handle Error event separately since it doesn't implement Clone
     if let AgentEvent::Error {
         agent_id: id,
         error,
     } = event
     {
-        agents.write().with_agent_mut(&id, |agent| {
-            agent.status = AgentStatus::Error(error);
-        });
+        if let Some(mut agent_signal) = agents.read().get(&id) {
+            agent_signal.write().status = AgentStatus::Error(error);
+        }
         return;
     }
 
-    // Apply state machine transition to the matching agent
-    // Note: We use a workaround by cloning after extracting the variant
-    let event_clone = match event {
-        AgentEvent::MessageChunk { agent_id, text } => AgentEvent::MessageChunk { agent_id, text },
-        AgentEvent::MessageComplete { agent_id } => AgentEvent::MessageComplete { agent_id },
-        AgentEvent::ToolCallStarted {
-            agent_id,
-            tool_id,
-            tool_call,
-        } => AgentEvent::ToolCallStarted {
-            agent_id,
-            tool_id,
-            tool_call,
-        },
-        AgentEvent::ToolCallUpdated {
-            agent_id,
-            tool_id,
-            fields,
-        } => AgentEvent::ToolCallUpdated {
-            agent_id,
-            tool_id,
-            fields,
-        },
-        AgentEvent::ToolCallCompleted {
-            agent_id,
-            tool_id,
-            result,
-        } => AgentEvent::ToolCallCompleted {
-            agent_id,
-            tool_id,
-            result,
-        },
-        AgentEvent::ToolCallFailed {
-            agent_id,
-            tool_id,
-            error,
-        } => AgentEvent::ToolCallFailed {
-            agent_id,
-            tool_id,
-            error,
-        },
-        AgentEvent::StatusChange { agent_id, status } => {
-            AgentEvent::StatusChange { agent_id, status }
-        }
-        AgentEvent::AvailableCommandsUpdate { agent_id, commands } => {
-            AgentEvent::AvailableCommandsUpdate { agent_id, commands }
-        }
-        AgentEvent::DiffUpdate {
-            agent_id,
-            diff_state,
-        } => AgentEvent::DiffUpdate {
-            agent_id,
-            diff_state,
-        },
-        AgentEvent::PermissionRequest { .. }
-        | AgentEvent::Disconnected { .. }
-        | AgentEvent::Error { .. } => {
-            // These are handled above
-            return;
-        }
+    let Some(mut agent_signal) = agents.read().get(&agent_id) else {
+        warn!("Event for unknown agent: {}", agent_id);
+        return;
     };
 
-    agents.write().retain_mut(|agent| {
-        if agent.id == agent_id {
-            *agent = agent.clone().apply_event(&event_clone);
-        }
-        true
-    });
+    agent_signal.write().apply_event(&event);
 }
 
 /// Spawn a new agent on a dedicated thread
