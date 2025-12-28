@@ -7,7 +7,7 @@ use crate::acp_agent::AgentEvent;
 use crate::state::{
     now_iso, AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, ToolCallStatus,
 };
-use agent_client_protocol::AvailableCommand;
+use agent_client_protocol::{AvailableCommand, ToolCallContent};
 
 impl AgentSession {
     /// Apply an event to this agent session, mutating in place.
@@ -32,6 +32,11 @@ impl AgentSession {
                 self.update_available_commands(commands.clone())
             }
             AgentEvent::DiffUpdate { diff_state, .. } => self.update_diff_state(diff_state.clone()),
+            AgentEvent::TerminalOutput {
+                terminal_id,
+                output,
+                ..
+            } => self.append_terminal_output(terminal_id, output),
             AgentEvent::Disconnected { .. }
             | AgentEvent::Error { .. }
             | AgentEvent::PermissionRequest { .. } => {
@@ -77,6 +82,13 @@ impl AgentSession {
         }
         // Mark any streaming message as complete
         self.complete_streaming_message();
+
+        for content in &tool_call.content {
+            if let ToolCallContent::Terminal { terminal_id } = content {
+                self.terminal_to_tool
+                    .insert(terminal_id.to_string(), tool_id.clone());
+            }
+        }
 
         let input_content = tool_call
             .raw_input
@@ -156,6 +168,18 @@ impl AgentSession {
         self.diff_state = diff_state;
         self.diff_state.selected_file = selected_file;
     }
+
+    fn append_terminal_output(&mut self, terminal_id: &str, output: &str) {
+        let Some(tool_id) = self.terminal_to_tool.get(terminal_id) else {
+            return;
+        };
+        let Some(msg) = self.messages.iter_mut().find(|m| m.id == *tool_id) else {
+            return;
+        };
+        if let MessageKind::ToolCall { result, .. } = &mut msg.kind {
+            result.get_or_insert_with(String::new).push_str(output);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -179,6 +203,7 @@ mod tests {
             available_commands: Vec::new(),
             cwd: PathBuf::from("/tmp"),
             diff_state: crate::state::DiffState::default(),
+            terminal_to_tool: std::collections::HashMap::new(),
         }
     }
 
@@ -428,5 +453,132 @@ mod tests {
 
         // Session should be mutated in place
         assert!(matches!(session.status, AgentStatus::Idle));
+    }
+
+    #[test]
+    fn test_terminal_output_appends_to_tool_call() {
+        let mut session = create_test_session();
+        let tool_id = "tool-123".to_string();
+        let terminal_id = "term-456".to_string();
+
+        session.messages.push(Message {
+            id: tool_id.clone(),
+            role: Role::Assistant,
+            content: "echo hello".to_string(),
+            kind: MessageKind::ToolCall {
+                name: "Bash".to_string(),
+                status: ToolCallStatus::Pending,
+                result: None,
+            },
+            timestamp: now_iso(),
+            is_streaming: false,
+        });
+
+        // Manually add the terminal → tool mapping (simulating what start_tool_call does)
+        session
+            .terminal_to_tool
+            .insert(terminal_id.clone(), tool_id.clone());
+
+        // Send terminal output
+        let event = AgentEvent::TerminalOutput {
+            agent_id: "test-id".to_string(),
+            terminal_id: terminal_id.clone(),
+            output: "hello\n".to_string(),
+            stream: crate::state::TerminalStream::Stdout,
+        };
+        session.apply_event(&event);
+
+        // Verify output was appended
+        if let MessageKind::ToolCall { result, .. } = &session.messages.last().unwrap().kind {
+            assert_eq!(result, &Some("hello\n".to_string()));
+        } else {
+            panic!("Expected ToolCall message kind");
+        }
+    }
+
+    #[test]
+    fn test_terminal_output_accumulates() {
+        let mut session = create_test_session();
+        let tool_id = "tool-123".to_string();
+        let terminal_id = "term-456".to_string();
+
+        // Add a tool call message
+        session.messages.push(Message {
+            id: tool_id.clone(),
+            role: Role::Assistant,
+            content: "echo hello; echo world".to_string(),
+            kind: MessageKind::ToolCall {
+                name: "Bash".to_string(),
+                status: ToolCallStatus::Pending,
+                result: None,
+            },
+            timestamp: now_iso(),
+            is_streaming: false,
+        });
+
+        // Add the mapping
+        session
+            .terminal_to_tool
+            .insert(terminal_id.clone(), tool_id.clone());
+
+        // Send multiple terminal output events
+        let event1 = AgentEvent::TerminalOutput {
+            agent_id: "test-id".to_string(),
+            terminal_id: terminal_id.clone(),
+            output: "hello\n".to_string(),
+            stream: crate::state::TerminalStream::Stdout,
+        };
+        session.apply_event(&event1);
+
+        let event2 = AgentEvent::TerminalOutput {
+            agent_id: "test-id".to_string(),
+            terminal_id: terminal_id.clone(),
+            output: "world\n".to_string(),
+            stream: crate::state::TerminalStream::Stdout,
+        };
+        session.apply_event(&event2);
+
+        // Verify both outputs were accumulated
+        if let MessageKind::ToolCall { result, .. } = &session.messages.last().unwrap().kind {
+            assert_eq!(result, &Some("hello\nworld\n".to_string()));
+        } else {
+            panic!("Expected ToolCall message kind");
+        }
+    }
+
+    #[test]
+    fn test_terminal_output_ignored_without_mapping() {
+        let mut session = create_test_session();
+        let tool_id = "tool-123".to_string();
+
+        // Add a tool call message but NO terminal mapping
+        session.messages.push(Message {
+            id: tool_id.clone(),
+            role: Role::Assistant,
+            content: "echo hello".to_string(),
+            kind: MessageKind::ToolCall {
+                name: "Bash".to_string(),
+                status: ToolCallStatus::Pending,
+                result: None,
+            },
+            timestamp: now_iso(),
+            is_streaming: false,
+        });
+
+        // Send terminal output for an unmapped terminal
+        let event = AgentEvent::TerminalOutput {
+            agent_id: "test-id".to_string(),
+            terminal_id: "unknown-terminal".to_string(),
+            output: "hello\n".to_string(),
+            stream: crate::state::TerminalStream::Stdout,
+        };
+        session.apply_event(&event);
+
+        // Verify result is still None (output was ignored)
+        if let MessageKind::ToolCall { result, .. } = &session.messages.last().unwrap().kind {
+            assert_eq!(result, &None);
+        } else {
+            panic!("Expected ToolCall message kind");
+        }
     }
 }
