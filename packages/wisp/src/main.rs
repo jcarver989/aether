@@ -51,7 +51,6 @@ async fn main() -> ExitCode {
         }
     };
 
-    // Branch based on whether prompt was provided
     let result = if cli.prompt.is_empty() {
         run_terminal_ui(state).await.map(|_| ExitCode::SUCCESS)
     } else {
@@ -130,15 +129,12 @@ async fn run_non_interactive(
     let user_msg_tx = state.agent_tx;
     let mut agent_msg_rx = state.agent_rx;
 
-    // Send the initial prompt
     user_msg_tx
         .send(UserMessage::Text {
             content: prompt.to_string(),
         })
-        .await
-        .map_err(|e| format!("Failed to send prompt: {e}"))?;
+        .await?;
 
-    // Process agent messages until done
     while let Some(message) = agent_msg_rx.recv().await {
         match message {
             AgentMessage::Text {
