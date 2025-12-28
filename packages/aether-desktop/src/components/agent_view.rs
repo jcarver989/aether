@@ -2,9 +2,15 @@
 //!
 //! Displays the chat interface for a single agent session.
 
+use std::sync::{Arc, LazyLock};
+
 use dioxus::prelude::*;
-use std::sync::Arc;
+use regex::Regex;
 use tokio::sync::Mutex;
+
+/// Matches `@query` at start of string or after whitespace, capturing the query.
+static FILE_MENTION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:^|\s)@(\S*)$").unwrap());
 
 use crate::file_search::{FileMatch, FileSearcher};
 use crate::state::{
@@ -179,26 +185,18 @@ pub fn AgentView(agent_id: String) -> Element {
                 return;
             }
 
-            // Check for @ mentions (find last @)
-            if let Some(at_pos) = value.rfind('@') {
-                // Make sure @ isn't part of an email or followed by a completed mention
-                let after_at = &value[at_pos + 1..];
-                // Only trigger if after @ is valid (no spaces yet = still typing query)
-                if !after_at.contains(' ') {
-                    let query = after_at.to_string();
+            if let Some(caps) = FILE_MENTION_RE.captures(&value) {
+                let query = caps.get(1).map_or("", |m| m.as_str()).to_string();
 
-                    // Update autocomplete state immediately for responsiveness
-                    *autocomplete_state.write() = AutocompleteState::file_mention(query.clone());
+                *autocomplete_state.write() = AutocompleteState::file_mention(query.clone());
 
-                    // Search files asynchronously to avoid blocking
-                    let searcher = file_searcher.clone();
-                    spawn(async move {
-                        let mut searcher = searcher.lock().await;
-                        let matches = searcher.search(&query, 10);
-                        file_matches.set(matches);
-                    });
-                    return;
-                }
+                let searcher = file_searcher.clone();
+                spawn(async move {
+                    let mut searcher = searcher.lock().await;
+                    let matches = searcher.search(&query, 10);
+                    file_matches.set(matches);
+                });
+                return;
             }
 
             // No trigger found, hide autocomplete

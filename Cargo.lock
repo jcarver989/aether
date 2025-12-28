@@ -85,6 +85,7 @@ dependencies = [
  "notify-debouncer-mini",
  "nucleo",
  "pulldown-cmark",
+ "regex",
  "serde",
  "serde_json",
  "syntect",
