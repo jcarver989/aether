@@ -4,8 +4,10 @@
 
 use dioxus::prelude::*;
 
-use crate::state::{now_iso, AgentStatus, Message, MessageKind, Role, SlashCommand};
-use crate::{AGENTS, HANDLES};
+use crate::state::{
+    now_iso, AgentStatus, CommentKey, DiffComment, Message, MessageKind, Role, SlashCommand,
+};
+use crate::{with_agent_mut, AGENTS, HANDLES};
 
 use super::command_dropdown::CommandDropdown;
 use super::diff_view::DiffView;
@@ -309,17 +311,81 @@ pub fn AgentView(agent_id: String) -> Element {
                     }
                 },
                 AgentViewTab::Diff => {
-                    let agent_id_for_select = agent_id_for_diff.clone();
+                    let agent_id = agent_id_for_diff.clone();
+
                     rsx! {
                         div {
                             class: "flex-1 overflow-hidden",
                             DiffView {
                                 diff_state: diff_state,
-                                on_file_select: move |path: String| {
-                                    // Update the selected file in the agent's diff state
-                                    let mut list = AGENTS.write();
-                                    if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id_for_select) {
-                                        agent.diff_state.selected_file = Some(path);
+                                on_file_select: {
+                                    let agent_id = agent_id.clone();
+                                    move |path: String| {
+                                        with_agent_mut(&agent_id, |agent| {
+                                            agent.diff_state.selected_file = Some(path);
+                                        });
+                                    }
+                                },
+                                on_add_comment: {
+                                    let agent_id = agent_id.clone();
+                                    move |comment: DiffComment| {
+                                        with_agent_mut(&agent_id, |agent| {
+                                            agent.diff_state.add_comment(comment);
+                                        });
+                                    }
+                                },
+                                on_edit_comment: {
+                                    let agent_id = agent_id.clone();
+                                    move |(key, new_content): (CommentKey, String)| {
+                                        with_agent_mut(&agent_id, |agent| {
+                                            agent.diff_state.update_comment(&key, new_content);
+                                        });
+                                    }
+                                },
+                                on_remove_comment: {
+                                    let agent_id = agent_id.clone();
+                                    move |key: CommentKey| {
+                                        with_agent_mut(&agent_id, |agent| {
+                                            agent.diff_state.remove_comment(&key);
+                                        });
+                                    }
+                                },
+                                on_clear_comments: {
+                                    let agent_id = agent_id.clone();
+                                    move |_| {
+                                        with_agent_mut(&agent_id, |agent| {
+                                            agent.diff_state.clear_comments();
+                                        });
+                                    }
+                                },
+                                on_send_comments: {
+                                    let agent_id = agent_id.clone();
+                                    let mut active_tab = active_tab;
+                                    move |prompt: String| {
+                                        // Add user message with the generated prompt
+                                        with_agent_mut(&agent_id, |agent| {
+                                            agent.messages.push(Message {
+                                                id: uuid::Uuid::new_v4().to_string(),
+                                                role: Role::User,
+                                                content: prompt.clone(),
+                                                kind: MessageKind::Text,
+                                                timestamp: now_iso(),
+                                                is_streaming: false,
+                                            });
+                                            agent.status = AgentStatus::Running;
+                                            agent.diff_state.clear_comments();
+                                        });
+
+                                        // Send via handles
+                                        if let Err(e) = HANDLES.read().send_prompt(&agent_id, prompt) {
+                                            tracing::error!("Failed to send comment prompt: {}", e);
+                                            with_agent_mut(&agent_id, |agent| {
+                                                agent.status = AgentStatus::Error(e.to_string());
+                                            });
+                                        }
+
+                                        // Switch to Chat tab to show the conversation
+                                        active_tab.set(AgentViewTab::Chat);
                                     }
                                 },
                             }
