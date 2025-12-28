@@ -216,10 +216,11 @@ pub fn map_agent_message_to_session_notification(
             })
         }
 
-        AgentMessage::Error { .. } | AgentMessage::Cancelled { .. } | AgentMessage::Done => {
-            // These are terminal events that affect the prompt response, not session updates
-            None
-        }
+        AgentMessage::Error { .. }
+        | AgentMessage::Cancelled { .. }
+        | AgentMessage::Done
+        | AgentMessage::ContextCompactionStarted { .. }
+        | AgentMessage::ContextCompactionResult { .. } => None,
     }
 }
 

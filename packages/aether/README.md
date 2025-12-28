@@ -33,7 +33,7 @@ aether = "0.1"
 
 ### Minimal Agent (No Tools)
 
-```rust
+```rust,no_run
 use aether::{
     agent::{AgentMessage, UserMessage, agent},
     llm::openrouter::OpenRouterProvider,
@@ -89,6 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Agent cancelled");
                 break;
             }
+            Some(ContextCompactionStarted { .. }) | Some(ContextCompactionResult { .. }) => {}
             None => break,
         }
     }
@@ -193,6 +194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Agent cancelled");
                 break;
             }
+            Some(ContextCompactionStarted { .. }) | Some(ContextCompactionResult { .. }) => {}
             None => break,
         }
     }

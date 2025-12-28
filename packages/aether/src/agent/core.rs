@@ -1,6 +1,6 @@
 use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{AgentMessage, UserMessage};
-use crate::context::TokenTracker;
+use crate::context::{CompactionConfig, Compactor, TokenTracker};
 use crate::llm::{
     ChatMessage, StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult,
 };
@@ -10,6 +10,7 @@ use crate::types::IsoString;
 use futures::Stream;
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
@@ -27,7 +28,7 @@ enum StreamEvent {
 type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
 
 pub struct Agent<T: StreamingModelProvider> {
-    llm: T,
+    llm: Arc<T>,
     context: Context,
     mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
     agent_message_tx: mpsc::Sender<AgentMessage>,
@@ -35,17 +36,19 @@ pub struct Agent<T: StreamingModelProvider> {
     middleware: Middleware,
     tool_timeout: Duration,
     token_tracker: TokenTracker,
+    compaction_config: Option<CompactionConfig>,
 }
 
 impl<T: StreamingModelProvider + 'static> Agent<T> {
     pub fn new(
-        llm: T,
+        llm: Arc<T>,
         context: Context,
         mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
         user_message_rx: mpsc::Receiver<UserMessage>,
         agent_message_tx: mpsc::Sender<AgentMessage>,
         middleware: Middleware,
         tool_timeout: Duration,
+        compaction_config: Option<CompactionConfig>,
     ) -> Self {
         let mut streams: StreamMap<String, EventStream> = StreamMap::new();
         streams.insert(
@@ -62,6 +65,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             middleware,
             tool_timeout,
             token_tracker: TokenTracker::new(200_000), // Default to Claude's 200k context limit
+            compaction_config,
         }
     }
 
@@ -236,7 +240,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 input_tokens,
                 output_tokens,
             } => {
-                self.handle_llm_usage(input_tokens, output_tokens);
+                self.handle_llm_usage(input_tokens, output_tokens).await;
             }
         }
     }
@@ -342,8 +346,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         }
     }
 
-    fn handle_llm_usage(&mut self, input_tokens: u32, output_tokens: u32) {
-        // Record token usage for context management
+    async fn handle_llm_usage(&mut self, input_tokens: u32, output_tokens: u32) {
         self.token_tracker.record_usage(input_tokens, output_tokens);
         tracing::debug!(
             "Token usage - input: {}, output: {}, ratio: {:.2}%, remaining: {}",
@@ -352,6 +355,65 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             self.token_tracker.usage_ratio() * 100.0,
             self.token_tracker.tokens_remaining()
         );
+
+        self.maybe_compact_context().await;
+    }
+
+    /// Check if compaction is needed and perform it if so.
+    async fn maybe_compact_context(&mut self) {
+        let Some(ref config) = self.compaction_config else {
+            return;
+        };
+
+        if !self.token_tracker.should_compact(config.threshold) {
+            return;
+        }
+
+        tracing::info!(
+            "Starting context compaction - {} messages, {:.1}% of context limit",
+            self.context.message_count(),
+            self.token_tracker.usage_ratio() * 100.0
+        );
+
+        let _ = self
+            .agent_message_tx
+            .send(AgentMessage::ContextCompactionStarted {
+                message_count: self.context.message_count(),
+            })
+            .await;
+
+        let compactor = Compactor::new(self.llm.clone());
+
+        match compactor.compact(&self.context).await {
+            Ok(result) => {
+                tracing::info!(
+                    "Context compacted: {} messages removed",
+                    result.messages_removed
+                );
+
+                self.context = result.context;
+                self.token_tracker.reset_current_usage();
+
+                let _ = self
+                    .middleware
+                    .emit(AgentEvent::ContextCompactionResult {
+                        summary_length: result.summary.len(),
+                        messages_removed: result.messages_removed,
+                    })
+                    .await;
+
+                let _ = self
+                    .agent_message_tx
+                    .send(AgentMessage::ContextCompactionResult {
+                        summary: result.summary,
+                        messages_removed: result.messages_removed,
+                    })
+                    .await;
+            }
+            Err(e) => {
+                tracing::warn!("Context compaction failed: {}", e);
+            }
+        }
     }
 
     async fn on_tool_execution_event(

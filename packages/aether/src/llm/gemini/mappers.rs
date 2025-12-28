@@ -125,8 +125,14 @@ fn map_messages_to_contents(messages: &[ChatMessage]) -> (Option<Content>, Vec<C
                 };
                 pending_tool_results.push(part);
             }
-            ChatMessage::Error { .. } => {
-                // Skip error messages in the context
+            ChatMessage::Error { .. } => {}
+            ChatMessage::Summary { content, .. } => {
+                contents.push(Content {
+                    role: "user".to_string(),
+                    parts: vec![Part::Text {
+                        text: format!("[Previous conversation summary]\n\n{content}"),
+                    }],
+                });
             }
         }
     }

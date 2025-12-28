@@ -27,18 +27,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     print!("{chunk}");
                     io::stdout().flush().unwrap();
                 } else {
-                    println!("\n\n✓ Message complete");
+                    println!("\n\nMessage complete");
                 }
             }
             Some(ToolCall { request, .. }) => {
-                println!("🔧 Tool '{}' in progress", request.name);
+                println!("Tool '{}' in progress", request.name);
             }
             Some(ToolResult { result, .. }) => {
-                println!("🔧 Tool '{}' completed", result.name);
+                println!("Tool '{}' completed", result.name);
                 println!("   Result: {}", result.result);
             }
             Some(ToolError { error, .. }) => {
-                eprintln!("🔧 Tool '{}' failed: {}", error.name, error.error);
+                eprintln!("Tool '{}' failed: {}", error.name, error.error);
             }
             Some(ToolProgress {
                 request,
@@ -52,21 +52,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_default();
                 let total_str = total.map(|t| format!("/{t}")).unwrap_or_default();
                 println!(
-                    "🔧 Tool '{}' progress: {}{}{}",
+                    "Tool '{}' progress: {}{}{}",
                     request.name, msg, progress, total_str
                 );
             }
             Some(Done) => {
-                println!("✓ Agent finished processing");
+                println!("Agent finished processing");
                 break;
             }
             Some(Error { message }) => {
-                eprintln!("❌ Error: {message}");
+                eprintln!("Error: {message}");
                 break;
             }
             Some(Cancelled { .. }) => {
-                println!("⚠️  Processing cancelled");
+                println!("Processing cancelled");
                 break;
+            }
+            Some(ContextCompactionStarted { message_count }) => {
+                println!("Context compaction started: {} messages", message_count);
+            }
+            Some(ContextCompactionResult {
+                messages_removed, ..
+            }) => {
+                println!("Context compacted: {} messages removed", messages_removed);
             }
             None => {
                 println!("Channel closed");

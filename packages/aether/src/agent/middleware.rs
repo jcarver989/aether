@@ -25,6 +25,14 @@ pub enum AgentEvent {
         name: String,
         arguments: String,
     },
+
+    /// Context was compacted to reduce token usage
+    ContextCompactionResult {
+        /// Length of the generated summary in characters
+        summary_length: usize,
+        /// Number of messages that were removed/compacted
+        messages_removed: usize,
+    },
 }
 
 type HandlerFn = Box<dyn Fn(AgentEvent) -> BoxFuture<'static, MiddlewareAction> + Send + Sync>;

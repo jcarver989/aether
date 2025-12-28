@@ -214,6 +214,14 @@ async fn stream_agent_messages(
                     .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
                 break;
             }
+            AgentMessage::ContextCompactionStarted { message_count } => {
+                tracing::debug!("Context compaction started: {} messages", message_count);
+            }
+            AgentMessage::ContextCompactionResult {
+                messages_removed, ..
+            } => {
+                tracing::debug!("Context compacted: {} messages removed", messages_removed);
+            }
         }
     }
 

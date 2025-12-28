@@ -40,13 +40,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Some(ToolCall { request, .. }) => {
-                println!("\n🔧 Tool '{}' in progress", request.name);
+                println!("\nTool '{}' in progress", request.name);
             }
             Some(ToolResult { result, .. }) => {
-                println!("\n🔧 Tool '{}' completed successfully", result.name);
+                println!("\nTool '{}' completed successfully", result.name);
             }
             Some(ToolError { error, .. }) => {
-                eprintln!("\n🔧 Tool '{}' failed: {}", error.name, error.error);
+                eprintln!("\nTool '{}' failed: {}", error.name, error.error);
             }
             Some(ToolProgress {
                 request,
@@ -60,21 +60,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_default();
                 let total_str = total.map(|t| format!("/{t}")).unwrap_or_default();
                 println!(
-                    "\n🔧 Tool '{}' progress: {}{}{}",
+                    "\nTool '{}' progress: {}{}{}",
                     request.name, msg, progress, total_str
                 );
             }
             Some(Done) => {
-                println!("\n✓ Agent finished");
+                println!("\nAgent finished");
                 break;
             }
             Some(Error { message }) => {
-                eprintln!("❌ Error: {message}");
+                eprintln!("Error: {message}");
                 break;
             }
             Some(Cancelled { .. }) => {
-                println!("⚠️  Cancelled");
+                println!("Cancelled");
                 break;
+            }
+            Some(ContextCompactionStarted { message_count }) => {
+                println!("Context compaction started: {} messages", message_count);
+            }
+            Some(ContextCompactionResult {
+                messages_removed, ..
+            }) => {
+                println!("Context compacted: {} messages removed", messages_removed);
             }
             None => {
                 println!("Channel closed");

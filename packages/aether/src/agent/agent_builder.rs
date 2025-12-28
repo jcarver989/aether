@@ -1,10 +1,12 @@
 use crate::agent::Result;
 use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::agent::{Agent, AgentMessage, UserMessage};
+use crate::context::CompactionConfig;
 use crate::llm::{ChatMessage, Context, StreamingModelProvider, ToolDefinition};
 use crate::mcp::run_mcp_task::McpCommand;
 use crate::types::IsoString;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
@@ -22,6 +24,7 @@ pub struct AgentBuilder<T: StreamingModelProvider> {
     mcp_tx: Option<Sender<McpCommand>>,
     channel_capacity: usize,
     tool_timeout: Duration,
+    compaction_config: Option<CompactionConfig>,
 }
 
 impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
@@ -34,6 +37,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             mcp_tx: None,
             channel_capacity: 1000,
             tool_timeout: Duration::from_secs(60 * 10),
+            compaction_config: Some(CompactionConfig::default()),
         }
     }
 
@@ -90,6 +94,31 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         self
     }
 
+    /// Configure context compaction settings.
+    ///
+    /// By default, agents automatically compact context when token usage exceeds
+    /// 85% of the context window, preventing overflow during long-running tasks.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Custom threshold
+    /// agent(llm).compaction(CompactionConfig::with_threshold(0.9))
+    ///
+    /// // Disable compaction entirely
+    /// agent(llm).compaction(CompactionConfig::disabled())
+    ///
+    /// // Full customization
+    /// agent(llm).compaction(
+    ///     CompactionConfig::with_threshold(0.85)
+    ///         .keep_recent_tool_results(3)
+    ///         .min_messages(20)
+    /// )
+    /// ```
+    pub fn compaction(mut self, config: CompactionConfig) -> Self {
+        self.compaction_config = Some(config);
+        self
+    }
+
     pub async fn spawn(self) -> Result<(Sender<UserMessage>, Receiver<AgentMessage>, AgentHandle)> {
         let mut messages = Vec::new();
         if let Some(content) = self.system_prompt {
@@ -108,13 +137,14 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         let context = Context::new(messages, self.tool_definitions);
 
         let agent = Agent::new(
-            self.llm,
+            Arc::new(self.llm),
             context,
             self.mcp_tx,
             user_message_rx,
             agent_message_tx,
             self.middleware,
             self.tool_timeout,
+            self.compaction_config,
         );
 
         let agent_handle = tokio::spawn(agent.run());

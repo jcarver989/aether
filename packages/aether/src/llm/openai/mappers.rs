@@ -68,7 +68,12 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
                     },
                 ))
             }
-
+            ChatMessage::Summary { content, .. } => Some(ChatCompletionRequestMessage::User(
+                ChatCompletionRequestUserMessage {
+                    content: format!("[Previous conversation summary]\n\n{content}").into(),
+                    name: None,
+                },
+            )),
             ChatMessage::Error { .. } => None,
         }
     }

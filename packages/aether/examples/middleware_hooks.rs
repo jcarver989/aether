@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 AgentEvent::ToolCall {
                     name, arguments, ..
                 } => {
-                    println!("🔧 Tool called: {name}");
+                    println!("Tool called: {name}");
                     println!("   Arguments: {arguments}");
                     run_command(&format!(
                         "echo '[TOOL] {name} with args {arguments}' >> conversation.log"
@@ -36,9 +36,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .await;
 
                     if name == "rm" || name == "delete" {
-                        println!("❌ Blocked dangerous tool: {name}");
+                        println!("Blocked dangerous tool: {name}");
                         return MiddlewareAction::Block;
                     }
+                }
+                AgentEvent::ContextCompactionResult {
+                    messages_removed, ..
+                } => {
+                    println!("Context compacted: {messages_removed} messages");
                 }
             }
             MiddlewareAction::Allow
