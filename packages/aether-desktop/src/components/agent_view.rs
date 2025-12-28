@@ -217,7 +217,6 @@ pub fn AgentView(agent_id: String) -> Element {
         let mut autocomplete_state = autocomplete_state;
         let commands = available_commands.clone();
         let mut input_val = input_val;
-        let file_matches = file_matches;
         let mut pending_files = pending_files;
 
         move |e: KeyboardEvent| {

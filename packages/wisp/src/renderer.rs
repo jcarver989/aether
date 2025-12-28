@@ -101,7 +101,6 @@ impl<W: Write> Renderer<W> {
                     if let Err(e) = tx
                         .send(UserMessage::Text {
                             content: user_input,
-                            attachments: Vec::new(),
                         })
                         .await
                     {
