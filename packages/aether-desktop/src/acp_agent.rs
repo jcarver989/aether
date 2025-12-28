@@ -600,15 +600,11 @@ fn compute_diff_state(cwd: &Path) -> DiffState {
     match compute_diff(cwd) {
         Ok(files) => DiffState {
             files,
-            selected_file: None,
-            loading: false,
-            error: None,
+            ..Default::default()
         },
         Err(e) => DiffState {
-            files: Vec::new(),
-            selected_file: None,
-            loading: false,
             error: Some(e.to_string()),
+            ..Default::default()
         },
     }
 }

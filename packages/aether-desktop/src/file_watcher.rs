@@ -113,7 +113,10 @@ impl FileWatcher {
 /// Filters out `.git` directories and common temporary file patterns.
 fn is_relevant_path(path: &Path) -> bool {
     // Skip .git directory
-    if path.components().any(|c| c.as_os_str() == OsStr::new(".git")) {
+    if path
+        .components()
+        .any(|c| c.as_os_str() == OsStr::new(".git"))
+    {
         return false;
     }
 
@@ -206,7 +209,11 @@ mod tests {
         }
 
         // Debouncing should limit the number of events
-        assert!(event_count <= 2, "Expected <= 2 events but got {}", event_count);
+        assert!(
+            event_count <= 2,
+            "Expected <= 2 events but got {}",
+            event_count
+        );
     }
 
     #[test]

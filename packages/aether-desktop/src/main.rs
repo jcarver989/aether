@@ -27,6 +27,18 @@ const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 pub static AGENTS: GlobalSignal<Vec<AgentSession>> = Signal::global(Vec::new);
 pub static HANDLES: GlobalSignal<AgentHandles> = Signal::global(AgentHandles::new);
 
+/// Helper to mutate an agent by ID. Reduces boilerplate for the common pattern of
+/// acquiring a write lock, finding the agent, and mutating it.
+pub fn with_agent_mut<F>(agent_id: &str, f: F)
+where
+    F: FnOnce(&mut AgentSession),
+{
+    let mut list = AGENTS.write();
+    if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
+        f(agent);
+    }
+}
+
 fn main() {
     // Use dioxus's built-in logger which integrates with the CLI
     // Set to INFO to filter out dioxus virtualdom debug spam

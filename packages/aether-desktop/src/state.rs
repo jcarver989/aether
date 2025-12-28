@@ -250,6 +250,55 @@ pub enum FileStatus {
     Renamed,
 }
 
+// ============================================================================
+// Comment Types
+// ============================================================================
+
+/// Unique key for identifying a comment location.
+/// Tuple of (file_path, line_number).
+pub type CommentKey = (String, u32);
+
+/// A comment on a diff line.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct DiffComment {
+    /// Path to the file being commented on
+    pub file_path: String,
+    /// Line number in the new version (or old version for deletions)
+    pub line_number: u32,
+    /// The type of line being commented on
+    pub line_origin: LineOrigin,
+    /// The content of the comment
+    pub content: String,
+    /// The original line content for context
+    pub line_content: String,
+    /// Timestamp when the comment was created
+    pub created_at: String,
+}
+
+impl DiffComment {
+    pub fn new(
+        file_path: String,
+        line_number: u32,
+        line_origin: LineOrigin,
+        content: String,
+        line_content: String,
+    ) -> Self {
+        Self {
+            file_path,
+            line_number,
+            line_origin,
+            content,
+            line_content,
+            created_at: now_iso(),
+        }
+    }
+
+    /// Returns the comment key for this comment.
+    pub fn key(&self) -> CommentKey {
+        (self.file_path.clone(), self.line_number)
+    }
+}
+
 /// Origin/type of a diff line.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LineOrigin {
@@ -293,4 +342,264 @@ pub struct DiffState {
     pub selected_file: Option<String>,
     pub loading: bool,
     pub error: Option<String>,
+    /// Comments on diff lines, keyed by (file_path, line_number)
+    pub comments: HashMap<CommentKey, DiffComment>,
+}
+
+impl DiffState {
+    /// Add a comment to the diff.
+    pub fn add_comment(&mut self, comment: DiffComment) {
+        let key = comment.key();
+        self.comments.insert(key, comment);
+    }
+
+    /// Remove a comment from the diff.
+    pub fn remove_comment(&mut self, key: &CommentKey) {
+        self.comments.remove(key);
+    }
+
+    /// Update a comment's content in place. Returns true if the comment was found and updated.
+    pub fn update_comment(&mut self, key: &CommentKey, new_content: String) -> bool {
+        if let Some(comment) = self.comments.get_mut(key) {
+            comment.content = new_content;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Clear all comments from the diff.
+    pub fn clear_comments(&mut self) {
+        self.comments.clear();
+    }
+
+    /// Get comments for a specific file.
+    pub fn comments_for_file(&self, file_path: &str) -> Vec<&DiffComment> {
+        self.comments
+            .values()
+            .filter(|c| c.file_path == file_path)
+            .collect()
+    }
+
+    /// Generate a prompt from all comments.
+    ///
+    /// Groups comments by file and formats them in a way that's
+    /// easy for an agent to understand and act on.
+    pub fn generate_prompt(&self) -> String {
+        generate_comments_prompt(&self.comments)
+    }
+}
+
+/// Generate a prompt from a collection of comments.
+///
+/// Groups comments by file and formats them in a way that's
+/// easy for an agent to understand and act on.
+pub fn generate_comments_prompt(comments: &HashMap<CommentKey, DiffComment>) -> String {
+    if comments.is_empty() {
+        return String::new();
+    }
+
+    // Group comments by file
+    let mut by_file: HashMap<&str, Vec<&DiffComment>> = HashMap::new();
+    for comment in comments.values() {
+        by_file.entry(&comment.file_path).or_default().push(comment);
+    }
+
+    // Sort files for consistent ordering
+    let mut files: Vec<_> = by_file.keys().cloned().collect();
+    files.sort();
+
+    let mut prompt = String::from("Please make the following changes:\n\n");
+    let mut index = 1;
+
+    for file_path in files {
+        let Some(comments) = by_file.get_mut(file_path) else {
+            continue;
+        };
+        // Sort comments by line number
+        comments.sort_by_key(|c| c.line_number);
+
+        for comment in comments.iter() {
+            let origin_marker = match comment.line_origin {
+                LineOrigin::Addition => "+",
+                LineOrigin::Deletion => "-",
+                LineOrigin::Context => " ",
+            };
+            let line_content = comment.line_content.trim();
+
+            prompt.push_str(&format!(
+                "{}. In `{}` at line {}:\n",
+                index, comment.file_path, comment.line_number
+            ));
+            prompt.push_str(&format!("   > {}{}\n", origin_marker, line_content));
+            prompt.push_str(&format!("   Comment: {}\n\n", comment.content));
+            index += 1;
+        }
+    }
+
+    prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_comment(file_path: &str, line_number: u32, content: &str) -> DiffComment {
+        DiffComment {
+            file_path: file_path.to_string(),
+            line_number,
+            line_origin: LineOrigin::Addition,
+            content: content.to_string(),
+            line_content: format!("let x = {};", line_number),
+            created_at: "2025-01-01T00:00:00.000Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_add_comment() {
+        let mut state = DiffState::default();
+        let comment = make_comment("src/main.rs", 42, "This needs a type annotation");
+
+        state.add_comment(comment.clone());
+
+        assert_eq!(state.comments.len(), 1);
+        let key = ("src/main.rs".to_string(), 42);
+        assert!(state.comments.contains_key(&key));
+        assert_eq!(
+            state.comments.get(&key).unwrap().content,
+            "This needs a type annotation"
+        );
+    }
+
+    #[test]
+    fn test_remove_comment() {
+        let mut state = DiffState::default();
+        let comment = make_comment("src/main.rs", 42, "Remove this");
+
+        state.add_comment(comment);
+        assert_eq!(state.comments.len(), 1);
+
+        let key = ("src/main.rs".to_string(), 42);
+        state.remove_comment(&key);
+
+        assert!(state.comments.is_empty());
+    }
+
+    #[test]
+    fn test_clear_comments() {
+        let mut state = DiffState::default();
+        state.add_comment(make_comment("src/main.rs", 10, "Comment 1"));
+        state.add_comment(make_comment("src/main.rs", 20, "Comment 2"));
+        state.add_comment(make_comment("src/lib.rs", 5, "Comment 3"));
+
+        assert_eq!(state.comments.len(), 3);
+
+        state.clear_comments();
+
+        assert!(state.comments.is_empty());
+    }
+
+    #[test]
+    fn test_comments_for_file() {
+        let mut state = DiffState::default();
+        state.add_comment(make_comment("src/main.rs", 10, "Main comment 1"));
+        state.add_comment(make_comment("src/main.rs", 20, "Main comment 2"));
+        state.add_comment(make_comment("src/lib.rs", 5, "Lib comment"));
+
+        let main_comments = state.comments_for_file("src/main.rs");
+        assert_eq!(main_comments.len(), 2);
+
+        let lib_comments = state.comments_for_file("src/lib.rs");
+        assert_eq!(lib_comments.len(), 1);
+
+        let other_comments = state.comments_for_file("src/other.rs");
+        assert!(other_comments.is_empty());
+    }
+
+    #[test]
+    fn test_generate_prompt_empty() {
+        let state = DiffState::default();
+        let prompt = state.generate_prompt();
+        assert!(prompt.is_empty());
+    }
+
+    #[test]
+    fn test_generate_prompt_single_comment() {
+        let mut state = DiffState::default();
+        state.add_comment(make_comment("src/main.rs", 42, "Add error handling"));
+
+        let prompt = state.generate_prompt();
+
+        assert!(prompt.contains("Please make the following changes:"));
+        assert!(prompt.contains("1. In `src/main.rs` at line 42:"));
+        assert!(prompt.contains("Comment: Add error handling"));
+    }
+
+    #[test]
+    fn test_generate_prompt_multiple_files() {
+        let mut state = DiffState::default();
+        state.add_comment(make_comment("src/main.rs", 10, "Fix main"));
+        state.add_comment(make_comment("src/lib.rs", 5, "Fix lib"));
+        state.add_comment(make_comment("src/main.rs", 20, "Another main fix"));
+
+        let prompt = state.generate_prompt();
+
+        // Should contain all comments
+        assert!(prompt.contains("Fix main"));
+        assert!(prompt.contains("Fix lib"));
+        assert!(prompt.contains("Another main fix"));
+
+        // Comments should be grouped by file and sorted
+        // lib.rs comes before main.rs alphabetically
+        let lib_pos = prompt.find("src/lib.rs").unwrap();
+        let main_pos = prompt.find("src/main.rs").unwrap();
+        assert!(lib_pos < main_pos);
+    }
+
+    #[test]
+    fn test_comment_key_uniqueness() {
+        let mut state = DiffState::default();
+        state.add_comment(make_comment("src/main.rs", 42, "First comment"));
+        state.add_comment(make_comment("src/main.rs", 42, "Second comment"));
+
+        // Same key overwrites the previous comment
+        assert_eq!(state.comments.len(), 1);
+        let key = ("src/main.rs".to_string(), 42);
+        assert_eq!(state.comments.get(&key).unwrap().content, "Second comment");
+    }
+
+    #[test]
+    fn test_diff_comment_key() {
+        let comment = make_comment("src/foo.rs", 100, "Test");
+        let key = comment.key();
+
+        assert_eq!(key.0, "src/foo.rs");
+        assert_eq!(key.1, 100);
+    }
+
+    #[test]
+    fn test_update_comment() {
+        let mut state = DiffState::default();
+        state.add_comment(make_comment("src/main.rs", 42, "Original content"));
+
+        let key = ("src/main.rs".to_string(), 42);
+        let updated = state.update_comment(&key, "Updated content".to_string());
+
+        assert!(updated);
+        assert_eq!(state.comments.get(&key).unwrap().content, "Updated content");
+    }
+
+    #[test]
+    fn test_update_comment_missing_key() {
+        let mut state = DiffState::default();
+        state.add_comment(make_comment("src/main.rs", 42, "Some content"));
+
+        let missing_key = ("src/other.rs".to_string(), 99);
+        let updated = state.update_comment(&missing_key, "New content".to_string());
+
+        assert!(!updated);
+        // Original comment should be unchanged
+        let key = ("src/main.rs".to_string(), 42);
+        assert_eq!(state.comments.get(&key).unwrap().content, "Some content");
+    }
 }
