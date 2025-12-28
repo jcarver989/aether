@@ -79,22 +79,39 @@ impl PendingResponse {
     /// Send an error to the appropriate typed channel
     fn send_error(self, err: LspError) {
         match self {
-            Self::Initialize(tx) => { let _ = tx.send(Err(err)); }
-            Self::Shutdown(tx) => { let _ = tx.send(Err(err)); }
-            Self::GotoDefinition(tx) => { let _ = tx.send(Err(err)); }
-            Self::FindReferences(tx) => { let _ = tx.send(Err(err)); }
-            Self::Hover(tx) => { let _ = tx.send(Err(err)); }
-            Self::WorkspaceSymbol(tx) => { let _ = tx.send(Err(err)); }
+            Self::Initialize(tx) => {
+                let _ = tx.send(Err(err));
+            }
+            Self::Shutdown(tx) => {
+                let _ = tx.send(Err(err));
+            }
+            Self::GotoDefinition(tx) => {
+                let _ = tx.send(Err(err));
+            }
+            Self::FindReferences(tx) => {
+                let _ = tx.send(Err(err));
+            }
+            Self::Hover(tx) => {
+                let _ = tx.send(Err(err));
+            }
+            Self::WorkspaceSymbol(tx) => {
+                let _ = tx.send(Err(err));
+            }
         }
     }
 
     /// Send a successful response to the appropriate typed channel
     fn send_response(self, value: Value) {
         match self {
-            Self::Initialize(tx) => { let _ = tx.send(Ok(())); }
-            Self::Shutdown(tx) => { let _ = tx.send(Ok(())); }
+            Self::Initialize(tx) => {
+                let _ = tx.send(Ok(()));
+            }
+            Self::Shutdown(tx) => {
+                let _ = tx.send(Ok(()));
+            }
             Self::GotoDefinition(tx) => {
-                let result = parse_lsp_response(value, GotoDefinitionResponse::Array(vec![]), "definition");
+                let result =
+                    parse_lsp_response(value, GotoDefinitionResponse::Array(vec![]), "definition");
                 let _ = tx.send(result);
             }
             Self::FindReferences(tx) => {
@@ -108,7 +125,12 @@ impl PendingResponse {
                 } else {
                     serde_json::from_value::<Hover>(value)
                         .map(Some)
-                        .map_err(|e| LspError::InvalidMessage(format!("Failed to parse hover response: {}", e)))
+                        .map_err(|e| {
+                            LspError::InvalidMessage(format!(
+                                "Failed to parse hover response: {}",
+                                e
+                            ))
+                        })
                 };
                 let _ = tx.send(result);
             }
@@ -129,8 +151,9 @@ fn parse_lsp_response<T: serde::de::DeserializeOwned>(
     if value.is_null() {
         Ok(null_default)
     } else {
-        serde_json::from_value(value)
-            .map_err(|e| LspError::InvalidMessage(format!("Failed to parse {} response: {}", type_name, e)))
+        serde_json::from_value(value).map_err(|e| {
+            LspError::InvalidMessage(format!("Failed to parse {} response: {}", type_name, e))
+        })
     }
 }
 
@@ -640,10 +663,10 @@ fn is_filtered_stderr(line: &str) -> bool {
     }
 
     // Filter other non-critical warnings
-    if lower.contains("warn") && (
-        lower.contains("application support") ||
-        lower.contains("config") && lower.contains("not found")
-    ) {
+    if lower.contains("warn")
+        && (lower.contains("application support")
+            || lower.contains("config") && lower.contains("not found"))
+    {
         return true;
     }
 
@@ -688,14 +711,21 @@ mod tests {
     fn test_is_filtered_stderr_filters_notify_error() {
         // The exact message from rust-analyzer about missing config
         let msg = "2025-12-27T13:30:41.405378-08:00  WARN notify error: No path was found. about [\"/Users/jj/Library/Application Support/rust-analyzer/rust-analyzer.toml\"]";
-        assert!(is_filtered_stderr(msg), "Should filter rust-analyzer notify error");
+        assert!(
+            is_filtered_stderr(msg),
+            "Should filter rust-analyzer notify error"
+        );
     }
 
     #[test]
     fn test_is_filtered_stderr_filters_config_warnings() {
         // Config-related warnings with "application support"
-        assert!(is_filtered_stderr("WARN: Config file not found at /Users/foo/Library/Application Support/rust-analyzer/config.toml"));
-        assert!(is_filtered_stderr("WARN: application support directory missing"));
+        assert!(is_filtered_stderr(
+            "WARN: Config file not found at /Users/foo/Library/Application Support/rust-analyzer/config.toml"
+        ));
+        assert!(is_filtered_stderr(
+            "WARN: application support directory missing"
+        ));
         // Note: simple "config not found" warnings are not filtered - only specific patterns
     }
 

@@ -2,12 +2,12 @@
 
 mod http_client;
 
-pub use http_client::{
-    HttpClient, HttpResponse, ReqwestClient, WebFetchInput, WebFetchOutput, DEFAULT_TIMEOUT_MS,
-    MAX_CONTENT_LENGTH, MAX_TIMEOUT_MS,
-};
 #[cfg(test)]
 pub use http_client::FakeHttpClient;
+pub use http_client::{
+    DEFAULT_TIMEOUT_MS, HttpClient, HttpResponse, MAX_CONTENT_LENGTH, MAX_TIMEOUT_MS,
+    ReqwestClient, WebFetchInput, WebFetchOutput,
+};
 
 use htmd::convert;
 use reqwest::Url;

@@ -9,11 +9,11 @@ use rmcp::{
     tool, tool_handler, tool_router,
 };
 use std::path::PathBuf;
-use tokio::sync::{Mutex, RwLock};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
 };
+use tokio::sync::{Mutex, RwLock};
 
 // Submodules - import types from their source modules directly
 pub mod default_tools;
@@ -45,12 +45,14 @@ use tools::edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
 use tools::find::{FindInput, FindOutput, find_files_by_name};
 use tools::grep::{GrepInput, GrepOutput, perform_grep};
 use tools::list_files::{ListFilesArgs, ListFilesResult, list_files};
-use tools::lsp::check_errors::{LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics};
-use tools::lsp::find_usages::{
-    LspFindReferencesInput, LspFindReferencesOutput, execute_lsp_find_references,
+use tools::lsp::check_errors::{
+    LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
 };
 use tools::lsp::find_definition::{
     LspGotoDefinitionInput, LspGotoDefinitionOutput, execute_lsp_goto_definition,
+};
+use tools::lsp::find_usages::{
+    LspFindReferencesInput, LspFindReferencesOutput, execute_lsp_find_references,
 };
 use tools::lsp::get_type_info::{LspHoverInput, LspHoverOutput, execute_lsp_hover};
 use tools::lsp::search_symbols::{

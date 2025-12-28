@@ -267,7 +267,10 @@ mod tests {
     #[test]
     fn test_uri_to_path() {
         // Unix-style path
-        assert_eq!(uri_to_path(&make_uri("/path/to/file.rs")), "/path/to/file.rs");
+        assert_eq!(
+            uri_to_path(&make_uri("/path/to/file.rs")),
+            "/path/to/file.rs"
+        );
 
         // Non-file URI
         let non_file_uri: Uri = "https://example.com/file.rs".parse().unwrap();
