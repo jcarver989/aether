@@ -1,10 +1,11 @@
 use std::error::Error;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::future::join_all;
 
 use crate::agent::{AgentMessage, UserMessage, agent};
-use crate::llm::LlmResponse;
+use crate::llm::{Context, LlmResponse};
 use crate::mcp::mcp;
 use crate::testing::FakeMcpServer;
 use crate::testing::fake_mcp::fake_mcp;
@@ -13,6 +14,12 @@ use super::FakeLlmProvider;
 
 pub fn test_agent() -> TestAgentBuilder {
     TestAgentBuilder::new()
+}
+
+/// Result of running a test agent, including messages and captured contexts.
+pub struct TestAgentResult {
+    pub messages: Vec<AgentMessage>,
+    pub captured_contexts: Arc<Mutex<Vec<Context>>>,
 }
 
 pub struct TestAgentBuilder {
@@ -52,7 +59,17 @@ impl TestAgentBuilder {
     }
 
     pub async fn run(self) -> Result<Vec<AgentMessage>, Box<dyn Error>> {
+        let result = self.run_with_context().await?;
+        Ok(result.messages)
+    }
+
+    /// Runs the test agent and returns both messages and captured contexts.
+    ///
+    /// Use this when you need to verify what context was passed to the LLM,
+    /// for example when testing that file attachments are properly formatted.
+    pub async fn run_with_context(self) -> Result<TestAgentResult, Box<dyn Error>> {
         let llm = FakeLlmProvider::new(self.responses);
+        let captured_contexts = llm.captured_contexts();
 
         let (tool_definitions, mcp_tx, _mcp_handle) = mcp()
             .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
@@ -78,6 +95,9 @@ impl TestAgentBuilder {
             }
         }
 
-        Ok(messages)
+        Ok(TestAgentResult {
+            messages,
+            captured_contexts,
+        })
     }
 }

@@ -76,8 +76,12 @@ impl acp::Agent for SessionManager {
             agent_capabilities: acp::AgentCapabilities {
                 // We don't support loading sessions initially
                 load_session: false,
-                // Default prompt and MCP capabilities
-                prompt_capabilities: Default::default(),
+                prompt_capabilities: acp::PromptCapabilities {
+                    embedded_context: true,
+                    image: false,
+                    audio: false,
+                    meta: None,
+                },
                 mcp_capabilities: Default::default(),
                 meta: None,
             },

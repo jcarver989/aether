@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use aether::{
     agent::{AgentMessage, UserMessage},
+    llm::ChatMessage,
     testing::{
         agent_message, llm_response, test_agent,
         {AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, SlowToolRequest},
@@ -189,6 +190,37 @@ async fn test_tool_timeout() -> Result<(), Box<dyn Error>> {
         has_tool_error,
         "Expected a ToolError with timeout message, got: {messages:?}"
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_simple_message_content() -> Result<(), Box<dyn Error>> {
+    let (id, chunks) = ("message_1", ["Hello"]);
+    let llm_responses = [llm_response(id).text(&chunks).build()];
+
+    let result = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("Just a simple message")])
+        .run_with_context()
+        .await?;
+
+    let contexts = result.captured_contexts.lock().unwrap();
+    let first_context = &contexts[0];
+    let messages = first_context.messages();
+
+    let user_message = messages
+        .iter()
+        .find(|m| matches!(m, ChatMessage::User { .. }))
+        .expect("Expected a user message");
+
+    let content = match user_message {
+        ChatMessage::User { content, .. } => content,
+        _ => panic!("Expected User message"),
+    };
+
+    // Content should be exactly the user's message
+    assert_eq!(content, "Just a simple message");
 
     Ok(())
 }

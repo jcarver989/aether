@@ -16,7 +16,6 @@ use thiserror::Error;
 /// - `SendError` (agent communication)
 #[derive(Debug, Error)]
 pub enum AetherDesktopError {
-    // Agent Spawn Errors
     #[error("Failed to parse provider: {0}")]
     ProviderParse(String),
 
@@ -69,6 +68,9 @@ pub enum AetherDesktopError {
 
     #[error("Agent channel closed")]
     SendChannelClosed,
+
+    #[error("File search error: {0}")]
+    FileSearch(String),
 }
 
 impl From<git2::Error> for AetherDesktopError {

@@ -82,11 +82,6 @@ impl FileWatcher {
 
         Ok(())
     }
-
-    /// Get the path being watched.
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
 }
 
 /// Check if a path should trigger a file watch event.

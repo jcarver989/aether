@@ -4,8 +4,8 @@ use crate::error::AetherDesktopError;
 use crate::file_watcher::{FileWatchEvent, FileWatcher};
 use crate::state::{AgentStatus, DiffState, TerminalStream};
 use agent_client_protocol::{
-    Agent, AvailableCommand, ClientSideConnection, ContentBlock, InitializeRequest,
-    NewSessionRequest, NewSessionResponse, PromptRequest, RequestPermissionRequest,
+    Agent, AgentCapabilities, AvailableCommand, ClientSideConnection, ContentBlock,
+    InitializeRequest, NewSessionRequest, PromptRequest, RequestPermissionRequest,
     RequestPermissionResponse, SessionId, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus,
     ToolCallUpdateFields, VERSION,
 };
@@ -24,6 +24,17 @@ use tokio_stream::{StreamExt, StreamMap};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, error, info, warn};
 
+/// Information returned from session initialization.
+///
+/// Contains both the session ID and agent capabilities needed by the client.
+#[derive(Debug, Clone)]
+pub struct SessionInfo {
+    /// ACP session ID for protocol communication
+    pub session_id: SessionId,
+    /// Agent capabilities returned from initialization
+    pub agent_capabilities: AgentCapabilities,
+}
+
 /// Runtime handle for an agent process.
 ///
 /// Owns the child process, background thread, and command channel.
@@ -33,6 +44,8 @@ pub struct AgentHandle {
     pub id: String,
     /// ACP session ID - used for protocol communication with child process
     pub acp_session_id: SessionId,
+    /// Agent capabilities returned from initialization
+    pub agent_capabilities: AgentCapabilities,
     /// Background thread running the agent (kept for cleanup)
     #[allow(dead_code)]
     thread: JoinHandle<()>,
@@ -86,13 +99,14 @@ impl AgentHandle {
         });
 
         // Await initialization (non-blocking)
-        let acp_session_id = init_rx.await.map_err(|_| {
+        let session_info = init_rx.await.map_err(|_| {
             AetherDesktopError::ActorInit("Agent thread terminated during init".into())
         })??;
 
         Ok(Self {
             id: agent_id,
-            acp_session_id,
+            acp_session_id: session_info.session_id,
+            agent_capabilities: session_info.agent_capabilities,
             thread,
             cmd_tx,
             ready_tx: Some(ready_tx),
@@ -100,11 +114,16 @@ impl AgentHandle {
     }
 
     /// Send a prompt to the agent.
-    pub fn send_prompt(&self, message: String) -> Result<(), AetherDesktopError> {
+    ///
+    /// The prompt is a vector of ContentBlocks which can include:
+    /// - `ContentBlock::Text` for the user's message
+    /// - `ContentBlock::Resource` for embedded file contents (if agent supports embedded_context)
+    /// - `ContentBlock::ResourceLink` for file references (fallback when embedded_context not supported)
+    pub fn send_prompt(&self, prompt: Vec<ContentBlock>) -> Result<(), AetherDesktopError> {
         self.cmd_tx
             .send(AgentCommand::Prompt {
                 acp_session_id: self.acp_session_id.clone(),
-                message,
+                prompt,
             })
             .map_err(|_| AetherDesktopError::SendChannelClosed)
     }
@@ -213,21 +232,21 @@ impl AgentEvent {
 pub enum AgentCommand {
     Prompt {
         acp_session_id: SessionId,
-        message: String,
+        prompt: Vec<ContentBlock>,
     },
 }
 
 async fn start_session(
     conn: &ClientSideConnection,
     cwd: PathBuf,
-) -> Result<NewSessionResponse, AetherDesktopError> {
+) -> Result<SessionInfo, AetherDesktopError> {
     let init_req = InitializeRequest {
         protocol_version: VERSION,
         client_capabilities: AcpClient::capabilities(),
         meta: None,
     };
 
-    let _ = conn
+    let init_response = conn
         .initialize(init_req)
         .await
         .map_err(|e| AetherDesktopError::ActorInit(e.to_string()))?;
@@ -238,12 +257,15 @@ async fn start_session(
         meta: None,
     };
 
-    let result = conn
+    let session_response = conn
         .new_session(session_req)
         .await
         .map_err(|e| AetherDesktopError::ActorSession(e.to_string()))?;
 
-    Ok(result)
+    Ok(SessionInfo {
+        session_id: session_response.session_id,
+        agent_capabilities: init_response.agent_capabilities,
+    })
 }
 
 /// Internal event types for the StreamMap
@@ -259,14 +281,14 @@ type EventStream = Pin<Box<dyn Stream<Item = LoopEvent> + Send>>;
 
 /// Main agent loop running on a dedicated thread.
 ///
-/// Handles initialization, sends acp_session_id back via init_tx, then runs the event loop.
+/// Handles initialization, sends session info back via init_tx, then runs the event loop.
 async fn run_agent(
     agent_id: String,
     cmd: String,
     cwd: PathBuf,
     cmd_rx: mpsc::UnboundedReceiver<AgentCommand>,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
-    init_tx: oneshot::Sender<Result<SessionId, AetherDesktopError>>,
+    init_tx: oneshot::Sender<Result<SessionInfo, AetherDesktopError>>,
     ready_rx: oneshot::Receiver<()>,
 ) {
     // Separate channel for raw events from AcpClient
@@ -297,17 +319,15 @@ async fn run_agent(
         }
     });
 
-    let session = match start_session(&conn, cwd.clone()).await {
-        Ok(session) => session,
+    let session_info = match start_session(&conn, cwd.clone()).await {
+        Ok(info) => info,
         Err(e) => {
             let _ = init_tx.send(Err(e));
             return;
         }
     };
-    let acp_session_id = session.session_id.clone();
 
-    // Send acp_session_id back to spawner so it can return
-    if init_tx.send(Ok(acp_session_id.clone())).is_err() {
+    if init_tx.send(Ok(session_info)).is_err() {
         // Spawner dropped, no point continuing
         return;
     }
@@ -355,7 +375,7 @@ async fn run_agent(
         match event {
             LoopEvent::Command(AgentCommand::Prompt {
                 acp_session_id: prompt_acp_session_id,
-                message,
+                prompt,
             }) => {
                 // Spawn prompt as a stream so it doesn't block other events
                 let conn = Rc::clone(&conn);
@@ -365,7 +385,7 @@ async fn run_agent(
                     let response = conn
                         .prompt(PromptRequest {
                             session_id: prompt_acp_session_id,
-                            prompt: vec![ContentBlock::from(message)],
+                            prompt,
                             meta: None,
                         })
                         .await;
