@@ -6,8 +6,8 @@ use crate::state::{AgentStatus, DiffState, TerminalStream};
 use agent_client_protocol::{
     Agent, AgentCapabilities, AvailableCommand, ClientSideConnection, ContentBlock,
     InitializeRequest, NewSessionRequest, PromptRequest, RequestPermissionRequest,
-    RequestPermissionResponse, SessionId, SessionUpdate, ToolCall, ToolCallContent,
-    ToolCallStatus, ToolCallUpdateFields, VERSION,
+    RequestPermissionResponse, SessionId, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus,
+    ToolCallUpdateFields, VERSION,
 };
 use futures::Stream;
 use std::path::{Path, PathBuf};
