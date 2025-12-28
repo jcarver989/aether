@@ -111,11 +111,7 @@ pub fn FilePill(
     on_remove: EventHandler<()>,
 ) -> Element {
     // Get just the filename for compact display
-    let filename = file
-        .path
-        .rsplit('/')
-        .next()
-        .unwrap_or(&file.path);
+    let filename = file.path.rsplit('/').next().unwrap_or(&file.path);
 
     rsx! {
         div {

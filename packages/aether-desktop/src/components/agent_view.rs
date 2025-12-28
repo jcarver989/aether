@@ -2,15 +2,18 @@
 //!
 //! Displays the chat interface for a single agent session.
 
+use std::path::Path;
 use std::sync::{Arc, LazyLock};
 
+use agent_client_protocol::{
+    ContentBlock, EmbeddedResource, EmbeddedResourceResource, ResourceLink, TextResourceContents,
+};
 use dioxus::prelude::*;
 use regex::Regex;
 use tokio::sync::Mutex;
 
 /// Matches `@query` at start of string or after whitespace, capturing the query.
-static FILE_MENTION_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?:^|\s)@(\S*)$").unwrap());
+static FILE_MENTION_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:^|\s)@(\S*)$").unwrap());
 
 use crate::file_search::{FileMatch, FileSearcher};
 use crate::state::{
@@ -113,32 +116,31 @@ pub fn AgentView(agent_id: String) -> Element {
             input_val.set(String::new());
             pending_files.write().clear();
 
-            // Spawn async task to read files and send message
             let agent_id = agent_id.clone();
             spawn(async move {
-                // Build the message content with file mentions (async file reading)
-                let full_content = if files.is_empty() {
-                    content
-                } else {
-                    let mut file_context = String::new();
-                    for file in &files {
+                let supports_embedded = HANDLES.read().supports_embedded_context(&agent_id);
+                let mut prompt: Vec<ContentBlock> = Vec::new();
+
+                for file in &files {
+                    if supports_embedded {
                         match tokio::fs::read_to_string(&file.absolute_path).await {
                             Ok(file_content) => {
-                                file_context.push_str(&format!(
-                                    "<file path=\"{}\">\n{}\n</file>\n\n",
-                                    file.path, file_content
-                                ));
+                                prompt.push(file_to_embedded_resource(file, &file_content));
                             }
                             Err(e) => {
                                 tracing::warn!("Failed to read file {}: {}", file.path, e);
                             }
                         }
+                    } else {
+                        prompt.push(file_to_resource_link(file));
                     }
-                    format!("{}{}", file_context, content)
-                };
+                }
 
-                // Send via handles (separate from UI state)
-                if let Err(e) = HANDLES.read().send_prompt(&agent_id, full_content) {
+                if !content.trim().is_empty() {
+                    prompt.push(ContentBlock::from(content));
+                }
+
+                if let Err(e) = HANDLES.read().send_prompt(&agent_id, prompt) {
                     tracing::error!("Failed to send message: {}", e);
                     with_agent_mut(&agent_id, |agent| {
                         agent.status = AgentStatus::Error(e.to_string());
@@ -165,7 +167,12 @@ pub fn AgentView(agent_id: String) -> Element {
         let mut autocomplete_state = autocomplete_state;
         let mut pending_files = pending_files;
         move |file: FileMatch| {
-            add_file_to_pending(file, &mut pending_files, &mut input_val, &mut autocomplete_state);
+            add_file_to_pending(
+                file,
+                &mut pending_files,
+                &mut input_val,
+                &mut autocomplete_state,
+            );
         }
     };
 
@@ -528,8 +535,7 @@ pub fn AgentView(agent_id: String) -> Element {
                                             agent.diff_state.clear_comments();
                                         });
 
-                                        // Send via handles
-                                        if let Err(e) = HANDLES.read().send_prompt(&agent_id, prompt) {
+                                        if let Err(e) = HANDLES.read().send_prompt(&agent_id, vec![ContentBlock::from(prompt)]) {
                                             tracing::error!("Failed to send comment prompt: {}", e);
                                             with_agent_mut(&agent_id, |agent| {
                                                 agent.status = AgentStatus::Error(e.to_string());
@@ -600,4 +606,66 @@ fn add_file_to_pending(
     }
 
     autocomplete_state.write().hide();
+}
+
+/// Build a ContentBlock::Resource with embedded file content.
+///
+/// Used when the agent supports `embedded_context` capability.
+fn file_to_embedded_resource(file: &FileMatch, content: &str) -> ContentBlock {
+    ContentBlock::Resource(EmbeddedResource {
+        annotations: None,
+        resource: EmbeddedResourceResource::TextResourceContents(TextResourceContents {
+            uri: format!("file://{}", file.absolute_path.display()),
+            text: content.to_string(),
+            mime_type: mime_from_path(&file.path),
+            meta: None,
+        }),
+        meta: None,
+    })
+}
+
+/// Build a ContentBlock::ResourceLink for a file reference.
+///
+/// Used when the agent does NOT support `embedded_context` - the agent will read the file itself.
+fn file_to_resource_link(file: &FileMatch) -> ContentBlock {
+    ContentBlock::ResourceLink(ResourceLink {
+        uri: format!("file://{}", file.absolute_path.display()),
+        name: file.path.clone(),
+        size: Some(file.size as i64),
+        mime_type: mime_from_path(&file.path),
+        title: Some(file.path.clone()),
+        description: None,
+        annotations: None,
+        meta: None,
+    })
+}
+
+/// Infer MIME type from file extension.
+fn mime_from_path(path: &str) -> Option<String> {
+    let ext = Path::new(path).extension()?.to_str()?;
+    let mime = match ext.to_lowercase().as_str() {
+        "rs" => "text/x-rust",
+        "py" => "text/x-python",
+        "js" => "text/javascript",
+        "ts" => "text/typescript",
+        "tsx" => "text/typescript-jsx",
+        "jsx" => "text/javascript-jsx",
+        "json" => "application/json",
+        "toml" => "text/x-toml",
+        "yaml" | "yml" => "text/x-yaml",
+        "md" => "text/markdown",
+        "html" => "text/html",
+        "css" => "text/css",
+        "go" => "text/x-go",
+        "java" => "text/x-java",
+        "c" => "text/x-c",
+        "cpp" | "cc" | "cxx" => "text/x-c++",
+        "h" | "hpp" => "text/x-c-header",
+        "sh" | "bash" => "text/x-shellscript",
+        "sql" => "text/x-sql",
+        "xml" => "text/xml",
+        "txt" => "text/plain",
+        _ => "text/plain",
+    };
+    Some(mime.to_string())
 }
