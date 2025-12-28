@@ -1,31 +1,6 @@
-use aether::agent::{AgentMessage, FileAttachment};
+use aether::agent::AgentMessage;
 use agent_client_protocol as acp;
 use rmcp::model::Prompt as McpPrompt;
-
-/// Converts a FileAttachment to an ACP EmbeddedResource ContentBlock.
-///
-/// This maps the file attachment format used internally by Aether to the
-/// ACP protocol format for embedded resources, allowing file contents to
-/// be transmitted along with user messages.
-pub fn map_file_attachment_to_embedded_resource(file: &FileAttachment) -> acp::ContentBlock {
-    acp::ContentBlock::Resource(acp::EmbeddedResource {
-        resource: acp::EmbeddedResourceResource::TextResourceContents(
-            acp::TextResourceContents {
-                uri: format!("file://{}", file.path),
-                mime_type: file.mime_type.clone(),
-                text: file.content.clone(),
-                meta: None,
-            },
-        ),
-        annotations: None,
-        meta: None,
-    })
-}
-
-/// Converts a list of FileAttachments to ACP ContentBlocks.
-pub fn map_file_attachments_to_content_blocks(files: &[FileAttachment]) -> Vec<acp::ContentBlock> {
-    files.iter().map(map_file_attachment_to_embedded_resource).collect()
-}
 
 /// Converts an MCP Prompt to an ACP AvailableCommand
 ///
@@ -496,55 +471,6 @@ mod tests {
             }
             _ => panic!("Expected ToolCallUpdate"),
         }
-    }
-
-    #[test]
-    fn test_map_file_attachment_to_embedded_resource() {
-        use std::path::PathBuf;
-
-        let attachment = FileAttachment {
-            path: "src/main.rs".to_string(),
-            absolute_path: PathBuf::from("/home/user/project/src/main.rs"),
-            content: "fn main() { println!(\"Hello\"); }".to_string(),
-            mime_type: Some("text/x-rust".to_string()),
-        };
-
-        let result = map_file_attachment_to_embedded_resource(&attachment);
-
-        let acp::ContentBlock::Resource(embedded) = result else {
-            panic!("Expected Resource content block");
-        };
-        let acp::EmbeddedResourceResource::TextResourceContents(text) = embedded.resource else {
-            panic!("Expected TextResourceContents");
-        };
-
-        assert_eq!(text.uri, "file://src/main.rs");
-        assert_eq!(text.text, "fn main() { println!(\"Hello\"); }");
-        assert_eq!(text.mime_type, Some("text/x-rust".to_string()));
-    }
-
-    #[test]
-    fn test_map_file_attachments_to_content_blocks() {
-        use std::path::PathBuf;
-
-        let attachments = vec![
-            FileAttachment {
-                path: "file1.rs".to_string(),
-                absolute_path: PathBuf::from("/path/file1.rs"),
-                content: "content1".to_string(),
-                mime_type: None,
-            },
-            FileAttachment {
-                path: "file2.rs".to_string(),
-                absolute_path: PathBuf::from("/path/file2.rs"),
-                content: "content2".to_string(),
-                mime_type: Some("text/plain".to_string()),
-            },
-        ];
-
-        let result = map_file_attachments_to_content_blocks(&attachments);
-
-        assert_eq!(result.len(), 2);
     }
 
     #[test]

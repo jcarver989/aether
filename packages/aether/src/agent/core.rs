@@ -1,5 +1,5 @@
 use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
-use crate::agent::{AgentMessage, FileAttachment, UserMessage};
+use crate::agent::{AgentMessage, UserMessage};
 use crate::context::{CompactionConfig, Compactor, TokenTracker};
 use crate::llm::{
     ChatMessage, StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult,
@@ -89,8 +89,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     self.on_user_cancel(&mut state).await;
                 }
 
-                StreamEvent::UserMessage(Text { content, attachments }) => {
-                    self.on_user_text(content, attachments).await;
+                StreamEvent::UserMessage(Text { content }) => {
+                    self.on_user_text(content).await;
                 }
 
                 StreamEvent::Llm(llm_event) => {
@@ -146,7 +146,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         let _ = self.agent_message_tx.send(AgentMessage::Done).await;
     }
 
-    async fn on_user_text(&mut self, content: String, attachments: Vec<FileAttachment>) {
+    async fn on_user_text(&mut self, content: String) {
         let action = self
             .middleware
             .emit(AgentEvent::UserMessage {
@@ -165,18 +165,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             return;
         }
 
-        let full_content = if attachments.is_empty() {
-            content
-        } else {
-            let formatted_attachments: Vec<String> = attachments
-                .iter()
-                .map(|f| format!("<file path=\"{}\">\n{}\n</file>", f.path, f.content))
-                .collect();
-            format!("{}\n\n{}", formatted_attachments.join("\n\n"), content)
-        };
-
         self.context.add_message(ChatMessage::User {
-            content: full_content,
+            content,
             timestamp: IsoString::now(),
         });
 
