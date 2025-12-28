@@ -11,6 +11,7 @@ mod acp_client;
 mod components;
 mod diff_engine;
 mod error;
+mod file_search;
 mod file_watcher;
 mod markdown;
 mod settings;
@@ -42,9 +43,6 @@ where
 }
 
 fn main() {
-    // Use dioxus's built-in logger which integrates with the CLI
-    // Set to INFO to filter out dioxus virtualdom debug spam
-    // Use RUST_LOG=aether_desktop=debug,aether=debug for agent tracing
     #[cfg(feature = "desktop")]
     {
         use dioxus::desktop::{Config, WindowBuilder};

@@ -10,6 +10,75 @@ use dioxus::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// The mode of the autocomplete dropdown.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub enum AutocompleteMode {
+    /// No autocomplete active
+    #[default]
+    None,
+    /// Showing slash commands (triggered by `/`)
+    SlashCommand,
+    /// Showing file picker (triggered by `@`)
+    FileMention,
+}
+
+/// State for the unified autocomplete dropdown.
+///
+/// Supports both slash commands (`/`) and file mentions (`@`).
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct AutocompleteState {
+    /// Whether the dropdown is visible
+    pub visible: bool,
+    /// Currently selected index in the filtered list
+    pub selected_index: usize,
+    /// Current filter text (text after the trigger character)
+    pub filter_text: String,
+    /// Current autocomplete mode
+    pub mode: AutocompleteMode,
+}
+
+impl AutocompleteState {
+    /// Create a new autocomplete state for slash commands.
+    pub fn slash_command(filter_text: String) -> Self {
+        Self {
+            visible: true,
+            selected_index: 0,
+            filter_text,
+            mode: AutocompleteMode::SlashCommand,
+        }
+    }
+
+    /// Create a new autocomplete state for file mentions.
+    pub fn file_mention(filter_text: String) -> Self {
+        Self {
+            visible: true,
+            selected_index: 0,
+            filter_text,
+            mode: AutocompleteMode::FileMention,
+        }
+    }
+
+    /// Hide the dropdown and reset state.
+    pub fn hide(&mut self) {
+        self.visible = false;
+        self.selected_index = 0;
+        self.filter_text.clear();
+        self.mode = AutocompleteMode::None;
+    }
+
+    /// Move selection up in the list.
+    pub fn select_previous(&mut self) {
+        self.selected_index = self.selected_index.saturating_sub(1);
+    }
+
+    /// Move selection down in the list, clamped to max_index.
+    pub fn select_next(&mut self, max_index: usize) {
+        if self.selected_index < max_index {
+            self.selected_index += 1;
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum AgentStatus {
     Idle,
@@ -661,5 +730,79 @@ mod tests {
         // Original comment should be unchanged
         let key = ("src/main.rs".to_string(), 42);
         assert_eq!(state.comments.get(&key).unwrap().content, "Some content");
+    }
+
+    #[test]
+    fn test_autocomplete_state_default() {
+        let state = AutocompleteState::default();
+        assert!(!state.visible);
+        assert_eq!(state.selected_index, 0);
+        assert!(state.filter_text.is_empty());
+        assert_eq!(state.mode, AutocompleteMode::None);
+    }
+
+    #[test]
+    fn test_autocomplete_state_slash_command() {
+        let state = AutocompleteState::slash_command("hel".to_string());
+        assert!(state.visible);
+        assert_eq!(state.selected_index, 0);
+        assert_eq!(state.filter_text, "hel");
+        assert_eq!(state.mode, AutocompleteMode::SlashCommand);
+    }
+
+    #[test]
+    fn test_autocomplete_state_file_mention() {
+        let state = AutocompleteState::file_mention("main".to_string());
+        assert!(state.visible);
+        assert_eq!(state.selected_index, 0);
+        assert_eq!(state.filter_text, "main");
+        assert_eq!(state.mode, AutocompleteMode::FileMention);
+    }
+
+    #[test]
+    fn test_autocomplete_state_hide() {
+        let mut state = AutocompleteState::file_mention("test".to_string());
+        state.selected_index = 5;
+
+        state.hide();
+
+        assert!(!state.visible);
+        assert_eq!(state.selected_index, 0);
+        assert!(state.filter_text.is_empty());
+        assert_eq!(state.mode, AutocompleteMode::None);
+    }
+
+    #[test]
+    fn test_autocomplete_state_select_previous() {
+        let mut state = AutocompleteState::slash_command("".to_string());
+        state.selected_index = 3;
+
+        state.select_previous();
+        assert_eq!(state.selected_index, 2);
+
+        state.select_previous();
+        assert_eq!(state.selected_index, 1);
+
+        state.select_previous();
+        assert_eq!(state.selected_index, 0);
+
+        state.select_previous();
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_autocomplete_state_select_next() {
+        let mut state = AutocompleteState::slash_command("".to_string());
+        let max_index = 4;
+
+        state.select_next(max_index);
+        assert_eq!(state.selected_index, 1);
+
+        state.select_next(max_index);
+        assert_eq!(state.selected_index, 2);
+
+        state.selected_index = 4;
+        state.select_next(max_index);
+        assert_eq!(state.selected_index, 4);
     }
 }
