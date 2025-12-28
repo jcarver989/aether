@@ -7,8 +7,8 @@
 //!
 //! Import types directly from submodules (e.g., `lsp::check_errors::LspDiagnosticsInput`).
 
-pub mod coding_tools;
 pub mod check_errors;
+pub mod coding_tools;
 pub mod find_definition;
 pub mod find_usages;
 pub mod get_type_info;
