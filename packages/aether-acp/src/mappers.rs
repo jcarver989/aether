@@ -65,9 +65,7 @@ pub fn map_content_blocks_to_text(blocks: Vec<acp::ContentBlock>) -> String {
             acp::ContentBlock::ResourceLink(link) => {
                 format!("[Resource: {}]", link.uri)
             }
-            acp::ContentBlock::Resource(resource) => {
-                format_embedded_resource(&resource)
-            }
+            acp::ContentBlock::Resource(resource) => format_embedded_resource(&resource),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -77,10 +75,7 @@ pub fn map_content_blocks_to_text(blocks: Vec<acp::ContentBlock>) -> String {
 pub fn format_embedded_resource(resource: &acp::EmbeddedResource) -> String {
     match &resource.resource {
         acp::EmbeddedResourceResource::TextResourceContents(text) => {
-            format!(
-                "<file uri=\"{}\">\n{}\n</file>",
-                text.uri, text.text
-            )
+            format!("<file uri=\"{}\">\n{}\n</file>", text.uri, text.text)
         }
         acp::EmbeddedResourceResource::BlobResourceContents(blob) => {
             format!("[Binary resource: {}]", blob.uri)

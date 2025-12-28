@@ -5,7 +5,9 @@
 
 use crate::acp_agent::AgentHandle;
 use crate::error::AetherDesktopError;
-use agent_client_protocol::{AvailableCommand, AvailableCommandInput, SessionId, ToolCall};
+use agent_client_protocol::{
+    AvailableCommand, AvailableCommandInput, ContentBlock, SessionId, ToolCall,
+};
 use dioxus::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -280,11 +282,25 @@ impl AgentHandles {
     }
 
     /// Send a prompt to an agent by its UUID.
-    pub fn send_prompt(&self, agent_id: &str, message: String) -> Result<(), AetherDesktopError> {
+    ///
+    /// The prompt is a vector of ContentBlocks which can include text, resources, or resource links.
+    pub fn send_prompt(
+        &self,
+        agent_id: &str,
+        prompt: Vec<ContentBlock>,
+    ) -> Result<(), AetherDesktopError> {
         match self.handles.get(agent_id) {
-            Some(handle) => handle.send_prompt(message),
+            Some(handle) => handle.send_prompt(prompt),
             None => Err(AetherDesktopError::SendNotConnected),
         }
+    }
+
+    /// Check if an agent supports embedded context in prompts.
+    pub fn supports_embedded_context(&self, agent_id: &str) -> bool {
+        self.handles
+            .get(agent_id)
+            .map(|h| h.agent_capabilities.prompt_capabilities.embedded_context)
+            .unwrap_or(false)
     }
 
     /// Remove an agent handle by its UUID.
