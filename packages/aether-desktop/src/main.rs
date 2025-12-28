@@ -3,7 +3,7 @@ use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
 use tokio::sync::mpsc;
 
-use state::{AgentHandles, AgentSession};
+use state::{AgentHandles, AgentRegistry, AgentSession};
 use views::Home;
 
 mod acp_agent;
@@ -25,19 +25,16 @@ const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
 /// Global signal for agent sessions - lives at module scope to avoid CopyValue warnings.
-pub static AGENTS: GlobalSignal<Vec<AgentSession>> = Signal::global(Vec::new);
+pub static AGENTS: GlobalSignal<AgentRegistry> = Signal::global(AgentRegistry::new);
 pub static HANDLES: GlobalSignal<AgentHandles> = Signal::global(AgentHandles::new);
 
 /// Helper to mutate an agent by ID. Reduces boilerplate for the common pattern of
-/// acquiring a write lock, finding the agent, and mutating it.
+/// acquiring a write lock and mutating an agent. Uses O(1) HashMap lookup.
 pub fn with_agent_mut<F>(agent_id: &str, f: F)
 where
     F: FnOnce(&mut AgentSession),
 {
-    let mut list = AGENTS.write();
-    if let Some(agent) = list.iter_mut().find(|a| a.id == agent_id) {
-        f(agent);
-    }
+    AGENTS.write().with_agent_mut(agent_id, f);
 }
 
 fn main() {

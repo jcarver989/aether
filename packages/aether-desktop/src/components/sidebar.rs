@@ -1,10 +1,10 @@
 use dioxus::prelude::*;
 
-use crate::state::{AgentSession, AgentStatus};
+use crate::state::{AgentRegistry, AgentSession, AgentStatus};
 
 #[component]
 pub fn Sidebar(
-    agents: ReadSignal<Vec<AgentSession>>,
+    agents: ReadSignal<AgentRegistry>,
     selected_id: Option<String>,
     on_new_agent: EventHandler<()>,
     on_select_agent: EventHandler<String>,
@@ -51,7 +51,7 @@ pub fn Sidebar(
             // Agent list
             div {
                 class: "flex-1 overflow-y-auto space-y-1 p-2",
-                for agent in agents.read().iter() {
+                for agent in agents.read().iter_ordered() {
                     AgentListItem {
                         key: "{agent.id}",
                         agent: agent.clone(),

@@ -6,7 +6,7 @@ use crate::acp_agent::{AgentEvent, AgentHandle};
 use crate::components::{AgentView, EmptyState, NewAgentForm, SettingsEditor, Sidebar};
 use crate::error::AetherDesktopError;
 use crate::settings::Settings;
-use crate::state::{AgentConfig, AgentHandles, AgentSession, AgentStatus};
+use crate::state::{AgentConfig, AgentHandles, AgentRegistry, AgentSession, AgentStatus};
 use crate::{EventChannel, AGENTS, HANDLES};
 use agent_client_protocol::{RequestPermissionOutcome, RequestPermissionResponse};
 use dioxus::prelude::*;
@@ -110,7 +110,7 @@ pub fn Home() -> Element {
 /// Dioxus CopyValue scope warnings.
 pub async fn run_ui_consumer(
     mut ui_rx: mpsc::UnboundedReceiver<AgentEvent>,
-    agents: &GlobalSignal<Vec<AgentSession>>,
+    agents: &GlobalSignal<AgentRegistry>,
     handles: &GlobalSignal<AgentHandles>,
 ) {
     info!("UI consumer started");
@@ -124,7 +124,7 @@ pub async fn run_ui_consumer(
 
 /// Apply an agent event to the agents signal
 fn apply_agent_event(
-    agents: &GlobalSignal<Vec<AgentSession>>,
+    agents: &GlobalSignal<AgentRegistry>,
     handles: &GlobalSignal<AgentHandles>,
     event: AgentEvent,
 ) {
@@ -155,12 +155,11 @@ fn apply_agent_event(
 
     // Handle events that modify both session state and handles
     if let AgentEvent::Disconnected { agent_id: id } = event {
-        let mut list = agents.write();
-        if let Some(agent) = list.iter_mut().find(|a| a.id == id) {
+        agents.write().with_agent_mut(&id, |agent| {
             if matches!(agent.status, AgentStatus::Running) {
                 agent.status = AgentStatus::Idle;
             }
-        }
+        });
         handles.write().remove(&id);
         return;
     }
@@ -171,10 +170,9 @@ fn apply_agent_event(
         error,
     } = event
     {
-        let mut list = agents.write();
-        if let Some(agent) = list.iter_mut().find(|a| a.id == id) {
+        agents.write().with_agent_mut(&id, |agent| {
             agent.status = AgentStatus::Error(error);
-        }
+        });
         return;
     }
 
@@ -250,7 +248,7 @@ fn apply_agent_event(
 
 /// Spawn a new agent on a dedicated thread
 async fn create_agent(
-    agents: &GlobalSignal<Vec<AgentSession>>,
+    agents: &GlobalSignal<AgentRegistry>,
     handles: &GlobalSignal<AgentHandles>,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
     config: AgentConfig,
@@ -270,7 +268,7 @@ async fn create_agent(
         initial_message,
         cwd,
     );
-    agents.write().push(session);
+    agents.write().insert(session);
     handle.mark_ready();
     handles.write().insert(handle);
     info!(agent_id = %agent_id, "Agent spawned on dedicated thread");
