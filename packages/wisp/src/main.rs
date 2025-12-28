@@ -11,7 +11,8 @@ use crossterm::queue;
 use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode, size};
 use render_context::RenderContext;
 use renderer::LoopAction;
-use std::io;
+use std::io::{self, Write};
+use std::process::ExitCode;
 use std::time::Duration;
 use tokio::{select, time};
 mod app_state;
@@ -23,7 +24,7 @@ use crate::render_context::Component;
 use crate::renderer::Renderer;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> ExitCode {
     let cli = Cli::parse();
 
     let log_dir = cli
@@ -41,11 +42,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
-    let state = AppState::from_cli(&cli).await?;
 
-    run_terminal_ui(state).await?;
+    let state = match AppState::from_cli(&cli).await {
+        Ok(state) => state,
+        Err(e) => {
+            eprintln!("Failed to initialize: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
 
-    Ok(())
+    // Branch based on whether prompt was provided
+    let result = if cli.prompt.is_empty() {
+        run_terminal_ui(state).await.map(|_| ExitCode::SUCCESS)
+    } else {
+        let prompt = cli.prompt.join(" ");
+        run_non_interactive(state, &prompt).await
+    };
+
+    match result {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("Fatal error: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Error>> {
@@ -99,4 +119,89 @@ async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Erro
     disable_raw_mode()?;
     println!("\nGoodbye!");
     Ok(())
+}
+
+async fn run_non_interactive(
+    state: AppState,
+    prompt: &str,
+) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    use aether::agent::{AgentMessage, UserMessage};
+
+    let user_msg_tx = state.agent_tx;
+    let mut agent_msg_rx = state.agent_rx;
+
+    // Send the initial prompt
+    user_msg_tx
+        .send(UserMessage::Text {
+            content: prompt.to_string(),
+        })
+        .await
+        .map_err(|e| format!("Failed to send prompt: {e}"))?;
+
+    // Process agent messages until done
+    while let Some(message) = agent_msg_rx.recv().await {
+        match message {
+            AgentMessage::Text {
+                chunk, is_complete, ..
+            } => {
+                if is_complete {
+                    println!();
+                } else {
+                    print!("{chunk}");
+                    io::stdout().flush()?;
+                }
+            }
+
+            AgentMessage::ToolCall { request, .. } => {
+                println!("[Tool: {}] Starting...", request.name);
+            }
+
+            AgentMessage::ToolProgress {
+                request,
+                progress,
+                total,
+                message,
+            } => {
+                let progress_str = total
+                    .map(|t| format!("{:.0}/{:.0}", progress, t))
+                    .unwrap_or_else(|| format!("{:.0}", progress));
+                let msg = message.as_deref().unwrap_or("");
+                println!("[Tool: {}] {} {}", request.name, msg, progress_str);
+            }
+
+            AgentMessage::ToolResult { result, .. } => {
+                println!("[Tool: {}] ✓ Completed", result.name);
+            }
+
+            AgentMessage::ToolError { error, .. } => {
+                eprintln!("[Tool: {}] ✗ Error: {}", error.name, error.error);
+            }
+
+            AgentMessage::Error { message } => {
+                eprintln!("Error: {message}");
+                return Ok(ExitCode::FAILURE);
+            }
+
+            AgentMessage::Cancelled { message } => {
+                eprintln!("Cancelled: {message}");
+                return Ok(ExitCode::FAILURE);
+            }
+
+            AgentMessage::ContextCompactionStarted { message_count } => {
+                println!("[Context compaction: {} messages]", message_count);
+            }
+
+            AgentMessage::ContextCompactionResult {
+                messages_removed, ..
+            } => {
+                println!("[Context compacted: {} messages removed]", messages_removed);
+            }
+
+            AgentMessage::Done => {
+                break;
+            }
+        }
+    }
+
+    Ok(ExitCode::SUCCESS)
 }
