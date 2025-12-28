@@ -36,12 +36,6 @@ impl AgentServerConfig {
         self
     }
 
-    /// Adds a single environment variable.
-    pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.env.insert(key.into(), value.into());
-        self
-    }
-
     /// Converts to a command line string for display.
     pub fn to_command_line(&self) -> String {
         let mut parts = vec![self.command.clone()];
@@ -115,9 +109,12 @@ mod tests {
         let mut settings = Settings::default();
         settings.agent_servers.insert(
             "aether".to_string(),
-            AgentServerConfig::new("aether-acp")
-                .with_args(["--model", "anthropic:claude-sonnet-4-20250514"])
-                .with_env("ANTHROPIC_API_KEY", "sk-test"),
+{
+                let mut config = AgentServerConfig::new("aether-acp")
+                    .with_args(["--model", "anthropic:claude-sonnet-4-20250514"]);
+                config.env.insert("ANTHROPIC_API_KEY".to_string(), "sk-test".to_string());
+                config
+            },
         );
         settings.agent_servers.insert(
             "claude".to_string(),
