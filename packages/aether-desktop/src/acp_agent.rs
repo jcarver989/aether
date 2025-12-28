@@ -1,7 +1,8 @@
 use crate::acp_client::{AcpClient, RawAgentEvent};
 use crate::diff_engine::compute_diff;
+use crate::error::AetherDesktopError;
 use crate::file_watcher::{FileWatchEvent, FileWatcher};
-use crate::state::{AgentStatus, DiffState, SendError};
+use crate::state::{AgentStatus, DiffState};
 use agent_client_protocol::{
     Agent, AvailableCommand, ClientSideConnection, ContentBlock, InitializeRequest,
     NewSessionRequest, NewSessionResponse, PromptRequest, RequestPermissionRequest,
@@ -50,7 +51,7 @@ impl AgentHandle {
         cmd_ref: &str,
         cwd: &Path,
         event_tx: mpsc::UnboundedSender<AgentEvent>,
-    ) -> Result<Self, ActorError> {
+    ) -> Result<Self, AetherDesktopError> {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let (init_tx, init_rx) = oneshot::channel();
         let (ready_tx, ready_rx) = oneshot::channel();
@@ -87,7 +88,7 @@ impl AgentHandle {
         // Await initialization (non-blocking)
         let acp_session_id = init_rx
             .await
-            .map_err(|_| ActorError::Init("Agent thread terminated during init".into()))??;
+            .map_err(|_| AetherDesktopError::ActorInit("Agent thread terminated during init".into()))??;
 
         Ok(Self {
             id: agent_id,
@@ -99,13 +100,13 @@ impl AgentHandle {
     }
 
     /// Send a prompt to the agent.
-    pub fn send_prompt(&self, message: String) -> Result<(), SendError> {
+    pub fn send_prompt(&self, message: String) -> Result<(), AetherDesktopError> {
         self.cmd_tx
             .send(AgentCommand::Prompt {
                 acp_session_id: self.acp_session_id.clone(),
                 message,
             })
-            .map_err(|_| SendError::ChannelClosed)
+            .map_err(|_| AetherDesktopError::SendChannelClosed)
     }
 
     /// Allow the agent loop to begin forwarding ACP events.
@@ -179,26 +180,6 @@ pub enum AgentEvent {
     },
 }
 
-/// Error types for actor operations.
-#[derive(Debug)]
-pub enum ActorError {
-    Spawn(String),
-    Init(String),
-    Session(String),
-}
-
-impl std::fmt::Display for ActorError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ActorError::Spawn(e) => write!(f, "Failed to spawn agent: {}", e),
-            ActorError::Init(e) => write!(f, "Failed to initialize: {}", e),
-            ActorError::Session(e) => write!(f, "Failed to create session: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for ActorError {}
-
 /// Commands that can be sent to the ACP actor.
 #[derive(Debug)]
 pub enum AgentCommand {
@@ -211,7 +192,7 @@ pub enum AgentCommand {
 async fn start_session(
     conn: &ClientSideConnection,
     cwd: PathBuf,
-) -> Result<NewSessionResponse, ActorError> {
+) -> Result<NewSessionResponse, AetherDesktopError> {
     let init_req = InitializeRequest {
         protocol_version: VERSION,
         client_capabilities: AcpClient::capabilities(),
@@ -221,7 +202,7 @@ async fn start_session(
     let _ = conn
         .initialize(init_req)
         .await
-        .map_err(|e| ActorError::Init(e.to_string()))?;
+        .map_err(|e| AetherDesktopError::ActorInit(e.to_string()))?;
 
     let session_req = NewSessionRequest {
         cwd,
@@ -232,7 +213,7 @@ async fn start_session(
     let result = conn
         .new_session(session_req)
         .await
-        .map_err(|e| ActorError::Session(e.to_string()))?;
+        .map_err(|e| AetherDesktopError::ActorSession(e.to_string()))?;
 
     Ok(result)
 }
@@ -257,7 +238,7 @@ async fn run_agent(
     cwd: PathBuf,
     cmd_rx: mpsc::UnboundedReceiver<AgentCommand>,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
-    init_tx: oneshot::Sender<Result<SessionId, ActorError>>,
+    init_tx: oneshot::Sender<Result<SessionId, AetherDesktopError>>,
     ready_rx: oneshot::Receiver<()>,
 ) {
     // Separate channel for raw events from AcpClient
@@ -423,10 +404,10 @@ async fn run_agent(
     });
 }
 
-fn spawn_child_process(cmd: &str) -> Result<(Child, ChildStdin, ChildStdout), ActorError> {
+fn spawn_child_process(cmd: &str) -> Result<(Child, ChildStdin, ChildStdout), AetherDesktopError> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     if parts.is_empty() {
-        return Err(ActorError::Spawn("Empty command line".to_string()));
+        return Err(AetherDesktopError::ActorSpawn("Empty command line".to_string()));
     }
 
     let (command, args) = (parts[0], &parts[1..]);
@@ -438,17 +419,17 @@ fn spawn_child_process(cmd: &str) -> Result<(Child, ChildStdin, ChildStdout), Ac
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|e| ActorError::Spawn(e.to_string()))?;
+        .map_err(|e| AetherDesktopError::ActorSpawn(e.to_string()))?;
 
     let stdin = child
         .stdin
         .take()
-        .ok_or(ActorError::Spawn("Failed to get stdin".to_string()))?;
+        .ok_or(AetherDesktopError::ActorSpawn("Failed to get stdin".to_string()))?;
 
     let stdout = child
         .stdout
         .take()
-        .ok_or(ActorError::Spawn("Failed to get stdout".to_string()))?;
+        .ok_or(AetherDesktopError::ActorSpawn("Failed to get stdout".to_string()))?;
 
     Ok((child, stdin, stdout))
 }

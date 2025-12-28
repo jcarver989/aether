@@ -4,6 +4,7 @@
 //! underlying agent protocol (ACP).
 
 use crate::acp_agent::AgentHandle;
+use crate::error::AetherDesktopError;
 use agent_client_protocol::{AvailableCommand, AvailableCommandInput, SessionId, ToolCall};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -135,24 +136,6 @@ pub struct AgentSession {
     pub diff_state: DiffState,
 }
 
-/// Error returned when attempting to send to a disconnected agent.
-#[derive(Debug)]
-pub enum SendError {
-    NotConnected,
-    ChannelClosed,
-}
-
-impl std::fmt::Display for SendError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SendError::NotConnected => write!(f, "Agent not connected"),
-            SendError::ChannelClosed => write!(f, "Agent channel closed"),
-        }
-    }
-}
-
-impl std::error::Error for SendError {}
-
 impl AgentSession {
     /// Create a new agent session.
     ///
@@ -218,10 +201,10 @@ impl AgentHandles {
     }
 
     /// Send a prompt to an agent by its UUID.
-    pub fn send_prompt(&self, agent_id: &str, message: String) -> Result<(), SendError> {
+    pub fn send_prompt(&self, agent_id: &str, message: String) -> Result<(), AetherDesktopError> {
         match self.handles.get(agent_id) {
             Some(handle) => handle.send_prompt(message),
-            None => Err(SendError::NotConnected),
+            None => Err(AetherDesktopError::SendNotConnected),
         }
     }
 

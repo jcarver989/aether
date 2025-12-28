@@ -2,8 +2,9 @@
 //!
 //! This is the main view that displays the agent sidebar and chat interface.
 
-use crate::acp_agent::{ActorError, AgentEvent, AgentHandle};
+use crate::acp_agent::{AgentEvent, AgentHandle};
 use crate::components::{AgentView, EmptyState, NewAgentForm, SettingsEditor, Sidebar};
+use crate::error::AetherDesktopError;
 use crate::settings::Settings;
 use crate::state::{
     now_iso, AgentConfig, AgentHandles, AgentSession, AgentStatus, Message, MessageKind, Role,
@@ -352,15 +353,14 @@ async fn create_agent(
     event_tx: mpsc::UnboundedSender<AgentEvent>,
     config: AgentConfig,
     initial_message: String,
-) -> Result<String, ActorError> {
+) -> Result<String, AetherDesktopError> {
     let cwd = current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let mut handle = AgentHandle::spawn(&config.command_line, &cwd, event_tx).await?;
     let agent_id = handle.id.clone();
     let acp_session_id = handle.acp_session_id.clone();
 
     handle
-        .send_prompt(initial_message.clone())
-        .map_err(|e| ActorError::Session(e.to_string()))?;
+        .send_prompt(initial_message.clone())?;
 
     let session = AgentSession::new(
         agent_id.clone(),

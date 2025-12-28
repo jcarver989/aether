@@ -2,49 +2,17 @@
 //!
 //! Provides functionality to compute diffs between HEAD and the working directory.
 
+use crate::error::AetherDesktopError;
 use crate::state::{DiffHunk, DiffLine, FileDiff, FileStatus, LineOrigin};
 use git2::{Delta, DiffOptions, Patch, Repository};
 use std::fs::read_to_string;
 use std::path::Path;
 
-/// Errors that can occur during diff computation.
-#[derive(Debug)]
-pub enum DiffError {
-    /// The path is not a git repository.
-    NotARepository,
-    /// A file in the diff has no path.
-    MissingPath,
-    /// Git operation failed.
-    Git(git2::Error),
-}
-
-impl std::fmt::Display for DiffError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DiffError::NotARepository => write!(f, "Not a git repository"),
-            DiffError::MissingPath => write!(f, "Diff entry has no file path"),
-            DiffError::Git(e) => write!(f, "Git error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for DiffError {}
-
-impl From<git2::Error> for DiffError {
-    fn from(e: git2::Error) -> Self {
-        if e.code() == git2::ErrorCode::NotFound {
-            DiffError::NotARepository
-        } else {
-            DiffError::Git(e)
-        }
-    }
-}
-
 /// Compute the diff between HEAD and the working directory.
 ///
 /// Returns a list of file diffs showing what has changed.
-/// If the path is not a git repository, returns `DiffError::NotARepository`.
-pub fn compute_diff(repo_path: &Path) -> Result<Vec<FileDiff>, DiffError> {
+/// If the path is not a git repository, returns `AetherDesktopError::DiffNotRepository`.
+pub fn compute_diff(repo_path: &Path) -> Result<Vec<FileDiff>, AetherDesktopError> {
     let repo = Repository::discover(repo_path)?;
     let workdir = repo.workdir().unwrap_or(repo_path);
 
@@ -69,7 +37,7 @@ pub fn compute_diff(repo_path: &Path) -> Result<Vec<FileDiff>, DiffError> {
     for idx in 0..num_deltas {
         let delta = diff
             .get_delta(idx)
-            .ok_or_else(|| DiffError::Git(git2::Error::from_str("Delta index out of bounds")))?;
+            .ok_or_else(|| AetherDesktopError::DiffGit(git2::Error::from_str("Delta index out of bounds")))?;
 
         let status = match delta.status() {
             Delta::Added | Delta::Untracked => FileStatus::Added,
@@ -87,7 +55,7 @@ pub fn compute_diff(repo_path: &Path) -> Result<Vec<FileDiff>, DiffError> {
             .path()
             .or_else(|| delta.old_file().path())
             .map(|p| p.to_string_lossy().to_string())
-            .ok_or(DiffError::MissingPath)?;
+            .ok_or(AetherDesktopError::DiffMissingPath)?;
 
         let old_path = if delta.status() == Delta::Renamed {
             delta
@@ -154,7 +122,7 @@ fn create_added_file_hunks(workdir: &Path, file_path: &str) -> Vec<DiffHunk> {
 }
 
 /// Parse hunks from a git2 Patch.
-fn parse_patch(patch: &Patch<'_>) -> Result<Vec<DiffHunk>, DiffError> {
+fn parse_patch(patch: &Patch<'_>) -> Result<Vec<DiffHunk>, AetherDesktopError> {
     let mut hunks = Vec::new();
 
     for hunk_idx in 0..patch.num_hunks() {
@@ -236,7 +204,7 @@ mod tests {
     fn test_compute_diff_non_repo() {
         let temp_dir = TempDir::new().unwrap();
         let result = compute_diff(temp_dir.path());
-        assert!(matches!(result, Err(DiffError::NotARepository)));
+        assert!(matches!(result, Err(AetherDesktopError::DiffNotRepository)));
     }
 
     #[test]

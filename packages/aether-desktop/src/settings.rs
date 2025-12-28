@@ -2,10 +2,10 @@
 //!
 //! Settings are stored as JSON and include configuration for agent servers.
 
+use crate::error::AetherDesktopError;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-use serde::{Deserialize, Serialize};
 
 /// Configuration for an agent server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -74,21 +74,23 @@ impl Settings {
     }
 
     /// Loads settings from a file path.
-    pub fn load(path: &PathBuf) -> Result<Self, SettingsError> {
-        let content = std::fs::read_to_string(path).map_err(SettingsError::Io)?;
-        serde_json::from_str(&content).map_err(SettingsError::Parse)
+    pub fn load(path: &PathBuf) -> Result<Self, AetherDesktopError> {
+        let content = std::fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&content)?)
     }
 
     /// Saves settings to a file path.
-    pub fn save(&self, path: &PathBuf) -> Result<(), SettingsError> {
-        let content = serde_json::to_string_pretty(self).map_err(SettingsError::Serialize)?;
+    pub fn save(&self, path: &PathBuf) -> Result<(), AetherDesktopError> {
+        let content = serde_json::to_string_pretty(self)?;
 
         // Create parent directories if needed
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(SettingsError::Io)?;
+            std::fs::create_dir_all(parent)?;
         }
 
-        std::fs::write(path, content).map_err(SettingsError::Io)
+        std::fs::write(path, content)?;
+
+        Ok(())
     }
 
     /// Returns the default settings file path.
@@ -103,26 +105,6 @@ impl Settings {
             .unwrap_or_else(Self::with_defaults)
     }
 }
-
-/// Errors that can occur when loading/saving settings.
-#[derive(Debug)]
-pub enum SettingsError {
-    Io(std::io::Error),
-    Parse(serde_json::Error),
-    Serialize(serde_json::Error),
-}
-
-impl std::fmt::Display for SettingsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SettingsError::Io(e) => write!(f, "IO error: {}", e),
-            SettingsError::Parse(e) => write!(f, "Parse error: {}", e),
-            SettingsError::Serialize(e) => write!(f, "Serialize error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for SettingsError {}
 
 #[cfg(test)]
 mod tests {

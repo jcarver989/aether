@@ -3,6 +3,7 @@
 //! Uses the `notify` crate with debouncing to watch for file changes
 //! in an agent's working directory.
 
+use crate::error::AetherDesktopError;
 use notify::RecommendedWatcher;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind, Debouncer};
 use std::ffi::OsStr;
@@ -21,26 +22,6 @@ pub enum FileWatchEvent {
     /// An error occurred while watching.
     Error(String),
 }
-
-/// Errors that can occur when setting up the file watcher.
-#[derive(Debug)]
-pub enum FileWatcherError {
-    /// Failed to create the watcher.
-    WatcherCreation(String),
-    /// Failed to watch the path.
-    WatchPath(String),
-}
-
-impl std::fmt::Display for FileWatcherError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FileWatcherError::WatcherCreation(e) => write!(f, "Failed to create watcher: {}", e),
-            FileWatcherError::WatchPath(e) => write!(f, "Failed to watch path: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for FileWatcherError {}
 
 /// A file system watcher that emits debounced change events.
 ///
@@ -62,7 +43,7 @@ impl FileWatcher {
     pub fn new(
         path: PathBuf,
         tx: mpsc::UnboundedSender<FileWatchEvent>,
-    ) -> Result<Self, FileWatcherError> {
+    ) -> Result<Self, AetherDesktopError> {
         let debouncer = new_debouncer(
             DEBOUNCE_DURATION,
             move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
@@ -82,7 +63,7 @@ impl FileWatcher {
                 }
             },
         )
-        .map_err(|e| FileWatcherError::WatcherCreation(e.to_string()))?;
+        .map_err(|e| AetherDesktopError::FileWatcherCreation(e.to_string()))?;
 
         let mut watcher = Self { debouncer, path };
 
@@ -91,13 +72,13 @@ impl FileWatcher {
         Ok(watcher)
     }
 
-    fn start_watching(&mut self) -> Result<(), FileWatcherError> {
+    fn start_watching(&mut self) -> Result<(), AetherDesktopError> {
         use notify::RecursiveMode;
 
         self.debouncer
             .watcher()
             .watch(&self.path, RecursiveMode::Recursive)
-            .map_err(|e| FileWatcherError::WatchPath(e.to_string()))?;
+            .map_err(|e| AetherDesktopError::FileWatcherPath(e.to_string()))?;
 
         Ok(())
     }

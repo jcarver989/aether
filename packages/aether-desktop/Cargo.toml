@@ -26,6 +26,7 @@ dirs = "6.0"
 git2 = "0.20"
 notify = "8.2"
 notify-debouncer-mini = "0.7"
+thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.14"
