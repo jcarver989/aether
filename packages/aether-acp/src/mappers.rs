@@ -1,6 +1,31 @@
-use aether::agent::AgentMessage;
+use aether::agent::{AgentMessage, FileAttachment};
 use agent_client_protocol as acp;
 use rmcp::model::Prompt as McpPrompt;
+
+/// Converts a FileAttachment to an ACP EmbeddedResource ContentBlock.
+///
+/// This maps the file attachment format used internally by Aether to the
+/// ACP protocol format for embedded resources, allowing file contents to
+/// be transmitted along with user messages.
+pub fn map_file_attachment_to_embedded_resource(file: &FileAttachment) -> acp::ContentBlock {
+    acp::ContentBlock::Resource(acp::EmbeddedResource {
+        resource: acp::EmbeddedResourceResource::TextResourceContents(
+            acp::TextResourceContents {
+                uri: format!("file://{}", file.path),
+                mime_type: file.mime_type.clone(),
+                text: file.content.clone(),
+                meta: None,
+            },
+        ),
+        annotations: None,
+        meta: None,
+    })
+}
+
+/// Converts a list of FileAttachments to ACP ContentBlocks.
+pub fn map_file_attachments_to_content_blocks(files: &[FileAttachment]) -> Vec<acp::ContentBlock> {
+    files.iter().map(map_file_attachment_to_embedded_resource).collect()
+}
 
 /// Converts an MCP Prompt to an ACP AvailableCommand
 ///
@@ -51,7 +76,10 @@ pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::Available
     }
 }
 
-/// Converts ACP ContentBlock to plain text for Aether agent
+/// Converts ACP ContentBlock to plain text for Aether agent.
+///
+/// Embedded resources (e.g., file attachments) are formatted with their URI
+/// and content for inclusion in the agent's context.
 pub fn map_content_blocks_to_text(blocks: Vec<acp::ContentBlock>) -> String {
     blocks
         .into_iter()
@@ -62,10 +90,27 @@ pub fn map_content_blocks_to_text(blocks: Vec<acp::ContentBlock>) -> String {
             acp::ContentBlock::ResourceLink(link) => {
                 format!("[Resource: {}]", link.uri)
             }
-            acp::ContentBlock::Resource(_resource) => "[Embedded resource]".to_string(),
+            acp::ContentBlock::Resource(resource) => {
+                format_embedded_resource(&resource)
+            }
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Formats an embedded resource as text for inclusion in agent context.
+pub fn format_embedded_resource(resource: &acp::EmbeddedResource) -> String {
+    match &resource.resource {
+        acp::EmbeddedResourceResource::TextResourceContents(text) => {
+            format!(
+                "<file uri=\"{}\">\n{}\n</file>",
+                text.uri, text.text
+            )
+        }
+        acp::EmbeddedResourceResource::BlobResourceContents(blob) => {
+            format!("[Binary resource: {}]", blob.uri)
+        }
+    }
 }
 
 /// Converts Aether AgentMessage to ACP SessionUpdate
@@ -451,5 +496,104 @@ mod tests {
             }
             _ => panic!("Expected ToolCallUpdate"),
         }
+    }
+
+    #[test]
+    fn test_map_file_attachment_to_embedded_resource() {
+        use std::path::PathBuf;
+
+        let attachment = FileAttachment {
+            path: "src/main.rs".to_string(),
+            absolute_path: PathBuf::from("/home/user/project/src/main.rs"),
+            content: "fn main() { println!(\"Hello\"); }".to_string(),
+            mime_type: Some("text/x-rust".to_string()),
+        };
+
+        let result = map_file_attachment_to_embedded_resource(&attachment);
+
+        let acp::ContentBlock::Resource(embedded) = result else {
+            panic!("Expected Resource content block");
+        };
+        let acp::EmbeddedResourceResource::TextResourceContents(text) = embedded.resource else {
+            panic!("Expected TextResourceContents");
+        };
+
+        assert_eq!(text.uri, "file://src/main.rs");
+        assert_eq!(text.text, "fn main() { println!(\"Hello\"); }");
+        assert_eq!(text.mime_type, Some("text/x-rust".to_string()));
+    }
+
+    #[test]
+    fn test_map_file_attachments_to_content_blocks() {
+        use std::path::PathBuf;
+
+        let attachments = vec![
+            FileAttachment {
+                path: "file1.rs".to_string(),
+                absolute_path: PathBuf::from("/path/file1.rs"),
+                content: "content1".to_string(),
+                mime_type: None,
+            },
+            FileAttachment {
+                path: "file2.rs".to_string(),
+                absolute_path: PathBuf::from("/path/file2.rs"),
+                content: "content2".to_string(),
+                mime_type: Some("text/plain".to_string()),
+            },
+        ];
+
+        let result = map_file_attachments_to_content_blocks(&attachments);
+
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_format_embedded_resource_text() {
+        let resource = acp::EmbeddedResource {
+            resource: acp::EmbeddedResourceResource::TextResourceContents(
+                acp::TextResourceContents {
+                    uri: "file://test.rs".to_string(),
+                    mime_type: None,
+                    text: "let x = 1;".to_string(),
+                    meta: None,
+                },
+            ),
+            annotations: None,
+            meta: None,
+        };
+
+        let result = format_embedded_resource(&resource);
+
+        assert_eq!(result, "<file uri=\"file://test.rs\">\nlet x = 1;\n</file>");
+    }
+
+    #[test]
+    fn test_map_content_blocks_to_text_with_embedded_resource() {
+        let blocks = vec![
+            acp::ContentBlock::Text(acp::TextContent {
+                text: "Check this file:".to_string(),
+                annotations: None,
+                meta: None,
+            }),
+            acp::ContentBlock::Resource(acp::EmbeddedResource {
+                resource: acp::EmbeddedResourceResource::TextResourceContents(
+                    acp::TextResourceContents {
+                        uri: "file://src/lib.rs".to_string(),
+                        mime_type: Some("text/x-rust".to_string()),
+                        text: "pub fn hello() {}".to_string(),
+                        meta: None,
+                    },
+                ),
+                annotations: None,
+                meta: None,
+            }),
+        ];
+
+        let result = map_content_blocks_to_text(blocks);
+
+        assert!(result.contains("Check this file:"));
+        assert!(result.contains("<file uri=\"file://src/lib.rs\">"));
+        assert!(result.contains("pub fn hello() {}"));
+        assert!(result.contains("</file>"));
     }
 }

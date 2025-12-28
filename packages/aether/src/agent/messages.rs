@@ -1,6 +1,24 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult};
+
+/// A file attachment that can be included with a user message.
+///
+/// File attachments are used by the `@file` mention feature to include
+/// file contents in the message sent to the agent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileAttachment {
+    /// The display path (typically relative to the working directory)
+    pub path: String,
+    /// The absolute path for reading the file content
+    pub absolute_path: PathBuf,
+    /// The file content (read at send time)
+    pub content: String,
+    /// Optional MIME type (e.g., "text/plain", "application/json")
+    pub mime_type: Option<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AgentMessage {
@@ -55,9 +73,13 @@ pub enum AgentMessage {
     Done,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UserMessage {
-    Text { content: String },
+    Text {
+        content: String,
+        /// Optional file attachments included via @-mentions
+        attachments: Vec<FileAttachment>,
+    },
     Cancel,
 }
 
@@ -73,9 +95,19 @@ impl AgentMessage {
 }
 
 impl UserMessage {
+    /// Creates a text message without any file attachments.
     pub fn text(content: &str) -> Self {
         UserMessage::Text {
             content: content.to_string(),
+            attachments: Vec::new(),
+        }
+    }
+
+    /// Creates a text message with file attachments.
+    pub fn text_with_attachments(content: &str, attachments: Vec<FileAttachment>) -> Self {
+        UserMessage::Text {
+            content: content.to_string(),
+            attachments,
         }
     }
 }
@@ -84,6 +116,7 @@ impl From<&str> for UserMessage {
     fn from(value: &str) -> Self {
         UserMessage::Text {
             content: value.to_string(),
+            attachments: Vec::new(),
         }
     }
 }

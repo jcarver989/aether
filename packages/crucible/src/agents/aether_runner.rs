@@ -255,6 +255,7 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
         agent_tx
             .send(UserMessage::Text {
                 content: config.task_prompt.to_string(),
+                attachments: Vec::new(),
             })
             .await
             .map_err(|e| RunError::ChannelSendFailed(format!("Failed to send task: {}", e)))?;
