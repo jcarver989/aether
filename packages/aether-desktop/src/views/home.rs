@@ -7,7 +7,8 @@ use crate::components::{AgentView, EmptyState, NewAgentForm, SettingsEditor, Sid
 use crate::error::AetherDesktopError;
 use crate::settings::Settings;
 use crate::state::{AgentConfig, AgentHandles, AgentRegistry, AgentSession, AgentStatus};
-use crate::{EventChannel, AGENTS, HANDLES};
+use crate::{AGENTS, EventChannel, HANDLES};
+use aether_acp_client::DockerProgress;
 use agent_client_protocol::{ContentBlock, RequestPermissionOutcome, RequestPermissionResponse};
 use dioxus::prelude::*;
 use std::env::current_dir;
@@ -192,20 +193,50 @@ async fn create_agent(
     initial_message: String,
 ) -> Result<String, AetherDesktopError> {
     let cwd = current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    let mut handle = AgentHandle::spawn(&config.command_line, &cwd, event_tx).await?;
-    let agent_id = handle.id.clone();
-    let acp_session_id = handle.acp_session_id.clone();
+    let is_docker = config.execution_mode.is_docker();
+    let agent_id = uuid::Uuid::new_v4().to_string();
 
-    handle.send_prompt(vec![ContentBlock::from(initial_message.clone())])?;
-
+    // Pre-register the agent so it can receive events during spawn
+    let initial_status = if is_docker {
+        AgentStatus::Starting(DockerProgress::CheckingImage)
+    } else {
+        AgentStatus::Running
+    };
     let session = AgentSession::new(
         agent_id.clone(),
-        acp_session_id,
-        config,
-        initial_message,
-        cwd,
+        String::new().into(),
+        config.clone(),
+        initial_message.clone(),
+        cwd.clone(),
+        initial_status,
     );
     agents.write().insert(session);
+
+    let spawn_result = AgentHandle::spawn(
+        agent_id.clone(),
+        &config.command_line,
+        &cwd,
+        event_tx,
+        config.execution_mode.clone(),
+    )
+    .await;
+
+    let mut handle = match spawn_result {
+        Ok(h) => h,
+        Err(e) => {
+            agents.write().remove(&agent_id);
+            return Err(e);
+        }
+    };
+
+    // Update session with real session_id and final status
+    if let Some(mut agent_signal) = agents.read().get(&agent_id) {
+        let mut agent = agent_signal.write();
+        agent.acp_session_id = handle.acp_session_id.clone();
+        agent.status = AgentStatus::Running;
+    }
+
+    handle.send_prompt(vec![ContentBlock::from(initial_message)])?;
     handle.mark_ready();
     handles.write().insert(handle);
     info!(agent_id = %agent_id, "Agent spawned on dedicated thread");

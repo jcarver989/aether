@@ -19,6 +19,9 @@ Core principles for writing idiomatic, safe, and efficient Rust code.
 - [Tooling](#tooling) → [tooling.md](./tooling.md)
 - [Project Conventions](#project-conventions-mcp-gateway)
 - [Anti-Patterns](#anti-patterns-to-avoid)
+- [Testing](./testing-fakes.md)
+- [Builders](./builder-pattern.md)
+- [Types](./type-safety.md)
 
 ## Type System
 

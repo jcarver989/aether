@@ -5,9 +5,9 @@
 use agent_client_protocol::ContentBlock;
 use dioxus::prelude::*;
 
-use crate::hooks::{use_agent_chat, AgentChatController};
-use crate::state::{now_iso, AgentStatus, CommentKey, DiffComment, Message, MessageKind, Role};
-use crate::{with_agent_mut, HANDLES};
+use crate::hooks::{AgentChatController, use_agent_chat};
+use crate::state::{AgentStatus, CommentKey, DiffComment, Message, MessageKind, Role, now_iso};
+use crate::{HANDLES, with_agent_mut};
 
 use super::command_dropdown::CommandDropdown;
 use super::diff_view::DiffView;
@@ -40,12 +40,14 @@ pub fn AgentView(agent_id: String) -> Element {
     let agent = agent_signal.read();
     let is_running = chat.is_running();
     let status_text = match &agent.status {
-        AgentStatus::Idle => "Idle",
-        AgentStatus::Running => "Running...",
-        AgentStatus::Error(_) => "Error",
+        AgentStatus::Idle => "Idle".to_string(),
+        AgentStatus::Starting(phase) => phase.text().to_string(),
+        AgentStatus::Running => "Running...".to_string(),
+        AgentStatus::Error(_) => "Error".to_string(),
     };
     let status_color = match &agent.status {
         AgentStatus::Idle => "bg-gray-600 text-gray-300",
+        AgentStatus::Starting(_) => "bg-yellow-600/20 text-yellow-400 border border-yellow-600/30",
         AgentStatus::Running => "bg-green-600/20 text-green-400 border border-green-600/30",
         AgentStatus::Error(_) => "bg-red-600/20 text-red-400 border border-red-600/30",
     };

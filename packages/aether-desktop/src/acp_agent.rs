@@ -1,39 +1,27 @@
-use crate::acp_client::{AcpClient, RawAgentEvent};
 use crate::diff_engine::compute_diff;
+use crate::docker_diff::compute_docker_diff;
+use crate::docker_watcher::{DockerFileEvent, DockerFilePoller};
 use crate::error::AetherDesktopError;
 use crate::file_watcher::{FileWatchEvent, FileWatcher};
-use crate::state::{AgentStatus, DiffState, TerminalStream};
+use crate::state::{AgentStatus, DiffState, ExecutionMode, TerminalStream};
+use aether_acp_client::{
+    AcpClient, AcpEvent, DockerConfig, DockerProgress, ImageSource, OutputStream, ProgressTx,
+    RawAgentEvent, SessionInfo, SpawnConfig, spawn_agent_process, start_session,
+};
 use agent_client_protocol::{
-    Agent, AgentCapabilities, AvailableCommand, ClientSideConnection, ContentBlock,
-    InitializeRequest, NewSessionRequest, PromptRequest, RequestPermissionRequest,
-    RequestPermissionResponse, SessionId, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus,
-    ToolCallUpdateFields, VERSION,
+    Agent, AgentCapabilities, AvailableCommand, ClientSideConnection, ContentBlock, PromptRequest,
+    RequestPermissionRequest, RequestPermissionResponse, SessionId, ToolCall, ToolCallUpdateFields,
 };
 use futures::Stream;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::process::Stdio;
 use std::rc::Rc;
 use std::thread::JoinHandle;
-use tokio::{
-    process::{Child, ChildStdin, ChildStdout, Command},
-    sync::{mpsc, oneshot},
-};
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::spawn_local;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::{StreamExt, StreamMap};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, error, info, warn};
-
-/// Information returned from session initialization.
-///
-/// Contains both the session ID and agent capabilities needed by the client.
-#[derive(Debug, Clone)]
-pub struct SessionInfo {
-    /// ACP session ID for protocol communication
-    pub session_id: SessionId,
-    /// Agent capabilities returned from initialization
-    pub agent_capabilities: AgentCapabilities,
-}
 
 /// Runtime handle for an agent process.
 ///
@@ -60,17 +48,20 @@ impl AgentHandle {
     ///
     /// The agent sends all events through the shared `event_tx` channel.
     /// Awaits until the session is established before returning.
+    ///
+    /// The `agent_id` must be provided by the caller so they can pre-register
+    /// the agent in the UI before spawn begins (to receive progress events).
     pub async fn spawn(
+        agent_id: String,
         cmd_ref: &str,
         cwd: &Path,
         event_tx: mpsc::UnboundedSender<AgentEvent>,
+        execution_mode: ExecutionMode,
     ) -> Result<Self, AetherDesktopError> {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let (init_tx, init_rx) = oneshot::channel();
         let (ready_tx, ready_rx) = oneshot::channel();
 
-        // Generate UUID locally before spawning thread
-        let agent_id = uuid::Uuid::new_v4().to_string();
         let agent_id_for_thread = agent_id.clone();
 
         let cmd = cmd_ref.to_string();
@@ -90,6 +81,7 @@ impl AgentHandle {
                     agent_id_for_thread,
                     cmd,
                     cwd,
+                    execution_mode,
                     cmd_rx,
                     event_tx,
                     init_tx,
@@ -236,38 +228,6 @@ pub enum AgentCommand {
     },
 }
 
-async fn start_session(
-    conn: &ClientSideConnection,
-    cwd: PathBuf,
-) -> Result<SessionInfo, AetherDesktopError> {
-    let init_req = InitializeRequest {
-        protocol_version: VERSION,
-        client_capabilities: AcpClient::capabilities(),
-        meta: None,
-    };
-
-    let init_response = conn
-        .initialize(init_req)
-        .await
-        .map_err(|e| AetherDesktopError::ActorInit(e.to_string()))?;
-
-    let session_req = NewSessionRequest {
-        cwd,
-        mcp_servers: vec![],
-        meta: None,
-    };
-
-    let session_response = conn
-        .new_session(session_req)
-        .await
-        .map_err(|e| AetherDesktopError::ActorSession(e.to_string()))?;
-
-    Ok(SessionInfo {
-        session_id: session_response.session_id,
-        agent_capabilities: init_response.agent_capabilities,
-    })
-}
-
 /// Internal event types for the StreamMap
 #[derive(Debug)]
 enum LoopEvent {
@@ -282,10 +242,12 @@ type EventStream = Pin<Box<dyn Stream<Item = LoopEvent> + Send>>;
 /// Main agent loop running on a dedicated thread.
 ///
 /// Handles initialization, sends session info back via init_tx, then runs the event loop.
+#[allow(clippy::too_many_arguments)]
 async fn run_agent(
     agent_id: String,
     cmd: String,
     cwd: PathBuf,
+    execution_mode: ExecutionMode,
     cmd_rx: mpsc::UnboundedReceiver<AgentCommand>,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
     init_tx: oneshot::Sender<Result<SessionInfo, AetherDesktopError>>,
@@ -294,23 +256,70 @@ async fn run_agent(
     // Separate channel for raw events from AcpClient
     let (raw_tx, raw_rx) = mpsc::unbounded_channel::<RawAgentEvent>();
 
-    let (_child, stdin, stdout) = match spawn_child_process(&cmd) {
-        Ok(result) => result,
-        Err(e) => {
-            let _ = init_tx.send(Err(e));
-            return;
+    // Parse command string into parts for spawner
+    let cmd_parts: Vec<String> = cmd.split_whitespace().map(String::from).collect();
+
+    // Create appropriate spawner based on execution mode
+    let is_docker = execution_mode.is_docker();
+    let spawn_config = match &execution_mode {
+        ExecutionMode::Local => SpawnConfig::Local,
+        ExecutionMode::Docker { dockerfile_path } => {
+            // Pass through API keys from host environment
+            let mut env = std::collections::HashMap::new();
+            if let Ok(key) = std::env::var("ZAI_API_KEY") {
+                env.insert("ZAI_API_KEY".to_string(), key);
+            }
+
+            SpawnConfig::Docker(DockerConfig {
+                image: ImageSource::Dockerfile(dockerfile_path.clone()),
+                mounts: vec![],
+                env,
+                mount_ssh_keys: true,
+                working_dir: "/workspace".to_string(),
+            })
         }
     };
 
-    let (conn, io_future) = ClientSideConnection::new(
-        AcpClient::new(raw_tx),
-        stdin.compat_write(),
-        stdout.compat(),
-        |fut| {
+    let progress_tx: Option<ProgressTx> = if is_docker {
+        let (tx, mut rx) = mpsc::unbounded_channel::<DockerProgress>();
+        let event_tx_clone = event_tx.clone();
+        let agent_id_clone = agent_id.clone();
+
+        spawn_local(async move {
+            while let Some(progress) = rx.recv().await {
+                let _ = event_tx_clone.send(AgentEvent::StatusChange {
+                    agent_id: agent_id_clone.clone(),
+                    status: AgentStatus::Starting(progress),
+                });
+            }
+        });
+
+        Some(tx)
+    } else {
+        None
+    };
+
+    let (process_handle, input, output) =
+        match spawn_agent_process(spawn_config, &cwd, cmd_parts, progress_tx).await {
+            Ok((agent, input, output)) => (agent, input, output),
+            Err(e) => {
+                let _ = init_tx.send(Err(AetherDesktopError::ActorSpawn(e.to_string())));
+                return;
+            }
+        };
+
+    if is_docker {
+        let _ = event_tx.send(AgentEvent::StatusChange {
+            agent_id: agent_id.clone(),
+            status: AgentStatus::Starting(DockerProgress::Initializing),
+        });
+    }
+
+    let (conn, io_future) =
+        ClientSideConnection::new(AcpClient::new(raw_tx), input, output, |fut| {
             // Spawn local tasks (LocalBoxFuture is not Send)
             tokio::task::spawn_local(fut);
-        },
-    );
+        });
 
     // Run IO in the background (also local since io_future is not Send)
     tokio::task::spawn_local(async move {
@@ -322,7 +331,7 @@ async fn run_agent(
     let session_info = match start_session(&conn, cwd.clone()).await {
         Ok(info) => info,
         Err(e) => {
-            let _ = init_tx.send(Err(e));
+            let _ = init_tx.send(Err(AetherDesktopError::ActorInit(e.to_string())));
             return;
         }
     };
@@ -356,15 +365,50 @@ async fn run_agent(
     );
 
     // Set up file watcher for the agent's working directory
-    let (file_watch_tx, file_watch_rx) = mpsc::unbounded_channel();
-    let _file_watcher = FileWatcher::new(cwd.clone(), file_watch_tx);
-    streams.insert(
-        "file_watch",
-        Box::pin(UnboundedReceiverStream::new(file_watch_rx).map(LoopEvent::FileWatchEvent)),
-    );
+    // Use different watcher implementation based on execution mode
+    let _docker_poller_shutdown: Option<tokio::sync::oneshot::Sender<()>>;
+
+    if is_docker {
+        // Docker mode: use polling-based watcher with its own channel
+        let (docker_watch_tx, docker_watch_rx) = mpsc::unbounded_channel();
+        let (poller, shutdown_tx) =
+            DockerFilePoller::new(std::sync::Arc::clone(&process_handle), docker_watch_tx);
+        poller.start();
+        _docker_poller_shutdown = Some(shutdown_tx);
+
+        // Map Docker file events to the same LoopEvent type
+        streams.insert(
+            "file_watch",
+            Box::pin(
+                UnboundedReceiverStream::new(docker_watch_rx).map(|e| match e {
+                    DockerFileEvent::Changed => LoopEvent::FileWatchEvent(FileWatchEvent::Changed),
+                    DockerFileEvent::Error(msg) => {
+                        LoopEvent::FileWatchEvent(FileWatchEvent::Error(msg))
+                    }
+                }),
+            ),
+        );
+    } else {
+        // Local mode: use standard file watcher with its own channel
+        _docker_poller_shutdown = None;
+        let (file_watch_tx, file_watch_rx) = mpsc::unbounded_channel();
+        let _file_watcher = FileWatcher::new(cwd.clone(), file_watch_tx);
+        streams.insert(
+            "file_watch",
+            Box::pin(UnboundedReceiverStream::new(file_watch_rx).map(LoopEvent::FileWatchEvent)),
+        );
+    }
 
     // Send initial diff state
-    let initial_diff = compute_diff_state(&cwd);
+    let initial_diff = if is_docker {
+        // Docker mode: compute diff via exec (async), start with empty state
+        DiffState {
+            is_ephemeral: true,
+            ..Default::default()
+        }
+    } else {
+        compute_diff_state(&cwd)
+    };
     let _ = event_tx.send(AgentEvent::DiffUpdate {
         agent_id: agent_id.clone(),
         diff_state: initial_diff,
@@ -434,7 +478,33 @@ async fn run_agent(
             LoopEvent::FileWatchEvent(file_event) => match file_event {
                 FileWatchEvent::Changed => {
                     debug!(agent_id = %agent_id, "File change detected, recomputing diff");
-                    let diff_state = compute_diff_state(&cwd);
+                    let diff_state = if is_docker {
+                        // Docker mode: compute diff via exec
+                        match compute_docker_diff(process_handle.as_ref()).await {
+                            Ok(files) => {
+                                let mut state = DiffState {
+                                    files,
+                                    is_ephemeral: true,
+                                    ..Default::default()
+                                };
+                                // Select first file by default if any exist
+                                if let Some(first) = state.files.first() {
+                                    state.selected_file = Some(first.path.clone());
+                                }
+                                state
+                            }
+                            Err(e) => {
+                                warn!(agent_id = %agent_id, "Docker diff failed: {}", e);
+                                DiffState {
+                                    is_ephemeral: true,
+                                    error: Some(e.to_string()),
+                                    ..Default::default()
+                                }
+                            }
+                        }
+                    } else {
+                        compute_diff_state(&cwd)
+                    };
                     let _ = event_tx.send(AgentEvent::DiffUpdate {
                         agent_id: agent_id.clone(),
                         diff_state,
@@ -452,188 +522,74 @@ async fn run_agent(
     });
 }
 
-fn spawn_child_process(cmd: &str) -> Result<(Child, ChildStdin, ChildStdout), AetherDesktopError> {
-    let parts: Vec<&str> = cmd.split_whitespace().collect();
-    if parts.is_empty() {
-        return Err(AetherDesktopError::ActorSpawn(
-            "Empty command line".to_string(),
-        ));
-    }
-
-    let (command, args) = (parts[0], &parts[1..]);
-    debug!("Command: {}, Args: {:?}", command, args);
-
-    let mut child = Command::new(command)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| AetherDesktopError::ActorSpawn(e.to_string()))?;
-
-    let stdin = child.stdin.take().ok_or(AetherDesktopError::ActorSpawn(
-        "Failed to get stdin".to_string(),
-    ))?;
-
-    let stdout = child.stdout.take().ok_or(AetherDesktopError::ActorSpawn(
-        "Failed to get stdout".to_string(),
-    ))?;
-
-    Ok((child, stdin, stdout))
-}
-
 /// Transform a raw event from AcpClient into UI-ready AgentEvent(s).
 ///
-/// This moves the transformation logic that was previously in EventDispatcher
-/// into the agent task loop where we have access to agent_id.
+/// Uses the shared transformation from aether_acp_client and adds agent_id
+/// for UI routing.
 fn transform_raw_event(agent_id: &str, raw_event: RawAgentEvent) -> Vec<AgentEvent> {
-    match raw_event {
-        RawAgentEvent::SessionNotification(notif) => {
-            transform_session_notification(agent_id, notif)
-        }
-        RawAgentEvent::PermissionRequest {
+    let acp_events = aether_acp_client::transform_raw_event(raw_event);
+    acp_events
+        .into_iter()
+        .map(|event| map_acp_event_to_agent_event(agent_id, event))
+        .collect()
+}
+
+/// Map a protocol-level AcpEvent to a UI-ready AgentEvent by adding agent_id.
+fn map_acp_event_to_agent_event(agent_id: &str, event: AcpEvent) -> AgentEvent {
+    match event {
+        AcpEvent::MessageChunk { text } => AgentEvent::MessageChunk {
+            agent_id: agent_id.to_string(),
+            text,
+        },
+        AcpEvent::MessageComplete => AgentEvent::MessageComplete {
+            agent_id: agent_id.to_string(),
+        },
+        AcpEvent::ToolCallStarted { tool_id, tool_call } => AgentEvent::ToolCallStarted {
+            agent_id: agent_id.to_string(),
+            tool_id,
+            tool_call,
+        },
+        AcpEvent::ToolCallUpdated { tool_id, fields } => AgentEvent::ToolCallUpdated {
+            agent_id: agent_id.to_string(),
+            tool_id,
+            fields,
+        },
+        AcpEvent::ToolCallCompleted { tool_id, result } => AgentEvent::ToolCallCompleted {
+            agent_id: agent_id.to_string(),
+            tool_id,
+            result,
+        },
+        AcpEvent::ToolCallFailed { tool_id, error } => AgentEvent::ToolCallFailed {
+            agent_id: agent_id.to_string(),
+            tool_id,
+            error,
+        },
+        AcpEvent::PermissionRequest {
             request,
             response_tx,
-        } => {
-            vec![AgentEvent::PermissionRequest {
-                agent_id: agent_id.to_string(),
-                request,
-                response_tx,
-            }]
-        }
-        RawAgentEvent::TerminalOutput {
+        } => AgentEvent::PermissionRequest {
+            agent_id: agent_id.to_string(),
+            request,
+            response_tx,
+        },
+        AcpEvent::AvailableCommandsUpdate { commands } => AgentEvent::AvailableCommandsUpdate {
+            agent_id: agent_id.to_string(),
+            commands,
+        },
+        AcpEvent::TerminalOutput {
             terminal_id,
             output,
             stream,
-        } => {
-            vec![AgentEvent::TerminalOutput {
-                agent_id: agent_id.to_string(),
-                terminal_id,
-                output,
-                stream,
-            }]
-        }
+        } => AgentEvent::TerminalOutput {
+            agent_id: agent_id.to_string(),
+            terminal_id,
+            output,
+            stream: match stream {
+                OutputStream::Stdout => TerminalStream::Stdout,
+                OutputStream::Stderr => TerminalStream::Stderr,
+            },
+        },
     }
-}
-
-fn transform_session_notification(
-    agent_id: &str,
-    notif: agent_client_protocol::SessionNotification,
-) -> Vec<AgentEvent> {
-    match notif.update {
-        SessionUpdate::AgentMessageChunk { content } => {
-            if let ContentBlock::Text(text_content) = content {
-                vec![AgentEvent::MessageChunk {
-                    agent_id: agent_id.to_string(),
-                    text: text_content.text,
-                }]
-            } else {
-                vec![]
-            }
-        }
-
-        SessionUpdate::UserMessageChunk { content } => {
-            if let ContentBlock::Text(text_content) = content {
-                debug!("User message chunk: {}", text_content.text);
-            }
-            vec![]
-        }
-
-        SessionUpdate::AgentThoughtChunk { content } => {
-            if let ContentBlock::Text(text_content) = content {
-                debug!("Agent thought: {}", text_content.text);
-            }
-            vec![]
-        }
-
-        SessionUpdate::ToolCall(tc) => {
-            let tool_id = tc.id.0.to_string();
-            info!("Tool call started: {} - {}", tool_id, tc.title);
-
-            vec![AgentEvent::ToolCallStarted {
-                agent_id: agent_id.to_string(),
-                tool_id,
-                tool_call: tc,
-            }]
-        }
-
-        SessionUpdate::ToolCallUpdate(update) => {
-            let tool_id = update.id.0.to_string();
-            debug!("Tool call update: {} - {:?}", tool_id, update.fields.status);
-
-            if let Some(status) = &update.fields.status {
-                match status {
-                    ToolCallStatus::Completed => {
-                        let content = extract_tool_content(&update.fields)
-                            .unwrap_or_else(|| "Completed".to_string());
-
-                        vec![AgentEvent::ToolCallCompleted {
-                            agent_id: agent_id.to_string(),
-                            tool_id,
-                            result: content,
-                        }]
-                    }
-                    ToolCallStatus::Failed => {
-                        let error_msg = extract_tool_content(&update.fields)
-                            .unwrap_or_else(|| "Unknown error".to_string());
-
-                        vec![AgentEvent::ToolCallFailed {
-                            agent_id: agent_id.to_string(),
-                            tool_id,
-                            error: error_msg,
-                        }]
-                    }
-                    _ => {
-                        vec![AgentEvent::ToolCallUpdated {
-                            agent_id: agent_id.to_string(),
-                            tool_id,
-                            fields: update.fields,
-                        }]
-                    }
-                }
-            } else {
-                vec![AgentEvent::ToolCallUpdated {
-                    agent_id: agent_id.to_string(),
-                    tool_id,
-                    fields: update.fields,
-                }]
-            }
-        }
-
-        SessionUpdate::Plan(plan) => {
-            debug!("Received plan: {:?}", plan);
-            vec![]
-        }
-
-        SessionUpdate::AvailableCommandsUpdate { available_commands } => {
-            debug!("Available commands updated: {:?}", available_commands);
-            vec![AgentEvent::AvailableCommandsUpdate {
-                agent_id: agent_id.to_string(),
-                commands: available_commands,
-            }]
-        }
-
-        SessionUpdate::CurrentModeUpdate { current_mode_id } => {
-            debug!("Mode changed to: {}", current_mode_id);
-            vec![]
-        }
-    }
-}
-
-/// Extract text content from tool call update fields
-fn extract_tool_content(fields: &ToolCallUpdateFields) -> Option<String> {
-    fields.content.as_ref().and_then(|contents| {
-        contents.iter().find_map(|c| match c {
-            ToolCallContent::Content { content } => {
-                if let ContentBlock::Text(t) = content {
-                    Some(t.text.clone())
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
-    })
 }
 
 /// Compute diff state for a given working directory.

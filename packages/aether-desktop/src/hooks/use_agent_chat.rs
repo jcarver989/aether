@@ -17,8 +17,8 @@ use tokio::fs::read_to_string;
 use tokio::sync::Mutex;
 
 use crate::file_search::{FileMatch, FileSearcher};
-use crate::state::{now_iso, AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand};
-use crate::{with_agent_mut, AGENTS, FILE_SEARCHERS, HANDLES};
+use crate::state::{AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, now_iso};
+use crate::{AGENTS, FILE_SEARCHERS, HANDLES, with_agent_mut};
 
 use super::use_autocomplete::{AutocompleteController, KeyAction};
 

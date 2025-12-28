@@ -103,6 +103,7 @@ fn AgentListItem(
 
     let status_color_class = match &agent.status {
         AgentStatus::Idle => "bg-gray-500",
+        AgentStatus::Starting(_) => "bg-yellow-500",
         AgentStatus::Running => "bg-green-500",
         AgentStatus::Error(_) => "bg-red-500",
     };
@@ -110,10 +111,10 @@ fn AgentListItem(
     let status_class = format!(
         "status-dot w-2.5 h-2.5 rounded-full {} {}",
         status_color_class,
-        if matches!(agent.status, AgentStatus::Running) {
-            "status-dot-running"
-        } else {
-            "status-dot-idle"
+        match &agent.status {
+            AgentStatus::Running => "status-dot-running",
+            AgentStatus::Starting(_) => "animate-pulse",
+            _ => "status-dot-idle",
         }
     );
 

@@ -1,2 +1,2 @@
 mod home;
-pub use home::{run_ui_consumer, Home};
+pub use home::{Home, run_ui_consumer};
