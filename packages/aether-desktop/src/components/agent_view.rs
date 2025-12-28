@@ -28,17 +28,18 @@ pub fn AgentView(agent_id: String) -> Element {
     let dropdown_state = use_signal(DropdownState::default);
     let mut active_tab = use_signal(|| AgentViewTab::Chat);
     let agent_id_for_send = agent_id.clone();
-    let agent_id_for_handlers = agent_id.clone();
     let agent_id_for_diff = agent_id.clone();
 
-    // Get available commands for this agent (read once per render)
-    let available_commands: Vec<SlashCommand> = {
-        let agents = AGENTS.read();
-        agents
-            .get(&agent_id_for_handlers)
-            .map(|a| a.available_commands.clone())
-            .unwrap_or_default()
+    let Some(agent_signal) = AGENTS.read().get(&agent_id) else {
+        return rsx! {
+            div {
+                class: "flex-1 flex items-center justify-center text-gray-500",
+                "Agent not found"
+            }
+        };
     };
+
+    let available_commands: Vec<SlashCommand> = agent_signal.read().available_commands.clone();
 
     let mut do_send = {
         let mut dropdown_state = dropdown_state;
@@ -180,18 +181,8 @@ pub fn AgentView(agent_id: String) -> Element {
         }
     };
 
-    // Read from global signal during render - this subscribes the component
-    // to AGENTS changes for reactive re-renders when messages stream in
-    let agents = AGENTS.read();
-    tracing::debug!("AgentView rendering, agents count: {}", agents.len());
-    let Some(agent) = agents.get(&agent_id) else {
-        return rsx! {
-            div {
-                class: "flex-1 flex items-center justify-center text-gray-500",
-                "Agent not found"
-            }
-        };
-    };
+    let agent = agent_signal.read();
+    tracing::debug!("AgentView rendering for agent: {}", agent.id);
 
     let is_running = matches!(agent.status, AgentStatus::Running);
     let status_text = match &agent.status {
