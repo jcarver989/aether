@@ -55,7 +55,7 @@ pub enum AgentMessage {
     Done,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UserMessage {
     Text { content: String },
     Cancel,

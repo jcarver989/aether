@@ -40,6 +40,7 @@ pub struct Agent<T: StreamingModelProvider> {
 }
 
 impl<T: StreamingModelProvider + 'static> Agent<T> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         llm: Arc<T>,
         context: Context,

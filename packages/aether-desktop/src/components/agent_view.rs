@@ -2,33 +2,46 @@
 //!
 //! Displays the chat interface for a single agent session.
 
-use dioxus::prelude::*;
+use std::path::Path;
+use std::sync::{Arc, LazyLock};
 
-use crate::state::{
-    now_iso, AgentStatus, CommentKey, DiffComment, Message, MessageKind, Role, SlashCommand,
+use agent_client_protocol::{
+    ContentBlock, EmbeddedResource, EmbeddedResourceResource, ResourceLink, TextResourceContents,
 };
-use crate::{with_agent_mut, AGENTS, HANDLES};
+use dioxus::prelude::*;
+use regex::Regex;
+use tokio::sync::Mutex;
+
+/// Matches `@query` at start of string or after whitespace, capturing the query.
+static FILE_MENTION_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:^|\s)@(\S*)$").unwrap());
+
+use crate::file_search::{FileMatch, FileSearcher};
+use crate::state::{
+    now_iso, AgentStatus, AutocompleteMode, AutocompleteState, CommentKey, DiffComment, Message,
+    MessageKind, Role, SlashCommand,
+};
+use crate::{with_agent_mut, AGENTS, FILE_SEARCHERS, HANDLES};
 
 use super::command_dropdown::CommandDropdown;
 use super::diff_view::DiffView;
+use super::file_picker::{FilePicker, FilePill};
 use super::message_bubble::MessageBubble;
 use super::view_tabs::{AgentViewTab, ViewTabs};
-
-/// State for the command dropdown
-#[derive(Clone, PartialEq, Default)]
-struct DropdownState {
-    visible: bool,
-    selected_index: usize,
-    filter_text: String,
-}
 
 #[component]
 pub fn AgentView(agent_id: String) -> Element {
     let mut input_val = use_signal(String::new);
-    let dropdown_state = use_signal(DropdownState::default);
+    let mut autocomplete_state = use_signal(AutocompleteState::default);
     let mut active_tab = use_signal(|| AgentViewTab::Chat);
     let agent_id_for_send = agent_id.clone();
     let agent_id_for_diff = agent_id.clone();
+
+    // Pending file mentions (files selected via @)
+    let mut pending_files: Signal<Vec<FileMatch>> = use_signal(Vec::new);
+
+    // File search results
+    let file_matches: Signal<Vec<FileMatch>> = use_signal(Vec::new);
+    let mut files_loading = use_signal(|| false);
 
     let Some(agent_signal) = AGENTS.read().get(&agent_id) else {
         return rsx! {
@@ -39,25 +52,59 @@ pub fn AgentView(agent_id: String) -> Element {
         };
     };
 
+    // Get the agent's cwd for file searching
+    let agent_cwd = agent_signal.read().cwd.clone();
+
+    // Get or create file searcher from global cache (shared across agent views with same cwd)
+    let file_searcher: Arc<Mutex<FileSearcher>> =
+        FILE_SEARCHERS.write().get_or_create(agent_cwd.clone());
+
+    // Index files on first render (only if not already indexed)
+    use_effect({
+        let searcher = file_searcher.clone();
+        move || {
+            let searcher = searcher.clone();
+            spawn(async move {
+                let mut searcher = searcher.lock().await;
+                if !searcher.is_indexed() {
+                    files_loading.set(true);
+                    if let Err(e) = searcher.index_files() {
+                        tracing::warn!("Failed to index files: {}", e);
+                    }
+                    files_loading.set(false);
+                }
+            });
+        }
+    });
+
     let available_commands: Vec<SlashCommand> = agent_signal.read().available_commands.clone();
 
     let mut do_send = {
-        let mut dropdown_state = dropdown_state;
+        let agent_id = agent_id_for_send.clone();
         move || {
             let content = input_val.read().clone();
-            if content.trim().is_empty() {
+            let files = pending_files.read().clone();
+
+            if content.trim().is_empty() && files.is_empty() {
                 return;
             }
 
-            // Close dropdown on send
-            dropdown_state.write().visible = false;
+            // Close autocomplete on send
+            autocomplete_state.write().hide();
 
-            // Add user message to state
-            with_agent_mut(&agent_id_for_send, |agent| {
+            // Add user message to state immediately (show original content, not file contents)
+            let display_content = if files.is_empty() {
+                content.clone()
+            } else {
+                let file_list: Vec<_> = files.iter().map(|f| format!("@{}", f.path)).collect();
+                format!("{}\n\n{}", file_list.join(" "), content)
+            };
+
+            with_agent_mut(&agent_id, |agent| {
                 agent.messages.push(Message {
                     id: uuid::Uuid::new_v4().to_string(),
                     role: Role::User,
-                    content: content.clone(),
+                    content: display_content,
                     kind: MessageKind::Text,
                     timestamp: now_iso(),
                     is_streaming: false,
@@ -65,117 +112,207 @@ pub fn AgentView(agent_id: String) -> Element {
                 agent.status = AgentStatus::Running;
             });
 
-            // Send via handles (separate from UI state)
-            if let Err(e) = HANDLES.read().send_prompt(&agent_id_for_send, content) {
-                tracing::error!("Failed to send message: {}", e);
-                with_agent_mut(&agent_id_for_send, |agent| {
-                    agent.status = AgentStatus::Error(e.to_string());
-                });
-            }
-
+            // Clear input immediately for responsiveness
             input_val.set(String::new());
+            pending_files.write().clear();
+
+            let agent_id = agent_id.clone();
+            spawn(async move {
+                let supports_embedded = HANDLES.read().supports_embedded_context(&agent_id);
+                let mut prompt: Vec<ContentBlock> = Vec::new();
+
+                for file in &files {
+                    if supports_embedded {
+                        match tokio::fs::read_to_string(&file.absolute_path).await {
+                            Ok(file_content) => {
+                                prompt.push(file_to_embedded_resource(file, &file_content));
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to read file {}: {}", file.path, e);
+                            }
+                        }
+                    } else {
+                        prompt.push(file_to_resource_link(file));
+                    }
+                }
+
+                if !content.trim().is_empty() {
+                    prompt.push(ContentBlock::from(content));
+                }
+
+                if let Err(e) = HANDLES.read().send_prompt(&agent_id, prompt) {
+                    tracing::error!("Failed to send message: {}", e);
+                    with_agent_mut(&agent_id, |agent| {
+                        agent.status = AgentStatus::Error(e.to_string());
+                    });
+                }
+            });
         }
     };
 
     // Handle command selection from dropdown
     let on_command_select = {
         let mut input_val = input_val;
-        let mut dropdown_state = dropdown_state;
+        let mut autocomplete_state = autocomplete_state;
         move |cmd: SlashCommand| {
             // Replace input with "/{command} "
             input_val.set(format!("/{} ", cmd.name));
-            dropdown_state.write().visible = false;
+            autocomplete_state.write().hide();
         }
     };
 
-    // Handle input changes - detect "/" for dropdown
+    // Handle file selection from file picker
+    let on_file_select = {
+        let mut input_val = input_val;
+        let mut autocomplete_state = autocomplete_state;
+        let mut pending_files = pending_files;
+        move |file: FileMatch| {
+            add_file_to_pending(
+                file,
+                &mut pending_files,
+                &mut input_val,
+                &mut autocomplete_state,
+            );
+        }
+    };
+
+    // Handle input changes - detect "/" or "@" for autocomplete
     let on_input_change = {
-        let mut dropdown_state = dropdown_state;
+        let mut autocomplete_state = autocomplete_state;
+        let mut file_matches = file_matches;
+        let file_searcher = file_searcher.clone();
         move |e: Event<FormData>| {
             let value = e.value();
             input_val.set(value.clone());
 
-            // Check if we should show/hide dropdown
+            // Check for slash commands (at start, no spaces)
             if value.starts_with('/') && !value.contains(' ') {
-                // Show dropdown, filter by text after "/"
                 let filter = value.trim_start_matches('/').to_string();
-                let mut state = dropdown_state.write();
-                state.visible = true;
-                state.filter_text = filter;
-                state.selected_index = 0;
-            } else {
-                dropdown_state.write().visible = false;
+                *autocomplete_state.write() = AutocompleteState::slash_command(filter);
+                return;
             }
+
+            if let Some(caps) = FILE_MENTION_RE.captures(&value) {
+                let query = caps.get(1).map_or("", |m| m.as_str()).to_string();
+
+                *autocomplete_state.write() = AutocompleteState::file_mention(query.clone());
+
+                let searcher = file_searcher.clone();
+                spawn(async move {
+                    let mut searcher = searcher.lock().await;
+                    let matches = searcher.search(&query, 10);
+                    file_matches.set(matches);
+                });
+                return;
+            }
+
+            // No trigger found, hide autocomplete
+            autocomplete_state.write().hide();
         }
     };
 
     // Enhanced keyboard handling
     let on_keydown = {
         let mut do_send = do_send.clone();
-        let mut dropdown_state = dropdown_state;
+        let mut autocomplete_state = autocomplete_state;
         let commands = available_commands.clone();
         let mut input_val = input_val;
+        let mut pending_files = pending_files;
 
         move |e: KeyboardEvent| {
-            let state = dropdown_state.read().clone();
+            let state = autocomplete_state.read().clone();
 
-            if state.visible {
-                // Dropdown is open - handle navigation
-                let filtered: Vec<&SlashCommand> = commands
-                    .iter()
-                    .filter(|cmd| {
-                        state.filter_text.is_empty()
-                            || cmd
-                                .name
-                                .to_lowercase()
-                                .contains(&state.filter_text.to_lowercase())
-                    })
-                    .collect();
+            if state.is_visible() {
+                match state.mode {
+                    AutocompleteMode::SlashCommand => {
+                        // Slash command dropdown navigation
+                        let filtered: Vec<&SlashCommand> = commands
+                            .iter()
+                            .filter(|cmd| {
+                                state.filter_text.is_empty()
+                                    || cmd
+                                        .name
+                                        .to_lowercase()
+                                        .contains(&state.filter_text.to_lowercase())
+                            })
+                            .collect();
 
+                        match e.key() {
+                            Key::ArrowDown => {
+                                e.prevent_default();
+                                if !filtered.is_empty() {
+                                    autocomplete_state.write().select_next(filtered.len() - 1);
+                                }
+                            }
+                            Key::ArrowUp => {
+                                e.prevent_default();
+                                autocomplete_state.write().select_previous();
+                            }
+                            Key::Enter | Key::Tab => {
+                                e.prevent_default();
+                                if let Some(cmd) = filtered.get(state.selected_index) {
+                                    input_val.set(format!("/{} ", cmd.name));
+                                    autocomplete_state.write().hide();
+                                }
+                            }
+                            Key::Escape => {
+                                e.prevent_default();
+                                autocomplete_state.write().hide();
+                            }
+                            _ => {}
+                        }
+                    }
+                    AutocompleteMode::FileMention => {
+                        // File picker navigation
+                        let matches = file_matches.read();
+                        let match_count = matches.len();
+
+                        match e.key() {
+                            Key::ArrowDown => {
+                                e.prevent_default();
+                                if match_count > 0 {
+                                    autocomplete_state.write().select_next(match_count - 1);
+                                }
+                            }
+                            Key::ArrowUp => {
+                                e.prevent_default();
+                                autocomplete_state.write().select_previous();
+                            }
+                            Key::Enter | Key::Tab => {
+                                e.prevent_default();
+                                if let Some(file) = matches.get(state.selected_index) {
+                                    add_file_to_pending(
+                                        file.clone(),
+                                        &mut pending_files,
+                                        &mut input_val,
+                                        &mut autocomplete_state,
+                                    );
+                                }
+                            }
+                            Key::Escape => {
+                                e.prevent_default();
+                                autocomplete_state.write().hide();
+                            }
+                            _ => {}
+                        }
+                    }
+                    AutocompleteMode::None => {}
+                }
+            } else {
                 match e.key() {
-                    Key::ArrowDown => {
+                    Key::Enter if !e.modifiers().shift() => {
                         e.prevent_default();
-                        let mut state = dropdown_state.write();
-                        if !filtered.is_empty() {
-                            state.selected_index = (state.selected_index + 1) % filtered.len();
-                        }
+                        do_send();
                     }
-                    Key::ArrowUp => {
-                        e.prevent_default();
-                        let mut state = dropdown_state.write();
-                        if !filtered.is_empty() {
-                            state.selected_index = state
-                                .selected_index
-                                .checked_sub(1)
-                                .unwrap_or(filtered.len().saturating_sub(1));
-                        }
-                    }
-                    Key::Enter => {
-                        e.prevent_default();
-                        if let Some(cmd) = filtered.get(state.selected_index) {
-                            input_val.set(format!("/{} ", cmd.name));
-                            dropdown_state.write().visible = false;
-                        }
-                    }
-                    Key::Escape => {
-                        e.prevent_default();
-                        dropdown_state.write().visible = false;
-                    }
-                    Key::Tab => {
-                        // Tab also selects (like autocomplete)
-                        e.prevent_default();
-                        if let Some(cmd) = filtered.get(state.selected_index) {
-                            input_val.set(format!("/{} ", cmd.name));
-                            dropdown_state.write().visible = false;
+                    Key::Backspace => {
+                        // If at start of input and we have pending files, remove the last one
+                        let input = input_val.read().clone();
+                        if input.is_empty() && !pending_files.read().is_empty() {
+                            e.prevent_default();
+                            pending_files.write().pop();
                         }
                     }
                     _ => {}
-                }
-            } else {
-                // Normal mode - send on Enter
-                if e.key() == Key::Enter && !e.modifiers().shift() {
-                    e.prevent_default();
-                    do_send();
                 }
             }
         }
@@ -196,9 +333,11 @@ pub fn AgentView(agent_id: String) -> Element {
         AgentStatus::Error(_) => "bg-red-600/20 text-red-400 border border-red-600/30",
     };
 
-    let dropdown_visible = dropdown_state.read().visible;
-    let dropdown_selected = dropdown_state.read().selected_index;
-    let dropdown_filter = dropdown_state.read().filter_text.clone();
+    // Read autocomplete state for rendering
+    let ac_state = autocomplete_state.read().clone();
+    let current_file_matches = file_matches.read().clone();
+    let current_pending_files = pending_files.read().clone();
+    let is_files_loading = *files_loading.read();
 
     // Get diff state for this agent
     let diff_state = agent.diff_state.clone();
@@ -257,17 +396,50 @@ pub fn AgentView(agent_id: String) -> Element {
                     div {
                         class: "p-4 border-t border-[#2d313a] bg-[#1a1d23]",
 
+                        // File pills (pending file mentions)
+                        if !current_pending_files.is_empty() {
+                            div {
+                                class: "flex flex-wrap gap-2 mb-3",
+                                for file in current_pending_files.iter() {
+                                    FilePill {
+                                        key: "{file.path}",
+                                        file: file.clone(),
+                                        on_remove: {
+                                            let path = file.path.clone();
+                                            let mut pending_files = pending_files;
+                                            move |_| {
+                                                pending_files.write().retain(|f| f.path != path);
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                        }
+
                         // Relative container for dropdown positioning
                         div {
                             class: "relative",
 
-                            // Command dropdown (positioned above input)
-                            if dropdown_visible {
-                                CommandDropdown {
-                                    commands: available_commands.clone(),
-                                    filter: dropdown_filter,
-                                    selected_index: dropdown_selected,
-                                    on_select: on_command_select,
+                            // Autocomplete dropdown (positioned above input)
+                            if ac_state.is_visible() {
+                                match ac_state.mode {
+                                    AutocompleteMode::SlashCommand => rsx! {
+                                        CommandDropdown {
+                                            commands: available_commands.clone(),
+                                            filter: ac_state.filter_text.clone(),
+                                            selected_index: ac_state.selected_index,
+                                            on_select: on_command_select,
+                                        }
+                                    },
+                                    AutocompleteMode::FileMention => rsx! {
+                                        FilePicker {
+                                            matches: current_file_matches.clone(),
+                                            selected_index: ac_state.selected_index,
+                                            loading: is_files_loading,
+                                            on_select: on_file_select,
+                                        }
+                                    },
+                                    AutocompleteMode::None => rsx! {},
                                 }
                             }
 
@@ -278,7 +450,7 @@ pub fn AgentView(agent_id: String) -> Element {
                                     value: "{input_val}",
                                     oninput: on_input_change,
                                     onkeydown: on_keydown,
-                                    placeholder: "Type a message or / for commands... (Enter to send)",
+                                    placeholder: "Type a message, / for commands, or @ to mention files...",
                                     disabled: is_running,
                                     rows: "2",
                                 }
@@ -362,8 +534,7 @@ pub fn AgentView(agent_id: String) -> Element {
                                             agent.diff_state.clear_comments();
                                         });
 
-                                        // Send via handles
-                                        if let Err(e) = HANDLES.read().send_prompt(&agent_id, prompt) {
+                                        if let Err(e) = HANDLES.read().send_prompt(&agent_id, vec![ContentBlock::from(prompt)]) {
                                             tracing::error!("Failed to send comment prompt: {}", e);
                                             with_agent_mut(&agent_id, |agent| {
                                                 agent.status = AgentStatus::Error(e.to_string());
@@ -410,4 +581,90 @@ pub fn EmptyState() -> Element {
             p { class: "text-sm mt-2 text-gray-600", "Click the \"New Agent\" button in the sidebar" }
         }
     }
+}
+
+/// Helper to add a file to pending mentions and clear the @query from input.
+fn add_file_to_pending(
+    file: FileMatch,
+    pending_files: &mut Signal<Vec<FileMatch>>,
+    input_val: &mut Signal<String>,
+    autocomplete_state: &mut Signal<AutocompleteState>,
+) {
+    // Add file if not already present
+    {
+        let mut files = pending_files.write();
+        if !files.iter().any(|f| f.path == file.path) {
+            files.push(file);
+        }
+    }
+
+    // Remove the @query from input
+    let current = input_val.read().clone();
+    if let Some(at_pos) = current.rfind('@') {
+        input_val.set(current[..at_pos].to_string());
+    }
+
+    autocomplete_state.write().hide();
+}
+
+/// Build a ContentBlock::Resource with embedded file content.
+///
+/// Used when the agent supports `embedded_context` capability.
+fn file_to_embedded_resource(file: &FileMatch, content: &str) -> ContentBlock {
+    ContentBlock::Resource(EmbeddedResource {
+        annotations: None,
+        resource: EmbeddedResourceResource::TextResourceContents(TextResourceContents {
+            uri: format!("file://{}", file.absolute_path.display()),
+            text: content.to_string(),
+            mime_type: mime_from_path(&file.path),
+            meta: None,
+        }),
+        meta: None,
+    })
+}
+
+/// Build a ContentBlock::ResourceLink for a file reference.
+///
+/// Used when the agent does NOT support `embedded_context` - the agent will read the file itself.
+fn file_to_resource_link(file: &FileMatch) -> ContentBlock {
+    ContentBlock::ResourceLink(ResourceLink {
+        uri: format!("file://{}", file.absolute_path.display()),
+        name: file.path.clone(),
+        size: Some(file.size as i64),
+        mime_type: mime_from_path(&file.path),
+        title: Some(file.path.clone()),
+        description: None,
+        annotations: None,
+        meta: None,
+    })
+}
+
+/// Infer MIME type from file extension.
+fn mime_from_path(path: &str) -> Option<String> {
+    let ext = Path::new(path).extension()?.to_str()?;
+    let mime = match ext.to_lowercase().as_str() {
+        "rs" => "text/x-rust",
+        "py" => "text/x-python",
+        "js" => "text/javascript",
+        "ts" => "text/typescript",
+        "tsx" => "text/typescript-jsx",
+        "jsx" => "text/javascript-jsx",
+        "json" => "application/json",
+        "toml" => "text/x-toml",
+        "yaml" | "yml" => "text/x-yaml",
+        "md" => "text/markdown",
+        "html" => "text/html",
+        "css" => "text/css",
+        "go" => "text/x-go",
+        "java" => "text/x-java",
+        "c" => "text/x-c",
+        "cpp" | "cc" | "cxx" => "text/x-c++",
+        "h" | "hpp" => "text/x-c-header",
+        "sh" | "bash" => "text/x-shellscript",
+        "sql" => "text/x-sql",
+        "xml" => "text/xml",
+        "txt" => "text/plain",
+        _ => "text/plain",
+    };
+    Some(mime.to_string())
 }

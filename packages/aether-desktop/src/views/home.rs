@@ -8,7 +8,7 @@ use crate::error::AetherDesktopError;
 use crate::settings::Settings;
 use crate::state::{AgentConfig, AgentHandles, AgentRegistry, AgentSession, AgentStatus};
 use crate::{EventChannel, AGENTS, HANDLES};
-use agent_client_protocol::{RequestPermissionOutcome, RequestPermissionResponse};
+use agent_client_protocol::{ContentBlock, RequestPermissionOutcome, RequestPermissionResponse};
 use dioxus::prelude::*;
 use std::env::current_dir;
 use std::path::PathBuf;
@@ -196,7 +196,7 @@ async fn create_agent(
     let agent_id = handle.id.clone();
     let acp_session_id = handle.acp_session_id.clone();
 
-    handle.send_prompt(initial_message.clone())?;
+    handle.send_prompt(vec![ContentBlock::from(initial_message.clone())])?;
 
     let session = AgentSession::new(
         agent_id.clone(),

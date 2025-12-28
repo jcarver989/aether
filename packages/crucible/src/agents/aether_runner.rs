@@ -253,11 +253,9 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
             .map_err(|e| RunError::ExecutionFailed(format!("Failed to spawn agent: {}", e)))?;
 
         agent_tx
-            .send(UserMessage::Text {
-                content: config.task_prompt.to_string(),
-            })
+            .send(UserMessage::text(config.task_prompt))
             .await
-            .map_err(|e| RunError::ChannelSendFailed(format!("Failed to send task: {}", e)))?;
+            .map_err(|e| RunError::ChannelSendFailed(format!("Failed to send task: {e}")))?;
 
         stream_agent_messages(agent_rx, tx).await
     }

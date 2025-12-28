@@ -19,6 +19,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::error;
 
+/// Callback type for reporting agent progress during subagent execution.
+type ProgressCallback = Box<dyn Fn(&str, &str, &AgentMessage) + Send + Sync>;
+
 use super::files::{AgentFile, PromptFile, SkillsFile};
 use super::tools::{
     AgentExecutor, ListAgentsOutput, ListSkillsOutput, LoadSkillsInput, LoadSkillsOutput, Skill,
@@ -258,7 +261,7 @@ impl PluginsMcp {
         let peer = Arc::new(context.peer.clone());
         let message_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
 
-        let progress_callback: Box<dyn Fn(&str, &str, &AgentMessage) + Send + Sync> = {
+        let progress_callback: ProgressCallback = {
             let progress_token = progress_token.clone();
             let peer = Arc::clone(&peer);
             let message_counter = Arc::clone(&message_counter);
