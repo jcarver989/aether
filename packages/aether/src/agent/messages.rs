@@ -41,6 +41,17 @@ pub enum AgentMessage {
         message: String,
     },
 
+    /// Context compaction has been triggered
+    ContextCompactionStarted {
+        message_count: usize,
+    },
+
+    /// Context was compacted to reduce token usage
+    ContextCompactionResult {
+        summary: String,
+        messages_removed: usize,
+    },
+
     Done,
 }
 

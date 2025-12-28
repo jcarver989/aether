@@ -139,6 +139,16 @@ async fn run_agent(
                 eprintln!("Cancelled: {message}");
             }
 
+            ContextCompactionStarted { message_count } => {
+                println!("[Context compaction started: {} messages]", message_count);
+            }
+
+            ContextCompactionResult {
+                messages_removed, ..
+            } => {
+                println!("[Context compacted: {} messages removed]", messages_removed);
+            }
+
             Done => {
                 println!("Agent task completed");
                 break;

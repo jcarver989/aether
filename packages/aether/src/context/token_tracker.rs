@@ -1,3 +1,6 @@
+/// Default threshold for triggering context compaction (85%)
+pub const DEFAULT_COMPACTION_THRESHOLD: f64 = 0.85;
+
 /// Tracks token usage from LLM API responses.
 /// Uses real usage data from API, not estimation.
 #[derive(Debug, Clone, Default)]
@@ -63,6 +66,15 @@ impl TokenTracker {
         self.usage_ratio() >= threshold
     }
 
+    /// Check if context should be compacted based on the given threshold.
+    /// This is a convenience method that combines usage ratio check with
+    /// a minimum context size requirement to avoid unnecessary compaction
+    /// on small conversations.
+    pub fn should_compact(&self, threshold: f64) -> bool {
+        let min_tokens = std::cmp::max(self.context_limit / 10, 1000);
+        self.last_input_tokens >= min_tokens && self.exceeds_threshold(threshold)
+    }
+
     /// Tokens remaining before hitting limit
     pub fn tokens_remaining(&self) -> u32 {
         self.context_limit.saturating_sub(self.last_input_tokens)
@@ -86,6 +98,13 @@ impl TokenTracker {
     /// Get total output tokens across all calls
     pub fn total_output_tokens(&self) -> u64 {
         self.total_output_tokens
+    }
+
+    /// Reset current usage tracking after context compaction.
+    /// Preserves cumulative totals for metrics while clearing the
+    /// last_input_tokens to prevent immediate re-triggering of compaction.
+    pub fn reset_current_usage(&mut self) {
+        self.last_input_tokens = 0;
     }
 }
 
@@ -150,5 +169,40 @@ mod tests {
         tracker.record_usage(850, 50);
         assert!(tracker.exceeds_threshold(0.8));
         assert!(tracker.exceeds_threshold(0.85));
+    }
+
+    #[test]
+    fn test_should_compact() {
+        let mut tracker = TokenTracker::new(10000);
+
+        tracker.record_usage(500, 100);
+        assert!(!tracker.should_compact(0.04));
+
+        tracker.record_usage(9000, 100);
+        assert!(tracker.should_compact(0.85));
+
+        tracker.record_usage(7000, 100);
+        assert!(!tracker.should_compact(0.85));
+    }
+
+    #[test]
+    fn test_default_compaction_threshold() {
+        use super::DEFAULT_COMPACTION_THRESHOLD;
+        assert!((DEFAULT_COMPACTION_THRESHOLD - 0.85).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_reset_current_usage() {
+        let mut tracker = TokenTracker::new(10000);
+        tracker.record_usage(9000, 100);
+
+        assert!(tracker.should_compact(0.85));
+
+        tracker.reset_current_usage();
+
+        assert_eq!(tracker.last_input_tokens(), 0);
+        assert!(!tracker.should_compact(0.85));
+        assert_eq!(tracker.total_input_tokens(), 9000);
+        assert_eq!(tracker.total_output_tokens(), 100);
     }
 }
