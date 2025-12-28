@@ -31,6 +31,13 @@ pub enum ToolCallStatus {
     Failed,
 }
 
+/// Identifies which output stream a terminal line came from.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TerminalStream {
+    Stdout,
+    Stderr,
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum MessageKind {
     Text,
@@ -135,6 +142,8 @@ pub struct AgentSession {
     pub cwd: PathBuf,
     /// Git diff state for this agent
     pub diff_state: DiffState,
+    /// Maps terminal_id → tool_id for correlating streaming terminal output
+    pub terminal_to_tool: HashMap<String, String>,
 }
 
 impl AgentSession {
@@ -161,6 +170,7 @@ impl AgentSession {
             available_commands: Vec::new(),
             cwd,
             diff_state: DiffState::default(),
+            terminal_to_tool: HashMap::new(),
         }
     }
 

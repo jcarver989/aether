@@ -2,7 +2,7 @@ use crate::acp_client::{AcpClient, RawAgentEvent};
 use crate::diff_engine::compute_diff;
 use crate::error::AetherDesktopError;
 use crate::file_watcher::{FileWatchEvent, FileWatcher};
-use crate::state::{AgentStatus, DiffState};
+use crate::state::{AgentStatus, DiffState, TerminalStream};
 use agent_client_protocol::{
     Agent, AvailableCommand, ClientSideConnection, ContentBlock, InitializeRequest,
     NewSessionRequest, NewSessionResponse, PromptRequest, RequestPermissionRequest,
@@ -178,6 +178,13 @@ pub enum AgentEvent {
         agent_id: String,
         diff_state: DiffState,
     },
+    /// Terminal output chunk received from a spawned process
+    TerminalOutput {
+        agent_id: String,
+        terminal_id: String,
+        output: String,
+        stream: TerminalStream,
+    },
 }
 
 impl AgentEvent {
@@ -196,6 +203,7 @@ impl AgentEvent {
             AgentEvent::Error { agent_id, .. } => agent_id,
             AgentEvent::AvailableCommandsUpdate { agent_id, .. } => agent_id,
             AgentEvent::DiffUpdate { agent_id, .. } => agent_id,
+            AgentEvent::TerminalOutput { agent_id, .. } => agent_id,
         }
     }
 }
@@ -471,6 +479,18 @@ fn transform_raw_event(agent_id: &str, raw_event: RawAgentEvent) -> Vec<AgentEve
                 agent_id: agent_id.to_string(),
                 request,
                 response_tx,
+            }]
+        }
+        RawAgentEvent::TerminalOutput {
+            terminal_id,
+            output,
+            stream,
+        } => {
+            vec![AgentEvent::TerminalOutput {
+                agent_id: agent_id.to_string(),
+                terminal_id,
+                output,
+                stream,
             }]
         }
     }

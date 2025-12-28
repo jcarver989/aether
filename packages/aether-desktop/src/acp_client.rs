@@ -16,10 +16,13 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::rc::Rc;
 use tokio::fs::{create_dir_all, write};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::spawn_local;
 use tracing::debug;
+
+use crate::state::TerminalStream;
 
 /// Raw events from AcpClient before session_id is attached.
 ///
@@ -32,13 +35,23 @@ pub enum RawAgentEvent {
         request: RequestPermissionRequest,
         response_tx: oneshot::Sender<RequestPermissionResponse>,
     },
+    /// Terminal output chunk received from a spawned process
+    TerminalOutput {
+        terminal_id: String,
+        output: String,
+        stream: TerminalStream,
+    },
 }
 
 /// Tracks a running terminal process
 struct TerminalProcess {
     child: tokio::process::Child,
-    output: String,
+    /// Accumulated output from the process (for protocol compliance).
+    /// Shared with reader tasks so they can append output as it arrives.
+    accumulated_output: Rc<RefCell<String>>,
     exit_status: Option<TerminalExitStatus>,
+    /// Handles to abort the stdout/stderr reader tasks on release
+    reader_abort_handles: Vec<tokio::task::AbortHandle>,
 }
 
 /// Shared terminal state (Rc because ?Send context)
@@ -157,7 +170,9 @@ impl Client for AcpClient {
     async fn create_terminal(&self, args: CreateTerminalRequest) -> Result<CreateTerminalResponse> {
         debug!("Create terminal: {}", args.command);
         let terminal_id = TerminalId::from(uuid::Uuid::new_v4().to_string());
-        let child = {
+        let terminal_id_str = terminal_id.to_string();
+
+        let mut child = {
             let mut cmd = Command::new("bash");
             cmd.arg("-c").arg(&args.command);
             cmd.stdout(Stdio::piped());
@@ -175,16 +190,40 @@ impl Client for AcpClient {
                 .map_err(|e| Error::internal_error().with_data(format!("Failed to spawn: {e}")))?
         };
 
+        let mut abort_handles = Vec::new();
+        let accumulated_output: Rc<RefCell<String>> = Rc::default();
+
+        if let Some(stdout) = child.stdout.take() {
+            let event_tx = self.event_tx.clone();
+            let tid = terminal_id_str.clone();
+            let acc = accumulated_output.clone();
+            let handle = spawn_local(async move {
+                stream_output(stdout, tid, TerminalStream::Stdout, event_tx, acc).await;
+            });
+            abort_handles.push(handle.abort_handle());
+        }
+
+        if let Some(stderr) = child.stderr.take() {
+            let event_tx = self.event_tx.clone();
+            let tid = terminal_id_str.clone();
+            let acc = accumulated_output.clone();
+            let handle = spawn_local(async move {
+                stream_output(stderr, tid, TerminalStream::Stderr, event_tx, acc).await;
+            });
+            abort_handles.push(handle.abort_handle());
+        }
+
         let terminal_process = TerminalProcess {
             child,
-            output: String::new(),
+            accumulated_output,
             exit_status: None,
+            reader_abort_handles: abort_handles,
         };
 
         self.terminal_state
             .terminals
             .borrow_mut()
-            .insert(terminal_id.to_string(), terminal_process);
+            .insert(terminal_id_str, terminal_process);
 
         Ok(CreateTerminalResponse {
             terminal_id,
@@ -211,10 +250,13 @@ impl Client for AcpClient {
             }
         }
 
+        let output = terminal.accumulated_output.borrow().clone();
+        let exit_status = terminal.exit_status.clone();
+
         Ok(TerminalOutputResponse {
-            output: terminal.output.clone(),
+            output,
             truncated: false,
-            exit_status: terminal.exit_status.clone(),
+            exit_status,
             meta: None,
         })
     }
@@ -232,25 +274,13 @@ impl Client for AcpClient {
             })?
         };
 
+        // Wait for the process to exit
+        // Note: stdout/stderr are already being read by the streaming reader tasks
         let status = terminal
             .child
             .wait()
             .await
             .map_err(|e| Error::internal_error().with_data(format!("Wait failed: {e}")))?;
-
-        if let Some(mut stdout) = terminal.child.stdout.take() {
-            let mut buf = String::new();
-            if stdout.read_to_string(&mut buf).await.is_ok() {
-                terminal.output.push_str(&buf);
-            }
-        }
-
-        if let Some(mut stderr) = terminal.child.stderr.take() {
-            let mut buf = String::new();
-            if stderr.read_to_string(&mut buf).await.is_ok() {
-                terminal.output.push_str(&buf);
-            }
-        }
 
         let exit_status = TerminalExitStatus {
             exit_code: status.code().map(|c| c as u32),
@@ -277,13 +307,44 @@ impl Client for AcpClient {
         debug!("Release terminal: {:?}", args.terminal_id);
 
         let terminal_id = args.terminal_id.to_string();
-        let mut terminals = self.terminal_state.terminals.borrow_mut();
+        let terminal = self
+            .terminal_state
+            .terminals
+            .borrow_mut()
+            .remove(&terminal_id);
 
-        if let Some(mut terminal) = terminals.remove(&terminal_id) {
+        if let Some(mut terminal) = terminal {
+            // Abort reader tasks first to prevent them from sending more events
+            for handle in terminal.reader_abort_handles {
+                handle.abort();
+            }
             // Kill if still running
             let _ = terminal.child.kill().await;
         }
 
         Ok(ReleaseTerminalResponse { meta: None })
+    }
+}
+
+/// Stream output line-by-line from a reader, sending each line as a RawAgentEvent
+/// and accumulating it for later retrieval via `terminal_output`.
+async fn stream_output<R: tokio::io::AsyncRead + Unpin>(
+    reader: R,
+    terminal_id: String,
+    stream: TerminalStream,
+    event_tx: mpsc::UnboundedSender<RawAgentEvent>,
+    accumulated: Rc<RefCell<String>>,
+) {
+    let buf_reader = BufReader::new(reader);
+    let mut lines = buf_reader.lines();
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        let output = format!("{line}\n");
+        accumulated.borrow_mut().push_str(&output);
+        let _ = event_tx.send(RawAgentEvent::TerminalOutput {
+            terminal_id: terminal_id.clone(),
+            output,
+            stream,
+        });
     }
 }
