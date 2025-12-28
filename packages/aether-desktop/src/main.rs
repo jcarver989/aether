@@ -3,6 +3,7 @@ use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
 use tokio::sync::mpsc;
 
+use file_search::FileSearcherCache;
 use state::{AgentHandles, AgentRegistry, AgentSession};
 use views::Home;
 
@@ -28,6 +29,9 @@ const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 /// Global signal for agent sessions - lives at module scope to avoid CopyValue warnings.
 pub static AGENTS: GlobalSignal<AgentRegistry> = Signal::global(AgentRegistry::new);
 pub static HANDLES: GlobalSignal<AgentHandles> = Signal::global(AgentHandles::new);
+/// Global cache of file searchers, keyed by working directory.
+/// Multiple agent views with the same cwd share a single searcher.
+pub static FILE_SEARCHERS: GlobalSignal<FileSearcherCache> = Signal::global(FileSearcherCache::new);
 
 /// Helper to mutate an agent by ID.
 ///

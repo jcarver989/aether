@@ -6,14 +6,47 @@
 use crate::error::AetherDesktopError;
 use ignore::WalkBuilder;
 use nucleo::{Config, Injector, Nucleo, Utf32String};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Maximum number of files to enumerate to prevent memory issues in huge repos.
 const MAX_FILES: usize = 100_000;
 
+/// Global cache of file searchers keyed by working directory.
+///
+/// This ensures that multiple agent views with the same cwd share a single
+/// file index, avoiding duplicate file tree walks and memory usage.
+#[derive(Default)]
+pub struct FileSearcherCache {
+    searchers: HashMap<PathBuf, Arc<Mutex<FileSearcher>>>,
+}
+
+impl FileSearcherCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get or create a file searcher for the given directory.
+    ///
+    /// If a searcher already exists for this cwd, returns a clone of the Arc.
+    /// Otherwise, creates a new searcher and stores it in the cache.
+    pub fn get_or_create(&mut self, cwd: PathBuf) -> Arc<Mutex<FileSearcher>> {
+        self.searchers
+            .entry(cwd.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(FileSearcher::new(cwd))))
+            .clone()
+    }
+
+    /// Check if a searcher exists for the given directory.
+    pub fn contains(&self, cwd: &Path) -> bool {
+        self.searchers.contains_key(cwd)
+    }
+}
+
 /// A file match result from fuzzy search.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FileMatch {
     /// Relative path from the working directory (for display)
     pub path: String,
@@ -354,5 +387,50 @@ mod tests {
         let count2 = searcher.index_files().unwrap();
         assert_eq!(count2, 7);
         assert_eq!(searcher.file_count(), 7);
+    }
+
+    #[test]
+    fn test_cache_returns_same_instance_for_same_cwd() {
+        let temp_dir = TempDir::new().unwrap();
+        let cwd = temp_dir.path().to_path_buf();
+
+        let mut cache = FileSearcherCache::new();
+
+        // First call should create a new searcher
+        let searcher1 = cache.get_or_create(cwd.clone());
+
+        // Second call with same cwd should return the same Arc
+        let searcher2 = cache.get_or_create(cwd.clone());
+
+        // Both should point to the same allocation
+        assert!(Arc::ptr_eq(&searcher1, &searcher2));
+    }
+
+    #[test]
+    fn test_cache_returns_different_instances_for_different_cwds() {
+        let temp_dir1 = TempDir::new().unwrap();
+        let temp_dir2 = TempDir::new().unwrap();
+
+        let mut cache = FileSearcherCache::new();
+
+        let searcher1 = cache.get_or_create(temp_dir1.path().to_path_buf());
+        let searcher2 = cache.get_or_create(temp_dir2.path().to_path_buf());
+
+        // Should be different instances
+        assert!(!Arc::ptr_eq(&searcher1, &searcher2));
+    }
+
+    #[test]
+    fn test_cache_contains() {
+        let temp_dir = TempDir::new().unwrap();
+        let cwd = temp_dir.path().to_path_buf();
+
+        let mut cache = FileSearcherCache::new();
+
+        assert!(!cache.contains(&cwd));
+
+        cache.get_or_create(cwd.clone());
+
+        assert!(cache.contains(&cwd));
     }
 }
