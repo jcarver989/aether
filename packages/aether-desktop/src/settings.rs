@@ -107,15 +107,14 @@ mod tests {
     #[test]
     fn test_serialize_settings() {
         let mut settings = Settings::default();
-        settings.agent_servers.insert(
-            "aether".to_string(),
-{
-                let mut config = AgentServerConfig::new("aether-acp")
-                    .with_args(["--model", "anthropic:claude-sonnet-4-20250514"]);
-                config.env.insert("ANTHROPIC_API_KEY".to_string(), "sk-test".to_string());
-                config
-            },
-        );
+        settings.agent_servers.insert("aether".to_string(), {
+            let mut config = AgentServerConfig::new("aether-acp")
+                .with_args(["--model", "anthropic:claude-sonnet-4-20250514"]);
+            config
+                .env
+                .insert("ANTHROPIC_API_KEY".to_string(), "sk-test".to_string());
+            config
+        });
         settings.agent_servers.insert(
             "claude".to_string(),
             AgentServerConfig::new("claude").with_args(["--allowedTools", "computer"]),

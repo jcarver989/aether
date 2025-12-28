@@ -3,11 +3,18 @@
 //! A simple form for creating a new agent session with a command line.
 
 use dioxus::prelude::*;
+use std::path::PathBuf;
 
 use crate::settings::Settings;
-use crate::state::AgentConfig;
+use crate::state::{AgentConfig, ExecutionMode};
 
 const CUSTOM_SERVER: &str = "__custom__";
+
+/// Check if a Dockerfile exists at .aether/Dockerfile in the given directory.
+fn dockerfile_path_if_exists(cwd: &std::path::Path) -> Option<PathBuf> {
+    let path = cwd.join(".aether/Dockerfile");
+    if path.exists() { Some(path) } else { None }
+}
 
 /// Inline form for creating a new agent, displayed in the main content area
 #[component]
@@ -30,6 +37,14 @@ pub fn NewAgentForm(
     });
     let custom_command_line = use_signal(|| AgentConfig::default().command_line);
     let mut initial_message = use_signal(String::new);
+
+    // Check for .aether/Dockerfile in current directory
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    let dockerfile_path = dockerfile_path_if_exists(&cwd);
+    let has_dockerfile = dockerfile_path.is_some();
+
+    // Docker mode toggle (enabled by default when Dockerfile exists)
+    let mut use_docker = use_signal(|| has_dockerfile);
 
     // Helper to get command line from selection
     let get_command_line = move || {
@@ -54,14 +69,6 @@ pub fn NewAgentForm(
         } else {
             capitalize(&server_name)
         }
-    };
-
-    let do_submit = move || {
-        let config = AgentConfig {
-            name: get_display_name(),
-            command_line: get_command_line(),
-        };
-        on_create.call((config, initial_message.read().clone()));
     };
 
     // Get sorted server names for dropdown
@@ -100,43 +107,94 @@ pub fn NewAgentForm(
                             placeholder: "What would you like to work on?",
                             value: "{initial_message}",
                             oninput: move |e| initial_message.set(e.value()),
-                            onkeydown: move |e: KeyboardEvent| {
-                                if e.key() == Key::Enter && !e.modifiers().shift() && !initial_message.read().trim().is_empty() {
-                                    e.prevent_default();
-                                    do_submit();
+                            onkeydown: {
+                                let dockerfile_path_for_keydown = dockerfile_path.clone();
+                                move |e: KeyboardEvent| {
+                                    if e.key() == Key::Enter && !e.modifiers().shift() && !initial_message.read().trim().is_empty() {
+                                        e.prevent_default();
+                                        submit_form(
+                                            &on_create,
+                                            get_display_name(),
+                                            get_command_line(),
+                                            use_docker(),
+                                            dockerfile_path_for_keydown.as_ref(),
+                                            &initial_message.read(),
+                                        );
+                                    }
                                 }
                             },
                         }
 
                         // Bottom toolbar
                         div {
-                            class: "flex items-center justify-end px-4 py-3 border-t border-[#2d313a] gap-3",
+                            class: "flex items-center justify-between px-4 py-3 border-t border-[#2d313a]",
 
-                            // Agent server dropdown
-                            select {
-                                class: "bg-[#252830] text-white border border-[#373b47] rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
-                                value: "{selected_server}",
-                                onchange: move |e| selected_server.set(e.value()),
-
-                                for name in server_names.iter() {
-                                    option {
-                                        key: "{name}",
-                                        value: "{name}",
-                                        "{name}"
+                            // Left side: Docker toggle (only show if Dockerfile exists)
+                            div {
+                                class: "flex items-center gap-2",
+                                if has_dockerfile {
+                                    label {
+                                        class: "flex items-center gap-2 cursor-pointer text-sm text-gray-400 hover:text-white transition-colors",
+                                        input {
+                                            r#type: "checkbox",
+                                            class: "w-4 h-4 rounded border-gray-500 bg-[#252830] text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer",
+                                            checked: use_docker(),
+                                            onchange: move |e| use_docker.set(e.checked()),
+                                        }
+                                        span {
+                                            class: "select-none",
+                                            "Run in Docker"
+                                        }
+                                        span {
+                                            class: "text-xs text-gray-500",
+                                            "(isolated)"
+                                        }
                                     }
-                                }
-                                option {
-                                    value: CUSTOM_SERVER,
-                                    "Custom..."
                                 }
                             }
 
-                            // Submit button
-                            button {
-                                class: "btn-primary px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
-                                disabled: initial_message.read().trim().is_empty(),
-                                onclick: move |_| do_submit(),
-                                "Start"
+                            // Right side: server dropdown and submit button
+                            div {
+                                class: "flex items-center gap-3",
+
+                                // Agent server dropdown
+                                select {
+                                    class: "bg-[#252830] text-white border border-[#373b47] rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
+                                    value: "{selected_server}",
+                                    onchange: move |e| selected_server.set(e.value()),
+
+                                    for name in server_names.iter() {
+                                        option {
+                                            key: "{name}",
+                                            value: "{name}",
+                                            "{name}"
+                                        }
+                                    }
+                                    option {
+                                        value: CUSTOM_SERVER,
+                                        "Custom..."
+                                    }
+                                }
+
+                                // Submit button
+                                button {
+                                    class: "btn-primary px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
+                                    disabled: initial_message.read().trim().is_empty(),
+                                    onclick: {
+                                        let dockerfile_path_for_click = dockerfile_path.clone();
+                                        move |_| {
+                                            submit_form(
+                                                &on_create,
+                                                get_display_name(),
+                                                get_command_line(),
+                                                use_docker(),
+                                                dockerfile_path_for_click.as_ref(),
+                                                &initial_message.read(),
+                                            );
+                                        }
+                                    },
+                                    "Start"
+                                }
                             }
                         }
                     }
@@ -160,4 +218,33 @@ fn capitalize(s: &str) -> String {
         None => String::new(),
         Some(first) => first.to_uppercase().chain(chars).collect(),
     }
+}
+
+/// Helper to submit the form with the current configuration.
+fn submit_form(
+    on_create: &EventHandler<(AgentConfig, String)>,
+    name: String,
+    command_line: String,
+    use_docker: bool,
+    dockerfile_path: Option<&PathBuf>,
+    initial_message: &str,
+) {
+    let execution_mode = if use_docker {
+        if let Some(path) = dockerfile_path {
+            ExecutionMode::Docker {
+                dockerfile_path: path.clone(),
+            }
+        } else {
+            ExecutionMode::Local
+        }
+    } else {
+        ExecutionMode::Local
+    };
+
+    let config = AgentConfig {
+        name,
+        command_line,
+        execution_mode,
+    };
+    on_create.call((config, initial_message.to_string()));
 }
