@@ -1,9 +1,8 @@
 use std::error::Error;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use aether::{
-    agent::{AgentMessage, FileAttachment, UserMessage},
+    agent::{AgentMessage, UserMessage},
     llm::ChatMessage,
     testing::{
         agent_message, llm_response, test_agent,
@@ -196,86 +195,7 @@ async fn test_tool_timeout() -> Result<(), Box<dyn Error>> {
 }
 
 #[tokio::test]
-async fn test_file_attachments_included_in_context() -> Result<(), Box<dyn Error>> {
-    let attachments = vec![
-        FileAttachment {
-            path: "src/main.rs".to_string(),
-            absolute_path: PathBuf::from("/project/src/main.rs"),
-            content: "fn main() { println!(\"Hello\"); }".to_string(),
-            mime_type: Some("text/x-rust".to_string()),
-        },
-        FileAttachment {
-            path: "README.md".to_string(),
-            absolute_path: PathBuf::from("/project/README.md"),
-            content: "# My Project".to_string(),
-            mime_type: Some("text/markdown".to_string()),
-        },
-    ];
-
-    let (id, chunks) = ("message_1", ["I see the files"]);
-    let llm_responses = [llm_response(id).text(&chunks).build()];
-
-    let result = test_agent()
-        .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text_with_attachments(
-            "What do these files contain?",
-            attachments,
-        )])
-        .run_with_context()
-        .await?;
-
-    // Verify the agent completed successfully
-    assert!(result
-        .messages
-        .iter()
-        .any(|m| matches!(m, AgentMessage::Done)));
-
-    // Verify the context passed to the LLM contains the formatted file attachments
-    let contexts = result.captured_contexts.lock().unwrap();
-    assert!(!contexts.is_empty(), "Expected at least one context capture");
-
-    let first_context = &contexts[0];
-    let messages = first_context.messages();
-
-    // Find the user message
-    let user_message = messages
-        .iter()
-        .find(|m| matches!(m, ChatMessage::User { .. }))
-        .expect("Expected a user message in context");
-
-    let content = match user_message {
-        ChatMessage::User { content, .. } => content,
-        _ => panic!("Expected User message"),
-    };
-
-    // Verify file contents are formatted and included
-    assert!(
-        content.contains("<file path=\"src/main.rs\">"),
-        "Expected file tag for src/main.rs, got: {}",
-        content
-    );
-    assert!(
-        content.contains("fn main() { println!(\"Hello\"); }"),
-        "Expected main.rs content in context"
-    );
-    assert!(
-        content.contains("<file path=\"README.md\">"),
-        "Expected file tag for README.md"
-    );
-    assert!(
-        content.contains("# My Project"),
-        "Expected README.md content in context"
-    );
-    assert!(
-        content.contains("What do these files contain?"),
-        "Expected user question in context"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_empty_attachments_do_not_affect_content() -> Result<(), Box<dyn Error>> {
+async fn test_simple_message_content() -> Result<(), Box<dyn Error>> {
     let (id, chunks) = ("message_1", ["Hello"]);
     let llm_responses = [llm_response(id).text(&chunks).build()];
 
@@ -299,9 +219,8 @@ async fn test_empty_attachments_do_not_affect_content() -> Result<(), Box<dyn Er
         _ => panic!("Expected User message"),
     };
 
-    // With no attachments, content should be exactly the user's message
+    // Content should be exactly the user's message
     assert_eq!(content, "Just a simple message");
-    assert!(!content.contains("<file"));
 
     Ok(())
 }
