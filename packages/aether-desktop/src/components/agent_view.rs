@@ -246,7 +246,7 @@ pub fn AgentView(agent_id: String) -> Element {
                 AgentViewTab::Chat => rsx! {
                     // Message list
                     div {
-                        class: "flex-1 overflow-y-auto p-4 space-y-4",
+                        class: "flex-1 overflow-y-auto px-3 py-2 space-y-1",
                         id: "message-list",
 
                         if agent.messages.is_empty() {

@@ -209,32 +209,8 @@ select:focus {
    Component-Specific Enhancements
    ======================================== */
 
-/* Message Bubbles */
-.message-bubble {
-    box-shadow: var(--shadow-md);
-    backdrop-filter: blur(10px);
-    transition: transform var(--transition-normal), box-shadow var(--transition-normal);
-}
-
-.message-bubble:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-lg);
-}
-
-.message-bubble-user {
-    background: linear-gradient(135deg, var(--color-accent-primary) 0%, var(--color-accent-primary-hover) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.message-bubble-assistant {
-    background: var(--color-bg-secondary);
-    border: 1px solid var(--color-border-default);
-}
-
-.message-bubble-tool {
-    background: rgba(37, 40, 48, 0.8);
-    border: 1px solid var(--color-border-subtle);
-}
+/* Message Bubbles - Flat design, no bubbles */
+/* Legacy classes removed - using inline Tailwind classes now */
 
 /* Sidebar Items */
 .sidebar-item {
@@ -305,14 +281,8 @@ select:focus {
     color: var(--color-text-muted);
 }
 
-/* Tool Call Display */
-.tool-call-header {
-    transition: opacity var(--transition-fast);
-}
-
-.tool-call-header:hover {
-    opacity: 0.8;
-}
+/* Tool Call Display - Flat design, minimal styling */
+/* Legacy classes removed - using inline Tailwind classes now */
 
 /* Modal/Dialog */
 .modal-backdrop {
