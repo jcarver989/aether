@@ -45,15 +45,15 @@ use tools::edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
 use tools::find::{FindInput, FindOutput, find_files_by_name};
 use tools::grep::{GrepInput, GrepOutput, perform_grep};
 use tools::list_files::{ListFilesArgs, ListFilesResult, list_files};
-use tools::lsp::diagnostics::{LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics};
-use tools::lsp::find_references::{
+use tools::lsp::check_errors::{LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics};
+use tools::lsp::find_usages::{
     LspFindReferencesInput, LspFindReferencesOutput, execute_lsp_find_references,
 };
-use tools::lsp::goto_definition::{
+use tools::lsp::find_definition::{
     LspGotoDefinitionInput, LspGotoDefinitionOutput, execute_lsp_goto_definition,
 };
-use tools::lsp::hover::{LspHoverInput, LspHoverOutput, execute_lsp_hover};
-use tools::lsp::workspace_symbol::{
+use tools::lsp::get_type_info::{LspHoverInput, LspHoverOutput, execute_lsp_hover};
+use tools::lsp::search_symbols::{
     LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput, execute_lsp_workspace_symbol,
 };
 use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
@@ -325,9 +325,9 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         Ok(Json(output))
     }
 
-    #[doc = include_str!("tools/lsp/diagnostics/description.md")]
+    #[doc = include_str!("tools/lsp/check_errors/description.md")]
     #[tool]
-    pub async fn lsp_diagnostics(
+    pub async fn check_errors(
         &self,
         request: Parameters<LspDiagnosticsInput>,
     ) -> Result<Json<LspDiagnosticsOutput>, String> {
@@ -335,9 +335,9 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         execute_lsp_diagnostics(input, &self.tools).await.map(Json)
     }
 
-    #[doc = include_str!("tools/lsp/goto_definition/description.md")]
+    #[doc = include_str!("tools/lsp/find_definition/description.md")]
     #[tool]
-    pub async fn lsp_goto_definition(
+    pub async fn find_definition(
         &self,
         request: Parameters<LspGotoDefinitionInput>,
     ) -> Result<Json<LspGotoDefinitionOutput>, String> {
@@ -347,9 +347,9 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             .map(Json)
     }
 
-    #[doc = include_str!("tools/lsp/find_references/description.md")]
+    #[doc = include_str!("tools/lsp/find_usages/description.md")]
     #[tool]
-    pub async fn lsp_find_references(
+    pub async fn find_usages(
         &self,
         request: Parameters<LspFindReferencesInput>,
     ) -> Result<Json<LspFindReferencesOutput>, String> {
@@ -359,9 +359,9 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             .map(Json)
     }
 
-    #[doc = include_str!("tools/lsp/hover/description.md")]
+    #[doc = include_str!("tools/lsp/get_type_info/description.md")]
     #[tool]
-    pub async fn lsp_hover(
+    pub async fn get_type_info(
         &self,
         request: Parameters<LspHoverInput>,
     ) -> Result<Json<LspHoverOutput>, String> {
@@ -369,9 +369,9 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
         execute_lsp_hover(input, &self.tools).await.map(Json)
     }
 
-    #[doc = include_str!("tools/lsp/workspace_symbol/description.md")]
+    #[doc = include_str!("tools/lsp/search_symbols/description.md")]
     #[tool]
-    pub async fn lsp_workspace_symbol(
+    pub async fn search_symbols(
         &self,
         request: Parameters<LspWorkspaceSymbolInput>,
     ) -> Result<Json<LspWorkspaceSymbolOutput>, String> {
