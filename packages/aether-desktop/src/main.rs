@@ -14,6 +14,7 @@ mod diff_engine;
 mod error;
 mod file_search;
 mod file_watcher;
+mod hooks;
 mod markdown;
 mod settings;
 mod state;
