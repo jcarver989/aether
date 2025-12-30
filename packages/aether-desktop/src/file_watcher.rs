@@ -5,7 +5,7 @@
 
 use crate::error::AetherDesktopError;
 use notify::RecommendedWatcher;
-use notify_debouncer_mini::{new_debouncer, DebouncedEventKind, Debouncer};
+use notify_debouncer_mini::{DebouncedEventKind, Debouncer, new_debouncer};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -97,10 +97,10 @@ fn is_relevant_path(path: &Path) -> bool {
     }
 
     // Skip temporary files
-    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-        if file_name.ends_with('~') || file_name.ends_with(".swp") || file_name.ends_with(".swx") {
-            return false;
-        }
+    if let Some(file_name) = path.file_name().and_then(|n| n.to_str())
+        && (file_name.ends_with('~') || file_name.ends_with(".swp") || file_name.ends_with(".swx"))
+    {
+        return false;
     }
 
     true

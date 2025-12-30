@@ -5,6 +5,7 @@
 
 use crate::acp_agent::AgentHandle;
 use crate::error::AetherDesktopError;
+use aether_acp_client::DockerProgress;
 use agent_client_protocol::{
     AvailableCommand, AvailableCommandInput, ContentBlock, SessionId, ToolCall,
 };
@@ -15,6 +16,7 @@ use std::path::PathBuf;
 #[derive(Clone, PartialEq, Debug)]
 pub enum AgentStatus {
     Idle,
+    Starting(DockerProgress),
     Running,
     Error(String),
 }
@@ -73,6 +75,26 @@ impl Message {
     }
 }
 
+/// Execution mode for an agent session.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub enum ExecutionMode {
+    /// Run agent as a local process.
+    #[default]
+    Local,
+    /// Run agent in a Docker container with copy-on-write isolation.
+    Docker {
+        /// Path to the Dockerfile used for this session.
+        dockerfile_path: std::path::PathBuf,
+    },
+}
+
+impl ExecutionMode {
+    /// Returns true if this is Docker execution mode.
+    pub fn is_docker(&self) -> bool {
+        matches!(self, ExecutionMode::Docker { .. })
+    }
+}
+
 /// Configuration for creating a new agent session.
 #[derive(Clone, PartialEq, Debug)]
 pub struct AgentConfig {
@@ -80,6 +102,8 @@ pub struct AgentConfig {
     pub name: String,
     /// Full command line for the agent (e.g., "aether-acp --model anthropic:claude-sonnet-4")
     pub command_line: String,
+    /// Execution mode - local or Docker.
+    pub execution_mode: ExecutionMode,
 }
 
 impl Default for AgentConfig {
@@ -89,6 +113,7 @@ impl Default for AgentConfig {
             command_line:
                 "aether-acp --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json"
                     .to_string(),
+            execution_mode: ExecutionMode::Local,
         }
     }
 }
@@ -152,13 +177,14 @@ impl AgentSession {
     /// Create a new agent session.
     ///
     /// The `id` is a locally-generated UUID for UI routing/state.
-    /// The `acp_session_id` is the session ID from the ACP protocol.
+    /// The `acp_session_id` is the session ID from the ACP protocol (can be empty for pending sessions).
     pub fn new(
         id: String,
         acp_session_id: SessionId,
         config: AgentConfig,
         initial_message: String,
         cwd: PathBuf,
+        status: AgentStatus,
     ) -> Self {
         let name = config.name.clone();
         Self {
@@ -166,7 +192,7 @@ impl AgentSession {
             acp_session_id,
             name,
             config,
-            status: AgentStatus::Running,
+            status,
             messages: vec![Message::user_text(initial_message)],
             tool_calls: HashMap::new(),
             available_commands: Vec::new(),
@@ -354,6 +380,8 @@ pub struct DiffState {
     pub error: Option<String>,
     /// Comments on diff lines, keyed by (file_path, line_number)
     pub comments: HashMap<CommentKey, DiffComment>,
+    /// Whether changes are ephemeral (Docker mode - not persisted to host)
+    pub is_ephemeral: bool,
 }
 
 impl DiffState {
@@ -678,5 +706,4 @@ mod tests {
         let key = ("src/main.rs".to_string(), 42);
         assert_eq!(state.comments.get(&key).unwrap().content, "Some content");
     }
-
 }

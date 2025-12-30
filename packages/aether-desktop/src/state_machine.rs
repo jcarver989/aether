@@ -5,7 +5,7 @@
 
 use crate::acp_agent::AgentEvent;
 use crate::state::{
-    now_iso, AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, ToolCallStatus,
+    AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, ToolCallStatus, now_iso,
 };
 use agent_client_protocol::{AvailableCommand, ToolCallContent};
 
@@ -46,11 +46,11 @@ impl AgentSession {
     }
 
     fn append_to_streaming_message(&mut self, text: String) {
-        if let Some(msg) = self.messages.last_mut().filter(|m| m.is_streaming) {
-            if matches!(msg.kind, MessageKind::Text) {
-                msg.content.push_str(&text);
-                return;
-            }
+        if let Some(msg) = self.messages.last_mut().filter(|m| m.is_streaming)
+            && matches!(msg.kind, MessageKind::Text)
+        {
+            msg.content.push_str(&text);
+            return;
         }
         // Create new streaming message
         self.messages.push(Message {
@@ -64,10 +64,10 @@ impl AgentSession {
     }
 
     fn complete_streaming_message(&mut self) {
-        if let Some(last_msg) = self.messages.last_mut() {
-            if last_msg.is_streaming {
-                last_msg.is_streaming = false;
-            }
+        if let Some(last_msg) = self.messages.last_mut()
+            && last_msg.is_streaming
+        {
+            last_msg.is_streaming = false;
         }
     }
 
@@ -123,30 +123,28 @@ impl AgentSession {
     }
 
     fn complete_tool_call(&mut self, tool_id: String, result: String) {
-        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == tool_id) {
-            if let MessageKind::ToolCall {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == tool_id)
+            && let MessageKind::ToolCall {
                 ref mut status,
                 result: ref mut res,
                 ..
             } = msg.kind
-            {
-                *status = ToolCallStatus::Completed;
-                *res = Some(result);
-            }
+        {
+            *status = ToolCallStatus::Completed;
+            *res = Some(result);
         }
     }
 
     fn fail_tool_call(&mut self, tool_id: String, error: String) {
-        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == tool_id) {
-            if let MessageKind::ToolCall {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == tool_id)
+            && let MessageKind::ToolCall {
                 ref mut status,
                 result: ref mut res,
                 ..
             } = msg.kind
-            {
-                *status = ToolCallStatus::Failed;
-                *res = Some(error);
-            }
+        {
+            *status = ToolCallStatus::Failed;
+            *res = Some(error);
         }
     }
 
