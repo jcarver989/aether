@@ -1,8 +1,3 @@
-//! ACP Client implementation for the desktop app.
-//!
-//! This module implements the `Client` trait from agent-client-protocol,
-//! allowing the desktop app to communicate with any ACP-compatible agent.
-
 use agent_client_protocol::{
     Client, ClientCapabilities, CreateTerminalRequest, CreateTerminalResponse, Error,
     FileSystemCapability, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
@@ -22,59 +17,67 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::spawn_local;
 use tracing::debug;
 
-use crate::state::TerminalStream;
+/// Output stream identifier for terminal output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputStream {
+    Stdout,
+    Stderr,
+}
 
 /// Raw events from AcpClient before session_id is attached.
 ///
-/// These are transformed into `AgentEvent` by the agent task loop
-/// which has access to the session_id.
+/// These are transformed into application-specific events by the caller
+/// which has access to additional context like agent IDs.
 #[derive(Debug)]
 pub enum RawAgentEvent {
+    /// Session notification from the agent.
     SessionNotification(SessionNotification),
+    /// Permission request that needs user response.
     PermissionRequest {
         request: RequestPermissionRequest,
         response_tx: oneshot::Sender<RequestPermissionResponse>,
     },
-    /// Terminal output chunk received from a spawned process
+    /// Terminal output chunk received from a spawned process.
     TerminalOutput {
         terminal_id: String,
         output: String,
-        stream: TerminalStream,
+        stream: OutputStream,
     },
 }
 
-/// Tracks a running terminal process
+/// Tracks a running terminal process.
 struct TerminalProcess {
     child: tokio::process::Child,
     /// Accumulated output from the process (for protocol compliance).
     /// Shared with reader tasks so they can append output as it arrives.
     accumulated_output: Rc<RefCell<String>>,
     exit_status: Option<TerminalExitStatus>,
-    /// Handles to abort the stdout/stderr reader tasks on release
+    /// Handles to abort the stdout/stderr reader tasks on release.
     reader_abort_handles: Vec<tokio::task::AbortHandle>,
 }
 
-/// Shared terminal state (Rc because ?Send context)
+/// Shared terminal state (Rc because ?Send context).
 #[derive(Clone, Default)]
 struct TerminalState {
     terminals: Rc<RefCell<HashMap<String, TerminalProcess>>>,
 }
 
-/// ACP Client implementation for the desktop app.
+/// ACP Client implementation.
 ///
 /// This handles requests from the agent:
 /// - File system operations (read/write)
 /// - Terminal operations (create/output/release)
-/// - Permission requests (forwarded to UI)
-/// - Session notifications (forwarded to UI)
+/// - Permission requests (forwarded via channel)
+/// - Session notifications (forwarded via channel)
 pub struct AcpClient {
-    /// Channel to send raw events to the agent task loop
+    /// Channel to send raw events to the caller.
     event_tx: mpsc::UnboundedSender<RawAgentEvent>,
-    /// Terminal state for managing spawned processes
+    /// Terminal state for managing spawned processes.
     terminal_state: TerminalState,
 }
 
 impl AcpClient {
+    /// Create a new ACP client with the given event channel.
     pub fn new(event_tx: mpsc::UnboundedSender<RawAgentEvent>) -> Self {
         Self {
             event_tx,
@@ -82,6 +85,7 @@ impl AcpClient {
         }
     }
 
+    /// Returns the client capabilities for ACP initialization.
     pub fn capabilities() -> ClientCapabilities {
         ClientCapabilities {
             fs: FileSystemCapability {
@@ -198,7 +202,7 @@ impl Client for AcpClient {
             let tid = terminal_id_str.clone();
             let acc = accumulated_output.clone();
             let handle = spawn_local(async move {
-                stream_output(stdout, tid, TerminalStream::Stdout, event_tx, acc).await;
+                stream_output(stdout, tid, OutputStream::Stdout, event_tx, acc).await;
             });
             abort_handles.push(handle.abort_handle());
         }
@@ -208,7 +212,7 @@ impl Client for AcpClient {
             let tid = terminal_id_str.clone();
             let acc = accumulated_output.clone();
             let handle = spawn_local(async move {
-                stream_output(stderr, tid, TerminalStream::Stderr, event_tx, acc).await;
+                stream_output(stderr, tid, OutputStream::Stderr, event_tx, acc).await;
             });
             abort_handles.push(handle.abort_handle());
         }
@@ -240,14 +244,14 @@ impl Client for AcpClient {
             Error::internal_error().with_data(format!("Terminal not found: {terminal_id}"))
         })?;
 
-        if terminal.exit_status.is_none() {
-            if let Ok(Some(status)) = terminal.child.try_wait() {
-                terminal.exit_status = Some(TerminalExitStatus {
-                    exit_code: status.code().map(|c| c as u32),
-                    signal: None,
-                    meta: None,
-                });
-            }
+        if terminal.exit_status.is_none()
+            && let Ok(Some(status)) = terminal.child.try_wait()
+        {
+            terminal.exit_status = Some(TerminalExitStatus {
+                exit_code: status.code().map(|c| c as u32),
+                signal: None,
+                meta: None,
+            });
         }
 
         let output = terminal.accumulated_output.borrow().clone();
@@ -331,7 +335,7 @@ impl Client for AcpClient {
 async fn stream_output<R: tokio::io::AsyncRead + Unpin>(
     reader: R,
     terminal_id: String,
-    stream: TerminalStream,
+    stream: OutputStream,
     event_tx: mpsc::UnboundedSender<RawAgentEvent>,
     accumulated: Rc<RefCell<String>>,
 ) {

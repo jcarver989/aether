@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
-use crate::state::{generate_comments_prompt, CommentKey, DiffComment, LineOrigin};
+use crate::state::{CommentKey, DiffComment, LineOrigin, generate_comments_prompt};
 
 /// Panel showing all pending comments with Send to Agent functionality.
 #[component]

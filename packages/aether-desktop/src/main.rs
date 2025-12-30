@@ -8,9 +8,10 @@ use state::{AgentHandles, AgentRegistry, AgentSession};
 use views::Home;
 
 mod acp_agent;
-mod acp_client;
 mod components;
 mod diff_engine;
+mod docker_diff;
+mod docker_watcher;
 mod error;
 mod file_search;
 mod file_watcher;

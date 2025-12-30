@@ -7,13 +7,17 @@ use crate::components::{AgentView, EmptyState, NewAgentForm, SettingsEditor, Sid
 use crate::error::AetherDesktopError;
 use crate::settings::Settings;
 use crate::state::{AgentConfig, AgentHandles, AgentRegistry, AgentSession, AgentStatus};
-use crate::{EventChannel, AGENTS, HANDLES};
+use crate::{AGENTS, EventChannel, HANDLES};
+use aether_acp_client::DockerProgress;
 use agent_client_protocol::{ContentBlock, RequestPermissionOutcome, RequestPermissionResponse};
 use dioxus::prelude::*;
 use std::env::current_dir;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
+
+/// Timeout in seconds for graceful agent termination before force kill.
+const TERMINATE_TIMEOUT_SECS: i64 = 10;
 
 /// Represents which view to show in the right pane
 #[derive(Clone, PartialEq)]
@@ -57,6 +61,16 @@ pub fn Home() -> Element {
         _ => None,
     };
 
+    let on_terminate_agent = move |agent_id: String| {
+        let mut right_pane_clone = right_pane;
+        spawn(async move {
+            if matches!(&*right_pane_clone.read(), RightPaneView::Agent(id) if id == &agent_id) {
+                right_pane_clone.set(RightPaneView::Empty);
+            }
+            terminate_agent(&AGENTS, &HANDLES, agent_id).await;
+        });
+    };
+
     rsx! {
         div {
             class: "flex h-screen bg-[#0f1116] text-white font-sans",
@@ -67,11 +81,12 @@ pub fn Home() -> Element {
                 on_new_agent: move |_| right_pane.set(RightPaneView::NewAgentForm),
                 on_select_agent: move |id| right_pane.set(RightPaneView::Agent(id)),
                 on_settings: move |_| right_pane.set(RightPaneView::Settings),
+                on_terminate: on_terminate_agent,
             }
 
             match &*right_pane.read() {
                 RightPaneView::Empty => rsx! { EmptyState {} },
-                RightPaneView::Agent(id) => rsx! { AgentView { agent_id: id.clone() } },
+                RightPaneView::Agent(id) => rsx! { AgentView { key: "{id}", agent_id: id.clone() } },
                 RightPaneView::NewAgentForm => rsx! {
                     NewAgentForm {
                         on_create: on_create_agent,
@@ -192,22 +207,70 @@ async fn create_agent(
     initial_message: String,
 ) -> Result<String, AetherDesktopError> {
     let cwd = current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    let mut handle = AgentHandle::spawn(&config.command_line, &cwd, event_tx).await?;
-    let agent_id = handle.id.clone();
-    let acp_session_id = handle.acp_session_id.clone();
+    let is_docker = config.execution_mode.is_docker();
+    let agent_id = uuid::Uuid::new_v4().to_string();
 
-    handle.send_prompt(vec![ContentBlock::from(initial_message.clone())])?;
-
+    // Pre-register the agent so it can receive events during spawn
+    let initial_status = if is_docker {
+        AgentStatus::Starting(DockerProgress::CheckingImage)
+    } else {
+        AgentStatus::Running
+    };
     let session = AgentSession::new(
         agent_id.clone(),
-        acp_session_id,
-        config,
-        initial_message,
-        cwd,
+        String::new().into(),
+        config.clone(),
+        initial_message.clone(),
+        cwd.clone(),
+        initial_status,
     );
     agents.write().insert(session);
+
+    let spawn_result = AgentHandle::spawn(
+        agent_id.clone(),
+        &config.command_line,
+        &cwd,
+        event_tx,
+        config.execution_mode.clone(),
+    )
+    .await;
+
+    let mut handle = match spawn_result {
+        Ok(h) => h,
+        Err(e) => {
+            agents.write().remove(&agent_id);
+            return Err(e);
+        }
+    };
+
+    // Update session with real session_id and final status
+    if let Some(mut agent_signal) = agents.read().get(&agent_id) {
+        let mut agent = agent_signal.write();
+        agent.acp_session_id = handle.acp_session_id.clone();
+        agent.status = AgentStatus::Running;
+    }
+
+    handle.send_prompt(vec![ContentBlock::from(initial_message)])?;
     handle.mark_ready();
     handles.write().insert(handle);
     info!(agent_id = %agent_id, "Agent spawned on dedicated thread");
     Ok(agent_id)
+}
+
+/// Terminate an agent and clean up its resources.
+///
+/// This removes the agent from both the UI registry and the handles collection,
+/// then terminates the underlying process (local or Docker container).
+async fn terminate_agent(
+    agents: &GlobalSignal<AgentRegistry>,
+    handles: &GlobalSignal<AgentHandles>,
+    agent_id: String,
+) {
+    let handle = handles.write().remove(&agent_id);
+    agents.write().remove(&agent_id);
+    if let Some(handle) = handle
+        && let Err(e) = handle.terminate(TERMINATE_TIMEOUT_SECS).await
+    {
+        warn!(agent_id = %agent_id, "Failed to terminate agent: {}", e);
+    }
 }
