@@ -9,6 +9,7 @@ pub fn Sidebar(
     on_new_agent: EventHandler<()>,
     on_select_agent: EventHandler<String>,
     on_settings: EventHandler<()>,
+    on_terminate: EventHandler<String>,
 ) -> Element {
     let registry = agents.read();
 
@@ -66,6 +67,10 @@ pub fn Sidebar(
                                     let id = agent_id.clone();
                                     move |_| on_select_agent.call(id.clone())
                                 },
+                                on_terminate: {
+                                    let id = agent_id.clone();
+                                    move |_| on_terminate.call(id.clone())
+                                },
                             }
                         }
                     }
@@ -98,6 +103,7 @@ fn AgentListItem(
     agent: Signal<AgentSession>,
     is_selected: bool,
     on_select: EventHandler<()>,
+    on_terminate: EventHandler<String>,
 ) -> Element {
     let agent = agent.read();
 
@@ -124,9 +130,11 @@ fn AgentListItem(
         "sidebar-item hover:bg-white/5"
     };
 
+    let agent_id = agent.id.clone();
+
     rsx! {
         div {
-            class: "p-3 cursor-pointer transition-all duration-200 rounded-lg {selected_class}",
+            class: "group p-3 cursor-pointer transition-all duration-200 rounded-lg {selected_class}",
             onclick: move |_| on_select.call(()),
 
             div {
@@ -137,6 +145,28 @@ fn AgentListItem(
                 div {
                     class: "font-medium text-gray-100 truncate flex-1 text-sm",
                     "{agent.name}"
+                }
+                // Terminate button (visible on hover)
+                button {
+                    class: "opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all p-1 rounded hover:bg-white/10",
+                    onclick: move |e| {
+                        e.stop_propagation();
+                        on_terminate.call(agent_id.clone());
+                    },
+                    title: "Terminate agent",
+                    svg {
+                        xmlns: "http://www.w3.org/2000/svg",
+                        width: "14",
+                        height: "14",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        line { x1: "18", y1: "6", x2: "6", y2: "18" }
+                        line { x1: "6", y1: "6", x2: "18", y2: "18" }
+                    }
                 }
             }
 
