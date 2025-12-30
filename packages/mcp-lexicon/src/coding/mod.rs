@@ -102,11 +102,14 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     files_read: RwLock<HashSet<String>>,
     tools: T,
     web_fetcher: WebFetcher,
+    /// Workspace root directory - communicated to LLMs via server instructions
+    root_dir: Option<PathBuf>,
 }
 
 #[tool_handler(router = self.tool_router)]
 impl<T: CodingTools + 'static> ServerHandler for CodingMcp<T> {
     fn get_info(&self) -> ServerInfo {
+        let instructions = self.build_instructions();
         ServerInfo {
             server_info: Implementation {
                 name: "coding-mcp".to_string(),
@@ -115,9 +118,7 @@ impl<T: CodingTools + 'static> ServerHandler for CodingMcp<T> {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some(
-                "A coding MCP server with grep-powered search, file operations (read/write), and bash command execution capabilities".into(),
-            ),
+            instructions: Some(instructions),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
@@ -134,6 +135,7 @@ impl CodingMcp<DefaultCodingTools> {
             files_read: RwLock::new(HashSet::new()),
             tools: DefaultCodingTools::new(),
             web_fetcher: WebFetcher::new(),
+            root_dir: None,
         }
     }
 }
@@ -149,6 +151,31 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             files_read: RwLock::new(HashSet::new()),
             tools,
             web_fetcher: WebFetcher::new(),
+            root_dir: None,
+        }
+    }
+
+    /// Set the workspace root directory.
+    ///
+    /// This path is communicated to LLMs via the server instructions,
+    /// helping them use correct absolute paths when calling file tools.
+    pub fn with_root_dir(mut self, root_dir: PathBuf) -> Self {
+        self.root_dir = Some(root_dir);
+        self
+    }
+
+    fn build_instructions(&self) -> String {
+        match &self.root_dir {
+            Some(root) => format!(
+                r#" # Coding MCP server
+This MCP server is equipped with grep-powered search, file operations (read/write), and bash command execution capabilities.
+
+When using tools from this server that take file path(s) as input, always use absolute paths starting from the workspace root:.
+<workspace-root>{}</workspace-root>
+"#,
+                root.display()
+            ),
+            None => "A coding MCP server with grep-powered search, file operations (read/write), and bash command execution capabilities.".to_string(),
         }
     }
 
