@@ -5,8 +5,9 @@ use crate::error::AetherDesktopError;
 use crate::file_watcher::{FileWatchEvent, FileWatcher};
 use crate::state::{AgentStatus, DiffState, ExecutionMode, TerminalStream};
 use aether_acp_client::{
-    AcpClient, AcpEvent, DockerConfig, DockerProgress, ImageSource, OutputStream, ProgressTx,
-    RawAgentEvent, SessionInfo, SpawnConfig, spawn_agent_process, start_session,
+    AcpClient, AcpEvent, AgentError, AgentProcess, DockerConfig, DockerProgress, ImageSource,
+    OutputStream, ProgressTx, RawAgentEvent, SessionInfo, SpawnConfig, spawn_agent_process,
+    start_session,
 };
 use agent_client_protocol::{
     Agent, AgentCapabilities, AvailableCommand, ClientSideConnection, ContentBlock, PromptRequest,
@@ -16,12 +17,16 @@ use futures::Stream;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::spawn_local;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::{debug, error, info, warn};
+
+/// Result type for agent initialization, containing session info and process handle.
+type InitResult = Result<(SessionInfo, Arc<dyn AgentProcess>), AetherDesktopError>;
 
 /// Runtime handle for an agent process.
 ///
@@ -41,6 +46,8 @@ pub struct AgentHandle {
     cmd_tx: mpsc::UnboundedSender<AgentCommand>,
     /// Gate for deferring ACP event forwarding until the UI is ready
     ready_tx: Option<oneshot::Sender<()>>,
+    /// Process handle for lifecycle management (termination)
+    process_handle: Arc<dyn AgentProcess>,
 }
 
 impl AgentHandle {
@@ -59,7 +66,7 @@ impl AgentHandle {
         execution_mode: ExecutionMode,
     ) -> Result<Self, AetherDesktopError> {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-        let (init_tx, init_rx) = oneshot::channel();
+        let (init_tx, init_rx) = oneshot::channel::<InitResult>();
         let (ready_tx, ready_rx) = oneshot::channel();
 
         let agent_id_for_thread = agent_id.clone();
@@ -91,7 +98,7 @@ impl AgentHandle {
         });
 
         // Await initialization (non-blocking)
-        let session_info = init_rx.await.map_err(|_| {
+        let (session_info, process_handle) = init_rx.await.map_err(|_| {
             AetherDesktopError::ActorInit("Agent thread terminated during init".into())
         })??;
 
@@ -102,6 +109,7 @@ impl AgentHandle {
             thread,
             cmd_tx,
             ready_tx: Some(ready_tx),
+            process_handle,
         })
     }
 
@@ -125,6 +133,13 @@ impl AgentHandle {
         if let Some(tx) = self.ready_tx.take() {
             let _ = tx.send(());
         }
+    }
+
+    /// Terminate the agent and clean up resources.
+    ///
+    /// Attempts graceful shutdown first, then force kills after timeout.
+    pub async fn terminate(&self, timeout_secs: i64) -> Result<(), AgentError> {
+        self.process_handle.terminate(timeout_secs).await
     }
 }
 
@@ -250,7 +265,7 @@ async fn run_agent(
     execution_mode: ExecutionMode,
     cmd_rx: mpsc::UnboundedReceiver<AgentCommand>,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
-    init_tx: oneshot::Sender<Result<SessionInfo, AetherDesktopError>>,
+    init_tx: oneshot::Sender<InitResult>,
     ready_rx: oneshot::Receiver<()>,
 ) {
     // Separate channel for raw events from AcpClient
@@ -336,7 +351,11 @@ async fn run_agent(
         }
     };
 
-    if init_tx.send(Ok(session_info)).is_err() {
+    let init_result = Ok((
+        session_info,
+        Arc::clone(&process_handle) as Arc<dyn AgentProcess>,
+    ));
+    if init_tx.send(init_result).is_err() {
         // Spawner dropped, no point continuing
         return;
     }
@@ -366,7 +385,9 @@ async fn run_agent(
 
     // Set up file watcher for the agent's working directory
     // Use different watcher implementation based on execution mode
+    // These variables must be declared here to keep them alive for the entire event loop
     let _docker_poller_shutdown: Option<tokio::sync::oneshot::Sender<()>>;
+    let _local_file_watcher: Option<FileWatcher>;
 
     if is_docker {
         // Docker mode: use polling-based watcher with its own channel
@@ -375,6 +396,7 @@ async fn run_agent(
             DockerFilePoller::new(std::sync::Arc::clone(&process_handle), docker_watch_tx);
         poller.start();
         _docker_poller_shutdown = Some(shutdown_tx);
+        _local_file_watcher = None;
 
         // Map Docker file events to the same LoopEvent type
         streams.insert(
@@ -392,11 +414,21 @@ async fn run_agent(
         // Local mode: use standard file watcher with its own channel
         _docker_poller_shutdown = None;
         let (file_watch_tx, file_watch_rx) = mpsc::unbounded_channel();
-        let _file_watcher = FileWatcher::new(cwd.clone(), file_watch_tx);
-        streams.insert(
-            "file_watch",
-            Box::pin(UnboundedReceiverStream::new(file_watch_rx).map(LoopEvent::FileWatchEvent)),
-        );
+        match FileWatcher::new(cwd.clone(), file_watch_tx) {
+            Ok(watcher) => {
+                _local_file_watcher = Some(watcher);
+                streams.insert(
+                    "file_watch",
+                    Box::pin(
+                        UnboundedReceiverStream::new(file_watch_rx).map(LoopEvent::FileWatchEvent),
+                    ),
+                );
+            }
+            Err(e) => {
+                warn!(agent_id = %agent_id, "Failed to create file watcher: {}", e);
+                _local_file_watcher = None;
+            }
+        }
     }
 
     // Send initial diff state
