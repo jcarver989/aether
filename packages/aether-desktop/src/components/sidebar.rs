@@ -56,15 +56,14 @@ pub fn Sidebar(
                 gap: Space::S1,
                 p: Space::S2,
                 class: "flex-1 overflow-y-auto",
-                for agent_signal in registry.iter_ordered() {
+                for agent in registry.iter_ordered() {
                     {
-                        let agent = agent_signal.read();
                         let agent_id = agent.id.clone();
                         let is_selected = selected_id.as_ref() == Some(&agent_id);
                         rsx! {
                             AgentListItem {
                                 key: "{agent_id}",
-                                agent: agent_signal,
+                                agent: agent.clone(),
                                 is_selected: is_selected,
                                 on_select: {
                                     let id = agent_id.clone();
@@ -103,12 +102,11 @@ pub fn Sidebar(
 
 #[component]
 fn AgentListItem(
-    agent: Signal<AgentSession>,
+    agent: AgentSession,
     is_selected: bool,
     on_select: EventHandler<()>,
     on_terminate: EventHandler<String>,
 ) -> Element {
-    let agent = agent.read();
 
     let status_color_class = match &agent.status {
         AgentStatus::Idle => "bg-gray-500",

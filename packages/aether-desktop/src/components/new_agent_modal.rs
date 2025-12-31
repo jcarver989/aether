@@ -3,9 +3,7 @@
 //! A simple form for creating a new agent session with a command line.
 
 use crate::components::layout::{Inline, Space};
-use crate::components::layout::{Inline, Space, Stack};
 use crate::settings::Settings;
-use crate::state::AgentConfig;
 use crate::state::{AgentConfig, ExecutionMode};
 use dioxus::prelude::*;
 use std::path::PathBuf;
@@ -130,19 +128,21 @@ pub fn NewAgentForm(
                         // Bottom toolbar
                         Inline {
                             gap: Space::S3,
-                            class: "justify-end px-4 py-3 border-t border-border-subtle",
+                            class: "justify-between px-4 py-3 border-t border-border-subtle",
 
-                            // Agent server dropdown
-                            select {
-                                class: "bg-bg-tertiary text-white border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-green-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
-                                value: "{selected_server}",
-                                onchange: move |e| selected_server.set(e.value()),
-
-                                for name in server_names.iter() {
-                                    option {
-                                        key: "{name}",
-                                        value: "{name}",
-                                        "{name}"
+                            // Left side: Docker checkbox (only shown if Dockerfile exists)
+                            div {
+                                class: "flex items-center gap-2",
+                                if has_dockerfile {
+                                    label {
+                                        class: "flex items-center gap-2 text-sm text-gray-300 cursor-pointer",
+                                        input {
+                                            r#type: "checkbox",
+                                            class: "w-4 h-4 rounded border-border-default bg-bg-tertiary accent-green-500 cursor-pointer",
+                                            checked: use_docker(),
+                                            onchange: move |e| use_docker.set(e.checked()),
+                                        }
+                                        "Use Dockerfile"
                                     }
                                 }
                             }
@@ -153,7 +153,7 @@ pub fn NewAgentForm(
 
                                 // Agent server dropdown
                                 select {
-                                    class: "bg-[#252830] text-white border border-[#373b47] rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
+                                    class: "bg-bg-tertiary text-white border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-green-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
                                     value: "{selected_server}",
                                     onchange: move |e| selected_server.set(e.value()),
 

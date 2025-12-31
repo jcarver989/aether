@@ -173,8 +173,7 @@ fn apply_agent_event(
     }
 
     if let AgentEvent::Disconnected { agent_id: id } = event {
-        if let Some(mut agent_signal) = agents.read().get(&id) {
-            let mut agent = agent_signal.write();
+        if let Some(agent) = agents.write().get_mut(&id) {
             if matches!(agent.status, AgentStatus::Running) {
                 agent.status = AgentStatus::Idle;
             }
@@ -189,18 +188,19 @@ fn apply_agent_event(
         error,
     } = event
     {
-        if let Some(mut agent_signal) = agents.read().get(&id) {
-            agent_signal.write().status = AgentStatus::Error(error);
+        if let Some(agent) = agents.write().get_mut(&id) {
+            agent.status = AgentStatus::Error(error);
         }
         return;
     }
 
-    let Some(mut agent_signal) = agents.read().get(&agent_id) else {
+    let mut registry = agents.write();
+    let Some(agent) = registry.get_mut(&agent_id) else {
         warn!("Event for unknown agent: {}", agent_id);
         return;
     };
 
-    agent_signal.write().apply_event(&event);
+    agent.apply_event(&event);
 }
 
 /// Spawn a new agent on a dedicated thread
@@ -249,8 +249,7 @@ async fn create_agent(
     };
 
     // Update session with real session_id and final status
-    if let Some(mut agent_signal) = agents.read().get(&agent_id) {
-        let mut agent = agent_signal.write();
+    if let Some(agent) = agents.write().get_mut(&agent_id) {
         agent.acp_session_id = handle.acp_session_id.clone();
         agent.status = AgentStatus::Running;
     }

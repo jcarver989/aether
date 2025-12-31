@@ -478,16 +478,14 @@ pub fn generate_comments_prompt(comments: &HashMap<CommentKey, DiffComment>) -> 
     prompt
 }
 
-/// Indexed registry for agent sessions with per-agent reactivity.
+/// Indexed registry for agent sessions.
 ///
-/// Each agent is stored in its own `Signal<AgentSession>`, so updating one
-/// agent only triggers re-renders for components observing that specific agent.
 /// Uses HashMap for O(1) lookups while maintaining insertion order via Vec
 /// for UI display purposes (sidebar listing).
 #[derive(Clone, Default)]
 pub struct AgentRegistry {
-    /// Maps agent ID to its reactive signal for per-agent updates
-    agents: HashMap<String, Signal<AgentSession>>,
+    /// Maps agent ID to its session
+    agents: HashMap<String, AgentSession>,
     /// Maintains insertion order for UI display
     order: Vec<String>,
 }
@@ -506,29 +504,32 @@ impl AgentRegistry {
         Self::default()
     }
 
-    /// Get the signal for a specific agent - O(1).
-    ///
-    /// Returns a cloned Signal handle that can be read/written independently.
-    pub fn get(&self, id: &str) -> Option<Signal<AgentSession>> {
-        self.agents.get(id).cloned()
+    /// Get a reference to a specific agent - O(1).
+    pub fn get(&self, id: &str) -> Option<&AgentSession> {
+        self.agents.get(id)
     }
 
-    /// Iterate over agent signals in insertion order.
-    pub fn iter_ordered(&self) -> impl Iterator<Item = Signal<AgentSession>> + '_ {
+    /// Get a mutable reference to a specific agent - O(1).
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut AgentSession> {
+        self.agents.get_mut(id)
+    }
+
+    /// Iterate over agent sessions in insertion order.
+    pub fn iter_ordered(&self) -> impl Iterator<Item = &AgentSession> + '_ {
         self.order
             .iter()
-            .filter_map(|id| self.agents.get(id).cloned())
+            .filter_map(|id| self.agents.get(id))
     }
 
-    /// Insert a new agent session wrapped in a signal.
+    /// Insert a new agent session.
     pub fn insert(&mut self, session: AgentSession) {
         let id = session.id.clone();
         self.order.push(id.clone());
-        self.agents.insert(id, Signal::new(session));
+        self.agents.insert(id, session);
     }
 
     /// Remove an agent by ID.
-    pub fn remove(&mut self, id: &str) -> Option<Signal<AgentSession>> {
+    pub fn remove(&mut self, id: &str) -> Option<AgentSession> {
         self.order.retain(|x| x != id);
         self.agents.remove(id)
     }

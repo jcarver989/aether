@@ -17,7 +17,7 @@ use tokio::fs::read_to_string;
 use tokio::sync::Mutex;
 
 use crate::file_search::{FileMatch, FileSearcher};
-use crate::state::{AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, now_iso};
+use crate::state::{AgentStatus, Message, MessageKind, Role, SlashCommand, now_iso};
 use crate::{AGENTS, FILE_SEARCHERS, HANDLES, with_agent_mut};
 
 use super::use_autocomplete::AutocompleteController;
@@ -87,15 +87,12 @@ impl AgentChatController {
         self.agent_id.read().clone()
     }
 
-    /// Get the agent session signal if it exists.
-    pub fn agent(&self) -> Option<Signal<AgentSession>> {
-        AGENTS.read().get(&self.agent_id())
-    }
-
     /// Check if the agent is currently running.
     pub fn is_running(&self) -> bool {
-        self.agent()
-            .map(|a| matches!(a.read().status, AgentStatus::Running))
+        AGENTS
+            .read()
+            .get(&self.agent_id())
+            .map(|a| matches!(a.status, AgentStatus::Running))
             .unwrap_or(false)
     }
 
@@ -274,17 +271,19 @@ impl Debug for AgentChatController {
 pub fn use_agent_chat(agent_id: &str) -> Option<AgentChatController> {
     let agent_id_signal = use_signal(|| agent_id.to_string());
 
-    // Check if agent exists
-    let agent_signal = AGENTS.read().get(agent_id)?;
+    // Check if agent exists and get initial data
+    let (agent_cwd, initial_commands) = {
+        let registry = AGENTS.read();
+        let agent = registry.get(agent_id)?;
+        (agent.cwd.clone(), agent.available_commands.clone())
+    };
 
     let input = use_signal(String::new);
     let pending_files = use_signal(Vec::new);
     let files_loading = use_signal(|| false);
     let input_mode = use_signal(|| InputMode::Normal);
 
-    // Get agent's cwd and available commands
-    let agent_cwd = agent_signal.read().cwd.clone();
-    let available_commands = use_signal(|| agent_signal.read().available_commands.clone());
+    let available_commands = use_signal(|| initial_commands);
 
     // Get or create file searcher
     let file_searcher: Signal<Option<Arc<Mutex<FileSearcher>>>> =

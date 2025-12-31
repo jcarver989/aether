@@ -36,15 +36,12 @@ pub static HANDLES: GlobalSignal<AgentHandles> = Signal::global(AgentHandles::ne
 pub static FILE_SEARCHERS: GlobalSignal<FileSearcherCache> = Signal::global(FileSearcherCache::new);
 
 /// Helper to mutate an agent by ID.
-///
-/// Gets the agent's signal (read lock on registry) and applies the mutation
-/// (write lock on single agent).
 pub fn with_agent_mut<F>(agent_id: &str, f: F)
 where
     F: FnOnce(&mut AgentSession),
 {
-    if let Some(mut agent_signal) = AGENTS.read().get(agent_id) {
-        f(&mut agent_signal.write());
+    if let Some(agent) = AGENTS.write().get_mut(agent_id) {
+        f(agent);
     }
 }
 
