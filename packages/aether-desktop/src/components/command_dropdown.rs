@@ -48,7 +48,7 @@ pub fn CommandDropdown(
             // Command list
             for (index, cmd) in filtered_commands.iter().enumerate() {
                 CommandItem {
-                    key: "{cmd.name}",
+                    key: "{index}-{cmd.name}",
                     command: (*cmd).clone(),
                     is_selected: index == selected_index,
                     on_click: {

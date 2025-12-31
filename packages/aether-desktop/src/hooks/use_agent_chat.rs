@@ -285,6 +285,18 @@ pub fn use_agent_chat(agent_id: &str) -> Option<AgentChatController> {
 
     let available_commands = use_signal(|| initial_commands);
 
+    // Sync available_commands from global registry when it changes
+    let agent_id_for_effect = agent_id.to_string();
+    let mut available_commands_sync = available_commands;
+    use_effect(move || {
+        let registry = AGENTS.read();
+        if let Some(agent) = registry.get(&agent_id_for_effect) {
+            if *available_commands_sync.read() != agent.available_commands {
+                available_commands_sync.set(agent.available_commands.clone());
+            }
+        }
+    });
+
     // Get or create file searcher
     let file_searcher: Signal<Option<Arc<Mutex<FileSearcher>>>> =
         use_signal(|| Some(FILE_SEARCHERS.write().get_or_create(agent_cwd.clone())));
