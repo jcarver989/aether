@@ -119,7 +119,7 @@ pub fn DiffLineRow(
 
                 // Line content with syntax highlighting
                 pre {
-                    class: "flex-1 px-2 overflow-x-auto whitespace-pre",
+                    class: "flex-1 px-2 whitespace-pre",
                     dangerous_inner_html: "{highlighted_content}",
                 }
             }
