@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::coding::error::CodingError;
 use crate::coding::lsp::config::{LspConfig, default_lsp_configs};
-use crate::coding::lsp::registry::{LspClientHandle, LspRegistry};
+use crate::coding::lsp::registry::{LspClientHandle, LspRegistry, DEFAULT_INDEXING_TIMEOUT};
 use crate::coding::lsp::{ClientNotification, LanguageId, path_to_uri};
 use crate::coding::tools::bash::ReadBackgroundBashOutput;
 use crate::coding::tools::bash::{BackgroundProcessHandle, BashInput, BashResult};
@@ -234,6 +234,29 @@ impl<T: CodingTools> LspCodingTools<T> {
         self.ensure_open(file_path, &result.raw_content).await;
         Ok(result.raw_content)
     }
+
+    /// Wait for all active LSP clients to finish indexing.
+    ///
+    /// This ensures that LSP operations return complete/accurate results
+    /// by waiting for background indexing (like rust-analyzer's workspace loading)
+    /// to complete before executing queries.
+    async fn await_all_lsps_ready(&self) -> Result<(), CodingError> {
+        for handle in self.registry.active_clients().await {
+            handle
+                .await_ready(DEFAULT_INDEXING_TIMEOUT)
+                .await
+                .map_err(CodingError::from)?;
+        }
+        Ok(())
+    }
+
+    /// Wait for a specific LSP client to finish indexing.
+    async fn await_lsp_ready(&self, handle: &LspClientHandle) -> Result<(), CodingError> {
+        handle
+            .await_ready(DEFAULT_INDEXING_TIMEOUT)
+            .await
+            .map_err(CodingError::from)
+    }
 }
 
 impl<T: CodingTools> CodingTools for LspCodingTools<T> {
@@ -293,7 +316,8 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     }
 
     async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, CodingError> {
-        // Aggregate diagnostics from all active LSP clients
+        self.await_all_lsps_ready().await?;
+
         let mut all_diagnostics = HashMap::new();
         for handle in self.registry.active_clients().await {
             if let Ok(diags) = handle.get_diagnostics().await {
@@ -322,6 +346,8 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
+        self.await_lsp_ready(&handle).await?;
+
         handle
             .client
             .goto_definition(uri, line - 1, column)
@@ -349,6 +375,8 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
+        self.await_lsp_ready(&handle).await?;
+
         handle
             .client
             .find_references(uri, line - 1, column, include_declaration)
@@ -375,6 +403,8 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
+        self.await_lsp_ready(&handle).await?;
+
         handle
             .client
             .hover(uri, line - 1, column)
@@ -383,7 +413,8 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     }
 
     async fn workspace_symbol(&self, query: &str) -> Result<Vec<SymbolInformation>, CodingError> {
-        // For workspace symbol, we query all active LSPs and aggregate results
+        self.await_all_lsps_ready().await?;
+
         let mut all_symbols = Vec::new();
         for handle in self.registry.active_clients().await {
             if let Ok(symbols) = handle.client.workspace_symbol(query.to_string()).await {

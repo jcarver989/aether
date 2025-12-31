@@ -36,6 +36,10 @@ pub enum LspError {
     /// Request was cancelled
     #[error("Request cancelled")]
     Cancelled,
+
+    /// Timeout waiting for LSP to finish indexing
+    #[error("Timeout waiting for LSP indexing (elapsed: {elapsed:?})")]
+    IndexingTimeout { elapsed: std::time::Duration },
 }
 
 impl LspError {
