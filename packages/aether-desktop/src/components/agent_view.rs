@@ -8,11 +8,10 @@ use super::file_picker::{FilePicker, FilePill};
 use super::message_bubble::MessageBubble;
 use super::prompt_input::PromptInput;
 use super::view_tabs::{AgentViewTab, ViewTabs};
+use crate::components::layout::{Inline, Space, Stack};
 use crate::hooks::{AgentChatController, use_agent_chat};
 use crate::state::{AgentStatus, CommentKey, DiffComment, Message, MessageKind, Role, now_iso};
-use crate::state::{AgentStatus, CommentKey, DiffComment, Message, MessageKind, Role, now_iso};
-use crate::{HANDLES, with_agent_mut};
-use crate::{HANDLES, with_agent_mut};
+use crate::{AGENTS, HANDLES, with_agent_mut};
 use agent_client_protocol::ContentBlock;
 use dioxus::prelude::*;
 
@@ -29,7 +28,8 @@ pub fn AgentView(agent_id: String) -> Element {
         };
     };
 
-    let Some(agent_signal) = chat.agent() else {
+    let registry = AGENTS.read();
+    let Some(agent) = registry.get(&agent_id) else {
         return rsx! {
             div {
                 class: "flex-1 flex items-center justify-center text-gray-500",
@@ -37,8 +37,6 @@ pub fn AgentView(agent_id: String) -> Element {
             }
         };
     };
-
-    let agent = agent_signal.read();
     let is_running = chat.is_running();
     let status_text = match &agent.status {
         AgentStatus::Idle => "Idle".to_string(),
