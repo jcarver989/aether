@@ -2,7 +2,7 @@
 
 use super::voice_input::VoiceInput;
 use crate::components::layout::{Inline, Space};
-use aether_voice::{record_and_transcribe, RecordingState};
+use aether_voice::{RecordingState, TranscriptionUpdate, record_and_transcribe};
 use dioxus::prelude::*;
 use tokio::sync::oneshot;
 
@@ -19,6 +19,8 @@ pub fn PromptInput(
 ) -> Element {
     let voice_state = use_signal(|| RecordingState::Idle);
     let mut stop_tx = use_signal::<Option<oneshot::Sender<()>>>(|| None);
+    // Store the text that existed before recording started
+    let mut prefix_text = use_signal(String::new);
 
     let mut handle_voice_click = {
         let mut voice_state = voice_state;
@@ -27,16 +29,33 @@ pub fn PromptInput(
                 if voice_state().can_transition_to(RecordingState::Recording) {
                     voice_state.set(RecordingState::Recording);
 
+                    // Save current text as prefix
+                    let current = value();
+                    let prefix = if current.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{} ", current)
+                    };
+                    prefix_text.set(prefix.clone());
+
                     let (tx, rx) = oneshot::channel();
                     stop_tx.set(Some(tx));
 
                     spawn(async move {
                         match record_and_transcribe(rx).await {
-                            Ok(text) => {
-                                if !text.is_empty() {
-                                    on_change.call(format!("{} {}", value(), text));
+                            Ok(mut updates_rx) => {
+                                // Consume streaming updates
+                                while let Some(update) = updates_rx.recv().await {
+                                    let TranscriptionUpdate { text, is_final } = update;
+                                    // Update input with prefix + transcribed text
+                                    let new_value = format!("{}{}", prefix, text);
+                                    on_change.call(new_value);
+
+                                    if is_final {
+                                        voice_state.set(RecordingState::Idle);
+                                        break;
+                                    }
                                 }
-                                voice_state.set(RecordingState::Idle);
                             }
                             Err(e) => {
                                 tracing::error!("Voice transcription failed: {}", e);

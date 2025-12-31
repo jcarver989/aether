@@ -113,7 +113,7 @@ pub fn SettingsEditor(on_close: EventHandler<()>) -> Element {
                         class: "mt-4 flex gap-2",
                         input {
                             r#type: "text",
-                            class: "flex-1 bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500",
+                            class: "flex-1 bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500 placeholder-gray-500",
                             placeholder: "New server name (e.g., claude, ollama)",
                             value: "{new_server_name}",
                             oninput: move |e| new_server_name.set(e.value()),
@@ -155,7 +155,7 @@ pub fn SettingsEditor(on_close: EventHandler<()>) -> Element {
                     "Cancel"
                 }
                 button {
-                    class: "bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors",
+                    class: "bg-green-600 hover:bg-green-700 text-black px-4 py-2 rounded-lg transition-colors",
                     onclick: save_settings,
                     "Save"
                 }
@@ -197,7 +197,7 @@ fn ServerCard(
                 div {
                     class: "flex items-center gap-2 ml-2",
                     button {
-                        class: "text-sm text-blue-400 hover:text-blue-300 px-2 py-1",
+                        class: "text-sm text-green-400 hover:text-green-300 px-2 py-1",
                         onclick: move |_| {
                             if is_editing {
                                 editing_server.set(None);
@@ -293,7 +293,7 @@ fn ServerEditForm(name: String, mut draft: Signal<Settings>) -> Element {
                 label { class: "block text-sm text-gray-400 mb-1", "Command" }
                 input {
                     r#type: "text",
-                    class: "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500 font-mono",
+                    class: "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500 placeholder-gray-500 font-mono",
                     placeholder: "e.g., aether-acp, claude, /usr/local/bin/ollama",
                     value: "{command}",
                     oninput: move |e| {
@@ -308,7 +308,7 @@ fn ServerEditForm(name: String, mut draft: Signal<Settings>) -> Element {
             div {
                 label { class: "block text-sm text-gray-400 mb-1", "Arguments (one per line)" }
                 textarea {
-                    class: "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500 font-mono resize-none",
+                    class: "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500 placeholder-gray-500 font-mono resize-none",
                     rows: "3",
                     placeholder: "--model\nanthropic:claude-sonnet-4\n--mcp-config\nmcp.json",
                     value: "{args_text}",
@@ -324,7 +324,7 @@ fn ServerEditForm(name: String, mut draft: Signal<Settings>) -> Element {
             div {
                 label { class: "block text-sm text-gray-400 mb-1", "Environment Variables (KEY=value, one per line)" }
                 textarea {
-                    class: "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500 font-mono resize-none",
+                    class: "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500 placeholder-gray-500 font-mono resize-none",
                     rows: "2",
                     placeholder: "ANTHROPIC_API_KEY=sk-...\nOPENAI_API_KEY=sk-...",
                     value: "{env_text}",

@@ -71,8 +71,8 @@ pub fn AgentView(agent_id: String) -> Element {
                 Inline {
                     gap: Space::S4,
                     div {
-                        h2 { class: "text-lg font-semibold text-white tracking-tight", "{agent_name}" }
-                        p { class: "text-sm text-gray-500 font-mono truncate max-w-xs", "{command_line}" }
+                        h2 { class: "text-sm font-semibold text-white tracking-tight", "{agent_name}" }
+                        p { class: "text-xs text-gray-500 font-mono truncate max-w-xs", "{command_line}" }
                     }
                     ViewTabs {
                         active: active_tab(),
@@ -308,11 +308,11 @@ pub fn EmptyState() -> Element {
             gap: Space::S4,
             class: "flex-1 items-center justify-center text-gray-500 bg-bg-primary",
             div {
-                class: "w-20 h-20 mb-2 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center",
+                class: "w-16 h-16 mb-2 rounded-full bg-gradient-to-br from-green-500/20 to-green-600/20 flex items-center justify-center",
                 svg {
                     xmlns: "http://www.w3.org/2000/svg",
-                    width: "40",
-                    height: "40",
+                    width: "32",
+                    height: "32",
                     view_box: "0 0 24 24",
                     fill: "none",
                     stroke: "currentColor",
@@ -328,8 +328,8 @@ pub fn EmptyState() -> Element {
             Stack {
                 gap: Space::S2,
                 class: "items-center",
-                p { class: "text-lg font-medium text-gray-400", "Create a new agent to get started" }
-                p { class: "text-sm text-gray-600", "Click the \"New Agent\" button in the sidebar" }
+                p { class: "text-sm font-medium text-gray-400", "Create a new agent to get started" }
+                p { class: "text-xs text-gray-600", "Click the \"New Agent\" button in the sidebar" }
             }
         }
     }

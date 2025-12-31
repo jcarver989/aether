@@ -57,7 +57,7 @@ pub fn DiffLineRow(
 
     // Hover class for commentable lines
     let hover_class = if is_hovered() && can_comment {
-        "ring-1 ring-inset ring-blue-500/30"
+        "ring-1 ring-inset ring-green-500/30"
     } else {
         ""
     };
@@ -166,7 +166,7 @@ pub fn DiffLineRow(
 pub fn HunkHeader(old_start: u32, old_lines: u32, new_start: u32, new_lines: u32) -> Element {
     rsx! {
         div {
-            class: "flex text-sm bg-blue-500/10 text-blue-400 py-1",
+            class: "flex text-sm bg-green-500/10 text-green-400 py-1",
             style: "font-family: var(--font-family-mono); font-weight: 400",
             span {
                 class: "px-4",

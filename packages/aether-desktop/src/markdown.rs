@@ -68,10 +68,10 @@ fn render_markdown_with_highlighting(content: &str, is_streaming: bool) -> Strin
             }
             Event::Start(Tag::Heading { level, .. }) => {
                 let size = match level {
-                    pulldown_cmark::HeadingLevel::H1 => "text-2xl font-bold mb-3",
-                    pulldown_cmark::HeadingLevel::H2 => "text-xl font-bold mb-2",
-                    pulldown_cmark::HeadingLevel::H3 => "text-lg font-semibold mb-2",
-                    _ => "text-base font-semibold mb-1",
+                    pulldown_cmark::HeadingLevel::H1 => "text-xl font-bold mb-2",
+                    pulldown_cmark::HeadingLevel::H2 => "text-lg font-bold mb-2",
+                    pulldown_cmark::HeadingLevel::H3 => "text-base font-semibold mb-1",
+                    _ => "text-sm font-semibold mb-1",
                 };
                 html.push_str(&format!("<h{} class=\"{}\">", level as u8, size));
             }
@@ -116,7 +116,7 @@ fn render_markdown_with_highlighting(content: &str, is_streaming: bool) -> Strin
             }
             Event::Start(Tag::Link { dest_url, .. }) => {
                 html.push_str(&format!(
-                    "<a href=\"{}\" class=\"text-blue-400 hover:underline\" target=\"_blank\">",
+                    "<a href=\"{}\" class=\"text-green-400 hover:underline\" target=\"_blank\">",
                     html_escape(&dest_url)
                 ));
             }

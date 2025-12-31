@@ -47,7 +47,7 @@ pub fn FileDrawer(
                     }
                     if modified_count > 0 {
                         span {
-                            class: "text-blue-400",
+                            class: "text-yellow-400",
                             "~{modified_count}"
                         }
                     }
@@ -93,7 +93,7 @@ pub fn FileDrawer(
 fn FileItem(file: FileDiff, is_selected: bool, on_click: EventHandler<String>) -> Element {
     let (status_icon, status_color) = match file.status {
         FileStatus::Added => ("+", "text-green-400"),
-        FileStatus::Modified => ("~", "text-blue-400"),
+        FileStatus::Modified => ("~", "text-yellow-400"),
         FileStatus::Deleted => ("-", "text-red-400"),
         FileStatus::Renamed => ("R", "text-purple-400"),
     };

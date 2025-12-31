@@ -104,7 +104,7 @@ pub fn CommentPanel(
 
                 // Send to Agent button
                 button {
-                    class: "w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors font-medium text-sm",
+                    class: "w-full py-2 px-4 bg-green-600 text-black rounded-lg hover:bg-green-500 transition-colors font-medium text-sm",
                     onclick: move |_| {
                         on_send.call(prompt.clone());
                     },

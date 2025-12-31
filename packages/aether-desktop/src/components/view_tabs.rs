@@ -14,20 +14,20 @@ pub enum AgentViewTab {
 #[component]
 pub fn ViewTabs(active: AgentViewTab, on_change: EventHandler<AgentViewTab>) -> Element {
     let chat_class = if active == AgentViewTab::Chat {
-        "px-4 py-2 text-sm font-medium rounded-lg bg-[#252830] text-white"
+        "px-3 py-1.5 text-xs font-medium rounded-lg bg-[#18181b] text-white"
     } else {
-        "px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+        "px-3 py-1.5 text-xs font-medium rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
     };
 
     let diff_class = if active == AgentViewTab::Diff {
-        "px-4 py-2 text-sm font-medium rounded-lg bg-[#252830] text-white"
+        "px-3 py-1.5 text-xs font-medium rounded-lg bg-[#18181b] text-white"
     } else {
-        "px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+        "px-3 py-1.5 text-xs font-medium rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
     };
 
     rsx! {
         div {
-            class: "flex gap-1 p-1 bg-[#1a1d23] rounded-xl",
+            class: "flex gap-1 p-1 bg-[#0f0f11] rounded-xl",
 
             button {
                 class: "{chat_class}",

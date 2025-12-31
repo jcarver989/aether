@@ -134,7 +134,7 @@ pub fn NewAgentForm(
 
                             // Agent server dropdown
                             select {
-                                class: "bg-bg-tertiary text-white border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
+                                class: "bg-bg-tertiary text-white border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-green-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
                                 value: "{selected_server}",
                                 onchange: move |e| selected_server.set(e.value()),
 

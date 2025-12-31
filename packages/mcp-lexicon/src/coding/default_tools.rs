@@ -25,6 +25,8 @@ impl DefaultCodingTools {
     }
 }
 
+muahahahaha - broken!
+
 impl CodingTools for DefaultCodingTools {
     async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, CodingError> {
         read_file_contents(args).await.map_err(CodingError::from)
