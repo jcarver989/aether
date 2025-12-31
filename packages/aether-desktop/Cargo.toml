@@ -31,6 +31,7 @@ nucleo = "0.5.0"
 ignore = "0.4.25"
 regex = { workspace = true }
 aether-acp-client = { path = "../aether-acp-client" }
+aether-voice = { path = "../aether-voice" }
 
 [dev-dependencies]
 tempfile = "3.14"

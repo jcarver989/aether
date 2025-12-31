@@ -2,6 +2,10 @@
 
 [web.app]
 
+# Tailwind CSS configuration
+tailwind_input = "tailwind.css"
+tailwind_output = "assets/tailwind.css"
+
 # HTML title tag content
 title = "aether-desktop"
 

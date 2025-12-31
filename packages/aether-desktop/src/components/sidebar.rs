@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::state::{AgentRegistry, AgentSession, AgentStatus};
+use crate::components::layout::{Inline, Space, Stack};
 
 #[component]
 pub fn Sidebar(
@@ -15,17 +16,17 @@ pub fn Sidebar(
 
     rsx! {
         div {
-            class: "w-72 bg-[#1a1d23] h-full flex flex-col border-r border-[#373b47]",
+            class: "w-72 bg-bg-secondary h-full flex flex-col border-r border-border-default",
 
             // Header with title and settings gear
             div {
-                class: "p-4 border-b border-[#2d313a] flex items-center justify-between",
+                class: "p-4 border-b border-border-subtle flex items-center justify-between",
                 h1 {
                     class: "text-lg font-semibold text-white tracking-tight",
                     "Aether Agents"
                 }
                 button {
-                    class: "text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10 hover:shadow-md",
+                    class: "text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10 hover:shadow-md",
                     onclick: move |_| on_settings.call(()),
                     title: "Settings",
                     svg {
@@ -51,8 +52,10 @@ pub fn Sidebar(
                 }
             }
 
-            div {
-                class: "flex-1 overflow-y-auto space-y-1 p-2",
+            Stack {
+                gap: Space::S1,
+                p: Space::S2,
+                class: "flex-1 overflow-y-auto",
                 for agent_signal in registry.iter_ordered() {
                     {
                         let agent = agent_signal.read();
@@ -86,9 +89,9 @@ pub fn Sidebar(
 
             // New agent button at bottom
             div {
-                class: "p-4 border-t border-[#2d313a]",
+                class: "p-4 border-t border-border-subtle",
                 button {
-                    class: "w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]",
+                    class: "w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold h-10 px-4 rounded-xl flex items-center justify-center gap-2 transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]",
                     onclick: move |_| on_new_agent.call(()),
                     span { class: "text-xl", "+" }
                     span { "New Agent" }
@@ -115,7 +118,7 @@ fn AgentListItem(
     };
 
     let status_class = format!(
-        "status-dot w-2.5 h-2.5 rounded-full {} {}",
+        "status-dot w-2 h-2 rounded-full {} {}",
         status_color_class,
         match &agent.status {
             AgentStatus::Running => "status-dot-running",
@@ -137,8 +140,8 @@ fn AgentListItem(
             class: "group p-3 cursor-pointer transition-all duration-200 rounded-lg {selected_class}",
             onclick: move |_| on_select.call(()),
 
-            div {
-                class: "flex items-center gap-3",
+            Inline {
+                gap: Space::S3,
                 // Status indicator
                 div { class: "{status_class}" }
                 // Agent name
@@ -178,7 +181,7 @@ fn AgentListItem(
 
             // Message count
             div {
-                class: "text-xs text-gray-600 mt-0.5 ml-5",
+                class: "text-xs text-gray-600 mt-1 ml-5",
                 "{agent.messages.len()} messages"
             }
         }

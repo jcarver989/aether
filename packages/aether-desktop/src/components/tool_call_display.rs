@@ -29,7 +29,7 @@ pub fn ToolCallDisplay(
 
             // Header - single line, minimal
             button {
-                class: "flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-white/5 rounded transition-colors",
+                class: "flex items-center gap-1 w-full text-left py-1 hover:bg-white/5 rounded transition-colors",
                 onclick: move |_| {
                     let current = *expanded.read();
                     expanded.set(!current);
@@ -54,7 +54,7 @@ pub fn ToolCallDisplay(
                 div {
                     class: "ml-5 mt-1 mb-1",
                     pre {
-                        class: "text-xs text-gray-400 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto bg-black/30 rounded px-2 py-1.5",
+                        class: "text-xs text-gray-400 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto bg-black/30 rounded px-2 py-1",
                         "{display_content}"
                     }
                 }

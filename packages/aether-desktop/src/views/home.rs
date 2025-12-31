@@ -3,7 +3,7 @@
 //! This is the main view that displays the agent sidebar and chat interface.
 
 use crate::acp_agent::{AgentEvent, AgentHandle};
-use crate::components::{AgentView, EmptyState, NewAgentForm, SettingsEditor, Sidebar};
+use crate::components::{AgentView, Card, EmptyState, Inline, NewAgentForm, SettingsEditor, Sidebar, Space, Stack};
 use crate::error::AetherDesktopError;
 use crate::settings::Settings;
 use crate::state::{AgentConfig, AgentHandles, AgentRegistry, AgentSession, AgentStatus};
@@ -73,7 +73,7 @@ pub fn Home() -> Element {
 
     rsx! {
         div {
-            class: "flex h-screen bg-[#0f1116] text-white font-sans",
+            class: "flex h-screen bg-bg-primary text-white font-sans",
 
             Sidebar {
                 agents: AGENTS.signal(),
@@ -102,17 +102,22 @@ pub fn Home() -> Element {
 
             // Error toast
             if let Some(err) = error_message.read().as_ref() {
-                div {
-                    class: "fixed bottom-4 right-4 bg-[#1a1d23] border border-red-500/30 text-white px-5 py-4 rounded-xl shadow-2xl max-w-md animate-fade-in z-50",
-                    div { class: "flex items-center gap-3",
-                        span { class: "font-semibold text-red-400", "Error" }
-                        button {
-                            class: "ml-auto text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-white/10",
-                            onclick: move |_| error_message.set(None),
-                            "✕"
+                Card {
+                    class: "fixed bottom-4 right-4 border-red-500/30 text-white shadow-2xl max-w-md animate-fade-in z-50",
+                    p: Space::S4,
+                    Stack {
+                        gap: Space::S2,
+                        Inline {
+                            gap: Space::S3,
+                            span { class: "font-semibold text-red-400", "Error" }
+                            button {
+                                class: "ml-auto text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-white/10",
+                                onclick: move |_| error_message.set(None),
+                                "✕"
+                            }
                         }
+                        p { class: "text-sm text-gray-200 leading-relaxed", "{err}" }
                     }
-                    p { class: "mt-2 text-sm text-gray-200 leading-relaxed", "{err}" }
                 }
             }
         }

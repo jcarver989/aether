@@ -79,7 +79,7 @@ pub fn DiffLineRow(
             // Comment marker (shown on hover, positioned in the left padding)
             if is_hovered() && can_comment && !show_comment_input && comment.is_none() {
                 div {
-                    class: "absolute left-1.5 top-1/2 -translate-y-1/2 z-10",
+                    class: "absolute left-2 top-1/2 -translate-y-1/2 z-10",
                     CommentMarker {
                         on_click: {
                             let line_info = line_info.clone();

@@ -2,11 +2,12 @@
 //!
 //! A simple form for creating a new agent session with a command line.
 
+use crate::components::layout::{Inline, Space, Stack};
+use crate::settings::Settings;
+use crate::state::AgentConfig;
+use crate::state::{AgentConfig, ExecutionMode};
 use dioxus::prelude::*;
 use std::path::PathBuf;
-
-use crate::settings::Settings;
-use crate::state::{AgentConfig, ExecutionMode};
 
 const CUSTOM_SERVER: &str = "__custom__";
 
@@ -77,13 +78,13 @@ pub fn NewAgentForm(
 
     rsx! {
         div {
-            class: "flex-1 flex flex-col h-full bg-[#0f1116]",
+            class: "flex-1 flex flex-col h-full bg-bg-primary",
 
             // Top bar with close button
             div {
                 class: "flex justify-end p-3",
                 button {
-                    class: "text-gray-500 hover:text-white transition-all p-1.5 rounded-lg hover:bg-white/10 hover:shadow-md",
+                    class: "text-gray-500 hover:text-white transition-all p-1 rounded-lg hover:bg-white/10 hover:shadow-md",
                     onclick: move |_| on_cancel.call(()),
                     "X"
                 }
@@ -98,7 +99,7 @@ pub fn NewAgentForm(
 
                     // Main prompt box
                     div {
-                        class: "bg-[#1a1d23] border border-[#373b47] rounded-2xl shadow-xl",
+                        class: "bg-bg-secondary border border-border-default rounded-2xl shadow-xl overflow-hidden",
 
                         // Textarea
                         textarea {
@@ -126,29 +127,21 @@ pub fn NewAgentForm(
                         }
 
                         // Bottom toolbar
-                        div {
-                            class: "flex items-center justify-between px-4 py-3 border-t border-[#2d313a]",
+                        Inline {
+                            gap: Space::S3,
+                            class: "justify-end px-4 py-3 border-t border-border-subtle",
 
-                            // Left side: Docker toggle (only show if Dockerfile exists)
-                            div {
-                                class: "flex items-center gap-2",
-                                if has_dockerfile {
-                                    label {
-                                        class: "flex items-center gap-2 cursor-pointer text-sm text-gray-400 hover:text-white transition-colors",
-                                        input {
-                                            r#type: "checkbox",
-                                            class: "w-4 h-4 rounded border-gray-500 bg-[#252830] text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer",
-                                            checked: use_docker(),
-                                            onchange: move |e| use_docker.set(e.checked()),
-                                        }
-                                        span {
-                                            class: "select-none",
-                                            "Run in Docker"
-                                        }
-                                        span {
-                                            class: "text-xs text-gray-500",
-                                            "(isolated)"
-                                        }
+                            // Agent server dropdown
+                            select {
+                                class: "bg-bg-tertiary text-white border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
+                                value: "{selected_server}",
+                                onchange: move |e| selected_server.set(e.value()),
+
+                                for name in server_names.iter() {
+                                    option {
+                                        key: "{name}",
+                                        value: "{name}",
+                                        "{name}"
                                     }
                                 }
                             }

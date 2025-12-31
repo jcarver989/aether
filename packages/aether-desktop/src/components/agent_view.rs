@@ -2,18 +2,19 @@
 //!
 //! Displays the chat interface for a single agent session.
 
-use agent_client_protocol::ContentBlock;
-use dioxus::prelude::*;
-
-use crate::hooks::{AgentChatController, use_agent_chat};
-use crate::state::{AgentStatus, CommentKey, DiffComment, Message, MessageKind, Role, now_iso};
-use crate::{HANDLES, with_agent_mut};
-
 use super::command_dropdown::CommandDropdown;
 use super::diff_view::DiffView;
 use super::file_picker::{FilePicker, FilePill};
 use super::message_bubble::MessageBubble;
+use super::prompt_input::PromptInput;
 use super::view_tabs::{AgentViewTab, ViewTabs};
+use crate::hooks::{AgentChatController, use_agent_chat};
+use crate::state::{AgentStatus, CommentKey, DiffComment, Message, MessageKind, Role, now_iso};
+use crate::state::{AgentStatus, CommentKey, DiffComment, Message, MessageKind, Role, now_iso};
+use crate::{HANDLES, with_agent_mut};
+use crate::{HANDLES, with_agent_mut};
+use agent_client_protocol::ContentBlock;
+use dioxus::prelude::*;
 
 #[component]
 pub fn AgentView(agent_id: String) -> Element {
@@ -62,13 +63,13 @@ pub fn AgentView(agent_id: String) -> Element {
 
     rsx! {
         div {
-            class: "flex-1 flex flex-col h-full bg-[#0f1116] overflow-hidden",
+            class: "flex-1 flex flex-col h-full bg-bg-primary overflow-hidden",
 
             // Header
             div {
-                class: "p-4 border-b border-[#2d313a] flex items-center justify-between",
-                div {
-                    class: "flex items-center gap-4",
+                class: "p-4 border-b border-border-subtle flex items-center justify-between",
+                Inline {
+                    gap: Space::S4,
                     div {
                         h2 { class: "text-lg font-semibold text-white tracking-tight", "{agent_name}" }
                         p { class: "text-sm text-gray-500 font-mono truncate max-w-xs", "{command_line}" }
@@ -79,7 +80,7 @@ pub fn AgentView(agent_id: String) -> Element {
                     }
                 }
                 span {
-                    class: "px-3 py-1.5 rounded-full text-xs font-medium {status_color}",
+                    class: "px-3 py-1 rounded-full text-xs font-medium {status_color}",
                     "{status_text}"
                 }
             }
@@ -88,8 +89,10 @@ pub fn AgentView(agent_id: String) -> Element {
             match active_tab() {
                 AgentViewTab::Chat => rsx! {
                     // Message list
-                    div {
-                        class: "flex-1 overflow-y-auto px-3 py-2 space-y-1",
+                    Stack {
+                        gap: Space::S1,
+                        p: Space::S3,
+                        class: "flex-1 overflow-y-auto",
                         id: "message-list",
 
                         if messages.is_empty() {
@@ -210,12 +213,13 @@ fn ChatInput(mut chat: AgentChatController, is_running: bool) -> Element {
 
     rsx! {
         div {
-            class: "p-4 border-t border-[#2d313a] bg-[#1a1d23]",
+            class: "p-4 border-t border-border-subtle bg-bg-secondary",
 
             // File pills (pending file mentions)
             if !pending_files.is_empty() {
-                div {
-                    class: "flex flex-wrap gap-2 mb-3",
+                Inline {
+                    gap: Space::S2,
+                    class: "flex-wrap mb-3",
                     for file in pending_files.iter() {
                         FilePill {
                             key: "{file.path}",
@@ -280,31 +284,17 @@ fn ChatInput(mut chat: AgentChatController, is_running: bool) -> Element {
                     InputMode::Normal => rsx! {},
                 }
 
-                div {
-                    class: "flex gap-3",
-                    textarea {
-                        class: "input-field flex-1 rounded-xl px-4 py-3 resize-none",
-                        value: "{input_value}",
-                        oninput: move |e: Event<FormData>| {
-                            chat.on_input_change(e.value());
-                        },
-                        onkeydown: move |e: KeyboardEvent| {
-                            if chat.on_keydown(&e.key(), e.modifiers().shift()) {
-                                e.prevent_default();
-                            }
-                        },
-                        placeholder: "Type a message, / for commands, or @ to mention files...",
-                        disabled: is_running,
-                        rows: "2",
-                    }
-                    button {
-                        class: "btn-primary px-6 py-3 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
-                        onclick: move |_| {
-                            chat.send();
-                        },
-                        disabled: is_running,
-                        if is_running { "Working..." } else { "Send" }
-                    }
+                PromptInput {
+                    value: chat.input,
+                    on_change: move |value: String| {
+                        chat.on_input_change(value);
+                    },
+                    on_submit: move |_| {
+                        chat.send();
+                    },
+                    placeholder: "Type a message, / for commands, or @ to mention files...".to_string(),
+                    disabled: is_running,
+                    rows: "2",
                 }
             }
         }
@@ -314,10 +304,11 @@ fn ChatInput(mut chat: AgentChatController, is_running: bool) -> Element {
 #[component]
 pub fn EmptyState() -> Element {
     rsx! {
-        div {
-            class: "flex-1 flex flex-col items-center justify-center text-gray-500 bg-[#0f1116]",
+        Stack {
+            gap: Space::S4,
+            class: "flex-1 items-center justify-center text-gray-500 bg-bg-primary",
             div {
-                class: "w-20 h-20 mb-6 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center",
+                class: "w-20 h-20 mb-2 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center",
                 svg {
                     xmlns: "http://www.w3.org/2000/svg",
                     width: "40",
@@ -334,8 +325,12 @@ pub fn EmptyState() -> Element {
                     }
                 }
             }
-            p { class: "text-lg font-medium text-gray-400", "Create a new agent to get started" }
-            p { class: "text-sm mt-2 text-gray-600", "Click the \"New Agent\" button in the sidebar" }
+            Stack {
+                gap: Space::S2,
+                class: "items-center",
+                p { class: "text-lg font-medium text-gray-400", "Create a new agent to get started" }
+                p { class: "text-sm text-gray-600", "Click the \"New Agent\" button in the sidebar" }
+            }
         }
     }
 }

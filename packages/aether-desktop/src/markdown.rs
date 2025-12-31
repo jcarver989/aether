@@ -110,7 +110,7 @@ fn render_markdown_with_highlighting(content: &str, is_streaming: bool) -> Strin
             }
             Event::Code(code) => {
                 html.push_str(&format!(
-                    "<code class=\"bg-gray-800 px-1.5 py-0.5 rounded text-sm font-mono text-pink-400\">{}</code>",
+                    "<code class=\"bg-gray-800 px-2 py-1 rounded text-sm font-mono text-pink-400\">{}</code>",
                     html_escape(&code)
                 ));
             }

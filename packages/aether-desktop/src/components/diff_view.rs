@@ -133,7 +133,7 @@ fn FileDiffContent(
         div {
             class: "p-3 border-b border-[#2d313a] flex items-center gap-3",
             span {
-                class: "px-2 py-0.5 rounded text-xs font-medium {status_class}",
+                class: "px-2 py-1 rounded text-xs font-medium {status_class}",
                 "{status_text}"
             }
             span {
