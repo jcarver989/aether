@@ -64,7 +64,7 @@ pub fn CommandDropdown(
 #[component]
 fn CommandItem(command: SlashCommand, is_selected: bool, on_click: EventHandler<()>) -> Element {
     let class_str = if is_selected {
-        "px-4 py-3 cursor-pointer transition-colors bg-blue-600 border-l-2 border-blue-400"
+        "px-4 py-3 cursor-pointer transition-colors bg-green-600 border-l-2 border-green-400"
     } else {
         "px-4 py-3 cursor-pointer transition-colors hover:bg-[#252830] border-l-2 border-transparent"
     };
@@ -80,7 +80,7 @@ fn CommandItem(command: SlashCommand, is_selected: bool, on_click: EventHandler<
             div {
                 class: "flex items-center gap-3",
                 span {
-                    class: "text-blue-400 font-mono text-sm font-medium",
+                    class: "text-green-400 font-mono text-sm font-medium",
                     "{command_display}"
                 }
                 if let Some(hint) = &hint_display {

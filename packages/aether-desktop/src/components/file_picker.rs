@@ -67,7 +67,7 @@ pub fn FilePicker(
 #[component]
 fn FileItem(file: FileMatch, is_selected: bool, on_click: EventHandler<()>) -> Element {
     let class_str = if is_selected {
-        "px-4 py-2 cursor-pointer transition-colors bg-blue-600 border-l-2 border-blue-400"
+        "px-4 py-2 cursor-pointer transition-colors bg-green-600 border-l-2 border-green-400"
     } else {
         "px-4 py-2 cursor-pointer transition-colors hover:bg-[#252830] border-l-2 border-transparent"
     };
@@ -115,7 +115,7 @@ pub fn FilePill(
 
     rsx! {
         div {
-            class: "inline-flex items-center gap-1 bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded-lg px-2 py-1 text-sm",
+            class: "inline-flex items-center gap-1 bg-green-600/20 text-green-400 border border-green-600/30 rounded-lg px-2 py-1 text-sm",
             title: "{file.path}",
 
             span {
@@ -123,7 +123,7 @@ pub fn FilePill(
                 "@{filename}"
             }
             button {
-                class: "ml-1 text-blue-300 hover:text-white transition-colors",
+                class: "ml-1 text-green-300 hover:text-white transition-colors",
                 onclick: move |e| {
                     e.stop_propagation();
                     on_remove.call(());

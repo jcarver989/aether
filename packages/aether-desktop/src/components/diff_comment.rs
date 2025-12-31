@@ -19,7 +19,7 @@ pub struct LineInfo {
 pub fn CommentMarker(on_click: EventHandler<()>) -> Element {
     rsx! {
         button {
-            class: "comment-marker w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold hover:bg-blue-400 transition-colors",
+            class: "comment-marker w-5 h-5 rounded-full bg-green-500 text-black flex items-center justify-center text-xs font-bold hover:bg-green-400 transition-colors",
             onclick: move |e| {
                 e.stop_propagation();
                 on_click.call(());
@@ -87,7 +87,7 @@ pub fn CommentInput(
                 }
 
                 button {
-                    class: "px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                    class: "px-3 py-1 text-sm bg-green-600 text-black rounded hover:bg-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                     disabled: content.read().trim().is_empty(),
                     onclick: move |_| try_save(),
                     "Save (Ctrl+Enter)"
@@ -122,7 +122,7 @@ pub fn CommentBubble(
 
     rsx! {
         div {
-            class: "comment-bubble bg-[#1a1d23] border-l-2 border-blue-500 rounded-r-lg p-3 mt-2 ml-8 group",
+            class: "comment-bubble bg-[#1a1d23] border-l-2 border-green-500 rounded-r-lg p-3 mt-2 ml-8 group",
 
             // Comment content
             p {

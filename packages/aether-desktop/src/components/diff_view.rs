@@ -119,7 +119,7 @@ fn FileDiffContent(
 ) -> Element {
     let (status_text, status_class) = match file.status {
         FileStatus::Added => ("Added", "text-green-400 bg-green-500/10"),
-        FileStatus::Modified => ("Modified", "text-blue-400 bg-blue-500/10"),
+        FileStatus::Modified => ("Modified", "text-yellow-400 bg-yellow-500/10"),
         FileStatus::Deleted => ("Deleted", "text-red-400 bg-red-500/10"),
         FileStatus::Renamed => ("Renamed", "text-purple-400 bg-purple-500/10"),
     };
@@ -246,7 +246,7 @@ fn LoadingState() -> Element {
                 class: "flex flex-col items-center gap-3",
                 // Simple spinner
                 div {
-                    class: "w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin",
+                    class: "w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin",
                 }
                 span {
                     class: "text-gray-400 text-sm",

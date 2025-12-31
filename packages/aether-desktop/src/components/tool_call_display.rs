@@ -11,7 +11,7 @@ pub fn ToolCallDisplay(
     let mut expanded = use_signal(|| false);
 
     let (icon, icon_color) = match status {
-        ToolCallStatus::Pending => ("○", "text-blue-400"),
+        ToolCallStatus::Pending => ("○", "text-yellow-400"),
         ToolCallStatus::Completed => ("✓", "text-green-400"),
         ToolCallStatus::Failed => ("✕", "text-red-400"),
     };

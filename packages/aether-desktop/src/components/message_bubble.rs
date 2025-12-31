@@ -18,9 +18,9 @@ pub fn MessageBubble(message: Message) -> Element {
                     if is_user {
                         rsx! {
                             div {
-                                class: "text-blue-300/80 text-sm",
+                                class: "text-green-300/80 text-sm",
                                 span {
-                                    class: "text-blue-500/60 mr-2",
+                                    class: "text-green-500/60 mr-2",
                                     ">"
                                 }
                                 "{message.content}"

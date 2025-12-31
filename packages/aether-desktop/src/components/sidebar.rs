@@ -22,7 +22,7 @@ pub fn Sidebar(
             div {
                 class: "p-4 border-b border-border-subtle flex items-center justify-between",
                 h1 {
-                    class: "text-lg font-semibold text-white tracking-tight",
+                    class: "text-sm font-semibold text-white tracking-tight",
                     "Aether Agents"
                 }
                 button {
@@ -91,9 +91,9 @@ pub fn Sidebar(
             div {
                 class: "p-4 border-t border-border-subtle",
                 button {
-                    class: "w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold h-10 px-4 rounded-xl flex items-center justify-center gap-2 transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]",
+                    class: "w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 text-black font-semibold h-10 px-4 rounded-xl flex items-center justify-center gap-2 transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]",
                     onclick: move |_| on_new_agent.call(()),
-                    span { class: "text-xl", "+" }
+                    span { class: "text-lg", "+" }
                     span { "New Agent" }
                 }
             }
