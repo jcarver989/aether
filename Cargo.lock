@@ -94,7 +94,10 @@ dependencies = [
 name = "aether-desktop"
 version = "0.1.0"
 dependencies = [
+<<<<<<< HEAD
  "aether-acp-client",
+=======
+>>>>>>> 9a0a681 (feat: more consistent ui spacing)
  "aether-voice",
  "agent-client-protocol",
  "async-trait",

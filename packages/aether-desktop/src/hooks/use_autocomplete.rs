@@ -85,13 +85,6 @@ impl<T: Clone + PartialEq + 'static> AutocompleteController<T> {
         self.items.read().clone()
     }
 
-    /// Get the currently selected item, if any.
-    pub fn selected_item(&self) -> Option<T> {
-        let items = self.items.read();
-        let idx = *self.selected_index.read();
-        items.get(idx).cloned()
-    }
-
     /// Show the autocomplete with the given filter text and items.
     ///
     /// For async item loading, pass an empty vec and call `set_items()` when results arrive.
@@ -102,13 +95,6 @@ impl<T: Clone + PartialEq + 'static> AutocompleteController<T> {
         self.visible.set(true);
     }
 
-    /// Hide the autocomplete and reset state.
-    pub fn hide(&mut self) {
-        self.visible.set(false);
-        self.filter.set(String::new());
-        self.selected_index.set(0);
-    }
-
     /// Update the items list (e.g., after filtering or async search).
     pub fn set_items(&mut self, new_items: Vec<T>) {
         self.items.set(new_items);
@@ -117,128 +103,5 @@ impl<T: Clone + PartialEq + 'static> AutocompleteController<T> {
         if *self.selected_index.read() >= len && len > 0 {
             self.selected_index.set(len - 1);
         }
-    }
-
-    /// Move selection to the next item.
-    pub fn select_next(&mut self) {
-        let len = self.items.read().len();
-        if len == 0 {
-            return;
-        }
-        let current = *self.selected_index.read();
-        self.selected_index.set((current + 1).min(len - 1));
-    }
-
-    /// Move selection to the previous item.
-    pub fn select_previous(&mut self) {
-        let current = *self.selected_index.read();
-        self.selected_index.set(current.saturating_sub(1));
-    }
-
-    /// Confirm the current selection and hide.
-    ///
-    /// Returns the selected item if one exists.
-    pub fn confirm(&mut self) -> Option<T> {
-        let item = self.selected_item();
-        self.hide();
-        item
-    }
-
-    /// Handle a keyboard event.
-    ///
-    /// Returns `Some(item)` if selection was confirmed, `None` otherwise.
-    /// Returns `KeyAction` indicating what happened.
-    pub fn handle_key(&mut self, key: &dioxus::prelude::Key) -> KeyAction<T> {
-        if !self.is_visible() {
-            return KeyAction::Ignored;
-        }
-
-        match key {
-            Key::ArrowDown => {
-                self.select_next();
-                KeyAction::Consumed
-            }
-            Key::ArrowUp => {
-                self.select_previous();
-                KeyAction::Consumed
-            }
-            Key::Enter | Key::Tab => {
-                if let Some(item) = self.confirm() {
-                    KeyAction::Selected(item)
-                } else {
-                    KeyAction::Consumed
-                }
-            }
-            Key::Escape => {
-                self.hide();
-                KeyAction::Consumed
-            }
-            _ => KeyAction::Ignored,
-        }
-    }
-}
-
-/// Result of handling a keyboard event.
-#[derive(Clone, Debug, PartialEq)]
-pub enum KeyAction<T> {
-    /// Key was not handled by autocomplete
-    Ignored,
-    /// Key was consumed (navigation, escape)
-    Consumed,
-    /// An item was selected
-    Selected(T),
-}
-
-impl<T> KeyAction<T> {
-    /// Whether the key event was handled.
-    #[allow(dead_code)]
-    pub fn was_handled(&self) -> bool {
-        !matches!(self, KeyAction::Ignored)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_key_action_was_handled() {
-        assert!(!KeyAction::<String>::Ignored.was_handled());
-        assert!(KeyAction::<String>::Consumed.was_handled());
-        assert!(KeyAction::Selected("test".to_string()).was_handled());
-    }
-
-    #[test]
-    fn test_key_action_equality() {
-        assert_eq!(KeyAction::<String>::Ignored, KeyAction::Ignored);
-        assert_eq!(KeyAction::<String>::Consumed, KeyAction::Consumed);
-        assert_eq!(
-            KeyAction::Selected("a".to_string()),
-            KeyAction::Selected("a".to_string())
-        );
-        assert_ne!(
-            KeyAction::Selected("a".to_string()),
-            KeyAction::Selected("b".to_string())
-        );
-        assert_ne!(KeyAction::<String>::Ignored, KeyAction::Consumed);
-    }
-
-    #[test]
-    fn test_key_action_clone() {
-        let action = KeyAction::Selected("test".to_string());
-        let cloned = action.clone();
-        assert_eq!(action, cloned);
-    }
-
-    #[test]
-    fn test_key_action_debug() {
-        let ignored = KeyAction::<String>::Ignored;
-        let consumed = KeyAction::<String>::Consumed;
-        let selected = KeyAction::Selected("item".to_string());
-
-        assert!(format!("{:?}", ignored).contains("Ignored"));
-        assert!(format!("{:?}", consumed).contains("Consumed"));
-        assert!(format!("{:?}", selected).contains("Selected"));
-        assert!(format!("{:?}", selected).contains("item"));
     }
 }

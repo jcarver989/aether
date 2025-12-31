@@ -20,7 +20,7 @@ use crate::file_search::{FileMatch, FileSearcher};
 use crate::state::{AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, now_iso};
 use crate::{AGENTS, FILE_SEARCHERS, HANDLES, with_agent_mut};
 
-use super::use_autocomplete::{AutocompleteController, KeyAction};
+use super::use_autocomplete::AutocompleteController;
 
 /// Matches `@query` at start of string or after whitespace, capturing the query.
 static FILE_MENTION_REGEX: LazyLock<Regex> =
@@ -158,82 +158,6 @@ impl AgentChatController {
         };
 
         self.input_mode.set(mode);
-    }
-
-    /// Handle keyboard events.
-    ///
-    /// Returns `true` if the event was consumed and should be prevented.
-    pub fn on_keydown(&mut self, key: &Key, shift: bool) -> bool {
-        // Handle autocomplete keys based on current mode
-        // We need to handle the key action outside the match to avoid borrow issues
-        enum Action {
-            None,
-            Consumed,
-            SelectCommand(SlashCommand),
-            SelectFile(FileMatch),
-        }
-
-        let action = match &mut *self.input_mode.write() {
-            InputMode::SlashCommand(ctrl) => match ctrl.handle_key(key) {
-                KeyAction::Selected(cmd) => Action::SelectCommand(cmd),
-                KeyAction::Consumed => Action::Consumed,
-                KeyAction::Ignored => Action::None,
-            },
-            InputMode::FileMention(ctrl) => match ctrl.handle_key(key) {
-                KeyAction::Selected(file) => Action::SelectFile(file),
-                KeyAction::Consumed => Action::Consumed,
-                KeyAction::Ignored => Action::None,
-            },
-            InputMode::Normal => Action::None,
-        };
-
-        match action {
-            Action::SelectCommand(cmd) => {
-                self.input.set(format!("/{} ", cmd.name));
-                self.input_mode.set(InputMode::Normal);
-                return true;
-            }
-            Action::SelectFile(file) => {
-                self.add_pending_file(file);
-                return true;
-            }
-            Action::Consumed => return true,
-            Action::None => {}
-        }
-
-        match key {
-            Key::Enter if !shift => {
-                self.send();
-                true
-            }
-            Key::Backspace => {
-                let input = self.input.read().clone();
-                if input.is_empty() && !self.pending_files.read().is_empty() {
-                    self.pending_files.write().pop();
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        }
-    }
-
-    /// Add a file to pending and clear the @query from input.
-    fn add_pending_file(&mut self, file: FileMatch) {
-        {
-            let mut files = self.pending_files.write();
-            if !files.iter().any(|f| f.path == file.path) {
-                files.push(file);
-            }
-        }
-
-        let current = self.input.read().clone();
-        if let Some(at_pos) = current.rfind('@') {
-            self.input.set(current[..at_pos].to_string());
-        }
-
-        self.input_mode.set(InputMode::Normal);
     }
 
     /// Remove a pending file by path.
