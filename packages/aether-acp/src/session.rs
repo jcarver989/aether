@@ -250,6 +250,7 @@ fn parse_slash_command_arguments(
 /// Parse the root directory from the mcp.json coding server args.
 ///
 /// Looks for the "coding" server entry and parses its args for `--root-dir`.
+/// Relative paths (like ".") are resolved against the mcp.json's directory.
 /// Returns None if the config doesn't exist, doesn't have a coding server,
 /// or the coding server doesn't specify a root-dir.
 fn parse_coding_root_dir(mcp_config_path: &std::path::Path) -> Option<PathBuf> {
@@ -258,7 +259,15 @@ fn parse_coding_root_dir(mcp_config_path: &std::path::Path) -> Option<PathBuf> {
 
     if let RawMcpServerConfig::InMemory { args } = coding_config {
         let parsed_args = CodingMcpArgs::from_args(args.clone()).ok()?;
-        parsed_args.root_dir
+        let root_dir = parsed_args.root_dir?;
+
+        // Resolve relative paths against the mcp.json's directory
+        if root_dir.is_relative() {
+            let config_dir = mcp_config_path.parent()?;
+            Some(config_dir.join(&root_dir).canonicalize().ok()?)
+        } else {
+            Some(root_dir)
+        }
     } else {
         None
     }
@@ -266,6 +275,8 @@ fn parse_coding_root_dir(mcp_config_path: &std::path::Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::{File, create_dir_all, remove_dir, remove_file};
+
     use serde_json::Map;
     use serde_json::Value;
 
@@ -291,5 +302,52 @@ mod tests {
         assert_eq!(arg_map, expected);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_coding_root_dir_resolves_relative_path() {
+        let (temp_dir, mcp_json_path) = create_temp_mcp_json("relative_path", ".");
+        let expected_path = temp_dir.canonicalize().unwrap();
+        let resolved = parse_coding_root_dir(&mcp_json_path).expect("Should resolve relative path");
+
+        assert_eq!(resolved, expected_path);
+        remove_file(&mcp_json_path).ok();
+        remove_dir(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_parse_coding_root_dir_preserves_absolute_path() {
+        let absolute_path = std::env::temp_dir().canonicalize().unwrap();
+        let (temp_dir, mcp_json_path) =
+            create_temp_mcp_json("absolute_path", &absolute_path.display().to_string());
+        let resolved = parse_coding_root_dir(&mcp_json_path).expect("Should return absolute path");
+
+        assert_eq!(resolved, absolute_path);
+        remove_file(&mcp_json_path).ok();
+        remove_dir(&temp_dir).ok();
+    }
+
+    fn create_temp_mcp_json(name: &str, root_dir: &str) -> (PathBuf, PathBuf) {
+        use std::io::Write;
+
+        let temp_dir = std::env::temp_dir().join(format!("aether_test_{name}"));
+        create_dir_all(&temp_dir).unwrap();
+
+        let mcp_json_path = temp_dir.join("mcp.json");
+        let mut file = File::create(&mcp_json_path).unwrap();
+        write!(
+            file,
+            r#"{{
+                "servers": {{
+                    "coding": {{
+                        "type": "in-memory",
+                        "args": ["--root-dir", "{root_dir}"]
+                    }}
+                }}
+            }}"#
+        )
+        .unwrap();
+
+        (temp_dir, mcp_json_path)
     }
 }

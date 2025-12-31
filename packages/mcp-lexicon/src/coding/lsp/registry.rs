@@ -148,7 +148,7 @@ impl LspRegistry {
                 Some(handle)
             }
             Err(e) => {
-                tracing::warn!("Failed to spawn LSP '{}': {}", config.command, e);
+                tracing::error!("Failed to spawn LSP '{}': {}", config.command, e);
                 None
             }
         }
