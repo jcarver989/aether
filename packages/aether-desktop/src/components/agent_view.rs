@@ -206,7 +206,7 @@ fn ChatInput(mut chat: AgentChatController, is_running: bool) -> Element {
 
     // Read state from controller
     let pending_files = chat.pending_files.read().clone();
-    let input_value = chat.input_value();
+    let _input_value = chat.input_value();
     let input_mode = chat.input_mode();
     let files_loading = *chat.files_loading.read();
     let available_commands = chat.available_commands();

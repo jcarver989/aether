@@ -1,6 +1,5 @@
 use dioxus::prelude::*;
 
-use crate::components::layout::Space;
 use crate::markdown::Markdown;
 use crate::state::{Message, MessageKind, Role};
 

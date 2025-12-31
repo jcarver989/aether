@@ -17,8 +17,7 @@ pub mod view_tabs;
 pub mod voice_input;
 
 pub use agent_view::{AgentView, EmptyState};
-pub use layout::{Card, Container, Inline, SectionHeader, Space, Stack};
+pub use layout::{Card, Inline, Space, Stack};
 pub use new_agent_modal::NewAgentForm;
-pub use prompt_input::PromptInput;
 pub use settings_editor::SettingsEditor;
 pub use sidebar::Sidebar;

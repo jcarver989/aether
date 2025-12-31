@@ -2,6 +2,7 @@
 //!
 //! A simple form for creating a new agent session with a command line.
 
+use crate::components::layout::{Inline, Space};
 use crate::components::layout::{Inline, Space, Stack};
 use crate::settings::Settings;
 use crate::state::AgentConfig;
