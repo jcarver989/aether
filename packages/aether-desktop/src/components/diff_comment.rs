@@ -3,6 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::state::{DiffComment, LineOrigin};
+use super::prompt_input::PromptInput;
 
 /// Information about a line that can be commented on.
 #[derive(Clone, PartialEq, Debug)]
@@ -62,27 +63,31 @@ pub fn CommentInput(
         div {
             class: "comment-input bg-[#1a1d23] border border-[#3d4450] rounded-lg p-3 mt-2 ml-8",
             onclick: move |e| e.stop_propagation(),
+            onkeydown: handle_keydown,
 
-            textarea {
-                class: "w-full bg-[#0f1116] border border-[#2d313a] rounded px-3 py-2 text-sm text-gray-200 resize-none focus:outline-none focus:border-blue-500",
-                placeholder: "Add a comment...",
+            PromptInput {
+                value: content,
+                on_change: move |value: String| {
+                    content.set(value);
+                },
+                on_submit: move |_| try_save(),
+                placeholder: "Add a comment...".to_string(),
+                disabled: false,
                 rows: "3",
-                value: "{content}",
-                oninput: move |e| content.set(e.value()),
-                onkeydown: handle_keydown,
+                simple: true,
             }
 
             div {
                 class: "flex justify-end gap-2 mt-2",
 
                 button {
-                    class: "px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors",
+                    class: "px-3 py-1 text-sm text-gray-400 hover:text-gray-200 transition-colors",
                     onclick: move |_| on_cancel.call(()),
                     "Cancel"
                 }
 
                 button {
-                    class: "px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                    class: "px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                     disabled: content.read().trim().is_empty(),
                     onclick: move |_| try_save(),
                     "Save (Ctrl+Enter)"

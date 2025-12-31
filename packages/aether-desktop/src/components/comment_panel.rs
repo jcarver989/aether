@@ -116,7 +116,7 @@ pub fn CommentPanel(
                     div {
                         class: "flex gap-2",
                         button {
-                            class: "flex-1 py-1.5 px-3 bg-red-600 text-white rounded text-sm hover:bg-red-500 transition-colors",
+                            class: "flex-1 py-1 px-3 bg-red-600 text-white rounded text-sm hover:bg-red-500 transition-colors",
                             onclick: move |_| {
                                 on_clear.call(());
                                 confirm_clear.set(false);
@@ -124,14 +124,14 @@ pub fn CommentPanel(
                             "Confirm Clear"
                         }
                         button {
-                            class: "flex-1 py-1.5 px-3 bg-gray-700 text-gray-200 rounded text-sm hover:bg-gray-600 transition-colors",
+                            class: "flex-1 py-1 px-3 bg-gray-700 text-gray-200 rounded text-sm hover:bg-gray-600 transition-colors",
                             onclick: move |_| confirm_clear.set(false),
                             "Cancel"
                         }
                     }
                 } else {
                     button {
-                        class: "w-full py-1.5 px-3 text-gray-400 hover:text-gray-200 text-sm transition-colors",
+                        class: "w-full py-1 px-3 text-gray-400 hover:text-gray-200 text-sm transition-colors",
                         onclick: move |_| confirm_clear.set(true),
                         "Clear All"
                     }

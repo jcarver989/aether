@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use crate::components::layout::Space;
 use crate::markdown::Markdown;
 use crate::state::{Message, MessageKind, Role};
 
@@ -11,7 +12,7 @@ pub fn MessageBubble(message: Message) -> Element {
 
     rsx! {
         div {
-            class: "py-0.5",
+            class: "py-1",
 
             match &message.kind {
                 MessageKind::Text => {
