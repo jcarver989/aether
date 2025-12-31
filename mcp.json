@@ -2,7 +2,7 @@
   "servers": {
     "coding": {
       "type": "in-memory",
-      "args": ["--root-dir", "/Users/jj/code/aether"]
+      "args": ["--root-dir", "."]
     },
     "plugins": {
       "type": "in-memory",
