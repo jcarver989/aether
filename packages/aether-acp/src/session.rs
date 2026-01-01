@@ -1,9 +1,9 @@
 use aether::agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent};
 use aether::llm::provider::StreamingModelProvider;
+use aether::mcp::McpSpawnResult;
 use aether::mcp::config::{RawMcpConfig, RawMcpServerConfig};
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
-use aether::mcp::McpSpawnResult;
 use agent_client_protocol as acp;
 use futures::FutureExt;
 use mcp_lexicon::{CodingMcp, CodingMcpArgs, LspCodingTools, PluginsMcp, ServiceExt};
@@ -64,9 +64,11 @@ impl Session {
                     async move {
                         let acp_tools =
                             AcpCodingTools::new(actor_handle.clone(), acp_session_id.clone());
-                        let lsp_tools = LspCodingTools::new(acp_tools, project_path);
+                        let lsp_tools = LspCodingTools::new(acp_tools, project_path.clone());
                         debug!("LspCodingTools created with lazy LSP spawning");
-                        CodingMcp::with_tools(lsp_tools).with_root_dir(project_path).into_dyn()
+                        CodingMcp::with_tools(lsp_tools)
+                            .with_root_dir(project_path)
+                            .into_dyn()
                     }
                     .boxed()
                 }),

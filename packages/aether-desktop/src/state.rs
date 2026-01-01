@@ -171,6 +171,12 @@ pub struct AgentSession {
     pub diff_state: DiffState,
     /// Maps terminal_id → tool_id for correlating streaming terminal output
     pub terminal_to_tool: HashMap<String, String>,
+    /// Current context usage ratio (0.0 - 1.0)
+    pub context_usage: f64,
+    /// Tokens currently used in context
+    pub tokens_used: u32,
+    /// Maximum context limit for this agent
+    pub context_limit: u32,
 }
 
 impl AgentSession {
@@ -199,6 +205,9 @@ impl AgentSession {
             cwd,
             diff_state: DiffState::default(),
             terminal_to_tool: HashMap::new(),
+            context_usage: 0.0,
+            tokens_used: 0,
+            context_limit: 0,
         }
     }
 
@@ -516,9 +525,7 @@ impl AgentRegistry {
 
     /// Iterate over agent sessions in insertion order.
     pub fn iter_ordered(&self) -> impl Iterator<Item = &AgentSession> + '_ {
-        self.order
-            .iter()
-            .filter_map(|id| self.agents.get(id))
+        self.order.iter().filter_map(|id| self.agents.get(id))
     }
 
     /// Insert a new agent session.

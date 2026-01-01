@@ -1,7 +1,7 @@
 use aether::{
     agent::{AgentMessage, UserMessage, agent},
     llm::openrouter::OpenRouterProvider,
-    mcp::{mcp, McpSpawnResult},
+    mcp::{McpSpawnResult, mcp},
 };
 use std::io::{self, Write};
 
@@ -88,6 +88,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 messages_removed, ..
             }) => {
                 println!("Context compacted: {} messages removed", messages_removed);
+            }
+            Some(ContextUsageUpdate {
+                usage_ratio,
+                tokens_used,
+                context_limit,
+            }) => {
+                println!(
+                    "Context usage: {:.1}% ({}/{} tokens)",
+                    usage_ratio * 100.0,
+                    tokens_used,
+                    context_limit
+                );
             }
             None => {
                 println!("Channel closed");

@@ -52,6 +52,7 @@ name = "aether-acp"
 version = "0.1.0"
 dependencies = [
  "aether",
+ "aether-acp-types",
  "agent-client-protocol",
  "async-trait",
  "clap",
@@ -72,6 +73,7 @@ dependencies = [
 name = "aether-acp-client"
 version = "0.1.0"
 dependencies = [
+ "aether-acp-types",
  "agent-client-protocol",
  "async-trait",
  "bollard",
@@ -80,6 +82,8 @@ dependencies = [
  "futures",
  "hex",
  "nix 0.29.0",
+ "serde",
+ "serde_json",
  "sha2",
  "tar",
  "tempfile",
@@ -88,6 +92,15 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "aether-acp-types"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

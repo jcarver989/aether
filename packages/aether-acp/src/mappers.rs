@@ -1,4 +1,5 @@
 use aether::agent::AgentMessage;
+use aether_acp_types::ContextUsageParams;
 use agent_client_protocol as acp;
 use rmcp::model::Prompt as McpPrompt;
 
@@ -231,11 +232,30 @@ pub fn map_agent_message_to_session_notification(
             })
         }
 
-        AgentMessage::Error { .. }
+        AgentMessage::ContextUsageUpdate { .. }
+        | AgentMessage::Error { .. }
         | AgentMessage::Cancelled { .. }
         | AgentMessage::Done
         | AgentMessage::ContextCompactionStarted { .. }
         | AgentMessage::ContextCompactionResult { .. } => None,
+    }
+}
+
+pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotification> {
+    match msg {
+        AgentMessage::ContextUsageUpdate {
+            usage_ratio,
+            tokens_used,
+            context_limit,
+        } => {
+            let params = ContextUsageParams {
+                usage_ratio: *usage_ratio,
+                tokens_used: *tokens_used,
+                context_limit: *context_limit,
+            };
+            Some(params.into())
+        }
+        _ => None,
     }
 }
 

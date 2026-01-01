@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
 
-use crate::state::{AgentRegistry, AgentSession, AgentStatus};
+use crate::components::ContextProgressBar;
 use crate::components::layout::{Inline, Space, Stack};
+use crate::state::{AgentRegistry, AgentSession, AgentStatus};
 
 #[component]
 pub fn Sidebar(
@@ -107,7 +108,6 @@ fn AgentListItem(
     on_select: EventHandler<()>,
     on_terminate: EventHandler<String>,
 ) -> Element {
-
     let status_color_class = match &agent.status {
         AgentStatus::Idle => "bg-gray-500",
         AgentStatus::Starting(_) => "bg-yellow-500",
@@ -132,6 +132,8 @@ fn AgentListItem(
     };
 
     let agent_id = agent.id.clone();
+    let has_context_usage = agent.context_limit > 0;
+    let context_usage = agent.context_usage;
 
     rsx! {
         div {
@@ -181,6 +183,13 @@ fn AgentListItem(
             div {
                 class: "text-xs text-gray-600 mt-1 ml-5",
                 "{agent.messages.len()} messages"
+            }
+
+            if has_context_usage {
+                div {
+                    class: "mt-2 ml-5",
+                    ContextProgressBar { usage: context_usage }
+                }
             }
         }
     }

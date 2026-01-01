@@ -1,3 +1,4 @@
+use aether::mcp::{RawMcpConfig, RawMcpServerConfig};
 use clap::Parser;
 use rmcp::{
     ServerHandler,

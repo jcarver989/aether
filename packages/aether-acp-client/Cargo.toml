@@ -6,6 +6,7 @@ edition = "2024"
 
 [dependencies]
 # ACP protocol
+aether-acp-types = { path = "../aether-acp-types" }
 agent-client-protocol = "0.5.0"
 
 # Docker support
@@ -26,6 +27,8 @@ thiserror = { workspace = true }
 sha2 = { workspace = true }
 uuid = { workspace = true }
 async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -34,6 +34,10 @@ pub enum AcpRequest {
         notification: acp::SessionNotification,
         response_tx: oneshot::Sender<Result<(), String>>,
     },
+    ExtNotification {
+        notification: acp::ExtNotification,
+        response_tx: oneshot::Sender<Result<(), String>>,
+    },
 }
 
 /// Actor that owns the ACP connection and processes requests
@@ -158,6 +162,19 @@ impl AcpActor {
                     .map_err(|e| format!("session_notification error: {e}"));
                 let _ = response_tx.send(result);
             }
+
+            AcpRequest::ExtNotification {
+                notification,
+                response_tx,
+            } => {
+                debug!("ACP actor: ext_notification {}", notification.method);
+                let result = self
+                    .conn
+                    .ext_notification(notification)
+                    .await
+                    .map_err(|e| format!("ext_notification error: {e}"));
+                let _ = response_tx.send(result);
+            }
         }
     }
 }
@@ -264,6 +281,20 @@ impl AcpActorHandle {
         let (response_tx, response_rx) = oneshot::channel();
         self.request_tx
             .send(AcpRequest::SessionNotification {
+                notification,
+                response_tx,
+            })
+            .map_err(|_| "ACP actor channel closed")?;
+        response_rx.await.map_err(|_| "Response channel closed")?
+    }
+
+    pub async fn send_ext_notification(
+        &self,
+        notification: acp::ExtNotification,
+    ) -> Result<(), String> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.request_tx
+            .send(AcpRequest::ExtNotification {
                 notification,
                 response_tx,
             })

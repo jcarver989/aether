@@ -2,7 +2,7 @@ mod common;
 
 mod mcp {
     mod config_parser_tests;
-    mod integration_tests;
     mod instructions_tests;
+    mod integration_tests;
     mod tool_collision_tests;
 }

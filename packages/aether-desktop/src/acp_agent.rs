@@ -211,6 +211,13 @@ pub enum AgentEvent {
         output: String,
         stream: TerminalStream,
     },
+    /// Context usage updated
+    ContextUsageUpdate {
+        agent_id: String,
+        usage_ratio: f64,
+        tokens_used: u32,
+        context_limit: u32,
+    },
 }
 
 impl AgentEvent {
@@ -230,6 +237,7 @@ impl AgentEvent {
             AgentEvent::AvailableCommandsUpdate { agent_id, .. } => agent_id,
             AgentEvent::DiffUpdate { agent_id, .. } => agent_id,
             AgentEvent::TerminalOutput { agent_id, .. } => agent_id,
+            AgentEvent::ContextUsageUpdate { agent_id, .. } => agent_id,
         }
     }
 }
@@ -620,6 +628,16 @@ fn map_acp_event_to_agent_event(agent_id: &str, event: AcpEvent) -> AgentEvent {
                 OutputStream::Stdout => TerminalStream::Stdout,
                 OutputStream::Stderr => TerminalStream::Stderr,
             },
+        },
+        AcpEvent::ContextUsageUpdate {
+            usage_ratio,
+            tokens_used,
+            context_limit,
+        } => AgentEvent::ContextUsageUpdate {
+            agent_id: agent_id.to_string(),
+            usage_ratio,
+            tokens_used,
+            context_limit,
         },
     }
 }

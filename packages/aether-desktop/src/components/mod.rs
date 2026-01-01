@@ -1,6 +1,7 @@
 pub mod agent_view;
 pub mod command_dropdown;
 pub mod comment_panel;
+pub mod context_progress;
 pub mod diff_comment;
 pub mod diff_line;
 pub mod diff_view;
@@ -17,6 +18,7 @@ pub mod view_tabs;
 pub mod voice_input;
 
 pub use agent_view::{AgentView, EmptyState};
+pub use context_progress::ContextProgressBar;
 pub use layout::{Card, Inline, Space, Stack};
 pub use new_agent_modal::NewAgentForm;
 pub use settings_editor::SettingsEditor;
