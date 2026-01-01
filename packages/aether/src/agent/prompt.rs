@@ -1,4 +1,5 @@
 use crate::agent::{AgentError, Result, substitute_parameters};
+use crate::mcp::ServerInstructions;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -14,6 +15,7 @@ pub enum Prompt {
         args: Option<HashMap<String, String>>,
     },
     SystemEnv,
+    McpInstructions(Vec<ServerInstructions>),
 }
 
 impl Prompt {
@@ -49,6 +51,10 @@ impl Prompt {
         Self::SystemEnv
     }
 
+    pub fn mcp_instructions(instructions: Vec<ServerInstructions>) -> Self {
+        Self::McpInstructions(instructions)
+    }
+
     /// Resolve this SystemPrompt to a String
     pub fn build(&self) -> Result<String> {
         match self {
@@ -67,6 +73,7 @@ impl Prompt {
                 Ok(substitute_parameters(&content, args))
             }
             Prompt::SystemEnv => Self::resolve_system_env(),
+            Prompt::McpInstructions(instructions) => Ok(format_mcp_instructions(instructions)),
         }
     }
 
@@ -154,4 +161,25 @@ impl Prompt {
 
         Ok(format!("<env>\n{}\n</env>", lines.join("\n")))
     }
+}
+
+/// Format MCP instructions with XML tags for the system prompt.
+pub fn format_mcp_instructions(instructions: &[ServerInstructions]) -> String {
+    if instructions.is_empty() {
+        return String::new();
+    }
+
+    let mut parts = vec!["# MCP Server Instructions\n".to_string()];
+    parts.push(
+        "The following MCP servers have provided instructions for how to use their tools and resources:\n".to_string(),
+    );
+
+    for instr in instructions {
+        parts.push(format!(
+            "<mcp-server-instructions name=\"{}\">\n{}\n</mcp-server-instructions>",
+            instr.server_name, instr.instructions
+        ));
+    }
+
+    parts.join("\n")
 }

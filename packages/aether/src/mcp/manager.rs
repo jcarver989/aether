@@ -96,6 +96,7 @@ impl McpManager {
 
                 let server_connection = McpServerConnection {
                     _name: name.clone(),
+                    instructions: extract_instructions(&client),
                     client: Arc::new(client),
                     server_task: None,
                 };
@@ -125,6 +126,7 @@ impl McpManager {
                     name.clone(),
                     McpServerConnection {
                         _name: name.clone(),
+                        instructions: extract_instructions(&client),
                         client: Arc::new(client),
                         server_task: None,
                     },
@@ -160,6 +162,7 @@ impl McpManager {
 
                 let server_connection = McpServerConnection {
                     _name: name.clone(),
+                    instructions: extract_instructions(&client),
                     client: Arc::new(client),
                     server_task: Some(server_handle),
                 };
@@ -222,6 +225,19 @@ impl McpManager {
 
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tool_definitions.clone()
+    }
+
+    /// Returns instructions from all connected MCP servers that provide them.
+    pub fn server_instructions(&self) -> Vec<ServerInstructions> {
+        self.servers
+            .iter()
+            .filter_map(|(name, conn)| {
+                conn.instructions.as_ref().map(|instr| ServerInstructions {
+                    server_name: name.clone(),
+                    instructions: instr.clone(),
+                })
+            })
+            .collect()
     }
 
     /// List all prompts from all connected MCP servers with namespacing
@@ -383,6 +399,12 @@ impl Drop for McpManager {
 }
 
 #[derive(Debug, Clone)]
+pub struct ServerInstructions {
+    pub server_name: String,
+    pub instructions: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct Tool {
     pub description: String,
     pub parameters: Value,
@@ -392,6 +414,7 @@ struct McpServerConnection {
     _name: String,
     client: Arc<RunningService<RoleClient, McpClient>>,
     server_task: Option<JoinHandle<()>>,
+    instructions: Option<String>,
 }
 
 impl From<RmcpTool> for Tool {
@@ -414,6 +437,14 @@ impl From<&RmcpTool> for Tool {
 
 fn create_namespaced_tool_name(server_name: &str, tool_name: &str) -> String {
     format!("{server_name}{SERVERNAME_DELIMITER}{tool_name}")
+}
+
+/// Extract non-empty instructions from an MCP client's peer info.
+fn extract_instructions(client: &RunningService<RoleClient, McpClient>) -> Option<String> {
+    client
+        .peer_info()
+        .and_then(|info| info.instructions.clone())
+        .filter(|s| !s.is_empty())
 }
 
 pub fn split_on_server_name(namespaced_name: &str) -> Option<(&str, &str)> {

@@ -1,7 +1,7 @@
 use aether::{
     agent::{AgentHandle, AgentMessage, UserMessage, agent},
     llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser},
-    mcp::{mcp, run_mcp_task::McpCommand},
+    mcp::{McpSpawnResult, ServerInstructions, mcp, run_mcp_task::McpCommand},
 };
 use futures::FutureExt;
 use rmcp::ServiceExt;
@@ -9,10 +9,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::task::JoinHandle;
 use tokio::{spawn, sync::mpsc};
 
-use crate::coding::CodingMcp;
+use crate::coding::{CodingMcp, CodingMcpArgs};
 use crate::plugins::files::AgentFile;
 
 /// Reference to a file artifact discovered or modified by a sub-agent
@@ -249,9 +248,20 @@ async fn execute_single_agent(
 
         let llm = create_llm(&task.agent_name, &agent_file, task.model).await?;
         let system_prompt = format!("{}{}", agent_file.content, STRUCTURED_OUTPUT_INSTRUCTIONS);
-        let (tools, mcp_tx, _mcp_handle) = spawn_mcps(&agent_dir).await?;
-        let (user_tx, mut agent_rx, _agent_handle) =
-            spawn_agent(llm, &system_prompt, mcp_tx, tools).await?;
+        let McpSpawnResult {
+            tool_definitions,
+            instructions,
+            command_tx,
+            handle: _,
+        } = spawn_mcps(&agent_dir).await?;
+        let (user_tx, mut agent_rx, _agent_handle) = spawn_agent(
+            llm,
+            &system_prompt,
+            instructions,
+            command_tx,
+            tool_definitions,
+        )
+        .await?;
 
         user_tx
             .send(UserMessage::text(&task.prompt))
@@ -350,22 +360,20 @@ async fn create_llm(
         .map_err(|e| format!("Failed to parse model spec '{}': {}", model_spec, e))
 }
 
-async fn spawn_mcps(
-    agent_dir: &Path,
-) -> Result<
-    (
-        Vec<ToolDefinition>,
-        mpsc::Sender<McpCommand>,
-        JoinHandle<()>,
-    ),
-    String,
-> {
+async fn spawn_mcps(agent_dir: &Path) -> Result<McpSpawnResult, String> {
+    let mcp_json_path = agent_dir.join("mcp.json");
+    let project_path = CodingMcpArgs::parse_root_dir_from_config(&mcp_json_path)
+        .unwrap_or_else(|| agent_dir.to_path_buf());
+
     mcp()
         .register_in_memory_server(
             "coding",
-            Box::new(|_args| async move { CodingMcp::new().into_dyn() }.boxed()),
+            Box::new(move |_args| {
+                let project_path = project_path.clone();
+                async move { CodingMcp::new().with_root_dir(project_path).into_dyn() }.boxed()
+            }),
         )
-        .from_json_file(agent_dir.join("mcp.json").to_str().unwrap_or(""))
+        .from_json_file(mcp_json_path.to_str().unwrap_or(""))
         .await
         .map_err(|e| format!("Failed to load mcp.json: {}", e))?
         .spawn()
@@ -376,6 +384,7 @@ async fn spawn_mcps(
 async fn spawn_agent(
     llm: Box<dyn StreamingModelProvider>,
     system_prompt: &str,
+    instructions: Vec<ServerInstructions>,
     mcp_tx: mpsc::Sender<McpCommand>,
     tools: Vec<ToolDefinition>,
 ) -> Result<
@@ -388,6 +397,7 @@ async fn spawn_agent(
 > {
     let (user_tx, agent_rx, agent_handle) = agent(llm)
         .system(system_prompt)
+        .mcp_instructions(instructions)
         .tools(mcp_tx, tools)
         .spawn()
         .await

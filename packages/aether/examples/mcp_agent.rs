@@ -1,7 +1,7 @@
 use aether::{
     agent::{AgentMessage, UserMessage, agent},
     llm::openrouter::OpenRouterProvider,
-    mcp::mcp,
+    mcp::{mcp, McpSpawnResult},
 };
 use std::io::{self, Write};
 
@@ -10,7 +10,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let llm = OpenRouterProvider::default("z-ai/glm-4.5-air")?;
-    let (tools, mcp_tx, _mcp_handle) = mcp()
+    let McpSpawnResult {
+        tool_definitions: tools,
+        instructions: _,
+        command_tx: mcp_tx,
+        handle: _mcp_handle,
+    } = mcp()
         .from_json_file("examples/mcp.json")
         .await?
         .spawn()

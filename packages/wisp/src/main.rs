@@ -193,6 +193,10 @@ async fn run_non_interactive(
                 println!("[Context compacted: {} messages removed]", messages_removed);
             }
 
+            AgentMessage::ContextUsageUpdate { .. } => {
+                // Silently ignore context usage updates in CLI output
+            }
+
             AgentMessage::Done => {
                 break;
             }

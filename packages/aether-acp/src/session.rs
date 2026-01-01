@@ -3,6 +3,7 @@ use aether::llm::provider::StreamingModelProvider;
 use aether::mcp::config::{RawMcpConfig, RawMcpServerConfig};
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
+use aether::mcp::McpSpawnResult;
 use agent_client_protocol as acp;
 use futures::FutureExt;
 use mcp_lexicon::{CodingMcp, CodingMcpArgs, LspCodingTools, PluginsMcp, ServiceExt};
@@ -48,7 +49,12 @@ impl Session {
         let config_str = mcp_config_path.to_str().ok_or("Invalid MCP config path")?;
 
         debug!("Creating ACP-enabled CodingMcp and PluginsMcp");
-        let (tools, mcp_tx, mcp_handle) = mcp()
+        let McpSpawnResult {
+            tool_definitions,
+            instructions,
+            command_tx: mcp_tx,
+            handle: mcp_handle,
+        } = mcp()
             .register_in_memory_server(
                 "coding",
                 Box::new(move |_args| {
@@ -60,7 +66,7 @@ impl Session {
                             AcpCodingTools::new(actor_handle.clone(), acp_session_id.clone());
                         let lsp_tools = LspCodingTools::new(acp_tools, project_path);
                         debug!("LspCodingTools created with lazy LSP spawning");
-                        CodingMcp::with_tools(lsp_tools).into_dyn()
+                        CodingMcp::with_tools(lsp_tools).with_root_dir(project_path).into_dyn()
                     }
                     .boxed()
                 }),
@@ -92,7 +98,8 @@ impl Session {
 
         let builder = agent(llm)
             .system(&system_prompt_text)
-            .tools(mcp_tx.clone(), tools);
+            .prompt(Prompt::mcp_instructions(instructions))
+            .tools(mcp_tx.clone(), tool_definitions);
 
         let (agent_tx, agent_rx, agent_handle) = builder.spawn().await?;
 

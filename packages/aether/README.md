@@ -131,7 +131,7 @@ And bring Mr. BotBot to life!
 use aether::{
     agent::{AgentMessage, UserMessage, agent, Prompt},
     llm::openrouter::OpenRouterProvider,
-    mcp::mcp,
+    mcp::{mcp, McpSpawnResult},
 };
 use std::io::{self, Write};
 
@@ -140,7 +140,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let llm = OpenRouterProvider::default("z-ai/glm-4.6")?;
 
     // 1. Connect to MCP servers
-    let (tools, mcp_tx, _mcp_handle) = mcp()
+    let McpSpawnResult {
+        tool_definitions: tools,
+        instructions: _,
+        command_tx: mcp_tx,
+        handle: _mcp_handle,
+    } = mcp()
         .from_json_file("mcp.json") // <-- Load MCP servers from JSON
         .await?
         .spawn() // <-- Spawn the MCP client into a tokio task (multiple agents can use it)
