@@ -3,7 +3,9 @@
 //! This is the main view that displays the agent sidebar and chat interface.
 
 use crate::acp_agent::{AgentEvent, AgentHandle};
-use crate::components::{AgentView, Card, EmptyState, Inline, NewAgentForm, SettingsEditor, Sidebar, Space, Stack};
+use crate::components::{
+    AgentView, Card, EmptyState, Inline, NewAgentForm, SettingsEditor, Sidebar, Space, Stack,
+};
 use crate::error::AetherDesktopError;
 use crate::settings::Settings;
 use crate::state::{AgentConfig, AgentHandles, AgentRegistry, AgentSession, AgentStatus};
@@ -173,10 +175,10 @@ fn apply_agent_event(
     }
 
     if let AgentEvent::Disconnected { agent_id: id } = event {
-        if let Some(agent) = agents.write().get_mut(&id) {
-            if matches!(agent.status, AgentStatus::Running) {
-                agent.status = AgentStatus::Idle;
-            }
+        if let Some(agent) = agents.write().get_mut(&id)
+            && matches!(agent.status, AgentStatus::Running)
+        {
+            agent.status = AgentStatus::Idle;
         }
         agents.write().remove(&id);
         handles.write().remove(&id);

@@ -52,6 +52,16 @@ pub enum AgentMessage {
         messages_removed: usize,
     },
 
+    /// Context usage update for UI display
+    ContextUsageUpdate {
+        /// Current usage ratio (0.0 - 1.0)
+        usage_ratio: f64,
+        /// Tokens used in current context
+        tokens_used: u32,
+        /// Maximum context limit
+        context_limit: u32,
+    },
+
     Done,
 }
 

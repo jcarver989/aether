@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Agent cancelled");
                 break;
             }
-            Some(ContextCompactionStarted { .. }) | Some(ContextCompactionResult { .. }) => {}
+            Some(ContextCompactionStarted { .. }) | Some(ContextCompactionResult { .. }) | Some(ContextUsageUpdate { .. }) => {}
             None => break,
         }
     }
@@ -199,7 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Agent cancelled");
                 break;
             }
-            Some(ContextCompactionStarted { .. }) | Some(ContextCompactionResult { .. }) => {}
+            Some(ContextCompactionStarted { .. }) | Some(ContextCompactionResult { .. }) | Some(ContextUsageUpdate { .. }) => {}
             None => break,
         }
     }

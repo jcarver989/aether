@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::coding::error::CodingError;
 use crate::coding::lsp::config::{LspConfig, default_lsp_configs};
-use crate::coding::lsp::registry::{LspClientHandle, LspRegistry, DEFAULT_INDEXING_TIMEOUT};
+use crate::coding::lsp::registry::{DEFAULT_INDEXING_TIMEOUT, LspClientHandle, LspRegistry};
 use crate::coding::lsp::{ClientNotification, LanguageId, path_to_uri};
 use crate::coding::tools::bash::ReadBackgroundBashOutput;
 use crate::coding::tools::bash::{BackgroundProcessHandle, BashInput, BashResult};

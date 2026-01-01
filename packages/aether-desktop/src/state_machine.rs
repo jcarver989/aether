@@ -37,6 +37,12 @@ impl AgentSession {
                 output,
                 ..
             } => self.append_terminal_output(terminal_id, output),
+            AgentEvent::ContextUsageUpdate {
+                usage_ratio,
+                tokens_used,
+                context_limit,
+                ..
+            } => self.update_context_usage(*usage_ratio, *tokens_used, *context_limit),
             AgentEvent::Disconnected { .. }
             | AgentEvent::Error { .. }
             | AgentEvent::PermissionRequest { .. } => {
@@ -167,6 +173,12 @@ impl AgentSession {
         self.diff_state.selected_file = selected_file;
     }
 
+    fn update_context_usage(&mut self, usage_ratio: f64, tokens_used: u32, context_limit: u32) {
+        self.context_usage = usage_ratio;
+        self.tokens_used = tokens_used;
+        self.context_limit = context_limit;
+    }
+
     fn append_terminal_output(&mut self, terminal_id: &str, output: &str) {
         let Some(tool_id) = self.terminal_to_tool.get(terminal_id) else {
             return;
@@ -202,6 +214,9 @@ mod tests {
             cwd: PathBuf::from("/tmp"),
             diff_state: crate::state::DiffState::default(),
             terminal_to_tool: std::collections::HashMap::new(),
+            context_usage: 0.0,
+            tokens_used: 0,
+            context_limit: 0,
         }
     }
 
@@ -451,6 +466,26 @@ mod tests {
 
         // Session should be mutated in place
         assert!(matches!(session.status, AgentStatus::Idle));
+    }
+
+    #[test]
+    fn test_context_usage_update() {
+        let mut session = create_test_session();
+        assert_eq!(session.context_usage, 0.0);
+        assert_eq!(session.tokens_used, 0);
+        assert_eq!(session.context_limit, 0);
+
+        let event = AgentEvent::ContextUsageUpdate {
+            agent_id: "test-id".to_string(),
+            usage_ratio: 0.75,
+            tokens_used: 75000,
+            context_limit: 100000,
+        };
+        session.apply_event(&event);
+
+        assert_eq!(session.context_usage, 0.75);
+        assert_eq!(session.tokens_used, 75000);
+        assert_eq!(session.context_limit, 100000);
     }
 
     #[test]

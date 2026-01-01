@@ -1,10 +1,10 @@
 use agent_client_protocol::{
     Client, ClientCapabilities, CreateTerminalRequest, CreateTerminalResponse, Error,
-    FileSystemCapability, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
-    ReleaseTerminalResponse, RequestPermissionRequest, RequestPermissionResponse, Result,
-    SessionNotification, TerminalExitStatus, TerminalId, TerminalOutputRequest,
-    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
-    WriteTextFileRequest, WriteTextFileResponse,
+    ExtNotification, FileSystemCapability, ReadTextFileRequest, ReadTextFileResponse,
+    ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
+    RequestPermissionResponse, Result, SessionNotification, TerminalExitStatus, TerminalId,
+    TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
+    WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -32,6 +32,8 @@ pub enum OutputStream {
 pub enum RawAgentEvent {
     /// Session notification from the agent.
     SessionNotification(SessionNotification),
+    /// Extension notification from the agent (custom protocol extensions).
+    ExtNotification(ExtNotification),
     /// Permission request that needs user response.
     PermissionRequest {
         request: RequestPermissionRequest,
@@ -122,6 +124,15 @@ impl Client for AcpClient {
         debug!("Session notification: {:?}", notification.update);
         self.event_tx
             .send(RawAgentEvent::SessionNotification(notification))
+            .map_err(|_| Error::internal_error().with_data("Notification channel closed"))?;
+
+        Ok(())
+    }
+
+    async fn ext_notification(&self, notification: ExtNotification) -> Result<()> {
+        debug!("Extension notification: {}", notification.method);
+        self.event_tx
+            .send(RawAgentEvent::ExtNotification(notification))
             .map_err(|_| Error::internal_error().with_data("Notification channel closed"))?;
 
         Ok(())

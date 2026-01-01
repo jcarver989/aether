@@ -10,7 +10,7 @@ use tracing::{debug, error, info};
 use crate::acp_actor::AcpActorHandle;
 use crate::mappers::{
     map_agent_message_to_session_notification, map_agent_message_to_stop_reason,
-    map_content_blocks_to_text,
+    map_content_blocks_to_text, try_into_ext_notification,
 };
 use crate::session::Session;
 
@@ -256,6 +256,12 @@ impl acp::Agent for SessionManager {
                     {
                         info!("Sending session notification");
                         self.send_notification(notification).await?;
+                    } else if let Some(ext_notification) = try_into_ext_notification(&msg) {
+                        info!("Sending ext notification: {}", ext_notification.method);
+                        self.actor_handle
+                            .send_ext_notification(ext_notification)
+                            .await
+                            .map_err(|_| acp::Error::internal_error())?;
                     } else {
                         info!("No notification generated for this message");
                     }

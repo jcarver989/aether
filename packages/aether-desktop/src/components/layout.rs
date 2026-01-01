@@ -10,7 +10,7 @@ pub enum Space {
 }
 
 impl Space {
-    pub fn to_tailwind(&self) -> &'static str {
+    pub fn to_tailwind(self) -> &'static str {
         match self {
             Space::None => "0",
             Space::S1 => "1",
@@ -20,11 +20,11 @@ impl Space {
         }
     }
 
-    pub fn gap_class(&self) -> String {
+    pub fn gap_class(self) -> String {
         format!("gap-{}", self.to_tailwind())
     }
 
-    pub fn p_class(&self) -> String {
+    pub fn p_class(self) -> String {
         format!("p-{}", self.to_tailwind())
     }
 }
@@ -74,7 +74,8 @@ pub fn Inline(
 pub fn Card(
     #[props(default = Space::S4)] p: Space,
     #[props(default = "rounded-xl".to_string())] radius: String,
-    #[props(default = "bg-bg-secondary border border-border-default".to_string())] background: String,
+    #[props(default = "bg-bg-secondary border border-border-default".to_string())]
+    background: String,
     #[props(default = "".to_string())] class: String,
     children: Element,
 ) -> Element {

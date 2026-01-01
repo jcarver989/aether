@@ -2,8 +2,8 @@
 
 use dioxus::prelude::*;
 
-use crate::state::{DiffComment, LineOrigin};
 use super::prompt_input::PromptInput;
+use crate::state::{DiffComment, LineOrigin};
 
 /// Information about a line that can be commented on.
 #[derive(Clone, PartialEq, Debug)]

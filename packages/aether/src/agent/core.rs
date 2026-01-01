@@ -357,6 +357,15 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             self.token_tracker.tokens_remaining()
         );
 
+        let _ = self
+            .agent_message_tx
+            .send(AgentMessage::ContextUsageUpdate {
+                usage_ratio: self.token_tracker.usage_ratio(),
+                tokens_used: self.token_tracker.last_input_tokens(),
+                context_limit: self.token_tracker.context_limit(),
+            })
+            .await;
+
         self.maybe_compact_context().await;
     }
 

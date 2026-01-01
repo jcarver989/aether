@@ -4,13 +4,17 @@
 //! events into higher-level events suitable for UI consumption.
 
 use crate::client::{OutputStream, RawAgentEvent};
+use aether_acp_types::{CONTEXT_USAGE_METHOD, ContextUsageParams};
 use agent_client_protocol::{
-    AvailableCommand, ContentBlock, RequestPermissionRequest, RequestPermissionResponse,
-    SessionNotification, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus,
-    ToolCallUpdateFields,
+    AvailableCommand, ContentBlock, ExtNotification, RequestPermissionRequest,
+    RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCall, ToolCallContent,
+    ToolCallStatus, ToolCallUpdateFields,
 };
 use tokio::sync::oneshot;
 use tracing::{debug, info};
+
+#[derive(Debug)]
+pub struct UnknownExtNotification;
 
 /// Protocol-level events from ACP without application-specific routing info.
 ///
@@ -49,6 +53,12 @@ pub enum AcpEvent {
         output: String,
         stream: OutputStream,
     },
+    /// Context usage updated.
+    ContextUsageUpdate {
+        usage_ratio: f64,
+        tokens_used: u32,
+        context_limit: u32,
+    },
 }
 
 /// Transform a raw ACP event into protocol-level events.
@@ -64,6 +74,12 @@ pub enum AcpEvent {
 pub fn transform_raw_event(raw_event: RawAgentEvent) -> Vec<AcpEvent> {
     match raw_event {
         RawAgentEvent::SessionNotification(notif) => transform_session_notification(notif),
+        RawAgentEvent::ExtNotification(notif) => {
+            match AcpEvent::try_from(notif) {
+                Ok(event) => vec![event],
+                Err(_) => vec![],
+            }
+        }
         RawAgentEvent::PermissionRequest {
             request,
             response_tx,
@@ -83,6 +99,25 @@ pub fn transform_raw_event(raw_event: RawAgentEvent) -> Vec<AcpEvent> {
                 output,
                 stream,
             }]
+        }
+    }
+}
+
+impl TryFrom<ExtNotification> for AcpEvent {
+    type Error = UnknownExtNotification;
+
+    fn try_from(notif: ExtNotification) -> Result<Self, Self::Error> {
+        if notif.method.as_ref() == CONTEXT_USAGE_METHOD {
+            let params: ContextUsageParams =
+                serde_json::from_str(notif.params.get()).map_err(|_| UnknownExtNotification)?;
+            Ok(AcpEvent::ContextUsageUpdate {
+                usage_ratio: params.usage_ratio,
+                tokens_used: params.tokens_used,
+                context_limit: params.context_limit,
+            })
+        } else {
+            debug!("Ignoring unknown ext notification: {}", notif.method);
+            Err(UnknownExtNotification)
         }
     }
 }
@@ -204,4 +239,73 @@ pub fn extract_tool_content(fields: &ToolCallUpdateFields) -> Option<String> {
             _ => None,
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_context_usage_ext_notification_transforms_correctly() {
+        let params = serde_json::json!({
+            "usage_ratio": 0.75,
+            "tokens_used": 75000,
+            "context_limit": 100000
+        });
+        let raw_value =
+            serde_json::value::RawValue::from_string(params.to_string()).expect("valid JSON");
+
+        let notif = ExtNotification {
+            method: Arc::from(CONTEXT_USAGE_METHOD),
+            params: Arc::from(raw_value),
+        };
+
+        let event = AcpEvent::try_from(notif).expect("should convert");
+
+        match event {
+            AcpEvent::ContextUsageUpdate {
+                usage_ratio,
+                tokens_used,
+                context_limit,
+            } => {
+                assert!((usage_ratio - 0.75).abs() < f64::EPSILON);
+                assert_eq!(tokens_used, 75000);
+                assert_eq!(context_limit, 100000);
+            }
+            _ => panic!("Expected ContextUsageUpdate event"),
+        }
+    }
+
+    #[test]
+    fn test_context_usage_with_missing_fields_returns_err() {
+        let params = serde_json::json!({
+            "usage_ratio": 0.75
+        });
+        let raw_value =
+            serde_json::value::RawValue::from_string(params.to_string()).expect("valid JSON");
+
+        let notif = ExtNotification {
+            method: Arc::from(CONTEXT_USAGE_METHOD),
+            params: Arc::from(raw_value),
+        };
+
+        assert!(AcpEvent::try_from(notif).is_err());
+    }
+
+    #[test]
+    fn test_unknown_ext_notification_returns_err() {
+        let params = serde_json::json!({
+            "some_field": "some_value"
+        });
+        let raw_value =
+            serde_json::value::RawValue::from_string(params.to_string()).expect("valid JSON");
+
+        let notif = ExtNotification {
+            method: Arc::from("_unknown/notification"),
+            params: Arc::from(raw_value),
+        };
+
+        assert!(AcpEvent::try_from(notif).is_err());
+    }
 }

@@ -2,7 +2,7 @@ use crate::cli::Cli;
 use aether::mcp::McpServerConfig;
 use aether::{
     agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent},
-    mcp::{mcp, McpSpawnResult},
+    mcp::{McpSpawnResult, mcp},
 };
 use mcp_lexicon::coding::{DefaultCodingTools, LspCodingTools};
 use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt};
