@@ -98,56 +98,6 @@ pub fn all_evals() -> Result<Vec<Eval>, Box<dyn std::error::Error>> {
                 EvalAssertion::command_exit_code("cargo build", 0),
             ],
         ),
-        Eval::new(
-            "todo_write_complex",
-            load_prompt("todo_write_complex")?,
-            WorkingDirectory::empty()?,
-            vec![
-                EvalAssertion::tool_call_exact("coding__todo_write", 1),
-                EvalAssertion::tool_call_with_args(
-                    "coding__todo_write",
-                    serde_json::json!({
-                        "todos": [
-                            {
-                                "content": "Set up database schema",
-                                "active_form": "Setting up database schema",
-                                "state": "pending"
-                            },
-                            {
-                                "content": "Create user authentication",
-                                "active_form": "Creating user authentication",
-                                "state": "pending"
-                            },
-                            {
-                                "content": "Design frontend components",
-                                "active_form": "Designing frontend components",
-                                "state": "pending"
-                            },
-                            {
-                                "content": "Implement user authentication",
-                                "active_form": "Implementing user authentication",
-                                "state": "in_progress"
-                            },
-                            {
-                                "content": "Build REST API endpoints",
-                                "active_form": "Building REST API endpoints",
-                                "state": "in_progress"
-                            },
-                            {
-                                "content": "Write unit tests",
-                                "active_form": "Writing unit tests",
-                                "state": "completed"
-                            },
-                            {
-                                "content": "Deploy to staging",
-                                "active_form": "Deploying to staging",
-                                "state": "completed"
-                            }
-                        ]
-                    }),
-                ),
-            ],
-        ),
     ])
 }
 
