@@ -1,8 +1,8 @@
-use crate::agent::Result;
 use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
-use crate::agent::{Agent, AgentMessage, UserMessage};
+use crate::agent::{Agent, AgentMessage, Prompt, Result, UserMessage};
 use crate::context::CompactionConfig;
 use crate::llm::{ChatMessage, Context, StreamingModelProvider, ToolDefinition};
+use crate::mcp::ServerInstructions;
 use crate::mcp::run_mcp_task::McpCommand;
 use crate::types::IsoString;
 use std::future::Future;
@@ -18,7 +18,7 @@ pub struct AgentHandle {
 
 pub struct AgentBuilder<T: StreamingModelProvider> {
     llm: T,
-    system_prompt: Option<String>,
+    prompts: Vec<Prompt>,
     middleware: Middleware,
     tool_definitions: Vec<ToolDefinition>,
     mcp_tx: Option<Sender<McpCommand>>,
@@ -31,7 +31,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
     pub fn new(llm: T) -> Self {
         Self {
             llm,
-            system_prompt: None,
+            prompts: Vec::new(),
             middleware: Middleware::new(),
             tool_definitions: Vec::new(),
             mcp_tx: None,
@@ -41,9 +41,24 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         }
     }
 
-    pub fn system(mut self, prompt: &str) -> Self {
-        self.system_prompt = Some(prompt.to_string());
+    pub fn system(mut self, text: &str) -> Self {
+        self.prompts.push(Prompt::text(text));
         self
+    }
+
+    /// Add a prompt to the system prompt.
+    ///
+    /// Multiple prompts are concatenated with double newlines.
+    pub fn prompt(mut self, prompt: Prompt) -> Self {
+        self.prompts.push(prompt);
+        self
+    }
+
+    /// Add MCP server instructions to the system prompt.
+    ///
+    /// This is a convenience method equivalent to `.prompt(Prompt::mcp_instructions(instructions))`.
+    pub fn mcp_instructions(self, instructions: Vec<ServerInstructions>) -> Self {
+        self.prompt(Prompt::mcp_instructions(instructions))
     }
 
     /// Add an event handler for agent events
@@ -121,11 +136,15 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
 
     pub async fn spawn(self) -> Result<(Sender<UserMessage>, Receiver<AgentMessage>, AgentHandle)> {
         let mut messages = Vec::new();
-        if let Some(content) = self.system_prompt {
-            messages.push(ChatMessage::System {
-                content,
-                timestamp: IsoString::now(),
-            });
+
+        if !self.prompts.is_empty() {
+            let system_content = Prompt::build_all(&self.prompts)?;
+            if !system_content.is_empty() {
+                messages.push(ChatMessage::System {
+                    content: system_content,
+                    timestamp: IsoString::now(),
+                });
+            }
         }
 
         let (user_message_tx, user_message_rx) =

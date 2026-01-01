@@ -1,6 +1,6 @@
 use aether::agent::{AgentMessage, UserMessage, agent};
 use aether::llm::{StreamingModelProvider, ToolCallRequest};
-use aether::mcp::{McpBuilder, ServerFactory, mcp};
+use aether::mcp::{McpBuilder, McpSpawnResult, ServerFactory, mcp};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -222,6 +222,18 @@ async fn stream_agent_messages(
             } => {
                 tracing::debug!("Context compacted: {} messages removed", messages_removed);
             }
+            AgentMessage::ContextUsageUpdate {
+                usage_ratio,
+                tokens_used,
+                context_limit,
+            } => {
+                tracing::debug!(
+                    "Context usage: {:.1}% ({}/{} tokens)",
+                    usage_ratio * 100.0,
+                    tokens_used,
+                    context_limit
+                );
+            }
         }
     }
 
@@ -235,13 +247,20 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
         tx: Sender<AgentRunnerMessage>,
     ) -> Result<(), RunError> {
         let mcp_builder = self.create_mcp_builder().await?;
-        let (tool_definitions, mcp_tx, _mcp_handle) = mcp_builder
+        let McpSpawnResult {
+            tool_definitions,
+            instructions,
+            command_tx,
+            handle: _mcp_handle,
+        } = mcp_builder
             .spawn()
             .await
             .map_err(|e| RunError::ExecutionFailed(format!("Failed to spawn MCP: {}", e)))?;
 
         let llm = self.llm.clone();
-        let mut agent_builder = agent(llm).tools(mcp_tx, tool_definitions);
+        let mut agent_builder = agent(llm)
+            .mcp_instructions(instructions)
+            .tools(command_tx, tool_definitions);
 
         if let Some(prompt) = config.system_prompt {
             agent_builder = agent_builder.system(prompt);

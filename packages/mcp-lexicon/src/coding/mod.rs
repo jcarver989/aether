@@ -91,6 +91,29 @@ impl CodingMcpArgs {
         Self::try_parse_from(full_args)
             .map_err(|e| format!("Failed to parse CodingMcp arguments: {e}"))
     }
+
+    /// Parse the root directory from an mcp.json config file.
+    ///
+    /// Looks for the "coding" server entry and parses its args for `--root-dir`.
+    /// Relative paths (like ".") are resolved against the mcp.json's directory.
+    pub fn parse_root_dir_from_config(mcp_config_path: &Path) -> Option<PathBuf> {
+        let raw_config = RawMcpConfig::from_json_file(mcp_config_path).ok()?;
+        let coding_config = raw_config.servers.get("coding")?;
+
+        if let RawMcpServerConfig::InMemory { args } = coding_config {
+            let parsed_args = Self::from_args(args.clone()).ok()?;
+            let root_dir = parsed_args.root_dir?;
+
+            if root_dir.is_relative() {
+                let config_dir = mcp_config_path.parent()?;
+                Some(config_dir.join(&root_dir).canonicalize().ok()?)
+            } else {
+                Some(root_dir)
+            }
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -1,7 +1,7 @@
 use aether::{
     agent::{AgentMessage::*, Prompt, UserMessage, agent},
     llm::{StreamingModelProvider, parser::ModelProviderParser},
-    mcp::{McpError, McpServerConfig, RawMcpConfig, mcp},
+    mcp::{McpError, McpServerConfig, McpSpawnResult, RawMcpConfig, mcp},
 };
 use clap::Parser;
 
@@ -77,11 +77,17 @@ async fn run_agent(
     prompt: &str,
     mcp_configs: Vec<McpServerConfig>,
 ) -> Result<(), McpError> {
-    let (tools, mcp_tx, _mcp_handle) = mcp().with_servers(mcp_configs).spawn().await?;
+    let McpSpawnResult {
+        tool_definitions,
+        instructions,
+        command_tx,
+        handle: _mcp_handle,
+    } = mcp().with_servers(mcp_configs).spawn().await?;
 
     let (tx, mut rx, _handle) = agent(llm)
         .system(system)
-        .tools(mcp_tx, tools)
+        .mcp_instructions(instructions)
+        .tools(command_tx, tool_definitions)
         .spawn()
         .await
         .unwrap();
@@ -147,6 +153,19 @@ async fn run_agent(
                 messages_removed, ..
             } => {
                 println!("[Context compacted: {} messages removed]", messages_removed);
+            }
+
+            ContextUsageUpdate {
+                usage_ratio,
+                tokens_used,
+                context_limit,
+            } => {
+                println!(
+                    "[Context usage: {:.1}% ({}/{} tokens)]",
+                    usage_ratio * 100.0,
+                    tokens_used,
+                    context_limit
+                );
             }
 
             Done => {

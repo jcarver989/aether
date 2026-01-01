@@ -7,6 +7,7 @@ use futures::future::join_all;
 use crate::agent::{AgentMessage, UserMessage, agent};
 use crate::llm::{Context, LlmResponse};
 use crate::mcp::mcp;
+use crate::mcp::McpSpawnResult;
 use crate::testing::FakeMcpServer;
 use crate::testing::fake_mcp::fake_mcp;
 
@@ -71,7 +72,12 @@ impl TestAgentBuilder {
         let llm = FakeLlmProvider::new(self.responses);
         let captured_contexts = llm.captured_contexts();
 
-        let (tool_definitions, mcp_tx, _mcp_handle) = mcp()
+        let McpSpawnResult {
+            tool_definitions,
+            instructions: _,
+            command_tx: mcp_tx,
+            handle: _mcp_handle,
+        } = mcp()
             .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
             .spawn()
             .await?;

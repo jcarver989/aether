@@ -2,7 +2,7 @@ use crate::llm::ToolDefinition;
 
 use super::{
     ElicitationRequest, McpError, McpManager, McpServerConfig, ParseError, RawMcpConfig,
-    ServerFactory,
+    ServerFactory, ServerInstructions,
     run_mcp_task::{McpCommand, run_mcp_task},
 };
 use std::collections::HashMap;
@@ -13,6 +13,14 @@ use tokio::{
 
 pub fn mcp() -> McpBuilder {
     McpBuilder::new()
+}
+
+/// Result of spawning MCP servers
+pub struct McpSpawnResult {
+    pub tool_definitions: Vec<ToolDefinition>,
+    pub instructions: Vec<ServerInstructions>,
+    pub command_tx: Sender<McpCommand>,
+    pub handle: JoinHandle<()>,
 }
 
 pub struct McpBuilder {
@@ -57,9 +65,7 @@ impl McpBuilder {
         Ok(self)
     }
 
-    pub async fn spawn(
-        self,
-    ) -> Result<(Vec<ToolDefinition>, Sender<McpCommand>, JoinHandle<()>), McpError> {
+    pub async fn spawn(self) -> Result<McpSpawnResult, McpError> {
         let (mcp_command_tx, mcp_command_rx) =
             mpsc::channel::<McpCommand>(self.mcp_channel_capacity);
         let (elicitation_tx, _elicitation_rx) =
@@ -68,8 +74,14 @@ impl McpBuilder {
         let mut mcp_manager = McpManager::new(elicitation_tx);
         mcp_manager.add_mcps(self.mcp_configs).await?;
         let tool_definitions = mcp_manager.tool_definitions();
+        let instructions = mcp_manager.server_instructions();
         let mcp_handle = tokio::spawn(run_mcp_task(mcp_manager, mcp_command_rx));
 
-        Ok((tool_definitions, mcp_command_tx, mcp_handle))
+        Ok(McpSpawnResult {
+            tool_definitions,
+            instructions,
+            command_tx: mcp_command_tx,
+            handle: mcp_handle,
+        })
     }
 }

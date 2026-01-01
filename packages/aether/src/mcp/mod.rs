@@ -10,6 +10,6 @@ pub mod variables;
 
 pub use config::*;
 pub use error::{McpError, Result};
-pub use manager::{ElicitationRequest, McpManager};
+pub use manager::{ElicitationRequest, McpManager, ServerInstructions};
 pub use mcp_builder::*;
 pub use variables::{VarError, expand_env_vars};

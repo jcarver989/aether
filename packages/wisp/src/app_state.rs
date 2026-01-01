@@ -2,7 +2,7 @@ use crate::cli::Cli;
 use aether::mcp::McpServerConfig;
 use aether::{
     agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent},
-    mcp::mcp,
+    mcp::{mcp, McpSpawnResult},
 };
 use mcp_lexicon::coding::{DefaultCodingTools, LspCodingTools};
 use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt};
@@ -46,7 +46,12 @@ impl AppState {
             .map(|h| h.join(".aether"))
             .unwrap_or_else(|| PathBuf::from(".aether"));
 
-        let (tools, tx, mcp_handle) = mcp()
+        let McpSpawnResult {
+            tool_definitions,
+            instructions,
+            command_tx,
+            handle: mcp_handle,
+        } = mcp()
             .with_servers(vec![
                 McpServerConfig::InMemory {
                     name: "coding".to_string(),
@@ -60,7 +65,11 @@ impl AppState {
             .spawn()
             .await?;
 
-        let (agent_tx, agent_rx, agent_handle) = agent_builder.tools(tx, tools).spawn().await?;
+        let (agent_tx, agent_rx, agent_handle) = agent_builder
+            .mcp_instructions(instructions)
+            .tools(command_tx, tool_definitions)
+            .spawn()
+            .await?;
 
         Ok(Self {
             model_string: cli.model.clone(),

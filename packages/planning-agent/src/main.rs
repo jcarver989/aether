@@ -12,12 +12,20 @@
 ///
 /// Then open http://localhost:3000 in your browser to view the interactive report.
 /// Press Ctrl+C to stop the server.
-use aether::{agent::Prompt, llm::parser::ModelProviderParser};
+use aether::{
+    agent::Prompt,
+    llm::parser::ModelProviderParser,
+    mcp::config::{RawMcpConfig, RawMcpServerConfig},
+};
 use clap::Parser;
 use crucible::{AetherRunner, EvalRunner, EvalsConfig, FileSystemStore};
 use futures::FutureExt;
-use mcp_lexicon::{CodingMcp, ServiceExt};
-use std::{sync::Arc, time::Duration};
+use mcp_lexicon::{CodingMcp, CodingMcpArgs, ServiceExt};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 #[derive(Parser)]
 #[command(name = "planning-agent")]
