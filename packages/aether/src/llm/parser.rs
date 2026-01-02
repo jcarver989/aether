@@ -4,8 +4,10 @@ use crate::llm::{
     LlmError, ProviderFactory, StreamingModelProvider,
     alloyed::AlloyedModelProvider,
     anthropic::AnthropicProvider,
+    deepseek::DeepSeekProvider,
     gemini::GeminiProvider,
     local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
+    moonshot::MoonshotProvider,
     openrouter::OpenRouterProvider,
     z_ai::ZAiProvider,
 };
@@ -29,7 +31,9 @@ impl Default for ModelProviderParser {
     fn default() -> Self {
         Self::new(HashMap::new())
             .with_provider::<AnthropicProvider>("anthropic")
+            .with_provider::<DeepSeekProvider>("deepseek")
             .with_provider::<GeminiProvider>("gemini")
+            .with_provider::<MoonshotProvider>("moonshot")
             .with_provider::<OpenRouterProvider>("openrouter")
             .with_provider::<OllamaProvider>("ollama")
             .with_provider::<ZAiProvider>("zai")

@@ -6,6 +6,8 @@ pub mod error;
 pub mod gemini;
 mod llm_response;
 pub mod local;
+pub mod deepseek;
+pub mod moonshot;
 pub mod openai;
 pub mod openai_compatible;
 pub mod openrouter;
