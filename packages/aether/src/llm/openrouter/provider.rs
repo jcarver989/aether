@@ -1,4 +1,4 @@
-use async_openai::{Client, config::OpenAIConfig};
+use async_openai::{Client, config::OpenAIConfig, types::chat::ChatCompletionStreamOptions};
 
 use crate::llm::openai_compatible::{build_chat_request, create_custom_stream};
 use crate::llm::{
@@ -62,7 +62,11 @@ impl ProviderFactory for OpenRouterProvider {
 
 impl StreamingModelProvider for OpenRouterProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        let request = build_chat_request(&self.model, context);
+        let mut request = build_chat_request(&self.model, context);
+        request.stream_options = Some(ChatCompletionStreamOptions {
+            include_usage: Some(true),
+            include_obfuscation: None,
+        });
         create_custom_stream(&self.client, request)
     }
 
