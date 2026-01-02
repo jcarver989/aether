@@ -12,8 +12,9 @@ use std::path::PathBuf;
 use tokio::sync::Mutex;
 
 use crate::tasks::{
-    TaskCreateInput, TaskCreateOutput, TaskListInput, TaskListOutput, TaskStore, TaskUpdateInput,
-    TaskUpdateOutput, execute_task_create, execute_task_list, execute_task_update,
+    TaskCreateInput, TaskCreateOutput, TaskGetInput, TaskGetOutput, TaskListInput, TaskListOutput,
+    TaskStore, TaskUpdateInput, TaskUpdateOutput, execute_task_create, execute_task_get,
+    execute_task_list, execute_task_update,
 };
 
 /// CLI arguments for TasksMcp server
@@ -123,5 +124,19 @@ impl TasksMcp {
         let mut store = self.task_store.lock().await;
         store.init().map_err(|e| e.to_string())?;
         Ok(Json(execute_task_list(input, &store)))
+    }
+
+    #[doc = include_str!("./tools/get/description.md")]
+    #[tool]
+    pub async fn task_get(
+        &self,
+        request: Parameters<TaskGetInput>,
+    ) -> Result<Json<TaskGetOutput>, String> {
+        let Parameters(input) = request;
+        let mut store = self.task_store.lock().await;
+        store.init().map_err(|e| e.to_string())?;
+        execute_task_get(input, &store)
+            .map(Json)
+            .map_err(|e| e.to_string())
     }
 }
