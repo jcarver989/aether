@@ -1,9 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::store::TaskStoreError;
-use super::types::{Task, TaskId, TaskUpdate};
-use super::TaskStore;
+use crate::tasks::task_store::{TaskStore, TaskStoreError};
+use crate::tasks::types::{Task, TaskId, TaskUpdate};
 
 /// Input for the task_create tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -12,9 +11,8 @@ pub struct TaskCreateInput {
     /// Short descriptive title for the task
     pub title: String,
 
-    /// Optional detailed description (markdown)
-    #[serde(default)]
-    pub description: Option<String>,
+    /// Detailed description (markdown)
+    pub description: String,
 
     /// Parent task ID - if provided, creates a subtask
     #[serde(default)]
@@ -77,23 +75,19 @@ pub fn execute_task_create(
     store: &mut TaskStore,
 ) -> Result<TaskCreateOutput, TaskStoreError> {
     let task = if let Some(parent_id) = &input.parent_id {
-        // Create subtask
         let parent = TaskId::from(parent_id.as_str());
         store.add_subtask(&parent, &input.title)?
     } else {
-        // Create root task
-        store.create_tree(&input.title, input.description.as_deref())?
+        store.create_tree(&input.title, Some(&input.description))?
     };
 
-    // Apply optional updates (assignee, deps, description for subtasks)
-    let needs_update = input.assignee.is_some()
-        || input.deps.is_some()
-        || (input.parent_id.is_some() && input.description.is_some());
+    let needs_update =
+        input.assignee.is_some() || input.deps.is_some() || input.parent_id.is_some();
 
     let task = if needs_update {
         let update = TaskUpdate {
             description: if input.parent_id.is_some() {
-                input.description.clone()
+                Some(input.description.clone())
             } else {
                 None // Already set during create_tree
             },
@@ -141,7 +135,7 @@ mod tests {
 
         let input = TaskCreateInput {
             title: "Research AI agents".to_string(),
-            description: Some("Investigate multi-agent patterns".to_string()),
+            description: "Investigate multi-agent patterns".to_string(),
             parent_id: None,
             assignee: Some("orchestrator".to_string()),
             deps: None,
@@ -159,20 +153,18 @@ mod tests {
     fn test_create_subtask() {
         let (_temp, mut store) = setup();
 
-        // Create root first
         let root_input = TaskCreateInput {
             title: "Root task".to_string(),
-            description: None,
+            description: "Root task description".to_string(),
             parent_id: None,
             assignee: None,
             deps: None,
         };
         let root = execute_task_create(root_input, &mut store).unwrap();
 
-        // Create subtask
         let sub_input = TaskCreateInput {
             title: "Subtask 1".to_string(),
-            description: Some("Do something specific".to_string()),
+            description: "Do something specific".to_string(),
             parent_id: Some(root.task.id.clone()),
             assignee: Some("worker-1".to_string()),
             deps: None,
@@ -190,14 +182,12 @@ mod tests {
     fn test_create_with_deps() {
         let (_temp, mut store) = setup();
 
-        // Create root and first subtask
         let root = store.create_tree("Root", None).unwrap();
         let sub1 = store.add_subtask(&root.id, "Subtask 1").unwrap();
 
-        // Create subtask with dependency
         let input = TaskCreateInput {
             title: "Subtask 2".to_string(),
-            description: None,
+            description: "Subtask with dependency".to_string(),
             parent_id: Some(root.id.to_string()),
             assignee: None,
             deps: Some(vec![sub1.id.to_string()]),
@@ -214,7 +204,7 @@ mod tests {
 
         let input = TaskCreateInput {
             title: "Orphan".to_string(),
-            description: None,
+            description: "Orphan task".to_string(),
             parent_id: Some("at-nonexistent".to_string()),
             assignee: None,
             deps: None,

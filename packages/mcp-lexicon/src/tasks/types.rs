@@ -4,109 +4,75 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::hash::Hash;
 
-// ============================================================================
-// Structured Task Result Types
-// ============================================================================
-
-/// Structured task completion result aligned with compression-resilient probe types.
+/// Structured task completion result.
 ///
-/// This schema captures information that survives context compression, focusing on
-/// what git cannot track: decisions, findings, continuation context, and resources.
+/// Captures information that survives context compression for handoff to downstream agents.
 /// File modifications are tracked by git (`git diff --name-only`).
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskResult {
     /// Executive summary (1-3 sentences)
     pub summary: String,
 
-    /// Key decisions made during task execution
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub decisions: Vec<Decision>,
-
-    /// Critical facts discovered (error messages, config values, patterns)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub findings: Vec<Finding>,
-
-    /// Continuation context for downstream tasks
-    #[serde(default, skip_serializing_if = "Continuation::is_empty")]
-    pub continuation: Continuation,
-
-    /// Files read but not modified (git doesn't track reads)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub files_read: Vec<String>,
-
-    /// External resources accessed (git doesn't track these)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub resources: Vec<ResourceRef>,
+    /// Context for downstream agents starting with empty context window
+    #[serde(default, skip_serializing_if = "Handoff::is_empty")]
+    pub handoff: Handoff,
 }
 
-/// A decision made during task execution, preserving the reasoning chain.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct Decision {
-    /// What was decided
-    pub what: String,
-
-    /// Why this choice was made
-    pub why: String,
-
-    /// Alternatives considered but rejected
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub rejected: Vec<String>,
-}
-
-/// A factual finding discovered during task execution.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct Finding {
-    /// Category: "error", "config", "pattern", "constraint", etc.
-    pub kind: String,
-
-    /// The actual finding
-    pub content: String,
-
-    /// Where this was found (file path, command output, etc.)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-}
-
-/// Continuation context for downstream tasks.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct Continuation {
-    /// Suggested next steps identified during execution
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub next_steps: Vec<String>,
-
-    /// Blockers or dependencies that couldn't be resolved
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub blockers: Vec<String>,
-
-    /// Open questions needing human input or further research
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub open_questions: Vec<String>,
-}
-
-impl Continuation {
-    pub fn is_empty(&self) -> bool {
-        self.next_steps.is_empty() && self.blockers.is_empty() && self.open_questions.is_empty()
+impl TaskResult {
+    /// Create a minimal result with just a summary
+    pub fn new(summary: impl Into<String>) -> Self {
+        Self {
+            summary: summary.into(),
+            handoff: Handoff::default(),
+        }
     }
 }
 
-/// Reference to an external resource accessed during task execution.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+/// Everything needed to hand off work to a fresh agent.
+///
+/// All fields are flat strings - agents write natural language like:
+/// - decisions: "Chose X because Y"
+/// - facts: "Found: error X in file Y"
+/// - resources: "https://example.com - brief description"
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub struct ResourceRef {
-    /// URI (URL, API endpoint, database connection, etc.)
-    pub uri: String,
+pub struct Handoff {
+    /// Key decisions made (what was decided and why)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decisions: Vec<String>,
 
-    /// What was retrieved or learned from this resource
-    pub summary: String,
+    /// Important facts discovered (errors, patterns, constraints)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub facts: Vec<String>,
+
+    /// Suggested next steps
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub next_steps: Vec<String>,
+
+    /// Blockers or unresolved issues
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blockers: Vec<String>,
+
+    /// Files examined (not modified - git tracks modifications)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files_read: Vec<String>,
+
+    /// External resources accessed with brief notes
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resources: Vec<String>,
 }
 
-// ============================================================================
-// Task ID and Core Types
-// ============================================================================
+impl Handoff {
+    pub fn is_empty(&self) -> bool {
+        self.decisions.is_empty()
+            && self.facts.is_empty()
+            && self.next_steps.is_empty()
+            && self.blockers.is_empty()
+            && self.files_read.is_empty()
+            && self.resources.is_empty()
+    }
+}
 
 /// Task identifier with hierarchical support.
 /// - Root tasks: `at-{hash8}` (e.g., `at-a1b2c3d4`)
@@ -226,13 +192,9 @@ pub struct Task {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deps: Vec<TaskId>,
 
-    /// Structured findings/output when completed (preferred)
+    /// Structured findings/output when completed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<TaskResult>,
-
-    /// Simple text result for backwards compatibility or trivial tasks
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result_text: Option<String>,
 
     /// When the task was created
     pub created_at: DateTime<Utc>,
@@ -254,7 +216,6 @@ impl Task {
             parent: None,
             deps: Vec::new(),
             result: None,
-            result_text: None,
             created_at: now,
             updated_at: now,
         }
@@ -272,7 +233,6 @@ impl Task {
             parent: Some(parent),
             deps: Vec::new(),
             result: None,
-            result_text: None,
             created_at: now,
             updated_at: now,
         }
@@ -308,25 +268,32 @@ pub struct TaskUpdate {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deps: Option<Vec<TaskId>>,
+
+    /// Completion result - when provided, task status is set to completed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<TaskResult>,
 }
 
 impl TaskUpdate {
-    /// Apply updates to a task
-    pub fn apply_to(&self, task: &mut Task) {
-        if let Some(title) = &self.title {
-            task.title = title.clone();
+    /// Apply updates to a task, consuming the update
+    pub fn apply_to(self, task: &mut Task) {
+        if let Some(title) = self.title {
+            task.title = title;
         }
-        if let Some(description) = &self.description {
-            task.description = Some(description.clone());
+        if let Some(description) = self.description {
+            task.description = Some(description);
         }
         if let Some(status) = self.status {
             task.status = status;
         }
-        if let Some(assignee) = &self.assignee {
-            task.assignee = Some(assignee.clone());
+        if let Some(assignee) = self.assignee {
+            task.assignee = Some(assignee);
         }
-        if let Some(deps) = &self.deps {
-            task.deps = deps.clone();
+        if let Some(deps) = self.deps {
+            task.deps = deps;
+        }
+        if let Some(result) = self.result {
+            task.result = Some(result);
         }
         task.touch();
     }
@@ -375,16 +342,12 @@ mod tests {
         let mut task = Task::new_root(id3.clone(), "Test Task".to_string());
         task.deps = vec![id1.clone(), id2.clone()];
 
-        // Not ready - no deps completed
         assert!(!task.is_ready(&[]));
 
-        // Not ready - only one dep completed
         assert!(!task.is_ready(&[&id1]));
 
-        // Ready - all deps completed
         assert!(task.is_ready(&[&id1, &id2]));
 
-        // Not ready if not pending
         task.status = TaskStatus::InProgress;
         assert!(!task.is_ready(&[&id1, &id2]));
     }
@@ -426,123 +389,94 @@ mod tests {
     fn test_task_result_full_serialization() {
         let result = TaskResult {
             summary: "Identified 5 API endpoints using deprecated auth".to_string(),
-            decisions: vec![Decision {
-                what: "Defer JWT migration".to_string(),
-                why: "Breaking change requires SDK updates".to_string(),
-                rejected: vec!["Immediate migration".to_string()],
-            }],
-            findings: vec![Finding {
-                kind: "pattern".to_string(),
-                content: "All endpoints use validate_session()".to_string(),
-                source: Some("src/api/*.rs".to_string()),
-            }],
-            continuation: Continuation {
+            handoff: Handoff {
+                decisions: vec![
+                    "Defer JWT migration until after v2.0 - breaking change requires SDK updates"
+                        .to_string(),
+                ],
+                facts: vec![
+                    "All endpoints use validate_session() for auth (src/api/*.rs)".to_string(),
+                    "Session tokens expire after 1 hour with no refresh".to_string(),
+                ],
                 next_steps: vec!["Create migration guide".to_string()],
-                blockers: vec!["Need product decision".to_string()],
-                open_questions: vec!["Support both auth methods?".to_string()],
+                blockers: vec!["Need product decision on migration timeline".to_string()],
+                files_read: vec!["src/api/auth.rs".to_string()],
+                resources: vec!["https://docs.rs/jsonwebtoken - supports RS256/ES256".to_string()],
             },
-            files_read: vec!["src/api/auth.rs".to_string()],
-            resources: vec![ResourceRef {
-                uri: "https://docs.rs/jsonwebtoken".to_string(),
-                summary: "JWT library docs".to_string(),
-            }],
         };
 
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"summary\":\"Identified 5 API endpoints"));
+        assert!(json.contains("\"handoff\":{"));
         assert!(json.contains("\"decisions\":["));
-        assert!(json.contains("\"findings\":["));
-        assert!(json.contains("\"continuation\":{"));
+        assert!(json.contains("\"facts\":["));
+        assert!(json.contains("\"next_steps\":["));
+        assert!(json.contains("\"blockers\":["));
         assert!(json.contains("\"files_read\":["));
         assert!(json.contains("\"resources\":["));
 
         let deserialized: TaskResult = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.summary, result.summary);
-        assert_eq!(deserialized.decisions.len(), 1);
-        assert_eq!(deserialized.findings.len(), 1);
-        assert_eq!(deserialized.continuation.next_steps.len(), 1);
+        assert_eq!(deserialized.handoff.decisions.len(), 1);
+        assert_eq!(deserialized.handoff.facts.len(), 2);
+        assert_eq!(deserialized.handoff.next_steps.len(), 1);
     }
 
     #[test]
     fn test_task_result_minimal_serialization() {
-        let result = TaskResult {
-            summary: "Task completed successfully".to_string(),
-            decisions: vec![],
-            findings: vec![],
-            continuation: Continuation::default(),
-            files_read: vec![],
-            resources: vec![],
-        };
+        let result = TaskResult::new("Task completed successfully");
 
         let json = serde_json::to_string(&result).unwrap();
 
-        // Empty fields should be skipped
-        assert!(!json.contains("\"decisions\""));
-        assert!(!json.contains("\"findings\""));
-        assert!(!json.contains("\"continuation\""));
-        assert!(!json.contains("\"files_read\""));
-        assert!(!json.contains("\"resources\""));
-
-        // Only summary should be present
+        // Empty handoff should be omitted
+        assert!(!json.contains("\"handoff\""));
         assert!(json.contains("\"summary\":\"Task completed successfully\""));
 
         let deserialized: TaskResult = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.summary, "Task completed successfully");
-        assert!(deserialized.decisions.is_empty());
+        assert!(deserialized.handoff.is_empty());
     }
 
     #[test]
-    fn test_continuation_is_empty() {
-        let empty = Continuation::default();
+    fn test_handoff_is_empty() {
+        let empty = Handoff::default();
         assert!(empty.is_empty());
 
-        let with_next_steps = Continuation {
+        let with_decisions = Handoff {
+            decisions: vec!["Chose X because Y".to_string()],
+            ..Default::default()
+        };
+        assert!(!with_decisions.is_empty());
+
+        let with_facts = Handoff {
+            facts: vec!["Found error in file X".to_string()],
+            ..Default::default()
+        };
+        assert!(!with_facts.is_empty());
+
+        let with_next_steps = Handoff {
             next_steps: vec!["Do something".to_string()],
             ..Default::default()
         };
         assert!(!with_next_steps.is_empty());
 
-        let with_blockers = Continuation {
+        let with_blockers = Handoff {
             blockers: vec!["Blocked on X".to_string()],
             ..Default::default()
         };
         assert!(!with_blockers.is_empty());
 
-        let with_questions = Continuation {
-            open_questions: vec!["Should we?".to_string()],
+        let with_files = Handoff {
+            files_read: vec!["src/main.rs".to_string()],
             ..Default::default()
         };
-        assert!(!with_questions.is_empty());
-    }
+        assert!(!with_files.is_empty());
 
-    #[test]
-    fn test_finding_without_source() {
-        let finding = Finding {
-            kind: "error".to_string(),
-            content: "Connection timeout".to_string(),
-            source: None,
+        let with_resources = Handoff {
+            resources: vec!["https://example.com - docs".to_string()],
+            ..Default::default()
         };
-
-        let json = serde_json::to_string(&finding).unwrap();
-        assert!(!json.contains("\"source\""));
-
-        let deserialized: Finding = serde_json::from_str(&json).unwrap();
-        assert!(deserialized.source.is_none());
-    }
-
-    #[test]
-    fn test_decision_without_rejected() {
-        let decision = Decision {
-            what: "Use async approach".to_string(),
-            why: "Better performance".to_string(),
-            rejected: vec![],
-        };
-
-        let json = serde_json::to_string(&decision).unwrap();
-        assert!(!json.contains("\"rejected\""));
-
-        let deserialized: Decision = serde_json::from_str(&json).unwrap();
-        assert!(deserialized.rejected.is_empty());
+        assert!(!with_resources.is_empty());
     }
 
     #[test]
@@ -552,15 +486,10 @@ mod tests {
 
         task.result = Some(TaskResult {
             summary: "Found the answer".to_string(),
-            decisions: vec![],
-            findings: vec![Finding {
-                kind: "insight".to_string(),
-                content: "Key discovery".to_string(),
-                source: None,
-            }],
-            continuation: Continuation::default(),
-            files_read: vec![],
-            resources: vec![],
+            handoff: Handoff {
+                facts: vec!["Key discovery".to_string()],
+                ..Default::default()
+            },
         });
 
         let json = serde_json::to_string(&task).unwrap();
@@ -570,24 +499,5 @@ mod tests {
         let deserialized: Task = serde_json::from_str(&json).unwrap();
         assert!(deserialized.result.is_some());
         assert_eq!(deserialized.result.unwrap().summary, "Found the answer");
-    }
-
-    #[test]
-    fn test_task_with_simple_result_text() {
-        let id = TaskId::new_root("a1b2c3d4");
-        let mut task = Task::new_root(id, "Simple task".to_string());
-
-        task.result_text = Some("Fixed typo in README".to_string());
-
-        let json = serde_json::to_string(&task).unwrap();
-        assert!(json.contains("\"result_text\":\"Fixed typo in README\""));
-        assert!(!json.contains("\"result\":{"));
-
-        let deserialized: Task = serde_json::from_str(&json).unwrap();
-        assert!(deserialized.result.is_none());
-        assert_eq!(
-            deserialized.result_text,
-            Some("Fixed typo in README".to_string())
-        );
     }
 }

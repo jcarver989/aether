@@ -1,9 +1,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::tool_create::TaskSummary;
-use super::types::TaskStatus;
-use super::TaskStore;
+use super::create::TaskSummary;
+use crate::tasks::task_store::TaskStore;
+use crate::tasks::types::TaskStatus;
 
 /// Input for the task_list tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -64,41 +64,32 @@ pub struct TaskListOutput {
     pub message: String,
 }
 
-/// List tasks with optional filters.
-///
-/// Filter priority (first matching filter is applied):
-/// 1. `ready_only` - tasks ready to start (pending with all deps completed)
-/// 2. `tree_id` - all tasks in a specific tree
-/// 3. `assignee` - tasks assigned to a specific agent
-/// 4. `status` - tasks with a specific status
-/// 5. (none) - all tasks
 pub fn execute_task_list(input: TaskListInput, store: &TaskStore) -> TaskListOutput {
     let tasks: Vec<TaskSummary> = if input.ready_only.unwrap_or(false) {
-        // Get tasks ready to start
-        store.get_ready().into_iter().map(TaskSummary::from).collect()
+        store
+            .get_ready()
+            .into_iter()
+            .map(TaskSummary::from)
+            .collect()
     } else if let Some(tree_id) = &input.tree_id {
-        // Get all tasks in a tree
-        let tree_id = super::types::TaskId::from(tree_id.as_str());
+        let tree_id = crate::tasks::types::TaskId::from(tree_id.as_str());
         store
             .get_tree(&tree_id)
             .map(|tasks| tasks.into_iter().map(TaskSummary::from).collect())
             .unwrap_or_default()
     } else if let Some(assignee) = &input.assignee {
-        // Filter by assignee
         store
             .list_by_assignee(assignee)
             .into_iter()
             .map(TaskSummary::from)
             .collect()
     } else if let Some(status) = input.status {
-        // Filter by status
         store
             .list_by_status(status.into())
             .into_iter()
             .map(TaskSummary::from)
             .collect()
     } else {
-        // Return all tasks (via listing all trees)
         store
             .list_trees()
             .iter()
@@ -163,7 +154,8 @@ fn build_filter_description(input: &TaskListInput) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::coding::tools::tasks::TaskUpdate;
+    use crate::tasks::TaskUpdate;
+    use crate::tasks::types::TaskResult;
     use tempfile::TempDir;
 
     fn setup() -> (TempDir, TaskStore) {
@@ -301,7 +293,6 @@ mod tests {
         let sub1 = store.add_subtask(&root.id, "Subtask 1").unwrap();
         let sub2 = store.add_subtask(&root.id, "Subtask 2").unwrap();
 
-        // sub2 depends on sub1
         store
             .update(
                 &sub2.id,
@@ -312,7 +303,6 @@ mod tests {
             )
             .unwrap();
 
-        // Before completing sub1
         let output = execute_task_list(
             TaskListInput {
                 assignee: None,
@@ -323,13 +313,20 @@ mod tests {
             &store,
         );
 
-        // root and sub1 should be ready, sub2 is blocked
         assert_eq!(output.count, 2);
 
-        // Complete sub1
-        store.complete(&sub1.id, None, None).unwrap();
+        // Complete sub1 using update with result
+        store
+            .update(
+                &sub1.id,
+                TaskUpdate {
+                    status: Some(TaskStatus::Completed),
+                    result: Some(TaskResult::new("done")),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
-        // Now sub2 should also be ready
         let output = execute_task_list(
             TaskListInput {
                 assignee: None,
@@ -340,7 +337,6 @@ mod tests {
             &store,
         );
 
-        // root and sub2 are ready (sub1 is completed)
         assert_eq!(output.count, 2);
         let ready_ids: Vec<_> = output.tasks.iter().map(|t| t.id.as_str()).collect();
         assert!(ready_ids.contains(&sub2.id.as_str()));

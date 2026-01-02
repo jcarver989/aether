@@ -6,7 +6,7 @@ use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
 use futures::FutureExt;
-use mcp_lexicon::{CodingMcp, CodingMcpArgs, LspCodingTools, PluginsMcp, ServiceExt};
+use mcp_lexicon::{CodingMcp, CodingMcpArgs, LspCodingTools, PluginsMcp, ServiceExt, TasksMcp};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -47,6 +47,7 @@ impl Session {
         debug!("Using project root for LSP: {:?}", project_path);
 
         let config_str = mcp_config_path.to_str().ok_or("Invalid MCP config path")?;
+        let tasks_project_path = project_path.clone();
 
         debug!("Creating ACP-enabled CodingMcp and PluginsMcp");
         let McpSpawnResult {
@@ -79,6 +80,23 @@ impl Session {
                     async move {
                         PluginsMcp::from_args(args)
                             .expect("Failed to parse PluginsMcp args")
+                            .into_dyn()
+                    }
+                    .boxed()
+                }),
+            )
+            .register_in_memory_server(
+                "tasks",
+                Box::new(move |args| {
+                    let project_path = tasks_project_path.clone();
+                    async move {
+                        TasksMcp::from_args(args)
+                            .unwrap_or_else(|e| {
+                                tracing::warn!(
+                                    "Failed to parse TasksMcp args: {e}, using defaults"
+                                );
+                                TasksMcp::new(project_path)
+                            })
                             .into_dyn()
                     }
                     .boxed()
