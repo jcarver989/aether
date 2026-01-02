@@ -13,6 +13,8 @@ use tokio::{spawn, sync::mpsc};
 
 use crate::coding::{CodingMcp, CodingMcpArgs};
 use crate::plugins::files::AgentFile;
+use crate::plugins::server::PluginsMcp;
+use crate::tasks::TasksMcp;
 
 /// Reference to a file artifact discovered or modified by a sub-agent
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -364,6 +366,7 @@ async fn spawn_mcps(agent_dir: &Path) -> Result<McpSpawnResult, String> {
     let mcp_json_path = agent_dir.join("mcp.json");
     let project_path = CodingMcpArgs::parse_root_dir_from_config(&mcp_json_path)
         .unwrap_or_else(|| agent_dir.to_path_buf());
+    let tasks_project_path = project_path.clone();
 
     mcp()
         .register_in_memory_server(
@@ -371,6 +374,32 @@ async fn spawn_mcps(agent_dir: &Path) -> Result<McpSpawnResult, String> {
             Box::new(move |_args| {
                 let project_path = project_path.clone();
                 async move { CodingMcp::new().with_root_dir(project_path).into_dyn() }.boxed()
+            }),
+        )
+        .register_in_memory_server(
+            "plugins",
+            Box::new(|args| {
+                async move {
+                    PluginsMcp::from_args(args)
+                        .expect("Failed to parse PluginsMcp args")
+                        .into_dyn()
+                }
+                .boxed()
+            }),
+        )
+        .register_in_memory_server(
+            "tasks",
+            Box::new(move |args| {
+                let project_path = tasks_project_path.clone();
+                async move {
+                    TasksMcp::from_args(args)
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("Failed to parse TasksMcp args: {e}, using defaults");
+                            TasksMcp::new(project_path)
+                        })
+                        .into_dyn()
+                }
+                .boxed()
             }),
         )
         .from_json_file(mcp_json_path.to_str().unwrap_or(""))
