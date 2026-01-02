@@ -8,11 +8,19 @@ use notify::RecommendedWatcher;
 use notify_debouncer_mini::{DebouncedEventKind, Debouncer, new_debouncer};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 /// Default debounce duration for file system events.
 const DEBOUNCE_DURATION: Duration = Duration::from_millis(300);
+
+/// Output debounce duration to coalesce multiple per-file events.
+///
+/// `notify-debouncer-mini` debounces per-file, so when multiple files change
+/// we can receive multiple callbacks in rapid succession. This secondary
+/// debounce ensures we only emit one `Changed` event per burst.
+const OUTPUT_DEBOUNCE: Duration = Duration::from_millis(1_000);
 
 /// Events emitted by the file watcher.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +52,8 @@ impl FileWatcher {
         path: PathBuf,
         tx: mpsc::UnboundedSender<FileWatchEvent>,
     ) -> Result<Self, AetherDesktopError> {
+        let last_sent = Arc::new(Mutex::new(Instant::now() - OUTPUT_DEBOUNCE));
+
         let debouncer = new_debouncer(
             DEBOUNCE_DURATION,
             move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
@@ -54,7 +64,11 @@ impl FileWatcher {
                         });
 
                         if has_relevant_events {
-                            let _ = tx.send(FileWatchEvent::Changed);
+                            let mut last = last_sent.lock().unwrap();
+                            if last.elapsed() >= OUTPUT_DEBOUNCE {
+                                *last = Instant::now();
+                                let _ = tx.send(FileWatchEvent::Changed);
+                            }
                         }
                     }
                     Err(error) => {
@@ -207,5 +221,34 @@ mod tests {
         assert!(!is_relevant_path(Path::new("/project/file.txt~")));
         assert!(!is_relevant_path(Path::new("/project/.main.rs.swp")));
         assert!(!is_relevant_path(Path::new("/project/.main.rs.swx")));
+    }
+
+    #[tokio::test]
+    async fn test_multi_file_changes_coalesced() {
+        let temp_dir = TempDir::new().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let _watcher = FileWatcher::new(temp_dir.path().to_path_buf(), tx).unwrap();
+
+        // Give the watcher time to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Create multiple different files in rapid succession
+        for i in 0..5 {
+            fs::write(temp_dir.path().join(format!("file_{}.txt", i)), "content").unwrap();
+        }
+
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+
+        let mut event_count = 0;
+        while rx.try_recv().is_ok() {
+            event_count += 1;
+        }
+
+        assert_eq!(
+            event_count, 1,
+            "Expected exactly 1 event for multi-file changes but got {}",
+            event_count
+        );
     }
 }
