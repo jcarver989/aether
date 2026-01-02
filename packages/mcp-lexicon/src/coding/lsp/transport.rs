@@ -1,9 +1,10 @@
 use super::error::{LspError, Result};
 use crate::coding::file_types::lsp_id_from_path;
 use lsp_types::{
+    CallHierarchyIncomingCallsParams, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
     DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    GotoDefinitionParams, HoverParams, InitializeParams, ProgressParams, PublishDiagnosticsParams,
-    ReferenceParams, WorkspaceSymbolParams,
+    DocumentSymbolParams, GotoDefinitionParams, HoverParams, InitializeParams, ProgressParams,
+    PublishDiagnosticsParams, ReferenceParams, WorkspaceSymbolParams,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, to_value};
@@ -227,12 +228,22 @@ pub enum ClientRequest {
     Shutdown(i64),
     /// Go to definition
     GotoDefinition(i64, GotoDefinitionParams),
+    /// Go to implementation
+    GotoImplementation(i64, GotoDefinitionParams),
     /// Find references
     FindReferences(i64, ReferenceParams),
     /// Hover (get type/documentation info)
     Hover(i64, HoverParams),
     /// Workspace symbol search
     WorkspaceSymbol(i64, WorkspaceSymbolParams),
+    /// Document symbol (get symbols in a document)
+    DocumentSymbol(i64, DocumentSymbolParams),
+    /// Prepare call hierarchy
+    PrepareCallHierarchy(i64, CallHierarchyPrepareParams),
+    /// Incoming calls
+    IncomingCalls(i64, CallHierarchyIncomingCallsParams),
+    /// Outgoing calls
+    OutgoingCalls(i64, CallHierarchyOutgoingCallsParams),
 }
 
 impl ClientRequest {
@@ -242,9 +253,14 @@ impl ClientRequest {
             ClientRequest::Initialize(id, _) => *id,
             ClientRequest::Shutdown(id) => *id,
             ClientRequest::GotoDefinition(id, _) => *id,
+            ClientRequest::GotoImplementation(id, _) => *id,
             ClientRequest::FindReferences(id, _) => *id,
             ClientRequest::Hover(id, _) => *id,
             ClientRequest::WorkspaceSymbol(id, _) => *id,
+            ClientRequest::DocumentSymbol(id, _) => *id,
+            ClientRequest::PrepareCallHierarchy(id, _) => *id,
+            ClientRequest::IncomingCalls(id, _) => *id,
+            ClientRequest::OutgoingCalls(id, _) => *id,
         }
     }
 }
@@ -386,6 +402,11 @@ pub async fn send_request(writer: &mut ChildStdin, request: &ClientRequest) -> R
             "textDocument/definition",
             to_value(params).unwrap_or(Value::Null),
         ),
+        ClientRequest::GotoImplementation(id, params) => (
+            *id,
+            "textDocument/implementation",
+            to_value(params).unwrap_or(Value::Null),
+        ),
         ClientRequest::FindReferences(id, params) => (
             *id,
             "textDocument/references",
@@ -399,6 +420,26 @@ pub async fn send_request(writer: &mut ChildStdin, request: &ClientRequest) -> R
         ClientRequest::WorkspaceSymbol(id, params) => (
             *id,
             "workspace/symbol",
+            to_value(params).unwrap_or(Value::Null),
+        ),
+        ClientRequest::DocumentSymbol(id, params) => (
+            *id,
+            "textDocument/documentSymbol",
+            to_value(params).unwrap_or(Value::Null),
+        ),
+        ClientRequest::PrepareCallHierarchy(id, params) => (
+            *id,
+            "textDocument/prepareCallHierarchy",
+            to_value(params).unwrap_or(Value::Null),
+        ),
+        ClientRequest::IncomingCalls(id, params) => (
+            *id,
+            "callHierarchy/incomingCalls",
+            to_value(params).unwrap_or(Value::Null),
+        ),
+        ClientRequest::OutgoingCalls(id, params) => (
+            *id,
+            "callHierarchy/outgoingCalls",
             to_value(params).unwrap_or(Value::Null),
         ),
     };

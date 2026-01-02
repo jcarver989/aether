@@ -2,10 +2,10 @@
 
 use lsp_types::{Location, SymbolKind, Uri};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A location in source code (file path with range)
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LocationResult {
     /// The file path

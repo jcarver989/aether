@@ -7,12 +7,20 @@
 //!
 //! Import types directly from submodules (e.g., `lsp::check_errors::LspDiagnosticsInput`).
 
-pub mod check_errors;
+// Core wrapper
 pub mod coding_tools;
+
+// Legacy tools (to be removed after migration)
+pub mod check_errors;
 pub mod find_definition;
 pub mod find_usages;
 pub mod get_type_info;
 pub mod search_symbols;
+
+// New consolidated tools
+pub mod call_hierarchy;
+pub mod document_info;
+pub mod symbol_lookup;
 
 // Re-export only the primary API type
 pub use coding_tools::LspCodingTools;

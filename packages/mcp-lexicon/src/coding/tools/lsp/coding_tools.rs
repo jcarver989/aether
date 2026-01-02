@@ -5,9 +5,11 @@
 //! multiple LSP servers based on file type.
 
 use lsp_types::{
-    Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    GotoDefinitionResponse, Hover, Location, SymbolInformation, TextDocumentContentChangeEvent,
-    TextDocumentIdentifier, TextDocumentItem, Uri, VersionedTextDocumentIdentifier,
+    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, Diagnostic,
+    DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+    DocumentSymbolResponse, GotoDefinitionResponse, Hover, Location, SymbolInformation,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem, Uri,
+    VersionedTextDocumentIdentifier,
 };
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -15,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::coding::error::CodingError;
+use crate::coding::lsp::common::uri_to_path;
 use crate::coding::lsp::config::{LspConfig, default_lsp_configs};
 use crate::coding::lsp::registry::{DEFAULT_INDEXING_TIMEOUT, LspClientHandle, LspRegistry};
 use crate::coding::lsp::{ClientNotification, LanguageId, path_to_uri};
@@ -422,6 +425,133 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
             }
         }
         Ok(all_symbols)
+    }
+
+    async fn goto_implementation(
+        &self,
+        file_path: &str,
+        symbol: &str,
+        line: u32,
+    ) -> Result<GotoDefinitionResponse, CodingError> {
+        let content = self.ensure_file_open_and_get_content(file_path).await?;
+        let column = find_symbol_column(&content, symbol, line)?;
+
+        let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
+
+        let handle = self
+            .registry
+            .get_or_spawn(Path::new(file_path))
+            .await
+            .ok_or_else(|| {
+                CodingError::NotConfigured("No LSP configured for this file type".to_string())
+            })?;
+
+        self.await_lsp_ready(&handle).await?;
+
+        handle
+            .client
+            .goto_implementation(uri, line - 1, column)
+            .await
+            .map_err(CodingError::from)
+    }
+
+    async fn document_symbol(
+        &self,
+        file_path: &str,
+    ) -> Result<DocumentSymbolResponse, CodingError> {
+        self.ensure_file_open_and_get_content(file_path).await?;
+
+        let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
+
+        let handle = self
+            .registry
+            .get_or_spawn(Path::new(file_path))
+            .await
+            .ok_or_else(|| {
+                CodingError::NotConfigured("No LSP configured for this file type".to_string())
+            })?;
+
+        self.await_lsp_ready(&handle).await?;
+
+        handle
+            .client
+            .document_symbol(uri)
+            .await
+            .map_err(CodingError::from)
+    }
+
+    async fn prepare_call_hierarchy(
+        &self,
+        file_path: &str,
+        symbol: &str,
+        line: u32,
+    ) -> Result<Vec<CallHierarchyItem>, CodingError> {
+        let content = self.ensure_file_open_and_get_content(file_path).await?;
+        let column = find_symbol_column(&content, symbol, line)?;
+
+        let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
+
+        let handle = self
+            .registry
+            .get_or_spawn(Path::new(file_path))
+            .await
+            .ok_or_else(|| {
+                CodingError::NotConfigured("No LSP configured for this file type".to_string())
+            })?;
+
+        self.await_lsp_ready(&handle).await?;
+
+        handle
+            .client
+            .prepare_call_hierarchy(uri, line - 1, column)
+            .await
+            .map_err(CodingError::from)
+    }
+
+    async fn incoming_calls(
+        &self,
+        item: CallHierarchyItem,
+    ) -> Result<Vec<CallHierarchyIncomingCall>, CodingError> {
+        let file_path = uri_to_path(&item.uri);
+
+        let handle = self
+            .registry
+            .get_or_spawn(Path::new(&file_path))
+            .await
+            .ok_or_else(|| {
+                CodingError::NotConfigured("No LSP configured for this file type".to_string())
+            })?;
+
+        self.await_lsp_ready(&handle).await?;
+
+        handle
+            .client
+            .incoming_calls(item)
+            .await
+            .map_err(CodingError::from)
+    }
+
+    async fn outgoing_calls(
+        &self,
+        item: CallHierarchyItem,
+    ) -> Result<Vec<CallHierarchyOutgoingCall>, CodingError> {
+        let file_path = uri_to_path(&item.uri);
+
+        let handle = self
+            .registry
+            .get_or_spawn(Path::new(&file_path))
+            .await
+            .ok_or_else(|| {
+                CodingError::NotConfigured("No LSP configured for this file type".to_string())
+            })?;
+
+        self.await_lsp_ready(&handle).await?;
+
+        handle
+            .client
+            .outgoing_calls(item)
+            .await
+            .map_err(CodingError::from)
     }
 }
 
