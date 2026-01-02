@@ -1,8 +1,9 @@
-use super::create::TaskSummary;
-use crate::tasks::task_store::{TaskStore, TaskStoreError};
-use crate::tasks::types::{TaskId, TaskResult, TaskStatus, TaskUpdate};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use super::common::TaskSummary;
+use crate::tasks::task_store::{TaskStore, TaskStoreError};
+use crate::tasks::types::{TaskId, TaskResult, TaskStatus, TaskUpdate};
 
 /// Input for the task_update tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

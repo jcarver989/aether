@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::create::TaskSummary;
+use super::common::TaskSummary;
 use crate::tasks::task_store::TaskStore;
 use crate::tasks::types::TaskStatus;
 
