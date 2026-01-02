@@ -1,7 +1,10 @@
 use std::future::Future;
 use std::{collections::HashMap, fmt::Debug};
 
-use lsp_types::{Diagnostic, GotoDefinitionResponse, Hover, Location, SymbolInformation};
+use lsp_types::{
+    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, Diagnostic,
+    DocumentSymbolResponse, GotoDefinitionResponse, Hover, Location, SymbolInformation,
+};
 
 use super::error::CodingError;
 use super::tools::bash::{
@@ -160,6 +163,84 @@ pub trait CodingTools: Send + Sync + Debug {
         &self,
         _query: &str,
     ) -> impl Future<Output = Result<Vec<SymbolInformation>, CodingError>> + Send {
+        async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
+    }
+
+    /// Go to the implementation of an interface/trait method.
+    ///
+    /// # Arguments
+    /// * `file_path` - The path to the file containing the symbol
+    /// * `symbol` - The symbol name to look up
+    /// * `line` - Line number where the symbol appears (1-indexed)
+    ///
+    /// # Returns
+    /// The implementation locations.
+    fn goto_implementation(
+        &self,
+        _file_path: &str,
+        _symbol: &str,
+        _line: u32,
+    ) -> impl Future<Output = Result<GotoDefinitionResponse, CodingError>> + Send {
+        async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
+    }
+
+    /// Get all symbols in a document.
+    ///
+    /// # Arguments
+    /// * `file_path` - The path to the file
+    ///
+    /// # Returns
+    /// Document symbol response which can be either flat or hierarchical symbols.
+    fn document_symbol(
+        &self,
+        _file_path: &str,
+    ) -> impl Future<Output = Result<DocumentSymbolResponse, CodingError>> + Send {
+        async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
+    }
+
+    /// Prepare call hierarchy at a position.
+    ///
+    /// # Arguments
+    /// * `file_path` - The path to the file containing the symbol
+    /// * `symbol` - The symbol name to look up
+    /// * `line` - Line number where the symbol appears (1-indexed)
+    ///
+    /// # Returns
+    /// A list of call hierarchy items at the position.
+    fn prepare_call_hierarchy(
+        &self,
+        _file_path: &str,
+        _symbol: &str,
+        _line: u32,
+    ) -> impl Future<Output = Result<Vec<CallHierarchyItem>, CodingError>> + Send {
+        async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
+    }
+
+    /// Get incoming calls for a call hierarchy item.
+    ///
+    /// # Arguments
+    /// * `item` - The call hierarchy item
+    ///
+    /// # Returns
+    /// A list of incoming calls.
+    fn incoming_calls(
+        &self,
+        _item: CallHierarchyItem,
+    ) -> impl Future<Output = Result<Vec<CallHierarchyIncomingCall>, CodingError>> + Send {
+        async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
+    }
+
+    /// Get outgoing calls for a call hierarchy item.
+    ///
+    /// # Arguments
+    /// * `item` - The call hierarchy item
+    ///
+    /// # Returns
+    /// A list of outgoing calls.
+    fn outgoing_calls(
+        &self,
+        _item: CallHierarchyItem,
+    ) -> impl Future<Output = Result<Vec<CallHierarchyOutgoingCall>, CodingError>> + Send {
         async { Err(CodingError::NotConfigured("LSP not configured".to_string())) }
     }
 }

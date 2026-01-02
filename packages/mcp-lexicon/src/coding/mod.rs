@@ -59,6 +59,12 @@ use tools::lsp::get_type_info::{LspHoverInput, LspHoverOutput, execute_lsp_hover
 use tools::lsp::search_symbols::{
     LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput, execute_lsp_workspace_symbol,
 };
+// New consolidated tools
+use tools::lsp::call_hierarchy::{
+    LspCallHierarchyInput, LspCallHierarchyOutput, execute_lsp_call_hierarchy,
+};
+use tools::lsp::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
+use tools::lsp::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 use tools::web_fetch::{WebFetchInput, WebFetchOutput, WebFetcher};
 use tools::write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
@@ -412,6 +418,40 @@ When using tools from this server that take file path(s) as input, always use ab
     ) -> Result<Json<LspWorkspaceSymbolOutput>, String> {
         let Parameters(input) = request;
         execute_lsp_workspace_symbol(input, &self.tools)
+            .await
+            .map(Json)
+    }
+
+    // New consolidated LSP tools
+
+    #[doc = include_str!("tools/lsp/symbol_lookup/description.md")]
+    #[tool]
+    pub async fn lsp_symbol(
+        &self,
+        request: Parameters<LspSymbolInput>,
+    ) -> Result<Json<LspSymbolOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_symbol(input, &self.tools).await.map(Json)
+    }
+
+    #[doc = include_str!("tools/lsp/document_info/description.md")]
+    #[tool]
+    pub async fn lsp_document(
+        &self,
+        request: Parameters<LspDocumentInput>,
+    ) -> Result<Json<LspDocumentOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_document(input, &self.tools).await.map(Json)
+    }
+
+    #[doc = include_str!("tools/lsp/call_hierarchy/description.md")]
+    #[tool]
+    pub async fn lsp_call_hierarchy(
+        &self,
+        request: Parameters<LspCallHierarchyInput>,
+    ) -> Result<Json<LspCallHierarchyOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_call_hierarchy(input, &self.tools)
             .await
             .map(Json)
     }

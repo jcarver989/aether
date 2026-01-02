@@ -4,12 +4,16 @@ use super::transport::{
     send_notification, send_request,
 };
 use lsp_types::{
-    ClientCapabilities, DynamicRegistrationClientCapabilities, GeneralClientCapabilities,
-    GotoCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverClientCapabilities,
-    HoverParams, InitializeParams, Location, MarkupKind, Position, ProgressParams,
-    PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, ReferenceContext,
-    ReferenceParams, SymbolInformation, TextDocumentClientCapabilities, TextDocumentIdentifier,
-    TextDocumentPositionParams, Uri, WindowClientCapabilities, WorkspaceSymbolParams,
+    CallHierarchyClientCapabilities, CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams,
+    CallHierarchyItem, CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams,
+    CallHierarchyPrepareParams, ClientCapabilities, DocumentSymbolClientCapabilities,
+    DocumentSymbolParams, DocumentSymbolResponse, DynamicRegistrationClientCapabilities,
+    GeneralClientCapabilities, GotoCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover,
+    HoverClientCapabilities, HoverParams, InitializeParams, Location, MarkupKind, Position,
+    ProgressParams, PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams,
+    ReferenceContext, ReferenceParams, SymbolInformation, TextDocumentClientCapabilities,
+    TextDocumentIdentifier, TextDocumentPositionParams, Uri, WindowClientCapabilities,
+    WorkspaceSymbolParams,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -48,6 +52,11 @@ enum Request {
         params: GotoDefinitionParams,
         response_tx: oneshot::Sender<Result<GotoDefinitionResponse>>,
     },
+    GotoImplementation {
+        id: i64,
+        params: GotoDefinitionParams,
+        response_tx: oneshot::Sender<Result<GotoDefinitionResponse>>,
+    },
     FindReferences {
         id: i64,
         params: ReferenceParams,
@@ -63,6 +72,26 @@ enum Request {
         params: WorkspaceSymbolParams,
         response_tx: oneshot::Sender<Result<Vec<SymbolInformation>>>,
     },
+    DocumentSymbol {
+        id: i64,
+        params: DocumentSymbolParams,
+        response_tx: oneshot::Sender<Result<DocumentSymbolResponse>>,
+    },
+    PrepareCallHierarchy {
+        id: i64,
+        params: CallHierarchyPrepareParams,
+        response_tx: oneshot::Sender<Result<Vec<CallHierarchyItem>>>,
+    },
+    IncomingCalls {
+        id: i64,
+        params: CallHierarchyIncomingCallsParams,
+        response_tx: oneshot::Sender<Result<Vec<CallHierarchyIncomingCall>>>,
+    },
+    OutgoingCalls {
+        id: i64,
+        params: CallHierarchyOutgoingCallsParams,
+        response_tx: oneshot::Sender<Result<Vec<CallHierarchyOutgoingCall>>>,
+    },
 }
 
 /// Pending response channels, keyed by request ID
@@ -70,9 +99,14 @@ enum PendingResponse {
     Initialize(oneshot::Sender<Result<()>>),
     Shutdown(oneshot::Sender<Result<()>>),
     GotoDefinition(oneshot::Sender<Result<GotoDefinitionResponse>>),
+    GotoImplementation(oneshot::Sender<Result<GotoDefinitionResponse>>),
     FindReferences(oneshot::Sender<Result<Vec<Location>>>),
     Hover(oneshot::Sender<Result<Option<Hover>>>),
     WorkspaceSymbol(oneshot::Sender<Result<Vec<SymbolInformation>>>),
+    DocumentSymbol(oneshot::Sender<Result<DocumentSymbolResponse>>),
+    PrepareCallHierarchy(oneshot::Sender<Result<Vec<CallHierarchyItem>>>),
+    IncomingCalls(oneshot::Sender<Result<Vec<CallHierarchyIncomingCall>>>),
+    OutgoingCalls(oneshot::Sender<Result<Vec<CallHierarchyOutgoingCall>>>),
 }
 
 impl PendingResponse {
@@ -88,6 +122,9 @@ impl PendingResponse {
             Self::GotoDefinition(tx) => {
                 let _ = tx.send(Err(err));
             }
+            Self::GotoImplementation(tx) => {
+                let _ = tx.send(Err(err));
+            }
             Self::FindReferences(tx) => {
                 let _ = tx.send(Err(err));
             }
@@ -95,6 +132,18 @@ impl PendingResponse {
                 let _ = tx.send(Err(err));
             }
             Self::WorkspaceSymbol(tx) => {
+                let _ = tx.send(Err(err));
+            }
+            Self::DocumentSymbol(tx) => {
+                let _ = tx.send(Err(err));
+            }
+            Self::PrepareCallHierarchy(tx) => {
+                let _ = tx.send(Err(err));
+            }
+            Self::IncomingCalls(tx) => {
+                let _ = tx.send(Err(err));
+            }
+            Self::OutgoingCalls(tx) => {
                 let _ = tx.send(Err(err));
             }
         }
@@ -112,6 +161,14 @@ impl PendingResponse {
             Self::GotoDefinition(tx) => {
                 let result =
                     parse_lsp_response(value, GotoDefinitionResponse::Array(vec![]), "definition");
+                let _ = tx.send(result);
+            }
+            Self::GotoImplementation(tx) => {
+                let result = parse_lsp_response(
+                    value,
+                    GotoDefinitionResponse::Array(vec![]),
+                    "implementation",
+                );
                 let _ = tx.send(result);
             }
             Self::FindReferences(tx) => {
@@ -136,6 +193,26 @@ impl PendingResponse {
             }
             Self::WorkspaceSymbol(tx) => {
                 let result = parse_lsp_response(value, vec![], "workspace symbol");
+                let _ = tx.send(result);
+            }
+            Self::DocumentSymbol(tx) => {
+                let result = parse_lsp_response(
+                    value,
+                    DocumentSymbolResponse::Flat(vec![]),
+                    "document symbol",
+                );
+                let _ = tx.send(result);
+            }
+            Self::PrepareCallHierarchy(tx) => {
+                let result = parse_lsp_response(value, vec![], "prepare call hierarchy");
+                let _ = tx.send(result);
+            }
+            Self::IncomingCalls(tx) => {
+                let result = parse_lsp_response(value, vec![], "incoming calls");
+                let _ = tx.send(result);
+            }
+            Self::OutgoingCalls(tx) => {
+                let result = parse_lsp_response(value, vec![], "outgoing calls");
                 let _ = tx.send(result);
             }
         }
@@ -291,11 +368,25 @@ impl LspClient {
             content_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]),
         };
 
+        // Declare support for document symbol capability
+        let document_symbol_capability = DocumentSymbolClientCapabilities {
+            hierarchical_document_symbol_support: Some(true),
+            ..Default::default()
+        };
+
+        // Declare support for call hierarchy capability
+        let call_hierarchy_capability = CallHierarchyClientCapabilities {
+            dynamic_registration: Some(false),
+        };
+
         let text_document_capabilities = TextDocumentClientCapabilities {
             publish_diagnostics: Some(pub_diagnostic_capabilities),
             definition: Some(definition_capability),
+            implementation: Some(definition_capability),
             references: Some(references_capability),
             hover: Some(hover_capability),
+            document_symbol: Some(document_symbol_capability),
+            call_hierarchy: Some(call_hierarchy_capability),
             ..Default::default()
         };
 
@@ -506,6 +597,177 @@ impl LspClient {
         response_rx.await.map_err(|_| LspError::response_closed())?
     }
 
+    /// Go to the implementation of an interface/trait method
+    ///
+    /// # Arguments
+    /// * `uri` - The URI of the document
+    /// * `line` - Line number (0-indexed)
+    /// * `character` - Character offset (0-indexed)
+    ///
+    /// # Returns
+    /// The implementation response, which may be a single location, multiple locations,
+    /// or location links depending on the server.
+    pub async fn goto_implementation(
+        &self,
+        uri: Uri,
+        line: u32,
+        character: u32,
+    ) -> Result<GotoDefinitionResponse> {
+        let params = GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position { line, character },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::GotoImplementation {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::handler_closed())?;
+
+        response_rx.await.map_err(|_| LspError::response_closed())?
+    }
+
+    /// Get all symbols in a document
+    ///
+    /// # Arguments
+    /// * `uri` - The URI of the document
+    ///
+    /// # Returns
+    /// Document symbol response which can be either flat or hierarchical symbols.
+    pub async fn document_symbol(&self, uri: Uri) -> Result<DocumentSymbolResponse> {
+        let params = DocumentSymbolParams {
+            text_document: TextDocumentIdentifier { uri },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::DocumentSymbol {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::handler_closed())?;
+
+        response_rx.await.map_err(|_| LspError::response_closed())?
+    }
+
+    /// Prepare call hierarchy at a position
+    ///
+    /// # Arguments
+    /// * `uri` - The URI of the document
+    /// * `line` - Line number (0-indexed)
+    /// * `character` - Character offset (0-indexed)
+    ///
+    /// # Returns
+    /// A list of call hierarchy items at the position (usually 0 or 1 items).
+    pub async fn prepare_call_hierarchy(
+        &self,
+        uri: Uri,
+        line: u32,
+        character: u32,
+    ) -> Result<Vec<CallHierarchyItem>> {
+        let params = CallHierarchyPrepareParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position { line, character },
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::PrepareCallHierarchy {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::handler_closed())?;
+
+        response_rx.await.map_err(|_| LspError::response_closed())?
+    }
+
+    /// Get incoming calls for a call hierarchy item
+    ///
+    /// # Arguments
+    /// * `item` - The call hierarchy item to get incoming calls for
+    ///
+    /// # Returns
+    /// A list of incoming calls (functions/methods that call this item).
+    pub async fn incoming_calls(
+        &self,
+        item: CallHierarchyItem,
+    ) -> Result<Vec<CallHierarchyIncomingCall>> {
+        let params = CallHierarchyIncomingCallsParams {
+            item,
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::IncomingCalls {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::handler_closed())?;
+
+        response_rx.await.map_err(|_| LspError::response_closed())?
+    }
+
+    /// Get outgoing calls for a call hierarchy item
+    ///
+    /// # Arguments
+    /// * `item` - The call hierarchy item to get outgoing calls for
+    ///
+    /// # Returns
+    /// A list of outgoing calls (functions/methods that this item calls).
+    pub async fn outgoing_calls(
+        &self,
+        item: CallHierarchyItem,
+    ) -> Result<Vec<CallHierarchyOutgoingCall>> {
+        let params = CallHierarchyOutgoingCallsParams {
+            item,
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let id = self.next_request_id();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.request_tx
+            .send(Request::OutgoingCalls {
+                id,
+                params,
+                response_tx,
+            })
+            .await
+            .map_err(|_| LspError::handler_closed())?;
+
+        response_rx.await.map_err(|_| LspError::response_closed())?
+    }
+
     /// Generate the next unique request ID
     fn next_request_id(&self) -> i64 {
         self.request_id.fetch_add(1, Ordering::SeqCst)
@@ -553,6 +815,10 @@ async fn run_handler(
                         ClientRequest::GotoDefinition(id, params),
                         PendingResponse::GotoDefinition(response_tx),
                     ),
+                    Request::GotoImplementation { id, params, response_tx } => (
+                        ClientRequest::GotoImplementation(id, params),
+                        PendingResponse::GotoImplementation(response_tx),
+                    ),
                     Request::FindReferences { id, params, response_tx } => (
                         ClientRequest::FindReferences(id, params),
                         PendingResponse::FindReferences(response_tx),
@@ -564,6 +830,22 @@ async fn run_handler(
                     Request::WorkspaceSymbol { id, params, response_tx } => (
                         ClientRequest::WorkspaceSymbol(id, params),
                         PendingResponse::WorkspaceSymbol(response_tx),
+                    ),
+                    Request::DocumentSymbol { id, params, response_tx } => (
+                        ClientRequest::DocumentSymbol(id, params),
+                        PendingResponse::DocumentSymbol(response_tx),
+                    ),
+                    Request::PrepareCallHierarchy { id, params, response_tx } => (
+                        ClientRequest::PrepareCallHierarchy(id, params),
+                        PendingResponse::PrepareCallHierarchy(response_tx),
+                    ),
+                    Request::IncomingCalls { id, params, response_tx } => (
+                        ClientRequest::IncomingCalls(id, params),
+                        PendingResponse::IncomingCalls(response_tx),
+                    ),
+                    Request::OutgoingCalls { id, params, response_tx } => (
+                        ClientRequest::OutgoingCalls(id, params),
+                        PendingResponse::OutgoingCalls(response_tx),
                     ),
                 };
 
