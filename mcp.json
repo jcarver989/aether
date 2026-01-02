@@ -7,6 +7,10 @@
     "plugins": {
       "type": "in-memory",
       "args": ["--dir", "$HOME/.aether"]
+    },
+    "tasks": {
+      "type": "in-memory",
+      "args": ["--dir", "."]
     }
   }
 }

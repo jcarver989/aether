@@ -5,7 +5,7 @@ use aether::{
     mcp::{McpSpawnResult, mcp},
 };
 use mcp_lexicon::coding::{DefaultCodingTools, LspCodingTools};
-use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt};
+use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt, TasksMcp};
 use std::env::current_dir;
 use std::error::Error;
 use std::path::PathBuf;
@@ -39,7 +39,7 @@ impl AppState {
 
         let agent_builder = agent(llm).system(&system_prompt);
         let root_path = current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let lsp_tools = LspCodingTools::new(DefaultCodingTools::new(), root_path);
+        let lsp_tools = LspCodingTools::new(DefaultCodingTools::new(), root_path.clone());
 
         // Get ~/.aether path for plugins
         let aether_dir = dirs::home_dir()
@@ -60,6 +60,10 @@ impl AppState {
                 McpServerConfig::InMemory {
                     name: "plugins".to_string(),
                     server: PluginsMcp::new(aether_dir).into_dyn(),
+                },
+                McpServerConfig::InMemory {
+                    name: "tasks".to_string(),
+                    server: TasksMcp::new(root_path.clone()).into_dyn(),
                 },
             ])
             .spawn()

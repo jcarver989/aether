@@ -1,10 +1,9 @@
+use super::task_index::TaskIndex;
+use super::types::{Task, TaskId, TaskStatus, TaskUpdate};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use thiserror::Error;
-
-use super::index::TaskIndex;
-use super::types::{Task, TaskId, TaskResult, TaskStatus, TaskUpdate};
 
 /// Errors that can occur during task store operations
 #[derive(Debug, Error)]
@@ -26,6 +25,9 @@ pub enum TaskStoreError {
 
     #[error("Cannot create subtask of non-root task: {id}")]
     InvalidParent { id: String },
+
+    #[error("Validation error: {message}")]
+    ValidationError { message: String },
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -60,18 +62,15 @@ impl TaskStore {
         }
 
         let active_dir = self.active_dir();
-
         if !active_dir.exists() {
             fs::create_dir_all(&active_dir)?;
         }
 
         self.index.clear();
 
-        // Scan active directory for task files
         for entry in fs::read_dir(&active_dir)? {
             let entry = entry?;
             let path = entry.path();
-
             if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
                 self.load_tree_file(&path)?;
             }
@@ -91,9 +90,7 @@ impl TaskStore {
         let id = TaskId::new_root(&hash);
 
         if self.index.contains(&id) {
-            return Err(TaskStoreError::AlreadyExists {
-                id: id.to_string(),
-            });
+            return Err(TaskStoreError::AlreadyExists { id: id.to_string() });
         }
 
         let mut task = Task::new_root(id, title.to_string());
@@ -107,12 +104,7 @@ impl TaskStore {
     }
 
     /// Add a subtask to an existing root task
-    pub fn add_subtask(
-        &mut self,
-        parent_id: &TaskId,
-        title: &str,
-    ) -> Result<Task, TaskStoreError> {
-        // Validate parent exists and is a root task
+    pub fn add_subtask(&mut self, parent_id: &TaskId, title: &str) -> Result<Task, TaskStoreError> {
         let root_id = parent_id.root();
 
         if !self.index.contains(&root_id) {
@@ -121,22 +113,17 @@ impl TaskStore {
             });
         }
 
-        // Generate subtask ID
         let subtask_index = self.index.next_subtask_index(&root_id);
         let subtask_id = TaskId::new_subtask(parent_id, subtask_index);
 
         let task = Task::new_subtask(subtask_id, parent_id.clone(), title.to_string());
 
-        // Get the tree file path
-        let file_path = self
-            .index
-            .get_tree_path(&root_id)
-            .cloned()
-            .ok_or_else(|| TaskStoreError::TreeNotFound {
+        let file_path = self.index.get_tree_path(&root_id).cloned().ok_or_else(|| {
+            TaskStoreError::TreeNotFound {
                 id: root_id.to_string(),
-            })?;
+            }
+        })?;
 
-        // Append to the tree file
         self.write_task_to_file(&task, &file_path)?;
         self.index.insert(task.clone(), file_path);
 
@@ -145,7 +132,6 @@ impl TaskStore {
 
     /// Update a task's fields
     pub fn update(&mut self, id: &TaskId, updates: TaskUpdate) -> Result<Task, TaskStoreError> {
-        // Validate dependencies if provided
         if let Some(deps) = &updates.deps {
             for dep_id in deps {
                 if !self.index.contains(dep_id) {
@@ -156,8 +142,6 @@ impl TaskStore {
             }
         }
 
-        // Clone the task first, then apply updates
-        // (we need the old task in the index for proper re-indexing)
         let mut task = self
             .index
             .get(id)
@@ -166,38 +150,8 @@ impl TaskStore {
 
         updates.apply_to(&mut task);
 
-        // Update the index first (it needs to see the old task to clean up indices)
         self.index.update(task.clone());
 
-        // Rewrite the tree file
-        self.rewrite_tree_file(&task.id.root())?;
-
-        Ok(task)
-    }
-
-    /// Mark a task as completed with optional structured result
-    pub fn complete(
-        &mut self,
-        id: &TaskId,
-        result: Option<TaskResult>,
-        result_text: Option<&str>,
-    ) -> Result<Task, TaskStoreError> {
-        // Clone the task first (we need the old task in the index for proper re-indexing)
-        let mut task = self
-            .index
-            .get(id)
-            .cloned()
-            .ok_or_else(|| TaskStoreError::NotFound { id: id.to_string() })?;
-
-        task.status = TaskStatus::Completed;
-        task.result = result;
-        task.result_text = result_text.map(String::from);
-        task.touch();
-
-        // Update the index first (it needs to see the old task to clean up indices)
-        self.index.update(task.clone());
-
-        // Rewrite the tree file
         self.rewrite_tree_file(&task.id.root())?;
 
         Ok(task)
@@ -235,13 +189,11 @@ impl TaskStore {
     pub fn archive_tree(&mut self, root_id: &TaskId) -> Result<(), TaskStoreError> {
         let root_id = root_id.root();
 
-        let src_path = self
-            .index
-            .get_tree_path(&root_id)
-            .cloned()
-            .ok_or_else(|| TaskStoreError::TreeNotFound {
+        let src_path = self.index.get_tree_path(&root_id).cloned().ok_or_else(|| {
+            TaskStoreError::TreeNotFound {
                 id: root_id.to_string(),
-            })?;
+            }
+        })?;
 
         let completed_dir = self.completed_dir();
         if !completed_dir.exists() {
@@ -271,8 +223,6 @@ impl TaskStore {
         self.index.is_empty()
     }
 
-    // Private helper methods
-
     fn active_dir(&self) -> PathBuf {
         self.root.join("active")
     }
@@ -289,8 +239,6 @@ impl TaskStore {
             .unwrap()
             .as_nanos();
 
-        // Mix in process ID and existing task count to reduce collision risk
-        // on rapid task creation within the same process
         let pid = std::process::id() as u128;
         let count = self.index.len() as u128;
         let mixed = now.wrapping_add(pid << 16).wrapping_add(count);
@@ -315,17 +263,13 @@ impl TaskStore {
     }
 
     fn write_task_to_file(&self, task: &Task, path: &PathBuf) -> Result<(), TaskStoreError> {
-        // Ensure parent directory exists
         if let Some(parent) = path.parent()
             && !parent.exists()
         {
             fs::create_dir_all(parent)?;
         }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
 
         let json = serde_json::to_string(task)?;
         writeln!(file, "{}", json)?;
@@ -334,19 +278,15 @@ impl TaskStore {
     }
 
     fn rewrite_tree_file(&self, root_id: &TaskId) -> Result<(), TaskStoreError> {
-        let path = self
-            .index
-            .get_tree_path(root_id)
-            .cloned()
-            .ok_or_else(|| TaskStoreError::TreeNotFound {
+        let path = self.index.get_tree_path(root_id).cloned().ok_or_else(|| {
+            TaskStoreError::TreeNotFound {
                 id: root_id.to_string(),
-            })?;
+            }
+        })?;
 
-        // Get all tasks in the tree, sorted by ID
         let mut tasks: Vec<_> = self.index.get_tree(root_id);
         tasks.sort_by_key(|t| t.id.as_str());
 
-        // Write all tasks to file
         let mut file = File::create(&path)?;
         for task in tasks {
             let json = serde_json::to_string(task)?;
@@ -360,6 +300,7 @@ impl TaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tasks::TaskResult;
     use tempfile::TempDir;
 
     fn setup() -> (TempDir, TaskStore) {
@@ -383,7 +324,6 @@ mod tests {
         assert_eq!(task.description, Some("Detailed description".to_string()));
         assert_eq!(task.status, TaskStatus::Pending);
 
-        // Verify file exists
         let file_path = store.active_dir().join(task.id.filename());
         assert!(file_path.exists());
     }
@@ -399,7 +339,6 @@ mod tests {
         assert_eq!(subtask.parent, Some(root.id.clone()));
         assert_eq!(subtask.title, "Subtask 1");
 
-        // Verify tree contains both tasks
         let tree = store.get_tree(&root.id).unwrap();
         assert_eq!(tree.len(), 2);
     }
@@ -428,17 +367,27 @@ mod tests {
     }
 
     #[test]
-    fn test_complete_task_with_text() {
+    fn test_complete_task_with_result() {
         let (_temp, mut store) = setup();
 
         let task = store.create_tree("Task to complete", None).unwrap();
 
         let completed = store
-            .complete(&task.id, None, Some("Found the answer!"))
+            .update(
+                &task.id,
+                TaskUpdate {
+                    status: Some(TaskStatus::Completed),
+                    result: Some(TaskResult::new("Found the answer!")),
+                    ..Default::default()
+                },
+            )
             .unwrap();
 
         assert_eq!(completed.status, TaskStatus::Completed);
-        assert_eq!(completed.result_text, Some("Found the answer!".to_string()));
+        assert_eq!(
+            completed.result.as_ref().map(|r| r.summary.as_str()),
+            Some("Found the answer!")
+        );
     }
 
     #[test]
@@ -449,7 +398,6 @@ mod tests {
         let subtask1 = store.add_subtask(&root.id, "Subtask 1").unwrap();
         let subtask2 = store.add_subtask(&root.id, "Subtask 2").unwrap();
 
-        // Add dependency: subtask2 depends on subtask1
         store
             .update(
                 &subtask2.id,
@@ -460,16 +408,22 @@ mod tests {
             )
             .unwrap();
 
-        // Initially: root and subtask1 ready, subtask2 blocked
         let ready = store.get_ready();
         assert_eq!(ready.len(), 2);
 
-        // Complete subtask1
-        store.complete(&subtask1.id, None, None).unwrap();
+        store
+            .update(
+                &subtask1.id,
+                TaskUpdate {
+                    status: Some(TaskStatus::Completed),
+                    result: Some(TaskResult::new("done")),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
-        // Now subtask2 should also be ready
         let ready = store.get_ready();
-        assert_eq!(ready.len(), 2); // root and subtask2
+        assert_eq!(ready.len(), 2);
 
         let ready_ids: Vec<_> = ready.iter().map(|t| t.id.as_str()).collect();
         assert!(ready_ids.contains(&subtask2.id.as_str()));
@@ -487,14 +441,11 @@ mod tests {
 
         store.archive_tree(&root.id).unwrap();
 
-        // Active file should be gone
         assert!(!active_file.exists());
 
-        // Completed file should exist
         let completed_file = store.completed_dir().join(root.id.filename());
         assert!(completed_file.exists());
 
-        // Index should be empty
         assert!(store.is_empty());
     }
 
@@ -503,7 +454,6 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path().join(".aether-tasks");
 
-        // Create store and add tasks
         let task_id = {
             let mut store = TaskStore::new(root.clone());
             store.init().unwrap();
@@ -514,7 +464,6 @@ mod tests {
             task.id
         };
 
-        // Create new store and verify tasks are loaded
         let mut store = TaskStore::new(root);
         store.init().unwrap();
 
@@ -563,10 +512,8 @@ mod tests {
         let root = store.create_tree("Root", None).unwrap();
         let subtask = store.add_subtask(&root.id, "Subtask").unwrap();
 
-        // Root is pending, subtask is pending
         assert_eq!(store.list_by_status(TaskStatus::Pending).len(), 2);
 
-        // Start working on subtask
         store
             .update(
                 &subtask.id,
@@ -625,15 +572,12 @@ mod tests {
         let mut store = TaskStore::new(root);
         store.init().unwrap();
 
-        // Create a task
         let task = store.create_tree("Test task", None).unwrap();
         assert_eq!(store.len(), 1);
 
-        // Calling init() again should NOT clear the in-memory index
         store.init().unwrap();
         assert_eq!(store.len(), 1);
 
-        // Task should still be accessible
         let retrieved = store.get(&task.id);
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().title, "Test task");

@@ -74,12 +74,10 @@ pub enum AcpEvent {
 pub fn transform_raw_event(raw_event: RawAgentEvent) -> Vec<AcpEvent> {
     match raw_event {
         RawAgentEvent::SessionNotification(notif) => transform_session_notification(notif),
-        RawAgentEvent::ExtNotification(notif) => {
-            match AcpEvent::try_from(notif) {
-                Ok(event) => vec![event],
-                Err(_) => vec![],
-            }
-        }
+        RawAgentEvent::ExtNotification(notif) => match AcpEvent::try_from(notif) {
+            Ok(event) => vec![event],
+            Err(_) => vec![],
+        },
         RawAgentEvent::PermissionRequest {
             request,
             response_tx,

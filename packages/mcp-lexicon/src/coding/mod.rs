@@ -60,11 +60,6 @@ use tools::lsp::search_symbols::{
     LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput, execute_lsp_workspace_symbol,
 };
 use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
-use tools::tasks::{
-    TaskCompleteInput, TaskCompleteOutput, TaskCreateInput, TaskCreateOutput, TaskListInput,
-    TaskListOutput, TaskStore, TaskUpdateInput, TaskUpdateOutput, execute_task_complete,
-    execute_task_create, execute_task_list, execute_task_update,
-};
 use tools::web_fetch::{WebFetchInput, WebFetchOutput, WebFetcher};
 use tools::write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
@@ -127,8 +122,6 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     background_processes: Mutex<HashMap<String, BackgroundProcessHandle>>,
     /// Track files that have been read to enforce read-before-edit safety
     files_read: RwLock<HashSet<String>>,
-    /// Task store for deep research agent workflows
-    task_store: Mutex<TaskStore>,
     tools: T,
     web_fetcher: WebFetcher,
     /// Workspace root directory - communicated to LLMs via server instructions
@@ -161,7 +154,6 @@ impl CodingMcp<DefaultCodingTools> {
             tool_router: Self::tool_router(),
             background_processes: Mutex::new(HashMap::new()),
             files_read: RwLock::new(HashSet::new()),
-            task_store: Mutex::new(TaskStore::new(PathBuf::from(".aether-tasks"))),
             tools: DefaultCodingTools::new(),
             web_fetcher: WebFetcher::new(),
             root_dir: None,
@@ -177,7 +169,6 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             tool_router: Self::tool_router(),
             background_processes: Mutex::new(HashMap::new()),
             files_read: RwLock::new(HashSet::new()),
-            task_store: Mutex::new(TaskStore::new(PathBuf::from(".aether-tasks"))),
             tools,
             web_fetcher: WebFetcher::new(),
             root_dir: None,
@@ -188,13 +179,10 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     ///
     /// This path is communicated to LLMs via the server instructions,
     /// helping them use correct absolute paths when calling file tools.
-    /// Also configures the task store to use this directory.
     ///
     /// # Note
     /// This is a builder method - call it before using the server.
-    /// Calling after tasks have been created will reset the task store.
     pub fn with_root_dir(mut self, root_dir: PathBuf) -> Self {
-        self.task_store = Mutex::new(TaskStore::new(root_dir.join(".aether-tasks")));
         self.root_dir = Some(root_dir);
         self
     }
@@ -436,54 +424,6 @@ When using tools from this server that take file path(s) as input, always use ab
     ) -> Result<Json<WebFetchOutput>, String> {
         let Parameters(args) = request;
         self.web_fetcher.fetch(args).await.into_mcp()
-    }
-
-    #[doc = include_str!("tools/tasks/description_create.md")]
-    #[tool]
-    pub async fn task_create(
-        &self,
-        request: Parameters<TaskCreateInput>,
-    ) -> Result<Json<TaskCreateOutput>, String> {
-        let Parameters(input) = request;
-        let mut store = self.task_store.lock().await;
-        store.init().map_err(|e| e.to_string())?;
-        execute_task_create(input, &mut store).map(Json).map_err(|e| e.to_string())
-    }
-
-    #[doc = include_str!("tools/tasks/description_update.md")]
-    #[tool]
-    pub async fn task_update(
-        &self,
-        request: Parameters<TaskUpdateInput>,
-    ) -> Result<Json<TaskUpdateOutput>, String> {
-        let Parameters(input) = request;
-        let mut store = self.task_store.lock().await;
-        store.init().map_err(|e| e.to_string())?;
-        execute_task_update(input, &mut store).map(Json).map_err(|e| e.to_string())
-    }
-
-    #[doc = include_str!("tools/tasks/description_list.md")]
-    #[tool]
-    pub async fn task_list(
-        &self,
-        request: Parameters<TaskListInput>,
-    ) -> Result<Json<TaskListOutput>, String> {
-        let Parameters(input) = request;
-        let mut store = self.task_store.lock().await;
-        store.init().map_err(|e| e.to_string())?;
-        Ok(Json(execute_task_list(input, &store)))
-    }
-
-    #[doc = include_str!("tools/tasks/description_complete.md")]
-    #[tool]
-    pub async fn task_complete(
-        &self,
-        request: Parameters<TaskCompleteInput>,
-    ) -> Result<Json<TaskCompleteOutput>, String> {
-        let Parameters(input) = request;
-        let mut store = self.task_store.lock().await;
-        store.init().map_err(|e| e.to_string())?;
-        execute_task_complete(input, &mut store).map(Json).map_err(|e| e.to_string())
     }
 }
 

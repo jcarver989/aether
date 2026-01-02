@@ -10,6 +10,5 @@ pub mod grep;
 pub mod list_files;
 pub mod lsp;
 pub mod read_file;
-pub mod tasks;
 pub mod web_fetch;
 pub mod write_file;

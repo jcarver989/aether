@@ -1,7 +1,6 @@
+use super::types::{Task, TaskId, TaskStatus};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-
-use super::types::{Task, TaskId, TaskStatus};
 
 /// In-memory index for fast task queries.
 /// Rebuilt on startup by scanning the active directory.
@@ -33,10 +32,8 @@ impl TaskIndex {
         let id = task.id.clone();
         let root_id = id.root();
 
-        // Track the tree file path
         self.trees.entry(root_id.clone()).or_insert(file_path);
 
-        // Update subtask counter if this is a subtask
         if !id.is_root()
             && let Some(suffix) = id.as_str().rsplit('.').next()
             && let Ok(idx) = suffix.parse::<usize>()
@@ -45,7 +42,6 @@ impl TaskIndex {
             *counter = (*counter).max(idx);
         }
 
-        // Index by assignee
         if let Some(assignee) = &task.assignee {
             self.by_assignee
                 .entry(assignee.clone())
@@ -53,13 +49,11 @@ impl TaskIndex {
                 .insert(id.clone());
         }
 
-        // Index by status
         self.by_status
             .entry(task.status)
             .or_default()
             .insert(id.clone());
 
-        // Store the task
         self.tasks.insert(id, task);
     }
 
@@ -67,9 +61,7 @@ impl TaskIndex {
     pub fn update(&mut self, task: Task) {
         let id = task.id.clone();
 
-        // Remove old index entries if task exists
         if let Some(old_task) = self.tasks.get(&id) {
-            // Remove old assignee index
             if let Some(old_assignee) = &old_task.assignee
                 && let Some(ids) = self.by_assignee.get_mut(old_assignee)
             {
@@ -79,7 +71,6 @@ impl TaskIndex {
                 }
             }
 
-            // Remove old status index
             if let Some(ids) = self.by_status.get_mut(&old_task.status) {
                 ids.remove(&id);
                 if ids.is_empty() {
@@ -88,7 +79,6 @@ impl TaskIndex {
             }
         }
 
-        // Add new index entries
         if let Some(assignee) = &task.assignee {
             self.by_assignee
                 .entry(assignee.clone())
@@ -101,14 +91,12 @@ impl TaskIndex {
             .or_default()
             .insert(id.clone());
 
-        // Update the task
         self.tasks.insert(id, task);
     }
 
     /// Remove a task from the index
     pub fn remove(&mut self, id: &TaskId) -> Option<Task> {
         if let Some(task) = self.tasks.remove(id) {
-            // Remove from assignee index
             if let Some(assignee) = &task.assignee
                 && let Some(ids) = self.by_assignee.get_mut(assignee)
             {
@@ -118,7 +106,6 @@ impl TaskIndex {
                 }
             }
 
-            // Remove from status index
             if let Some(ids) = self.by_status.get_mut(&task.status) {
                 ids.remove(id);
                 if ids.is_empty() {
@@ -136,7 +123,6 @@ impl TaskIndex {
     pub fn remove_tree(&mut self, root_id: &TaskId) -> Vec<Task> {
         let mut removed = Vec::new();
 
-        // Find all tasks in this tree
         let ids_to_remove: Vec<TaskId> = self
             .tasks
             .keys()
@@ -150,7 +136,6 @@ impl TaskIndex {
             }
         }
 
-        // Remove tree mapping and counter
         self.trees.remove(root_id);
         self.subtask_counters.remove(root_id);
 
@@ -268,7 +253,6 @@ mod tests {
             parent: None,
             deps: Vec::new(),
             result: None,
-            result_text: None,
             created_at: now,
             updated_at: now,
         }
@@ -343,16 +327,13 @@ mod tests {
         let mut task = make_task("at-abc123", TaskStatus::Pending, Some("worker-1"));
         index.insert(task.clone(), path);
 
-        // Update status and assignee
         task.status = TaskStatus::InProgress;
         task.assignee = Some("worker-2".to_string());
         index.update(task);
 
-        // Old indices should be empty
         assert!(index.get_by_assignee("worker-1").is_empty());
         assert!(index.get_by_status(TaskStatus::Pending).is_empty());
 
-        // New indices should have the task
         assert_eq!(index.get_by_assignee("worker-2").len(), 1);
         assert_eq!(index.get_by_status(TaskStatus::InProgress).len(), 1);
     }
@@ -401,18 +382,15 @@ mod tests {
         let mut index = TaskIndex::new();
         let path = PathBuf::from(".aether-tasks/active/at-abc123.jsonl");
 
-        // Task with no deps - should be ready
         index.insert(
             make_task("at-abc123", TaskStatus::Pending, None),
             path.clone(),
         );
 
-        // Task with completed dep - should be ready
         let mut task2 = make_task("at-abc123.2", TaskStatus::Pending, None);
         task2.deps = vec![TaskId::from("at-abc123.1")];
         index.insert(task2, path.clone());
 
-        // Completed task
         index.insert(make_task("at-abc123.1", TaskStatus::Completed, None), path);
 
         let ready = index.get_ready();
@@ -442,7 +420,6 @@ mod tests {
         let path = PathBuf::from(".aether-tasks/active/at-abc123.jsonl");
         let root_id = TaskId::from("at-abc123");
 
-        // Insert tasks including subtask .5
         index.insert(
             make_task("at-abc123", TaskStatus::Pending, None),
             path.clone(),
@@ -452,7 +429,6 @@ mod tests {
             path.clone(),
         );
 
-        // Next should be 6
         assert_eq!(index.next_subtask_index(&root_id), 6);
     }
 }
