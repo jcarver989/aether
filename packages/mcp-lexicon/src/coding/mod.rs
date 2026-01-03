@@ -67,6 +67,8 @@ use tools::lsp::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp
 use tools::lsp::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 use tools::web_fetch::{WebFetchInput, WebFetchOutput, WebFetcher};
+use tools::web_search::{WebSearchInput, WebSearchOutput, WebSearcher};
+use tools::web_search::search_client::BraveSearchClient;
 use tools::write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
 /// Extension trait for converting tool results to MCP format
@@ -130,6 +132,7 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     files_read: RwLock<HashSet<String>>,
     tools: T,
     web_fetcher: WebFetcher,
+    web_searcher: Option<WebSearcher<BraveSearchClient>>,
     /// Workspace root directory - communicated to LLMs via server instructions
     root_dir: Option<PathBuf>,
 }
@@ -162,6 +165,7 @@ impl CodingMcp<DefaultCodingTools> {
             files_read: RwLock::new(HashSet::new()),
             tools: DefaultCodingTools::new(),
             web_fetcher: WebFetcher::new(),
+            web_searcher: WebSearcher::try_new().ok(),
             root_dir: None,
         }
     }
@@ -177,6 +181,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             files_read: RwLock::new(HashSet::new()),
             tools,
             web_fetcher: WebFetcher::new(),
+            web_searcher: WebSearcher::try_new().ok(),
             root_dir: None,
         }
     }
@@ -464,6 +469,29 @@ When using tools from this server that take file path(s) as input, always use ab
     ) -> Result<Json<WebFetchOutput>, String> {
         let Parameters(args) = request;
         self.web_fetcher.fetch(args).await.into_mcp()
+    }
+
+    #[doc = include_str!("tools/web_search/description.md")]
+    #[tool]
+    pub async fn web_search(
+        &self,
+        request: Parameters<WebSearchInput>,
+    ) -> Result<Json<WebSearchOutput>, String> {
+        let Parameters(args) = request;
+
+        let searcher = self
+            .web_searcher
+            .as_ref()
+            .ok_or_else(|| {
+                "Web search not available: BRAVE_SEARCH_API_KEY environment variable not set. \
+                 Get a free API key from https://api.search.brave.com/app/keys".to_string()
+            })?;
+
+        searcher
+            .search(args)
+            .await
+            .map_err(|e| e.to_string())
+            .map(Json)
     }
 }
 
