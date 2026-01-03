@@ -136,8 +136,9 @@ impl WebSearcher<BraveSearchClient> {
 
 impl Default for WebSearcher<BraveSearchClient> {
     fn default() -> Self {
-        Self::with_api_key(std::env::var("BRAVE_SEARCH_API_KEY")
-            .expect("BRAVE_SEARCH_API_KEY must be set"))
+        Self::with_api_key(
+            std::env::var("BRAVE_SEARCH_API_KEY").expect("BRAVE_SEARCH_API_KEY must be set"),
+        )
     }
 }
 
@@ -251,7 +252,10 @@ mod tests {
             make_result("https://allowed.com/page"),
         ];
 
-        let filtered = filter_allowed_domains(results, &["example.com".to_string(), "test.org".to_string()]);
+        let filtered = filter_allowed_domains(
+            results,
+            &["example.com".to_string(), "test.org".to_string()],
+        );
         let filtered = filter_blocked_domains(filtered, &["test.org".to_string()]);
 
         assert_eq!(filtered.len(), 1);
@@ -273,7 +277,10 @@ mod tests {
             .await;
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), WebSearchError::InvalidQuery(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            WebSearchError::InvalidQuery(_)
+        ));
     }
 
     #[tokio::test]

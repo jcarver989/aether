@@ -43,16 +43,20 @@ impl BraveSearchClient {
     ///
     /// The API key is read from BRAVE_SEARCH_API_KEY environment variable
     pub fn new() -> Result<Self, WebSearchError> {
-        let api_key = std::env::var("BRAVE_SEARCH_API_KEY")
-            .map_err(|_| WebSearchError::ConfigError(
+        let api_key = std::env::var("BRAVE_SEARCH_API_KEY").map_err(|_| {
+            WebSearchError::ConfigError(
                 "BRAVE_SEARCH_API_KEY environment variable not set. \
-                 Get a free API key from https://api.search.brave.com/app/keys".to_string()
-            ))?;
+                 Get a free API key from https://api.search.brave.com/app/keys"
+                    .to_string(),
+            )
+        })?;
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(DEFAULT_TIMEOUT_MS))
             .build()
-            .map_err(|e| WebSearchError::ConfigError(format!("Failed to build HTTP client: {e}")))?;
+            .map_err(|e| {
+                WebSearchError::ConfigError(format!("Failed to build HTTP client: {e}"))
+            })?;
 
         Ok(Self { client, api_key })
     }
@@ -71,7 +75,9 @@ impl BraveSearchClient {
 impl SearchClient for BraveSearchClient {
     async fn search(&self, params: SearchParams) -> Result<Vec<RawSearchResult>, WebSearchError> {
         if params.query.trim().is_empty() {
-            return Err(WebSearchError::InvalidQuery("Search query cannot be empty".to_string()));
+            return Err(WebSearchError::InvalidQuery(
+                "Search query cannot be empty".to_string(),
+            ));
         }
 
         let count = params.count.min(20); // Max 20 results per request
@@ -81,10 +87,7 @@ impl SearchClient for BraveSearchClient {
             .get(BRAVE_API_ENDPOINT)
             .header("X-Subscription-Token", &self.api_key)
             .header("Accept", "application/json")
-            .query(&[
-                ("q", &params.query),
-                ("count", &count.to_string()),
-            ])
+            .query(&[("q", &params.query), ("count", &count.to_string())])
             .send()
             .await
             .map_err(|e| {
@@ -115,10 +118,9 @@ impl SearchClient for BraveSearchClient {
             )));
         }
 
-        let response_body: BraveWebResponse = response
-            .json()
-            .await
-            .map_err(|e| WebSearchError::ParseError(format!("Failed to parse JSON response: {e}")))?;
+        let response_body: BraveWebResponse = response.json().await.map_err(|e| {
+            WebSearchError::ParseError(format!("Failed to parse JSON response: {e}"))
+        })?;
 
         let results = response_body
             .web
@@ -160,7 +162,8 @@ struct BraveResult {
 #[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct FakeSearchClient {
-    responses: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<RawSearchResult>>>>,
+    responses:
+        std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<RawSearchResult>>>>,
     search_history: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     default_response: Option<Vec<RawSearchResult>>,
 }
@@ -200,7 +203,10 @@ impl FakeSearchClient {
 #[cfg(test)]
 impl SearchClient for FakeSearchClient {
     async fn search(&self, params: SearchParams) -> Result<Vec<RawSearchResult>, WebSearchError> {
-        self.search_history.lock().unwrap().push(params.query.clone());
+        self.search_history
+            .lock()
+            .unwrap()
+            .push(params.query.clone());
 
         let responses = self.responses.lock().unwrap();
         if let Some(results) = responses.get(&params.query) {
@@ -281,13 +287,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_fake_client_with_default_response() {
-        let fake = FakeSearchClient::new().with_default(vec![
-            RawSearchResult {
-                title: "Default Result".to_string(),
-                url: "https://example.com".to_string(),
-                description: "Default description".to_string(),
-            },
-        ]);
+        let fake = FakeSearchClient::new().with_default(vec![RawSearchResult {
+            title: "Default Result".to_string(),
+            url: "https://example.com".to_string(),
+            description: "Default description".to_string(),
+        }]);
 
         let results = fake
             .search(SearchParams {
