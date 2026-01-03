@@ -19,7 +19,6 @@ use tokio::sync::{Mutex, RwLock};
 // Submodules - import types from their source modules directly
 pub mod default_tools;
 pub mod error;
-pub mod file_types;
 pub mod lsp;
 pub mod tools;
 pub mod tools_trait;

@@ -7,7 +7,6 @@
 //! # Architecture
 //!
 //! The module is organized into:
-//! - [`transport`] - JSON-RPC over stdio transport layer
 //! - [`diagnostics`] - Utilities for working with LSP diagnostics
 //! - [`error`] - Error types for LSP operations
 //! - [`registry`] - Multi-LSP registry for managing multiple language servers
@@ -42,16 +41,17 @@ pub mod common;
 pub mod diagnostics;
 pub mod error;
 pub mod registry;
-pub mod transport;
 
 // Re-export from aether_lspd for convenience
-pub use aether_lspd::{LspClient, LspConfig, default_lsp_configs, get_config_for_language};
+pub use aether_lspd::{
+    LanguageId, LspClient, LspConfig, get_config_for_language,
+    symbol_kind_to_string,
+};
 
-pub use common::{LocationResult, parse_line, path_to_uri, symbol_kind_to_string, uri_to_path};
+pub use common::{LocationResult, parse_line, path_to_uri, uri_to_path};
 pub use diagnostics::{
     DiagnosticCounts, FormattedDiagnostic, Severity, count_by_severity, filter_by_severity,
     format_diagnostics,
 };
 pub use error::{LspError, Result};
 pub use registry::LspRegistry;
-pub use transport::{LanguageId, LanguageIdExt};

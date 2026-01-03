@@ -3,7 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::coding::lsp::common::{LocationResult, symbol_kind_to_string};
+use aether_lspd::symbol_kind_to_string;
+use crate::coding::lsp::common::LocationResult;
 use crate::coding::tools_trait::CodingTools;
 
 /// Input for the lsp_workspace_symbol tool
@@ -52,7 +53,7 @@ pub async fn execute_lsp_workspace_symbol<T: CodingTools>(
         .iter()
         .map(|s| SymbolResult {
             name: s.name.clone(),
-            kind: symbol_kind_to_string(s.kind),
+            kind: symbol_kind_to_string(s.kind).to_string(),
             container_name: s.container_name.clone(),
             location: LocationResult::from_location(&s.location),
         })

@@ -1,6 +1,5 @@
 use crate::protocol::LanguageId;
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
 /// Configuration for an LSP server
 #[derive(Debug, Clone)]
@@ -36,12 +35,11 @@ impl LspConfig {
     }
 }
 
-/// Returns default LSP configurations for common languages
+/// Get the configuration for a given language
 ///
-/// These defaults assume the LSP servers are installed and available in PATH.
-/// The system will gracefully degrade if a server is not available.
-pub fn default_lsp_configs() -> Vec<LspConfig> {
-    vec![
+/// Returns None if no LSP is configured for the language.
+pub fn get_config_for_language(language: LanguageId) -> Option<LspConfig> {
+    let configs = vec![
         LspConfig::new("rust-analyzer").with_languages(vec![LanguageId::Rust]),
         LspConfig::new("typescript-language-server")
             .with_args(vec!["--stdio".to_string()])
@@ -56,26 +54,14 @@ pub fn default_lsp_configs() -> Vec<LspConfig> {
             .with_languages(vec![LanguageId::Python]),
         LspConfig::new("gopls").with_languages(vec![LanguageId::Go]),
         LspConfig::new("clangd").with_languages(vec![LanguageId::C, LanguageId::Cpp]),
-    ]
-}
-
-/// Static storage for the config map
-static CONFIG_MAP: OnceLock<HashMap<LanguageId, LspConfig>> = OnceLock::new();
-
-/// Get the configuration for a given language
-///
-/// Returns None if no LSP is configured for the language.
-pub fn get_config_for_language(language: LanguageId) -> Option<&'static LspConfig> {
-    let map = CONFIG_MAP.get_or_init(|| {
-        let mut map = HashMap::new();
-        for config in default_lsp_configs() {
-            for lang in &config.languages {
-                map.insert(*lang, config.clone());
-            }
+    ];
+    let mut map = HashMap::new();
+    for config in configs {
+        for lang in &config.languages {
+            map.insert(*lang, config.clone());
         }
-        map
-    });
-    map.get(&language)
+    }
+    map.get(&language).cloned()
 }
 
 #[cfg(test)]
@@ -91,26 +77,6 @@ mod tests {
         assert_eq!(config.command, "test-lsp");
         assert_eq!(config.args, vec!["--stdio", "--debug"]);
         assert_eq!(config.languages, vec![LanguageId::Rust]);
-    }
-
-    #[test]
-    fn test_default_lsp_configs() {
-        let configs = default_lsp_configs();
-
-        assert!(!configs.is_empty());
-
-        let rust_config = configs.iter().find(|c| c.command == "rust-analyzer");
-        assert!(rust_config.is_some());
-        let rust_config = rust_config.unwrap();
-        assert!(rust_config.languages.contains(&LanguageId::Rust));
-
-        let ts_config = configs
-            .iter()
-            .find(|c| c.command == "typescript-language-server");
-        assert!(ts_config.is_some());
-        let ts_config = ts_config.unwrap();
-        assert!(ts_config.languages.contains(&LanguageId::TypeScript));
-        assert!(ts_config.languages.contains(&LanguageId::JavaScript));
     }
 
     #[test]

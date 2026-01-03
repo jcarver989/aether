@@ -13,10 +13,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use aether_lspd::{LspClient, get_config_for_language};
+use aether_lspd::{LanguageId, LspClient, get_config_for_language};
 use futures::future::join_all;
-
-use super::transport::{LanguageId, LanguageIdExt};
 
 /// Registry that manages LSP daemon clients, connecting lazily on demand
 pub struct LspRegistry {

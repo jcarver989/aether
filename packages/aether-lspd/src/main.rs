@@ -1,9 +1,9 @@
 mod client_handler;
-mod config;
 mod daemon;
 mod error;
-mod lockfile;
+mod lsp_config;
 mod lsp_manager;
+mod pid_lockfile;
 mod protocol;
 use crate::daemon::run_daemon;
 use clap::Parser;

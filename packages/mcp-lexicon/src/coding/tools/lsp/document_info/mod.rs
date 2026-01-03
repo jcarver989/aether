@@ -7,7 +7,8 @@ use lsp_types::DocumentSymbolResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::coding::lsp::common::{LocationResult, symbol_kind_to_string};
+use aether_lspd::symbol_kind_to_string;
+use crate::coding::lsp::common::LocationResult;
 use crate::coding::tools_trait::CodingTools;
 
 /// The operation to perform on a document
@@ -103,7 +104,7 @@ fn convert_document_symbols(
                 };
                 DocumentSymbolResult {
                     name: sym.name,
-                    kind: symbol_kind_to_string(sym.kind),
+                    kind: symbol_kind_to_string(sym.kind).to_string(),
                     detail: None,
                     range: range.clone(),
                     selection_range: range,
@@ -147,7 +148,7 @@ fn convert_document_symbol(
 
     DocumentSymbolResult {
         name: sym.name,
-        kind: symbol_kind_to_string(sym.kind),
+        kind: symbol_kind_to_string(sym.kind).to_string(),
         detail: sym.detail,
         range,
         selection_range,
