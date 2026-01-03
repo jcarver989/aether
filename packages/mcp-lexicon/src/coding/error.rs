@@ -38,6 +38,10 @@ pub enum CodingError {
     #[error(transparent)]
     WebFetch(#[from] WebFetchError),
 
+    /// Web search errors
+    #[error(transparent)]
+    WebSearch(#[from] WebSearchError),
+
     /// Tool not configured/available
     #[error("{0}")]
     NotConfigured(String),
@@ -181,4 +185,32 @@ pub enum WebFetchError {
     /// Failed to parse HTML content
     #[error("Failed to parse HTML: {0}")]
     ParseFailed(String),
+}
+
+/// Errors related to web search operations
+#[derive(Debug, Error)]
+pub enum WebSearchError {
+    /// Invalid search query
+    #[error("Invalid search query: {0}")]
+    InvalidQuery(String),
+
+    /// API request failed
+    #[error("API request failed: {0}")]
+    ApiError(String),
+
+    /// Rate limit exceeded
+    #[error("Rate limit exceeded: {0}")]
+    RateLimited(String),
+
+    /// Request timed out
+    #[error("Request timed out after {0}ms")]
+    Timeout(u64),
+
+    /// Configuration error
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+
+    /// Failed to parse API response
+    #[error("Failed to parse API response: {0}")]
+    ParseError(String),
 }

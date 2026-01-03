@@ -25,9 +25,14 @@ clap = { workspace = true, features = ["env"] }
 tracing-subscriber = { workspace = true, features = ["registry", "fmt", "json"] }
 tracing-appender = { workspace = true }
 thiserror = { workspace = true }
-lsp-types = "0.97"
+lsp-types = { workspace = true }
+aether-lspd = { path = "../aether-lspd" }
 reqwest = { workspace = true }
 htmd = "0.5"
+url = "2.5"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = { workspace = true }
