@@ -7,7 +7,7 @@ use lsp_types::DocumentSymbolResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::coding::lsp::common::{symbol_kind_to_string, LocationResult};
+use crate::coding::lsp::common::{LocationResult, symbol_kind_to_string};
 use crate::coding::tools_trait::CodingTools;
 
 /// The operation to perform on a document
@@ -86,41 +86,43 @@ pub async fn execute_lsp_document<T: CodingTools>(
 }
 
 /// Convert DocumentSymbolResponse to our result format
-fn convert_document_symbols(file_path: &str, response: DocumentSymbolResponse) -> Vec<DocumentSymbolResult> {
+fn convert_document_symbols(
+    file_path: &str,
+    response: DocumentSymbolResponse,
+) -> Vec<DocumentSymbolResult> {
     match response {
-        DocumentSymbolResponse::Flat(symbols) => {
-            symbols
-                .into_iter()
-                .map(|sym| {
-                    let range = LocationResult {
-                        file_path: file_path.to_string(),
-                        start_line: sym.location.range.start.line + 1,
-                        start_column: sym.location.range.start.character + 1,
-                        end_line: sym.location.range.end.line + 1,
-                        end_column: sym.location.range.end.character + 1,
-                    };
-                    DocumentSymbolResult {
-                        name: sym.name,
-                        kind: symbol_kind_to_string(sym.kind),
-                        detail: None,
-                        range: range.clone(),
-                        selection_range: range,
-                        children: None,
-                    }
-                })
-                .collect()
-        }
-        DocumentSymbolResponse::Nested(symbols) => {
-            symbols
-                .into_iter()
-                .map(|sym| convert_document_symbol(file_path, sym))
-                .collect()
-        }
+        DocumentSymbolResponse::Flat(symbols) => symbols
+            .into_iter()
+            .map(|sym| {
+                let range = LocationResult {
+                    file_path: file_path.to_string(),
+                    start_line: sym.location.range.start.line + 1,
+                    start_column: sym.location.range.start.character + 1,
+                    end_line: sym.location.range.end.line + 1,
+                    end_column: sym.location.range.end.character + 1,
+                };
+                DocumentSymbolResult {
+                    name: sym.name,
+                    kind: symbol_kind_to_string(sym.kind),
+                    detail: None,
+                    range: range.clone(),
+                    selection_range: range,
+                    children: None,
+                }
+            })
+            .collect(),
+        DocumentSymbolResponse::Nested(symbols) => symbols
+            .into_iter()
+            .map(|sym| convert_document_symbol(file_path, sym))
+            .collect(),
     }
 }
 
 /// Convert a single DocumentSymbol to our result format (recursive for children)
-fn convert_document_symbol(file_path: &str, sym: lsp_types::DocumentSymbol) -> DocumentSymbolResult {
+fn convert_document_symbol(
+    file_path: &str,
+    sym: lsp_types::DocumentSymbol,
+) -> DocumentSymbolResult {
     let range = LocationResult {
         file_path: file_path.to_string(),
         start_line: sym.range.start.line + 1,

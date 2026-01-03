@@ -16,11 +16,12 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use aether_lspd::LspClient;
+
 use crate::coding::error::CodingError;
-use crate::coding::lsp::common::uri_to_path;
-use crate::coding::lsp::config::{LspConfig, default_lsp_configs};
-use crate::coding::lsp::registry::{DEFAULT_INDEXING_TIMEOUT, LspClientHandle, LspRegistry};
-use crate::coding::lsp::{ClientNotification, LanguageId, path_to_uri};
+use crate::coding::lsp::common::{path_to_uri, uri_to_path};
+use crate::coding::lsp::registry::LspRegistry;
+use crate::coding::lsp::{LanguageId, LanguageIdExt};
 use crate::coding::tools::bash::ReadBackgroundBashOutput;
 use crate::coding::tools::bash::{BackgroundProcessHandle, BashInput, BashResult};
 use crate::coding::tools::edit_file::{EditFileArgs, EditFileResponse};
@@ -89,9 +90,9 @@ impl<T: CodingTools> Debug for LspCodingTools<T> {
 }
 
 impl<T: CodingTools> LspCodingTools<T> {
-    /// Create with default LSP configurations.
+    /// Create LSP-enabled coding tools for a project.
     ///
-    /// Uses default configurations for common languages:
+    /// Uses the daemon's built-in configurations for common languages:
     /// - rust-analyzer for Rust
     /// - typescript-language-server for TypeScript/JavaScript
     /// - pyright-langserver for Python
@@ -100,15 +101,7 @@ impl<T: CodingTools> LspCodingTools<T> {
     ///
     /// LSP servers for detected project languages are spawned immediately in the background.
     pub fn new(inner: T, root_path: PathBuf) -> Self {
-        Self::with_configs(inner, root_path, default_lsp_configs())
-    }
-
-    /// Create with custom LSP configurations.
-    ///
-    /// Use this to specify custom LSP servers or override defaults.
-    /// LSP servers for detected project languages are spawned immediately in the background.
-    pub fn with_configs(inner: T, root_path: PathBuf, configs: Vec<LspConfig>) -> Self {
-        let registry = Arc::new(LspRegistry::new(root_path, configs));
+        let registry = Arc::new(LspRegistry::new(root_path));
 
         // Spawn LSPs for detected project languages in background
         // This allows LSPs like rust-analyzer to start indexing immediately
@@ -126,11 +119,7 @@ impl<T: CodingTools> LspCodingTools<T> {
 
     /// Ensure a document is open with its LSP, sending didOpen if needed.
     /// Returns the current version number (1 if just opened, or incremented if already open).
-    async fn ensure_open(
-        &self,
-        file_path: &str,
-        content: &str,
-    ) -> Option<(i32, Arc<LspClientHandle>)> {
+    async fn ensure_open(&self, file_path: &str, content: &str) -> Option<(i32, Arc<LspClient>)> {
         let path = Path::new(file_path);
         let Ok(uri) = path_to_uri(path) else {
             return None;
@@ -152,32 +141,30 @@ impl<T: CodingTools> LspCodingTools<T> {
             None => {}
         }
 
-        let handle = self.registry.get_or_spawn(path).await;
+        let client = self.registry.get_or_spawn(path).await;
         let language_id = LanguageId::from_path(path);
         let version = 1;
 
-        if let Some(ref handle) = handle {
+        if let Some(ref client) = client {
             let params = DidOpenTextDocumentParams {
                 text_document: TextDocumentItem {
                     uri: uri.clone(),
-                    language_id: language_id.to_string(),
+                    language_id: language_id.as_str().to_string(),
                     version,
                     text: content.to_string(),
                 },
             };
 
-            let _ = handle
-                .notification_tx
-                .try_send(ClientNotification::TextDocumentOpened(params));
+            let _ = client.notify_opened(params).await;
         }
 
-        let has_lsp = handle.is_some();
+        let has_lsp = client.is_some();
         self.open_documents
             .lock()
             .unwrap()
             .insert(uri, DocumentState { version, has_lsp });
 
-        handle.map(|h| (version, h))
+        client.map(|c| (version, c))
     }
 
     /// Notify the LSP that a document was changed (requires document to be open)
@@ -187,7 +174,7 @@ impl<T: CodingTools> LspCodingTools<T> {
             return;
         };
 
-        if let Some(handle) = self.registry.get_or_spawn(path).await {
+        if let Some(client) = self.registry.get_or_spawn(path).await {
             let params = DidChangeTextDocumentParams {
                 text_document: VersionedTextDocumentIdentifier { uri, version },
                 content_changes: vec![TextDocumentContentChangeEvent {
@@ -196,9 +183,7 @@ impl<T: CodingTools> LspCodingTools<T> {
                     text: content.to_string(),
                 }],
             };
-            let _ = handle
-                .notification_tx
-                .try_send(ClientNotification::TextDocumentChanged(params));
+            let _ = client.notify_changed(params).await;
         }
     }
 
@@ -209,14 +194,12 @@ impl<T: CodingTools> LspCodingTools<T> {
             return;
         };
 
-        if let Some(handle) = self.registry.get_or_spawn(path).await {
+        if let Some(client) = self.registry.get_or_spawn(path).await {
             let params = DidSaveTextDocumentParams {
                 text_document: TextDocumentIdentifier { uri },
                 text: content.map(|s| s.to_string()),
             };
-            let _ = handle
-                .notification_tx
-                .try_send(ClientNotification::TextDocumentSaved(params));
+            let _ = client.notify_saved(params).await;
         }
     }
 
@@ -236,29 +219,6 @@ impl<T: CodingTools> LspCodingTools<T> {
 
         self.ensure_open(file_path, &result.raw_content).await;
         Ok(result.raw_content)
-    }
-
-    /// Wait for all active LSP clients to finish indexing.
-    ///
-    /// This ensures that LSP operations return complete/accurate results
-    /// by waiting for background indexing (like rust-analyzer's workspace loading)
-    /// to complete before executing queries.
-    async fn await_all_lsps_ready(&self) -> Result<(), CodingError> {
-        for handle in self.registry.active_clients().await {
-            handle
-                .await_ready(DEFAULT_INDEXING_TIMEOUT)
-                .await
-                .map_err(CodingError::from)?;
-        }
-        Ok(())
-    }
-
-    /// Wait for a specific LSP client to finish indexing.
-    async fn await_lsp_ready(&self, handle: &LspClientHandle) -> Result<(), CodingError> {
-        handle
-            .await_ready(DEFAULT_INDEXING_TIMEOUT)
-            .await
-            .map_err(CodingError::from)
     }
 }
 
@@ -319,15 +279,22 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     }
 
     async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, CodingError> {
-        self.await_all_lsps_ready().await?;
+        let mut result = HashMap::new();
 
-        let mut all_diagnostics = HashMap::new();
-        for handle in self.registry.active_clients().await {
-            if let Ok(diags) = handle.get_diagnostics().await {
-                all_diagnostics.extend(diags);
+        // Query diagnostics from all active LSP clients
+        for client in self.registry.active_clients().await {
+            if let Ok(params_list) = client.get_diagnostics(None).await {
+                for params in params_list {
+                    let file_path = uri_to_path(&params.uri);
+                    result
+                        .entry(file_path)
+                        .or_insert_with(Vec::new)
+                        .extend(params.diagnostics);
+                }
             }
         }
-        Ok(all_diagnostics)
+
+        Ok(result)
     }
 
     async fn goto_definition(
@@ -341,7 +308,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
 
         let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
 
-        let handle = self
+        let client = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
@@ -349,10 +316,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
-        self.await_lsp_ready(&handle).await?;
-
-        handle
-            .client
+        client
             .goto_definition(uri, line - 1, column)
             .await
             .map_err(CodingError::from)
@@ -370,7 +334,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
 
         let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
 
-        let handle = self
+        let client = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
@@ -378,10 +342,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
-        self.await_lsp_ready(&handle).await?;
-
-        handle
-            .client
+        client
             .find_references(uri, line - 1, column, include_declaration)
             .await
             .map_err(CodingError::from)
@@ -398,7 +359,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
 
         let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
 
-        let handle = self
+        let client = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
@@ -406,21 +367,16 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
-        self.await_lsp_ready(&handle).await?;
-
-        handle
-            .client
+        client
             .hover(uri, line - 1, column)
             .await
             .map_err(CodingError::from)
     }
 
     async fn workspace_symbol(&self, query: &str) -> Result<Vec<SymbolInformation>, CodingError> {
-        self.await_all_lsps_ready().await?;
-
         let mut all_symbols = Vec::new();
-        for handle in self.registry.active_clients().await {
-            if let Ok(symbols) = handle.client.workspace_symbol(query.to_string()).await {
+        for client in self.registry.active_clients().await {
+            if let Ok(symbols) = client.workspace_symbol(query.to_string()).await {
                 all_symbols.extend(symbols);
             }
         }
@@ -438,7 +394,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
 
         let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
 
-        let handle = self
+        let client = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
@@ -446,10 +402,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
-        self.await_lsp_ready(&handle).await?;
-
-        handle
-            .client
+        client
             .goto_implementation(uri, line - 1, column)
             .await
             .map_err(CodingError::from)
@@ -463,7 +416,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
 
         let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
 
-        let handle = self
+        let client = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
@@ -471,13 +424,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
-        self.await_lsp_ready(&handle).await?;
-
-        handle
-            .client
-            .document_symbol(uri)
-            .await
-            .map_err(CodingError::from)
+        client.document_symbol(uri).await.map_err(CodingError::from)
     }
 
     async fn prepare_call_hierarchy(
@@ -491,7 +438,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
 
         let uri = path_to_uri(Path::new(file_path)).map_err(CodingError::from)?;
 
-        let handle = self
+        let client = self
             .registry
             .get_or_spawn(Path::new(file_path))
             .await
@@ -499,10 +446,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
-        self.await_lsp_ready(&handle).await?;
-
-        handle
-            .client
+        client
             .prepare_call_hierarchy(uri, line - 1, column)
             .await
             .map_err(CodingError::from)
@@ -514,7 +458,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     ) -> Result<Vec<CallHierarchyIncomingCall>, CodingError> {
         let file_path = uri_to_path(&item.uri);
 
-        let handle = self
+        let client = self
             .registry
             .get_or_spawn(Path::new(&file_path))
             .await
@@ -522,13 +466,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
-        self.await_lsp_ready(&handle).await?;
-
-        handle
-            .client
-            .incoming_calls(item)
-            .await
-            .map_err(CodingError::from)
+        client.incoming_calls(item).await.map_err(CodingError::from)
     }
 
     async fn outgoing_calls(
@@ -537,7 +475,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     ) -> Result<Vec<CallHierarchyOutgoingCall>, CodingError> {
         let file_path = uri_to_path(&item.uri);
 
-        let handle = self
+        let client = self
             .registry
             .get_or_spawn(Path::new(&file_path))
             .await
@@ -545,13 +483,7 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
                 CodingError::NotConfigured("No LSP configured for this file type".to_string())
             })?;
 
-        self.await_lsp_ready(&handle).await?;
-
-        handle
-            .client
-            .outgoing_calls(item)
-            .await
-            .map_err(CodingError::from)
+        client.outgoing_calls(item).await.map_err(CodingError::from)
     }
 }
 

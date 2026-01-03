@@ -149,8 +149,10 @@ pub async fn execute_lsp_symbol<T: CodingTools>(
                 .prepare_call_hierarchy(&input.file_path, &input.symbol, line)
                 .await
                 .map_err(|e| e.to_string())?;
-            let call_hierarchy_items: Vec<CallHierarchyItemResult> =
-                items.into_iter().map(CallHierarchyItemResult::from).collect();
+            let call_hierarchy_items: Vec<CallHierarchyItemResult> = items
+                .into_iter()
+                .map(CallHierarchyItemResult::from)
+                .collect();
             let total_count = call_hierarchy_items.len();
             Ok(LspSymbolOutput {
                 operation: "prepare_call_hierarchy".to_string(),

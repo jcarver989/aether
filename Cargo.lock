@@ -136,6 +136,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-lspd"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "futures",
+ "libc",
+ "lsp-types",
+ "nix 0.29.0",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "aether-voice"
 version = "0.1.0"
 dependencies = [
@@ -4127,6 +4147,7 @@ name = "mcp_lexicon"
 version = "0.1.0"
 dependencies = [
  "aether",
+ "aether-lspd",
  "chrono",
  "clap",
  "crucible",
@@ -4136,6 +4157,7 @@ dependencies = [
  "grep",
  "htmd",
  "ignore",
+ "libc",
  "lsp-types",
  "regex",
  "reqwest",
@@ -4150,6 +4172,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 

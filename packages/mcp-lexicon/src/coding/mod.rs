@@ -67,8 +67,8 @@ use tools::lsp::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp
 use tools::lsp::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 use tools::web_fetch::{WebFetchInput, WebFetchOutput, WebFetcher};
-use tools::web_search::{WebSearchInput, WebSearchOutput, WebSearcher};
 use tools::web_search::search_client::BraveSearchClient;
+use tools::web_search::{WebSearchInput, WebSearchOutput, WebSearcher};
 use tools::write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
 /// Extension trait for converting tool results to MCP format
@@ -479,13 +479,11 @@ When using tools from this server that take file path(s) as input, always use ab
     ) -> Result<Json<WebSearchOutput>, String> {
         let Parameters(args) = request;
 
-        let searcher = self
-            .web_searcher
-            .as_ref()
-            .ok_or_else(|| {
-                "Web search not available: BRAVE_SEARCH_API_KEY environment variable not set. \
-                 Get a free API key from https://api.search.brave.com/app/keys".to_string()
-            })?;
+        let searcher = self.web_searcher.as_ref().ok_or_else(|| {
+            "Web search not available: BRAVE_SEARCH_API_KEY environment variable not set. \
+                 Get a free API key from https://api.search.brave.com/app/keys"
+                .to_string()
+        })?;
 
         searcher
             .search(args)

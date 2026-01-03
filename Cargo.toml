@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["packages/aether", "packages/mcp-lexicon", "packages/wisp", "packages/crucible", "packages/aether-acp", "packages/aether-acp-types", "packages/planning-agent", "packages/aether-desktop", "packages/aether-acp-client", "packages/aether-voice"]
+members = ["packages/aether", "packages/mcp-lexicon", "packages/wisp", "packages/crucible", "packages/aether-acp", "packages/aether-acp-types", "packages/planning-agent", "packages/aether-desktop", "packages/aether-acp-client", "packages/aether-voice", "packages/aether-lspd"]
 
 [workspace.dependencies]
 # Async runtime
@@ -26,6 +26,9 @@ tracing-appender = "0.2"
 rmcp = { version = "^0.12.0", features = ["client", "server", "macros", "schemars", "auth"] }
 async-openai = { version = "^0.32.2", features = ["byot", "chat-completion"] }
 reqwest = { version = "^0.12.28", features = ["json"] }
+
+# LSP types - shared across packages
+lsp-types = "0.97"
 
 # Schema and validation
 schemars = { version = "^1.1.0", features = ["derive"] }

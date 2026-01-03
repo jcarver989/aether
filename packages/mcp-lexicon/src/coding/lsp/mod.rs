@@ -7,69 +7,51 @@
 //! # Architecture
 //!
 //! The module is organized into:
-//! - [`client`] - The main `LspClient` struct that manages server lifecycle
 //! - [`transport`] - JSON-RPC over stdio transport layer
 //! - [`diagnostics`] - Utilities for working with LSP diagnostics
 //! - [`error`] - Error types for LSP operations
-//! - [`config`] - LSP server configuration types
 //! - [`registry`] - Multi-LSP registry for managing multiple language servers
+//!
+//! For the LSP client, use `aether_lspd::LspClient` which connects to the shared
+//! LSP daemon for efficient resource usage across multiple agents. LSP server
+//! configurations are managed by the daemon (see `aether_lspd::config`).
 //!
 //! # Example
 //!
 //! ```ignore
-//! use mcp_lexicon::coding::lsp::{LspClient, ClientNotification, ServerNotification};
-//! use lsp_types::DidOpenTextDocumentParams;
+//! use aether_lspd::{LspClient, LanguageId};
+//! use mcp_lexicon::coding::lsp::LspRegistry;
 //! use std::path::Path;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let root = Path::new("/path/to/rust/project");
 //!
-//!     // Spawn and initialize rust-analyzer
-//!     let (tx, mut rx, mut client) = LspClient::spawn("rust-analyzer", &[], root).await?;
+//!     // Connect to daemon, spawning it if needed
+//!     let client = LspClient::connect_or_spawn(root, LanguageId::Rust).await?;
 //!
-//!     // Open a file via the notification sender
-//!     tx.send(ClientNotification::TextDocumentOpened(DidOpenTextDocumentParams {
-//!         text_document: lsp_types::TextDocumentItem {
-//!             uri: lsp_types::Url::from_file_path(root.join("src/main.rs")).unwrap(),
-//!             language_id: "rust".into(),
-//!             version: 1,
-//!             text: std::fs::read_to_string(root.join("src/main.rs"))?,
-//!         },
-//!     })).await?;
+//!     // Make LSP requests
+//!     let uri = lsp_types::Url::from_file_path(root.join("src/main.rs")).unwrap();
+//!     let response = client.goto_definition(uri, 10, 5).await?;
 //!
-//!     // Receive diagnostics from the notification receiver
-//!     while let Some(notif) = rx.recv().await {
-//!         if let ServerNotification::Diagnostics(diag) = notif {
-//!             for d in &diag.diagnostics {
-//!                 println!("{:?}: {}", d.severity, d.message);
-//!             }
-//!         }
-//!     }
-//!
-//!     // Shutdown
-//!     client.shutdown().await?;
 //!     Ok(())
 //! }
 //! ```
 
-pub mod client;
 pub mod common;
-pub mod config;
 pub mod diagnostics;
 pub mod error;
 pub mod registry;
 pub mod transport;
 
-pub use client::{
-    LspClient, NotificationReceiver, NotificationSender, ServerNotification, path_to_uri,
-};
-pub use common::{LocationResult, parse_line, symbol_kind_to_string, uri_to_path};
-pub use config::{LspConfig, default_lsp_configs};
+// Re-export from aether_lspd for convenience
+pub use aether_lspd::{LspClient, LspConfig, default_lsp_configs, get_config_for_language};
+
+pub use common::{LocationResult, parse_line, path_to_uri, symbol_kind_to_string, uri_to_path};
 pub use diagnostics::{
     DiagnosticCounts, FormattedDiagnostic, Severity, count_by_severity, filter_by_severity,
     format_diagnostics,
 };
 pub use error::{LspError, Result};
-pub use registry::{LspClientHandle, LspRegistry};
-pub use transport::{ClientNotification, LanguageId};
+pub use registry::LspRegistry;
+pub use transport::{LanguageId, LanguageIdExt};
