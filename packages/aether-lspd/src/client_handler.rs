@@ -1,24 +1,14 @@
-use std::sync::Arc;
-
-use tokio::io::{ReadHalf, WriteHalf};
-use tokio::net::UnixStream;
-use tokio::sync::mpsc;
-
-use crate::config::get_config_for_language;
+use crate::lsp_config::get_config_for_language;
 use crate::lsp_manager::{LspErrorInfo, LspHandle, LspKey, LspManagerHandle, LspOp, LspResult};
 use crate::protocol::{
     DaemonRequest, DaemonResponse, LspErrorResponse, LspRequest, LspResponse, ProtocolError,
     read_frame, write_frame,
 };
-
-impl From<LspErrorInfo> for LspErrorResponse {
-    fn from(e: LspErrorInfo) -> Self {
-        Self {
-            code: e.code,
-            message: e.message,
-        }
-    }
-}
+use std::sync::Arc;
+use tokio::io::{ReadHalf, WriteHalf, split};
+use tokio::net::UnixStream;
+use tokio::spawn;
+use tokio::sync::mpsc;
 
 /// Handle a client connection
 pub async fn handle_client(
@@ -26,14 +16,10 @@ pub async fn handle_client(
     lsp_manager: LspManagerHandle,
     client_id: uuid::Uuid,
 ) {
-    let (reader, writer) = tokio::io::split(stream);
-
+    let (reader, writer) = split(stream);
     let (response_tx, response_rx) = mpsc::channel::<DaemonResponse>(100);
-
-    let writer_handle = tokio::spawn(run_writer(writer, response_rx));
-
+    let writer_handle = spawn(run_writer(writer, response_rx));
     run_reader(reader, lsp_manager, client_id, response_tx).await;
-
     let _ = writer_handle.await;
 }
 
@@ -58,7 +44,6 @@ async fn run_reader(
     response_tx: mpsc::Sender<DaemonResponse>,
 ) {
     tracing::debug!("Client connected: {}", client_id);
-
     let mut lsp_handle: Option<Arc<LspHandle>> = None;
 
     loop {
@@ -74,19 +59,17 @@ async fn run_reader(
             }
         };
 
-        let Some(request) = request else { continue };
-
         match request {
-            DaemonRequest::Ping => {
+            Some(DaemonRequest::Ping) => {
                 let _ = response_tx.send(DaemonResponse::Pong).await;
             }
 
-            DaemonRequest::Disconnect => {
+            Some(DaemonRequest::Disconnect) => {
                 tracing::debug!("Client {} disconnected gracefully", client_id);
                 break;
             }
 
-            DaemonRequest::Initialize(init) => {
+            Some(DaemonRequest::Initialize(init)) => {
                 let config = match get_config_for_language(init.language) {
                     Some(c) => c,
                     None => {
@@ -121,8 +104,8 @@ async fn run_reader(
                 }
             }
 
-            DaemonRequest::LspRequest(lsp_req) => {
-                let client_id = lsp_req.client_id();
+            Some(DaemonRequest::LspRequest(request)) => {
+                let client_id = request.client_id();
                 let Some(ref handle) = lsp_handle else {
                     let _ = response_tx
                         .send(DaemonResponse::Error(ProtocolError::with_client_id(
@@ -133,15 +116,17 @@ async fn run_reader(
                     continue;
                 };
 
-                let response = handle_lsp_request(handle, lsp_req).await;
+                let response = handle_lsp_request(handle, request).await;
                 let _ = response_tx.send(response).await;
             }
 
-            DaemonRequest::LspNotification(notif) => {
+            Some(DaemonRequest::LspNotification(notif)) => {
                 if let Some(ref handle) = lsp_handle {
                     handle.send_notification(notif).await;
                 }
             }
+
+            None => {}
         }
     }
 }
@@ -149,15 +134,6 @@ async fn run_reader(
 /// Handle an LSP request
 async fn handle_lsp_request(handle: &LspHandle, request: LspRequest) -> DaemonResponse {
     let client_id = request.client_id();
-
-    if let LspRequest::GetDiagnostics { uri, .. } = &request {
-        let diagnostics = handle.get_diagnostics(uri.as_ref()).await;
-        return DaemonResponse::LspResponse(LspResponse::GetDiagnostics {
-            client_id,
-            result: Ok(diagnostics),
-        });
-    }
-
     let op = match request {
         LspRequest::GotoDefinition { params, .. } => LspOp::GotoDefinition(params),
         LspRequest::GotoImplementation { params, .. } => LspOp::GotoImplementation(params),
@@ -168,7 +144,12 @@ async fn handle_lsp_request(handle: &LspHandle, request: LspRequest) -> DaemonRe
         LspRequest::PrepareCallHierarchy { params, .. } => LspOp::PrepareCallHierarchy(params),
         LspRequest::IncomingCalls { params, .. } => LspOp::IncomingCalls(params),
         LspRequest::OutgoingCalls { params, .. } => LspOp::OutgoingCalls(params),
-        LspRequest::GetDiagnostics { .. } => unreachable!(),
+        LspRequest::GetDiagnostics { uri, .. } => {
+            return DaemonResponse::LspResponse(LspResponse::GetDiagnostics {
+                client_id,
+                result: Ok(handle.get_diagnostics(uri.as_ref()).await),
+            });
+        }
     };
 
     match handle.request(op).await {
@@ -214,5 +195,14 @@ async fn handle_lsp_request(handle: &LspHandle, request: LspRequest) -> DaemonRe
             DaemonResponse::LspResponse(response)
         }
         Err(e) => DaemonResponse::Error(ProtocolError::with_client_id(e.to_string(), client_id)),
+    }
+}
+
+impl From<LspErrorInfo> for LspErrorResponse {
+    fn from(e: LspErrorInfo) -> Self {
+        Self {
+            code: e.code,
+            message: e.message,
+        }
     }
 }

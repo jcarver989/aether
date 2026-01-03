@@ -8,7 +8,8 @@ use lsp_types::CallHierarchyItem;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::coding::lsp::common::{LocationResult, symbol_kind_to_string, uri_to_path};
+use aether_lspd::symbol_kind_to_string;
+use crate::coding::lsp::common::{LocationResult, uri_to_path};
 use crate::coding::tools_trait::CodingTools;
 
 /// A serializable representation of a CallHierarchyItem
@@ -53,7 +54,7 @@ impl From<CallHierarchyItem> for CallHierarchyItemResult {
 
         Self {
             name: item.name,
-            kind: symbol_kind_to_string(item.kind),
+            kind: symbol_kind_to_string(item.kind).to_string(),
             detail: item.detail,
             file_path,
             range,

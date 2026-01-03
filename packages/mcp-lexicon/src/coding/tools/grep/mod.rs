@@ -1,7 +1,7 @@
 pub mod common;
 
 use crate::coding::error::GrepError;
-use crate::coding::file_types::extensions_for_type;
+use aether_lspd::extensions_for_alias as extensions_for_type;
 use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 use globset::{Glob, GlobSetBuilder};
 use grep::{
