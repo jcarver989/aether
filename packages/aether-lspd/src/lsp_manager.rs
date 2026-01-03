@@ -1,15 +1,14 @@
 use crate::error::{DaemonError, DaemonResult};
-use crate::protocol::{LspNotification, ServerNotification};
+use crate::protocol::LspNotification;
 use lsp_types::{
     CallHierarchyClientCapabilities, CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams,
     CallHierarchyItem, CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams,
     CallHierarchyPrepareParams, ClientCapabilities, DocumentSymbolClientCapabilities,
     DocumentSymbolParams, DocumentSymbolResponse, DynamicRegistrationClientCapabilities,
     GeneralClientCapabilities, GotoCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover,
-    HoverClientCapabilities, HoverParams, InitializeParams, Location, MarkupKind, ProgressParams,
+    HoverClientCapabilities, HoverParams, InitializeParams, Location, MarkupKind,
     PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, ReferenceParams,
-    SymbolInformation, TextDocumentClientCapabilities, Uri, WindowClientCapabilities,
-    WorkspaceSymbolParams,
+    SymbolInformation, TextDocumentClientCapabilities, Uri, WorkspaceSymbolParams,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -17,7 +16,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{RwLock, mpsc, oneshot};
@@ -44,65 +42,119 @@ pub struct GotoImplementation(pub GotoDefinitionParams);
 
 impl LspOperation for GotoDefinitionParams {
     type Response = GotoDefinitionResponse;
-    fn method(&self) -> &'static str { "textDocument/definition" }
-    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
-    fn default_response() -> Self::Response { GotoDefinitionResponse::Array(vec![]) }
+    fn method(&self) -> &'static str {
+        "textDocument/definition"
+    }
+    fn params(&self) -> Value {
+        serde_json::to_value(self).unwrap()
+    }
+    fn default_response() -> Self::Response {
+        GotoDefinitionResponse::Array(vec![])
+    }
 }
 
 impl LspOperation for GotoImplementation {
     type Response = GotoDefinitionResponse;
-    fn method(&self) -> &'static str { "textDocument/implementation" }
-    fn params(&self) -> Value { serde_json::to_value(&self.0).unwrap() }
-    fn default_response() -> Self::Response { GotoDefinitionResponse::Array(vec![]) }
+    fn method(&self) -> &'static str {
+        "textDocument/implementation"
+    }
+    fn params(&self) -> Value {
+        serde_json::to_value(&self.0).unwrap()
+    }
+    fn default_response() -> Self::Response {
+        GotoDefinitionResponse::Array(vec![])
+    }
 }
 
 impl LspOperation for ReferenceParams {
     type Response = Vec<Location>;
-    fn method(&self) -> &'static str { "textDocument/references" }
-    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
-    fn default_response() -> Self::Response { vec![] }
+    fn method(&self) -> &'static str {
+        "textDocument/references"
+    }
+    fn params(&self) -> Value {
+        serde_json::to_value(self).unwrap()
+    }
+    fn default_response() -> Self::Response {
+        vec![]
+    }
 }
 
 impl LspOperation for HoverParams {
     type Response = Option<Hover>;
-    fn method(&self) -> &'static str { "textDocument/hover" }
-    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
-    fn default_response() -> Self::Response { None }
+    fn method(&self) -> &'static str {
+        "textDocument/hover"
+    }
+    fn params(&self) -> Value {
+        serde_json::to_value(self).unwrap()
+    }
+    fn default_response() -> Self::Response {
+        None
+    }
 }
 
 impl LspOperation for WorkspaceSymbolParams {
     type Response = Vec<SymbolInformation>;
-    fn method(&self) -> &'static str { "workspace/symbol" }
-    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
-    fn default_response() -> Self::Response { vec![] }
+    fn method(&self) -> &'static str {
+        "workspace/symbol"
+    }
+    fn params(&self) -> Value {
+        serde_json::to_value(self).unwrap()
+    }
+    fn default_response() -> Self::Response {
+        vec![]
+    }
 }
 
 impl LspOperation for DocumentSymbolParams {
     type Response = DocumentSymbolResponse;
-    fn method(&self) -> &'static str { "textDocument/documentSymbol" }
-    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
-    fn default_response() -> Self::Response { DocumentSymbolResponse::Flat(vec![]) }
+    fn method(&self) -> &'static str {
+        "textDocument/documentSymbol"
+    }
+    fn params(&self) -> Value {
+        serde_json::to_value(self).unwrap()
+    }
+    fn default_response() -> Self::Response {
+        DocumentSymbolResponse::Flat(vec![])
+    }
 }
 
 impl LspOperation for CallHierarchyPrepareParams {
     type Response = Vec<CallHierarchyItem>;
-    fn method(&self) -> &'static str { "textDocument/prepareCallHierarchy" }
-    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
-    fn default_response() -> Self::Response { vec![] }
+    fn method(&self) -> &'static str {
+        "textDocument/prepareCallHierarchy"
+    }
+    fn params(&self) -> Value {
+        serde_json::to_value(self).unwrap()
+    }
+    fn default_response() -> Self::Response {
+        vec![]
+    }
 }
 
 impl LspOperation for CallHierarchyIncomingCallsParams {
     type Response = Vec<CallHierarchyIncomingCall>;
-    fn method(&self) -> &'static str { "callHierarchy/incomingCalls" }
-    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
-    fn default_response() -> Self::Response { vec![] }
+    fn method(&self) -> &'static str {
+        "callHierarchy/incomingCalls"
+    }
+    fn params(&self) -> Value {
+        serde_json::to_value(self).unwrap()
+    }
+    fn default_response() -> Self::Response {
+        vec![]
+    }
 }
 
 impl LspOperation for CallHierarchyOutgoingCallsParams {
     type Response = Vec<CallHierarchyOutgoingCall>;
-    fn method(&self) -> &'static str { "callHierarchy/outgoingCalls" }
-    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
-    fn default_response() -> Self::Response { vec![] }
+    fn method(&self) -> &'static str {
+        "callHierarchy/outgoingCalls"
+    }
+    fn params(&self) -> Value {
+        serde_json::to_value(self).unwrap()
+    }
+    fn default_response() -> Self::Response {
+        vec![]
+    }
 }
 
 /// Manager for LSP server instances (simplified from actor pattern)
@@ -119,10 +171,6 @@ pub struct LspHandle {
     notification_tx: mpsc::Sender<LspNotification>,
     /// Cached diagnostics keyed by file URI
     diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
-    /// Subscribers for server notifications (diagnostics, progress).
-    /// Used by `subscribe()` for push-based notification delivery.
-    #[allow(dead_code)]
-    subscribers: Arc<RwLock<Vec<mpsc::Sender<ServerNotification>>>>,
     /// Background task handle
     _task: JoinHandle<()>,
 }
@@ -141,13 +189,6 @@ pub struct LspErrorInfo {
     pub message: String,
 }
 
-/// Context for the LSP handler loop
-struct LspHandlerContext {
-    subscribers: Arc<RwLock<Vec<mpsc::Sender<ServerNotification>>>>,
-    diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
-    root_path: PathBuf,
-}
-
 impl LspManager {
     /// Create a new LSP manager
     pub fn new() -> Self {
@@ -163,21 +204,17 @@ impl LspManager {
         command: &str,
         args: &[String],
     ) -> DaemonResult<Arc<LspHandle>> {
-        // Fast path: read lock
         if let Some(handle) = self.lsps.read().await.get(&key) {
             return Ok(Arc::clone(handle));
         }
 
-        // Slow path: write lock
         let mut lsps = self.lsps.write().await;
-
-        // Double-check after acquiring write lock (another task may have spawned it)
         if let Some(handle) = lsps.get(&key) {
             return Ok(Arc::clone(handle));
         }
 
         let handle = Arc::new(spawn_lsp(&key.workspace_root, command, args).await?);
-        lsps.insert(key, Arc::clone(&handle));
+        lsps.insert(key, handle.clone());
         Ok(handle)
     }
 
@@ -247,17 +284,6 @@ impl LspHandle {
             tracing::warn!("Failed to send notification: {}", e);
         }
     }
-
-    /// Subscribe to server notifications (diagnostics, progress, etc.)
-    ///
-    /// Returns a receiver that will receive notifications as they arrive.
-    /// The subscription is automatically cleaned up when the receiver is dropped.
-    #[allow(dead_code)]
-    pub async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-        let (tx, rx) = mpsc::channel(100);
-        self.subscribers.write().await.push(tx);
-        rx
-    }
 }
 
 /// Spawn a new LSP server process
@@ -284,24 +310,28 @@ async fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonRe
 
     let (request_tx, request_rx) = mpsc::channel(100);
     let (notification_tx, notification_rx) = mpsc::channel(100);
-    let subscribers = Arc::new(RwLock::new(Vec::new()));
     let diagnostics_cache = Arc::new(RwLock::new(HashMap::new()));
 
-    let ctx = LspHandlerContext {
-        subscribers: Arc::clone(&subscribers),
-        diagnostics_cache: Arc::clone(&diagnostics_cache),
-        root_path: root_path.to_path_buf(),
-    };
+    let handler_diagnostics_cache = Arc::clone(&diagnostics_cache);
+    let handler_root_path = root_path.to_path_buf();
 
     let task = tokio::spawn(async move {
-        run_lsp_handler(process, stdin, stdout, request_rx, notification_rx, ctx).await;
+        run_lsp_handler(
+            process,
+            stdin,
+            stdout,
+            request_rx,
+            notification_rx,
+            handler_diagnostics_cache,
+            handler_root_path,
+        )
+        .await;
     });
 
     Ok(LspHandle {
         request_tx,
         notification_tx,
         diagnostics_cache,
-        subscribers,
         _task: task,
     })
 }
@@ -313,14 +343,14 @@ async fn run_lsp_handler(
     stdout: ChildStdout,
     mut request_rx: mpsc::Receiver<LspRequestEnvelope>,
     mut notification_rx: mpsc::Receiver<LspNotification>,
-    ctx: LspHandlerContext,
+    diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
+    root_path: PathBuf,
 ) {
     let mut reader = BufReader::new(stdout);
-    let next_id = AtomicI64::new(1);
-    // Simplified: just store the response sender, parsing happens at the caller
+    let mut next_id: i64 = 1;
     let mut pending: HashMap<i64, oneshot::Sender<Result<Value, LspErrorInfo>>> = HashMap::new();
 
-    if let Err(e) = initialize_lsp(&mut stdin, &next_id, &ctx.root_path).await {
+    if let Err(e) = initialize_lsp(&mut stdin, &mut next_id, &root_path).await {
         tracing::error!("Failed to initialize LSP: {}", e);
         return;
     }
@@ -351,7 +381,7 @@ async fn run_lsp_handler(
             msg = read_lsp_message(&mut reader) => {
                 match msg {
                     Ok(Some(msg)) => {
-                        handle_lsp_message(msg, &mut pending, &ctx.subscribers, &ctx.diagnostics_cache).await;
+                        handle_lsp_message(msg, &mut pending, &diagnostics_cache).await;
                     }
                     Ok(None) => {
                         tracing::info!("LSP server closed connection");
@@ -364,7 +394,8 @@ async fn run_lsp_handler(
             }
 
             Some(envelope) = request_rx.recv() => {
-                let id = next_id.fetch_add(1, Ordering::SeqCst);
+                let id = next_id;
+                next_id += 1;
                 pending.insert(id, envelope.response_tx);
 
                 if let Err(e) = send_request(&mut stdin, id, envelope.method, envelope.params).await {
@@ -404,7 +435,6 @@ async fn run_lsp_handler(
 async fn handle_lsp_message(
     msg: Value,
     pending: &mut HashMap<i64, oneshot::Sender<Result<Value, LspErrorInfo>>>,
-    subscribers: &RwLock<Vec<mpsc::Sender<ServerNotification>>>,
     diagnostics_cache: &RwLock<HashMap<Uri, PublishDiagnosticsParams>>,
 ) {
     // Handle response messages
@@ -426,32 +456,13 @@ async fn handle_lsp_message(
         return;
     }
 
-    // Handle notification messages
+    // Handle notification messages - cache diagnostics
     if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
-        let params = msg.get("params").cloned().unwrap_or(Value::Null);
-
-        let notification = match method {
-            "textDocument/publishDiagnostics" => {
-                if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params)
-                {
-                    let mut cache = diagnostics_cache.write().await;
-                    cache.insert(diag_params.uri.clone(), diag_params.clone());
-
-                    Some(ServerNotification::Diagnostics(diag_params))
-                } else {
-                    None
-                }
-            }
-            "$/progress" => serde_json::from_value::<ProgressParams>(params)
-                .ok()
-                .map(ServerNotification::Progress),
-            _ => None,
-        };
-
-        if let Some(notif) = notification {
-            let subs = subscribers.read().await;
-            for sub in subs.iter() {
-                let _ = sub.try_send(notif.clone());
+        if method == "textDocument/publishDiagnostics" {
+            let params = msg.get("params").cloned().unwrap_or(Value::Null);
+            if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params) {
+                let mut cache = diagnostics_cache.write().await;
+                cache.insert(diag_params.uri.clone(), diag_params);
             }
         }
     }
@@ -460,17 +471,13 @@ async fn handle_lsp_message(
 /// Initialize the LSP server
 async fn initialize_lsp(
     stdin: &mut ChildStdin,
-    next_id: &AtomicI64,
+    next_id: &mut i64,
     root_path: &Path,
 ) -> std::io::Result<()> {
     let root_uri = path_to_uri(root_path);
 
     let capabilities = ClientCapabilities {
         general: Some(GeneralClientCapabilities::default()),
-        window: Some(WindowClientCapabilities {
-            work_done_progress: Some(true),
-            ..Default::default()
-        }),
         text_document: Some(TextDocumentClientCapabilities {
             publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
                 related_information: Some(true),
@@ -511,7 +518,8 @@ async fn initialize_lsp(
         ..Default::default()
     };
 
-    let id = next_id.fetch_add(1, Ordering::SeqCst);
+    let id = *next_id;
+    *next_id += 1;
     send_request(
         stdin,
         id,
@@ -579,18 +587,10 @@ async fn send_client_notification(
     notification: &LspNotification,
 ) -> std::io::Result<()> {
     let (method, params) = match notification {
-        LspNotification::Opened(p) => {
-            ("textDocument/didOpen", serde_json::to_value(p).unwrap())
-        }
-        LspNotification::Changed(p) => {
-            ("textDocument/didChange", serde_json::to_value(p).unwrap())
-        }
-        LspNotification::Saved(p) => {
-            ("textDocument/didSave", serde_json::to_value(p).unwrap())
-        }
-        LspNotification::Closed(p) => {
-            ("textDocument/didClose", serde_json::to_value(p).unwrap())
-        }
+        LspNotification::Opened(p) => ("textDocument/didOpen", serde_json::to_value(p).unwrap()),
+        LspNotification::Changed(p) => ("textDocument/didChange", serde_json::to_value(p).unwrap()),
+        LspNotification::Saved(p) => ("textDocument/didSave", serde_json::to_value(p).unwrap()),
+        LspNotification::Closed(p) => ("textDocument/didClose", serde_json::to_value(p).unwrap()),
     };
     send_notification(stdin, method, params).await
 }
@@ -639,59 +639,3 @@ async fn write_lsp_message(stdin: &mut ChildStdin, msg: &Value) -> std::io::Resu
     stdin.flush().await
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Test that verifies subscribers added via LspHandle::add_subscriber are
-    /// visible to the notification broadcast system.
-    ///
-    /// This test catches a bug where LspHandle had its own separate `subscribers`
-    /// field instead of sharing the Arc with the background task.
-    #[tokio::test]
-    async fn test_subscribers_are_shared_with_handler() {
-        let shared_subscribers: Arc<RwLock<Vec<mpsc::Sender<ServerNotification>>>> =
-            Arc::new(RwLock::new(Vec::new()));
-
-        let handler_subscribers = Arc::clone(&shared_subscribers);
-
-        let (tx, mut rx) = mpsc::channel::<ServerNotification>(10);
-
-        {
-            let mut subs = shared_subscribers.write().await;
-            subs.push(tx);
-        }
-
-        let handler_count = handler_subscribers.read().await.len();
-        assert_eq!(
-            handler_count, 1,
-            "Handler should see subscriber added via shared Arc"
-        );
-
-        let test_notification = ServerNotification::Progress(ProgressParams {
-            token: lsp_types::ProgressToken::Number(1),
-            value: lsp_types::ProgressParamsValue::WorkDone(lsp_types::WorkDoneProgress::Begin(
-                lsp_types::WorkDoneProgressBegin {
-                    title: "test".to_string(),
-                    cancellable: None,
-                    message: None,
-                    percentage: None,
-                },
-            )),
-        });
-
-        {
-            let subs = handler_subscribers.read().await;
-            for sub in subs.iter() {
-                let _ = sub.try_send(test_notification.clone());
-            }
-        }
-
-        let received = rx.try_recv();
-        assert!(
-            received.is_ok(),
-            "Subscriber should receive notification broadcast by handler"
-        );
-    }
-
-}

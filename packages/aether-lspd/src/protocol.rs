@@ -3,8 +3,8 @@ use lsp_types::{
     CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverParams, Location, ProgressParams, PublishDiagnosticsParams,
-    ReferenceParams, SymbolInformation, Uri, WorkspaceSymbolParams,
+    GotoDefinitionResponse, Hover, HoverParams, Location, PublishDiagnosticsParams, ReferenceParams,
+    SymbolInformation, Uri, WorkspaceSymbolParams,
 };
 use serde::{Deserialize, Serialize};
 use std::io;
@@ -172,7 +172,6 @@ pub enum DaemonResponse {
     Initialized,
     Pong,
     LspResponse(LspResponse),
-    LspNotification(ServerNotification),
     Error(ProtocolError),
 }
 
@@ -219,13 +218,6 @@ pub enum LspResponse {
         client_id: i64,
         result: Result<Vec<PublishDiagnosticsParams>, LspErrorResponse>,
     },
-}
-
-/// Server notification (diagnostics, progress, etc.)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ServerNotification {
-    Diagnostics(PublishDiagnosticsParams),
-    Progress(ProgressParams),
 }
 
 /// LSP error response
