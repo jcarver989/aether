@@ -117,6 +117,8 @@ pub fn NewAgentForm(
                                     }
                                 }
                             },
+                            autocorrect: "off",
+                            spellcheck: "false",
                         }
 
                         // Bottom toolbar
