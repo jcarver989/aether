@@ -16,10 +16,6 @@ pub enum DaemonError {
     #[error("Failed to spawn LSP: {0}")]
     LspSpawnFailed(String),
 
-    /// LSP communication error
-    #[error("LSP error: {0}")]
-    LspError(String),
-
     /// Lockfile error
     #[error("Lockfile error: {0}")]
     LockfileError(String),

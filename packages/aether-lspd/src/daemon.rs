@@ -1,6 +1,6 @@
 use crate::client_handler::handle_client;
 use crate::error::{DaemonError, DaemonResult};
-use crate::lsp_manager::spawn_lsp_manager;
+use crate::lsp_manager::LspManager;
 use crate::pid_lockfile::PidLockfile;
 use std::fs::{create_dir_all, remove_file};
 use std::future::pending;
@@ -29,7 +29,7 @@ pub async fn run_daemon(socket_path: PathBuf, idle_timeout: Option<Duration>) ->
     }
 
     let shutdown_rx = spawn_shutdown_signal_handler();
-    let lsp_manager = spawn_lsp_manager();
+    let lsp_manager = LspManager::new();
 
     tracing::info!("Daemon listening on {:?}", socket_path);
     run_listener_loop(socket_path.clone(), shutdown_rx, &lsp_manager, idle_timeout).await?;
@@ -47,7 +47,7 @@ pub async fn run_daemon(socket_path: PathBuf, idle_timeout: Option<Duration>) ->
 async fn run_listener_loop(
     socket_path: PathBuf,
     mut shutdown_rx: oneshot::Receiver<()>,
-    lsp_manager: &crate::lsp_manager::LspManagerHandle,
+    lsp_manager: &LspManager,
     idle_timeout: Option<Duration>,
 ) -> DaemonResult<()> {
     let listener = UnixListener::bind(&socket_path).map_err(DaemonError::BindFailed)?;

@@ -118,7 +118,7 @@ mod tests {
     fn test_lockfile_blocks_second_acquire() {
         let temp = TempDir::new().unwrap();
         let lock_path = temp.path().join("test.lock");
-        let _ = PidLockfile::acquire(&lock_path).unwrap();
+        let _lock = PidLockfile::acquire(&lock_path).unwrap();
         let result = PidLockfile::acquire(&lock_path);
 
         assert!(result.is_err());
