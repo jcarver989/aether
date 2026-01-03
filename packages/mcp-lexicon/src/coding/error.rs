@@ -3,6 +3,7 @@
 //! This module provides structured error types for all coding tool operations,
 //! replacing the previous `Result<T, String>` pattern with proper `thiserror` enums.
 
+use aether_lspd::ClientError;
 use thiserror::Error;
 
 use super::lsp::error::LspError;
@@ -33,6 +34,10 @@ pub enum CodingError {
     /// LSP-related errors
     #[error(transparent)]
     Lsp(#[from] LspError),
+
+    /// LSP daemon client errors
+    #[error(transparent)]
+    DaemonClient(#[from] ClientError),
 
     /// Web fetch errors
     #[error(transparent)]

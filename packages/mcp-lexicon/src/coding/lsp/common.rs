@@ -3,6 +3,9 @@
 use lsp_types::{Location, SymbolKind, Uri};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+use super::error::LspError;
 
 /// A location in source code (file path with range)
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -56,6 +59,20 @@ pub fn uri_to_path(uri: &Uri) -> String {
     } else {
         uri_str.to_string()
     }
+}
+
+/// Convert a file path to an LSP URI
+pub fn path_to_uri(path: &Path) -> Result<Uri, LspError> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+
+    let uri_str = format!("file://{}", absolute.display());
+    uri_str
+        .parse()
+        .map_err(|_| LspError::Transport(format!("Invalid path: {}", path.display())))
 }
 
 /// Convert SymbolKind to a human-readable string

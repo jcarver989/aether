@@ -12,111 +12,26 @@ use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout};
 
-/// LSP language identifier for a file type
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub enum LanguageId {
-    Rust,
-    Python,
-    JavaScript,
-    JavaScriptReact,
-    TypeScript,
-    TypeScriptReact,
-    Go,
-    Java,
-    C,
-    Cpp,
-    CSharp,
-    Ruby,
-    Php,
-    Swift,
-    Kotlin,
-    Scala,
-    Html,
-    Css,
-    Json,
-    Yaml,
-    Toml,
-    Markdown,
-    Xml,
-    Sql,
-    ShellScript,
-    PlainText,
-}
+// Re-export LanguageId from aether-lspd
+pub use aether_lspd::LanguageId;
 
-impl LanguageId {
-    /// Get the LSP language ID string for this language
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            LanguageId::Rust => "rust",
-            LanguageId::Python => "python",
-            LanguageId::JavaScript => "javascript",
-            LanguageId::JavaScriptReact => "javascriptreact",
-            LanguageId::TypeScript => "typescript",
-            LanguageId::TypeScriptReact => "typescriptreact",
-            LanguageId::Go => "go",
-            LanguageId::Java => "java",
-            LanguageId::C => "c",
-            LanguageId::Cpp => "cpp",
-            LanguageId::CSharp => "csharp",
-            LanguageId::Ruby => "ruby",
-            LanguageId::Php => "php",
-            LanguageId::Swift => "swift",
-            LanguageId::Kotlin => "kotlin",
-            LanguageId::Scala => "scala",
-            LanguageId::Html => "html",
-            LanguageId::Css => "css",
-            LanguageId::Json => "json",
-            LanguageId::Yaml => "yaml",
-            LanguageId::Toml => "toml",
-            LanguageId::Markdown => "markdown",
-            LanguageId::Xml => "xml",
-            LanguageId::Sql => "sql",
-            LanguageId::ShellScript => "shellscript",
-            LanguageId::PlainText => "plaintext",
-        }
-    }
-
+/// Extension trait for LanguageId providing mcp-lexicon-specific functionality
+pub trait LanguageIdExt {
     /// Detect language ID from file path
-    pub fn from_path(path: &Path) -> Self {
-        Self::from_lsp_id(lsp_id_from_path(path))
-    }
-
-    /// Convert an LSP language ID string to a LanguageId enum variant
-    fn from_lsp_id(lsp_id: &str) -> Self {
-        match lsp_id {
-            "rust" => LanguageId::Rust,
-            "python" => LanguageId::Python,
-            "javascript" => LanguageId::JavaScript,
-            "javascriptreact" => LanguageId::JavaScriptReact,
-            "typescript" => LanguageId::TypeScript,
-            "typescriptreact" => LanguageId::TypeScriptReact,
-            "go" => LanguageId::Go,
-            "java" => LanguageId::Java,
-            "c" => LanguageId::C,
-            "cpp" => LanguageId::Cpp,
-            "csharp" => LanguageId::CSharp,
-            "ruby" => LanguageId::Ruby,
-            "php" => LanguageId::Php,
-            "swift" => LanguageId::Swift,
-            "kotlin" => LanguageId::Kotlin,
-            "scala" => LanguageId::Scala,
-            "html" => LanguageId::Html,
-            "css" => LanguageId::Css,
-            "json" => LanguageId::Json,
-            "yaml" => LanguageId::Yaml,
-            "toml" => LanguageId::Toml,
-            "markdown" => LanguageId::Markdown,
-            "xml" => LanguageId::Xml,
-            "sql" => LanguageId::Sql,
-            "shellscript" => LanguageId::ShellScript,
-            _ => LanguageId::PlainText,
-        }
-    }
+    fn from_path(path: &Path) -> LanguageId;
 
     /// Get the primary file extension for this language (reverse of from_path)
     ///
     /// Returns None for PlainText since it has no specific extension.
-    pub fn extension(&self) -> Option<&'static str> {
+    fn extension(&self) -> Option<&'static str>;
+}
+
+impl LanguageIdExt for LanguageId {
+    fn from_path(path: &Path) -> LanguageId {
+        from_lsp_id(lsp_id_from_path(path))
+    }
+
+    fn extension(&self) -> Option<&'static str> {
         match self {
             LanguageId::Rust => Some("rs"),
             LanguageId::Python => Some("py"),
@@ -148,9 +63,35 @@ impl LanguageId {
     }
 }
 
-impl std::fmt::Display for LanguageId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+/// Convert an LSP language ID string to a LanguageId enum variant
+fn from_lsp_id(lsp_id: &str) -> LanguageId {
+    match lsp_id {
+        "rust" => LanguageId::Rust,
+        "python" => LanguageId::Python,
+        "javascript" => LanguageId::JavaScript,
+        "javascriptreact" => LanguageId::JavaScriptReact,
+        "typescript" => LanguageId::TypeScript,
+        "typescriptreact" => LanguageId::TypeScriptReact,
+        "go" => LanguageId::Go,
+        "java" => LanguageId::Java,
+        "c" => LanguageId::C,
+        "cpp" => LanguageId::Cpp,
+        "csharp" => LanguageId::CSharp,
+        "ruby" => LanguageId::Ruby,
+        "php" => LanguageId::Php,
+        "swift" => LanguageId::Swift,
+        "kotlin" => LanguageId::Kotlin,
+        "scala" => LanguageId::Scala,
+        "html" => LanguageId::Html,
+        "css" => LanguageId::Css,
+        "json" => LanguageId::Json,
+        "yaml" => LanguageId::Yaml,
+        "toml" => LanguageId::Toml,
+        "markdown" => LanguageId::Markdown,
+        "xml" => LanguageId::Xml,
+        "sql" => LanguageId::Sql,
+        "shellscript" => LanguageId::ShellScript,
+        _ => LanguageId::PlainText,
     }
 }
 
