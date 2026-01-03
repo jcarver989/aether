@@ -136,6 +136,8 @@ pub fn SettingsEditor(on_close: EventHandler<()>) -> Element {
                                     error_message.set(None);
                                 }
                             },
+                            autocorrect: "off",
+                            spellcheck: "false",
                         }
                         button {
                             class: "bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm transition-colors",
@@ -301,6 +303,8 @@ fn ServerEditForm(name: String, mut draft: Signal<Settings>) -> Element {
                         let new_config = build_config();
                         draft.write().agent_servers.insert(name_for_cmd.clone(), new_config);
                     },
+                    autocorrect: "off",
+                    spellcheck: "false",
                 }
             }
 
@@ -317,6 +321,8 @@ fn ServerEditForm(name: String, mut draft: Signal<Settings>) -> Element {
                         let new_config = build_config();
                         draft.write().agent_servers.insert(name_for_args.clone(), new_config);
                     },
+                    autocorrect: "off",
+                    spellcheck: "false",
                 }
             }
 
@@ -333,6 +339,8 @@ fn ServerEditForm(name: String, mut draft: Signal<Settings>) -> Element {
                         let new_config = build_config();
                         draft.write().agent_servers.insert(name_for_env.clone(), new_config);
                     },
+                    autocorrect: "off",
+                    spellcheck: "false",
                 }
             }
         }

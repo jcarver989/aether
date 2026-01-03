@@ -91,6 +91,8 @@ pub fn PromptInput(
                     placeholder: "{placeholder}",
                     disabled: disabled,
                     rows: rows_attr,
+                    autocorrect: "off",
+                    spellcheck: "false",
                 }
 
                 VoiceInput {
@@ -125,6 +127,8 @@ pub fn PromptInput(
                         placeholder: "{placeholder}",
                         disabled: disabled,
                         rows: rows_attr,
+                        autocorrect: "off",
+                        spellcheck: "false",
                     }
 
                     VoiceInput {
