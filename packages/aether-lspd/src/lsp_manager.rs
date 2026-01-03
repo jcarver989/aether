@@ -30,36 +30,90 @@ pub struct LspKey {
     pub language: String,
 }
 
-/// Messages that can be sent to the LSP manager actor
-enum LspManagerRequest {
-    GetOrSpawn {
-        key: LspKey,
-        command: String,
-        args: Vec<String>,
-        response_tx: oneshot::Sender<DaemonResult<Arc<LspHandle>>>,
-    },
-    Shutdown {
-        response_tx: oneshot::Sender<()>,
-    },
+/// Trait for LSP operations - eliminates the need for separate Op/Result/Kind enums
+pub trait LspOperation: Send + Sync {
+    type Response: DeserializeOwned + Send + 'static;
+
+    fn method(&self) -> &'static str;
+    fn params(&self) -> Value;
+    fn default_response() -> Self::Response;
 }
 
-/// Actor that manages active LSP server processes
-struct LspManagerActor {
-    /// Active LSP instances keyed by (workspace, language)
-    lsps: HashMap<LspKey, Arc<LspHandle>>,
-    /// Request receiver
-    request_rx: mpsc::Receiver<LspManagerRequest>,
+/// Wrapper for GotoImplementation (uses same params as GotoDefinition)
+pub struct GotoImplementation(pub GotoDefinitionParams);
+
+impl LspOperation for GotoDefinitionParams {
+    type Response = GotoDefinitionResponse;
+    fn method(&self) -> &'static str { "textDocument/definition" }
+    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
+    fn default_response() -> Self::Response { GotoDefinitionResponse::Array(vec![]) }
 }
 
-/// Handle to communicate with the LSP manager actor
+impl LspOperation for GotoImplementation {
+    type Response = GotoDefinitionResponse;
+    fn method(&self) -> &'static str { "textDocument/implementation" }
+    fn params(&self) -> Value { serde_json::to_value(&self.0).unwrap() }
+    fn default_response() -> Self::Response { GotoDefinitionResponse::Array(vec![]) }
+}
+
+impl LspOperation for ReferenceParams {
+    type Response = Vec<Location>;
+    fn method(&self) -> &'static str { "textDocument/references" }
+    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
+    fn default_response() -> Self::Response { vec![] }
+}
+
+impl LspOperation for HoverParams {
+    type Response = Option<Hover>;
+    fn method(&self) -> &'static str { "textDocument/hover" }
+    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
+    fn default_response() -> Self::Response { None }
+}
+
+impl LspOperation for WorkspaceSymbolParams {
+    type Response = Vec<SymbolInformation>;
+    fn method(&self) -> &'static str { "workspace/symbol" }
+    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
+    fn default_response() -> Self::Response { vec![] }
+}
+
+impl LspOperation for DocumentSymbolParams {
+    type Response = DocumentSymbolResponse;
+    fn method(&self) -> &'static str { "textDocument/documentSymbol" }
+    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
+    fn default_response() -> Self::Response { DocumentSymbolResponse::Flat(vec![]) }
+}
+
+impl LspOperation for CallHierarchyPrepareParams {
+    type Response = Vec<CallHierarchyItem>;
+    fn method(&self) -> &'static str { "textDocument/prepareCallHierarchy" }
+    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
+    fn default_response() -> Self::Response { vec![] }
+}
+
+impl LspOperation for CallHierarchyIncomingCallsParams {
+    type Response = Vec<CallHierarchyIncomingCall>;
+    fn method(&self) -> &'static str { "callHierarchy/incomingCalls" }
+    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
+    fn default_response() -> Self::Response { vec![] }
+}
+
+impl LspOperation for CallHierarchyOutgoingCallsParams {
+    type Response = Vec<CallHierarchyOutgoingCall>;
+    fn method(&self) -> &'static str { "callHierarchy/outgoingCalls" }
+    fn params(&self) -> Value { serde_json::to_value(self).unwrap() }
+    fn default_response() -> Self::Response { vec![] }
+}
+
+/// Manager for LSP server instances (simplified from actor pattern)
 #[derive(Clone)]
-pub struct LspManagerHandle {
-    request_tx: mpsc::Sender<LspManagerRequest>,
+pub struct LspManager {
+    lsps: Arc<RwLock<HashMap<LspKey, Arc<LspHandle>>>>,
 }
 
 /// Handle to an active LSP server
 pub struct LspHandle {
-    /// Request sender
+    /// Request sender (method, params, response channel)
     request_tx: mpsc::Sender<LspRequestEnvelope>,
     /// Notification sender (fire-and-forget)
     notification_tx: mpsc::Sender<LspNotification>,
@@ -73,38 +127,11 @@ pub struct LspHandle {
     _task: JoinHandle<()>,
 }
 
-/// Envelope for an LSP request with response channel
+/// Envelope for an LSP request with response channel (simplified: uses Value)
 struct LspRequestEnvelope {
-    request: LspOp,
-    response_tx: oneshot::Sender<LspResult>,
-}
-
-/// Operation to perform on the LSP server
-#[derive(Debug)]
-pub enum LspOp {
-    GotoDefinition(GotoDefinitionParams),
-    GotoImplementation(GotoDefinitionParams),
-    FindReferences(ReferenceParams),
-    Hover(HoverParams),
-    WorkspaceSymbol(WorkspaceSymbolParams),
-    DocumentSymbol(DocumentSymbolParams),
-    PrepareCallHierarchy(CallHierarchyPrepareParams),
-    IncomingCalls(CallHierarchyIncomingCallsParams),
-    OutgoingCalls(CallHierarchyOutgoingCallsParams),
-}
-
-/// Result of an LSP request
-#[derive(Debug)]
-pub enum LspResult {
-    GotoDefinition(std::result::Result<GotoDefinitionResponse, LspErrorInfo>),
-    GotoImplementation(std::result::Result<GotoDefinitionResponse, LspErrorInfo>),
-    FindReferences(std::result::Result<Vec<Location>, LspErrorInfo>),
-    Hover(std::result::Result<Option<Hover>, LspErrorInfo>),
-    WorkspaceSymbol(std::result::Result<Vec<SymbolInformation>, LspErrorInfo>),
-    DocumentSymbol(std::result::Result<DocumentSymbolResponse, LspErrorInfo>),
-    PrepareCallHierarchy(std::result::Result<Vec<CallHierarchyItem>, LspErrorInfo>),
-    IncomingCalls(std::result::Result<Vec<CallHierarchyIncomingCall>, LspErrorInfo>),
-    OutgoingCalls(std::result::Result<Vec<CallHierarchyOutgoingCall>, LspErrorInfo>),
+    method: &'static str,
+    params: Value,
+    response_tx: oneshot::Sender<Result<Value, LspErrorInfo>>,
 }
 
 /// Error information from LSP
@@ -121,64 +148,14 @@ struct LspHandlerContext {
     root_path: PathBuf,
 }
 
-/// Spawn the LSP manager actor and return a handle
-pub fn spawn_lsp_manager() -> LspManagerHandle {
-    let (request_tx, request_rx) = mpsc::channel(100);
-    let actor = LspManagerActor {
-        lsps: HashMap::new(),
-        request_rx,
-    };
-    tokio::spawn(actor.run());
-    LspManagerHandle { request_tx }
-}
-
-impl LspManagerActor {
-    /// Run the actor loop
-    async fn run(mut self) {
-        tracing::debug!("LspManagerActor starting");
-
-        while let Some(request) = self.request_rx.recv().await {
-            match request {
-                LspManagerRequest::GetOrSpawn {
-                    key,
-                    command,
-                    args,
-                    response_tx,
-                } => {
-                    let result = self.get_or_spawn(key, &command, &args).await;
-                    let _ = response_tx.send(result);
-                }
-                LspManagerRequest::Shutdown { response_tx } => {
-                    self.lsps.clear();
-                    let _ = response_tx.send(());
-                    break;
-                }
-            }
+impl LspManager {
+    /// Create a new LSP manager
+    pub fn new() -> Self {
+        Self {
+            lsps: Arc::new(RwLock::new(HashMap::new())),
         }
-
-        tracing::debug!("LspManagerActor stopping");
     }
 
-    /// Get or spawn an LSP for the given workspace and language
-    async fn get_or_spawn(
-        &mut self,
-        key: LspKey,
-        command: &str,
-        args: &[String],
-    ) -> DaemonResult<Arc<LspHandle>> {
-        if let Some(handle) = self.lsps.get(&key) {
-            return Ok(Arc::clone(handle));
-        }
-
-        let handle = spawn_lsp(&key.workspace_root, command, args).await?;
-        let handle = Arc::new(handle);
-        self.lsps.insert(key, Arc::clone(&handle));
-
-        Ok(handle)
-    }
-}
-
-impl LspManagerHandle {
     /// Get or spawn an LSP for the given workspace and language
     pub async fn get_or_spawn(
         &self,
@@ -186,49 +163,70 @@ impl LspManagerHandle {
         command: &str,
         args: &[String],
     ) -> DaemonResult<Arc<LspHandle>> {
-        let (response_tx, response_rx) = oneshot::channel();
-        self.request_tx
-            .send(LspManagerRequest::GetOrSpawn {
-                key,
-                command: command.to_string(),
-                args: args.to_vec(),
-                response_tx,
-            })
-            .await
-            .map_err(|_| DaemonError::LspError("LspManager closed".into()))?;
-        response_rx
-            .await
-            .map_err(|_| DaemonError::LspError("Response channel closed".into()))?
+        // Fast path: read lock
+        if let Some(handle) = self.lsps.read().await.get(&key) {
+            return Ok(Arc::clone(handle));
+        }
+
+        // Slow path: write lock
+        let mut lsps = self.lsps.write().await;
+
+        // Double-check after acquiring write lock (another task may have spawned it)
+        if let Some(handle) = lsps.get(&key) {
+            return Ok(Arc::clone(handle));
+        }
+
+        let handle = Arc::new(spawn_lsp(&key.workspace_root, command, args).await?);
+        lsps.insert(key, Arc::clone(&handle));
+        Ok(handle)
     }
 
     /// Shutdown all LSP instances
     pub async fn shutdown(&self) {
-        let (response_tx, response_rx) = oneshot::channel();
-        let _ = self
-            .request_tx
-            .send(LspManagerRequest::Shutdown { response_tx })
-            .await;
-        let _ = response_rx.await;
+        self.lsps.write().await.clear();
+    }
+}
+
+impl Default for LspManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl LspHandle {
     /// Send a request to the LSP and wait for response
-    pub async fn request(&self, request: LspOp) -> DaemonResult<LspResult> {
+    pub async fn request<O: LspOperation>(&self, op: O) -> Result<O::Response, LspErrorInfo> {
         let (response_tx, response_rx) = oneshot::channel();
         let envelope = LspRequestEnvelope {
-            request,
+            method: op.method(),
+            params: op.params(),
             response_tx,
         };
 
         self.request_tx
             .send(envelope)
             .await
-            .map_err(|_| DaemonError::LspError("LSP handler closed".into()))?;
+            .map_err(|_| LspErrorInfo {
+                code: -1,
+                message: "LSP handler closed".into(),
+            })?;
 
-        response_rx
-            .await
-            .map_err(|_| DaemonError::LspError("Response channel closed".into()))
+        let result = response_rx.await.map_err(|_| LspErrorInfo {
+            code: -1,
+            message: "Response channel closed".into(),
+        })?;
+
+        // Parse the Value response into the expected type
+        result.and_then(|value| {
+            if value.is_null() {
+                Ok(O::default_response())
+            } else {
+                serde_json::from_value(value).map_err(|e| LspErrorInfo {
+                    code: -1,
+                    message: format!("Parse error: {}", e),
+                })
+            }
+        })
     }
 
     /// Get cached diagnostics
@@ -319,7 +317,8 @@ async fn run_lsp_handler(
 ) {
     let mut reader = BufReader::new(stdout);
     let next_id = AtomicI64::new(1);
-    let mut pending: HashMap<i64, (LspRequestKind, oneshot::Sender<LspResult>)> = HashMap::new();
+    // Simplified: just store the response sender, parsing happens at the caller
+    let mut pending: HashMap<i64, oneshot::Sender<Result<Value, LspErrorInfo>>> = HashMap::new();
 
     if let Err(e) = initialize_lsp(&mut stdin, &next_id, &ctx.root_path).await {
         tracing::error!("Failed to initialize LSP: {}", e);
@@ -366,13 +365,12 @@ async fn run_lsp_handler(
 
             Some(envelope) = request_rx.recv() => {
                 let id = next_id.fetch_add(1, Ordering::SeqCst);
-                let kind = request_kind(&envelope.request);
-                pending.insert(id, (kind, envelope.response_tx));
+                pending.insert(id, envelope.response_tx);
 
-                if let Err(e) = send_lsp_request(&mut stdin, id, &envelope.request).await {
+                if let Err(e) = send_request(&mut stdin, id, envelope.method, envelope.params).await {
                     tracing::error!("Failed to send LSP request: {}", e);
-                    if let Some((kind, tx)) = pending.remove(&id) {
-                        let _ = tx.send(error_result(kind, LspErrorInfo {
+                    if let Some(tx) = pending.remove(&id) {
+                        let _ = tx.send(Err(LspErrorInfo {
                             code: -1,
                             message: e.to_string(),
                         }));
@@ -393,67 +391,25 @@ async fn run_lsp_handler(
         }
     }
 
-    for (_, (kind, tx)) in pending {
-        let _ = tx.send(error_result(
-            kind,
-            LspErrorInfo {
-                code: -1,
-                message: "LSP server closed".into(),
-            },
-        ));
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum LspRequestKind {
-    GotoDefinition,
-    GotoImplementation,
-    FindReferences,
-    Hover,
-    WorkspaceSymbol,
-    DocumentSymbol,
-    PrepareCallHierarchy,
-    IncomingCalls,
-    OutgoingCalls,
-}
-
-fn request_kind(req: &LspOp) -> LspRequestKind {
-    match req {
-        LspOp::GotoDefinition(_) => LspRequestKind::GotoDefinition,
-        LspOp::GotoImplementation(_) => LspRequestKind::GotoImplementation,
-        LspOp::FindReferences(_) => LspRequestKind::FindReferences,
-        LspOp::Hover(_) => LspRequestKind::Hover,
-        LspOp::WorkspaceSymbol(_) => LspRequestKind::WorkspaceSymbol,
-        LspOp::DocumentSymbol(_) => LspRequestKind::DocumentSymbol,
-        LspOp::PrepareCallHierarchy(_) => LspRequestKind::PrepareCallHierarchy,
-        LspOp::IncomingCalls(_) => LspRequestKind::IncomingCalls,
-        LspOp::OutgoingCalls(_) => LspRequestKind::OutgoingCalls,
-    }
-}
-
-fn error_result(kind: LspRequestKind, err: LspErrorInfo) -> LspResult {
-    match kind {
-        LspRequestKind::GotoDefinition => LspResult::GotoDefinition(Err(err)),
-        LspRequestKind::GotoImplementation => LspResult::GotoImplementation(Err(err)),
-        LspRequestKind::FindReferences => LspResult::FindReferences(Err(err)),
-        LspRequestKind::Hover => LspResult::Hover(Err(err)),
-        LspRequestKind::WorkspaceSymbol => LspResult::WorkspaceSymbol(Err(err)),
-        LspRequestKind::DocumentSymbol => LspResult::DocumentSymbol(Err(err)),
-        LspRequestKind::PrepareCallHierarchy => LspResult::PrepareCallHierarchy(Err(err)),
-        LspRequestKind::IncomingCalls => LspResult::IncomingCalls(Err(err)),
-        LspRequestKind::OutgoingCalls => LspResult::OutgoingCalls(Err(err)),
+    // Clean up pending requests on shutdown
+    for (_, tx) in pending {
+        let _ = tx.send(Err(LspErrorInfo {
+            code: -1,
+            message: "LSP server closed".into(),
+        }));
     }
 }
 
 /// Handle an incoming LSP message
 async fn handle_lsp_message(
     msg: Value,
-    pending: &mut HashMap<i64, (LspRequestKind, oneshot::Sender<LspResult>)>,
+    pending: &mut HashMap<i64, oneshot::Sender<Result<Value, LspErrorInfo>>>,
     subscribers: &RwLock<Vec<mpsc::Sender<ServerNotification>>>,
     diagnostics_cache: &RwLock<HashMap<Uri, PublishDiagnosticsParams>>,
 ) {
+    // Handle response messages
     if let Some(id) = msg.get("id").and_then(|v| v.as_i64()) {
-        if let Some((kind, tx)) = pending.remove(&id) {
+        if let Some(tx) = pending.remove(&id) {
             let result = if let Some(error) = msg.get("error") {
                 let code = error.get("code").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
                 let message = error
@@ -461,16 +417,16 @@ async fn handle_lsp_message(
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown error")
                     .to_string();
-                error_result(kind, LspErrorInfo { code, message })
+                Err(LspErrorInfo { code, message })
             } else {
-                let result = msg.get("result").cloned().unwrap_or(Value::Null);
-                parse_response(kind, result)
+                Ok(msg.get("result").cloned().unwrap_or(Value::Null))
             };
             let _ = tx.send(result);
         }
         return;
     }
 
+    // Handle notification messages
     if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
         let params = msg.get("params").cloned().unwrap_or(Value::Null);
 
@@ -498,61 +454,6 @@ async fn handle_lsp_message(
                 let _ = sub.try_send(notif.clone());
             }
         }
-    }
-}
-
-fn parse_response(kind: LspRequestKind, value: Value) -> LspResult {
-    match kind {
-        LspRequestKind::GotoDefinition => LspResult::GotoDefinition(parse_or_default(
-            value,
-            GotoDefinitionResponse::Array(vec![]),
-        )),
-        LspRequestKind::GotoImplementation => LspResult::GotoImplementation(parse_or_default(
-            value,
-            GotoDefinitionResponse::Array(vec![]),
-        )),
-        LspRequestKind::FindReferences => {
-            LspResult::FindReferences(parse_or_default(value, vec![]))
-        }
-        LspRequestKind::Hover => {
-            if value.is_null() {
-                LspResult::Hover(Ok(None))
-            } else {
-                match serde_json::from_value::<Hover>(value) {
-                    Ok(h) => LspResult::Hover(Ok(Some(h))),
-                    Err(e) => LspResult::Hover(Err(LspErrorInfo {
-                        code: -1,
-                        message: format!("Parse error: {}", e),
-                    })),
-                }
-            }
-        }
-        LspRequestKind::WorkspaceSymbol => {
-            LspResult::WorkspaceSymbol(parse_or_default(value, vec![]))
-        }
-        LspRequestKind::DocumentSymbol => LspResult::DocumentSymbol(parse_or_default(
-            value,
-            DocumentSymbolResponse::Flat(vec![]),
-        )),
-        LspRequestKind::PrepareCallHierarchy => {
-            LspResult::PrepareCallHierarchy(parse_or_default(value, vec![]))
-        }
-        LspRequestKind::IncomingCalls => LspResult::IncomingCalls(parse_or_default(value, vec![])),
-        LspRequestKind::OutgoingCalls => LspResult::OutgoingCalls(parse_or_default(value, vec![])),
-    }
-}
-
-fn parse_or_default<T: DeserializeOwned>(
-    value: Value,
-    default: T,
-) -> std::result::Result<T, LspErrorInfo> {
-    if value.is_null() {
-        Ok(default)
-    } else {
-        serde_json::from_value(value).map_err(|e| LspErrorInfo {
-            code: -1,
-            message: format!("Parse error: {}", e),
-        })
     }
 }
 
@@ -692,38 +593,6 @@ async fn send_client_notification(
         }
     };
     send_notification(stdin, method, params).await
-}
-
-/// Send a typed LSP request
-async fn send_lsp_request(stdin: &mut ChildStdin, id: i64, request: &LspOp) -> std::io::Result<()> {
-    let (method, params) = match request {
-        LspOp::GotoDefinition(p) => ("textDocument/definition", serde_json::to_value(p).unwrap()),
-        LspOp::GotoImplementation(p) => (
-            "textDocument/implementation",
-            serde_json::to_value(p).unwrap(),
-        ),
-        LspOp::FindReferences(p) => ("textDocument/references", serde_json::to_value(p).unwrap()),
-        LspOp::Hover(p) => ("textDocument/hover", serde_json::to_value(p).unwrap()),
-        LspOp::WorkspaceSymbol(p) => ("workspace/symbol", serde_json::to_value(p).unwrap()),
-        LspOp::DocumentSymbol(p) => (
-            "textDocument/documentSymbol",
-            serde_json::to_value(p).unwrap(),
-        ),
-        LspOp::PrepareCallHierarchy(p) => (
-            "textDocument/prepareCallHierarchy",
-            serde_json::to_value(p).unwrap(),
-        ),
-        LspOp::IncomingCalls(p) => (
-            "callHierarchy/incomingCalls",
-            serde_json::to_value(p).unwrap(),
-        ),
-        LspOp::OutgoingCalls(p) => (
-            "callHierarchy/outgoingCalls",
-            serde_json::to_value(p).unwrap(),
-        ),
-    };
-
-    send_request(stdin, id, method, params).await
 }
 
 /// Read an LSP message from stdout

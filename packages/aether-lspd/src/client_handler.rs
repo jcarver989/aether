@@ -1,5 +1,5 @@
 use crate::lsp_config::get_config_for_language;
-use crate::lsp_manager::{LspErrorInfo, LspHandle, LspKey, LspManagerHandle, LspOp, LspResult};
+use crate::lsp_manager::{GotoImplementation, LspErrorInfo, LspHandle, LspKey, LspManager};
 use crate::protocol::{
     DaemonRequest, DaemonResponse, LspErrorResponse, LspRequest, LspResponse, ProtocolError,
     read_frame, write_frame,
@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 /// Handle a client connection
 pub async fn handle_client(
     stream: UnixStream,
-    lsp_manager: LspManagerHandle,
+    lsp_manager: LspManager,
     client_id: uuid::Uuid,
 ) {
     let (reader, writer) = split(stream);
@@ -39,7 +39,7 @@ async fn run_writer(
 /// Read requests from client
 async fn run_reader(
     mut reader: ReadHalf<UnixStream>,
-    lsp_manager: LspManagerHandle,
+    lsp_manager: LspManager,
     client_id: uuid::Uuid,
     response_tx: mpsc::Sender<DaemonResponse>,
 ) {
@@ -134,68 +134,51 @@ async fn run_reader(
 /// Handle an LSP request
 async fn handle_lsp_request(handle: &LspHandle, request: LspRequest) -> DaemonResponse {
     let client_id = request.client_id();
-    let op = match request {
-        LspRequest::GotoDefinition { params, .. } => LspOp::GotoDefinition(params),
-        LspRequest::GotoImplementation { params, .. } => LspOp::GotoImplementation(params),
-        LspRequest::FindReferences { params, .. } => LspOp::FindReferences(params),
-        LspRequest::Hover { params, .. } => LspOp::Hover(params),
-        LspRequest::WorkspaceSymbol { params, .. } => LspOp::WorkspaceSymbol(params),
-        LspRequest::DocumentSymbol { params, .. } => LspOp::DocumentSymbol(params),
-        LspRequest::PrepareCallHierarchy { params, .. } => LspOp::PrepareCallHierarchy(params),
-        LspRequest::IncomingCalls { params, .. } => LspOp::IncomingCalls(params),
-        LspRequest::OutgoingCalls { params, .. } => LspOp::OutgoingCalls(params),
-        LspRequest::GetDiagnostics { uri, .. } => {
-            return DaemonResponse::LspResponse(LspResponse::GetDiagnostics {
-                client_id,
-                result: Ok(handle.get_diagnostics(uri.as_ref()).await),
-            });
-        }
+
+    let response = match request {
+        LspRequest::GotoDefinition { params, .. } => LspResponse::GotoDefinition {
+            client_id,
+            result: handle.request(params).await.map_err(Into::into),
+        },
+        LspRequest::GotoImplementation { params, .. } => LspResponse::GotoImplementation {
+            client_id,
+            result: handle.request(GotoImplementation(params)).await.map_err(Into::into),
+        },
+        LspRequest::FindReferences { params, .. } => LspResponse::FindReferences {
+            client_id,
+            result: handle.request(params).await.map_err(Into::into),
+        },
+        LspRequest::Hover { params, .. } => LspResponse::Hover {
+            client_id,
+            result: handle.request(params).await.map_err(Into::into),
+        },
+        LspRequest::WorkspaceSymbol { params, .. } => LspResponse::WorkspaceSymbol {
+            client_id,
+            result: handle.request(params).await.map_err(Into::into),
+        },
+        LspRequest::DocumentSymbol { params, .. } => LspResponse::DocumentSymbol {
+            client_id,
+            result: handle.request(params).await.map_err(Into::into),
+        },
+        LspRequest::PrepareCallHierarchy { params, .. } => LspResponse::PrepareCallHierarchy {
+            client_id,
+            result: handle.request(params).await.map_err(Into::into),
+        },
+        LspRequest::IncomingCalls { params, .. } => LspResponse::IncomingCalls {
+            client_id,
+            result: handle.request(params).await.map_err(Into::into),
+        },
+        LspRequest::OutgoingCalls { params, .. } => LspResponse::OutgoingCalls {
+            client_id,
+            result: handle.request(params).await.map_err(Into::into),
+        },
+        LspRequest::GetDiagnostics { uri, .. } => LspResponse::GetDiagnostics {
+            client_id,
+            result: Ok(handle.get_diagnostics(uri.as_ref()).await),
+        },
     };
 
-    match handle.request(op).await {
-        Ok(result) => {
-            let response = match result {
-                LspResult::GotoDefinition(r) => LspResponse::GotoDefinition {
-                    client_id,
-                    result: r.map_err(Into::into),
-                },
-                LspResult::GotoImplementation(r) => LspResponse::GotoImplementation {
-                    client_id,
-                    result: r.map_err(Into::into),
-                },
-                LspResult::FindReferences(r) => LspResponse::FindReferences {
-                    client_id,
-                    result: r.map_err(Into::into),
-                },
-                LspResult::Hover(r) => LspResponse::Hover {
-                    client_id,
-                    result: r.map_err(Into::into),
-                },
-                LspResult::WorkspaceSymbol(r) => LspResponse::WorkspaceSymbol {
-                    client_id,
-                    result: r.map_err(Into::into),
-                },
-                LspResult::DocumentSymbol(r) => LspResponse::DocumentSymbol {
-                    client_id,
-                    result: r.map_err(Into::into),
-                },
-                LspResult::PrepareCallHierarchy(r) => LspResponse::PrepareCallHierarchy {
-                    client_id,
-                    result: r.map_err(Into::into),
-                },
-                LspResult::IncomingCalls(r) => LspResponse::IncomingCalls {
-                    client_id,
-                    result: r.map_err(Into::into),
-                },
-                LspResult::OutgoingCalls(r) => LspResponse::OutgoingCalls {
-                    client_id,
-                    result: r.map_err(Into::into),
-                },
-            };
-            DaemonResponse::LspResponse(response)
-        }
-        Err(e) => DaemonResponse::Error(ProtocolError::with_client_id(e.to_string(), client_id)),
-    }
+    DaemonResponse::LspResponse(response)
 }
 
 impl From<LspErrorInfo> for LspErrorResponse {

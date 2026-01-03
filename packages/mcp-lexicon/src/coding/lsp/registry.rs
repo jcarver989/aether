@@ -56,9 +56,7 @@ impl LspRegistry {
         language_id: LanguageId,
     ) -> Option<Arc<LspClient>> {
         // Check if daemon has config for this language
-        if get_config_for_language(language_id).is_none() {
-            return None;
-        }
+        get_config_for_language(language_id)?;
 
         // Check if already connected
         {
