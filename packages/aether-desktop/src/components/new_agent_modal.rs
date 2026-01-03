@@ -24,15 +24,9 @@ pub fn NewAgentForm(
 ) -> Element {
     let settings: Signal<Settings> = use_context();
 
-    // Get the first server name as default, or use custom
-    let default_server = {
+    let mut selected_server = use_signal(|| {
         let s = settings.read();
         s.agent_servers.keys().next().cloned()
-    };
-
-    let mut selected_server = use_signal(|| {
-        default_server
-            .clone()
             .unwrap_or_else(|| CUSTOM_SERVER.to_string())
     });
     let custom_command_line = use_signal(|| AgentConfig::default().command_line);
