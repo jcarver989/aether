@@ -312,10 +312,7 @@ mod tests {
     fn create_skill_file(temp_dir: &TempDir, name: &str, description: &str) {
         let skill_dir = temp_dir.path().join(name);
         std::fs::create_dir_all(&skill_dir).unwrap();
-        let content = format!(
-            "---\ndescription: {} \n---\n# Skill Content\n",
-            description
-        );
+        let content = format!("---\ndescription: {} \n---\n# Skill Content\n", description);
         std::fs::write(skill_dir.join("SKILL.md"), content).unwrap();
     }
 }

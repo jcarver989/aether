@@ -46,7 +46,7 @@ pub enum AetherDesktopError {
     DiffMissingPath,
 
     #[error("Git error: {0}")]
-    DiffGit(git2::Error),
+    DiffGit(String),
 
     // File Watcher Errors
     #[error("Failed to create file watcher: {0}")]
@@ -71,14 +71,4 @@ pub enum AetherDesktopError {
 
     #[error("File search error: {0}")]
     FileSearch(String),
-}
-
-impl From<git2::Error> for AetherDesktopError {
-    fn from(e: git2::Error) -> Self {
-        if e.code() == git2::ErrorCode::NotFound {
-            AetherDesktopError::DiffNotRepository
-        } else {
-            AetherDesktopError::DiffGit(e)
-        }
-    }
 }

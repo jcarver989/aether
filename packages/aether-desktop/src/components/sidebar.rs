@@ -28,6 +28,7 @@ pub fn Sidebar(
                 }
                 button {
                     class: "text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10 hover:shadow-md",
+                    "data-testid": "settings-button",
                     onclick: move |_| on_settings.call(()),
                     title: "Settings",
                     svg {
@@ -82,6 +83,7 @@ pub fn Sidebar(
                 if registry.is_empty() {
                     div {
                         class: "p-4 text-gray-500 text-sm text-center",
+                        "data-testid": "no-agents-message",
                         "No agents yet. Create one to get started."
                     }
                 }
@@ -92,6 +94,7 @@ pub fn Sidebar(
                 class: "p-4 border-t border-border-subtle",
                 button {
                     class: "w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 text-black font-semibold h-10 px-4 rounded-xl flex items-center justify-center gap-2 transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]",
+                    "data-testid": "new-agent-button",
                     onclick: move |_| on_new_agent.call(()),
                     span { class: "text-lg", "+" }
                     span { "New Agent" }
@@ -135,9 +138,11 @@ fn AgentListItem(
     let has_context_usage = agent.context_limit > 0;
     let context_usage = agent.context_usage;
 
+    let testid = format!("agent-item-{}", agent_id);
     rsx! {
         div {
             class: "group p-3 cursor-pointer transition-all duration-200 rounded-lg {selected_class}",
+            "data-testid": "{testid}",
             onclick: move |_| on_select.call(()),
 
             Inline {

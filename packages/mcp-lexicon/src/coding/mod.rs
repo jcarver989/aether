@@ -23,19 +23,9 @@ pub mod lsp;
 pub mod tools;
 pub mod tools_trait;
 
-// =============================================================================
-// Public API exports
-// =============================================================================
-// These are the stable public types for external consumers.
-// Import other types directly from their submodules (e.g., tools::bash::BashInput).
-
 pub use default_tools::DefaultCodingTools;
 pub use tools::lsp::LspCodingTools;
 pub use tools_trait::CodingTools;
-
-// =============================================================================
-// Internal imports (used by CodingMcp implementation below)
-// =============================================================================
 
 use tools::bash::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,

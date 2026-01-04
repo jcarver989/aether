@@ -89,7 +89,7 @@ impl Settings {
 
     /// Returns the default settings file path.
     pub fn default_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("aether").join("settings.json"))
+        crate::platform::io::config_dir().map(|p| p.join("aether").join("settings.json"))
     }
 
     /// Loads settings from the default path, or returns defaults if not found.

@@ -2,7 +2,8 @@
 //!
 //! Displays a filterable list of files when the user types "@".
 
-use crate::file_search::FileMatch;
+use crate::platform::FileMatch;
+
 use dioxus::prelude::*;
 
 /// Props for the file picker dropdown.

@@ -5,10 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
-// Request Types
-// ============================================================================
-
 /// Top-level request for CodeAssist API
 #[derive(Debug, Clone, Serialize)]
 pub struct CAGenerateContentRequest {
@@ -124,10 +120,6 @@ pub struct GenerationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_sequences: Option<Vec<String>>,
 }
-
-// ============================================================================
-// Response Types
-// ============================================================================
 
 /// Top-level response from CodeAssist API
 #[derive(Debug, Clone, Deserialize)]

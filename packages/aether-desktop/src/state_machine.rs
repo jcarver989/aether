@@ -3,7 +3,7 @@
 //! This module implements pure functions for handling agent events,
 //! making the logic unit-testable without Dioxus signals.
 
-use crate::acp_agent::AgentEvent;
+use crate::platform::AgentEvent;
 use crate::state::{
     AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, ToolCallStatus, now_iso,
 };

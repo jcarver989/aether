@@ -4,19 +4,14 @@
 //! and the logic more testable.
 
 use std::fmt::Debug;
-use std::path::Path;
 use std::sync::Arc;
 
-use agent_client_protocol::{
-    ContentBlock, EmbeddedResource, EmbeddedResourceResource, ResourceLink, TextResourceContents,
-};
+use agent_client_protocol::ContentBlock;
 use dioxus::prelude::*;
 use regex::Regex;
 use std::sync::LazyLock;
-use tokio::fs::read_to_string;
-use tokio::sync::Mutex;
 
-use crate::file_search::{FileMatch, FileSearcher};
+use crate::platform::{FileMatch, FileSearcher, Mutex, io, resources};
 use crate::state::{AgentStatus, Message, MessageKind, Role, SlashCommand, now_iso};
 use crate::{AGENTS, FILE_SEARCHERS, HANDLES, with_agent_mut};
 
@@ -201,22 +196,17 @@ impl AgentChatController {
         self.pending_files.write().clear();
 
         spawn(async move {
-            let supports_embedded = HANDLES.read().supports_embedded_context(&agent_id);
             let mut prompt: Vec<ContentBlock> = Vec::new();
 
+            let supports_embedded = HANDLES.read().supports_embedded_context(&agent_id);
             for file in &files {
-                if supports_embedded {
-                    match read_to_string(&file.absolute_path).await {
-                        Ok(file_content) => {
-                            prompt.push(file_to_embedded_resource(file, &file_content));
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to read file {}: {}", file.path, e);
-                        }
-                    }
-                } else {
-                    prompt.push(file_to_resource_link(file));
-                }
+                // Try to read file content (will fail gracefully on web)
+                let content = io::read_to_string(&file.absolute_path).await.ok();
+                prompt.push(resources::file_to_content_block(
+                    file,
+                    content.as_deref(),
+                    supports_embedded,
+                ));
             }
 
             if !content.trim().is_empty() {
@@ -330,62 +320,4 @@ pub fn use_agent_chat(agent_id: &str) -> Option<AgentChatController> {
         file_searcher,
         available_commands,
     })
-}
-
-/// Build a ContentBlock::Resource with embedded file content.
-fn file_to_embedded_resource(file: &FileMatch, content: &str) -> ContentBlock {
-    ContentBlock::Resource(EmbeddedResource {
-        annotations: None,
-        resource: EmbeddedResourceResource::TextResourceContents(TextResourceContents {
-            uri: format!("file://{}", file.absolute_path.display()),
-            text: content.to_string(),
-            mime_type: mime_from_path(&file.path),
-            meta: None,
-        }),
-        meta: None,
-    })
-}
-
-/// Build a ContentBlock::ResourceLink for a file reference.
-fn file_to_resource_link(file: &FileMatch) -> ContentBlock {
-    ContentBlock::ResourceLink(ResourceLink {
-        uri: format!("file://{}", file.absolute_path.display()),
-        name: file.path.clone(),
-        size: Some(file.size as i64),
-        mime_type: mime_from_path(&file.path),
-        title: Some(file.path.clone()),
-        description: None,
-        annotations: None,
-        meta: None,
-    })
-}
-
-/// Infer MIME type from file extension.
-fn mime_from_path(path: &str) -> Option<String> {
-    let ext = Path::new(path).extension()?.to_str()?;
-    let mime = match ext.to_lowercase().as_str() {
-        "rs" => "text/x-rust",
-        "py" => "text/x-python",
-        "js" => "text/javascript",
-        "ts" => "text/typescript",
-        "tsx" => "text/typescript-jsx",
-        "jsx" => "text/javascript-jsx",
-        "json" => "application/json",
-        "toml" => "text/x-toml",
-        "yaml" | "yml" => "text/x-yaml",
-        "md" => "text/markdown",
-        "html" => "text/html",
-        "css" => "text/css",
-        "go" => "text/x-go",
-        "java" => "text/x-java",
-        "c" => "text/x-c",
-        "cpp" | "cc" | "cxx" => "text/x-c++",
-        "h" | "hpp" => "text/x-c-header",
-        "sh" | "bash" => "text/x-shellscript",
-        "sql" => "text/x-sql",
-        "xml" => "text/xml",
-        "txt" => "text/plain",
-        _ => "text/plain",
-    };
-    Some(mime.to_string())
 }

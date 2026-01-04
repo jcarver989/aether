@@ -8,10 +8,12 @@ use super::tool_call_display::ToolCallDisplay;
 #[component]
 pub fn MessageBubble(message: Message) -> Element {
     let is_user = message.role == Role::User;
+    let testid = format!("message-{}", message.id);
 
     rsx! {
         div {
             class: "py-1",
+            "data-testid": "{testid}",
 
             match &message.kind {
                 MessageKind::Text => {
