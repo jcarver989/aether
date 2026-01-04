@@ -1,6 +1,6 @@
-Text/pattern search using ripgrep. Best for string literals, log messages, TODOs, or regex patterns.
+Text/pattern search. **For code structure (definitions, usages, types), use `lsp_symbol` instead—it's faster and understands code.**
 
-**Use `lsp_symbol` instead for:** finding definitions, usages, or type information. LSP understands code structure; grep just matches text.
+Best for: string literals, log messages, TODOs, comments, or regex patterns in non-code files.
 
 Usage:
 - Supports full regex syntax (e.g., "log.*Error", "function\s+\w+")
@@ -9,3 +9,11 @@ Usage:
 - Pattern syntax: Uses ripgrep - literal braces need escaping (use `interface\{\}` to find `interface{}` in Go code)
 - Multiline matching: For cross-line patterns like `struct \{[\s\S]*?field`, use `multiline: true`
 - Call multiple grep in parallel when speculative searches are useful
+
+## When NOT to use grep
+
+- "Where is function X defined?" → `lsp_symbol(operation: "definition")`
+- "What calls function X?" → `lsp_symbol` → `lsp_call_hierarchy`
+- "What type is variable X?" → `lsp_symbol(operation: "hover")`
+
+Grep can't distinguish `foo` the function from `foo` in a comment or string. LSP can.

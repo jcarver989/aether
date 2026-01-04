@@ -184,21 +184,32 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     }
 
     fn build_instructions(&self) -> String {
-        let base = r#"# Coding MCP server
+        let base = r#"# Coding MCP Server
 
-## Tool Selection Guide
+## LSP-First Principle
 
-**For code navigation (definitions, references, types):** Use LSP tools (`lsp_symbol`, `lsp_document`, `lsp_call_hierarchy`). LSP understands code semantically - it knows that `foo` in `foo.bar()` is different from `foo` in a comment or string.
+**For anything about code structure, use LSP tools first.** They're faster and more precise than grep/find.
 
-**For text/pattern search:** Use `grep`. Best for log messages, TODOs, string literals, or regex patterns.
+| Task | Wrong | Right |
+|------|-------|-------|
+| Find where X is defined | `grep "fn X"` + read files | `lsp_symbol(operation: "definition")` |
+| Find all usages of X | `grep "X"` (matches comments too) | `lsp_symbol(operation: "references")` |
+| Understand large file | `read_file` (800 lines) | `lsp_document` → `read_file(offset, limit)` |
+| Navigate to dependency | Manual ~/.cargo navigation | `lsp_symbol` on import (cross-crate jump) |
 
-## Tools
-- **lsp_symbol** - Find definitions, implementations, references, type info for a symbol
-- **lsp_document** - List all symbols in a file (functions, classes, structs)
-- **lsp_call_hierarchy** - Navigate call relationships (who calls this? what does this call?)
-- **grep** - Regex/text search across files
-- **read_file/edit_file/write_file** - File operations
-- **bash** - Terminal commands (git, npm, cargo, etc.)"#;
+**Symptoms you're using the wrong tool:**
+- Running grep multiple times to find a definition → use `lsp_symbol`
+- Reading entire files to find one function → use `lsp_document` first
+- Manually navigating ~/.cargo or node_modules → use LSP cross-crate navigation
+
+## Quick Reference
+
+- **Code symbols** (definitions, usages, types): `lsp_symbol`
+- **File structure** (what's in this file?): `lsp_document`
+- **Call relationships** (who calls X?): `lsp_symbol` → `lsp_call_hierarchy`
+- **Text patterns** (TODOs, logs, strings): `grep`
+- **File names** (find *.test.ts): `find`
+"#;
 
         match &self.root_dir {
             Some(root) => format!(

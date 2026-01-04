@@ -1,4 +1,6 @@
-Fast file pattern matching tool that works with any codebase size.
+Finds files by name pattern. **For finding where code symbols are defined, use `lsp_symbol` instead.**
+
+Best for: locating files when you know part of the filename (e.g., "*.test.ts", "config*.json")
 
 Usage:
 - Supports glob patterns like "**/*.js" or "src/**/*.ts"
