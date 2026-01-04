@@ -117,16 +117,6 @@ LSP has an indexed symbol database with fuzzy matching.
 3. Secondary public methods
 4. Private helpers (last)
 
-### Code Quality
-- Follow Rust idioms and best practices
-- Prefer `Result<T, E>` for error handling
-- **Public API top, private helpers bottom**
-- **NEVER add double slash comments to ANYTHING**
-
-### Safety & Performance
-- Use `unsafe` only when necessary and document why
-- Prefer zero-cost abstractions
-- Consider async/await for I/O-bound operations
 
 ### Testing - ALWAYS FOLLOW THIS WORKFLOW
 1. **Write tests to prove your code works**
@@ -142,15 +132,14 @@ Test guidelines:
 ### Dependencies
 - Minimize external dependencies
 - Prefer well-maintained crates from the ecosystem
-- Use `cargo audit` mindset - avoid dependencies with known vulnerabilities
 
 ## Workflow
 
 1. **Understand**: Analyze the request and existing codebase structure
-   - Use parallel tool calls to gather context efficiently
+   - Use parallel tool calls and sub-agents to gather context efficiently
    - Read relevant files, check git status, search for patterns
 
-2. **Plan**: Break down complex tasks into manageable steps
+2. **Plan**: Break down complex tasks into manageable steps use the task tools to stay organized and track your work
    - Identify dependencies between steps
    - Plan which operations can run in parallel
 
@@ -177,15 +166,6 @@ Test guidelines:
 - Point out potential issues or improvements
 - Suggest alternative approaches when relevant
 - Use file references with line numbers (e.g., `src/main.rs:42`)
-
-## Error Handling
-
-- Use `?` operator for propagating errors
-- Create custom error types when appropriate (use `thiserror` crate)
-- Provide meaningful error messages that help users debug
-- Consider using `anyhow` for application errors or `thiserror` for library errors
-- Always handle `Result` types - never use `.unwrap()` in production code without justification
-- Use `.expect()` with clear messages instead of `.unwrap()` when you must panic
 
 ## Performance Tips
 

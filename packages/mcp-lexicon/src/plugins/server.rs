@@ -22,7 +22,7 @@ use tracing::error;
 /// Callback type for reporting agent progress during subagent execution.
 type ProgressCallback = Box<dyn Fn(&str, &str, &AgentMessage) + Send + Sync>;
 
-use super::files::{load_agent_metadata, AgentFile, PromptFile, SkillsFile, SubAgentInfo};
+use super::files::{load_agent_metadata, load_skill_metadata, AgentFile, PromptFile, SkillInfo as SkillMetadata, SkillsFile, SubAgentInfo};
 use super::tools::{
     AgentExecutor, ListAgentsOutput, ListSkillsOutput, LoadSkillsInput, LoadSkillsOutput, Skill,
     SkillInfo, SpawnSubAgentsInput, SpawnSubAgentsOutput, SubAgentListItem,
@@ -53,6 +53,7 @@ pub struct PluginsMcp {
     commands_dir: PathBuf,
     skills_dir: PathBuf,
     agents_dir: PathBuf,
+    skills_info: Vec<SkillMetadata>,
     agents_info: Vec<SubAgentInfo>,
     tool_router: ToolRouter<Self>,
 }
@@ -60,13 +61,16 @@ pub struct PluginsMcp {
 impl PluginsMcp {
     /// Create a new PluginsMcp server with the given base directory
     pub fn new(base_dir: PathBuf) -> Self {
+        let skills_dir = base_dir.join("skills");
         let agents_dir = base_dir.join("sub-agents");
+        let skills_info = load_skill_metadata(&skills_dir);
         let agents_info = load_agent_metadata(&agents_dir);
 
         Self {
             commands_dir: base_dir.join("commands"),
-            skills_dir: base_dir.join("skills"),
+            skills_dir,
             agents_dir,
+            skills_info,
             agents_info,
             tool_router: Self::tool_router(),
         }
@@ -83,15 +87,22 @@ impl PluginsMcp {
     fn build_instructions(&self) -> String {
         let mut instructions = include_str!("./instructions.md").to_string();
 
-        if self.agents_info.is_empty() {
-            return instructions;
+        if !self.skills_info.is_empty() {
+            instructions.push_str("\n\n## Available Skills\n");
+            instructions.push_str("The following skills are available:\n\n");
+
+            for skill in &self.skills_info {
+                instructions.push_str(&format!("- **{}**: {}\n", skill.name, skill.description));
+            }
         }
 
-        instructions.push_str("\n\n## Available Sub-Agents\n");
-        instructions.push_str("The following sub-agents are available:\n\n");
+        if !self.agents_info.is_empty() {
+            instructions.push_str("\n\n## Available Sub-Agents\n");
+            instructions.push_str("The following sub-agents are available:\n\n");
 
-        for agent in &self.agents_info {
-            instructions.push_str(&format!("- **{}**: {}\n", agent.name, agent.description));
+            for agent in &self.agents_info {
+                instructions.push_str(&format!("- **{}**: {}\n", agent.name, agent.description));
+            }
         }
 
         instructions
@@ -208,7 +219,7 @@ impl PluginsMcp {
                 let description = file
                     .frontmatter
                     .as_ref()
-                    .and_then(|f| f.description.clone())
+                    .map(|f| f.description.clone())
                     .unwrap_or_default();
                 Some(SkillInfo { name, description })
             })
