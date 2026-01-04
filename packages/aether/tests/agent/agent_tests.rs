@@ -2,7 +2,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use aether::{
-    agent::{AgentMessage, UserMessage},
+    agent::{AgentMessage, COMPLETION_SIGNAL, UserMessage},
     llm::ChatMessage,
     testing::{
         agent_message, llm_response, test_agent,
@@ -12,7 +12,8 @@ use aether::{
 
 #[tokio::test]
 async fn test_text_message() -> Result<(), Box<dyn Error>> {
-    let (id, chunks) = ("message_1", ["Hello", "user"]);
+    let id = "message_1";
+    let chunks = ["Hello", "user", COMPLETION_SIGNAL];
     let llm_responses = [llm_response(id).text(&chunks).build()];
     let mut expected_messages = agent_message(id).text(&chunks).build();
     expected_messages.push(AgentMessage::Done);
@@ -31,7 +32,8 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
     let tool_request = AddNumbersRequest::new(3, 5);
     let tool_result = AddNumbersResult::new(8);
     let (m1_id, t1_id, t1_name) = ("message_1", "call_1", "test__add_numbers");
-    let (m2_id, chunks) = ("message-2", ["The", " sum", " is", " 8"]);
+    let m2_id = "message-2";
+    let chunks = ["The", " sum", " is", " 8", COMPLETION_SIGNAL];
 
     let llm_responses = [
         llm_response(m1_id)
@@ -77,6 +79,7 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
         " not",
         " allowed",
         ".",
+        COMPLETION_SIGNAL,
     ];
 
     let llm_responses = [
@@ -221,6 +224,144 @@ async fn test_simple_message_content() -> Result<(), Box<dyn Error>> {
 
     // Content should be exactly the user's message
     assert_eq!(content, "Just a simple message");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_auto_continue_stops_with_completion_signal() -> Result<(), Box<dyn Error>> {
+    let chunks = ["I have completed the task. ", COMPLETION_SIGNAL];
+    let llm_responses = [llm_response("msg_1").text(&chunks).build()];
+
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("do something")])
+        .max_auto_continues(3)
+        .run()
+        .await?;
+
+    let auto_continue_count = messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
+        .count();
+    assert_eq!(
+        auto_continue_count, 0,
+        "Expected no AutoContinue messages when completion signal is present"
+    );
+
+    assert!(
+        matches!(messages.last(), Some(AgentMessage::Done)),
+        "Expected Done message"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_auto_continue_triggers_without_completion_signal() -> Result<(), Box<dyn Error>> {
+    let final_chunks = ["Done! ", COMPLETION_SIGNAL];
+    let llm_responses = [
+        llm_response("msg_1")
+            .text(&["I'm thinking about the problem..."])
+            .build(),
+        llm_response("msg_2").text(&["Let me continue..."]).build(),
+        llm_response("msg_3").text(&final_chunks).build(),
+    ];
+
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("do something")])
+        .max_auto_continues(5)
+        .run()
+        .await?;
+
+    let auto_continue_count = messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
+        .count();
+    assert_eq!(
+        auto_continue_count, 2,
+        "Expected 2 AutoContinue messages, got {}",
+        auto_continue_count
+    );
+
+    let auto_continues: Vec<_> = messages
+        .iter()
+        .filter_map(|m| match m {
+            AgentMessage::AutoContinue {
+                attempt,
+                max_attempts,
+            } => Some((*attempt, *max_attempts)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(auto_continues, vec![(1, 5), (2, 5)]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_auto_continue_respects_max_limit() -> Result<(), Box<dyn Error>> {
+    let llm_responses = [
+        llm_response("msg_1").text(&["Thinking..."]).build(),
+        llm_response("msg_2").text(&["Still thinking..."]).build(),
+        llm_response("msg_3").text(&["More thinking..."]).build(),
+        llm_response("msg_4")
+            .text(&["This should not appear"])
+            .build(),
+    ];
+
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("do something")])
+        .max_auto_continues(2)
+        .run()
+        .await?;
+
+    let auto_continue_count = messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
+        .count();
+    assert_eq!(
+        auto_continue_count, 2,
+        "Expected 2 AutoContinue messages (max limit), got {}",
+        auto_continue_count
+    );
+
+    assert!(
+        matches!(messages.last(), Some(AgentMessage::Done)),
+        "Expected Done message after hitting max_auto_continues"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_auto_continue_disabled_with_zero() -> Result<(), Box<dyn Error>> {
+    let llm_responses = [llm_response("msg_1")
+        .text(&["No completion signal here"])
+        .build()];
+
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("do something")])
+        .max_auto_continues(0)
+        .run()
+        .await?;
+
+    let auto_continue_count = messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
+        .count();
+    assert_eq!(
+        auto_continue_count, 0,
+        "Expected no AutoContinue messages when max_auto_continues=0"
+    );
+
+    assert!(
+        matches!(messages.last(), Some(AgentMessage::Done)),
+        "Expected Done message"
+    );
 
     Ok(())
 }

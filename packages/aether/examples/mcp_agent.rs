@@ -101,6 +101,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     context_limit
                 );
             }
+            Some(AutoContinue {
+                attempt,
+                max_attempts,
+            }) => {
+                println!(
+                    "Auto-continuing: attempt {}/{} (LLM stopped without completion signal)",
+                    attempt, max_attempts
+                );
+            }
             None => {
                 println!("Channel closed");
                 break;

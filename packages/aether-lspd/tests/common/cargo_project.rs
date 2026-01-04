@@ -1,5 +1,3 @@
-
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -83,7 +81,6 @@ edition = "2021"
     fn init_src_dir(&self) -> Result<(), CargoProjectError> {
         let src_dir = self.root().join("src");
         fs::create_dir_all(&src_dir).map_err(CargoProjectError::Io)?;
-
 
         let main_content = r#"fn main() {
     println!("Hello, world!");

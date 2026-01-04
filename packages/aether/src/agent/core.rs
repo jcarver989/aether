@@ -17,6 +17,9 @@ use tokio_stream::StreamExt;
 use tokio_stream::StreamMap;
 use tokio_stream::wrappers::ReceiverStream;
 
+/// Signal that must be present in the LLM response to indicate genuine task completion
+pub const COMPLETION_SIGNAL: &str = "<task-complete/>";
+
 /// Internal event type for merging LLM and tool result streams
 #[derive(Debug)]
 enum StreamEvent {
@@ -37,6 +40,10 @@ pub struct Agent<T: StreamingModelProvider> {
     tool_timeout: Duration,
     token_tracker: TokenTracker,
     compaction_config: Option<CompactionConfig>,
+    /// Maximum number of times to auto-continue when LLM stops without completion signal
+    max_auto_continues: u32,
+    /// Current count of consecutive auto-continue attempts (resets after tool calls or completion)
+    auto_continue_count: u32,
 }
 
 impl<T: StreamingModelProvider + 'static> Agent<T> {
@@ -50,6 +57,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         middleware: Middleware,
         tool_timeout: Duration,
         compaction_config: Option<CompactionConfig>,
+        max_auto_continues: u32,
     ) -> Self {
         let mut streams: StreamMap<String, EventStream> = StreamMap::new();
         streams.insert(
@@ -67,6 +75,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             tool_timeout,
             token_tracker: TokenTracker::new(200_000), // Default to Claude's 200k context limit
             compaction_config,
+            max_auto_continues,
+            auto_continue_count: 0,
         }
     }
 
@@ -121,13 +131,46 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     })
                     .await;
 
-                let should_continue = state.has_tool_calls();
+                let has_tool_calls = state.has_tool_calls();
+                let has_completion_signal = state.message_content.contains(COMPLETION_SIGNAL);
+                let message_content = state.message_content.clone();
                 state = IterationState::new();
 
-                if should_continue {
+                if has_tool_calls {
+                    self.auto_continue_count = 0;
                     self.start_llm_stream();
-                } else if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
-                    tracing::warn!("Failed to send Done message: {:?}", e);
+                } else if has_completion_signal {
+                    self.auto_continue_count = 0;
+                    if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
+                        tracing::warn!("Failed to send Done message: {:?}", e);
+                    }
+                } else if self.auto_continue_count < self.max_auto_continues {
+                    self.auto_continue_count += 1;
+                    tracing::info!(
+                        "LLM stopped without completion signal or tool calls, auto-continuing (attempt {}/{})",
+                        self.auto_continue_count,
+                        self.max_auto_continues
+                    );
+
+                    let _ = self
+                        .agent_message_tx
+                        .send(AgentMessage::AutoContinue {
+                            attempt: self.auto_continue_count,
+                            max_attempts: self.max_auto_continues,
+                        })
+                        .await;
+
+                    self.inject_continuation_prompt(&message_content);
+                    self.start_llm_stream();
+                } else {
+                    tracing::warn!(
+                        "LLM stopped {} times without completion signal, giving up",
+                        self.max_auto_continues
+                    );
+                    self.auto_continue_count = 0;
+                    if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
+                        tracing::warn!("Failed to send Done message: {:?}", e);
+                    }
                 }
             }
         }
@@ -183,6 +226,22 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             .map(StreamEvent::Llm);
 
         self.streams.insert("llm".to_string(), Box::pin(llm_stream));
+    }
+
+    /// Inject a continuation prompt when the LLM stops without completing the task
+    fn inject_continuation_prompt(&mut self, previous_response: &str) {
+        if !previous_response.is_empty() {
+            self.context.add_message(ChatMessage::Assistant {
+                content: previous_response.to_string(),
+                timestamp: IsoString::now(),
+                tool_calls: Vec::new(),
+            });
+        }
+
+        self.context.add_message(ChatMessage::User {
+            content: format!("Continue. When done, include {}", COMPLETION_SIGNAL),
+            timestamp: IsoString::now(),
+        });
     }
 
     async fn on_llm_event(

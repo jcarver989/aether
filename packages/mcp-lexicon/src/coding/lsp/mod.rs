@@ -44,8 +44,7 @@ pub mod registry;
 
 // Re-export from aether_lspd for convenience
 pub use aether_lspd::{
-    LanguageId, LspClient, LspConfig, get_config_for_language,
-    symbol_kind_to_string,
+    LanguageId, LspClient, LspConfig, get_config_for_language, symbol_kind_to_string,
 };
 
 pub use common::{LocationResult, parse_line, path_to_uri, uri_to_path};

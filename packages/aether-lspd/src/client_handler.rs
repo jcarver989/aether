@@ -11,11 +11,7 @@ use tokio::spawn;
 use tokio::sync::mpsc;
 
 /// Handle a client connection
-pub async fn handle_client(
-    stream: UnixStream,
-    lsp_manager: LspManager,
-    client_id: uuid::Uuid,
-) {
+pub async fn handle_client(stream: UnixStream, lsp_manager: LspManager, client_id: uuid::Uuid) {
     let (reader, writer) = split(stream);
     let (response_tx, response_rx) = mpsc::channel::<DaemonResponse>(100);
     let writer_handle = spawn(run_writer(writer, response_rx));
@@ -142,7 +138,10 @@ async fn handle_lsp_request(handle: &LspHandle, request: LspRequest) -> DaemonRe
         },
         LspRequest::GotoImplementation { params, .. } => LspResponse::GotoImplementation {
             client_id,
-            result: handle.request(GotoImplementation(params)).await.map_err(Into::into),
+            result: handle
+                .request(GotoImplementation(params))
+                .await
+                .map_err(Into::into),
         },
         LspRequest::FindReferences { params, .. } => LspResponse::FindReferences {
             client_id,

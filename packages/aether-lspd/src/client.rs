@@ -511,8 +511,7 @@ impl LspClient {
 
     /// Send notification that a document was saved
     pub async fn notify_saved(&self, params: DidSaveTextDocumentParams) -> ClientResult<()> {
-        self.send_notification(LspNotification::Saved(params))
-            .await
+        self.send_notification(LspNotification::Saved(params)).await
     }
 
     /// Send notification that a document was closed
