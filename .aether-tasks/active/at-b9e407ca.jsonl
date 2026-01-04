@@ -1,1 +1,0 @@
-{"id":"at-b9e407ca","title":"RFC: File-drawer sidebar for Git diff view","description":"Convert the Git diff view sidebar in aether-desktop from a flat file list to a hierarchical file-drawer that groups files by directory, similar to GitHub PR reviews.","status":"pending","created_at":"2026-01-01T21:16:41.984828Z","updated_at":"2026-01-01T21:16:41.984828Z"}
