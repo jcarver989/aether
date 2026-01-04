@@ -258,14 +258,49 @@ async fn test_auto_continue_stops_with_completion_signal() -> Result<(), Box<dyn
 }
 
 #[tokio::test]
+async fn test_auto_continue_not_triggered_for_opening_message() -> Result<(), Box<dyn Error>> {
+    let chunks = ["Hey there!", " How can I help?"];
+
+    let llm_responses = [llm_response("msg_1").text(&chunks).build()];
+
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("hello")])
+        .max_auto_continues(3)
+        .run()
+        .await?;
+
+    let auto_continue_count = messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
+        .count();
+    assert_eq!(
+        auto_continue_count, 0,
+        "Expected no AutoContinue messages for opening message without tool calls"
+    );
+
+    assert!(
+        matches!(messages.last(), Some(AgentMessage::Done)),
+        "Expected Done message for opening message"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_auto_continue_triggers_without_completion_signal() -> Result<(), Box<dyn Error>> {
+    let tool_request = AddNumbersRequest::new(2, 3);
     let final_chunks = ["Done! ", COMPLETION_SIGNAL];
+
     let llm_responses = [
         llm_response("msg_1")
+            .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
+            .build(),
+        llm_response("msg_2")
             .text(&["I'm thinking about the problem..."])
             .build(),
-        llm_response("msg_2").text(&["Let me continue..."]).build(),
-        llm_response("msg_3").text(&final_chunks).build(),
+        llm_response("msg_3").text(&["Let me continue..."]).build(),
+        llm_response("msg_4").text(&final_chunks).build(),
     ];
 
     let messages = test_agent()
@@ -281,7 +316,7 @@ async fn test_auto_continue_triggers_without_completion_signal() -> Result<(), B
         .count();
     assert_eq!(
         auto_continue_count, 2,
-        "Expected 2 AutoContinue messages, got {}",
+        "Expected 2 AutoContinue messages after tool call, got {}",
         auto_continue_count
     );
 
@@ -302,11 +337,16 @@ async fn test_auto_continue_triggers_without_completion_signal() -> Result<(), B
 
 #[tokio::test]
 async fn test_auto_continue_respects_max_limit() -> Result<(), Box<dyn Error>> {
+    let tool_request = AddNumbersRequest::new(2, 3);
+
     let llm_responses = [
-        llm_response("msg_1").text(&["Thinking..."]).build(),
-        llm_response("msg_2").text(&["Still thinking..."]).build(),
-        llm_response("msg_3").text(&["More thinking..."]).build(),
-        llm_response("msg_4")
+        llm_response("msg_1")
+            .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
+            .build(),
+        llm_response("msg_2").text(&["Thinking..."]).build(),
+        llm_response("msg_3").text(&["Still thinking..."]).build(),
+        llm_response("msg_4").text(&["More thinking..."]).build(),
+        llm_response("msg_5")
             .text(&["This should not appear"])
             .build(),
     ];
@@ -338,9 +378,16 @@ async fn test_auto_continue_respects_max_limit() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn test_auto_continue_disabled_with_zero() -> Result<(), Box<dyn Error>> {
-    let llm_responses = [llm_response("msg_1")
-        .text(&["No completion signal here"])
-        .build()];
+    let tool_request = AddNumbersRequest::new(2, 3);
+
+    let llm_responses = [
+        llm_response("msg_1")
+            .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
+            .build(),
+        llm_response("msg_2")
+            .text(&["No completion signal here"])
+            .build(),
+    ];
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
