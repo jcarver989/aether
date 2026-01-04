@@ -87,7 +87,7 @@ impl ServerHandler for PluginsMcp {
                 icons: None,
                 website_url: None,
             },
-            instructions: None,
+            instructions: Some(include_str!("./instructions.md").to_string()),
             capabilities: ServerCapabilities::builder()
                 .enable_prompts()
                 .enable_tools()
