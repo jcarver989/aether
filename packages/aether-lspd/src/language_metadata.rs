@@ -290,7 +290,10 @@ mod tests {
     #[test]
     fn test_from_lsp_id() {
         assert_eq!(from_lsp_id("rust"), Some(LanguageId::Rust));
-        assert_eq!(from_lsp_id("typescriptreact"), Some(LanguageId::TypeScriptReact));
+        assert_eq!(
+            from_lsp_id("typescriptreact"),
+            Some(LanguageId::TypeScriptReact)
+        );
         assert_eq!(from_lsp_id("unknown"), None);
     }
 
@@ -304,10 +307,22 @@ mod tests {
     #[test]
     fn test_language_id_from_path() {
         assert_eq!(LanguageId::from_path(Path::new("foo.rs")), LanguageId::Rust);
-        assert_eq!(LanguageId::from_path(Path::new("bar.py")), LanguageId::Python);
-        assert_eq!(LanguageId::from_path(Path::new("baz.tsx")), LanguageId::TypeScriptReact);
-        assert_eq!(LanguageId::from_path(Path::new("unknown.xyz")), LanguageId::PlainText);
-        assert_eq!(LanguageId::from_path(Path::new("no_extension")), LanguageId::PlainText);
+        assert_eq!(
+            LanguageId::from_path(Path::new("bar.py")),
+            LanguageId::Python
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("baz.tsx")),
+            LanguageId::TypeScriptReact
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("unknown.xyz")),
+            LanguageId::PlainText
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("no_extension")),
+            LanguageId::PlainText
+        );
     }
 
     #[test]

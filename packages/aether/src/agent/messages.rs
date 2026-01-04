@@ -62,6 +62,14 @@ pub enum AgentMessage {
         context_limit: u32,
     },
 
+    /// Agent is auto-continuing because LLM stopped without completion signal
+    AutoContinue {
+        /// Current attempt number (1-indexed)
+        attempt: u32,
+        /// Maximum allowed attempts
+        max_attempts: u32,
+    },
+
     Done,
 }
 

@@ -3,8 +3,8 @@ use lsp_types::{
     CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverParams, Location, PublishDiagnosticsParams, ReferenceParams,
-    SymbolInformation, Uri, WorkspaceSymbolParams,
+    GotoDefinitionResponse, Hover, HoverParams, Location, PublishDiagnosticsParams,
+    ReferenceParams, SymbolInformation, Uri, WorkspaceSymbolParams,
 };
 use serde::{Deserialize, Serialize};
 use std::io;

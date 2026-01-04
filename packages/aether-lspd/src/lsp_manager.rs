@@ -638,4 +638,3 @@ async fn write_lsp_message(stdin: &mut ChildStdin, msg: &Value) -> std::io::Resu
     stdin.write_all(content.as_bytes()).await?;
     stdin.flush().await
 }
-

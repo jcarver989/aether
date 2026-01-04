@@ -74,4 +74,3 @@ pub fn path_to_uri(path: &Path) -> Result<Uri, LspError> {
         .parse()
         .map_err(|_| LspError::Transport(format!("Invalid path: {}", path.display())))
 }
-

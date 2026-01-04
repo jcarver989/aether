@@ -237,7 +237,8 @@ pub fn map_agent_message_to_session_notification(
         | AgentMessage::Cancelled { .. }
         | AgentMessage::Done
         | AgentMessage::ContextCompactionStarted { .. }
-        | AgentMessage::ContextCompactionResult { .. } => None,
+        | AgentMessage::ContextCompactionResult { .. }
+        | AgentMessage::AutoContinue { .. } => None,
     }
 }
 

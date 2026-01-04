@@ -7,9 +7,9 @@ use lsp_types::DocumentSymbolResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use aether_lspd::symbol_kind_to_string;
 use crate::coding::lsp::common::LocationResult;
 use crate::coding::tools_trait::CodingTools;
+use aether_lspd::symbol_kind_to_string;
 
 /// The operation to perform on a document
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

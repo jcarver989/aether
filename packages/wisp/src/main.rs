@@ -197,6 +197,16 @@ async fn run_non_interactive(
                 // Silently ignore context usage updates in CLI output
             }
 
+            AgentMessage::AutoContinue {
+                attempt,
+                max_attempts,
+            } => {
+                println!(
+                    "[Auto-continuing: {}/{} - LLM stopped without completion signal]",
+                    attempt, max_attempts
+                );
+            }
+
             AgentMessage::Done => {
                 break;
             }

@@ -168,6 +168,16 @@ async fn run_agent(
                 );
             }
 
+            AutoContinue {
+                attempt,
+                max_attempts,
+            } => {
+                println!(
+                    "[Auto-continuing: attempt {}/{} - LLM stopped without completion signal]",
+                    attempt, max_attempts
+                );
+            }
+
             Done => {
                 println!("Agent task completed");
                 break;

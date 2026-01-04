@@ -19,9 +19,9 @@ use std::sync::{Arc, Mutex};
 use aether_lspd::LspClient;
 
 use crate::coding::error::CodingError;
+use crate::coding::lsp::LanguageId;
 use crate::coding::lsp::common::{path_to_uri, uri_to_path};
 use crate::coding::lsp::registry::LspRegistry;
-use crate::coding::lsp::LanguageId;
 use crate::coding::tools::bash::ReadBackgroundBashOutput;
 use crate::coding::tools::bash::{BackgroundProcessHandle, BashInput, BashResult};
 use crate::coding::tools::edit_file::{EditFileArgs, EditFileResponse};

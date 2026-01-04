@@ -25,6 +25,7 @@ pub struct AgentBuilder<T: StreamingModelProvider> {
     channel_capacity: usize,
     tool_timeout: Duration,
     compaction_config: Option<CompactionConfig>,
+    max_auto_continues: u32,
 }
 
 impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
@@ -38,6 +39,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             channel_capacity: 1000,
             tool_timeout: Duration::from_secs(60 * 10),
             compaction_config: Some(CompactionConfig::default()),
+            max_auto_continues: 3,
         }
     }
 
@@ -134,6 +136,30 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         self
     }
 
+    /// Configure the maximum number of auto-continue attempts.
+    ///
+    /// When the LLM stops without making tool calls and without including
+    /// the completion signal (TASK_COMPLETE), the agent will automatically
+    /// inject a continuation prompt and restart the LLM stream.
+    ///
+    /// This setting limits how many times the agent will attempt to continue
+    /// before giving up and returning `AgentMessage::Done`.
+    ///
+    /// Default: 3
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Allow up to 5 auto-continue attempts
+    /// agent(llm).max_auto_continues(5)
+    ///
+    /// // Disable auto-continue entirely
+    /// agent(llm).max_auto_continues(0)
+    /// ```
+    pub fn max_auto_continues(mut self, max: u32) -> Self {
+        self.max_auto_continues = max;
+        self
+    }
+
     pub async fn spawn(self) -> Result<(Sender<UserMessage>, Receiver<AgentMessage>, AgentHandle)> {
         let mut messages = Vec::new();
 
@@ -164,6 +190,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             self.middleware,
             self.tool_timeout,
             self.compaction_config,
+            self.max_auto_continues,
         );
 
         let agent_handle = tokio::spawn(agent.run());

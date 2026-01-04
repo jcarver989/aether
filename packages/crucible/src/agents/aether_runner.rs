@@ -234,6 +234,16 @@ async fn stream_agent_messages(
                     context_limit
                 );
             }
+            AgentMessage::AutoContinue {
+                attempt,
+                max_attempts,
+            } => {
+                tracing::debug!(
+                    "Auto-continuing: attempt {}/{} - LLM stopped without completion signal",
+                    attempt,
+                    max_attempts
+                );
+            }
         }
     }
 

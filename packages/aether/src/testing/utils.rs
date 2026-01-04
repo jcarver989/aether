@@ -27,6 +27,7 @@ pub struct TestAgentBuilder {
     messages: Vec<UserMessage>,
     responses: Vec<Vec<LlmResponse>>,
     timeout: Option<Duration>,
+    max_auto_continues: Option<u32>,
 }
 
 impl Default for TestAgentBuilder {
@@ -41,6 +42,7 @@ impl TestAgentBuilder {
             messages: Vec::new(),
             responses: Vec::new(),
             timeout: None,
+            max_auto_continues: None,
         }
     }
 
@@ -56,6 +58,11 @@ impl TestAgentBuilder {
 
     pub fn tool_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
+        self
+    }
+
+    pub fn max_auto_continues(mut self, max: u32) -> Self {
+        self.max_auto_continues = Some(max);
         self
     }
 
@@ -85,6 +92,9 @@ impl TestAgentBuilder {
         let mut builder = agent(llm).tools(mcp_tx, tool_definitions);
         if let Some(timeout) = self.timeout {
             builder = builder.tool_timeout(timeout);
+        }
+        if let Some(max) = self.max_auto_continues {
+            builder = builder.max_auto_continues(max);
         }
 
         let (tx, mut rx, _handle) = builder.spawn().await?;
