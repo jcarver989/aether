@@ -4,20 +4,11 @@
 //!
 //! `LspCodingTools` provides multi-language LSP support by lazily spawning
 //! appropriate language servers based on file type.
-//!
-//! Import types directly from submodules (e.g., `lsp::check_errors::LspDiagnosticsInput`).
 
 // Core wrapper
 pub mod coding_tools;
 
-// Legacy tools (to be removed after migration)
-pub mod check_errors;
-pub mod find_definition;
-pub mod find_usages;
-pub mod get_type_info;
-pub mod search_symbols;
-
-// New consolidated tools
+// Consolidated LSP tools
 pub mod call_hierarchy;
 pub mod document_info;
 pub mod symbol_lookup;
