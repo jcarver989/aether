@@ -2,20 +2,20 @@
 //!
 //! This is the main view that displays the agent sidebar and chat interface.
 
-use crate::acp_agent::{AgentEvent, AgentHandle};
 use crate::components::{
     AgentView, Card, EmptyState, Inline, NewAgentForm, SettingsEditor, Sidebar, Space, Stack,
 };
 use crate::error::AetherDesktopError;
+use crate::platform::{AgentEvent, AgentHandle, DockerProgress, ReceiverExt, mpsc};
 use crate::settings::Settings;
 use crate::state::{AgentConfig, AgentHandles, AgentRegistry, AgentSession, AgentStatus};
 use crate::{AGENTS, EventChannel, HANDLES};
-use aether_acp_client::DockerProgress;
+
 use agent_client_protocol::{ContentBlock, RequestPermissionOutcome, RequestPermissionResponse};
 use dioxus::prelude::*;
 use std::env::current_dir;
 use std::path::PathBuf;
-use tokio::sync::mpsc;
+
 use tracing::{info, warn};
 
 /// Timeout in seconds for graceful agent termination before force kill.
@@ -137,7 +137,7 @@ pub async fn run_ui_consumer(
 ) {
     info!("UI consumer started");
 
-    while let Some(event) = ui_rx.recv().await {
+    while let Some(event) = ui_rx.recv_next().await {
         apply_agent_event(agents, handles, event);
     }
 

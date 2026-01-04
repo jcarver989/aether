@@ -81,6 +81,7 @@ pub fn NewAgentForm(
                 class: "flex justify-end p-3",
                 button {
                     class: "text-gray-500 hover:text-white transition-all p-1 rounded-lg hover:bg-white/10 hover:shadow-md",
+                    "data-testid": "cancel-agent-button",
                     onclick: move |_| on_cancel.call(()),
                     "X"
                 }
@@ -100,6 +101,7 @@ pub fn NewAgentForm(
                         // Textarea
                         textarea {
                             class: "w-full bg-transparent text-white px-5 pt-5 pb-3 resize-none focus:outline-none text-base placeholder-gray-500 leading-relaxed",
+                            "data-testid": "initial-message-input",
                             rows: "4",
                             placeholder: "What would you like to work on?",
                             value: "{initial_message}",
@@ -138,6 +140,7 @@ pub fn NewAgentForm(
                                         input {
                                             r#type: "checkbox",
                                             class: "w-4 h-4 rounded border-border-default bg-bg-tertiary accent-green-500 cursor-pointer",
+                                            "data-testid": "use-docker-checkbox",
                                             checked: use_docker(),
                                             onchange: move |e| use_docker.set(e.checked()),
                                         }
@@ -153,6 +156,7 @@ pub fn NewAgentForm(
                                 // Agent server dropdown
                                 select {
                                     class: "bg-bg-tertiary text-white border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-green-500 text-sm hover:border-[#64748b] transition-colors cursor-pointer",
+                                    "data-testid": "server-dropdown",
                                     value: "{selected_server}",
                                     onchange: move |e| selected_server.set(e.value()),
 
@@ -172,6 +176,7 @@ pub fn NewAgentForm(
                                 // Submit button
                                 button {
                                     class: "btn-primary px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
+                                    "data-testid": "create-agent-button",
                                     disabled: initial_message.read().trim().is_empty(),
                                     onclick: {
                                         let dockerfile_path_for_click = dockerfile_path.clone();

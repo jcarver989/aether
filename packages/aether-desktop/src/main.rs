@@ -1,27 +1,43 @@
-use acp_agent::AgentEvent;
 use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
-use tokio::sync::mpsc;
 
-use file_search::FileSearcherCache;
 use state::{AgentHandles, AgentRegistry, AgentSession};
 use views::Home;
 
+// Native-only modules (require desktop feature)
+#[cfg(feature = "desktop")]
 mod acp_agent;
-mod components;
+#[cfg(feature = "desktop")]
 mod diff_engine;
+#[cfg(feature = "desktop")]
 mod docker_diff;
+#[cfg(feature = "desktop")]
 mod docker_watcher;
-mod error;
+#[cfg(feature = "desktop")]
 mod file_search;
+#[cfg(feature = "desktop")]
 mod file_watcher;
+
+// Fake implementations for web/testing
+#[cfg(not(feature = "desktop"))]
+mod fakes;
+
+// Cross-platform modules
+mod components;
+mod error;
+mod events;
+mod file_types;
 mod hooks;
 mod markdown;
+mod platform;
 mod settings;
 mod state;
 mod state_machine;
 mod syntax;
 mod views;
+
+// Re-export platform types
+use platform::{AgentEvent, FileSearcherCache, mpsc};
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const THEME_CSS: Asset = asset!("/assets/styling/theme.css");
@@ -71,13 +87,13 @@ pub struct EventChannel(pub mpsc::UnboundedSender<AgentEvent>);
 #[component]
 fn App() -> Element {
     let event_tx: mpsc::UnboundedSender<AgentEvent> = use_hook(|| {
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = platform::unbounded_channel();
         spawn_forever(async move {
             views::run_ui_consumer(event_rx, &AGENTS, &HANDLES).await;
         });
-
         event_tx
     });
+
     use_context_provider(|| EventChannel(event_tx));
 
     rsx! {

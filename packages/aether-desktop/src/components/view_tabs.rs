@@ -28,6 +28,7 @@ pub fn ViewTabs(active: AgentViewTab, on_change: EventHandler<AgentViewTab>) -> 
     rsx! {
         div {
             class: "flex gap-1 p-1 bg-[#0f0f11] rounded-xl",
+            "data-testid": "view-tabs",
 
             button {
                 class: "{chat_class}",

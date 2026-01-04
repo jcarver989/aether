@@ -2,9 +2,11 @@
 
 use super::voice_input::VoiceInput;
 use crate::components::layout::{Inline, Space};
-use aether_voice::{RecordingState, TranscriptionUpdate, record_and_transcribe};
+use crate::platform::voice::RecordingState;
 use dioxus::prelude::*;
-use tokio::sync::oneshot;
+
+#[cfg(feature = "desktop")]
+use crate::platform::voice::{TranscriptionUpdate, oneshot, record_and_transcribe};
 
 /// Prompt input with textarea and voice button.
 #[component]
@@ -18,10 +20,13 @@ pub fn PromptInput(
     #[props(default = false)] simple: bool,
 ) -> Element {
     let voice_state = use_signal(|| RecordingState::Idle);
+
+    #[cfg(feature = "desktop")]
     let mut stop_tx = use_signal::<Option<oneshot::Sender<()>>>(|| None);
-    // Store the text that existed before recording started
+    #[cfg(feature = "desktop")]
     let mut prefix_text = use_signal(String::new);
 
+    #[cfg(feature = "desktop")]
     let mut handle_voice_click = {
         let mut voice_state = voice_state;
         move |should_start: bool| {
@@ -74,6 +79,11 @@ pub fn PromptInput(
         }
     };
 
+    #[cfg(not(feature = "desktop"))]
+    let handle_voice_click = move |_should_start: bool| {
+        // Voice recording not available in web mode
+    };
+
     let rows_attr = rows.unwrap_or("2");
 
     if simple {
@@ -84,6 +94,7 @@ pub fn PromptInput(
 
                 textarea {
                     class: "input-field w-full rounded-xl px-4 py-3 resize-none pr-10",
+                    "data-testid": "prompt-input",
                     value: "{value()}",
                     oninput: move |e: Event<FormData>| {
                         on_change.call(e.value());
@@ -114,6 +125,7 @@ pub fn PromptInput(
 
                     textarea {
                         class: "input-field w-full rounded-xl px-4 py-3 resize-none pr-10 h-full",
+                        "data-testid": "prompt-input",
                         value: "{value()}",
                         oninput: move |e: Event<FormData>| {
                             on_change.call(e.value());
@@ -140,6 +152,7 @@ pub fn PromptInput(
 
                 button {
                     class: "btn-primary px-6 py-3 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
+                    "data-testid": "submit-button",
                     onclick: move |_| {
                         on_submit.call(());
                     },

@@ -8,19 +8,28 @@ use git2::{Delta, DiffOptions, Patch, Repository};
 use std::fs::read_to_string;
 use std::path::Path;
 
+/// Convert a git2::Error to AetherDesktopError.
+fn git_err(e: git2::Error) -> AetherDesktopError {
+    if e.code() == git2::ErrorCode::NotFound {
+        AetherDesktopError::DiffNotRepository
+    } else {
+        AetherDesktopError::DiffGit(e.to_string())
+    }
+}
+
 /// Compute the diff between HEAD and the working directory.
 ///
 /// Returns a list of file diffs showing what has changed.
 /// If the path is not a git repository, returns `AetherDesktopError::DiffNotRepository`.
 pub fn compute_diff(repo_path: &Path) -> Result<Vec<FileDiff>, AetherDesktopError> {
-    let repo = Repository::discover(repo_path)?;
+    let repo = Repository::discover(repo_path).map_err(git_err)?;
     let workdir = repo.workdir().unwrap_or(repo_path);
 
     // Get HEAD tree (handle case where repo has no commits)
     let head_tree = match repo.head() {
-        Ok(head) => Some(head.peel_to_tree()?),
+        Ok(head) => Some(head.peel_to_tree().map_err(git_err)?),
         Err(e) if e.code() == git2::ErrorCode::UnbornBranch => None,
-        Err(e) => return Err(e.into()),
+        Err(e) => return Err(git_err(e)),
     };
 
     // Configure diff options
@@ -29,15 +38,17 @@ pub fn compute_diff(repo_path: &Path) -> Result<Vec<FileDiff>, AetherDesktopErro
     opts.recurse_untracked_dirs(true);
 
     // Compute diff: HEAD tree vs working directory
-    let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))?;
+    let diff = repo
+        .diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))
+        .map_err(git_err)?;
 
     let mut file_diffs = Vec::new();
     let num_deltas = diff.deltas().len();
 
     for idx in 0..num_deltas {
-        let delta = diff.get_delta(idx).ok_or_else(|| {
-            AetherDesktopError::DiffGit(git2::Error::from_str("Delta index out of bounds"))
-        })?;
+        let delta = diff
+            .get_delta(idx)
+            .ok_or_else(|| AetherDesktopError::DiffGit("Delta index out of bounds".to_string()))?;
 
         let status = match delta.status() {
             Delta::Added | Delta::Untracked => FileStatus::Added,
@@ -67,7 +78,7 @@ pub fn compute_diff(repo_path: &Path) -> Result<Vec<FileDiff>, AetherDesktopErro
         };
 
         // Get the patch for this file to extract hunks
-        let mut hunks = match Patch::from_diff(&diff, idx)? {
+        let mut hunks = match Patch::from_diff(&diff, idx).map_err(git_err)? {
             Some(patch) => parse_patch(&patch)?,
             None => Vec::new(),
         };
@@ -126,11 +137,11 @@ fn parse_patch(patch: &Patch<'_>) -> Result<Vec<DiffHunk>, AetherDesktopError> {
     let mut hunks = Vec::new();
 
     for hunk_idx in 0..patch.num_hunks() {
-        let (hunk, num_lines) = patch.hunk(hunk_idx)?;
+        let (hunk, num_lines) = patch.hunk(hunk_idx).map_err(git_err)?;
 
         let mut lines = Vec::new();
         for line_idx in 0..num_lines {
-            let line = patch.line_in_hunk(hunk_idx, line_idx)?;
+            let line = patch.line_in_hunk(hunk_idx, line_idx).map_err(git_err)?;
 
             let origin = match line.origin() {
                 '+' => LineOrigin::Addition,

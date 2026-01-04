@@ -1,6 +1,7 @@
 //! Voice input UI component.
 
-use aether_voice::RecordingState;
+use crate::platform::RecordingState;
+
 use dioxus::prelude::*;
 
 /// Voice input button with recording state indicator.

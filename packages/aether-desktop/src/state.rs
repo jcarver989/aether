@@ -3,9 +3,9 @@
 //! These types represent the UI state and are independent of the
 //! underlying agent protocol (ACP).
 
-use crate::acp_agent::AgentHandle;
 use crate::error::AetherDesktopError;
-use aether_acp_client::DockerProgress;
+use crate::platform::{AgentHandle, DockerProgress};
+
 use agent_client_protocol::{
     AvailableCommand, AvailableCommandInput, ContentBlock, SessionId, ToolCall,
 };
@@ -282,10 +282,6 @@ impl Default for AgentHandles {
     }
 }
 
-// ============================================================================
-// Git Diff Types
-// ============================================================================
-
 /// Status of a file in the git diff.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FileStatus {
@@ -294,10 +290,6 @@ pub enum FileStatus {
     Deleted,
     Renamed,
 }
-
-// ============================================================================
-// Comment Types
-// ============================================================================
 
 /// Unique key for identifying a comment location.
 /// Tuple of (file_path, line_number).

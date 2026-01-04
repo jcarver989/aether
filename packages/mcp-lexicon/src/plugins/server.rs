@@ -22,7 +22,10 @@ use tracing::error;
 /// Callback type for reporting agent progress during subagent execution.
 type ProgressCallback = Box<dyn Fn(&str, &str, &AgentMessage) + Send + Sync>;
 
-use super::files::{load_agent_metadata, load_skill_metadata, AgentFile, PromptFile, SkillInfo as SkillMetadata, SkillsFile, SubAgentInfo};
+use super::files::{
+    AgentFile, PromptFile, SkillInfo as SkillMetadata, SkillsFile, SubAgentInfo,
+    load_agent_metadata, load_skill_metadata,
+};
 use super::tools::{
     AgentExecutor, ListAgentsOutput, ListSkillsOutput, LoadSkillsInput, LoadSkillsOutput, Skill,
     SkillInfo, SpawnSubAgentsInput, SpawnSubAgentsOutput, SubAgentListItem,

@@ -4,6 +4,7 @@
 //! `ignore` and `nucleo` crates respectively.
 
 use crate::error::AetherDesktopError;
+use crate::file_types::FileMatch;
 use ignore::WalkBuilder;
 use nucleo::{Config, Injector, Nucleo, Utf32String};
 use std::collections::HashMap;
@@ -43,17 +44,6 @@ impl FileSearcherCache {
     pub fn contains(&self, cwd: &Path) -> bool {
         self.searchers.contains_key(cwd)
     }
-}
-
-/// A file match result from fuzzy search.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FileMatch {
-    /// Relative path from the working directory (for display)
-    pub path: String,
-    /// Absolute path for reading content
-    pub absolute_path: PathBuf,
-    /// File size in bytes
-    pub size: u64,
 }
 
 /// File searcher with fuzzy matching support.

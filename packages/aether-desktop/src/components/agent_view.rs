@@ -15,6 +15,8 @@ use crate::{AGENTS, HANDLES, with_agent_mut};
 use agent_client_protocol::ContentBlock;
 use dioxus::prelude::*;
 
+use crate::platform::FileMatch;
+
 #[component]
 pub fn AgentView(agent_id: String) -> Element {
     let mut active_tab = use_signal(|| AgentViewTab::Chat);
@@ -79,6 +81,7 @@ pub fn AgentView(agent_id: String) -> Element {
                 }
                 span {
                     class: "px-3 py-1 rounded-full text-xs font-medium {status_color}",
+                    "data-testid": "agent-status",
                     "{status_text}"
                 }
             }
@@ -87,27 +90,31 @@ pub fn AgentView(agent_id: String) -> Element {
             match active_tab() {
                 AgentViewTab::Chat => rsx! {
                     // Message list
-                    Stack {
-                        gap: Space::S1,
-                        p: Space::S3,
+                    div {
+                        "data-testid": "message-list",
                         class: "flex-1 overflow-y-auto",
-                        id: "message-list",
+                        Stack {
+                            gap: Space::S1,
+                            p: Space::S3,
+                            class: "min-h-full",
+                            id: "message-list",
 
-                        if messages.is_empty() {
-                            div {
-                                class: "h-full flex items-center justify-center text-gray-500",
-                                "Send a message to start the conversation"
+                            if messages.is_empty() {
+                                div {
+                                    class: "h-full flex items-center justify-center text-gray-500",
+                                    "Send a message to start the conversation"
+                                }
                             }
-                        }
 
-                        for msg in messages.iter() {
-                            MessageBubble {
-                                key: "{msg.id}",
-                                message: msg.clone(),
+                            for msg in messages.iter() {
+                                MessageBubble {
+                                    key: "{msg.id}",
+                                    message: msg.clone(),
+                                }
                             }
-                        }
 
-                        div { id: "message-end" }
+                            div { id: "message-end" }
+                        }
                     }
 
                     // Input area
@@ -261,7 +268,7 @@ fn ChatInput(mut chat: AgentChatController, is_running: bool) -> Element {
                             loading: files_loading,
                             on_select: {
                                 let mut chat = chat;
-                                move |file: crate::file_search::FileMatch| {
+                                move |file: FileMatch| {
                                     // Add file to pending
                                     {
                                         let mut files = chat.pending_files.write();
