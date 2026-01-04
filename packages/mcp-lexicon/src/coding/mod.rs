@@ -45,20 +45,6 @@ use tools::edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
 use tools::find::{FindInput, FindOutput, find_files_by_name};
 use tools::grep::{GrepInput, GrepOutput, perform_grep};
 use tools::list_files::{ListFilesArgs, ListFilesResult, list_files};
-use tools::lsp::check_errors::{
-    LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
-};
-use tools::lsp::find_definition::{
-    LspGotoDefinitionInput, LspGotoDefinitionOutput, execute_lsp_goto_definition,
-};
-use tools::lsp::find_usages::{
-    LspFindReferencesInput, LspFindReferencesOutput, execute_lsp_find_references,
-};
-use tools::lsp::get_type_info::{LspHoverInput, LspHoverOutput, execute_lsp_hover};
-use tools::lsp::search_symbols::{
-    LspWorkspaceSymbolInput, LspWorkspaceSymbolOutput, execute_lsp_workspace_symbol,
-};
-// New consolidated tools
 use tools::lsp::call_hierarchy::{
     LspCallHierarchyInput, LspCallHierarchyOutput, execute_lsp_call_hierarchy,
 };
@@ -198,17 +184,32 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     }
 
     fn build_instructions(&self) -> String {
+        let base = r#"# Coding MCP server
+
+## Tool Selection Guide
+
+**For code navigation (definitions, references, types):** Use LSP tools (`lsp_symbol`, `lsp_document`, `lsp_call_hierarchy`). LSP understands code semantically - it knows that `foo` in `foo.bar()` is different from `foo` in a comment or string.
+
+**For text/pattern search:** Use `grep`. Best for log messages, TODOs, string literals, or regex patterns.
+
+## Tools
+- **lsp_symbol** - Find definitions, implementations, references, type info for a symbol
+- **lsp_document** - List all symbols in a file (functions, classes, structs)
+- **lsp_call_hierarchy** - Navigate call relationships (who calls this? what does this call?)
+- **grep** - Regex/text search across files
+- **read_file/edit_file/write_file** - File operations
+- **bash** - Terminal commands (git, npm, cargo, etc.)"#;
+
         match &self.root_dir {
             Some(root) => format!(
-                r#" # Coding MCP server
-This MCP server is equipped with grep-powered search, file operations (read/write), and bash command execution capabilities.
+                r#"{}
 
-When using tools from this server that take file path(s) as input, always use absolute paths starting from the workspace root:.
-<workspace-root>{}</workspace-root>
-"#,
+When using tools that take file paths, always use absolute paths from:
+<workspace-root>{}</workspace-root>"#,
+                base,
                 root.display()
             ),
-            None => "A coding MCP server with grep-powered search, file operations (read/write), and bash command execution capabilities.".to_string(),
+            None => base.to_string(),
         }
     }
 
@@ -369,64 +370,6 @@ When using tools from this server that take file path(s) as input, always use ab
 
         Ok(Json(result))
     }
-
-    #[doc = include_str!("tools/lsp/check_errors/description.md")]
-    #[tool]
-    pub async fn check_errors(
-        &self,
-        request: Parameters<LspDiagnosticsInput>,
-    ) -> Result<Json<LspDiagnosticsOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_diagnostics(input, &self.tools).await.map(Json)
-    }
-
-    #[doc = include_str!("tools/lsp/find_definition/description.md")]
-    #[tool]
-    pub async fn find_definition(
-        &self,
-        request: Parameters<LspGotoDefinitionInput>,
-    ) -> Result<Json<LspGotoDefinitionOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_goto_definition(input, &self.tools)
-            .await
-            .map(Json)
-    }
-
-    #[doc = include_str!("tools/lsp/find_usages/description.md")]
-    #[tool]
-    pub async fn find_usages(
-        &self,
-        request: Parameters<LspFindReferencesInput>,
-    ) -> Result<Json<LspFindReferencesOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_find_references(input, &self.tools)
-            .await
-            .map(Json)
-    }
-
-    #[doc = include_str!("tools/lsp/get_type_info/description.md")]
-    #[tool]
-    pub async fn get_type_info(
-        &self,
-        request: Parameters<LspHoverInput>,
-    ) -> Result<Json<LspHoverOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_hover(input, &self.tools).await.map(Json)
-    }
-
-    #[doc = include_str!("tools/lsp/search_symbols/description.md")]
-    #[tool]
-    pub async fn search_symbols(
-        &self,
-        request: Parameters<LspWorkspaceSymbolInput>,
-    ) -> Result<Json<LspWorkspaceSymbolOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_workspace_symbol(input, &self.tools)
-            .await
-            .map(Json)
-    }
-
-    // New consolidated LSP tools
 
     #[doc = include_str!("tools/lsp/symbol_lookup/description.md")]
     #[tool]

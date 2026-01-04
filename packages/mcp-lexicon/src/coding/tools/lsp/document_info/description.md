@@ -1,13 +1,11 @@
-Get information about a document using LSP (Language Server Protocol).
+Get a structural overview of a file - all functions, classes, structs, and their locations.
 
-**Operations:**
-- `symbols`: Get all symbols (functions, classes, variables, etc.) in the document
+**When to use:**
+- "What's in this file?" - Get a map of the file structure
+- "Where is function X in this file?" - Find it without reading the whole file
+- After reading a file, to understand its organization
 
 **Usage:**
-1. Read the file first to ensure it's open in the LSP
-2. Use this tool to get structural information about the document
-
-**Example - Get all symbols:**
 ```json
 {
   "operation": "symbols",
@@ -15,8 +13,6 @@ Get information about a document using LSP (Language Server Protocol).
 }
 ```
 
-**Returns:**
-- `symbols`: Hierarchical list of symbols with their names, kinds, and locations
-- `total_count`: Number of top-level symbols
+**Returns:** Hierarchical list of symbols with names, kinds (function, class, struct, etc.), and line locations.
 
-Symbols are returned with their full hierarchical structure when supported by the language server.
+Note: Read the file first to establish LSP context.

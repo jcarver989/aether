@@ -1,18 +1,15 @@
-Look up information about a symbol using LSP (Language Server Protocol).
+Navigate code semantically using LSP. Unlike grep, LSP understands code structure.
 
-This tool provides multiple operations for symbol navigation and information:
-
-**Operations:**
-- `definition`: Navigate to where a symbol is defined
-- `implementation`: Find implementations of an interface/trait method
-- `references`: Find all usages of a symbol across the codebase
-- `hover`: Get type information and documentation for a symbol
-- `prepare_call_hierarchy`: Get call hierarchy items for use with lsp_call_hierarchy
+**When to use:**
+- "Where is X defined?" → `operation: "definition"`
+- "Where is X used?" → `operation: "references"`
+- "What type is X?" / "Show docs for X" → `operation: "hover"`
+- "What implements this trait/interface?" → `operation: "implementation"`
+- "I need call hierarchy for X" → `operation: "prepare_call_hierarchy"` (then use `lsp_call_hierarchy`)
 
 **Usage:**
-1. Read the file containing the symbol first (required for LSP context)
-2. Provide the exact symbol name as it appears in the code
-3. Provide the 1-indexed line number where the symbol appears
+1. Provide `file_path`, `symbol` (exact name as it appears), and `line` (1-indexed)
+2. The file should be read first (establishes LSP context)
 
 **Example - Find definition:**
 ```json
@@ -24,15 +21,14 @@ This tool provides multiple operations for symbol navigation and information:
 }
 ```
 
-**Example - Find all references:**
+**Example - Find all usages:**
 ```json
 {
   "operation": "references",
   "file_path": "/path/to/file.rs",
-  "symbol": "my_function",
-  "line": "42",
-  "include_declaration": false
+  "symbol": "process_request",
+  "line": "42"
 }
 ```
 
-**Note:** The `include_declaration` parameter only applies to the `references` operation.
+Note: `include_declaration` parameter only applies to `references` (default: true).
