@@ -44,6 +44,9 @@ pub struct Agent<T: StreamingModelProvider> {
     max_auto_continues: u32,
     /// Current count of consecutive auto-continue attempts (resets after tool calls or completion)
     auto_continue_count: u32,
+    /// Track whether any tool calls have been made in this conversation
+    /// Auto-continue should only trigger after at least one tool call has been made
+    has_made_tool_calls: bool,
 }
 
 impl<T: StreamingModelProvider + 'static> Agent<T> {
@@ -77,6 +80,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             compaction_config,
             max_auto_continues,
             auto_continue_count: 0,
+            has_made_tool_calls: false,
         }
     }
 
@@ -137,6 +141,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 state = IterationState::new();
 
                 if has_tool_calls {
+                    self.has_made_tool_calls = true;
                     self.auto_continue_count = 0;
                     self.start_llm_stream();
                 } else if has_completion_signal {
@@ -144,7 +149,9 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                     if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
                         tracing::warn!("Failed to send Done message: {:?}", e);
                     }
-                } else if self.auto_continue_count < self.max_auto_continues {
+                } else if self.has_made_tool_calls
+                    && self.auto_continue_count < self.max_auto_continues
+                {
                     self.auto_continue_count += 1;
                     tracing::info!(
                         "LLM stopped without completion signal or tool calls, auto-continuing (attempt {}/{})",
@@ -239,7 +246,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         }
 
         self.context.add_message(ChatMessage::User {
-            content: format!("Continue. When done, include {}", COMPLETION_SIGNAL),
+            content: format!("If you stopped because your task is complete, respond with: {}. Otherwise, if you paused by accident continue", COMPLETION_SIGNAL),
             timestamp: IsoString::now(),
         });
     }
