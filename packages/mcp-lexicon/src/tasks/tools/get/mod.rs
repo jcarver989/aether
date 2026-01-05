@@ -1,9 +1,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::common::TaskDetail;
 use crate::coding::display_meta::ToolDisplayMeta;
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
+use crate::tasks::types::{Task, TaskId, TaskStatus};
 
 /// Input for the task_get tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -17,16 +17,9 @@ pub struct TaskGetInput {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskGetOutput {
-    /// Status of the operation
     pub status: String,
-
-    /// The full task object
-    pub task: TaskDetail,
-
-    /// Human-readable message
+    pub task: Task,
     pub message: String,
-
-    /// Display metadata for human-friendly rendering
     #[serde(skip_serializing_if = "Option::is_none")]
     pub _meta: Option<serde_json::Value>,
 }
@@ -36,7 +29,7 @@ pub fn execute_task_get(
     input: TaskGetInput,
     store: &TaskStore,
 ) -> Result<TaskGetOutput, TaskStoreError> {
-    let task_id = crate::tasks::types::TaskId::from(input.id.as_str());
+    let task_id = TaskId::from(input.id.as_str());
 
     let task = store
         .get(&task_id)
@@ -44,14 +37,14 @@ pub fn execute_task_get(
 
     let display_meta = ToolDisplayMeta::todo_single(
         task.title.clone(),
-        task.status == crate::tasks::types::TaskStatus::Completed,
+        task.status == TaskStatus::Completed,
         None,
     );
 
     Ok(TaskGetOutput {
         status: "success".to_string(),
         message: format!("Retrieved task '{}'", task.title),
-        task: TaskDetail::from(task),
+        task: task.clone(),
         _meta: display_meta.into_meta(),
     })
 }
@@ -59,8 +52,7 @@ pub fn execute_task_get(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::Handoff;
-    use crate::tasks::types::{TaskResult, TaskStatus, TaskUpdate};
+    use crate::tasks::types::TaskUpdate;
     use tempfile::TempDir;
 
     fn setup() -> (TempDir, TaskStore) {
@@ -88,13 +80,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(output.status, "success");
-        assert_eq!(output.task.id, created.id.to_string());
+        assert_eq!(output.task.id.to_string(), created.id.to_string());
         assert_eq!(output.task.title, "Research topic");
         assert_eq!(
             output.task.description,
             Some("Detailed description".to_string())
         );
-        assert_eq!(output.task.status, "pending");
+        assert_eq!(output.task.status, TaskStatus::Pending);
         assert!(output.message.contains("Retrieved task"));
     }
 
@@ -113,13 +105,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(output.task.id, subtask.id.to_string());
+        assert_eq!(output.task.id.to_string(), subtask.id.to_string());
         assert_eq!(output.task.title, "Subtask 1");
-        assert_eq!(output.task.parent, Some(root.id.to_string()));
+        assert_eq!(output.task.parent, Some(root.id.clone()));
     }
 
     #[test]
-    fn test_get_task_with_result() {
+    fn test_get_task_with_flat_fields() {
         let (_temp, mut store) = setup();
 
         let task = store.create_tree("Task to complete", None).unwrap();
@@ -129,17 +121,11 @@ mod tests {
                 &task.id,
                 TaskUpdate {
                     status: Some(TaskStatus::Completed),
-                    result: Some(TaskResult {
-                        summary: "Found the answer".to_string(),
-                        handoff: Handoff {
-                            decisions: vec!["Chose option A".to_string()],
-                            facts: vec!["Discovered X".to_string()],
-                            next_steps: vec!["Do Y next".to_string()],
-                            blockers: vec![],
-                            files_read: vec!["src/main.rs".to_string()],
-                            resources: vec![],
-                        },
-                    }),
+                    summary: Some("Found the answer".to_string()),
+                    decisions: Some(vec!["Chose option A".to_string()]),
+                    facts: Some(vec!["Discovered X".to_string()]),
+                    next_steps: Some(vec!["Do Y next".to_string()]),
+                    files_read: Some(vec!["src/main.rs".to_string()]),
                     ..Default::default()
                 },
             )
@@ -153,16 +139,12 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(output.task.status, "completed");
-
-        let result = output.task.result.unwrap();
-        assert_eq!(result.summary, "Found the answer");
-
-        let handoff = result.handoff.unwrap();
-        assert_eq!(handoff.decisions, vec!["Chose option A"]);
-        assert_eq!(handoff.facts, vec!["Discovered X"]);
-        assert_eq!(handoff.next_steps, vec!["Do Y next"]);
-        assert_eq!(handoff.files_read, vec!["src/main.rs"]);
+        assert_eq!(output.task.status, TaskStatus::Completed);
+        assert_eq!(output.task.summary, Some("Found the answer".to_string()));
+        assert_eq!(output.task.decisions, vec!["Chose option A"]);
+        assert_eq!(output.task.facts, vec!["Discovered X"]);
+        assert_eq!(output.task.next_steps, vec!["Do Y next"]);
+        assert_eq!(output.task.files_read, vec!["src/main.rs"]);
     }
 
     #[test]
@@ -191,7 +173,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(output.task.deps, vec![sub1.id.to_string()]);
+        assert_eq!(output.task.deps, vec![sub1.id.clone()]);
     }
 
     #[test]

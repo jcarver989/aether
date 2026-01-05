@@ -168,7 +168,6 @@ fn build_filter_description(input: &TaskListInput) -> String {
 mod tests {
     use super::*;
     use crate::tasks::TaskUpdate;
-    use crate::tasks::types::TaskResult;
     use tempfile::TempDir;
 
     fn setup() -> (TempDir, TaskStore) {
@@ -328,13 +327,12 @@ mod tests {
 
         assert_eq!(output.count, 2);
 
-        // Complete sub1 using update with result
         store
             .update(
                 &sub1.id,
                 TaskUpdate {
                     status: Some(TaskStatus::Completed),
-                    result: Some(TaskResult::new("done")),
+                    summary: Some("done".to_string()),
                     ..Default::default()
                 },
             )
