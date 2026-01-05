@@ -9,6 +9,10 @@
     },
     "tasks": {
       "type": "in-memory"
+    },
+    "contextbridge": {
+      "type": "http",
+      "url": "https://gateway.contextbridge.ai/mcp"
     }
   }
 }
