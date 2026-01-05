@@ -42,7 +42,7 @@ impl AgentSession {
             AgentEvent::Disconnected { .. }
             | AgentEvent::Error { .. }
             | AgentEvent::PermissionRequest { .. } => {
-                // These events are handled by the UI consumer directly
+                // These events are handled elsewhere or don't mutate session state
             }
         }
     }

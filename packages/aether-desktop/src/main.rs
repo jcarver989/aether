@@ -1,8 +1,12 @@
 use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
 
-use state::{AgentHandles, AgentRegistry, AgentSession};
+use state::{AgentHandles, AgentRegistry, AgentSession, McpServerStatus};
 use views::Home;
+
+/// Global signal for MCP server statuses - lives at module scope to avoid CopyValue warnings.
+pub static MCP_SERVER_STATUSES: GlobalSignal<std::collections::HashMap<String, McpServerStatus>> =
+    Signal::global(std::collections::HashMap::new);
 
 // Native-only modules (require desktop feature)
 #[cfg(feature = "desktop")]
@@ -17,6 +21,8 @@ mod docker_watcher;
 mod file_search;
 #[cfg(feature = "desktop")]
 mod file_watcher;
+#[cfg(feature = "desktop")]
+mod mcp_probe;
 
 // Fake implementations for web/testing
 #[cfg(not(feature = "desktop"))]
@@ -29,6 +35,7 @@ mod events;
 mod file_types;
 mod hooks;
 mod markdown;
+mod mcp_oauth;
 mod platform;
 mod settings;
 mod state;
@@ -37,7 +44,7 @@ mod syntax;
 mod views;
 
 // Re-export platform types
-use platform::{AgentEvent, FileSearcherCache, mpsc};
+use platform::{AppEvent, FileSearcherCache, mpsc};
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const THEME_CSS: Asset = asset!("/assets/styling/theme.css");
@@ -80,16 +87,17 @@ fn main() {
     dioxus::launch(App);
 }
 
-/// Sender for agent events, provided via context to child components.
+/// Sender for app events, provided via context to child components.
 #[derive(Clone)]
-pub struct EventChannel(pub mpsc::UnboundedSender<AgentEvent>);
+pub struct EventChannel(pub mpsc::UnboundedSender<AppEvent>);
 
 #[component]
 fn App() -> Element {
-    let event_tx: mpsc::UnboundedSender<AgentEvent> = use_hook(|| {
+    let event_tx: mpsc::UnboundedSender<AppEvent> = use_hook(|| {
         let (event_tx, event_rx) = platform::unbounded_channel();
+        let event_tx_clone = event_tx.clone();
         spawn_forever(async move {
-            views::run_ui_consumer(event_rx, &AGENTS, &HANDLES).await;
+            views::run_ui_consumer(event_rx, event_tx_clone, &AGENTS, &HANDLES).await;
         });
         event_tx
     });

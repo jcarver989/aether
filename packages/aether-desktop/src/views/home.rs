@@ -3,13 +3,21 @@
 //! This is the main view that displays the agent sidebar and chat interface.
 
 use crate::components::{
-    AgentView, Card, EmptyState, Inline, NewAgentForm, SettingsEditor, Sidebar, Space, Stack,
+    AgentView, Card, EmptyState, Inline, McpServersPanel, NewAgentForm, SettingsEditor, Sidebar,
+    Space, Stack,
 };
 use crate::error::AetherDesktopError;
-use crate::platform::{AgentEvent, AgentHandle, DockerProgress, ReceiverExt, mpsc};
+use crate::events::{AgentEvent, AppEvent, McpEvent};
+#[cfg(feature = "desktop")]
+use crate::mcp_oauth::OAUTH_CALLBACK_PORT;
+#[cfg(feature = "desktop")]
+use crate::mcp_probe::probe_mcp_servers;
+use crate::platform::{AgentHandle, DockerProgress, ReceiverExt, mpsc};
 use crate::settings::Settings;
-use crate::state::{AgentConfig, AgentHandles, AgentRegistry, AgentSession, AgentStatus};
-use crate::{AGENTS, EventChannel, HANDLES};
+use crate::state::{
+    AgentConfig, AgentHandles, AgentRegistry, AgentSession, AgentStatus, McpServerStatus,
+};
+use crate::{AGENTS, EventChannel, HANDLES, MCP_SERVER_STATUSES};
 
 use agent_client_protocol::{ContentBlock, RequestPermissionOutcome, RequestPermissionResponse};
 use dioxus::prelude::*;
@@ -25,6 +33,7 @@ enum RightPaneView {
     Agent(String), // Agent UUID
     NewAgentForm,
     Settings,
+    McpServers,
 }
 
 #[component]
@@ -80,10 +89,17 @@ pub fn Home() -> Element {
                 on_new_agent: move |_| right_pane.set(RightPaneView::NewAgentForm),
                 on_select_agent: move |id| right_pane.set(RightPaneView::Agent(id)),
                 on_settings: move |_| right_pane.set(RightPaneView::Settings),
+                on_mcp_servers: move |_| {
+                    right_pane.set(RightPaneView::McpServers);
+                    #[cfg(feature = "desktop")]
+                    tokio::spawn(async move {
+                        trigger_mcp_probe().await;
+                    });
+                },
                 on_terminate: on_terminate_agent,
             }
 
-            match &*right_pane.read() {
+            {match &*right_pane.read() {
                 RightPaneView::Empty => rsx! { EmptyState {} },
                 RightPaneView::Agent(id) => rsx! { AgentView { key: "{id}", agent_id: id.clone() } },
                 RightPaneView::NewAgentForm => rsx! {
@@ -97,9 +113,26 @@ pub fn Home() -> Element {
                         on_close: move |_| right_pane.set(RightPaneView::Empty),
                     }
                 },
-            }
+                RightPaneView::McpServers => rsx! {
+                    div {
+                        class: "flex-1 flex flex-col p-6",
+                        div {
+                            class: "flex items-center justify-between mb-6",
+                            h2 {
+                                class: "text-lg font-semibold text-white",
+                                "MCP Servers"
+                            }
+                            button {
+                                class: "text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-white/10",
+                                onclick: move |_| right_pane.set(RightPaneView::Empty),
+                                "✕"
+                            }
+                        }
+                        McpServersPanel {}
+                    }
+                },
+            }}
 
-            // Error toast
             if let Some(err) = error_message.read().as_ref() {
                 Card {
                     class: "fixed bottom-4 right-4 border-red-500/30 text-white shadow-2xl max-w-md animate-fade-in z-50",
@@ -128,17 +161,113 @@ pub fn Home() -> Element {
 /// This is spawned at the App level using GlobalSignals to avoid
 /// Dioxus CopyValue scope warnings.
 pub async fn run_ui_consumer(
-    mut ui_rx: mpsc::UnboundedReceiver<AgentEvent>,
+    mut ui_rx: mpsc::UnboundedReceiver<AppEvent>,
+    event_tx: mpsc::UnboundedSender<AppEvent>,
     agents: &GlobalSignal<AgentRegistry>,
     handles: &GlobalSignal<AgentHandles>,
 ) {
     info!("UI consumer started");
 
     while let Some(event) = ui_rx.recv_next().await {
-        apply_agent_event(agents, handles, event);
+        match event {
+            AppEvent::Mcp(mcp_event) => apply_mcp_event(mcp_event, event_tx.clone()),
+            AppEvent::Agent(agent_event) => apply_agent_event(agents, handles, agent_event),
+        }
     }
 
     info!("UI consumer stopped");
+}
+
+/// Handle MCP-related events.
+///
+/// Returns the new status if the global status should be updated.
+fn apply_mcp_event(event: McpEvent, event_tx: mpsc::UnboundedSender<AppEvent>) {
+    let (server_name, new_status) = match &event {
+        McpEvent::StatusChanged {
+            server_name,
+            status,
+        } => {
+            info!("MCP server status changed: {} -> {:?}", server_name, status);
+            (server_name.clone(), status.clone())
+        }
+        McpEvent::StartOAuthFlow {
+            server_name,
+            base_url,
+        } => {
+            info!("Starting OAuth flow for server: {}", server_name);
+            let server_name_clone = server_name.clone();
+            let base_url = base_url.clone();
+            tokio::spawn(async move {
+                run_oauth_flow(server_name_clone, base_url, event_tx).await;
+            });
+            (server_name.clone(), McpServerStatus::Connecting)
+        }
+        McpEvent::OAuthFlowCompleted { server_name } => {
+            info!("OAuth flow completed for server: {}", server_name);
+            (server_name.clone(), McpServerStatus::Connected)
+        }
+        McpEvent::OAuthFlowFailed { server_name, error } => {
+            warn!("OAuth flow failed for server {}: {}", server_name, error);
+            (
+                server_name.clone(),
+                McpServerStatus::Failed {
+                    error: error.clone(),
+                },
+            )
+        }
+    };
+
+    MCP_SERVER_STATUSES.write().insert(server_name, new_status);
+}
+
+/// Run the OAuth flow for an MCP server.
+async fn run_oauth_flow(
+    server_name: String,
+    base_url: String,
+    event_tx: mpsc::UnboundedSender<AppEvent>,
+) {
+    use crate::mcp_oauth::DesktopOAuthHandler;
+
+    info!("Running OAuth flow for {}", server_name);
+
+    let handler = DesktopOAuthHandler::new(OAUTH_CALLBACK_PORT);
+    let result_event = match handler.handle_oauth(&server_name, &base_url, &[]).await {
+            Ok(_access_token) => {
+                info!("OAuth flow succeeded for {}", server_name);
+                // Token is automatically persisted via credential store in aether core library
+                // The OAuthFlowCompleted event will update the status to Connected
+                McpEvent::OAuthFlowCompleted { server_name }
+            }
+            Err(e) => {
+                warn!("OAuth flow failed for {}: {:?}", server_name, e);
+                McpEvent::OAuthFlowFailed {
+                    server_name,
+                    error: e.to_string(),
+                }
+            }
+        };
+    let _ = event_tx.send(result_event.into());
+}
+
+/// Trigger MCP server probing and update the global status.
+#[cfg(feature = "desktop")]
+async fn trigger_mcp_probe() {
+    let cwd = std::env::current_dir().unwrap_or_else(|e| {
+        warn!("Failed to get current directory: {}", e);
+        std::path::PathBuf::new()
+    });
+    info!("Probing MCP servers from {:?}", cwd);
+
+    let results = probe_mcp_servers(&cwd).await;
+    info!("Probe complete, updating {} servers", results.len());
+
+    // Update the global status for each server
+    let mut statuses = MCP_SERVER_STATUSES.write();
+    for (name, status) in results {
+        statuses.insert(name, status);
+    }
+    drop(statuses); // Explicitly drop the write guard
+    info!("MCP server statuses updated");
 }
 
 fn apply_agent_event(
@@ -206,7 +335,7 @@ fn apply_agent_event(
 async fn create_agent(
     agents: &GlobalSignal<AgentRegistry>,
     handles: &GlobalSignal<AgentHandles>,
-    event_tx: mpsc::UnboundedSender<AgentEvent>,
+    event_tx: mpsc::UnboundedSender<AppEvent>,
     config: AgentConfig,
     initial_message: String,
 ) -> Result<String, AetherDesktopError> {
