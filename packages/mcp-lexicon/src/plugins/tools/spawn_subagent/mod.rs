@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::{spawn, sync::mpsc};
 
-use crate::coding::{CodingMcp, CodingMcpArgs};
+use crate::coding::CodingMcp;
 use crate::plugins::files::AgentFile;
 use crate::plugins::server::PluginsMcp;
 use crate::tasks::TasksMcp;
@@ -155,14 +155,16 @@ pub type ProgressCallback = Box<dyn Fn(&str, &str, &AgentMessage) + Send + Sync>
 pub struct AgentExecutor {
     agents_dir: Arc<PathBuf>,
     progress_callback: Option<Arc<ProgressCallback>>,
+    roots: Vec<PathBuf>,
 }
 
 impl AgentExecutor {
-    /// Create a new AgentExecutor with the given agents directory
-    pub fn new(agents_dir: PathBuf) -> Self {
+    /// Create a new AgentExecutor with the given agents directory and workspace roots
+    pub fn new(agents_dir: PathBuf, roots: Vec<PathBuf>) -> Self {
         Self {
             agents_dir: Arc::new(agents_dir),
             progress_callback: None,
+            roots,
         }
     }
 
@@ -184,6 +186,7 @@ impl AgentExecutor {
 
         let agents_dir = Arc::clone(&self.agents_dir);
         let progress_callback = self.progress_callback.clone();
+        let roots = self.roots.clone();
         let handles: Vec<_> = tasks
             .into_iter()
             .enumerate()
@@ -191,8 +194,9 @@ impl AgentExecutor {
                 let task_id = format!("task_{}", i);
                 let agents_dir = Arc::clone(&agents_dir);
                 let progress_callback = progress_callback.clone();
+                let roots = roots.clone();
                 spawn(async move {
-                    execute_single_agent(task_id, task, agents_dir, progress_callback).await
+                    execute_single_agent(task_id, task, agents_dir, progress_callback, roots).await
                 })
             })
             .collect();
@@ -235,6 +239,7 @@ async fn execute_single_agent(
     task: SubAgentTask,
     agents_dir: Arc<PathBuf>,
     progress_callback: Option<Arc<ProgressCallback>>,
+    roots: Vec<PathBuf>,
 ) -> SubAgentResult {
     let agent_name = task.agent_name.clone();
 
@@ -255,7 +260,7 @@ async fn execute_single_agent(
             instructions,
             command_tx,
             handle: _,
-        } = spawn_mcps(&agent_dir).await?;
+        } = spawn_mcps(&agent_dir, roots).await?;
         let (user_tx, mut agent_rx, _agent_handle) = spawn_agent(
             llm,
             &system_prompt,
@@ -362,19 +367,17 @@ async fn create_llm(
         .map_err(|e| format!("Failed to parse model spec '{}': {}", model_spec, e))
 }
 
-async fn spawn_mcps(agent_dir: &Path) -> Result<McpSpawnResult, String> {
+async fn spawn_mcps(agent_dir: &Path, roots: Vec<PathBuf>) -> Result<McpSpawnResult, String> {
     let mcp_json_path = agent_dir.join("mcp.json");
-    let project_path = CodingMcpArgs::parse_root_dir_from_config(&mcp_json_path)
-        .unwrap_or_else(|| agent_dir.to_path_buf());
-    let tasks_project_path = project_path.clone();
+    let tasks_base_dir = roots
+        .first()
+        .cloned()
+        .ok_or("No roots provided for sub-agent")?;
 
     mcp()
         .register_in_memory_server(
             "coding",
-            Box::new(move |_args| {
-                let project_path = project_path.clone();
-                async move { CodingMcp::new().with_root_dir(project_path).into_dyn() }.boxed()
-            }),
+            Box::new(move |_args| async move { CodingMcp::new().into_dyn() }.boxed()),
         )
         .register_in_memory_server(
             "plugins",
@@ -389,19 +392,12 @@ async fn spawn_mcps(agent_dir: &Path) -> Result<McpSpawnResult, String> {
         )
         .register_in_memory_server(
             "tasks",
-            Box::new(move |args| {
-                let project_path = tasks_project_path.clone();
-                async move {
-                    TasksMcp::from_args(args)
-                        .unwrap_or_else(|e| {
-                            tracing::warn!("Failed to parse TasksMcp args: {e}, using defaults");
-                            TasksMcp::new(project_path)
-                        })
-                        .into_dyn()
-                }
-                .boxed()
+            Box::new(move |_args| {
+                let base_dir = tasks_base_dir.clone();
+                async move { TasksMcp::new(base_dir).into_dyn() }.boxed()
             }),
         )
+        .with_roots(roots)
         .from_json_file(mcp_json_path.to_str().unwrap_or(""))
         .await
         .map_err(|e| format!("Failed to load mcp.json: {}", e))?

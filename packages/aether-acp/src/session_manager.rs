@@ -118,12 +118,12 @@ impl acp::Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
-        // Create the session with ACP connection info
         let session = Session::new(
             session_id.clone(),
             llm,
             self.system_prompt.clone(),
             self.mcp_config_path.clone(),
+            args.cwd,
             self.actor_handle.clone(),
             acp_session_id.clone(),
         )

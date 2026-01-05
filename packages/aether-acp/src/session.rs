@@ -1,22 +1,20 @@
+use crate::acp_actor::AcpActorHandle;
+use crate::acp_coding_tools::AcpCodingTools;
+use crate::mappers::map_mcp_prompt_to_available_command;
 use aether::agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent};
 use aether::llm::provider::StreamingModelProvider;
 use aether::mcp::McpSpawnResult;
-use aether::mcp::config::{RawMcpConfig, RawMcpServerConfig};
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
 use futures::FutureExt;
-use mcp_lexicon::{CodingMcp, CodingMcpArgs, LspCodingTools, PluginsMcp, ServiceExt, TasksMcp};
+use mcp_lexicon::{CodingMcp, LspCodingTools, PluginsMcp, ServiceExt, TasksMcp};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::debug;
-
-use crate::acp_actor::AcpActorHandle;
-use crate::acp_coding_tools::AcpCodingTools;
-use crate::mappers::map_mcp_prompt_to_available_command;
 
 /// Represents an active Aether agent session
 pub struct Session {
@@ -36,20 +34,18 @@ impl Session {
         llm: T,
         system_prompt: Option<String>,
         mcp_config_path: std::path::PathBuf,
+        cwd: PathBuf,
         actor_handle: AcpActorHandle,
         acp_session_id: acp::SessionId,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         debug!("Creating new session: {}", id);
         debug!("Loading MCP configuration from: {:?}", mcp_config_path);
-
-        let project_path = parse_coding_root_dir(&mcp_config_path)
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-        debug!("Using project root for LSP: {:?}", project_path);
+        debug!("Using project root: {:?}", cwd);
 
         let config_str = mcp_config_path.to_str().ok_or("Invalid MCP config path")?;
-        let tasks_project_path = project_path.clone();
+        let tasks_cwd = cwd.clone();
+        let roots_path = cwd.clone();
 
-        debug!("Creating ACP-enabled CodingMcp and PluginsMcp");
         let McpSpawnResult {
             tool_definitions,
             instructions,
@@ -61,7 +57,7 @@ impl Session {
                 Box::new(move |_args| {
                     let actor_handle = actor_handle.clone();
                     let acp_session_id = acp_session_id.clone();
-                    let project_path = project_path.clone();
+                    let project_path = cwd.clone();
                     async move {
                         let acp_tools =
                             AcpCodingTools::new(actor_handle.clone(), acp_session_id.clone());
@@ -88,7 +84,7 @@ impl Session {
             .register_in_memory_server(
                 "tasks",
                 Box::new(move |args| {
-                    let project_path = tasks_project_path.clone();
+                    let project_path = tasks_cwd.clone();
                     async move {
                         TasksMcp::from_args(args)
                             .unwrap_or_else(|e| {
@@ -102,23 +98,23 @@ impl Session {
                     .boxed()
                 }),
             )
+            .with_roots(vec![roots_path])
             .from_json_file(config_str)
             .await?
             .spawn()
             .await?;
 
-        // Build system prompt from AGENTS.md and optional custom prompt
-        let mut prompts = vec![Prompt::agents_md()];
-        if let Some(ref custom_prompt) = system_prompt {
-            prompts.push(Prompt::text(custom_prompt));
-        }
+        let system_prompt = {
+            let mut parts = vec![Prompt::agents_md(), Prompt::mcp_instructions(instructions)];
+            if let Some(ref custom_prompt) = system_prompt {
+                parts.push(Prompt::text(custom_prompt));
+            }
 
-        let system_prompt_text = Prompt::build_all(&prompts)
-            .map_err(|e| format!("Failed to build system prompt: {e}"))?;
+            Prompt::build_all(&parts).map_err(|e| format!("Failed to build system prompt: {e}"))?
+        };
 
         let builder = agent(llm)
-            .system(&system_prompt_text)
-            .prompt(Prompt::mcp_instructions(instructions))
+            .system(&system_prompt)
             .tools(mcp_tx.clone(), tool_definitions);
 
         let (agent_tx, agent_rx, agent_handle) = builder.spawn().await?;
@@ -274,36 +270,8 @@ fn parse_slash_command_arguments(
     }
 }
 
-/// Parse the root directory from the mcp.json coding server args.
-///
-/// Looks for the "coding" server entry and parses its args for `--root-dir`.
-/// Relative paths (like ".") are resolved against the mcp.json's directory.
-/// Returns None if the config doesn't exist, doesn't have a coding server,
-/// or the coding server doesn't specify a root-dir.
-fn parse_coding_root_dir(mcp_config_path: &std::path::Path) -> Option<PathBuf> {
-    let raw_config = RawMcpConfig::from_json_file(mcp_config_path).ok()?;
-    let coding_config = raw_config.servers.get("coding")?;
-
-    if let RawMcpServerConfig::InMemory { args } = coding_config {
-        let parsed_args = CodingMcpArgs::from_args(args.clone()).ok()?;
-        let root_dir = parsed_args.root_dir?;
-
-        // Resolve relative paths against the mcp.json's directory
-        if root_dir.is_relative() {
-            let config_dir = mcp_config_path.parent()?;
-            Some(config_dir.join(&root_dir).canonicalize().ok()?)
-        } else {
-            Some(root_dir)
-        }
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::fs::{File, create_dir_all, remove_dir, remove_file};
-
     use serde_json::Map;
     use serde_json::Value;
 
@@ -329,52 +297,5 @@ mod tests {
         assert_eq!(arg_map, expected);
 
         Ok(())
-    }
-
-    #[test]
-    fn test_parse_coding_root_dir_resolves_relative_path() {
-        let (temp_dir, mcp_json_path) = create_temp_mcp_json("relative_path", ".");
-        let expected_path = temp_dir.canonicalize().unwrap();
-        let resolved = parse_coding_root_dir(&mcp_json_path).expect("Should resolve relative path");
-
-        assert_eq!(resolved, expected_path);
-        remove_file(&mcp_json_path).ok();
-        remove_dir(&temp_dir).ok();
-    }
-
-    #[test]
-    fn test_parse_coding_root_dir_preserves_absolute_path() {
-        let absolute_path = std::env::temp_dir().canonicalize().unwrap();
-        let (temp_dir, mcp_json_path) =
-            create_temp_mcp_json("absolute_path", &absolute_path.display().to_string());
-        let resolved = parse_coding_root_dir(&mcp_json_path).expect("Should return absolute path");
-
-        assert_eq!(resolved, absolute_path);
-        remove_file(&mcp_json_path).ok();
-        remove_dir(&temp_dir).ok();
-    }
-
-    fn create_temp_mcp_json(name: &str, root_dir: &str) -> (PathBuf, PathBuf) {
-        use std::io::Write;
-
-        let temp_dir = std::env::temp_dir().join(format!("aether_test_{name}"));
-        create_dir_all(&temp_dir).unwrap();
-
-        let mcp_json_path = temp_dir.join("mcp.json");
-        let mut file = File::create(&mcp_json_path).unwrap();
-        write!(
-            file,
-            r#"{{
-                "servers": {{
-                    "coding": {{
-                        "type": "in-memory",
-                        "args": ["--root-dir", "{root_dir}"]
-                    }}
-                }}
-            }}"#
-        )
-        .unwrap();
-
-        (temp_dir, mcp_json_path)
     }
 }

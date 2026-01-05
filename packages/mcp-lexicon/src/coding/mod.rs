@@ -108,8 +108,8 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     tools: T,
     web_fetcher: WebFetcher,
     web_searcher: Option<WebSearcher<BraveSearchClient>>,
-    /// Workspace root directory - communicated to LLMs via server instructions
-    root_dir: Option<PathBuf>,
+    /// Workspace roots (from MCP protocol or CLI args)
+    roots: RwLock<Vec<PathBuf>>,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -141,7 +141,7 @@ impl CodingMcp<DefaultCodingTools> {
             tools: DefaultCodingTools::new(),
             web_fetcher: WebFetcher::new(),
             web_searcher: WebSearcher::try_new().ok(),
-            root_dir: None,
+            roots: RwLock::new(Vec::new()),
         }
     }
 }
@@ -157,20 +157,41 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             tools,
             web_fetcher: WebFetcher::new(),
             web_searcher: WebSearcher::try_new().ok(),
-            root_dir: None,
+            roots: RwLock::new(Vec::new()),
         }
     }
 
-    /// Set the workspace root directory.
+    /// Set workspace roots.
     ///
-    /// This path is communicated to LLMs via the server instructions,
-    /// helping them use correct absolute paths when calling file tools.
+    /// Can be used to set roots from MCP protocol or CLI arguments.
+    /// The first root is used as the primary workspace root.
     ///
     /// # Note
     /// This is a builder method - call it before using the server.
-    pub fn with_root_dir(mut self, root_dir: PathBuf) -> Self {
-        self.root_dir = Some(root_dir);
+    pub fn with_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.roots = RwLock::new(roots);
         self
+    }
+
+    /// Set the workspace root directory from a single path.
+    ///
+    /// Convenience method that wraps the path in a Vec and calls with_roots().
+    /// Typically used with CLI arguments like --root-dir.
+    ///
+    /// # Note
+    /// This is a builder method - call it before using the server.
+    pub fn with_root_dir(self, root_dir: PathBuf) -> Self {
+        self.with_roots(vec![root_dir])
+    }
+
+    /// Get the current workspace root.
+    ///
+    /// Returns the first root if multiple are provided.
+    fn get_workspace_root(&self) -> Option<PathBuf> {
+        self.roots
+            .try_read()
+            .ok()
+            .and_then(|roots| roots.first().cloned())
     }
 
     fn build_instructions(&self) -> String {
@@ -201,7 +222,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 - **File names** (find *.test.ts): `find`
 "#;
 
-        match &self.root_dir {
+        match self.get_workspace_root() {
             Some(root) => format!(
                 r#"{}
 

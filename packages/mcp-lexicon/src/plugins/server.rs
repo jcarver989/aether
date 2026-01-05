@@ -17,6 +17,7 @@ use rmcp::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::error;
 
 /// Callback type for reporting agent progress during subagent execution.
@@ -59,6 +60,8 @@ pub struct PluginsMcp {
     skills_info: Vec<SkillMetadata>,
     agents_info: Vec<SubAgentInfo>,
     tool_router: ToolRouter<Self>,
+    /// Workspace roots (from MCP protocol or CLI args)
+    roots: Arc<RwLock<Vec<PathBuf>>>,
 }
 
 impl PluginsMcp {
@@ -76,6 +79,7 @@ impl PluginsMcp {
             skills_info,
             agents_info,
             tool_router: Self::tool_router(),
+            roots: Arc::new(RwLock::new(vec![base_dir])),
         }
     }
 
@@ -85,6 +89,14 @@ impl PluginsMcp {
         let parsed_args = PluginsMcpArgs::from_args(args)?;
         let base_dir = parsed_args.base_dir.unwrap_or_else(|| PathBuf::from("."));
         Ok(Self::new(base_dir))
+    }
+
+    /// Set workspace roots.
+    ///
+    /// Can be used to set roots from MCP protocol or to override CLI arguments.
+    pub fn with_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.roots = Arc::new(RwLock::new(roots));
+        self
     }
 
     fn build_instructions(&self) -> String {
@@ -332,8 +344,10 @@ impl PluginsMcp {
             )
         };
 
-        let executor =
-            AgentExecutor::new(self.agents_dir.clone()).with_progress_callback(progress_callback);
+        // Pass inherited roots to sub-agents
+        let roots = self.roots.read().await.clone();
+        let executor = AgentExecutor::new(self.agents_dir.clone(), roots)
+            .with_progress_callback(progress_callback);
 
         let output = executor.execute_tasks(args.tasks).await;
         Ok(Json(output))

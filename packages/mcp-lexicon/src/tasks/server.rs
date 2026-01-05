@@ -9,7 +9,7 @@ use rmcp::{
     tool, tool_handler, tool_router,
 };
 use std::path::PathBuf;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::tasks::{
     TaskCreateInput, TaskCreateOutput, TaskGetInput, TaskGetOutput, TaskListInput, TaskListOutput,
@@ -44,6 +44,8 @@ impl TasksMcpArgs {
 pub struct TasksMcp {
     task_store: Mutex<TaskStore>,
     tool_router: ToolRouter<Self>,
+    /// Workspace roots (from MCP protocol or CLI args)
+    roots: RwLock<Vec<PathBuf>>,
 }
 
 impl TasksMcp {
@@ -54,6 +56,7 @@ impl TasksMcp {
         Self {
             task_store: Mutex::new(TaskStore::new(base_dir.join(".aether-tasks"))),
             tool_router: Self::tool_router(),
+            roots: RwLock::new(vec![base_dir]),
         }
     }
 
@@ -63,6 +66,14 @@ impl TasksMcp {
     pub fn from_args(args: Vec<String>) -> Result<Self, String> {
         let parsed_args = TasksMcpArgs::from_args(args)?;
         Ok(Self::new(parsed_args.dir))
+    }
+
+    /// Set workspace roots.
+    ///
+    /// Can be used to set roots from MCP protocol or to override CLI arguments.
+    pub fn with_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.roots = RwLock::new(roots);
+        self
     }
 }
 

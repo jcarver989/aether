@@ -4,30 +4,36 @@ use rmcp::{
     handler::client::progress::ProgressDispatcher,
     model::{
         ClientInfo, CreateElicitationRequestParam, CreateElicitationResult, ElicitationAction,
-        ErrorData, ProgressNotificationParam,
+        ErrorData, ListRootsResult, ProgressNotificationParam,
     },
     service::{NotificationContext, RequestContext},
 };
 use std::result::Result;
-use tokio::sync::{mpsc, oneshot};
+use std::sync::Arc;
+use tokio::sync::{RwLock, mpsc, oneshot};
 
 use crate::mcp::ElicitationRequest;
+use rmcp::model::Root;
 
 pub struct McpClient {
     client_info: ClientInfo,
     pub progress_dispatcher: ProgressDispatcher,
     elicitation_sender: mpsc::Sender<ElicitationRequest>,
+    /// Roots advertised to MCP servers
+    roots: Arc<RwLock<Vec<Root>>>,
 }
 
 impl McpClient {
     pub fn new(
         client_info: ClientInfo,
         elicitation_sender: mpsc::Sender<ElicitationRequest>,
+        roots: Arc<RwLock<Vec<Root>>>,
     ) -> Self {
         Self {
             client_info,
             progress_dispatcher: ProgressDispatcher::new(),
             elicitation_sender,
+            roots,
         }
     }
 }
@@ -70,5 +76,16 @@ impl ClientHandler for McpClient {
                 content: None,
             }),
         }
+    }
+
+    async fn list_roots(
+        &self,
+        _context: RequestContext<RoleClient>,
+    ) -> Result<ListRootsResult, ErrorData> {
+        let roots = self.roots.read().await;
+
+        Ok(ListRootsResult {
+            roots: roots.clone(),
+        })
     }
 }
