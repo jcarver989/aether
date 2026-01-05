@@ -300,7 +300,6 @@ impl TaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::TaskResult;
     use tempfile::TempDir;
 
     fn setup() -> (TempDir, TaskStore) {
@@ -367,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn test_complete_task_with_result() {
+    fn test_complete_task_with_summary() {
         let (_temp, mut store) = setup();
 
         let task = store.create_tree("Task to complete", None).unwrap();
@@ -377,17 +376,14 @@ mod tests {
                 &task.id,
                 TaskUpdate {
                     status: Some(TaskStatus::Completed),
-                    result: Some(TaskResult::new("Found the answer!")),
+                    summary: Some("Found the answer!".to_string()),
                     ..Default::default()
                 },
             )
             .unwrap();
 
         assert_eq!(completed.status, TaskStatus::Completed);
-        assert_eq!(
-            completed.result.as_ref().map(|r| r.summary.as_str()),
-            Some("Found the answer!")
-        );
+        assert_eq!(completed.summary, Some("Found the answer!".to_string()));
     }
 
     #[test]
@@ -416,7 +412,7 @@ mod tests {
                 &subtask1.id,
                 TaskUpdate {
                     status: Some(TaskStatus::Completed),
-                    result: Some(TaskResult::new("done")),
+                    summary: Some("done".to_string()),
                     ..Default::default()
                 },
             )

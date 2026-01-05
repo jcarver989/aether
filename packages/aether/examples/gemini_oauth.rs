@@ -14,10 +14,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("Waiting for OAuth callback on http://localhost:8085...");
-    let code = wait_for_callback(8085).await?;
+    let callback = wait_for_callback(8085).await?;
 
     println!("Exchanging code for tokens...");
-    let tokens = exchange_code(&code, &init.verifier).await?;
+    let tokens = exchange_code(&callback.code, &init.verifier).await?;
 
     let store = FileCredentialStore::new()?;
     store

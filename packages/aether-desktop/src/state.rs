@@ -291,6 +291,19 @@ pub enum FileStatus {
     Renamed,
 }
 
+/// Status of an MCP server connection
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum McpServerStatus {
+    /// Server is currently connecting
+    Connecting,
+    /// Server is connected and operational
+    Connected,
+    /// Server requires OAuth authentication
+    NeedsOAuth { server_id: String, base_url: String },
+    /// Server connection failed
+    Failed { error: String },
+}
+
 /// Unique key for identifying a comment location.
 /// Tuple of (file_path, line_number).
 pub type CommentKey = (String, u32);

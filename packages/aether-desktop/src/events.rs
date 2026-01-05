@@ -4,11 +4,51 @@
 //! to update state. This module is platform-agnostic.
 
 use crate::platform::oneshot;
-use crate::state::{AgentStatus, DiffState, TerminalStream};
+use crate::state::{AgentStatus, DiffState, McpServerStatus, TerminalStream};
 use agent_client_protocol::{
     AvailableCommand, RequestPermissionRequest, RequestPermissionResponse, ToolCall,
     ToolCallUpdateFields,
 };
+
+/// Top-level application events.
+#[derive(Debug)]
+pub enum AppEvent {
+    /// Agent-related event
+    Agent(AgentEvent),
+    /// MCP server-related event
+    Mcp(McpEvent),
+}
+
+impl From<AgentEvent> for AppEvent {
+    fn from(event: AgentEvent) -> Self {
+        AppEvent::Agent(event)
+    }
+}
+
+impl From<McpEvent> for AppEvent {
+    fn from(event: McpEvent) -> Self {
+        AppEvent::Mcp(event)
+    }
+}
+
+/// Events related to MCP server connections.
+#[derive(Debug, Clone)]
+pub enum McpEvent {
+    /// MCP server status changed
+    StatusChanged {
+        server_name: String,
+        status: McpServerStatus,
+    },
+    /// Start OAuth flow for an MCP server
+    StartOAuthFlow {
+        server_name: String,
+        base_url: String,
+    },
+    /// OAuth flow completed successfully
+    OAuthFlowCompleted { server_name: String },
+    /// OAuth flow failed
+    OAuthFlowFailed { server_name: String, error: String },
+}
 
 /// Events emitted by an agent for UI consumption.
 #[derive(Debug)]

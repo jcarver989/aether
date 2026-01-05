@@ -107,6 +107,7 @@ dependencies = [
 name = "aether-desktop"
 version = "0.1.0"
 dependencies = [
+ "aether",
  "aether-acp-client",
  "aether-voice",
  "agent-client-protocol",
@@ -125,6 +126,7 @@ dependencies = [
  "nucleo",
  "pulldown-cmark",
  "regex",
+ "rmcp",
  "serde",
  "serde_json",
  "syntect",
