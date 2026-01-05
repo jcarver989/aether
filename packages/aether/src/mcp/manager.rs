@@ -1,6 +1,6 @@
 use crate::{
     llm::ToolDefinition,
-    mcp::{McpError, Result, config::McpServerConfig},
+    mcp::{McpError, Result, config::McpServerConfig, oauth_integration::create_auth_manager_from_store},
 };
 use rmcp::{
     RoleClient, ServiceExt,
@@ -10,7 +10,8 @@ use rmcp::{
     },
     serve_client,
     service::RunningService,
-    transport::{StreamableHttpClientTransport, TokioChildProcess},
+    transport::streamable_http_client::StreamableHttpClientTransportConfig,
+    transport::{StreamableHttpClientTransport, TokioChildProcess, auth::AuthClient},
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -80,36 +81,36 @@ impl McpManager {
 
     pub async fn add_mcps(&mut self, configs: Vec<McpServerConfig>) -> Result<()> {
         for config in configs {
-            self.add_mcp(config).await?;
+            let name = config.name().to_string();
+            if let Err(e) = self.add_mcp(config).await {
+                // Log warning but continue with other servers
+                tracing::warn!("Failed to connect to MCP server '{}': {}", name, e);
+            }
         }
         Ok(())
+    }
+
+    /// Add an MCP server with OAuth/bearer token authentication.
+    ///
+    /// This is used when connecting to MCP servers that require OAuth.
+    pub async fn add_mcp_with_auth(
+        &mut self,
+        name: String,
+        base_url: &str,
+        auth_header: String,
+    ) -> Result<()> {
+        let config = StreamableHttpClientTransportConfig {
+            uri: base_url.into(),
+            auth_header: Some(auth_header),
+            ..Default::default()
+        };
+        self.connect_http_server(name, config).await
     }
 
     pub async fn add_mcp(&mut self, config: McpServerConfig) -> Result<()> {
         use McpServerConfig::*;
         match config {
-            Http { name, config } => {
-                let transport = StreamableHttpClientTransport::from_config(config.clone());
-                let mcp_client = self.create_mcp_client();
-                let client = serve_client(mcp_client, transport).await.map_err(|e| {
-                    McpError::ConnectionFailed(format!(
-                        "Failed to connect to HTTP MCP server {name}: {e}"
-                    ))
-                })?;
-
-                self.discover_tools_for_server(&name, &client).await?;
-
-                let server_connection = McpServerConnection {
-                    _name: name.clone(),
-                    instructions: extract_instructions(&client),
-                    client: Arc::new(client),
-                    server_task: None,
-                };
-
-                self.servers.insert(name, server_connection);
-
-                Ok(())
-            }
+            Http { name, config } => self.connect_http_server(name, config).await,
 
             Stdio {
                 name,
@@ -179,7 +180,57 @@ impl McpManager {
         }
     }
 
-    /// Discover tools for a specific server and add them to the manager's bookkeeping
+    /// Connect to an HTTP MCP server and register it.
+    ///
+    /// If OAuth credentials are stored for this server, uses AuthClient for automatic
+    /// token management and refresh. Otherwise falls back to static auth header.
+    async fn connect_http_server(
+        &mut self,
+        name: String,
+        config: StreamableHttpClientTransportConfig,
+    ) -> Result<()> {
+        let mcp_client = self.create_mcp_client();
+        let conn_err = |e| McpError::ConnectionFailed(format!("HTTP MCP server {name}: {e}"));
+
+        // Use AuthClient with OAuth if we have stored credentials (and no static auth header)
+        let client = match self.create_auth_client(&name, &config.uri).await {
+            Some(auth_client) if config.auth_header.is_none() => {
+                tracing::debug!("Using OAuth for server '{name}'");
+                let transport = StreamableHttpClientTransport::with_client(auth_client, config);
+                serve_client(mcp_client, transport).await.map_err(conn_err)?
+            }
+            _ => {
+                let transport = StreamableHttpClientTransport::from_config(config);
+                serve_client(mcp_client, transport).await.map_err(conn_err)?
+            }
+        };
+
+        self.discover_tools_for_server(&name, &client).await?;
+        self.servers.insert(
+            name.clone(),
+            McpServerConnection {
+                _name: name,
+                instructions: extract_instructions(&client),
+                client: Arc::new(client),
+                server_task: None,
+            },
+        );
+        Ok(())
+    }
+
+    /// Create an AuthClient with stored OAuth credentials if available.
+    async fn create_auth_client(
+        &self,
+        server_id: &str,
+        base_url: &str,
+    ) -> Option<AuthClient<reqwest::Client>> {
+        let auth_manager = create_auth_manager_from_store(server_id, base_url)
+            .await
+            .ok()??;
+        Some(AuthClient::new(reqwest::Client::default(), auth_manager))
+    }
+
+    /// Discover tools for a specific server and add them to the manager's bookkeeping.
     async fn discover_tools_for_server(
         &mut self,
         server_name: &str,
