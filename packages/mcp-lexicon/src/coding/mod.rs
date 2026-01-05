@@ -18,6 +18,7 @@ use tokio::sync::{Mutex, RwLock};
 
 // Submodules - import types from their source modules directly
 pub mod default_tools;
+pub mod display_meta;
 pub mod error;
 pub mod lsp;
 pub mod tools;
@@ -27,6 +28,7 @@ pub use default_tools::DefaultCodingTools;
 pub use tools::lsp::LspCodingTools;
 pub use tools_trait::CodingTools;
 
+use crate::coding::display_meta::ToolDisplayMeta;
 use tools::bash::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,
     ReadBackgroundBashOutput, execute_command, read_background_bash,
@@ -37,6 +39,9 @@ use tools::grep::{GrepInput, GrepOutput, perform_grep};
 use tools::list_files::{ListFilesArgs, ListFilesResult, list_files};
 use tools::lsp::call_hierarchy::{
     LspCallHierarchyInput, LspCallHierarchyOutput, execute_lsp_call_hierarchy,
+};
+use tools::lsp::check_errors::{
+    LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
 };
 use tools::lsp::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
 use tools::lsp::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
@@ -203,6 +208,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 
 | Task | Wrong | Right |
 |------|-------|-------|
+| Check for errors | `cargo check`, `npm run build` | `lsp_check_errors` (instant, no build) |
 | Find where X is defined | `grep "fn X"` + read files | `lsp_symbol(operation: "definition")` |
 | Find all usages of X | `grep "X"` (matches comments too) | `lsp_symbol(operation: "references")` |
 | Understand large file | `read_file` (800 lines) | `lsp_document` → `read_file(offset, limit)` |
@@ -215,6 +221,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 
 ## Quick Reference
 
+- **Errors & warnings** (instant check without build): `lsp_check_errors`
 - **Code symbols** (definitions, usages, types): `lsp_symbol`
 - **File structure** (what's in this file?): `lsp_document`
 - **Call relationships** (who calls X?): `lsp_symbol` → `lsp_call_hierarchy`
@@ -337,6 +344,8 @@ When using tools that take file paths, always use absolute paths from:
     #[tool]
     pub async fn bash(&self, request: Parameters<BashInput>) -> Result<Json<BashOutput>, String> {
         let Parameters(args) = request;
+        let command = args.command.clone();
+        let description = args.description.clone();
         let result = self.tools.bash(args).await.map_err(|e| e.to_string())?;
 
         match result {
@@ -350,12 +359,20 @@ When using tools that take file paths, always use absolute paths from:
                     .await
                     .insert(shell_id.clone(), handle);
 
+                let display_meta = ToolDisplayMeta::command(
+                    crate::coding::display_meta::truncate_command(&command, 80),
+                    description.or(Some("Running in background".to_string())),
+                    0,
+                    None,
+                );
+
                 // Return immediate response with shell_id
                 Ok(Json(BashOutput {
                     output: String::new(),
                     exit_code: 0,
                     killed: None,
                     shell_id: Some(shell_id),
+                    _meta: Some(display_meta.to_meta()),
                 }))
             }
         }
@@ -423,6 +440,16 @@ When using tools that take file paths, always use absolute paths from:
         execute_lsp_call_hierarchy(input, &self.tools)
             .await
             .map(Json)
+    }
+
+    #[doc = include_str!("tools/lsp/check_errors/description.md")]
+    #[tool]
+    pub async fn lsp_check_errors(
+        &self,
+        request: Parameters<LspDiagnosticsInput>,
+    ) -> Result<Json<LspDiagnosticsOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_diagnostics(input, &self.tools).await.map(Json)
     }
 
     #[doc = include_str!("tools/web_fetch/description.md")]

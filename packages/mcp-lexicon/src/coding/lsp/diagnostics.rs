@@ -4,9 +4,12 @@
 
 use super::common::uri_to_path;
 use lsp_types::{Diagnostic, DiagnosticSeverity, PublishDiagnosticsParams, Uri};
+use schemars::JsonSchema;
+use serde::Serialize;
 
 /// A simplified diagnostic representation for display
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct FormattedDiagnostic {
     /// The file path (extracted from URI)
     pub file: String,
@@ -25,7 +28,8 @@ pub struct FormattedDiagnostic {
 }
 
 /// Simplified severity levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
 pub enum Severity {
     Error,
     Warning,
@@ -142,24 +146,22 @@ pub fn count_by_severity(diagnostics: &[FormattedDiagnostic]) -> DiagnosticCount
             Severity::Hint => counts.hints += 1,
         }
     }
+    counts.total = counts.errors + counts.warnings + counts.infos + counts.hints;
     counts
 }
 
 /// Counts of diagnostics by severity
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DiagnosticCounts {
     pub errors: usize,
     pub warnings: usize,
     pub infos: usize,
     pub hints: usize,
+    pub total: usize,
 }
 
 impl DiagnosticCounts {
-    /// Total number of diagnostics
-    pub fn total(&self) -> usize {
-        self.errors + self.warnings + self.infos + self.hints
-    }
-
     /// Returns true if there are any errors
     pub fn has_errors(&self) -> bool {
         self.errors > 0
@@ -260,7 +262,7 @@ mod tests {
         assert_eq!(counts.warnings, 1);
         assert_eq!(counts.infos, 0);
         assert_eq!(counts.hints, 0);
-        assert_eq!(counts.total(), 3);
+        assert_eq!(counts.total, 3);
         assert!(counts.has_errors());
     }
 
