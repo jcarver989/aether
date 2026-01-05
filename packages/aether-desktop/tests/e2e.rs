@@ -1,10 +1,20 @@
-//! End-to-end tests using fantoccini (WebDriver client).
+//! End-to-end tests using fantoccini (WebDriver client) with Chrome.
+//!
+//! # Prerequisites
+//!
+//! Install chromedriver: `brew install chromedriver`
 //!
 //! # Running Tests
 //!
-//! 1. Start geckodriver: `geckodriver --port 4444`
-//! 2. Start the dev server: `dx serve --features web --port 8080`
-//! 3. Run tests: `cargo test -p aether-desktop --test e2e -- --test-threads=1`
+//! From the `packages/aether-desktop` directory:
+//! ```bash
+//! just e2e              # Run all tests (headless, parallel)
+//! just e2e-visible      # Run with visible browser for debugging
+//! just e2e test_name    # Run a specific test
+//! ```
+//!
+//! The justfile handles starting dx serve and cleaning up automatically.
+//! Each test spawns its own chromedriver instance on a dynamic port.
 
 #[path = "e2e_support/pages/mod.rs"]
 mod pages;
@@ -20,7 +30,7 @@ use std::time::Duration;
 async fn test_app_loads_successfully() {
     let harness = TestHarness::new().await.expect("setup failed");
 
-    let title = harness.client.title().await.expect("Failed to get title");
+    let title = harness.client().title().await.expect("Failed to get title");
     assert!(
         title.to_lowercase().contains("aether"),
         "Expected title to contain 'aether', got: {title}"
@@ -33,8 +43,8 @@ async fn test_app_loads_successfully() {
 async fn test_sidebar_is_visible() {
     let harness = TestHarness::new().await.expect("setup failed");
 
-    assert_visible(&harness.client, "new-agent-button").await;
-    assert_visible(&harness.client, "settings-button").await;
+    assert_visible(&harness.client(), "new-agent-button").await;
+    assert_visible(&harness.client(), "settings-button").await;
 
     harness.close().await.ok();
 }
@@ -43,7 +53,7 @@ async fn test_sidebar_is_visible() {
 async fn test_empty_state_shows_when_no_agents() {
     let harness = TestHarness::new().await.expect("setup failed");
 
-    assert_visible(&harness.client, "no-agents-message").await;
+    assert_visible(&harness.client(), "no-agents-message").await;
 
     let message = harness
         .sidebar()
@@ -73,7 +83,7 @@ async fn test_new_agent_button_is_clickable() {
 
     // Click and verify modal opens
     harness.sidebar().click_new_agent().await.expect("click");
-    assert_visible(&harness.client, "initial-message-input").await;
+    assert_visible(&harness.client(), "initial-message-input").await;
 
     harness.close().await.ok();
 }
@@ -83,7 +93,7 @@ async fn test_main_content_area_is_visible() {
     let harness = TestHarness::new().await.expect("setup failed");
 
     let main_content = harness
-        .client
+        .client()
         .find(Locator::Css(".flex-1"))
         .await
         .expect("Failed to find main content area");
@@ -101,10 +111,10 @@ async fn test_can_open_new_agent_form() {
 
     harness.sidebar().click_new_agent().await.expect("click");
 
-    assert_visible(&harness.client, "initial-message-input").await;
-    assert_visible(&harness.client, "server-dropdown").await;
-    assert_visible(&harness.client, "create-agent-button").await;
-    assert_visible(&harness.client, "cancel-agent-button").await;
+    assert_visible(&harness.client(), "initial-message-input").await;
+    assert_visible(&harness.client(), "server-dropdown").await;
+    assert_visible(&harness.client(), "create-agent-button").await;
+    assert_visible(&harness.client(), "cancel-agent-button").await;
 
     harness.close().await.ok();
 }
@@ -114,12 +124,12 @@ async fn test_can_cancel_new_agent_form() {
     let harness = TestHarness::new().await.expect("setup failed");
 
     harness.sidebar().click_new_agent().await.expect("click");
-    assert_visible(&harness.client, "initial-message-input").await;
+    assert_visible(&harness.client(), "initial-message-input").await;
 
     harness.modal().click_cancel().await.expect("cancel");
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    assert_not_visible(&harness.client, "initial-message-input").await;
+    assert_not_visible(&harness.client(), "initial-message-input").await;
 
     harness.close().await.ok();
 }
@@ -220,7 +230,7 @@ async fn test_can_select_agent_from_sidebar() {
         .await
         .expect("click agent");
 
-    assert_visible(&harness.client, "message-list").await;
+    assert_visible(&harness.client(), "message-list").await;
 
     harness.close().await.ok();
 }

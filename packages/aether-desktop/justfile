@@ -1,0 +1,57 @@
+# Default recipe - list available commands
+default:
+    @just --list
+
+# Run E2E tests (starts dx serve, runs tests, cleans up)
+# Requires: chromedriver (brew install chromedriver)
+e2e *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cleanup() {
+        if [[ -n "${DX_PID:-}" ]]; then
+            kill $DX_PID 2>/dev/null || true
+        fi
+    }
+    trap cleanup EXIT
+
+    # Kill any stale process on port 8080
+    lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+
+    # Start dx serve in background (redirect output to avoid blocking)
+    echo "Starting dx serve..."
+    dx serve --platform web --port 8080 > /dev/null 2>&1 &
+    DX_PID=$!
+
+    # Wait for dx serve to be ready
+    echo "Waiting for dx serve to be ready..."
+    for i in {1..60}; do
+        if curl -s http://localhost:8080 > /dev/null 2>&1; then
+            echo "dx serve ready"
+            break
+        fi
+        if ! kill -0 $DX_PID 2>/dev/null; then
+            echo "dx serve failed to start"
+            exit 1
+        fi
+        sleep 1
+    done
+
+    if ! curl -s http://localhost:8080 > /dev/null 2>&1; then
+        echo "Timeout waiting for dx serve"
+        exit 1
+    fi
+
+    # Run tests with limited parallelism (each test spawns its own Chrome)
+    echo "Running E2E tests..."
+    cargo test -p aether-desktop --test e2e -- --test-threads=4 {{ args }} || TEST_EXIT=$?
+
+    exit ${TEST_EXIT:-0}
+
+# Run E2E tests with visible browser (for debugging)
+e2e-visible *args:
+    HEADLESS=false just e2e {{ args }}
+
+# Run E2E tests with verbose output (for debugging hangs)
+e2e-debug *args:
+    E2E_VERBOSE=1 RUST_BACKTRACE=1 just e2e --test-threads=1 {{ args }}
