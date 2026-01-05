@@ -4,6 +4,20 @@ use crate::components::ContextProgressBar;
 use crate::components::layout::{Inline, Space, Stack};
 use crate::state::{AgentRegistry, AgentSession, AgentStatus};
 
+/// Icon button used in the sidebar header.
+#[component]
+fn IconButton(onclick: EventHandler<()>, title: &'static str, test_id: &'static str, children: Element) -> Element {
+    rsx! {
+        button {
+            class: "text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10 hover:shadow-md",
+            "data-testid": test_id,
+            onclick: move |_| onclick.call(()),
+            title,
+            {children}
+        }
+    }
+}
+
 #[component]
 pub fn Sidebar(
     agents: ReadSignal<AgentRegistry>,
@@ -11,6 +25,7 @@ pub fn Sidebar(
     on_new_agent: EventHandler<()>,
     on_select_agent: EventHandler<String>,
     on_settings: EventHandler<()>,
+    on_mcp_servers: EventHandler<()>,
     on_terminate: EventHandler<String>,
 ) -> Element {
     let registry = agents.read();
@@ -26,30 +41,19 @@ pub fn Sidebar(
                     class: "text-sm font-semibold text-white tracking-tight",
                     "Aether Agents"
                 }
-                button {
-                    class: "text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10 hover:shadow-md",
-                    "data-testid": "settings-button",
-                    onclick: move |_| on_settings.call(()),
-                    title: "Settings",
-                    svg {
-                        xmlns: "http://www.w3.org/2000/svg",
-                        width: "20",
-                        height: "20",
-                        view_box: "0 0 24 24",
-                        fill: "none",
-                        stroke: "currentColor",
-                        stroke_width: "2",
-                        stroke_linecap: "round",
-                        stroke_linejoin: "round",
-                        // Gear icon path
-                        path {
-                            d: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
-                        }
-                        circle {
-                            cx: "12",
-                            cy: "12",
-                            r: "3"
-                        }
+                div {
+                    class: "flex items-center gap-1",
+                    IconButton {
+                        onclick: move |_| on_mcp_servers.call(()),
+                        title: "MCP Servers",
+                        test_id: "mcp-servers-button",
+                        ServerIcon {}
+                    }
+                    IconButton {
+                        onclick: move |_| on_settings.call(()),
+                        title: "Settings",
+                        test_id: "settings-button",
+                        GearIcon {}
                     }
                 }
             }
@@ -207,5 +211,53 @@ fn truncate(s: &str, max_chars: usize) -> String {
     } else {
         let truncated: String = s.chars().take(max_chars.saturating_sub(3)).collect();
         format!("{}...", truncated.trim_end())
+    }
+}
+
+// =============================================================================
+// SVG Icon Components
+// =============================================================================
+
+/// Server icon (stacked rectangles with dots).
+#[component]
+fn ServerIcon() -> Element {
+    rsx! {
+        svg {
+            xmlns: "http://www.w3.org/2000/svg",
+            width: "20",
+            height: "20",
+            view_box: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            stroke_width: "2",
+            stroke_linecap: "round",
+            stroke_linejoin: "round",
+            rect { x: "2", y: "2", width: "20", height: "8", rx: "2", ry: "2" }
+            rect { x: "2", y: "14", width: "20", height: "8", rx: "2", ry: "2" }
+            line { x1: "6", y1: "6", x2: "6.01", y2: "6" }
+            line { x1: "6", y1: "18", x2: "6.01", y2: "18" }
+        }
+    }
+}
+
+/// Gear/settings icon.
+#[component]
+fn GearIcon() -> Element {
+    rsx! {
+        svg {
+            xmlns: "http://www.w3.org/2000/svg",
+            width: "20",
+            height: "20",
+            view_box: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            stroke_width: "2",
+            stroke_linecap: "round",
+            stroke_linejoin: "round",
+            path {
+                d: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+            }
+            circle { cx: "12", cy: "12", r: "3" }
+        }
     }
 }

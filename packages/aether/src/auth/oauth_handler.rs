@@ -2,11 +2,18 @@ use crate::auth::{AuthError, Result};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
-/// Start a local callback server to capture the OAuth authorization code
+/// OAuth callback data containing both the authorization code and state (CSRF token)
+#[derive(Debug, Clone)]
+pub struct OAuthCallback {
+    pub code: String,
+    pub state: String,
+}
+
+/// Start a local callback server to capture the OAuth authorization code and state
 ///
 /// Listens on the specified port and waits for the OAuth redirect.
-/// Returns the authorization code from the callback URL.
-pub async fn wait_for_callback(port: u16) -> Result<String> {
+/// Returns the authorization code and state (CSRF token) from the callback URL.
+pub async fn wait_for_callback(port: u16) -> Result<OAuthCallback> {
     let addr = format!("127.0.0.1:{port}");
     let listener = TcpListener::bind(&addr)
         .await
@@ -25,7 +32,7 @@ pub async fn wait_for_callback(port: u16) -> Result<String> {
         .map_err(|e| AuthError::Io(format!("Failed to read request: {e}")))?;
 
     // Parse the request line: GET /oauth2callback?code=XXX&state=YYY HTTP/1.1
-    let code = parse_code_from_request(&request_line)?;
+    let callback = parse_callback_from_request(&request_line)?;
 
     // Send a success response
     let response = create_success_response();
@@ -34,11 +41,11 @@ pub async fn wait_for_callback(port: u16) -> Result<String> {
         .await
         .map_err(|e| AuthError::Io(format!("Failed to write response: {e}")))?;
 
-    Ok(code)
+    Ok(callback)
 }
 
-/// Parse the authorization code from the HTTP request line
-fn parse_code_from_request(request_line: &str) -> Result<String> {
+/// Parse the authorization code and state from the HTTP request line
+fn parse_callback_from_request(request_line: &str) -> Result<OAuthCallback> {
     // Request format: GET /oauth2callback?code=XXX&state=YYY HTTP/1.1
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
@@ -71,18 +78,26 @@ fn parse_code_from_request(request_line: &str) -> Result<String> {
         }
     }
 
-    // Extract the code
+    // Extract code and state
+    let mut code = None;
+    let mut state = None;
+
     for param in query.split('&') {
-        if let Some((key, value)) = param.split_once('=')
-            && key == "code"
-        {
-            return Ok(urlencoding_decode(value));
+        if let Some((key, value)) = param.split_once('=') {
+            match key {
+                "code" => code = Some(urlencoding_decode(value)),
+                "state" => state = Some(urlencoding_decode(value)),
+                _ => {}
+            }
         }
     }
 
-    Err(AuthError::InvalidResponse(
-        "No authorization code in callback".to_string(),
-    ))
+    let code =
+        code.ok_or_else(|| AuthError::InvalidResponse("No authorization code in callback".into()))?;
+    let state =
+        state.ok_or_else(|| AuthError::InvalidResponse("No state parameter in callback".into()))?;
+
+    Ok(OAuthCallback { code, state })
 }
 
 /// Simple URL decoding (handles %XX escapes)
@@ -186,34 +201,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_code_from_valid_request() {
+    fn parse_callback_from_valid_request() {
         let request = "GET /oauth2callback?code=4%2F0AYWS-abc123&state=verifier HTTP/1.1\r\n";
-        let code = parse_code_from_request(request).unwrap();
-        assert_eq!(code, "4/0AYWS-abc123");
+        let callback = parse_callback_from_request(request).unwrap();
+        assert_eq!(callback.code, "4/0AYWS-abc123");
+        assert_eq!(callback.state, "verifier");
     }
 
     #[test]
-    fn parse_code_handles_plus_encoding() {
-        let request = "GET /oauth2callback?code=hello+world&state=test HTTP/1.1\r\n";
-        let code = parse_code_from_request(request).unwrap();
-        assert_eq!(code, "hello world");
+    fn parse_callback_handles_plus_encoding() {
+        let request = "GET /oauth2callback?code=hello+world&state=test+state HTTP/1.1\r\n";
+        let callback = parse_callback_from_request(request).unwrap();
+        assert_eq!(callback.code, "hello world");
+        assert_eq!(callback.state, "test state");
     }
 
     #[test]
-    fn parse_code_returns_error_for_oauth_error() {
+    fn parse_callback_returns_error_for_oauth_error() {
         let request =
             "GET /oauth2callback?error=access_denied&error_description=User+denied HTTP/1.1\r\n";
-        let result = parse_code_from_request(request);
+        let result = parse_callback_from_request(request);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("User denied"));
     }
 
     #[test]
-    fn parse_code_returns_error_for_missing_code() {
+    fn parse_callback_returns_error_for_missing_code() {
         let request = "GET /oauth2callback?state=verifier HTTP/1.1\r\n";
-        let result = parse_code_from_request(request);
+        let result = parse_callback_from_request(request);
         assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No authorization code"));
+    }
+
+    #[test]
+    fn parse_callback_returns_error_for_missing_state() {
+        let request = "GET /oauth2callback?code=abc123 HTTP/1.1\r\n";
+        let result = parse_callback_from_request(request);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No state parameter"));
     }
 
     #[test]

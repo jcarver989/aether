@@ -3,7 +3,7 @@
 //! This module centralizes all platform-specific (`#[cfg(feature = "desktop")]`)
 //! re-exports so consumer modules can import from a single location.
 
-pub use crate::events::AgentEvent;
+pub use crate::events::{AgentEvent, AppEvent};
 
 #[cfg(feature = "desktop")]
 pub use crate::acp_agent::AgentHandle;
