@@ -1,3 +1,7 @@
+use crate::coding::CodingMcp;
+use crate::plugins::files::AgentFile;
+use crate::plugins::server::PluginsMcp;
+use crate::tasks::TasksMcp;
 use aether::{
     agent::{AgentHandle, AgentMessage, UserMessage, agent},
     llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser},
@@ -10,11 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::{spawn, sync::mpsc};
-
-use crate::coding::CodingMcp;
-use crate::plugins::files::AgentFile;
-use crate::plugins::server::PluginsMcp;
-use crate::tasks::TasksMcp;
 
 /// Reference to a file artifact discovered or modified by a sub-agent
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -77,8 +76,6 @@ pub struct SubAgentTask {
     pub agent_name: String,
     /// Task for the agent to perform
     pub prompt: String,
-    /// Optional model override in the format of "provider:model" (e.g., "anthropic:claude-3.5-sonnet")
-    pub model: Option<String>,
 }
 
 /// Input for spawning sub-agents
@@ -252,7 +249,7 @@ async fn execute_single_agent(
         let agent_file = AgentFile::from_file(&agent_file_path)
             .map_err(|e| format!("Failed to load agent file: {e}"))?;
 
-        let llm = create_llm(&task.agent_name, &agent_file, task.model).await?;
+        let llm = create_llm(&task.agent_name, &agent_file).await?;
         let system_prompt = format!("{}{}", agent_file.content, STRUCTURED_OUTPUT_INSTRUCTIONS);
         let McpSpawnResult {
             tool_definitions,
@@ -345,18 +342,14 @@ async fn execute_single_agent(
 async fn create_llm(
     agent_name: &str,
     agent_file: &AgentFile,
-    model_override: Option<String>,
 ) -> Result<Box<dyn StreamingModelProvider>, String> {
-    let model_spec = model_override
-        .or_else(|| {
-            agent_file
-                .frontmatter
-                .as_ref()
-                .map(|f| f.model.clone())
-        })
+    let model_spec = agent_file
+        .frontmatter
+        .as_ref()
+        .map(|f| f.model.clone())
         .ok_or_else(|| {
             format!(
-                "No model specified. Provide model parameter or set 'model' in {}/AGENTS.md frontmatter",
+                "No model specified. Set 'model' in {}/AGENTS.md frontmatter",
                 agent_name
             )
         })?;
