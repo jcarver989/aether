@@ -1,4 +1,5 @@
 use crate::coding::CodingMcp;
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::plugins::files::AgentFile;
 use crate::plugins::server::PluginsMcp;
 use crate::tasks::TasksMcp;
@@ -105,8 +106,8 @@ pub struct SubAgentResult {
     pub agent_name: String,
     /// Status of execution
     pub status: SubAgentStatus,
-    /// Structured output (present on success)
-    pub output: Option<StructuredAgentOutput>,
+    /// Raw output from the sub-agent (present on success)
+    pub output: Option<String>,
     /// Error message if status is Error
     pub error: Option<String>,
 }
@@ -121,6 +122,9 @@ pub struct SpawnSubAgentsOutput {
     pub success_count: usize,
     /// Number of failures
     pub error_count: usize,
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 /// Prompt instructions appended to sub-agent prompts to ensure structured output
@@ -177,8 +181,17 @@ impl AgentExecutor {
                 results: vec![],
                 success_count: 0,
                 error_count: 0,
+                _meta: None,
             };
         }
+
+        // Store task count and first task for display metadata
+        let task_count = tasks.len();
+
+        // Clone the first task for display metadata (we need to keep the original for execution)
+        let first_task = tasks.first().unwrap();
+        let first_agent_name = first_task.agent_name.clone();
+        let first_prompt = first_task.prompt.clone();
 
         let agents_dir = Arc::clone(&self.agents_dir);
         let progress_callback = self.progress_callback.clone();
@@ -221,10 +234,19 @@ impl AgentExecutor {
             .filter(|r| matches!(r.status, SubAgentStatus::Error))
             .count();
 
+        // Create display metadata using the first task
+        let display_meta = ToolDisplayMeta::spawn_subagent(
+            first_agent_name,
+            first_prompt,
+            task_count,
+            1, // For batch operations, we show the first task's context
+        );
+
         SpawnSubAgentsOutput {
             results,
             success_count,
             error_count,
+            _meta: display_meta.into_meta(),
         }
     }
 }
@@ -239,7 +261,7 @@ async fn execute_single_agent(
 ) -> SubAgentResult {
     let agent_name = task.agent_name.clone();
 
-    let result: Result<StructuredAgentOutput, String> = async {
+    let result: Result<String, String> = async {
         let agent_dir = agents_dir.join(&task.agent_name);
         if !agent_dir.exists() {
             return Err(format!("Agent '{}' not found", task.agent_name));
@@ -250,7 +272,7 @@ async fn execute_single_agent(
             .map_err(|e| format!("Failed to load agent file: {e}"))?;
 
         let llm = create_llm(&task.agent_name, &agent_file).await?;
-        let system_prompt = format!("{}{}", agent_file.content, STRUCTURED_OUTPUT_INSTRUCTIONS);
+        let system_prompt = agent_file.content.clone();
         let McpSpawnResult {
             tool_definitions,
             instructions,
@@ -266,8 +288,10 @@ async fn execute_single_agent(
         )
         .await?;
 
+        let prompt_with_instructions =
+            format!("{}\n\n{}", task.prompt, STRUCTURED_OUTPUT_INSTRUCTIONS);
         user_tx
-            .send(UserMessage::text(&task.prompt))
+            .send(UserMessage::text(&prompt_with_instructions))
             .await
             .map_err(|e| format!("Failed to send message to agent: {}", e))?;
 
@@ -317,7 +341,7 @@ async fn execute_single_agent(
             return Err(format!("Agent error: {}", err));
         }
 
-        StructuredAgentOutput::parse(&final_output)
+        Ok(final_output)
     }
     .await;
 
