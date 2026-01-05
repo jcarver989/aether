@@ -10,6 +10,7 @@ pub mod coding_tools;
 
 // Consolidated LSP tools
 pub mod call_hierarchy;
+pub mod check_errors;
 pub mod document_info;
 pub mod symbol_lookup;
 
