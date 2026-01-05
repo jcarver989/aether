@@ -1,8 +1,4 @@
-//! Finite state machine for agent event processing.
-//!
-//! This module implements pure functions for handling agent events,
-//! making the logic unit-testable without Dioxus signals.
-
+use crate::components::tool_display::ToolDisplayMeta;
 use crate::platform::AgentEvent;
 use crate::state::{
     AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, ToolCallStatus, now_iso,
@@ -110,6 +106,7 @@ impl AgentSession {
                 name: tool_call.title.clone(),
                 status: ToolCallStatus::Pending,
                 result: None,
+                display_meta: None,
             },
             timestamp: now_iso(),
             is_streaming: false,
@@ -129,28 +126,26 @@ impl AgentSession {
     }
 
     fn complete_tool_call(&mut self, tool_id: String, result: String) {
-        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == tool_id)
-            && let MessageKind::ToolCall {
-                ref mut status,
-                result: ref mut res,
-                ..
-            } = msg.kind
-        {
-            *status = ToolCallStatus::Completed;
-            *res = Some(result);
-        }
+        self.finish_tool_call(tool_id, ToolCallStatus::Completed, result);
     }
 
     fn fail_tool_call(&mut self, tool_id: String, error: String) {
+        self.finish_tool_call(tool_id, ToolCallStatus::Failed, error);
+    }
+
+    fn finish_tool_call(&mut self, tool_id: String, next_status: ToolCallStatus, payload: String) {
         if let Some(msg) = self.messages.iter_mut().find(|m| m.id == tool_id)
             && let MessageKind::ToolCall {
                 ref mut status,
                 result: ref mut res,
+                display_meta: ref mut meta,
                 ..
             } = msg.kind
         {
-            *status = ToolCallStatus::Failed;
-            *res = Some(error);
+            let display_meta = ToolDisplayMeta::try_extract(Some(&payload));
+            *status = next_status;
+            *res = Some(payload);
+            *meta = display_meta;
         }
     }
 
@@ -323,6 +318,7 @@ mod tests {
                 name: "Test Tool".to_string(),
                 status: ToolCallStatus::Pending,
                 result: None,
+                display_meta: None,
             },
             timestamp: now_iso(),
             is_streaming: false,
@@ -357,6 +353,7 @@ mod tests {
                 name: "Test Tool".to_string(),
                 status: ToolCallStatus::Pending,
                 result: None,
+                display_meta: None,
             },
             timestamp: now_iso(),
             is_streaming: false,
@@ -502,6 +499,7 @@ mod tests {
                 name: "Bash".to_string(),
                 status: ToolCallStatus::Pending,
                 result: None,
+                display_meta: None,
             },
             timestamp: now_iso(),
             is_streaming: false,
@@ -544,6 +542,7 @@ mod tests {
                 name: "Bash".to_string(),
                 status: ToolCallStatus::Pending,
                 result: None,
+                display_meta: None,
             },
             timestamp: now_iso(),
             is_streaming: false,
@@ -593,6 +592,7 @@ mod tests {
                 name: "Bash".to_string(),
                 status: ToolCallStatus::Pending,
                 result: None,
+                display_meta: None,
             },
             timestamp: now_iso(),
             is_streaming: false,

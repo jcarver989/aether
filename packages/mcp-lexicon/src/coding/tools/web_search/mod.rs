@@ -1,5 +1,3 @@
-//! Web search tool for searching the web using Brave Search API
-
 pub mod search_client;
 
 pub use search_client::{BraveSearchClient, RawSearchResult, SearchClient, SearchParams};
@@ -11,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::coding::error::WebSearchError;
 
 const DEFAULT_COUNT: u32 = 10;
@@ -42,6 +41,10 @@ pub struct WebSearchOutput {
 
     /// The original query
     pub query: String,
+
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 /// Individual search result
@@ -104,7 +107,7 @@ impl<C: SearchClient> WebSearcher<C> {
         }
 
         // Convert to output format
-        let results = results
+        let results: Vec<SearchResult> = results
             .into_iter()
             .map(|r| SearchResult {
                 title: r.title,
@@ -113,9 +116,12 @@ impl<C: SearchClient> WebSearcher<C> {
             })
             .collect();
 
+        let display_meta = ToolDisplayMeta::web_search(query.to_string(), results.len());
+
         Ok(WebSearchOutput {
             results,
             query: query.to_string(),
+            _meta: display_meta.into_meta(),
         })
     }
 }

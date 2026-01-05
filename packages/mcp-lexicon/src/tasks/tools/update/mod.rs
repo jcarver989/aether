@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::common::TaskSummary;
-use crate::coding::display_meta::{TodoItemMeta, ToolDisplayMeta};
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
 use crate::tasks::types::{Handoff, TaskId, TaskResult, TaskStatus, TaskUpdate};
 
@@ -227,17 +227,17 @@ pub fn execute_task_update(
     };
 
     // Generate display metadata for the todo list
-    let display_meta = ToolDisplayMeta::todo(vec![TodoItemMeta {
-        content: task.title.clone(),
-        completed: effective_status == Some(TaskStatus::Completed),
-        active_form: if effective_status == Some(TaskStatus::Completed) {
-            Some("Completing task".to_string())
+    let display_meta = ToolDisplayMeta::todo_single(
+        task.title.clone(),
+        effective_status == Some(TaskStatus::Completed),
+        Some(if effective_status == Some(TaskStatus::Completed) {
+            "Completing task".to_string()
         } else if effective_status == Some(TaskStatus::InProgress) {
-            Some("Working on task".to_string())
+            "Working on task".to_string()
         } else {
-            Some("Updating task".to_string())
-        },
-    }]);
+            "Updating task".to_string()
+        }),
+    );
 
     Ok(TaskUpdateOutput {
         status: "success".to_string(),
@@ -245,7 +245,7 @@ pub fn execute_task_update(
         message,
         changes,
         newly_ready,
-        _meta: Some(display_meta.to_meta()),
+        _meta: display_meta.into_meta(),
     })
 }
 

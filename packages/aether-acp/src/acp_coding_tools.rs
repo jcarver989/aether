@@ -1,5 +1,6 @@
 use agent_client_protocol as acp;
 use mcp_lexicon::coding::CodingTools;
+use mcp_lexicon::coding::display_meta::{ToolDisplayMeta, truncate};
 use mcp_lexicon::coding::error::{BashError, CodingError, FileError};
 use mcp_lexicon::coding::tools::bash::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashOutput,
@@ -79,6 +80,12 @@ impl CodingTools for AcpCodingTools {
         let lines_shown = lines.len();
         let offset = args.offset.unwrap_or(1);
 
+        let display_meta = ToolDisplayMeta::read_file(
+            args.file_path.clone(),
+            Some(response.content.len()),
+            Some(total_lines),
+        );
+
         Ok(ReadFileResult {
             status: "success".to_string(),
             file_path: args.file_path.clone(),
@@ -89,6 +96,7 @@ impl CodingTools for AcpCodingTools {
             limit: args.limit,
             size: response.content.len(),
             raw_content: response.content,
+            _meta: display_meta.into_meta(),
         })
     }
 
@@ -110,10 +118,13 @@ impl CodingTools for AcpCodingTools {
                 reason: e,
             })?;
 
+        let display_meta = ToolDisplayMeta::write_file(args.file_path.clone(), Some(bytes_written));
+
         Ok(WriteFileResponse {
             message: format!("Successfully wrote to {}", args.file_path),
             bytes_written,
             file_path: args.file_path,
+            _meta: display_meta.into_meta(),
         })
     }
 
@@ -179,12 +190,19 @@ impl CodingTools for AcpCodingTools {
 
         let total_lines = new_content.lines().count();
 
+        let display_meta = ToolDisplayMeta::edit_file(
+            args.file_path.clone(),
+            Some(truncate(&args.old_string, 100)),
+            Some(truncate(&args.new_string, 100)),
+        );
+
         Ok(EditFileResponse {
             status: "success".to_string(),
             file_path: args.file_path,
             total_lines,
             replacements_made,
             content: new_content,
+            _meta: display_meta.into_meta(),
         })
     }
 
@@ -235,8 +253,6 @@ impl CodingTools for AcpCodingTools {
             // since ACP terminals don't use local processes
             let (_tx, output_rx) = tokio::sync::mpsc::unbounded_channel();
             let task_handle = tokio::spawn(async {
-                // This task just waits indefinitely since the actual process
-                // is managed by the ACP client
                 futures::future::pending::<()>().await;
                 (0, false) // exit_code, killed
             });
@@ -279,11 +295,20 @@ impl CodingTools for AcpCodingTools {
                 })
                 .await;
 
+            let exit_code = exit_response.exit_status.exit_code.unwrap_or(0) as i32;
+            let display_meta = ToolDisplayMeta::command(
+                args.command.clone(),
+                args.description,
+                exit_code,
+                Some(false),
+            );
+
             Ok(BashResult::Completed(BashOutput {
                 output: output_response.output,
-                exit_code: exit_response.exit_status.exit_code.unwrap_or(0) as i32,
+                exit_code,
                 killed: None,
                 shell_id: None,
+                _meta: display_meta.into_meta(),
             }))
         }
     }
@@ -315,8 +340,25 @@ impl CodingTools for AcpCodingTools {
             .await
             .map_err(BashError::WaitFailed)?;
 
-        // Check if it's still running
         let is_running = output_response.exit_status.is_none();
+        let exit_code = output_response
+            .exit_status
+            .as_ref()
+            .and_then(|s| s.exit_code)
+            .map(|c| c as i32);
+
+        let description = if is_running {
+            "Running in background"
+        } else {
+            "Background process completed"
+        };
+
+        let display_meta = ToolDisplayMeta::command(
+            format!("ACP terminal {}", terminal_id),
+            Some(description.to_string()),
+            exit_code.unwrap_or(0),
+            Some(false),
+        );
 
         let result = ReadBackgroundBashOutput {
             output: output_response.output,
@@ -325,10 +367,8 @@ impl CodingTools for AcpCodingTools {
             } else {
                 "completed".to_string()
             },
-            exit_code: output_response
-                .exit_status
-                .and_then(|s| s.exit_code)
-                .map(|c| c as i32),
+            exit_code,
+            _meta: display_meta.into_meta(),
         };
 
         if is_running {

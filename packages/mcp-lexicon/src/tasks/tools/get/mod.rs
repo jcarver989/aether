@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::common::TaskDetail;
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
 
 /// Input for the task_get tool
@@ -24,6 +25,10 @@ pub struct TaskGetOutput {
 
     /// Human-readable message
     pub message: String,
+
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 /// Get a task by ID
@@ -37,10 +42,17 @@ pub fn execute_task_get(
         .get(&task_id)
         .ok_or(TaskStoreError::NotFound { id: input.id })?;
 
+    let display_meta = ToolDisplayMeta::todo_single(
+        task.title.clone(),
+        task.status == crate::tasks::types::TaskStatus::Completed,
+        None,
+    );
+
     Ok(TaskGetOutput {
         status: "success".to_string(),
         message: format!("Retrieved task '{}'", task.title),
         task: TaskDetail::from(task),
+        _meta: display_meta.into_meta(),
     })
 }
 

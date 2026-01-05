@@ -1,5 +1,3 @@
-//! HTTP client abstraction for web fetching
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -45,6 +43,10 @@ pub struct WebFetchOutput {
 
     /// Page title if available
     pub title: Option<String>,
+
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 /// Response from an HTTP client fetch operation

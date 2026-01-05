@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::coding::error::FileError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -22,6 +23,9 @@ pub struct WriteFileResponse {
     pub bytes_written: usize,
     /// File path that was written
     pub file_path: String,
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileResponse, FileError> {
@@ -48,6 +52,8 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
     // Count bytes for response
     let bytes_written = args.content.len();
 
+    let display_meta = ToolDisplayMeta::write_file(args.file_path.clone(), Some(bytes_written));
+
     Ok(WriteFileResponse {
         message: format!(
             "Successfully wrote {} bytes to {}",
@@ -55,5 +61,6 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
         ),
         bytes_written,
         file_path: args.file_path,
+        _meta: display_meta.into_meta(),
     })
 }

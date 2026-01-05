@@ -16,7 +16,6 @@ use std::{
 };
 use tokio::sync::{Mutex, RwLock};
 
-// Submodules - import types from their source modules directly
 pub mod default_tools;
 pub mod display_meta;
 pub mod error;
@@ -28,7 +27,7 @@ pub use default_tools::DefaultCodingTools;
 pub use tools::lsp::LspCodingTools;
 pub use tools_trait::CodingTools;
 
-use crate::coding::display_meta::ToolDisplayMeta;
+use crate::coding::display_meta::{ToolDisplayMeta, truncate};
 use tools::bash::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,
     ReadBackgroundBashOutput, execute_command, read_background_bash,
@@ -360,7 +359,7 @@ When using tools that take file paths, always use absolute paths from:
                     .insert(shell_id.clone(), handle);
 
                 let display_meta = ToolDisplayMeta::command(
-                    crate::coding::display_meta::truncate_command(&command, 80),
+                    truncate(&command, 80),
                     description.or(Some("Running in background".to_string())),
                     0,
                     None,
@@ -372,7 +371,7 @@ When using tools that take file paths, always use absolute paths from:
                     exit_code: 0,
                     killed: None,
                     shell_id: Some(shell_id),
-                    _meta: Some(display_meta.to_meta()),
+                    _meta: display_meta.into_meta(),
                 }))
             }
         }

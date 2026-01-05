@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::common::TaskSummary;
+use crate::coding::display_meta::{TodoItemMeta, ToolDisplayMeta};
 use crate::tasks::task_store::TaskStore;
 use crate::tasks::types::TaskStatus;
 
@@ -62,6 +63,10 @@ pub struct TaskListOutput {
 
     /// Human-readable message
     pub message: String,
+
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 pub fn execute_task_list(input: TaskListInput, store: &TaskStore) -> TaskListOutput {
@@ -114,11 +119,19 @@ pub fn execute_task_list(input: TaskListInput, store: &TaskStore) -> TaskListOut
         format!("Found {} tasks{}", count, filter_desc)
     };
 
+    let todo_items: Vec<TodoItemMeta> = tasks
+        .iter()
+        .map(|t| TodoItemMeta::new(t.title.clone(), t.status == "completed", None))
+        .collect();
+
+    let display_meta = ToolDisplayMeta::todo(todo_items);
+
     TaskListOutput {
         status: "success".to_string(),
         tasks,
         count,
         message,
+        _meta: display_meta.into_meta(),
     }
 }
 

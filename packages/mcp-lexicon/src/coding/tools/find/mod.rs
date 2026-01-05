@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::coding::error::FindError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -23,6 +24,9 @@ pub struct FindOutput {
     pub count: usize,
     /// Search directory used
     pub search_path: String,
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError> {
@@ -98,10 +102,14 @@ pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError
     matches.sort();
 
     let count = matches.len();
+
+    let display_meta = ToolDisplayMeta::find(args.pattern.clone(), search_path.to_string(), count);
+
     Ok(FindOutput {
         matches,
         count,
         search_path: search_path.to_string(),
+        _meta: display_meta.into_meta(),
     })
 }
 

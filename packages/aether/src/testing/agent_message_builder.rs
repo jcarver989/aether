@@ -46,13 +46,6 @@ impl AgentMessageBuilder {
         let request_json = serde_json::to_string(request).expect("Failed to serialize request");
         let result_json = serde_json::to_string(result).expect("Failed to serialize result");
 
-        // MCP wraps the result in a text content structure
-        let result_json = serde_json::json!({
-            "text": result_json,
-            "type": "text"
-        })
-        .to_string();
-
         use crate::llm::{ToolCallRequest, ToolCallResult};
 
         // Tool call start
@@ -85,7 +78,6 @@ impl AgentMessageBuilder {
             model_name: self.model_name.clone(),
         });
 
-        // Tool result received
         self.chunks.push(AgentMessage::ToolResult {
             result: ToolCallResult {
                 id: tool_call_id.to_string(),

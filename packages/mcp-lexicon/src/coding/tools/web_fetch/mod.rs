@@ -1,5 +1,3 @@
-//! Web fetch tool for retrieving and converting web content to markdown
-
 mod http_client;
 
 #[cfg(test)]
@@ -13,6 +11,7 @@ use htmd::convert;
 use reqwest::Url;
 use std::time::Duration;
 
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::coding::error::WebFetchError;
 
 /// HTTP client for fetching web content and converting to markdown.
@@ -63,12 +62,16 @@ impl<C: HttpClient> WebFetcher<C> {
             (markdown, false)
         };
 
+        let display_meta =
+            ToolDisplayMeta::web_fetch(url.clone(), title.clone(), Some(content.len() as u64));
+
         Ok(WebFetchOutput {
             content,
             final_url: response.final_url,
             status_code: response.status_code,
             truncated,
             title,
+            _meta: display_meta.into_meta(),
         })
     }
 }

@@ -44,6 +44,7 @@ pub fn MessageBubble(message: Message) -> Element {
                     name,
                     status,
                     result,
+                    display_meta,
                 } => {
                     rsx! {
                         ToolCallDisplay {
@@ -51,6 +52,7 @@ pub fn MessageBubble(message: Message) -> Element {
                             input: message.content.clone(),
                             status: status.clone(),
                             result: result.clone(),
+                            display_meta: display_meta.clone(),
                         }
                     }
                 }

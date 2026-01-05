@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::coding::error::ListFilesError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -38,6 +39,9 @@ pub struct ListFilesResult {
     pub directory: String,
     pub files: Vec<FileInfo>,
     pub total_count: usize,
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFilesError> {
@@ -101,10 +105,13 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
 
     let total_count = files.len();
 
+    let display_meta = ToolDisplayMeta::list_files(target_path.to_string(), total_count);
+
     Ok(ListFilesResult {
         status: "success".to_string(),
         directory: target_path.to_string(),
         files,
         total_count,
+        _meta: display_meta.into_meta(),
     })
 }

@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::coding::display_meta::{ToolDisplayMeta, truncate};
 use crate::coding::error::FileError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -31,6 +32,9 @@ pub struct EditFileResponse {
     /// The new file content after editing (used internally for LSP sync)
     #[serde(skip_serializing)]
     pub content: String,
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, FileError> {
@@ -87,11 +91,18 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     // Count lines for response
     let total_lines = updated_content.lines().count();
 
+    let display_meta = ToolDisplayMeta::edit_file(
+        args.file_path.clone(),
+        Some(truncate(&args.old_string, 100)),
+        Some(truncate(&args.new_string, 100)),
+    );
+
     Ok(EditFileResponse {
         status: "success".to_string(),
         file_path: args.file_path,
         total_lines,
         replacements_made,
         content: updated_content,
+        _meta: display_meta.into_meta(),
     })
 }
