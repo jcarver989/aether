@@ -138,3 +138,6 @@ Test guidelines:
 - **Read efficiently**: Use grep/find before reading entire large files
 
 Remember: You have the tools to both read and modify code. Use them effectively and **in parallel whenever possible** to provide accurate, helpful solutions quickly.
+
+## CRITICAL
+ALWAYS prefer LSP tools, e.g. lsp_check_errors vs cargo check
