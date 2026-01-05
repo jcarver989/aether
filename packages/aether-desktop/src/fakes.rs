@@ -4,7 +4,7 @@
 //! implementations and canned responses. Used for e2e testing with webdriver.
 
 use crate::error::AetherDesktopError;
-use crate::events::AgentEvent;
+use crate::events::{AgentEvent, AppEvent};
 use crate::state::{AgentStatus, ExecutionMode};
 use agent_client_protocol::{AgentCapabilities, ContentBlock, SessionId};
 use std::collections::HashMap;
@@ -27,7 +27,7 @@ pub mod acp_agent {
         /// Agent capabilities (with reasonable defaults)
         pub agent_capabilities: AgentCapabilities,
         /// Event sender for emitting fake events
-        event_tx: futures::channel::mpsc::UnboundedSender<AgentEvent>,
+        event_tx: futures::channel::mpsc::UnboundedSender<AppEvent>,
     }
 
     impl AgentHandle {
@@ -38,7 +38,7 @@ pub mod acp_agent {
             agent_id: String,
             _cmd_ref: &str,
             _cwd: &Path,
-            event_tx: futures::channel::mpsc::UnboundedSender<AgentEvent>,
+            event_tx: futures::channel::mpsc::UnboundedSender<AppEvent>,
             _execution_mode: ExecutionMode,
         ) -> Result<Self, AetherDesktopError> {
             // Simulate a brief startup delay
@@ -78,32 +78,44 @@ pub mod acp_agent {
                 gloo_timers::future::TimeoutFuture::new(200).await;
 
                 // Emit status change to running
-                let _ = event_tx.unbounded_send(AgentEvent::StatusChange {
-                    agent_id: agent_id.clone(),
-                    status: AgentStatus::Running,
-                });
+                let _ = event_tx.unbounded_send(
+                    AgentEvent::StatusChange {
+                        agent_id: agent_id.clone(),
+                        status: AgentStatus::Running,
+                    }
+                    .into(),
+                );
 
                 // Emit canned response in chunks
                 let response = generate_canned_response(&prompt_text);
                 for chunk in response.chars().collect::<Vec<_>>().chunks(10) {
                     let text: String = chunk.iter().collect();
-                    let _ = event_tx.unbounded_send(AgentEvent::MessageChunk {
-                        agent_id: agent_id.clone(),
-                        text,
-                    });
+                    let _ = event_tx.unbounded_send(
+                        AgentEvent::MessageChunk {
+                            agent_id: agent_id.clone(),
+                            text,
+                        }
+                        .into(),
+                    );
                     gloo_timers::future::TimeoutFuture::new(50).await;
                 }
 
                 // Emit message complete
-                let _ = event_tx.unbounded_send(AgentEvent::MessageComplete {
-                    agent_id: agent_id.clone(),
-                });
+                let _ = event_tx.unbounded_send(
+                    AgentEvent::MessageComplete {
+                        agent_id: agent_id.clone(),
+                    }
+                    .into(),
+                );
 
                 // Emit status change to idle
-                let _ = event_tx.unbounded_send(AgentEvent::StatusChange {
-                    agent_id: agent_id.clone(),
-                    status: AgentStatus::Idle,
-                });
+                let _ = event_tx.unbounded_send(
+                    AgentEvent::StatusChange {
+                        agent_id: agent_id.clone(),
+                        status: AgentStatus::Idle,
+                    }
+                    .into(),
+                );
             });
 
             Ok(())
@@ -116,9 +128,12 @@ pub mod acp_agent {
 
         /// Terminate the fake agent.
         pub async fn terminate(&self, _timeout_secs: i64) -> Result<(), FakeAgentError> {
-            let _ = self.event_tx.unbounded_send(AgentEvent::Disconnected {
-                agent_id: self.id.clone(),
-            });
+            let _ = self.event_tx.unbounded_send(
+                AgentEvent::Disconnected {
+                    agent_id: self.id.clone(),
+                }
+                .into(),
+            );
             Ok(())
         }
     }

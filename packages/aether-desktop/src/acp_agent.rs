@@ -2,7 +2,7 @@ use crate::diff_engine::compute_diff;
 use crate::docker_diff::compute_docker_diff;
 use crate::docker_watcher::{DockerFileEvent, DockerFilePoller};
 use crate::error::AetherDesktopError;
-use crate::events::AgentEvent;
+use crate::events::{AgentEvent, AppEvent};
 use crate::file_watcher::{FileWatchEvent, FileWatcher};
 use crate::state::{AgentStatus, DiffState, ExecutionMode, TerminalStream};
 use aether_acp_client::{
@@ -62,7 +62,7 @@ impl AgentHandle {
         agent_id: String,
         cmd_ref: &str,
         cwd: &Path,
-        event_tx: mpsc::UnboundedSender<AgentEvent>,
+        event_tx: mpsc::UnboundedSender<AppEvent>,
         execution_mode: ExecutionMode,
     ) -> Result<Self, AetherDesktopError> {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
@@ -173,7 +173,7 @@ async fn run_agent(
     cwd: PathBuf,
     execution_mode: ExecutionMode,
     cmd_rx: mpsc::UnboundedReceiver<AgentCommand>,
-    event_tx: mpsc::UnboundedSender<AgentEvent>,
+    event_tx: mpsc::UnboundedSender<AppEvent>,
     init_tx: oneshot::Sender<InitResult>,
     ready_rx: oneshot::Receiver<()>,
 ) {
@@ -211,10 +211,13 @@ async fn run_agent(
 
         spawn_local(async move {
             while let Some(progress) = rx.recv().await {
-                let _ = event_tx_clone.send(AgentEvent::StatusChange {
-                    agent_id: agent_id_clone.clone(),
-                    status: AgentStatus::Starting(progress),
-                });
+                let _ = event_tx_clone.send(
+                    AgentEvent::StatusChange {
+                        agent_id: agent_id_clone.clone(),
+                        status: AgentStatus::Starting(progress),
+                    }
+                    .into(),
+                );
             }
         });
 
@@ -233,10 +236,13 @@ async fn run_agent(
         };
 
     if is_docker {
-        let _ = event_tx.send(AgentEvent::StatusChange {
-            agent_id: agent_id.clone(),
-            status: AgentStatus::Starting(DockerProgress::Initializing),
-        });
+        let _ = event_tx.send(
+            AgentEvent::StatusChange {
+                agent_id: agent_id.clone(),
+                status: AgentStatus::Starting(DockerProgress::Initializing),
+            }
+            .into(),
+        );
     }
 
     let (conn, io_future) =
@@ -350,10 +356,13 @@ async fn run_agent(
     } else {
         compute_diff_state(&cwd)
     };
-    let _ = event_tx.send(AgentEvent::DiffUpdate {
-        agent_id: agent_id.clone(),
-        diff_state: initial_diff,
-    });
+    let _ = event_tx.send(
+        AgentEvent::DiffUpdate {
+            agent_id: agent_id.clone(),
+            diff_state: initial_diff,
+        }
+        .into(),
+    );
 
     // Main event loop - polls all streams concurrently
     while let Some((_, event)) = streams.next().await {
@@ -391,20 +400,29 @@ async fn run_agent(
                 match result {
                     Ok(response) => {
                         info!(agent_id = %agent_id, "Prompt completed: {:?}", response.stop_reason);
-                        let _ = event_tx.send(AgentEvent::MessageComplete {
-                            agent_id: agent_id.clone(),
-                        });
-                        let _ = event_tx.send(AgentEvent::StatusChange {
-                            agent_id: agent_id.clone(),
-                            status: AgentStatus::Idle,
-                        });
+                        let _ = event_tx.send(
+                            AgentEvent::MessageComplete {
+                                agent_id: agent_id.clone(),
+                            }
+                            .into(),
+                        );
+                        let _ = event_tx.send(
+                            AgentEvent::StatusChange {
+                                agent_id: agent_id.clone(),
+                                status: AgentStatus::Idle,
+                            }
+                            .into(),
+                        );
                     }
                     Err(e) => {
                         error!(agent_id = %agent_id, "Prompt failed: {}", e);
-                        let _ = event_tx.send(AgentEvent::StatusChange {
-                            agent_id: agent_id.clone(),
-                            status: AgentStatus::Error(e.to_string()),
-                        });
+                        let _ = event_tx.send(
+                            AgentEvent::StatusChange {
+                                agent_id: agent_id.clone(),
+                                status: AgentStatus::Error(e.to_string()),
+                            }
+                            .into(),
+                        );
                     }
                 }
             }
@@ -412,7 +430,7 @@ async fn run_agent(
             LoopEvent::RawEvent(raw_event) => {
                 let events = transform_raw_event(&agent_id, *raw_event);
                 for event in events {
-                    let _ = event_tx.send(event);
+                    let _ = event_tx.send(event.into());
                 }
             }
 
@@ -446,10 +464,13 @@ async fn run_agent(
                     } else {
                         compute_diff_state(&cwd)
                     };
-                    let _ = event_tx.send(AgentEvent::DiffUpdate {
-                        agent_id: agent_id.clone(),
-                        diff_state,
-                    });
+                    let _ = event_tx.send(
+                        AgentEvent::DiffUpdate {
+                            agent_id: agent_id.clone(),
+                            diff_state,
+                        }
+                        .into(),
+                    );
                 }
                 FileWatchEvent::Error(err) => {
                     warn!(agent_id = %agent_id, "File watcher error: {}", err);
@@ -458,9 +479,12 @@ async fn run_agent(
         }
     }
 
-    let _ = event_tx.send(AgentEvent::Disconnected {
-        agent_id: agent_id.clone(),
-    });
+    let _ = event_tx.send(
+        AgentEvent::Disconnected {
+            agent_id: agent_id.clone(),
+        }
+        .into(),
+    );
 }
 
 /// Transform a raw event from AcpClient into UI-ready AgentEvent(s).

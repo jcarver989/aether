@@ -422,7 +422,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_from_result_without_meta() {
         let result = r#"{"status": "success"}"#;
