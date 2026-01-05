@@ -51,6 +51,7 @@ async fn main() -> acp::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
+        .pretty()
         .init();
 
     info!("Starting Aether ACP server");
