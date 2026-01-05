@@ -6,6 +6,7 @@ use crate::components::layout::{Inline, Space};
 use crate::settings::Settings;
 use crate::state::{AgentConfig, ExecutionMode};
 use dioxus::prelude::*;
+use std::env::current_dir;
 use std::path::PathBuf;
 
 const CUSTOM_SERVER: &str = "__custom__";
@@ -34,9 +35,14 @@ pub fn NewAgentForm(
     });
     let custom_command_line = use_signal(|| AgentConfig::default().command_line);
     let mut initial_message = use_signal(String::new);
+    let mut project_path = use_signal(|| {
+        current_dir()
+            .unwrap_or_else(|_| PathBuf::from("/"))
+            .to_string_lossy()
+            .to_string()
+    });
 
-    // Check for .aether/Dockerfile in current directory
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    let cwd = current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let dockerfile_path = dockerfile_path_if_exists(&cwd);
     let has_dockerfile = dockerfile_path.is_some();
 
@@ -108,6 +114,7 @@ pub fn NewAgentForm(
                             oninput: move |e| initial_message.set(e.value()),
                             onkeydown: {
                                 let dockerfile_path_for_keydown = dockerfile_path.clone();
+                                let project_path_for_keydown = project_path.read().clone();
                                 move |e: KeyboardEvent| {
                                     if e.key() == Key::Enter && !e.modifiers().shift() && !initial_message.read().trim().is_empty() {
                                         e.prevent_default();
@@ -118,12 +125,32 @@ pub fn NewAgentForm(
                                             use_docker(),
                                             dockerfile_path_for_keydown.as_ref(),
                                             &initial_message.read(),
+                                            &project_path_for_keydown,
                                         );
                                     }
                                 }
                             },
                             autocorrect: "off",
                             spellcheck: "false",
+                        }
+
+                        div {
+                            class: "px-4 py-2 border-t border-border-subtle",
+                            div {
+                                class: "flex items-center gap-2",
+                                span {
+                                    class: "text-sm text-gray-400 whitespace-nowrap",
+                                    "Project:"
+                                }
+                                input {
+                                    class: "flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-gray-500",
+                                    "data-testid": "project-path-input",
+                                    r#type: "text",
+                                    value: "{project_path}",
+                                    oninput: move |e| project_path.set(e.value()),
+                                    placeholder: "/path/to/project",
+                                }
+                            }
                         }
 
                         // Bottom toolbar
@@ -180,6 +207,7 @@ pub fn NewAgentForm(
                                     disabled: initial_message.read().trim().is_empty(),
                                     onclick: {
                                         let dockerfile_path_for_click = dockerfile_path.clone();
+                                        let project_path_for_click = project_path.read().clone();
                                         move |_| {
                                             submit_form(
                                                 &on_create,
@@ -188,6 +216,7 @@ pub fn NewAgentForm(
                                                 use_docker(),
                                                 dockerfile_path_for_click.as_ref(),
                                                 &initial_message.read(),
+                                                &project_path_for_click,
                                             );
                                         }
                                     },
@@ -226,6 +255,7 @@ fn submit_form(
     use_docker: bool,
     dockerfile_path: Option<&PathBuf>,
     initial_message: &str,
+    project_path: &str,
 ) {
     let execution_mode = if use_docker {
         if let Some(path) = dockerfile_path {
@@ -243,6 +273,7 @@ fn submit_form(
         name,
         command_line,
         execution_mode,
+        project_path: PathBuf::from(project_path),
     };
     on_create.call((config, initial_message.to_string()));
 }

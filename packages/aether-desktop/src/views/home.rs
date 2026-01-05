@@ -13,9 +13,6 @@ use crate::{AGENTS, EventChannel, HANDLES};
 
 use agent_client_protocol::{ContentBlock, RequestPermissionOutcome, RequestPermissionResponse};
 use dioxus::prelude::*;
-use std::env::current_dir;
-use std::path::PathBuf;
-
 use tracing::{info, warn};
 
 /// Timeout in seconds for graceful agent termination before force kill.
@@ -213,7 +210,7 @@ async fn create_agent(
     config: AgentConfig,
     initial_message: String,
 ) -> Result<String, AetherDesktopError> {
-    let cwd = current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    let cwd = config.project_path.clone();
     let is_docker = config.execution_mode.is_docker();
     let agent_id = uuid::Uuid::new_v4().to_string();
 

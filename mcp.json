@@ -1,16 +1,14 @@
 {
   "servers": {
     "coding": {
-      "type": "in-memory",
-      "args": ["--root-dir", "."]
+      "type": "in-memory"
     },
     "plugins": {
       "type": "in-memory",
       "args": ["--dir", "$HOME/.aether"]
     },
     "tasks": {
-      "type": "in-memory",
-      "args": ["--dir", "."]
+      "type": "in-memory"
     }
   }
 }

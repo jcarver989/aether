@@ -20,17 +20,30 @@ pub fn file_to_content_block(
     content: Option<&str>,
     supports_embedded: bool,
 ) -> ContentBlock {
-    if supports_embedded && content.is_some() {
-        ContentBlock::Resource(EmbeddedResource {
-            annotations: None,
-            resource: EmbeddedResourceResource::TextResourceContents(TextResourceContents {
-                uri: format!("file://{}", file.absolute_path.display()),
-                text: content.unwrap().to_string(),
-                mime_type: mime_from_path(&file.path),
+    if supports_embedded {
+        if let Some(content) = content {
+            ContentBlock::Resource(EmbeddedResource {
+                annotations: None,
+                resource: EmbeddedResourceResource::TextResourceContents(TextResourceContents {
+                    uri: format!("file://{}", file.absolute_path.display()),
+                    text: content.to_string(),
+                    mime_type: mime_from_path(&file.path),
+                    meta: None,
+                }),
                 meta: None,
-            }),
-            meta: None,
-        })
+            })
+        } else {
+            ContentBlock::Resource(EmbeddedResource {
+                annotations: None,
+                resource: EmbeddedResourceResource::TextResourceContents(TextResourceContents {
+                    uri: format!("file://{}", file.absolute_path.display()),
+                    text: String::new(),
+                    mime_type: mime_from_path(&file.path),
+                    meta: None,
+                }),
+                meta: None,
+            })
+        }
     } else {
         file_to_resource_link(file)
     }

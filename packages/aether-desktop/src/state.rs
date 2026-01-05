@@ -104,6 +104,8 @@ pub struct AgentConfig {
     pub command_line: String,
     /// Execution mode - local or Docker.
     pub execution_mode: ExecutionMode,
+    /// Project directory path (used as workspace root for MCP servers)
+    pub project_path: PathBuf,
 }
 
 impl Default for AgentConfig {
@@ -114,6 +116,7 @@ impl Default for AgentConfig {
                 "aether-acp --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json"
                     .to_string(),
             execution_mode: ExecutionMode::Local,
+            project_path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
         }
     }
 }

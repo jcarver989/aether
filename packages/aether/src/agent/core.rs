@@ -246,7 +246,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         }
 
         self.context.add_message(ChatMessage::User {
-            content: format!("If you stopped because your task is complete, respond with: {}. Otherwise, if you paused by accident continue", COMPLETION_SIGNAL),
+            content: format!("<system-notification>The LLM API indicated completion without a '{}' signal. If your response or task is complete, respond ONLY with: {}. If you're still working, continue from where you left off.</system-notification>", COMPLETION_SIGNAL, COMPLETION_SIGNAL),
             timestamp: IsoString::now(),
         });
     }

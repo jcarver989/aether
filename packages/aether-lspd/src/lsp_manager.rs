@@ -457,13 +457,13 @@ async fn handle_lsp_message(
     }
 
     // Handle notification messages - cache diagnostics
-    if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
-        if method == "textDocument/publishDiagnostics" {
-            let params = msg.get("params").cloned().unwrap_or(Value::Null);
-            if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params) {
-                let mut cache = diagnostics_cache.write().await;
-                cache.insert(diag_params.uri.clone(), diag_params);
-            }
+    if let Some(method) = msg.get("method").and_then(|v| v.as_str())
+        && method == "textDocument/publishDiagnostics"
+    {
+        let params = msg.get("params").cloned().unwrap_or(Value::Null);
+        if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params) {
+            let mut cache = diagnostics_cache.write().await;
+            cache.insert(diag_params.uri.clone(), diag_params);
         }
     }
 }
