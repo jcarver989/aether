@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::common::TaskSummary;
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
 use crate::tasks::types::{TaskId, TaskUpdate};
 
@@ -40,6 +41,10 @@ pub struct TaskCreateOutput {
 
     /// Human-readable message
     pub message: String,
+
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 /// Create a new task or subtask
@@ -82,10 +87,17 @@ pub fn execute_task_create(
         "task tree"
     };
 
+    let display_meta = ToolDisplayMeta::todo_single(
+        task.title.clone(),
+        false,
+        Some(format!("Creating {}", task_type)),
+    );
+
     Ok(TaskCreateOutput {
         status: "success".to_string(),
         message: format!("Created {} '{}' with ID {}", task_type, task.title, task.id),
         task: TaskSummary::from(&task),
+        _meta: display_meta.into_meta(),
     })
 }
 

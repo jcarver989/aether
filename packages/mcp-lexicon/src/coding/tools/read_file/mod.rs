@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::coding::error::FileError;
 
 const MAX_LINE_LENGTH: usize = 2000;
@@ -33,6 +34,9 @@ pub struct ReadFileResult {
     /// Raw file content without line numbers (used internally for LSP sync)
     #[serde(skip_serializing)]
     pub raw_content: String,
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, FileError> {
@@ -87,6 +91,12 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, Fi
 
             let formatted_content = lines_with_numbers.join("\n");
 
+            let display_meta = ToolDisplayMeta::read_file(
+                args.file_path.clone(),
+                Some(content.len()),
+                Some(total_lines),
+            );
+
             Ok(ReadFileResult {
                 status: "success".to_string(),
                 file_path: args.file_path,
@@ -97,6 +107,7 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, Fi
                 limit: Some(limit),
                 size: content.len(),
                 raw_content: content,
+                _meta: display_meta.into_meta(),
             })
         }
         Err(e) => Err(FileError::ReadFailed {

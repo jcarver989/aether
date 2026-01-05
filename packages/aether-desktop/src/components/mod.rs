@@ -14,6 +14,7 @@ pub mod prompt_input;
 pub mod settings_editor;
 pub mod sidebar;
 pub mod tool_call_display;
+pub mod tool_display;
 pub mod view_tabs;
 pub mod voice_input;
 

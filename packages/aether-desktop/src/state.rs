@@ -1,8 +1,4 @@
-//! Application state types for the desktop app.
-//!
-//! These types represent the UI state and are independent of the
-//! underlying agent protocol (ACP).
-
+use crate::components::tool_display::ToolDisplayMeta;
 use crate::error::AetherDesktopError;
 use crate::platform::{AgentHandle, DockerProgress};
 
@@ -49,6 +45,7 @@ pub enum MessageKind {
         name: String,
         status: ToolCallStatus,
         result: Option<String>,
+        display_meta: Option<ToolDisplayMeta>,
     },
 }
 

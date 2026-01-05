@@ -76,11 +76,12 @@ impl TryFrom<(&ToolCallRequest, rmcp::model::CallToolResult)> for ToolCallResult
             })
         } else {
             let result_value = mcp_result
-                .content
-                .first()
-                .map(|content| {
-                    serde_json::to_value(content)
-                        .unwrap_or(serde_json::Value::String("Serialization error".to_string()))
+                .structured_content
+                .or_else(|| {
+                    mcp_result.content.first().map(|content| {
+                        serde_json::to_value(content)
+                            .unwrap_or(serde_json::Value::String("Serialization error".to_string()))
+                    })
                 })
                 .unwrap_or_else(|| serde_json::Value::String("No result".to_string()));
             Ok(ToolCallResult {
@@ -90,5 +91,84 @@ impl TryFrom<(&ToolCallRequest, rmcp::model::CallToolResult)> for ToolCallResult
                 result: result_value.to_string(),
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmcp::model::{CallToolResult as McpCallToolResult, Content};
+    use serde_json::json;
+
+    fn make_request() -> ToolCallRequest {
+        ToolCallRequest {
+            id: "call_123".to_string(),
+            name: "test_tool".to_string(),
+            arguments: "{}".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_tool_call_result_prefers_structured_content() {
+        let request = make_request();
+
+        let structured = json!({
+            "status": "success",
+            "file_path": "/test/file.rs",
+            "_meta": {
+                "display": {
+                    "type": "ReadFile",
+                    "filePath": "/test/file.rs",
+                    "size": 1024,
+                    "lines": 50
+                }
+            }
+        });
+
+        let mcp_result = McpCallToolResult {
+            content: vec![Content::text("plain text fallback")],
+            structured_content: Some(structured.clone()),
+            is_error: Some(false),
+            meta: None,
+        };
+
+        let result = ToolCallResult::try_from((&request, mcp_result)).unwrap();
+
+        assert!(result.result.contains("_meta"));
+        assert!(result.result.contains("ReadFile"));
+    }
+
+    #[test]
+    fn test_tool_call_result_falls_back_to_content() {
+        let request = make_request();
+
+        let mcp_result = McpCallToolResult {
+            content: vec![Content::text("plain text result")],
+            structured_content: None,
+            is_error: Some(false),
+            meta: None,
+        };
+
+        let result = ToolCallResult::try_from((&request, mcp_result)).unwrap();
+
+        assert!(result.result.contains("plain text result"));
+    }
+
+    #[test]
+    fn test_tool_call_result_handles_error() {
+        let request = make_request();
+
+        let mcp_result = McpCallToolResult {
+            content: vec![Content::text("Error: file not found")],
+            structured_content: None,
+            is_error: Some(true),
+            meta: None,
+        };
+
+        let result = ToolCallResult::try_from((&request, mcp_result));
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.error.contains("file not found"));
     }
 }

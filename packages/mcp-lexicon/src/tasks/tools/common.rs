@@ -1,5 +1,3 @@
-//! Common output types shared across task tools.
-
 use schemars::JsonSchema;
 use serde::Serialize;
 

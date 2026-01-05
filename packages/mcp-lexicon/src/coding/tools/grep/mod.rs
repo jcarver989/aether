@@ -1,5 +1,6 @@
 pub mod common;
 
+use crate::coding::display_meta::ToolDisplayMeta;
 use crate::coding::error::GrepError;
 use aether_lspd::extensions_for_alias as extensions_for_type;
 use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
@@ -22,6 +23,9 @@ pub struct GrepContentOutput {
     pub matches: Vec<MatchData>,
     /// Total number of matches
     pub total_matches: usize,
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -31,6 +35,9 @@ pub struct GrepFilesOutput {
     pub files: Vec<String>,
     /// Number of files with matches
     pub count: usize,
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -47,6 +54,9 @@ pub struct GrepCountOutput {
     pub counts: Vec<GrepFileCount>,
     /// Total matches across all files
     pub total: usize,
+    /// Display metadata for human-friendly rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -210,18 +220,24 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
         // Single file search
         if !should_include_file(path_obj, &args.file_type, &glob_set) {
             // Return empty results if file doesn't match filters
+            let empty_meta =
+                ToolDisplayMeta::grep(args.pattern.clone(), search_path.to_string(), 0);
+            let meta = empty_meta.into_meta();
             return match output_mode {
                 OutputMode::Content => Ok(GrepOutput::Content(GrepContentOutput {
                     matches: vec![],
                     total_matches: 0,
+                    _meta: meta,
                 })),
                 OutputMode::FilesWithMatches => Ok(GrepOutput::Files(GrepFilesOutput {
                     files: vec![],
                     count: 0,
+                    _meta: meta,
                 })),
                 OutputMode::Count => Ok(GrepOutput::Count(GrepCountOutput {
                     counts: vec![],
                     total: 0,
+                    _meta: meta,
                 })),
             };
         }
@@ -377,28 +393,32 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
         }
     }
 
+    let match_count = match output_mode {
+        OutputMode::Content => all_matches.len(),
+        OutputMode::FilesWithMatches => files_with_matches.len(),
+        OutputMode::Count => file_counts.iter().map(|fc| fc.count).sum(),
+    };
+
+    let display_meta =
+        ToolDisplayMeta::grep(args.pattern.clone(), search_path.to_string(), match_count);
+    let meta = display_meta.into_meta();
+
     match output_mode {
-        OutputMode::Content => {
-            let total_matches = all_matches.len();
-            Ok(GrepOutput::Content(GrepContentOutput {
-                matches: all_matches,
-                total_matches,
-            }))
-        }
-        OutputMode::FilesWithMatches => {
-            let count = files_with_matches.len();
-            Ok(GrepOutput::Files(GrepFilesOutput {
-                files: files_with_matches,
-                count,
-            }))
-        }
-        OutputMode::Count => {
-            let total: usize = file_counts.iter().map(|fc| fc.count).sum();
-            Ok(GrepOutput::Count(GrepCountOutput {
-                counts: file_counts,
-                total,
-            }))
-        }
+        OutputMode::Content => Ok(GrepOutput::Content(GrepContentOutput {
+            matches: all_matches,
+            total_matches: match_count,
+            _meta: meta,
+        })),
+        OutputMode::FilesWithMatches => Ok(GrepOutput::Files(GrepFilesOutput {
+            files: files_with_matches,
+            count: match_count,
+            _meta: meta,
+        })),
+        OutputMode::Count => Ok(GrepOutput::Count(GrepCountOutput {
+            counts: file_counts,
+            total: match_count,
+            _meta: meta,
+        })),
     }
 }
 

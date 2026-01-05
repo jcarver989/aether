@@ -52,7 +52,6 @@ impl StructuredAgentOutput {
             return Ok(parsed);
         }
 
-        // Try to extract JSON from markdown code block
         if let Some(json_str) = extract_json_from_markdown(raw_output)
             && let Ok(parsed) = serde_json::from_str::<Self>(&json_str)
         {

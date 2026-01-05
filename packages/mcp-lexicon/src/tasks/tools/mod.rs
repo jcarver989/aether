@@ -1,5 +1,3 @@
-//! Task management tools.
-
 pub mod common;
 pub mod create;
 pub mod get;
