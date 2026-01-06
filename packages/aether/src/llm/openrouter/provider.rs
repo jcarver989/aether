@@ -1,6 +1,10 @@
-use async_openai::{Client, config::OpenAIConfig, types::chat::ChatCompletionStreamOptions};
+use async_openai::{Client, config::OpenAIConfig};
+use async_stream;
+use tokio_stream::StreamExt;
 
-use crate::llm::openai_compatible::{build_chat_request, create_custom_stream};
+use crate::llm::openai::process_completion_stream;
+use crate::llm::openai_compatible::{build_chat_request, types::ChatCompletionStreamResponse};
+use crate::llm::openrouter::types::OpenRouterChatRequest;
 use crate::llm::{
     Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider,
 };
@@ -62,13 +66,31 @@ impl ProviderFactory for OpenRouterProvider {
 
 impl StreamingModelProvider for OpenRouterProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        let mut request = build_chat_request(&self.model, context);
-        request.stream_options = Some(ChatCompletionStreamOptions {
-            include_usage: Some(true),
-            include_obfuscation: None,
-        });
+        let request: OpenRouterChatRequest = build_chat_request(&self.model, context).into();
+        let client = self.client.clone();
 
-        create_custom_stream(&self.client, request)
+        Box::pin(async_stream::stream! {
+            let stream = match client
+                .chat()
+                .create_stream_byot::<OpenRouterChatRequest, ChatCompletionStreamResponse>(request)
+                .await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    yield Err(LlmError::ApiRequest(e.to_string()));
+                    return;
+                }
+            };
+
+            let mapped_stream = stream.map(|result| {
+                result
+                    .map(|response| response.into())
+                    .map_err(|e| LlmError::ApiError(e.to_string()))
+            });
+
+            for await item in process_completion_stream(mapped_stream) {
+                yield item;
+            }
+        })
     }
 
     fn display_name(&self) -> String {
