@@ -449,6 +449,9 @@
   .max-h-48 {
     max-height: var(--spacing-48);
   }
+  .max-h-64 {
+    max-height: var(--spacing-64);
+  }
   .max-h-80 {
     max-height: var(--spacing-80);
   }
@@ -714,6 +717,12 @@
   }
   .border-accent-primary {
     border-color: var(--color-accent-primary);
+  }
+  .border-blue-600\/30 {
+    border-color: color-mix(in srgb, oklch(54.6% 0.245 262.881) 30%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-blue-600) 30%, transparent);
+    }
   }
   .border-border-default {
     border-color: var(--color-border-default);

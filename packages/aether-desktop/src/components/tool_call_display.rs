@@ -1,9 +1,95 @@
 use crate::components::tool_display::{
-    BashDisplay, EditFileDisplay, ReadFileDisplay, SubAgentDisplay, TodoDisplay, ToolDisplayMeta,
-    WriteFileDisplay,
+    BashDisplay, EditFileDisplay, ReadFileDisplay, SubAgentDisplay, SubAgentStreamMessage,
+    TodoDisplay, ToolDisplayMeta, WriteFileDisplay,
 };
 use crate::state::{SubAgentStreams, ToolCallStatus};
 use dioxus::prelude::*;
+
+/// Inline display of sub-agent streaming when we don't have full display_meta yet
+#[component]
+fn SubAgentStreamInline(
+    stream_id: String,
+    agent_name: String,
+    messages: Vec<SubAgentStreamMessage>,
+    is_complete: bool,
+) -> Element {
+    let text_content: String = messages
+        .iter()
+        .filter_map(|msg| match msg {
+            SubAgentStreamMessage::Text { chunk } => Some(chunk.as_str()),
+            SubAgentStreamMessage::TextComplete { full_text } => Some(full_text.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    rsx! {
+        div {
+            class: "flex flex-col gap-1 border-l-2 border-blue-600/30 pl-3 py-1 max-h-64 overflow-y-auto",
+            "data-testid": "sub-agent-stream-inline-{stream_id}",
+
+            div {
+                class: "flex items-center gap-2",
+                span { class: "text-gray-500 text-xs", "→" }
+                span { class: "text-blue-400 font-mono text-sm", "{agent_name}" }
+                if is_complete {
+                    span { class: "text-green-500 text-xs", "✓" }
+                } else {
+                    span { class: "inline-block w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" }
+                }
+            }
+
+            if !text_content.is_empty() {
+                div {
+                    class: "text-xs text-gray-400 whitespace-pre-wrap ml-4",
+                    "{text_content}"
+                }
+            }
+
+            for msg in &messages {
+                match msg {
+                    SubAgentStreamMessage::ToolStarted { name, input_summary } => {
+                        rsx! {
+                            div {
+                                class: "flex items-center gap-2 text-[11px] ml-4",
+                                span { class: "text-blue-400 font-mono", "⚒ {name}" }
+                                span { class: "text-gray-500 italic truncate", "{input_summary}" }
+                            }
+                        }
+                    }
+                    SubAgentStreamMessage::ToolCompleted { name, output_summary } => {
+                        rsx! {
+                            div {
+                                class: "flex items-center gap-2 text-[11px] ml-4",
+                                span { class: "text-green-500", "✓" }
+                                span { class: "text-gray-500 font-mono", "{name}" }
+                                span { class: "text-gray-600 truncate", "{output_summary}" }
+                            }
+                        }
+                    }
+                    SubAgentStreamMessage::ToolFailed { name, error } => {
+                        rsx! {
+                            div {
+                                class: "flex items-center gap-2 text-[11px] ml-4",
+                                span { class: "text-red-500", "✗" }
+                                span { class: "text-red-400 font-mono", "{name}" }
+                                span { class: "text-red-500/70 truncate", "{error}" }
+                            }
+                        }
+                    }
+                    SubAgentStreamMessage::Error { message } => {
+                        rsx! {
+                            div {
+                                class: "text-[11px] text-red-400 ml-4",
+                                "Error: {message}"
+                            }
+                        }
+                    }
+                    _ => rsx! {}
+                }
+            }
+        }
+    }
+}
 
 #[component]
 pub fn ToolCallDisplay(
@@ -75,6 +161,40 @@ fn build_tool_display(
     display_content: &str,
     sub_agent_streams: Option<SubAgentStreams>,
 ) -> (Option<String>, Element) {
+    // For sub-agent spawns, always show the SubAgentDisplay (even while pending)
+    // so we can display streaming progress
+    if let Some(ToolDisplayMeta::SpawnSubAgent(sub_agent)) = display_meta {
+        let detail_text = display_meta.and_then(|meta| meta.detail_line());
+        return (
+            detail_text,
+            rsx! { SubAgentDisplay { sub_agent_meta: sub_agent.clone(), streams: sub_agent_streams } },
+        );
+    }
+
+    // If we have sub-agent streams but no display_meta yet (tool still pending),
+    // show the streams directly
+    if let Some(ref streams) = sub_agent_streams {
+        if !streams.streams.is_empty() {
+            return (
+                None,
+                rsx! {
+                    div {
+                        class: "flex flex-col gap-1",
+                        for (id, stream) in streams.streams.iter() {
+                            SubAgentStreamInline {
+                                key: "{id}",
+                                stream_id: id.clone(),
+                                agent_name: stream.agent_name.clone(),
+                                messages: stream.messages.clone(),
+                                is_complete: stream.is_complete,
+                            }
+                        }
+                    }
+                },
+            );
+        }
+    }
+
     if *status == ToolCallStatus::Pending {
         return (None, render_raw_content(display_content));
     }
@@ -93,8 +213,8 @@ fn build_tool_display(
             rsx! { EditFileDisplay { edit_meta: edit.clone() } }
         }
         Some(ToolDisplayMeta::Todo(todo)) => rsx! { TodoDisplay { todo_meta: todo.clone() } },
-        Some(ToolDisplayMeta::SpawnSubAgent(sub_agent)) => {
-            rsx! { SubAgentDisplay { sub_agent_meta: sub_agent.clone(), streams: sub_agent_streams } }
+        Some(ToolDisplayMeta::SpawnSubAgent(_)) => {
+            unreachable!("SpawnSubAgent handled above")
         }
         _ => render_raw_content(display_content),
     };

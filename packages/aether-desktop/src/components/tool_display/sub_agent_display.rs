@@ -32,7 +32,7 @@ pub fn SubAgentDisplay(
 
     rsx! {
         div {
-            class: "flex flex-col gap-1 py-1",
+            class: "flex flex-col gap-1 py-1 max-h-64 overflow-y-auto",
             "data-testid": "sub-agent-display",
 
             div {

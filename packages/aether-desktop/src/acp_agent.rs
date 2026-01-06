@@ -606,6 +606,11 @@ fn convert_agent_message_to_stream_message(event: AgentMessage) -> Option<SubAge
             }
         }
         AgentMessage::ToolCall { request, .. } => {
+            // Only create ToolStarted if we have a valid tool name
+            // (streaming tool calls may send partial updates with empty names)
+            if request.name.is_empty() {
+                return None;
+            }
             let input_summary = truncate_string(&request.arguments, 100);
             Some(SubAgentStreamMessage::ToolStarted {
                 name: request.name,
