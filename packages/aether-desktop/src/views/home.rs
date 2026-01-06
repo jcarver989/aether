@@ -92,7 +92,7 @@ pub fn Home() -> Element {
                 on_mcp_servers: move |_| {
                     right_pane.set(RightPaneView::McpServers);
                     #[cfg(feature = "desktop")]
-                    tokio::spawn(async move {
+                    spawn(async move {
                         trigger_mcp_probe().await;
                     });
                 },
