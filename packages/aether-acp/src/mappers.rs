@@ -1,5 +1,5 @@
 use aether::agent::AgentMessage;
-use aether_acp_types::ContextUsageParams;
+use agent_events::{ContextUsageParams, SubAgentProgressParams, SubAgentProgressPayload};
 use agent_client_protocol as acp;
 use rmcp::model::Prompt as McpPrompt;
 
@@ -182,39 +182,34 @@ pub fn map_agent_message_to_session_notification(
         } => {
             tracing::info!("Tool progress: {message:?}");
 
-            let content = message
+            if message
                 .as_ref()
-                // Sub agents serialize AgentMessage in content
-                .and_then(|msg_str| try_parse_agent_message_content(msg_str))
-                // Normal progress notifications
-                .unwrap_or_else(|| {
-                    let progress_text = message
-                        .as_ref()
-                        .map(|msg| {
-                            format!(
-                                "{} ({}/{})",
-                                msg,
-                                progress,
-                                total
-                                    .map(|t| t.to_string())
-                                    .unwrap_or_else(|| "?".to_string())
-                            )
-                        })
-                        .unwrap_or_else(|| {
-                            format!(
-                                "Progress: {}/{}",
-                                progress,
-                                total
-                                    .map(|t| t.to_string())
-                                    .unwrap_or_else(|| "?".to_string())
-                            )
-                        });
+                .and_then(|msg_str| try_parse_sub_agent_progress(msg_str, request))
+                .is_some()
+            {
+                return None;
+            }
 
-                    acp::ContentBlock::Text(acp::TextContent {
-                        annotations: None,
-                        text: progress_text,
-                        meta: None,
-                    })
+            let progress_text = message
+                .as_ref()
+                .map(|msg| {
+                    format!(
+                        "{} ({}/{})",
+                        msg,
+                        progress,
+                        total
+                            .map(|t| t.to_string())
+                            .unwrap_or_else(|| "?".to_string())
+                    )
+                })
+                .unwrap_or_else(|| {
+                    format!(
+                        "Progress: {}/{}",
+                        progress,
+                        total
+                            .map(|t| t.to_string())
+                            .unwrap_or_else(|| "?".to_string())
+                    )
                 });
 
             Some(acp::SessionNotification {
@@ -223,7 +218,13 @@ pub fn map_agent_message_to_session_notification(
                     id: request.id.clone().into(),
                     fields: acp::ToolCallUpdateFields {
                         status: Some(acp::ToolCallStatus::InProgress),
-                        content: Some(vec![acp::ToolCallContent::Content { content }]),
+                        content: Some(vec![acp::ToolCallContent::Content {
+                            content: acp::ContentBlock::Text(acp::TextContent {
+                                annotations: None,
+                                text: progress_text,
+                                meta: None,
+                            }),
+                        }]),
                         ..Default::default()
                     },
                     meta: None,
@@ -256,6 +257,11 @@ pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotificat
             };
             Some(params.into())
         }
+        AgentMessage::ToolProgress { request, message, .. } => {
+            let msg_str = message.as_ref()?;
+            let params = try_parse_sub_agent_progress(msg_str, request)?;
+            Some(params.into())
+        }
         _ => None,
     }
 }
@@ -270,136 +276,43 @@ pub fn map_agent_message_to_stop_reason(msg: &AgentMessage) -> acp::StopReason {
     }
 }
 
-/// Attempts to parse a serialized AgentMessage and extract its content as an ACP ContentBlock
-///
-/// This is used primarily for sub-agent messages that are serialized in tool progress notifications.
-/// Returns Some(ContentBlock) if the message can be parsed and contains displayable content,
-/// None otherwise.
-fn try_parse_agent_message_content(message_str: &str) -> Option<acp::ContentBlock> {
-    serde_json::from_str::<AgentMessage>(message_str)
-        .ok()
-        .and_then(|agent_msg| match agent_msg {
-            AgentMessage::Text { chunk, .. } => Some(acp::ContentBlock::Text(acp::TextContent {
-                annotations: None,
-                text: chunk,
-                meta: None,
-            })),
-            AgentMessage::ToolResult { result, .. } => {
-                let text = format!("Tool '{}' completed:\n{}", result.name, result.result);
-                Some(acp::ContentBlock::Text(acp::TextContent {
-                    annotations: None,
-                    text,
-                    meta: None,
-                }))
-            }
-            AgentMessage::ToolError { error, .. } => {
-                let text = format!("Tool '{}' failed:\n{}", error.name, error.error);
-                Some(acp::ContentBlock::Text(acp::TextContent {
-                    annotations: None,
-                    text,
-                    meta: None,
-                }))
-            }
-            _ => None,
-        })
+/// Attempt to parse a tool progress message as sub-agent progress.
+fn try_parse_sub_agent_progress(
+    message: &str,
+    request: &aether::llm::ToolCallRequest,
+) -> Option<SubAgentProgressParams> {
+    let payload: SubAgentProgressPayload = serde_json::from_str(message).ok()?;
+
+    Some(SubAgentProgressParams {
+        parent_tool_id: request.id.clone(),
+        task_id: payload.task_id,
+        agent_name: payload.agent_name,
+        event: payload.event,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use aether::llm::ToolCallRequest;
+    use agent_events::SUB_AGENT_PROGRESS_METHOD;
     use std::sync::Arc;
 
     #[test]
-    fn test_try_parse_agent_message_content_with_text() {
-        let serialized = r#"{"Text":{"message_id":"test-id","chunk":"Hello World","is_complete":false,"model_name":"TestModel"}}"#;
-
-        let result = try_parse_agent_message_content(serialized);
-
-        assert!(result.is_some());
-        if let Some(acp::ContentBlock::Text(text)) = result {
-            assert_eq!(text.text, "Hello World");
-        } else {
-            panic!("Expected Text content block");
-        }
-    }
-
-    #[test]
-    fn test_try_parse_agent_message_content_with_non_text() {
-        let serialized = r#"{"Done":null}"#;
-
-        let result = try_parse_agent_message_content(serialized);
-
-        assert!(result.is_none(), "Non-text messages should return None");
-    }
-
-    #[test]
-    fn test_try_parse_agent_message_content_with_invalid_json() {
-        let invalid = "not valid json at all";
-
-        let result = try_parse_agent_message_content(invalid);
-
-        assert!(result.is_none(), "Invalid JSON should return None");
-    }
-
-    #[test]
-    fn test_try_parse_agent_message_content_with_tool_result() {
-        // Create an actual ToolCallResult and serialize it to see the structure
-        use aether::llm::ToolCallResult;
-        let tool_result = AgentMessage::ToolResult {
-            result: ToolCallResult {
-                id: "call_123".to_string(),
-                name: "read_file".to_string(),
-                arguments: "{}".to_string(),
-                result: "File contents here".to_string(),
-            },
-            model_name: "TestModel".to_string(),
-        };
-
-        let serialized = serde_json::to_string(&tool_result).unwrap();
-        let result = try_parse_agent_message_content(&serialized);
-
-        assert!(result.is_some(), "Serialized: {}", serialized);
-        if let Some(acp::ContentBlock::Text(text)) = result {
-            assert!(text.text.contains("Tool 'read_file' completed:"));
-            assert!(text.text.contains("File contents here"));
-        } else {
-            panic!("Expected Text content block");
-        }
-    }
-
-    #[test]
-    fn test_try_parse_agent_message_content_with_tool_error() {
-        // Create an actual ToolCallError and serialize it to see the structure
-        use aether::llm::ToolCallError;
-        let tool_error = AgentMessage::ToolError {
-            error: ToolCallError {
-                id: "call_456".to_string(),
-                name: "write_file".to_string(),
-                arguments: Some("{}".to_string()),
-                error: "Permission denied".to_string(),
-            },
-            model_name: "TestModel".to_string(),
-        };
-
-        let serialized = serde_json::to_string(&tool_error).unwrap();
-        let result = try_parse_agent_message_content(&serialized);
-
-        assert!(result.is_some(), "Serialized: {}", serialized);
-        if let Some(acp::ContentBlock::Text(text)) = result {
-            assert!(text.text.contains("Tool 'write_file' failed:"));
-            assert!(text.text.contains("Permission denied"));
-        } else {
-            panic!("Expected Text content block");
-        }
-    }
-
-    #[test]
-    fn test_tool_progress_with_serialized_agent_message() {
+    fn test_tool_progress_with_sub_agent_payload_emits_ext_notification() {
         let session_id = acp::SessionId(Arc::from("test-session"));
 
-        // Simulate a tool progress message with a serialized Text AgentMessage
-        let serialized_msg = r#"{"Text":{"message_id":"75ce3bed-b1cd-469f-9142-7039847f5b00","chunk":"Hello","is_complete":false,"model_name":"LlamaCpp"}}"#;
+        let payload = SubAgentProgressPayload {
+            task_id: "task_1".to_string(),
+            agent_name: "sub-agent".to_string(),
+            event: AgentMessage::Text {
+                message_id: "msg_1".to_string(),
+                chunk: "Hello".to_string(),
+                is_complete: false,
+                model_name: "TestModel".to_string(),
+            },
+        };
+        let serialized_msg = serde_json::to_string(&payload).unwrap();
 
         let tool_progress = AgentMessage::ToolProgress {
             request: ToolCallRequest {
@@ -415,40 +328,17 @@ mod tests {
         let notification =
             map_agent_message_to_session_notification(session_id.clone(), &tool_progress);
 
-        // Should return a notification
-        assert!(notification.is_some());
+        assert!(notification.is_none());
 
-        let notification = notification.unwrap();
+        let ext = try_into_ext_notification(&tool_progress).expect("ext notification");
+        assert_eq!(ext.method.as_ref(), SUB_AGENT_PROGRESS_METHOD);
 
-        // Should be a ToolCallUpdate
-        match notification.update {
-            acp::SessionUpdate::ToolCallUpdate(update) => {
-                assert_eq!(update.id, acp::ToolCallId::from("call_123"));
-                assert_eq!(update.fields.status, Some(acp::ToolCallStatus::InProgress));
-
-                // Should have content with the deserialized text, not the raw JSON
-                if let Some(content) = &update.fields.content {
-                    assert!(!content.is_empty());
-                    if let acp::ToolCallContent::Content { content: block } = &content[0] {
-                        if let acp::ContentBlock::Text(text) = block {
-                            // Should contain "Hello" from the chunk, not the raw JSON
-                            assert!(
-                                text.text.contains("Hello"),
-                                "Expected 'Hello' in text, got: {}",
-                                text.text
-                            );
-                            assert!(
-                                !text.text.contains("message_id"),
-                                "Should not contain raw JSON"
-                            );
-                        } else {
-                            panic!("Expected Text content block");
-                        }
-                    }
-                }
-            }
-            _ => panic!("Expected ToolCallUpdate"),
-        }
+        let parsed: SubAgentProgressParams =
+            serde_json::from_str(ext.params.get()).expect("valid JSON");
+        assert_eq!(parsed.parent_tool_id, "call_123");
+        assert_eq!(parsed.task_id, "task_1");
+        assert_eq!(parsed.agent_name, "sub-agent");
+        assert!(matches!(parsed.event, AgentMessage::Text { .. }));
     }
 
     #[test]

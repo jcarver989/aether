@@ -8,7 +8,7 @@ edition = "2024"
 
 [dependencies]
 # Cross-platform dependencies
-dioxus = { version = "0.7.2", features = ["router"] }
+dioxus = { version = "0.7", features = ["router"] }
 agent-client-protocol = "0.5.0"
 uuid = { version = "1.10", features = ["v4", "js"] }
 futures = "0.3"
@@ -22,8 +22,9 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = { workspace = true }
 regex = { workspace = true }
-aether = { path = "../aether", default-features = false }
-rmcp = { workspace = true, features = ["transport-streamable-http-client-reqwest"] }
+# Native-only MCP dependencies (requires tokio)
+aether = { path = "../aether", default-features = false, optional = true }
+rmcp = { workspace = true, features = ["transport-streamable-http-client-reqwest"], optional = true }
 
 # Native-only dependencies (desktop feature)
 tokio = { workspace = true, features = ["full"], optional = true }
@@ -36,6 +37,7 @@ notify-debouncer-mini = { version = "0.7", optional = true }
 nucleo = { version = "0.5.0", optional = true }
 ignore = { version = "0.4.25", optional = true }
 aether-acp-client = { path = "../aether-acp-client", optional = true }
+agent-events = { path = "../agent-events", optional = true }
 aether-voice = { path = "../aether-voice", optional = true }
 
 # Web-only dependencies
@@ -61,5 +63,7 @@ desktop = [
     "dep:ignore",
     "dep:aether-acp-client",
     "dep:aether-voice",
+    "dep:rmcp",
+    "dep:aether",
 ]
 mobile = ["dioxus/mobile"]

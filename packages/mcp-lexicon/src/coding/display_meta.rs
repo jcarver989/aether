@@ -163,6 +163,20 @@ pub struct LspSymbolDisplayMeta {
     pub result_count: Option<usize>,
 }
 
+/// Display metadata for spawn_subagent operations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnSubAgentDisplayMeta {
+    /// The agent name being spawned
+    pub agent_name: String,
+    /// The prompt/task sent to the sub-agent
+    pub prompt: String,
+    /// Number of tasks in the batch
+    pub task_count: usize,
+    /// Current task index (1-based)
+    pub task_index: usize,
+}
+
 /// Union of all display metadata types.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "PascalCase")]
@@ -178,6 +192,7 @@ pub enum ToolDisplayMeta {
     WebFetch(WebFetchDisplayMeta),
     WebSearch(WebSearchDisplayMeta),
     LspSymbol(LspSymbolDisplayMeta),
+    SpawnSubAgent(SpawnSubAgentDisplayMeta),
 }
 
 impl ToolDisplayMeta {
@@ -279,6 +294,21 @@ impl ToolDisplayMeta {
             symbol,
             operation,
             result_count,
+        })
+    }
+
+    /// Create spawn_subagent display metadata.
+    pub fn spawn_subagent(
+        agent_name: String,
+        prompt: String,
+        task_count: usize,
+        task_index: usize,
+    ) -> Self {
+        ToolDisplayMeta::SpawnSubAgent(SpawnSubAgentDisplayMeta {
+            agent_name,
+            prompt,
+            task_count,
+            task_index,
         })
     }
 

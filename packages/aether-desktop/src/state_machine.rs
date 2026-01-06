@@ -1,50 +1,124 @@
-use crate::components::tool_display::ToolDisplayMeta;
+use crate::components::tool_display::{SubAgentStreamMessage, ToolDisplayMeta};
 use crate::platform::AgentEvent;
 use crate::state::{
     AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, ToolCallStatus, now_iso,
 };
+use aether_acp_client::transform::AcpEvent;
 use agent_client_protocol::{AvailableCommand, ToolCallContent};
+use tracing::debug;
 
 impl AgentSession {
     /// Apply an event to this agent session, mutating in place.
     pub fn apply_event(&mut self, event: &AgentEvent) {
         match event {
-            AgentEvent::MessageChunk { text, .. } => self.append_to_streaming_message(text.clone()),
-            AgentEvent::MessageComplete { .. } => self.complete_streaming_message(),
-            AgentEvent::ToolCallStarted {
-                tool_id, tool_call, ..
-            } => self.start_tool_call(tool_id.clone(), tool_call.clone()),
-            AgentEvent::ToolCallUpdated {
-                tool_id, fields, ..
-            } => self.update_tool_call(tool_id.clone(), fields.clone()),
-            AgentEvent::ToolCallCompleted {
-                tool_id, result, ..
-            } => self.complete_tool_call(tool_id.clone(), result.clone()),
-            AgentEvent::ToolCallFailed { tool_id, error, .. } => {
-                self.fail_tool_call(tool_id.clone(), error.clone())
+            AgentEvent::Protocol { agent_id: _, event: acp_event } => {
+                self.apply_acp_event(acp_event);
             }
             AgentEvent::StatusChange { status, .. } => self.update_status(status.clone()),
-            AgentEvent::AvailableCommandsUpdate { commands, .. } => {
-                self.update_available_commands(commands.clone())
-            }
             AgentEvent::DiffUpdate { diff_state, .. } => self.update_diff_state(diff_state.clone()),
-            AgentEvent::TerminalOutput {
-                terminal_id,
-                output,
+            AgentEvent::SubAgentProgress {
+                parent_tool_id,
+                sub_agent_id,
+                agent_name,
+                message,
                 ..
-            } => self.append_terminal_output(terminal_id, output),
-            AgentEvent::ContextUsageUpdate {
-                usage_ratio,
-                tokens_used,
-                context_limit,
-                ..
-            } => self.update_context_usage(*usage_ratio, *tokens_used, *context_limit),
+            } => self.update_sub_agent_progress(parent_tool_id, sub_agent_id, agent_name, message),
             AgentEvent::Disconnected { .. }
             | AgentEvent::Error { .. }
             | AgentEvent::PermissionRequest { .. } => {
                 // These events are handled elsewhere or don't mutate session state
             }
         }
+    }
+
+    fn apply_acp_event(&mut self, event: &AcpEvent) {
+        match event {
+            AcpEvent::MessageChunk { text } => self.append_to_streaming_message(text.clone()),
+            AcpEvent::MessageComplete => self.complete_streaming_message(),
+            AcpEvent::ToolCallStarted {
+                tool_id, tool_call, ..
+            } => self.start_tool_call(tool_id.clone(), tool_call.clone()),
+            AcpEvent::ToolCallUpdated {
+                tool_id, fields, ..
+            } => self.update_tool_call(tool_id.clone(), fields.clone()),
+            AcpEvent::ToolCallCompleted {
+                tool_id, result, ..
+            } => self.complete_tool_call(tool_id.clone(), result.clone()),
+            AcpEvent::ToolCallFailed { tool_id, error, .. } => {
+                self.fail_tool_call(tool_id.clone(), error.clone())
+            }
+            AcpEvent::AvailableCommandsUpdate { commands } => {
+                self.update_available_commands(commands.clone())
+            }
+            AcpEvent::TerminalOutput {
+                terminal_id,
+                output,
+                ..
+            } => self.append_terminal_output(terminal_id, output),
+            AcpEvent::ContextUsageUpdate {
+                usage_ratio,
+                tokens_used,
+                context_limit,
+            } => self.update_context_usage(*usage_ratio, *tokens_used, *context_limit),
+            AcpEvent::PermissionRequest { .. } | AcpEvent::Progress { .. } => {
+                // PermissionRequest is handled at event routing level, Progress is ignored
+            }
+            AcpEvent::SubAgentProgress { .. } => {
+                // SubAgentProgress is handled via AgentEvent::SubAgentProgress, not here
+            }
+        }
+    }
+
+    fn update_sub_agent_progress(
+        &mut self,
+        parent_tool_id: &str,
+        sub_agent_id: &str,
+        agent_name: &str,
+        message: &SubAgentStreamMessage,
+    ) {
+        debug!(
+            "Updating sub-agent progress: parent_tool_id={}, sub_agent_id={}, agent_name={}, message={:?}",
+            parent_tool_id, sub_agent_id, agent_name, message
+        );
+
+        let streams = self
+            .sub_agent_streams
+            .entry(parent_tool_id.to_string())
+            .or_default();
+        let state = streams.get_or_create(sub_agent_id, agent_name);
+
+        match message {
+            SubAgentStreamMessage::Text { chunk } => {
+                // Find existing text message to append to, or create one
+                if let Some(SubAgentStreamMessage::Text { chunk: existing }) =
+                    state.messages.last_mut()
+                {
+                    existing.push_str(chunk);
+                } else {
+                    state.messages.push(message.clone());
+                }
+            }
+            SubAgentStreamMessage::TextComplete { full_text } => {
+                // Replace last text message or just append
+                if let Some(SubAgentStreamMessage::Text { .. }) = state.messages.last() {
+                    state.messages.pop();
+                }
+                state.messages.push(SubAgentStreamMessage::Text {
+                    chunk: full_text.clone(),
+                });
+            }
+            SubAgentStreamMessage::Done => {
+                state.is_complete = true;
+            }
+            _ => {
+                state.messages.push(message.clone());
+            }
+        }
+
+        debug!(
+            "Sub-agent streams state: {:?}",
+            self.sub_agent_streams.keys().collect::<Vec<_>>()
+        );
     }
 
     fn append_to_streaming_message(&mut self, text: String) {
@@ -212,6 +286,7 @@ mod tests {
             context_usage: 0.0,
             tokens_used: 0,
             context_limit: 0,
+            sub_agent_streams: std::collections::HashMap::new(),
         }
     }
 
@@ -227,9 +302,11 @@ mod tests {
             is_streaming: true,
         });
 
-        let event = AgentEvent::MessageChunk {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            text: " text".to_string(),
+            event: AcpEvent::MessageChunk {
+                text: " text".to_string(),
+            },
         };
         session.apply_event(&event);
 
@@ -241,9 +318,11 @@ mod tests {
     fn test_message_chunk_creates_new_message() {
         let mut session = create_test_session();
 
-        let event = AgentEvent::MessageChunk {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            text: "New message".to_string(),
+            event: AcpEvent::MessageChunk {
+                text: "New message".to_string(),
+            },
         };
         session.apply_event(&event);
 
@@ -264,8 +343,9 @@ mod tests {
             is_streaming: true,
         });
 
-        let event = AgentEvent::MessageComplete {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
+            event: AcpEvent::MessageComplete,
         };
         session.apply_event(&event);
 
@@ -289,10 +369,12 @@ mod tests {
             meta: None,
         };
 
-        let event = AgentEvent::ToolCallStarted {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            tool_id: "tool-1".to_string(),
-            tool_call: tool_call.clone(),
+            event: AcpEvent::ToolCallStarted {
+                tool_id: "tool-1".to_string(),
+                tool_call: tool_call.clone(),
+            },
         };
         session.apply_event(&event);
 
@@ -324,10 +406,12 @@ mod tests {
             is_streaming: false,
         });
 
-        let event = AgentEvent::ToolCallCompleted {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            tool_id: tool_id.clone(),
-            result: "Success!".to_string(),
+            event: AcpEvent::ToolCallCompleted {
+                tool_id: tool_id.clone(),
+                result: "Success!".to_string(),
+            },
         };
         session.apply_event(&event);
 
@@ -359,10 +443,12 @@ mod tests {
             is_streaming: false,
         });
 
-        let event = AgentEvent::ToolCallFailed {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            tool_id: tool_id.clone(),
-            error: "Error!".to_string(),
+            event: AcpEvent::ToolCallFailed {
+                tool_id: tool_id.clone(),
+                error: "Error!".to_string(),
+            },
         };
         session.apply_event(&event);
 
@@ -399,9 +485,9 @@ mod tests {
             meta: None,
         }];
 
-        let event = AgentEvent::AvailableCommandsUpdate {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            commands,
+            event: AcpEvent::AvailableCommandsUpdate { commands },
         };
         session.apply_event(&event);
 
@@ -472,11 +558,13 @@ mod tests {
         assert_eq!(session.tokens_used, 0);
         assert_eq!(session.context_limit, 0);
 
-        let event = AgentEvent::ContextUsageUpdate {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            usage_ratio: 0.75,
-            tokens_used: 75000,
-            context_limit: 100000,
+            event: AcpEvent::ContextUsageUpdate {
+                usage_ratio: 0.75,
+                tokens_used: 75000,
+                context_limit: 100000,
+            },
         };
         session.apply_event(&event);
 
@@ -511,11 +599,13 @@ mod tests {
             .insert(terminal_id.clone(), tool_id.clone());
 
         // Send terminal output
-        let event = AgentEvent::TerminalOutput {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            terminal_id: terminal_id.clone(),
-            output: "hello\n".to_string(),
-            stream: crate::state::TerminalStream::Stdout,
+            event: AcpEvent::TerminalOutput {
+                terminal_id: terminal_id.clone(),
+                output: "hello\n".to_string(),
+                stream: aether_acp_client::OutputStream::Stdout,
+            },
         };
         session.apply_event(&event);
 
@@ -554,19 +644,23 @@ mod tests {
             .insert(terminal_id.clone(), tool_id.clone());
 
         // Send multiple terminal output events
-        let event1 = AgentEvent::TerminalOutput {
+        let event1 = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            terminal_id: terminal_id.clone(),
-            output: "hello\n".to_string(),
-            stream: crate::state::TerminalStream::Stdout,
+            event: AcpEvent::TerminalOutput {
+                terminal_id: terminal_id.clone(),
+                output: "hello\n".to_string(),
+                stream: aether_acp_client::OutputStream::Stdout,
+            },
         };
         session.apply_event(&event1);
 
-        let event2 = AgentEvent::TerminalOutput {
+        let event2 = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            terminal_id: terminal_id.clone(),
-            output: "world\n".to_string(),
-            stream: crate::state::TerminalStream::Stdout,
+            event: AcpEvent::TerminalOutput {
+                terminal_id: terminal_id.clone(),
+                output: "world\n".to_string(),
+                stream: aether_acp_client::OutputStream::Stdout,
+            },
         };
         session.apply_event(&event2);
 
@@ -599,11 +693,13 @@ mod tests {
         });
 
         // Send terminal output for an unmapped terminal
-        let event = AgentEvent::TerminalOutput {
+        let event = AgentEvent::Protocol {
             agent_id: "test-id".to_string(),
-            terminal_id: "unknown-terminal".to_string(),
-            output: "hello\n".to_string(),
-            stream: crate::state::TerminalStream::Stdout,
+            event: AcpEvent::TerminalOutput {
+                terminal_id: "unknown-terminal".to_string(),
+                output: "hello\n".to_string(),
+                stream: aether_acp_client::OutputStream::Stdout,
+            },
         };
         session.apply_event(&event);
 

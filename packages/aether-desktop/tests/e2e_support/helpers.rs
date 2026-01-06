@@ -7,7 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::pages::{AgentViewPage, NewAgentModalPage, SidebarPage};
+use crate::pages::{AgentViewPage, NewAgentModalPage, SidebarPage, SubAgentPage};
 
 pub const BASE_URL: &str = "http://localhost:8080";
 
@@ -155,6 +155,11 @@ impl TestHarness {
     /// Get an AgentViewPage for interacting with the agent view.
     pub fn agent_view(&self) -> AgentViewPage<'_> {
         AgentViewPage::new(self.client())
+    }
+
+    /// Get a SubAgentPage for interacting with sub-agent displays.
+    pub fn sub_agent(&self) -> SubAgentPage<'_> {
+        SubAgentPage::new(self.client())
     }
 
     /// Close the WebDriver session. Call this at the end of each test.

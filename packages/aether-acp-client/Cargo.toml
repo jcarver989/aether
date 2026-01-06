@@ -6,7 +6,7 @@ edition = "2024"
 
 [dependencies]
 # ACP protocol
-aether-acp-types = { path = "../aether-acp-types" }
+agent-events = { path = "../agent-events" }
 agent-client-protocol = "0.5.0"
 
 # Docker support

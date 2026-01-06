@@ -74,3 +74,6 @@ pub use session::{SessionError, SessionInfo, start_session};
 pub use transform::{
     AcpEvent, extract_tool_content, transform_raw_event, transform_session_notification,
 };
+
+// Re-exports: types from agent-events for convenience
+pub use agent_events::AgentMessage;

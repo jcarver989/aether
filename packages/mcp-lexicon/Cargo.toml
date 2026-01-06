@@ -19,6 +19,7 @@ regex = { workspace = true }
 serde_yaml = "0.9"
 uuid = { workspace = true, features = ["serde"] }
 aether = { path = "../aether" }
+agent-events = { path = "../agent-events" }
 tracing = { workspace = true }
 crucible = { path = "../crucible" }
 clap = { workspace = true, features = ["env"] }

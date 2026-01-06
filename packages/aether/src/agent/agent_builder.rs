@@ -37,7 +37,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             tool_definitions: Vec::new(),
             mcp_tx: None,
             channel_capacity: 1000,
-            tool_timeout: Duration::from_secs(60 * 10),
+            tool_timeout: Duration::from_secs(60 * 20),
             compaction_config: Some(CompactionConfig::default()),
             max_auto_continues: 3,
         }
@@ -105,7 +105,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
     /// If a tool does not return a result within this duration, it will be marked as failed
     /// and the agent will continue processing.
     ///
-    /// Default: 10 minutes
+    /// Default: 20 minutes
     pub fn tool_timeout(mut self, timeout: Duration) -> Self {
         self.tool_timeout = timeout;
         self

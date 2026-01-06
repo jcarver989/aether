@@ -1,16 +1,19 @@
 use crate::components::tool_display::{
-    BashDisplay, EditFileDisplay, ReadFileDisplay, TodoDisplay, ToolDisplayMeta, WriteFileDisplay,
+    BashDisplay, EditFileDisplay, ReadFileDisplay, SubAgentDisplay, TodoDisplay, ToolDisplayMeta,
+    WriteFileDisplay,
 };
-use crate::state::ToolCallStatus;
+use crate::state::{SubAgentStreams, ToolCallStatus};
 use dioxus::prelude::*;
 
 #[component]
 pub fn ToolCallDisplay(
     tool_name: String,
+    tool_id: String,
     input: String,
     status: ToolCallStatus,
     result: Option<String>,
     display_meta: Option<ToolDisplayMeta>,
+    sub_agent_streams: Option<SubAgentStreams>,
 ) -> Element {
     let (icon, icon_color) = match status {
         ToolCallStatus::Pending => ("○", "text-yellow-400"),
@@ -27,7 +30,7 @@ pub fn ToolCallDisplay(
     let display_tool_name = clean_tool_name(&tool_name);
 
     let (detail_text, expanded_content) =
-        build_tool_display(&status, display_meta.as_ref(), display_content);
+        build_tool_display(&status, display_meta.as_ref(), display_content, sub_agent_streams);
 
     rsx! {
         div {
@@ -70,6 +73,7 @@ fn build_tool_display(
     status: &ToolCallStatus,
     display_meta: Option<&ToolDisplayMeta>,
     display_content: &str,
+    sub_agent_streams: Option<SubAgentStreams>,
 ) -> (Option<String>, Element) {
     if *status == ToolCallStatus::Pending {
         return (None, render_raw_content(display_content));
@@ -89,6 +93,9 @@ fn build_tool_display(
             rsx! { EditFileDisplay { edit_meta: edit.clone() } }
         }
         Some(ToolDisplayMeta::Todo(todo)) => rsx! { TodoDisplay { todo_meta: todo.clone() } },
+        Some(ToolDisplayMeta::SpawnSubAgent(sub_agent)) => {
+            rsx! { SubAgentDisplay { sub_agent_meta: sub_agent.clone(), streams: sub_agent_streams } }
+        }
         _ => render_raw_content(display_content),
     };
 
@@ -129,7 +136,8 @@ mod tests {
             killed: None,
         });
 
-        let (detail_text, _) = build_tool_display(&ToolCallStatus::Pending, Some(&meta), "input");
+        let (detail_text, _) =
+            build_tool_display(&ToolCallStatus::Pending, Some(&meta), "input", None);
         assert_eq!(detail_text, None);
     }
 
@@ -150,7 +158,8 @@ mod tests {
             ],
         });
 
-        let (detail_text, _) = build_tool_display(&ToolCallStatus::Completed, Some(&meta), "input");
+        let (detail_text, _) =
+            build_tool_display(&ToolCallStatus::Completed, Some(&meta), "input", None);
         assert_eq!(detail_text, Some("(1/2)".to_string()));
     }
 
@@ -158,7 +167,8 @@ mod tests {
     fn test_tool_detail_text_todo_empty_hidden() {
         let meta = ToolDisplayMeta::Todo(TodoDisplayMeta { items: vec![] });
 
-        let (detail_text, _) = build_tool_display(&ToolCallStatus::Completed, Some(&meta), "input");
+        let (detail_text, _) =
+            build_tool_display(&ToolCallStatus::Completed, Some(&meta), "input", None);
         assert_eq!(detail_text, None);
     }
 }

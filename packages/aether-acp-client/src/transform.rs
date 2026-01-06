@@ -4,7 +4,7 @@
 //! events into higher-level events suitable for UI consumption.
 
 use crate::client::{OutputStream, RawAgentEvent};
-use aether_acp_types::{CONTEXT_USAGE_METHOD, ContextUsageParams};
+use agent_events::{AgentMessage, CONTEXT_USAGE_METHOD, SUB_AGENT_PROGRESS_METHOD, ContextUsageParams, SubAgentProgressParams};
 use agent_client_protocol::{
     AvailableCommand, ContentBlock, ExtNotification, RequestPermissionRequest,
     RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCall, ToolCallContent,
@@ -59,6 +59,19 @@ pub enum AcpEvent {
         tokens_used: u32,
         context_limit: u32,
     },
+    /// Progress notification from the agent.
+    Progress {
+        progress: f64,
+        total: Option<f64>,
+        message: Option<String>,
+    },
+    /// Sub-agent progress update.
+    SubAgentProgress {
+        parent_tool_id: String,
+        task_id: String,
+        agent_name: String,
+        event: AgentMessage,
+    },
 }
 
 /// Transform a raw ACP event into protocol-level events.
@@ -112,6 +125,29 @@ impl TryFrom<ExtNotification> for AcpEvent {
                 usage_ratio: params.usage_ratio,
                 tokens_used: params.tokens_used,
                 context_limit: params.context_limit,
+            })
+        } else if notif.method.as_ref() == SUB_AGENT_PROGRESS_METHOD {
+            let params: SubAgentProgressParams =
+                serde_json::from_str(notif.params.get()).map_err(|_| UnknownExtNotification)?;
+            Ok(AcpEvent::SubAgentProgress {
+                parent_tool_id: params.parent_tool_id,
+                task_id: params.task_id,
+                agent_name: params.agent_name,
+                event: params.event,
+            })
+        } else if notif.method.as_ref() == "notifications/progress" {
+            #[derive(serde::Deserialize)]
+            struct ProgressParams {
+                progress: f64,
+                total: Option<f64>,
+                message: Option<String>,
+            }
+            let params: ProgressParams =
+                serde_json::from_str(notif.params.get()).map_err(|_| UnknownExtNotification)?;
+            Ok(AcpEvent::Progress {
+                progress: params.progress,
+                total: params.total,
+                message: params.message,
             })
         } else {
             debug!("Ignoring unknown ext notification: {}", notif.method);

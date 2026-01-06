@@ -62,6 +62,33 @@ pub fn unbounded_channel<T>() -> (mpsc::UnboundedSender<T>, mpsc::UnboundedRecei
 }
 
 // =============================================================================
+// Sender extension trait
+// =============================================================================
+
+/// Extension trait for unified send across platforms.
+///
+/// Desktop (tokio): Uses `.send()` which returns Result
+/// Web (futures): Uses `.unbounded_send()` which returns Result
+pub trait SenderExt<T> {
+    /// Send an item on the channel.
+    fn send_event(&self, item: T) -> Result<(), T>;
+}
+
+#[cfg(feature = "desktop")]
+impl<T> SenderExt<T> for mpsc::UnboundedSender<T> {
+    fn send_event(&self, item: T) -> Result<(), T> {
+        self.send(item).map_err(|e| e.0)
+    }
+}
+
+#[cfg(not(feature = "desktop"))]
+impl<T> SenderExt<T> for mpsc::UnboundedSender<T> {
+    fn send_event(&self, item: T) -> Result<(), T> {
+        self.unbounded_send(item).map_err(|e| e.into_inner())
+    }
+}
+
+// =============================================================================
 // Receiver extension trait
 // =============================================================================
 

@@ -10,8 +10,10 @@ mod agent_view;
 mod new_agent_modal;
 mod prompt_input;
 mod sidebar;
+mod sub_agent;
 
 pub use agent_view::AgentViewPage;
 pub use new_agent_modal::NewAgentModalPage;
 pub use prompt_input::PromptInputPage;
 pub use sidebar::SidebarPage;
+pub use sub_agent::SubAgentPage;
