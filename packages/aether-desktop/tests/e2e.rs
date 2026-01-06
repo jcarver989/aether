@@ -265,3 +265,84 @@ async fn test_message_list_empty_for_new_agent() {
 
     harness.close().await.ok();
 }
+
+#[tokio::test]
+async fn test_subagent_streaming_renders() {
+    let harness = TestHarness::new().await.expect("setup failed");
+
+    // 1. Open new agent modal
+    harness
+        .sidebar()
+        .click_new_agent()
+        .await
+        .expect("click new agent");
+    assert_visible(&harness.client(), "initial-message-input").await;
+
+    // 2. Set input value via JavaScript (workaround for text input issues in web mode)
+    harness
+        .client()
+        .execute(
+            r#"document.querySelector('[data-testid="initial-message-input"]').value = 'test subagent'"#,
+            vec![],
+        )
+        .await
+        .expect("set input value");
+
+    // Dispatch input event to update state and enable create button
+    harness
+        .client()
+        .execute(
+            r#"document.querySelector('[data-testid="initial-message-input"]').dispatchEvent(new Event('input', { bubbles: true }))"#,
+            vec![],
+        )
+        .await
+        .expect("dispatch input event");
+
+    // Wait for button state to update
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // 3. Click create button
+    harness.modal().click_create().await.expect("click create");
+
+    // 4. Wait for sub-agent events to be emitted and rendered
+    // The fake agent emits sub-agent events after ~200ms, then streams text chunks
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+
+    // 5. Assert sub-agent display is visible
+    assert_visible(&harness.client(), "sub-agent-display").await;
+
+    // 6. Verify sub-agent name is rendered
+    let agent_name = harness
+        .sub_agent()
+        .get_sub_agent_name()
+        .await
+        .expect("get sub-agent name");
+    assert_eq!(
+        agent_name, "fake-subagent",
+        "Expected sub-agent name to be 'fake-subagent', got: {agent_name}"
+    );
+
+    // 7. Verify streaming text is rendered
+    let stream_text = harness
+        .sub_agent()
+        .get_stream_text()
+        .await
+        .expect("get stream text");
+    assert!(
+        stream_text.contains("Exploring"),
+        "Expected stream text to contain 'Exploring', got: {stream_text}"
+    );
+
+    // 8. Verify tool completed event is rendered
+    let tool_completed = harness
+        .sub_agent()
+        .get_tool_completed_elements()
+        .await
+        .expect("get tool completed elements");
+    assert!(
+        !tool_completed.is_empty(),
+        "Expected at least one tool completed event to be rendered"
+    );
+
+    harness.close().await.ok();
+}

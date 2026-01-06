@@ -3,11 +3,12 @@
 //! These events are emitted by agents (real or fake) and consumed by the UI
 //! to update state. This module is platform-agnostic.
 
+use crate::components::tool_display::SubAgentStreamMessage;
 use crate::platform::oneshot;
-use crate::state::{AgentStatus, DiffState, McpServerStatus, TerminalStream};
+use crate::state::{AgentStatus, DiffState, McpServerStatus};
+use aether_acp_client::transform::AcpEvent;
 use agent_client_protocol::{
-    AvailableCommand, RequestPermissionRequest, RequestPermissionResponse, ToolCall,
-    ToolCallUpdateFields,
+    RequestPermissionRequest, RequestPermissionResponse,
 };
 
 /// Top-level application events.
@@ -53,34 +54,8 @@ pub enum McpEvent {
 /// Events emitted by an agent for UI consumption.
 #[derive(Debug)]
 pub enum AgentEvent {
-    /// Append text chunk to the current streaming message
-    MessageChunk { agent_id: String, text: String },
-    /// Mark current streaming message as complete
-    MessageComplete { agent_id: String },
-    /// A new tool call started
-    ToolCallStarted {
-        agent_id: String,
-        tool_id: String,
-        tool_call: ToolCall,
-    },
-    /// Tool call fields updated (but not completed/failed)
-    ToolCallUpdated {
-        agent_id: String,
-        tool_id: String,
-        fields: ToolCallUpdateFields,
-    },
-    /// Tool call completed successfully
-    ToolCallCompleted {
-        agent_id: String,
-        tool_id: String,
-        result: String,
-    },
-    /// Tool call failed
-    ToolCallFailed {
-        agent_id: String,
-        tool_id: String,
-        error: String,
-    },
+    /// Protocol events from ACP, wrapped with agent_id for routing
+    Protocol { agent_id: String, event: AcpEvent },
     /// Agent status changed
     StatusChange {
         agent_id: String,
@@ -98,29 +73,18 @@ pub enum AgentEvent {
     /// Error occurred
     #[allow(dead_code)]
     Error { agent_id: String, error: String },
-    /// Available slash commands updated
-    AvailableCommandsUpdate {
-        agent_id: String,
-        commands: Vec<AvailableCommand>,
-    },
     /// Git diff state updated
     DiffUpdate {
         agent_id: String,
         diff_state: DiffState,
     },
-    /// Terminal output chunk received from a spawned process
-    TerminalOutput {
+    /// Progress update from a streaming sub-agent
+    SubAgentProgress {
         agent_id: String,
-        terminal_id: String,
-        output: String,
-        stream: TerminalStream,
-    },
-    /// Context usage updated
-    ContextUsageUpdate {
-        agent_id: String,
-        usage_ratio: f64,
-        tokens_used: u32,
-        context_limit: u32,
+        parent_tool_id: String,
+        sub_agent_id: String,
+        agent_name: String,
+        message: SubAgentStreamMessage,
     },
 }
 
@@ -128,20 +92,13 @@ impl AgentEvent {
     /// Extract the agent_id from this event.
     pub fn agent_id(&self) -> &str {
         match self {
-            AgentEvent::MessageChunk { agent_id, .. } => agent_id,
-            AgentEvent::MessageComplete { agent_id } => agent_id,
-            AgentEvent::ToolCallStarted { agent_id, .. } => agent_id,
-            AgentEvent::ToolCallUpdated { agent_id, .. } => agent_id,
-            AgentEvent::ToolCallCompleted { agent_id, .. } => agent_id,
-            AgentEvent::ToolCallFailed { agent_id, .. } => agent_id,
+            AgentEvent::Protocol { agent_id, .. } => agent_id,
             AgentEvent::StatusChange { agent_id, .. } => agent_id,
             AgentEvent::PermissionRequest { agent_id, .. } => agent_id,
             AgentEvent::Disconnected { agent_id } => agent_id,
             AgentEvent::Error { agent_id, .. } => agent_id,
-            AgentEvent::AvailableCommandsUpdate { agent_id, .. } => agent_id,
             AgentEvent::DiffUpdate { agent_id, .. } => agent_id,
-            AgentEvent::TerminalOutput { agent_id, .. } => agent_id,
-            AgentEvent::ContextUsageUpdate { agent_id, .. } => agent_id,
+            AgentEvent::SubAgentProgress { agent_id, .. } => agent_id,
         }
     }
 }

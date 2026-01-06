@@ -174,6 +174,20 @@ pub struct LspSymbolDisplayMeta {
     pub result_count: Option<usize>,
 }
 
+/// Display metadata for spawn_subagent operations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnSubAgentDisplayMeta {
+    /// The agent name being spawned
+    pub agent_name: String,
+    /// The prompt/task sent to the sub-agent
+    pub prompt: String,
+    /// Number of tasks in the batch
+    pub task_count: usize,
+    /// Current task index (1-based)
+    pub task_index: usize,
+}
+
 /// Union of all display metadata types.
 ///
 /// This enum matches the backend `ToolDisplayMeta` from mcp-lexicon
@@ -192,6 +206,7 @@ pub enum ToolDisplayMeta {
     WebFetch(WebFetchDisplayMeta),
     WebSearch(WebSearchDisplayMeta),
     LspSymbol(LspSymbolDisplayMeta),
+    SpawnSubAgent(SpawnSubAgentDisplayMeta),
 }
 
 impl ToolDisplayMeta {
@@ -264,6 +279,16 @@ impl ToolDisplayMeta {
                     Some(detail)
                 }
             }
+            ToolDisplayMeta::SpawnSubAgent(sub_agent) => {
+                if sub_agent.task_count > 1 {
+                    Some(format!(
+                        "{} (task {}/{})",
+                        sub_agent.agent_name, sub_agent.task_index, sub_agent.task_count
+                    ))
+                } else {
+                    Some(sub_agent.agent_name.clone())
+                }
+            }
         }
     }
 }
@@ -274,6 +299,31 @@ fn format_count(count: usize, singular: &str, plural: &str) -> String {
     } else {
         format!("{count} {plural}")
     }
+}
+
+/// Message from a streaming sub-agent (frontend-only type)
+///
+/// Used for UI rendering. Sub-agent progress is now received via
+/// `_aether/sub_agent_progress` ACP extension notification.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SubAgentStreamMessage {
+    /// Streaming text chunk
+    Text { chunk: String },
+    /// Final complete text (replaces accumulated chunks)
+    TextComplete { full_text: String },
+    /// Sub-agent started a tool call
+    ToolStarted { name: String, input_summary: String },
+    /// Sub-agent's tool call completed
+    ToolCompleted {
+        name: String,
+        output_summary: String,
+    },
+    /// Sub-agent's tool call failed
+    ToolFailed { name: String, error: String },
+    /// Sub-agent encountered an error
+    Error { message: String },
+    /// Sub-agent finished execution
+    Done,
 }
 
 #[cfg(test)]
@@ -512,5 +562,53 @@ mod tests {
             }
             _ => panic!("Expected ReadFile variant"),
         }
+    }
+
+    #[test]
+    fn test_from_result_spawn_subagent() {
+        let result = r#"{
+            "_meta": {
+                "display": {
+                    "type": "SpawnSubAgent",
+                    "agentName": "codebase-explorer",
+                    "prompt": "Explore codebase",
+                    "taskCount": 1,
+                    "taskIndex": 1
+                }
+            }
+        }"#;
+        let meta = ToolDisplayMeta::from_result(result);
+        assert!(meta.is_some());
+        match meta.unwrap() {
+            ToolDisplayMeta::SpawnSubAgent(sub_agent) => {
+                assert_eq!(sub_agent.agent_name, "codebase-explorer");
+                assert_eq!(sub_agent.prompt, "Explore codebase");
+                assert_eq!(sub_agent.task_count, 1);
+                assert_eq!(sub_agent.task_index, 1);
+            }
+            _ => panic!("Expected SpawnSubAgent variant"),
+        }
+    }
+
+    #[test]
+    fn test_from_result_spawn_subagent_multi_task() {
+        let result = r#"{
+            "_meta": {
+                "display": {
+                    "type": "SpawnSubAgent",
+                    "agentName": "linear-task-planner",
+                    "prompt": "Generate implementation plan",
+                    "taskCount": 3,
+                    "taskIndex": 2
+                }
+            }
+        }"#;
+        let meta = ToolDisplayMeta::from_result(result);
+        assert!(meta.is_some());
+        // Check detail_line() for multi-task scenario
+        assert_eq!(
+            meta.as_ref().unwrap().detail_line(),
+            Some("linear-task-planner (task 2/3)".to_string())
+        );
     }
 }

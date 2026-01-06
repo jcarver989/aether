@@ -1,12 +1,15 @@
 use dioxus::prelude::*;
 
 use crate::markdown::Markdown;
-use crate::state::{Message, MessageKind, Role};
+use crate::state::{Message, MessageKind, Role, SubAgentStreams};
 
 use super::tool_call_display::ToolCallDisplay;
 
 #[component]
-pub fn MessageBubble(message: Message) -> Element {
+pub fn MessageBubble(
+    message: Message,
+    sub_agent_streams: Option<SubAgentStreams>,
+) -> Element {
     let is_user = message.role == Role::User;
     let testid = format!("message-{}", message.id);
 
@@ -49,10 +52,12 @@ pub fn MessageBubble(message: Message) -> Element {
                     rsx! {
                         ToolCallDisplay {
                             tool_name: name.clone(),
+                            tool_id: message.id.clone(),
                             input: message.content.clone(),
                             status: status.clone(),
                             result: result.clone(),
                             display_meta: display_meta.clone(),
+                            sub_agent_streams: sub_agent_streams.clone(),
                         }
                     }
                 }

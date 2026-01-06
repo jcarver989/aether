@@ -1,13 +1,14 @@
+use crate::components::tool_display::types::SubAgentStreamMessage;
 use crate::diff_engine::compute_diff;
 use crate::docker_diff::compute_docker_diff;
 use crate::docker_watcher::{DockerFileEvent, DockerFilePoller};
 use crate::error::AetherDesktopError;
 use crate::events::{AgentEvent, AppEvent};
 use crate::file_watcher::{FileWatchEvent, FileWatcher};
-use crate::state::{AgentStatus, DiffState, ExecutionMode, TerminalStream};
+use crate::state::{AgentStatus, DiffState, ExecutionMode};
 use aether_acp_client::{
-    AcpClient, AcpEvent, AgentError, AgentProcess, DockerConfig, DockerProgress, ImageSource,
-    OutputStream, ProgressTx, RawAgentEvent, SessionInfo, SpawnConfig, spawn_agent_process,
+    AcpClient, AcpEvent, AgentError, AgentMessage, AgentProcess, DockerConfig, DockerProgress,
+    ImageSource, ProgressTx, RawAgentEvent, SessionInfo, SpawnConfig, spawn_agent_process,
     start_session,
 };
 use agent_client_protocol::{
@@ -401,8 +402,9 @@ async fn run_agent(
                     Ok(response) => {
                         info!(agent_id = %agent_id, "Prompt completed: {:?}", response.stop_reason);
                         let _ = event_tx.send(
-                            AgentEvent::MessageComplete {
+                            AgentEvent::Protocol {
                                 agent_id: agent_id.clone(),
+                                event: AcpEvent::MessageComplete,
                             }
                             .into(),
                         );
@@ -490,80 +492,162 @@ async fn run_agent(
 /// Transform a raw event from AcpClient into UI-ready AgentEvent(s).
 ///
 /// Uses the shared transformation from aether_acp_client and adds agent_id
-/// for UI routing.
+/// for UI routing. Some events (like ToolCallUpdated with sub-agent progress)
+/// may emit multiple AgentEvent variants.
 fn transform_raw_event(agent_id: &str, raw_event: RawAgentEvent) -> Vec<AgentEvent> {
     let acp_events = aether_acp_client::transform_raw_event(raw_event);
     acp_events
         .into_iter()
-        .map(|event| map_acp_event_to_agent_event(agent_id, event))
+        .flat_map(|event| map_acp_event_to_agent_events(agent_id, event))
         .collect()
 }
 
-/// Map a protocol-level AcpEvent to a UI-ready AgentEvent by adding agent_id.
-fn map_acp_event_to_agent_event(agent_id: &str, event: AcpEvent) -> AgentEvent {
+/// Map a protocol-level AcpEvent to UI-ready AgentEvent(s) by adding agent_id.
+///
+/// Returns a Vec because ToolCallUpdated can produce both a regular update event
+/// AND a sub-agent progress event when the content contains streaming data.
+fn map_acp_event_to_agent_events(agent_id: &str, event: AcpEvent) -> Vec<AgentEvent> {
     match event {
-        AcpEvent::MessageChunk { text } => AgentEvent::MessageChunk {
+        AcpEvent::MessageChunk { text } => vec![AgentEvent::Protocol {
             agent_id: agent_id.to_string(),
-            text,
-        },
-        AcpEvent::MessageComplete => AgentEvent::MessageComplete {
+            event: AcpEvent::MessageChunk { text },
+        }],
+        AcpEvent::MessageComplete => vec![AgentEvent::Protocol {
             agent_id: agent_id.to_string(),
-        },
-        AcpEvent::ToolCallStarted { tool_id, tool_call } => AgentEvent::ToolCallStarted {
+            event: AcpEvent::MessageComplete,
+        }],
+        AcpEvent::ToolCallStarted { tool_id, tool_call } => vec![AgentEvent::Protocol {
             agent_id: agent_id.to_string(),
-            tool_id,
-            tool_call,
-        },
-        AcpEvent::ToolCallUpdated { tool_id, fields } => AgentEvent::ToolCallUpdated {
+            event: AcpEvent::ToolCallStarted { tool_id, tool_call },
+        }],
+        AcpEvent::ToolCallUpdated { tool_id, fields } => vec![AgentEvent::Protocol {
             agent_id: agent_id.to_string(),
-            tool_id,
-            fields,
-        },
-        AcpEvent::ToolCallCompleted { tool_id, result } => AgentEvent::ToolCallCompleted {
+            event: AcpEvent::ToolCallUpdated { tool_id, fields },
+        }],
+        AcpEvent::ToolCallCompleted { tool_id, result } => vec![AgentEvent::Protocol {
             agent_id: agent_id.to_string(),
-            tool_id,
-            result,
-        },
-        AcpEvent::ToolCallFailed { tool_id, error } => AgentEvent::ToolCallFailed {
+            event: AcpEvent::ToolCallCompleted { tool_id, result },
+        }],
+        AcpEvent::ToolCallFailed { tool_id, error } => vec![AgentEvent::Protocol {
             agent_id: agent_id.to_string(),
-            tool_id,
-            error,
-        },
+            event: AcpEvent::ToolCallFailed { tool_id, error },
+        }],
         AcpEvent::PermissionRequest {
             request,
             response_tx,
-        } => AgentEvent::PermissionRequest {
+        } => vec![AgentEvent::PermissionRequest {
             agent_id: agent_id.to_string(),
             request,
             response_tx,
-        },
-        AcpEvent::AvailableCommandsUpdate { commands } => AgentEvent::AvailableCommandsUpdate {
+        }],
+        AcpEvent::AvailableCommandsUpdate { commands } => vec![AgentEvent::Protocol {
             agent_id: agent_id.to_string(),
-            commands,
-        },
+            event: AcpEvent::AvailableCommandsUpdate { commands },
+        }],
         AcpEvent::TerminalOutput {
             terminal_id,
             output,
             stream,
-        } => AgentEvent::TerminalOutput {
+        } => vec![AgentEvent::Protocol {
             agent_id: agent_id.to_string(),
-            terminal_id,
-            output,
-            stream: match stream {
-                OutputStream::Stdout => TerminalStream::Stdout,
-                OutputStream::Stderr => TerminalStream::Stderr,
+            event: AcpEvent::TerminalOutput {
+                terminal_id,
+                output,
+                stream,
             },
-        },
+        }],
         AcpEvent::ContextUsageUpdate {
             usage_ratio,
             tokens_used,
             context_limit,
-        } => AgentEvent::ContextUsageUpdate {
+        } => vec![AgentEvent::Protocol {
             agent_id: agent_id.to_string(),
-            usage_ratio,
-            tokens_used,
-            context_limit,
-        },
+            event: AcpEvent::ContextUsageUpdate {
+                usage_ratio,
+                tokens_used,
+                context_limit,
+            },
+        }],
+        AcpEvent::SubAgentProgress {
+            parent_tool_id,
+            task_id,
+            agent_name,
+            event,
+        } => {
+            let stream_message = convert_agent_message_to_stream_message(event);
+            match stream_message {
+                Some(msg) => vec![AgentEvent::SubAgentProgress {
+                    agent_id: agent_id.to_string(),
+                    parent_tool_id,
+                    sub_agent_id: task_id,
+                    agent_name,
+                    message: msg,
+                }],
+                None => vec![],
+            }
+        }
+        AcpEvent::Progress { .. } => {
+            // Progress notifications are now handled via ToolCallUpdated content or SubAgentProgress
+            vec![]
+        }
+    }
+}
+
+/// Convert an agent message to a stream message for UI display.
+fn convert_agent_message_to_stream_message(event: AgentMessage) -> Option<SubAgentStreamMessage> {
+    match event {
+        AgentMessage::Text {
+            chunk, is_complete, ..
+        } => {
+            if is_complete {
+                Some(SubAgentStreamMessage::TextComplete { full_text: chunk })
+            } else {
+                Some(SubAgentStreamMessage::Text { chunk })
+            }
+        }
+        AgentMessage::ToolCall { request, .. } => {
+            let input_summary = truncate_string(&request.arguments, 100);
+            Some(SubAgentStreamMessage::ToolStarted {
+                name: request.name,
+                input_summary,
+            })
+        }
+        AgentMessage::ToolResult { result, .. } => {
+            let output_summary = truncate_string(&result.result, 100);
+            Some(SubAgentStreamMessage::ToolCompleted {
+                name: result.name,
+                output_summary,
+            })
+        }
+        AgentMessage::ToolError { error, .. } => Some(SubAgentStreamMessage::ToolFailed {
+            name: error.name,
+            error: error.error,
+        }),
+        AgentMessage::Error { message } => Some(SubAgentStreamMessage::Error { message }),
+        AgentMessage::Cancelled { message } => Some(SubAgentStreamMessage::Error { message }),
+        AgentMessage::Done => Some(SubAgentStreamMessage::Done),
+        AgentMessage::ToolProgress {
+            request, message, ..
+        } => {
+            let progress_text = message.unwrap_or_else(|| format!("{} in progress...", request.name));
+            Some(SubAgentStreamMessage::Text {
+                chunk: progress_text,
+            })
+        }
+        // Internal events - skip for sub-agent UI display
+        AgentMessage::ContextCompactionStarted { .. }
+        | AgentMessage::ContextCompactionResult { .. }
+        | AgentMessage::ContextUsageUpdate { .. }
+        | AgentMessage::AutoContinue { .. } => None,
+    }
+}
+
+/// Truncate a string to a maximum length, appending "..." if truncated.
+fn truncate_string(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len])
     }
 }
 

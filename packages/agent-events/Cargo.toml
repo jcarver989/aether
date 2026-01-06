@@ -1,5 +1,5 @@
 [package]
-name = "aether-acp-types"
+name = "agent-events"
 version = "0.1.0"
 authors = ["Josh Carver <jcarver989@gmail.com>"]
 edition = "2024"

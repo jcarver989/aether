@@ -55,6 +55,7 @@ pub fn AgentView(agent_id: String) -> Element {
 
     let diff_state = agent.diff_state.clone();
     let messages = agent.messages.clone();
+    let sub_agent_streams = agent.sub_agent_streams.clone();
     let agent_name = agent.name.clone();
     let command_line = agent.config.command_line.clone();
 
@@ -110,6 +111,7 @@ pub fn AgentView(agent_id: String) -> Element {
                                 MessageBubble {
                                     key: "{msg.id}",
                                     message: msg.clone(),
+                                    sub_agent_streams: sub_agent_streams.get(&msg.id).cloned(),
                                 }
                             }
 

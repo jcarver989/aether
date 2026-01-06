@@ -1,4 +1,5 @@
 use aether::agent::{AgentMessage, substitute_parameters};
+use agent_events::SubAgentProgressPayload;
 use clap::Parser;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
@@ -319,15 +320,16 @@ impl PluginsMcp {
                     if let Some(ref token) = progress_token {
                         let counter =
                             message_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let progress_data = serde_json::json!({
-                            "task_id": task_id,
-                            "agent_name": agent_name,
-                            "event": serde_json::to_value(message).unwrap_or(serde_json::Value::Null),
-                        });
+                        let progress_payload = SubAgentProgressPayload {
+                            task_id: task_id.to_string(),
+                            agent_name: agent_name.to_string(),
+                            event: message.clone(),
+                        };
 
                         let peer = Arc::clone(&peer);
                         let token = token.clone();
-                        let progress_data_str = progress_data.to_string();
+                        let progress_data_str =
+                            serde_json::to_string(&progress_payload).unwrap_or_default();
 
                         tokio::spawn(async move {
                             let _ = peer

@@ -6,7 +6,12 @@ use crate::state::{AgentRegistry, AgentSession, AgentStatus};
 
 /// Icon button used in the sidebar header.
 #[component]
-fn IconButton(onclick: EventHandler<()>, title: &'static str, test_id: &'static str, children: Element) -> Element {
+fn IconButton(
+    onclick: EventHandler<()>,
+    title: &'static str,
+    test_id: &'static str,
+    children: Element,
+) -> Element {
     rsx! {
         button {
             class: "text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10 hover:shadow-md",

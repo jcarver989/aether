@@ -1,5 +1,6 @@
 use crate::EventChannel;
 use crate::events::McpEvent;
+use crate::platform::SenderExt;
 use crate::state::McpServerStatus;
 use dioxus::prelude::*;
 
@@ -80,7 +81,7 @@ fn OAuthButton(server_id: String, base_url: String) -> Element {
             server_name: server_id.clone(),
             base_url: base_url.clone(),
         };
-        let _ = event_tx.send(event.into());
+        let _ = event_tx.send_event(event.into());
     };
 
     rsx! {

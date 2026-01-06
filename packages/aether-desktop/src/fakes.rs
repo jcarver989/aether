@@ -3,10 +3,12 @@
 //! These types mimic the real behavior of native-only modules with in-memory
 //! implementations and canned responses. Used for e2e testing with webdriver.
 
+use crate::components::tool_display::types::SubAgentStreamMessage;
 use crate::error::AetherDesktopError;
 use crate::events::{AgentEvent, AppEvent};
 use crate::state::{AgentStatus, ExecutionMode};
-use agent_client_protocol::{AgentCapabilities, ContentBlock, SessionId};
+use aether_acp_client::transform::AcpEvent;
+use agent_client_protocol::{AgentCapabilities, ContentBlock, SessionId, ToolCall};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -55,6 +57,7 @@ pub mod acp_agent {
         /// Send a prompt to the fake agent.
         ///
         /// Emits canned response events after a brief delay.
+        /// If the prompt contains "subagent", also emits sub-agent streaming events.
         pub fn send_prompt(&self, prompt: Vec<ContentBlock>) -> Result<(), AetherDesktopError> {
             let agent_id = self.id.clone();
             let event_tx = self.event_tx.clone();
@@ -72,6 +75,9 @@ pub mod acp_agent {
                 .collect::<Vec<_>>()
                 .join(" ");
 
+            // Check if this prompt should trigger sub-agent events
+            let should_trigger_subagent = prompt_text.to_lowercase().contains("subagent");
+
             // Spawn async task to emit canned response
             spawn(async move {
                 // Brief delay to simulate processing
@@ -86,14 +92,19 @@ pub mod acp_agent {
                     .into(),
                 );
 
+                // If sub-agent trigger detected, emit sub-agent events
+                if should_trigger_subagent {
+                    emit_subagent_events(&agent_id, &event_tx).await;
+                }
+
                 // Emit canned response in chunks
                 let response = generate_canned_response(&prompt_text);
                 for chunk in response.chars().collect::<Vec<_>>().chunks(10) {
                     let text: String = chunk.iter().collect();
                     let _ = event_tx.unbounded_send(
-                        AgentEvent::MessageChunk {
+                        AgentEvent::Protocol {
                             agent_id: agent_id.clone(),
-                            text,
+                            event: AcpEvent::MessageChunk { text },
                         }
                         .into(),
                     );
@@ -102,8 +113,9 @@ pub mod acp_agent {
 
                 // Emit message complete
                 let _ = event_tx.unbounded_send(
-                    AgentEvent::MessageComplete {
+                    AgentEvent::Protocol {
                         agent_id: agent_id.clone(),
+                        event: AcpEvent::MessageComplete,
                     }
                     .into(),
                 );
@@ -161,6 +173,8 @@ pub mod acp_agent {
             "I'm here to help! In this testing mode, I can respond to basic prompts and simulate agent behavior. Try asking me something!".to_string()
         } else if prompt_lower.contains("test") {
             "Test acknowledged! The e2e testing infrastructure is working correctly. You can interact with the UI and verify component behavior.".to_string()
+        } else if prompt_lower.contains("subagent") {
+            "I've spawned a sub-agent to help with your request. You can see its progress in the tool call display.".to_string()
         } else {
             format!(
                 "I received your message: \"{}\". In web testing mode, I provide canned responses to simulate agent behavior.",
@@ -171,6 +185,132 @@ pub mod acp_agent {
                 }
             )
         }
+    }
+
+    /// Emit sub-agent streaming events for testing.
+    ///
+    /// Simulates a sub-agent that explores the codebase and calls tools.
+    async fn emit_subagent_events(
+        agent_id: &str,
+        event_tx: &futures::channel::mpsc::UnboundedSender<AppEvent>,
+    ) {
+        let tool_id = format!("fake-tool-{}", uuid::Uuid::new_v4());
+        let sub_agent_id = format!("fake-subagent-{}", uuid::Uuid::new_v4());
+        let agent_name = "fake-subagent";
+        let prompt = "Explore the codebase";
+
+        // 1. Emit ToolCallStarted with SpawnSubAgent metadata
+        let tool_call = ToolCall {
+            id: tool_id.clone().into(),
+            title: "spawn_subagent".to_string(),
+            kind: Default::default(),
+            status: agent_client_protocol::ToolCallStatus::Pending,
+            content: vec![],
+            locations: vec![],
+            raw_input: Some(serde_json::json!({
+                "agent_name": agent_name,
+                "prompt": prompt
+            })),
+            raw_output: None,
+            meta: None,
+        };
+        let _ = event_tx.unbounded_send(
+            AgentEvent::Protocol {
+                agent_id: agent_id.to_string(),
+                event: AcpEvent::ToolCallStarted {
+                    tool_id: tool_id.clone(),
+                    tool_call,
+                },
+            }
+            .into(),
+        );
+
+        gloo_timers::future::TimeoutFuture::new(100).await;
+
+        // 2. Emit SubAgentProgress::Text events (streaming chunks)
+        for chunk in ["Exploring ", "the ", "codebase ", "structure..."] {
+            let _ = event_tx.unbounded_send(
+                AgentEvent::SubAgentProgress {
+                    agent_id: agent_id.to_string(),
+                    parent_tool_id: tool_id.clone(),
+                    sub_agent_id: sub_agent_id.clone(),
+                    agent_name: agent_name.to_string(),
+                    message: SubAgentStreamMessage::Text {
+                        chunk: chunk.to_string(),
+                    },
+                }
+                .into(),
+            );
+            gloo_timers::future::TimeoutFuture::new(50).await;
+        }
+
+        // 3. Emit SubAgentProgress::ToolStarted
+        let _ = event_tx.unbounded_send(
+            AgentEvent::SubAgentProgress {
+                agent_id: agent_id.to_string(),
+                parent_tool_id: tool_id.clone(),
+                sub_agent_id: sub_agent_id.clone(),
+                agent_name: agent_name.to_string(),
+                message: SubAgentStreamMessage::ToolStarted {
+                    name: "read_file".to_string(),
+                    input_summary: "src/main.rs".to_string(),
+                },
+            }
+            .into(),
+        );
+        gloo_timers::future::TimeoutFuture::new(100).await;
+
+        // 4. Emit SubAgentProgress::ToolCompleted
+        let _ = event_tx.unbounded_send(
+            AgentEvent::SubAgentProgress {
+                agent_id: agent_id.to_string(),
+                parent_tool_id: tool_id.clone(),
+                sub_agent_id: sub_agent_id.clone(),
+                agent_name: agent_name.to_string(),
+                message: SubAgentStreamMessage::ToolCompleted {
+                    name: "read_file".to_string(),
+                    output_summary: "File read successfully".to_string(),
+                },
+            }
+            .into(),
+        );
+        gloo_timers::future::TimeoutFuture::new(50).await;
+
+        // 5. Emit SubAgentProgress::Done
+        let _ = event_tx.unbounded_send(
+            AgentEvent::SubAgentProgress {
+                agent_id: agent_id.to_string(),
+                parent_tool_id: tool_id.clone(),
+                sub_agent_id: sub_agent_id.clone(),
+                agent_name: agent_name.to_string(),
+                message: SubAgentStreamMessage::Done,
+            }
+            .into(),
+        );
+
+        // 6. Emit ToolCallCompleted with SpawnSubAgent display metadata
+        let result_json = serde_json::json!({
+            "_meta": {
+                "display": {
+                    "type": "SpawnSubAgent",
+                    "agentName": agent_name,
+                    "prompt": prompt,
+                    "taskCount": 1,
+                    "taskIndex": 1
+                }
+            },
+            "result": "Sub-agent completed exploration"
+        });
+        let _ = event_tx.unbounded_send(
+            AgentEvent::Protocol {
+                agent_id: agent_id.to_string(),
+                event: AcpEvent::ToolCallCompleted {
+                    tool_id: tool_id.clone(),
+                    result: serde_json::to_string(&result_json).unwrap_or_default(),
+                },
+            }
+            .into(),
+        );
     }
 }
 

@@ -181,6 +181,7 @@ pub async fn run_ui_consumer(
 /// Handle MCP-related events.
 ///
 /// Returns the new status if the global status should be updated.
+#[cfg(feature = "desktop")]
 fn apply_mcp_event(event: McpEvent, event_tx: mpsc::UnboundedSender<AppEvent>) {
     let (server_name, new_status) = match &event {
         McpEvent::StatusChanged {
@@ -220,7 +221,46 @@ fn apply_mcp_event(event: McpEvent, event_tx: mpsc::UnboundedSender<AppEvent>) {
     MCP_SERVER_STATUSES.write().insert(server_name, new_status);
 }
 
+/// Handle MCP-related events (web stub - OAuth not supported).
+#[cfg(not(feature = "desktop"))]
+fn apply_mcp_event(event: McpEvent, _event_tx: mpsc::UnboundedSender<AppEvent>) {
+    let (server_name, new_status) = match &event {
+        McpEvent::StatusChanged {
+            server_name,
+            status,
+        } => {
+            info!("MCP server status changed: {} -> {:?}", server_name, status);
+            (server_name.clone(), status.clone())
+        }
+        McpEvent::StartOAuthFlow { server_name, .. } => {
+            warn!("OAuth flow not supported in web mode for server: {}", server_name);
+            (
+                server_name.clone(),
+                McpServerStatus::Failed {
+                    error: "OAuth not supported in web mode".to_string(),
+                },
+            )
+        }
+        McpEvent::OAuthFlowCompleted { server_name } => {
+            info!("OAuth flow completed for server: {}", server_name);
+            (server_name.clone(), McpServerStatus::Connected)
+        }
+        McpEvent::OAuthFlowFailed { server_name, error } => {
+            warn!("OAuth flow failed for server {}: {}", server_name, error);
+            (
+                server_name.clone(),
+                McpServerStatus::Failed {
+                    error: error.clone(),
+                },
+            )
+        }
+    };
+
+    MCP_SERVER_STATUSES.write().insert(server_name, new_status);
+}
+
 /// Run the OAuth flow for an MCP server.
+#[cfg(feature = "desktop")]
 async fn run_oauth_flow(
     server_name: String,
     base_url: String,
@@ -232,20 +272,20 @@ async fn run_oauth_flow(
 
     let handler = DesktopOAuthHandler::new(OAUTH_CALLBACK_PORT);
     let result_event = match handler.handle_oauth(&server_name, &base_url, &[]).await {
-            Ok(_access_token) => {
-                info!("OAuth flow succeeded for {}", server_name);
-                // Token is automatically persisted via credential store in aether core library
-                // The OAuthFlowCompleted event will update the status to Connected
-                McpEvent::OAuthFlowCompleted { server_name }
+        Ok(_access_token) => {
+            info!("OAuth flow succeeded for {}", server_name);
+            // Token is automatically persisted via credential store in aether core library
+            // The OAuthFlowCompleted event will update the status to Connected
+            McpEvent::OAuthFlowCompleted { server_name }
+        }
+        Err(e) => {
+            warn!("OAuth flow failed for {}: {:?}", server_name, e);
+            McpEvent::OAuthFlowFailed {
+                server_name,
+                error: e.to_string(),
             }
-            Err(e) => {
-                warn!("OAuth flow failed for {}: {:?}", server_name, e);
-                McpEvent::OAuthFlowFailed {
-                    server_name,
-                    error: e.to_string(),
-                }
-            }
-        };
+        }
+    };
     let _ = event_tx.send(result_event.into());
 }
 

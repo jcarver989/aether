@@ -1,4 +1,5 @@
 use crate::components::tool_display::ToolDisplayMeta;
+use crate::components::tool_display::types::SubAgentStreamMessage;
 use crate::error::AetherDesktopError;
 use crate::platform::{AgentHandle, DockerProgress};
 
@@ -177,6 +178,8 @@ pub struct AgentSession {
     pub tokens_used: u32,
     /// Maximum context limit for this agent
     pub context_limit: u32,
+    /// Streaming state for sub-agents, keyed by parent_tool_id
+    pub sub_agent_streams: HashMap<String, SubAgentStreams>,
 }
 
 impl AgentSession {
@@ -208,12 +211,44 @@ impl AgentSession {
             context_usage: 0.0,
             tokens_used: 0,
             context_limit: 0,
+            sub_agent_streams: HashMap::new(),
         }
     }
 
     /// Get the first user message content, if any.
     pub fn first_user_message(&self) -> Option<&str> {
         self.messages.first().map(|m| m.content.as_str())
+    }
+}
+
+/// Streaming state for a single sub-agent instance
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct SubAgentStreamingState {
+    pub agent_name: String,
+    pub messages: Vec<SubAgentStreamMessage>,
+    pub is_complete: bool,
+}
+
+/// All sub-agent streams for a parent tool call
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct SubAgentStreams {
+    /// Map of sub_agent_id → streaming state
+    pub streams: HashMap<String, SubAgentStreamingState>,
+}
+
+impl SubAgentStreams {
+    pub fn get_or_create(
+        &mut self,
+        sub_agent_id: &str,
+        agent_name: &str,
+    ) -> &mut SubAgentStreamingState {
+        self.streams
+            .entry(sub_agent_id.to_string())
+            .or_insert_with(|| SubAgentStreamingState {
+                agent_name: agent_name.to_string(),
+                messages: Vec::new(),
+                is_complete: false,
+            })
     }
 }
 

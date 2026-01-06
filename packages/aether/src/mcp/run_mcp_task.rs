@@ -4,7 +4,7 @@ use futures::future::Either;
 use futures::stream::{self, StreamExt};
 use rmcp::model::{GetPromptResult, ProgressNotificationParam, Prompt};
 use rmcp::service::RunningService;
-use rmcp::{RoleClient, model::CallToolRequestParam};
+use rmcp::RoleClient;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -142,11 +142,13 @@ async fn try_execute_tool(
     tool_call_id: String,
     event_tx: mpsc::Sender<ToolExecutionEvent>,
 ) -> Result<ToolCallResult, ToolCallError> {
+    use crate::llm::mcp_result_to_tool_call_result;
+    use crate::llm::tool_call_request_to_mcp;
     use rmcp::model::{ClientRequest::CallToolRequest, Request, ServerResult};
     use rmcp::service::PeerRequestOptions;
 
     let tool_request_param =
-        CallToolRequestParam::try_from(request).map_err(|e| ToolCallError {
+        tool_call_request_to_mcp(request).map_err(|e| ToolCallError {
             id: request.id.clone(),
             name: request.name.clone(),
             arguments: Some(request.arguments.clone()),
@@ -222,5 +224,5 @@ async fn try_execute_tool(
         }
     };
 
-    ToolCallResult::try_from((request, mcp_result))
+    mcp_result_to_tool_call_result(request, mcp_result)
 }

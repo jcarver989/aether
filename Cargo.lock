@@ -21,6 +21,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "aether"
 version = "0.1.0"
 dependencies = [
+ "agent-events",
  "async-openai",
  "async-stream",
  "async-trait",
@@ -52,8 +53,8 @@ name = "aether-acp"
 version = "0.1.0"
 dependencies = [
  "aether",
- "aether-acp-types",
  "agent-client-protocol",
+ "agent-events",
  "async-trait",
  "clap",
  "dirs 5.0.1",
@@ -73,8 +74,8 @@ dependencies = [
 name = "aether-acp-client"
 version = "0.1.0"
 dependencies = [
- "aether-acp-types",
  "agent-client-protocol",
+ "agent-events",
  "async-trait",
  "bollard",
  "bytes",
@@ -95,15 +96,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aether-acp-types"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "aether-desktop"
 version = "0.1.0"
 dependencies = [
@@ -111,6 +103,7 @@ dependencies = [
  "aether-acp-client",
  "aether-voice",
  "agent-client-protocol",
+ "agent-events",
  "async-trait",
  "chrono",
  "dioxus",
@@ -201,6 +194,15 @@ dependencies = [
  "anyhow",
  "derive_more 2.1.1",
  "schemars 1.2.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "agent-events"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
  "serde",
  "serde_json",
 ]
@@ -4223,6 +4225,7 @@ version = "0.1.0"
 dependencies = [
  "aether",
  "aether-lspd",
+ "agent-events",
  "chrono",
  "clap",
  "crucible",

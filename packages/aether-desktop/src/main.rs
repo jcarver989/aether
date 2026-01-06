@@ -28,6 +28,10 @@ mod mcp_probe;
 #[cfg(not(feature = "desktop"))]
 mod fakes;
 
+// Native-only OAuth module (uses aether crate)
+#[cfg(feature = "desktop")]
+mod mcp_oauth;
+
 // Cross-platform modules
 mod components;
 mod error;
@@ -35,7 +39,6 @@ mod events;
 mod file_types;
 mod hooks;
 mod markdown;
-mod mcp_oauth;
 mod platform;
 mod settings;
 mod state;

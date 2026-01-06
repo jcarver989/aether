@@ -67,6 +67,7 @@ impl StreamingModelProvider for OpenRouterProvider {
             include_usage: Some(true),
             include_obfuscation: None,
         });
+
         create_custom_stream(&self.client, request)
     }
 
