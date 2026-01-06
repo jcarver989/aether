@@ -46,27 +46,25 @@ pub struct OpenRouterChatRequest {
 }
 
 impl From<CreateChatCompletionRequest> for OpenRouterChatRequest {
-    fn from(req: CreateChatCompletionRequest) -> Self {
+    fn from(request: CreateChatCompletionRequest) -> Self {
         Self {
-            model: req.model,
-            messages: req.messages,
-            stream: req.stream,
-            tools: req.tools,
-            tool_choice: req.tool_choice,
-            temperature: req.temperature,
-            top_p: req.top_p,
-            max_completion_tokens: req.max_completion_tokens,
-            presence_penalty: req.presence_penalty,
-            frequency_penalty: req.frequency_penalty,
-            stop: req.stop,
-            response_format: req.response_format,
-            // OpenRouter-specific: enable usage tracking in streaming responses
-            // See: https://openrouter.ai/docs/use-cases/usage-accounting
+            model: request.model,
+            messages: request.messages,
+            stream: request.stream,
+            tools: request.tools,
+            tool_choice: request.tool_choice,
+            temperature: request.temperature,
+            top_p: request.top_p,
+            max_completion_tokens: request.max_completion_tokens,
             stream_options: Some(ChatCompletionStreamOptions {
                 include_usage: Some(true),
                 include_obfuscation: None,
             }),
             usage: Some(OpenRouterUsage { include: true }),
+            presence_penalty: request.presence_penalty,
+            frequency_penalty: request.frequency_penalty,
+            stop: request.stop,
+            response_format: request.response_format,
         }
     }
 }
