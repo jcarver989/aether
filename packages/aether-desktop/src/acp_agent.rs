@@ -583,11 +583,10 @@ fn map_acp_event_to_agent_events(agent_id: &str, event: AcpEvent) -> Vec<AgentEv
                 return vec![];
             }
             // Skip tool calls with empty names (partial streaming updates)
-            if let AgentMessage::ToolCall { ref request, .. } = event {
-                if request.name.is_empty() {
+            if let AgentMessage::ToolCall { ref request, .. } = event
+                && request.name.is_empty() {
                     return vec![];
                 }
-            }
             vec![AgentEvent::SubAgentProgress {
                 agent_id: agent_id.to_string(),
                 parent_tool_id,
