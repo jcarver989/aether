@@ -64,8 +64,12 @@ pub fn ToolCallDisplay(
 
     let display_tool_name = clean_tool_name(&tool_name);
 
-    let (detail_text, expanded_content) =
-        build_tool_display(&status, display_meta.as_ref(), display_content, sub_agent_streams);
+    let (detail_text, expanded_content) = build_tool_display(
+        &status,
+        display_meta.as_ref(),
+        display_content,
+        sub_agent_streams,
+    );
 
     rsx! {
         div {

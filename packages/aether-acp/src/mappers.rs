@@ -1,6 +1,6 @@
 use aether::agent::AgentMessage;
-use agent_events::{ContextUsageParams, SubAgentProgressParams, SubAgentProgressPayload};
 use agent_client_protocol as acp;
+use agent_events::{ContextUsageParams, SubAgentProgressParams, SubAgentProgressPayload};
 use rmcp::model::Prompt as McpPrompt;
 
 /// Converts an MCP Prompt to an ACP AvailableCommand
@@ -257,7 +257,9 @@ pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotificat
             };
             Some(params.into())
         }
-        AgentMessage::ToolProgress { request, message, .. } => {
+        AgentMessage::ToolProgress {
+            request, message, ..
+        } => {
             let msg_str = message.as_ref()?;
             let params = try_parse_sub_agent_progress(msg_str, request)?;
             Some(params.into())

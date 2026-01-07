@@ -2,9 +2,9 @@ use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition}
 use crate::mcp::McpManager;
 use futures::future::Either;
 use futures::stream::{self, StreamExt};
+use rmcp::RoleClient;
 use rmcp::model::{GetPromptResult, ProgressNotificationParam, Prompt};
 use rmcp::service::RunningService;
-use rmcp::RoleClient;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -147,13 +147,12 @@ async fn try_execute_tool(
     use rmcp::model::{ClientRequest::CallToolRequest, Request, ServerResult};
     use rmcp::service::PeerRequestOptions;
 
-    let tool_request_param =
-        tool_call_request_to_mcp(request).map_err(|e| ToolCallError {
-            id: request.id.clone(),
-            name: request.name.clone(),
-            arguments: Some(request.arguments.clone()),
-            error: e,
-        })?;
+    let tool_request_param = tool_call_request_to_mcp(request).map_err(|e| ToolCallError {
+        id: request.id.clone(),
+        name: request.name.clone(),
+        arguments: Some(request.arguments.clone()),
+        error: e,
+    })?;
 
     let handle = client
         .send_cancellable_request(

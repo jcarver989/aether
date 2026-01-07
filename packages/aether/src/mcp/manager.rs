@@ -1,6 +1,9 @@
 use crate::{
     llm::ToolDefinition,
-    mcp::{McpError, Result, config::McpServerConfig, oauth_integration::create_auth_manager_from_store},
+    mcp::{
+        McpError, Result, config::McpServerConfig,
+        oauth_integration::create_auth_manager_from_store,
+    },
 };
 use rmcp::{
     RoleClient, ServiceExt,
@@ -197,11 +200,15 @@ impl McpManager {
             Some(auth_client) if config.auth_header.is_none() => {
                 tracing::debug!("Using OAuth for server '{name}'");
                 let transport = StreamableHttpClientTransport::with_client(auth_client, config);
-                serve_client(mcp_client, transport).await.map_err(conn_err)?
+                serve_client(mcp_client, transport)
+                    .await
+                    .map_err(conn_err)?
             }
             _ => {
                 let transport = StreamableHttpClientTransport::from_config(config);
-                serve_client(mcp_client, transport).await.map_err(conn_err)?
+                serve_client(mcp_client, transport)
+                    .await
+                    .map_err(conn_err)?
             }
         };
 

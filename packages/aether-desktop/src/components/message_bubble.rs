@@ -6,10 +6,7 @@ use crate::state::{Message, MessageKind, Role, SubAgentStreams};
 use super::tool_call_display::ToolCallDisplay;
 
 #[component]
-pub fn MessageBubble(
-    message: Message,
-    sub_agent_streams: Option<SubAgentStreams>,
-) -> Element {
+pub fn MessageBubble(message: Message, sub_agent_streams: Option<SubAgentStreams>) -> Element {
     let is_user = message.role == Role::User;
     let testid = format!("message-{}", message.id);
 

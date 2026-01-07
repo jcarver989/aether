@@ -233,7 +233,10 @@ fn apply_mcp_event(event: McpEvent, _event_tx: mpsc::UnboundedSender<AppEvent>) 
             (server_name.clone(), status.clone())
         }
         McpEvent::StartOAuthFlow { server_name, .. } => {
-            warn!("OAuth flow not supported in web mode for server: {}", server_name);
+            warn!(
+                "OAuth flow not supported in web mode for server: {}",
+                server_name
+            );
             (
                 server_name.clone(),
                 McpServerStatus::Failed {
