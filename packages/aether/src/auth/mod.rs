@@ -13,7 +13,7 @@ pub use anthropic::{
 };
 pub use credentials::{CredentialsFile, McpCredential, ProviderCredential};
 pub use file_store::FileCredentialStore;
-pub use oauth_handler::{open_browser, wait_for_callback, OAuthCallback};
+pub use oauth_handler::{OAuthCallback, open_browser, wait_for_callback};
 pub use rmcp_adapter::RmcpCredentialStoreAdapter;
 
 #[derive(Debug, Error)]

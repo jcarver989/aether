@@ -1,7 +1,7 @@
 use crate::components::tool_display::ToolDisplayMeta;
-use agent_events::AgentMessage;
 use crate::error::AetherDesktopError;
 use crate::platform::{AgentHandle, DockerProgress};
+use agent_events::AgentMessage;
 
 use agent_client_protocol::{
     AvailableCommand, AvailableCommandInput, ContentBlock, SessionId, ToolCall,
@@ -239,8 +239,7 @@ impl SubAgentStreamingState {
         // If this is the complete message, remove the incomplete placeholder
         if *is_complete
             && let Some(AgentMessage::Text {
-                is_complete: false,
-                ..
+                is_complete: false, ..
             }) = self.messages.last()
         {
             self.messages.pop();

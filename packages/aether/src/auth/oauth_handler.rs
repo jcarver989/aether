@@ -231,7 +231,12 @@ mod tests {
         let request = "GET /oauth2callback?state=verifier HTTP/1.1\r\n";
         let result = parse_callback_from_request(request);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No authorization code"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No authorization code")
+        );
     }
 
     #[test]
@@ -239,7 +244,12 @@ mod tests {
         let request = "GET /oauth2callback?code=abc123 HTTP/1.1\r\n";
         let result = parse_callback_from_request(request);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No state parameter"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No state parameter")
+        );
     }
 
     #[test]

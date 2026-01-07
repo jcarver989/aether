@@ -9,10 +9,10 @@ use aether_acp_client::{
     AcpClient, AcpEvent, AgentError, AgentProcess, DockerConfig, DockerProgress, ImageSource,
     ProgressTx, RawAgentEvent, SessionInfo, SpawnConfig, spawn_agent_process, start_session,
 };
-use agent_events::AgentMessage;
 use agent_client_protocol::{
     Agent, AgentCapabilities, ClientSideConnection, ContentBlock, PromptRequest, SessionId,
 };
+use agent_events::AgentMessage;
 use futures::Stream;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
