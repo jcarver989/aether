@@ -25,6 +25,8 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
             match result {
                 Ok(mut response) => {
                     // Emit usage information if available
+                    // This must be checked on every chunk since usage may come
+                    // in a separate final chunk after finish_reason
                     if let Some(usage) = response.usage {
                         yield Ok(LlmResponse::Usage {
                             input_tokens: usage.prompt_tokens,
@@ -61,17 +63,19 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                             for tool_call in tool_collector.complete_all_tool_calls() {
                                 yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                             }
-
-                            yield Ok(LlmResponse::Done);
-                            break;
+                            // Don't break yet - continue to capture usage from subsequent chunks
+                            // OpenRouter sends usage in the last SSE message after finish_reason
+                            // See: https://openrouter.ai/docs/guides/usage-accounting
                         }
                     } else {
-                        // No choices means stream is done
+                        // No choices in this chunk - could be:
+                        // 1. Final usage-only chunk after finish_reason (OpenRouter)
+                        // 2. Stream is done (some providers)
+                        // We already extracted usage above if present
                         debug!("No choices in response, ending stream");
                         for tool_call in tool_collector.complete_all_tool_calls() {
                             yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                         }
-                        yield Ok(LlmResponse::Done);
                         break;
                     }
                 }
@@ -81,6 +85,8 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                 }
             }
         }
+
+        yield Ok(LlmResponse::Done);
     }
 }
 
