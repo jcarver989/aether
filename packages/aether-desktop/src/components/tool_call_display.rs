@@ -127,25 +127,26 @@ fn build_tool_display(
     // If we have sub-agent streams but no display_meta yet (tool still pending),
     // show the streams directly
     if let Some(ref streams) = sub_agent_streams
-        && !streams.streams.is_empty() {
-            return (
-                None,
-                rsx! {
-                    div {
-                        class: "flex flex-col gap-1",
-                        for (id, stream) in streams.streams.iter() {
-                            SubAgentStreamInline {
-                                key: "{id}",
-                                stream_id: id.clone(),
-                                agent_name: stream.agent_name.clone(),
-                                messages: stream.messages.clone(),
-                                is_complete: stream.is_complete,
-                            }
+        && !streams.streams.is_empty()
+    {
+        return (
+            None,
+            rsx! {
+                div {
+                    class: "flex flex-col gap-1",
+                    for (id, stream) in streams.streams.iter() {
+                        SubAgentStreamInline {
+                            key: "{id}",
+                            stream_id: id.clone(),
+                            agent_name: stream.agent_name.clone(),
+                            messages: stream.messages.clone(),
+                            is_complete: stream.is_complete,
                         }
                     }
-                },
-            );
-        }
+                }
+            },
+        );
+    }
 
     if *status == ToolCallStatus::Pending {
         return (None, render_raw_content(display_content));

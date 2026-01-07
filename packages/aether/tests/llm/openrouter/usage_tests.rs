@@ -1,9 +1,9 @@
+use aether::llm::LlmResponse;
+use aether::llm::openai::streaming::process_completion_stream;
 use aether::llm::openai_compatible::types::{
     ChatCompletionStreamChoice, ChatCompletionStreamResponse, ChatCompletionStreamResponseDelta,
     Usage,
 };
-use aether::llm::openai::streaming::process_completion_stream;
-use aether::llm::LlmResponse;
 use async_openai::types::chat::Role;
 use tokio_stream::StreamExt;
 
