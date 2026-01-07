@@ -1,9 +1,9 @@
-use async_openai::{Client, config::OpenAIConfig, types::chat::ChatCompletionStreamOptions};
-
-use crate::llm::openai_compatible::{build_chat_request, create_custom_stream};
+use crate::llm::openai_compatible::{build_chat_request, streaming::create_custom_stream_generic};
+use crate::llm::openrouter::types::OpenRouterChatRequest;
 use crate::llm::{
     Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider,
 };
+use async_openai::{Client, config::OpenAIConfig};
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
@@ -62,13 +62,11 @@ impl ProviderFactory for OpenRouterProvider {
 
 impl StreamingModelProvider for OpenRouterProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        let mut request = build_chat_request(&self.model, context);
-        request.stream_options = Some(ChatCompletionStreamOptions {
-            include_usage: Some(true),
-            include_obfuscation: None,
-        });
-
-        create_custom_stream(&self.client, request)
+        // Build base request and convert to OpenRouter-specific format
+        // The From trait automatically adds usage tracking parameters
+        // See: https://openrouter.ai/docs/use-cases/usage-accounting
+        let request: OpenRouterChatRequest = build_chat_request(&self.model, context).into();
+        create_custom_stream_generic(&self.client, request)
     }
 
     fn display_name(&self) -> String {

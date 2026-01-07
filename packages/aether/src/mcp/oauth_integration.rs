@@ -52,13 +52,14 @@ pub async fn perform_oauth_flow<H: OAuthHandler>(
 ) -> Result<OAuthHelperResult, OAuthError> {
     // Try to load existing credentials first
     if let Some(auth_manager) = create_auth_manager_from_store(server_id, base_url).await?
-        && let Ok(access_token) = auth_manager.get_access_token().await {
-            return Ok(OAuthHelperResult {
-                access_token: access_token.clone(),
-                auth_header: format!("Bearer {access_token}"),
-            });
-        }
-        // Token might be expired and refresh failed, continue to new auth flow
+        && let Ok(access_token) = auth_manager.get_access_token().await
+    {
+        return Ok(OAuthHelperResult {
+            access_token: access_token.clone(),
+            auth_header: format!("Bearer {access_token}"),
+        });
+    }
+    // Token might be expired and refresh failed, continue to new auth flow
 
     // No stored credentials or they're invalid, start new OAuth flow
     let credential_store = create_credential_store(server_id)?;
