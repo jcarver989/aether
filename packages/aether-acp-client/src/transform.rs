@@ -4,12 +4,16 @@
 //! events into higher-level events suitable for UI consumption.
 
 use crate::client::{OutputStream, RawAgentEvent};
-use agent_events::{AgentMessage, CONTEXT_USAGE_METHOD, SUB_AGENT_PROGRESS_METHOD, ContextUsageParams, SubAgentProgressParams};
 use agent_client_protocol::{
     AvailableCommand, ContentBlock, ExtNotification, RequestPermissionRequest,
     RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCall, ToolCallContent,
     ToolCallStatus, ToolCallUpdateFields,
 };
+use agent_events::{
+    AgentMessage, CONTEXT_USAGE_METHOD, ContextUsageParams, SUB_AGENT_PROGRESS_METHOD,
+    SubAgentProgressParams,
+};
+use serde_json::from_str;
 use tokio::sync::oneshot;
 use tracing::{debug, info};
 
@@ -118,40 +122,45 @@ impl TryFrom<ExtNotification> for AcpEvent {
     type Error = UnknownExtNotification;
 
     fn try_from(notif: ExtNotification) -> Result<Self, Self::Error> {
-        if notif.method.as_ref() == CONTEXT_USAGE_METHOD {
-            let params: ContextUsageParams =
-                serde_json::from_str(notif.params.get()).map_err(|_| UnknownExtNotification)?;
-            Ok(AcpEvent::ContextUsageUpdate {
-                usage_ratio: params.usage_ratio,
-                tokens_used: params.tokens_used,
-                context_limit: params.context_limit,
-            })
-        } else if notif.method.as_ref() == SUB_AGENT_PROGRESS_METHOD {
-            let params: SubAgentProgressParams =
-                serde_json::from_str(notif.params.get()).map_err(|_| UnknownExtNotification)?;
-            Ok(AcpEvent::SubAgentProgress {
-                parent_tool_id: params.parent_tool_id,
-                task_id: params.task_id,
-                agent_name: params.agent_name,
-                event: params.event,
-            })
-        } else if notif.method.as_ref() == "notifications/progress" {
-            #[derive(serde::Deserialize)]
-            struct ProgressParams {
-                progress: f64,
-                total: Option<f64>,
-                message: Option<String>,
+        match notif.method.as_ref() {
+            CONTEXT_USAGE_METHOD => {
+                let params: ContextUsageParams =
+                    from_str(notif.params.get()).map_err(|_| UnknownExtNotification)?;
+                Ok(AcpEvent::ContextUsageUpdate {
+                    usage_ratio: params.usage_ratio,
+                    tokens_used: params.tokens_used,
+                    context_limit: params.context_limit,
+                })
             }
-            let params: ProgressParams =
-                serde_json::from_str(notif.params.get()).map_err(|_| UnknownExtNotification)?;
-            Ok(AcpEvent::Progress {
-                progress: params.progress,
-                total: params.total,
-                message: params.message,
-            })
-        } else {
-            debug!("Ignoring unknown ext notification: {}", notif.method);
-            Err(UnknownExtNotification)
+            SUB_AGENT_PROGRESS_METHOD => {
+                let params: SubAgentProgressParams =
+                    from_str(notif.params.get()).map_err(|_| UnknownExtNotification)?;
+                Ok(AcpEvent::SubAgentProgress {
+                    parent_tool_id: params.parent_tool_id,
+                    task_id: params.task_id,
+                    agent_name: params.agent_name,
+                    event: params.event,
+                })
+            }
+            "notifications/progress" => {
+                #[derive(serde::Deserialize)]
+                struct ProgressParams {
+                    progress: f64,
+                    total: Option<f64>,
+                    message: Option<String>,
+                }
+                let params: ProgressParams =
+                    from_str(notif.params.get()).map_err(|_| UnknownExtNotification)?;
+                Ok(AcpEvent::Progress {
+                    progress: params.progress,
+                    total: params.total,
+                    message: params.message,
+                })
+            }
+            method => {
+                debug!("Ignoring unknown ext notification: {}", method);
+                Err(UnknownExtNotification)
+            }
         }
     }
 }

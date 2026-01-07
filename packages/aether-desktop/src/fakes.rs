@@ -3,12 +3,12 @@
 //! These types mimic the real behavior of native-only modules with in-memory
 //! implementations and canned responses. Used for e2e testing with webdriver.
 
-use crate::components::tool_display::types::SubAgentStreamMessage;
 use crate::error::AetherDesktopError;
 use crate::events::{AgentEvent, AppEvent};
 use crate::state::{AgentStatus, ExecutionMode};
 use aether_acp_client::transform::AcpEvent;
 use agent_client_protocol::{AgentCapabilities, ContentBlock, SessionId, ToolCall};
+use agent_events::{AgentMessage, ToolCallRequest, ToolCallResult};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -235,8 +235,11 @@ pub mod acp_agent {
                     parent_tool_id: tool_id.clone(),
                     sub_agent_id: sub_agent_id.clone(),
                     agent_name: agent_name.to_string(),
-                    message: SubAgentStreamMessage::Text {
+                    message: AgentMessage::Text {
+                        message_id: uuid::Uuid::new_v4().to_string(),
                         chunk: chunk.to_string(),
+                        is_complete: false,
+                        model_name: "fake-model".to_string(),
                     },
                 }
                 .into(),
@@ -244,32 +247,41 @@ pub mod acp_agent {
             gloo_timers::future::TimeoutFuture::new(50).await;
         }
 
-        // 3. Emit SubAgentProgress::ToolStarted
+        // 3. Emit SubAgentProgress::ToolCall
         let _ = event_tx.unbounded_send(
             AgentEvent::SubAgentProgress {
                 agent_id: agent_id.to_string(),
                 parent_tool_id: tool_id.clone(),
                 sub_agent_id: sub_agent_id.clone(),
                 agent_name: agent_name.to_string(),
-                message: SubAgentStreamMessage::ToolStarted {
-                    name: "read_file".to_string(),
-                    input_summary: "src/main.rs".to_string(),
+                message: AgentMessage::ToolCall {
+                    request: ToolCallRequest {
+                        id: "fake-call-1".to_string(),
+                        name: "read_file".to_string(),
+                        arguments: r#"{"path": "src/main.rs"}"#.to_string(),
+                    },
+                    model_name: "fake-model".to_string(),
                 },
             }
             .into(),
         );
         gloo_timers::future::TimeoutFuture::new(100).await;
 
-        // 4. Emit SubAgentProgress::ToolCompleted
+        // 4. Emit SubAgentProgress::ToolResult
         let _ = event_tx.unbounded_send(
             AgentEvent::SubAgentProgress {
                 agent_id: agent_id.to_string(),
                 parent_tool_id: tool_id.clone(),
                 sub_agent_id: sub_agent_id.clone(),
                 agent_name: agent_name.to_string(),
-                message: SubAgentStreamMessage::ToolCompleted {
-                    name: "read_file".to_string(),
-                    output_summary: "File read successfully".to_string(),
+                message: AgentMessage::ToolResult {
+                    result: ToolCallResult {
+                        id: "fake-call-1".to_string(),
+                        name: "read_file".to_string(),
+                        arguments: r#"{"path": "src/main.rs"}"#.to_string(),
+                        result: "File read successfully".to_string(),
+                    },
+                    model_name: "fake-model".to_string(),
                 },
             }
             .into(),
@@ -283,7 +295,7 @@ pub mod acp_agent {
                 parent_tool_id: tool_id.clone(),
                 sub_agent_id: sub_agent_id.clone(),
                 agent_name: agent_name.to_string(),
-                message: SubAgentStreamMessage::Done,
+                message: AgentMessage::Done,
             }
             .into(),
         );

@@ -8,7 +8,7 @@ edition = "2024"
 
 [dependencies]
 # Cross-platform dependencies
-dioxus = { version = "0.7", features = ["router"] }
+dioxus = { version = "0.7.2", features = ["router"] }
 agent-client-protocol = "0.5.0"
 uuid = { version = "1.10", features = ["v4", "js"] }
 futures = "0.3"
@@ -62,6 +62,7 @@ desktop = [
     "dep:nucleo",
     "dep:ignore",
     "dep:aether-acp-client",
+    "dep:agent-events",
     "dep:aether-voice",
     "dep:rmcp",
     "dep:aether",

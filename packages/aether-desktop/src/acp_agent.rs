@@ -1,4 +1,3 @@
-use crate::components::tool_display::types::SubAgentStreamMessage;
 use crate::diff_engine::compute_diff;
 use crate::docker_diff::compute_docker_diff;
 use crate::docker_watcher::{DockerFileEvent, DockerFilePoller};
@@ -7,10 +6,10 @@ use crate::events::{AgentEvent, AppEvent};
 use crate::file_watcher::{FileWatchEvent, FileWatcher};
 use crate::state::{AgentStatus, DiffState, ExecutionMode};
 use aether_acp_client::{
-    AcpClient, AcpEvent, AgentError, AgentMessage, AgentProcess, DockerConfig, DockerProgress,
-    ImageSource, ProgressTx, RawAgentEvent, SessionInfo, SpawnConfig, spawn_agent_process,
-    start_session,
+    AcpClient, AcpEvent, AgentError, AgentProcess, DockerConfig, DockerProgress, ImageSource,
+    ProgressTx, RawAgentEvent, SessionInfo, SpawnConfig, spawn_agent_process, start_session,
 };
+use agent_events::AgentMessage;
 use agent_client_protocol::{
     Agent, AgentCapabilities, ClientSideConnection, ContentBlock, PromptRequest, SessionId,
 };
@@ -574,85 +573,34 @@ fn map_acp_event_to_agent_events(agent_id: &str, event: AcpEvent) -> Vec<AgentEv
             agent_name,
             event,
         } => {
-            let stream_message = convert_agent_message_to_stream_message(event);
-            match stream_message {
-                Some(msg) => vec![AgentEvent::SubAgentProgress {
-                    agent_id: agent_id.to_string(),
-                    parent_tool_id,
-                    sub_agent_id: task_id,
-                    agent_name,
-                    message: msg,
-                }],
-                None => vec![],
+            // Filter out internal events not relevant for UI
+            if matches!(
+                event,
+                AgentMessage::ContextCompactionStarted { .. }
+                    | AgentMessage::ContextCompactionResult { .. }
+                    | AgentMessage::ContextUsageUpdate { .. }
+                    | AgentMessage::AutoContinue { .. }
+            ) {
+                return vec![];
             }
+            // Skip tool calls with empty names (partial streaming updates)
+            if let AgentMessage::ToolCall { ref request, .. } = event {
+                if request.name.is_empty() {
+                    return vec![];
+                }
+            }
+            vec![AgentEvent::SubAgentProgress {
+                agent_id: agent_id.to_string(),
+                parent_tool_id,
+                sub_agent_id: task_id,
+                agent_name,
+                message: event,
+            }]
         }
         AcpEvent::Progress { .. } => {
             // Progress notifications are now handled via ToolCallUpdated content or SubAgentProgress
             vec![]
         }
-    }
-}
-
-/// Convert an agent message to a stream message for UI display.
-fn convert_agent_message_to_stream_message(event: AgentMessage) -> Option<SubAgentStreamMessage> {
-    match event {
-        AgentMessage::Text {
-            chunk, is_complete, ..
-        } => {
-            if is_complete {
-                Some(SubAgentStreamMessage::TextComplete { full_text: chunk })
-            } else {
-                Some(SubAgentStreamMessage::Text { chunk })
-            }
-        }
-        AgentMessage::ToolCall { request, .. } => {
-            // Only create ToolStarted if we have a valid tool name
-            // (streaming tool calls may send partial updates with empty names)
-            if request.name.is_empty() {
-                return None;
-            }
-            let input_summary = truncate_string(&request.arguments, 100);
-            Some(SubAgentStreamMessage::ToolStarted {
-                name: request.name,
-                input_summary,
-            })
-        }
-        AgentMessage::ToolResult { result, .. } => {
-            let output_summary = truncate_string(&result.result, 100);
-            Some(SubAgentStreamMessage::ToolCompleted {
-                name: result.name,
-                output_summary,
-            })
-        }
-        AgentMessage::ToolError { error, .. } => Some(SubAgentStreamMessage::ToolFailed {
-            name: error.name,
-            error: error.error,
-        }),
-        AgentMessage::Error { message } => Some(SubAgentStreamMessage::Error { message }),
-        AgentMessage::Cancelled { message } => Some(SubAgentStreamMessage::Error { message }),
-        AgentMessage::Done => Some(SubAgentStreamMessage::Done),
-        AgentMessage::ToolProgress {
-            request, message, ..
-        } => {
-            let progress_text = message.unwrap_or_else(|| format!("{} in progress...", request.name));
-            Some(SubAgentStreamMessage::Text {
-                chunk: progress_text,
-            })
-        }
-        // Internal events - skip for sub-agent UI display
-        AgentMessage::ContextCompactionStarted { .. }
-        | AgentMessage::ContextCompactionResult { .. }
-        | AgentMessage::ContextUsageUpdate { .. }
-        | AgentMessage::AutoContinue { .. } => None,
-    }
-}
-
-/// Truncate a string to a maximum length, appending "..." if truncated.
-fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len])
     }
 }
 

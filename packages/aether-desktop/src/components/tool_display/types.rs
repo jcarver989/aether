@@ -301,31 +301,6 @@ fn format_count(count: usize, singular: &str, plural: &str) -> String {
     }
 }
 
-/// Message from a streaming sub-agent (frontend-only type)
-///
-/// Used for UI rendering. Sub-agent progress is now received via
-/// `_aether/sub_agent_progress` ACP extension notification.
-#[derive(Clone, Debug, PartialEq)]
-pub enum SubAgentStreamMessage {
-    /// Streaming text chunk
-    Text { chunk: String },
-    /// Final complete text (replaces accumulated chunks)
-    TextComplete { full_text: String },
-    /// Sub-agent started a tool call
-    ToolStarted { name: String, input_summary: String },
-    /// Sub-agent's tool call completed
-    ToolCompleted {
-        name: String,
-        output_summary: String,
-    },
-    /// Sub-agent's tool call failed
-    ToolFailed { name: String, error: String },
-    /// Sub-agent encountered an error
-    Error { message: String },
-    /// Sub-agent finished execution
-    Done,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
