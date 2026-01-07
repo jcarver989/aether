@@ -1,18 +1,9 @@
-use async_openai::{Client, config::OpenAIConfig};
-<<<<<<< HEAD
-use async_stream;
-use tokio_stream::StreamExt;
-
-use crate::llm::openai::process_completion_stream;
-use crate::llm::openai_compatible::{build_chat_request, types::ChatCompletionStreamResponse};
-=======
-
 use crate::llm::openai_compatible::{build_chat_request, streaming::create_custom_stream_generic};
->>>>>>> 516877e (refactor: DRY up OpenRouter provider and make streaming more generic)
 use crate::llm::openrouter::types::OpenRouterChatRequest;
 use crate::llm::{
     Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider,
 };
+use async_openai::{Client, config::OpenAIConfig};
 
 pub struct OpenRouterProvider {
     client: Client<OpenAIConfig>,
