@@ -126,8 +126,8 @@ fn build_tool_display(
 
     // If we have sub-agent streams but no display_meta yet (tool still pending),
     // show the streams directly
-    if let Some(ref streams) = sub_agent_streams {
-        if !streams.streams.is_empty() {
+    if let Some(ref streams) = sub_agent_streams
+        && !streams.streams.is_empty() {
             return (
                 None,
                 rsx! {
@@ -146,7 +146,6 @@ fn build_tool_display(
                 },
             );
         }
-    }
 
     if *status == ToolCallStatus::Pending {
         return (None, render_raw_content(display_content));
