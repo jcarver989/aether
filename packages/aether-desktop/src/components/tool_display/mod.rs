@@ -12,4 +12,4 @@ pub use bash_display::BashDisplay;
 pub use file_op_display::{EditFileDisplay, ReadFileDisplay, WriteFileDisplay};
 pub use sub_agent_display::SubAgentDisplay;
 pub use todo_display::TodoDisplay;
-pub use types::{SubAgentStreamMessage, ToolDisplayMeta};
+pub use types::ToolDisplayMeta;

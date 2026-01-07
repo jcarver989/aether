@@ -1,17 +1,21 @@
-use crate::components::tool_display::{SubAgentStreamMessage, ToolDisplayMeta};
+use crate::components::tool_display::ToolDisplayMeta;
 use crate::platform::AgentEvent;
 use crate::state::{
     AgentSession, AgentStatus, Message, MessageKind, Role, SlashCommand, ToolCallStatus, now_iso,
 };
 use aether_acp_client::transform::AcpEvent;
 use agent_client_protocol::{AvailableCommand, ToolCallContent};
+use agent_events::AgentMessage;
 use tracing::debug;
 
 impl AgentSession {
     /// Apply an event to this agent session, mutating in place.
     pub fn apply_event(&mut self, event: &AgentEvent) {
         match event {
-            AgentEvent::Protocol { agent_id: _, event: acp_event } => {
+            AgentEvent::Protocol {
+                agent_id: _,
+                event: acp_event,
+            } => {
                 self.apply_acp_event(acp_event);
             }
             AgentEvent::StatusChange { status, .. } => self.update_status(status.clone()),
@@ -74,7 +78,7 @@ impl AgentSession {
         parent_tool_id: &str,
         sub_agent_id: &str,
         agent_name: &str,
-        message: &SubAgentStreamMessage,
+        message: &AgentMessage,
     ) {
         debug!(
             "Updating sub-agent progress: parent_tool_id={}, sub_agent_id={}, agent_name={}, message={:?}",
@@ -88,28 +92,32 @@ impl AgentSession {
         let state = streams.get_or_create(sub_agent_id, agent_name);
 
         match message {
-            SubAgentStreamMessage::Text { chunk } => {
-                // Find existing text message to append to, or create one
-                if let Some(SubAgentStreamMessage::Text { chunk: existing }) =
-                    state.messages.last_mut()
+            AgentMessage::Text {
+                chunk, is_complete, ..
+            } => {
+                if *is_complete {
+                    if let Some(AgentMessage::Text { .. }) = state.messages.last() {
+                        state.messages.pop();
+                    }
+                }
+                if let Some(AgentMessage::Text {
+                    chunk: existing,
+                    is_complete: false,
+                    ..
+                }) = state.messages.last_mut()
                 {
                     existing.push_str(chunk);
                 } else {
                     state.messages.push(message.clone());
                 }
             }
-            SubAgentStreamMessage::TextComplete { full_text } => {
-                // Replace last text message or just append
-                if let Some(SubAgentStreamMessage::Text { .. }) = state.messages.last() {
-                    state.messages.pop();
-                }
-                state.messages.push(SubAgentStreamMessage::Text {
-                    chunk: full_text.clone(),
-                });
-            }
-            SubAgentStreamMessage::Done => {
+            AgentMessage::Done => {
                 state.is_complete = true;
             }
+            AgentMessage::ContextCompactionStarted { .. }
+            | AgentMessage::ContextCompactionResult { .. }
+            | AgentMessage::ContextUsageUpdate { .. }
+            | AgentMessage::AutoContinue { .. } => {}
             _ => {
                 state.messages.push(message.clone());
             }

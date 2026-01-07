@@ -1,8 +1,9 @@
 use crate::components::tool_display::{
-    BashDisplay, EditFileDisplay, ReadFileDisplay, SubAgentDisplay, SubAgentStreamMessage,
-    TodoDisplay, ToolDisplayMeta, WriteFileDisplay,
+    BashDisplay, EditFileDisplay, ReadFileDisplay, SubAgentDisplay, TodoDisplay, ToolDisplayMeta,
+    WriteFileDisplay,
 };
 use crate::state::{SubAgentStreams, ToolCallStatus};
+use agent_events::AgentMessage;
 use dioxus::prelude::*;
 
 /// Inline display of sub-agent streaming when we don't have full display_meta yet
@@ -10,14 +11,13 @@ use dioxus::prelude::*;
 fn SubAgentStreamInline(
     stream_id: String,
     agent_name: String,
-    messages: Vec<SubAgentStreamMessage>,
+    messages: Vec<AgentMessage>,
     is_complete: bool,
 ) -> Element {
     let text_content: String = messages
         .iter()
         .filter_map(|msg| match msg {
-            SubAgentStreamMessage::Text { chunk } => Some(chunk.as_str()),
-            SubAgentStreamMessage::TextComplete { full_text } => Some(full_text.as_str()),
+            AgentMessage::Text { chunk, .. } => Some(chunk.as_str()),
             _ => None,
         })
         .collect();
@@ -47,36 +47,38 @@ fn SubAgentStreamInline(
 
             for msg in &messages {
                 match msg {
-                    SubAgentStreamMessage::ToolStarted { name, input_summary } => {
+                    AgentMessage::ToolCall { request, .. } => {
+                        let input_summary = truncate_str(&request.arguments, 100);
                         rsx! {
                             div {
                                 class: "flex items-center gap-2 text-[11px] ml-4",
-                                span { class: "text-blue-400 font-mono", "⚒ {name}" }
+                                span { class: "text-blue-400 font-mono", "⚒ {request.name}" }
                                 span { class: "text-gray-500 italic truncate", "{input_summary}" }
                             }
                         }
                     }
-                    SubAgentStreamMessage::ToolCompleted { name, output_summary } => {
+                    AgentMessage::ToolResult { result, .. } => {
+                        let output_summary = truncate_str(&result.result, 100);
                         rsx! {
                             div {
                                 class: "flex items-center gap-2 text-[11px] ml-4",
                                 span { class: "text-green-500", "✓" }
-                                span { class: "text-gray-500 font-mono", "{name}" }
+                                span { class: "text-gray-500 font-mono", "{result.name}" }
                                 span { class: "text-gray-600 truncate", "{output_summary}" }
                             }
                         }
                     }
-                    SubAgentStreamMessage::ToolFailed { name, error } => {
+                    AgentMessage::ToolError { error, .. } => {
                         rsx! {
                             div {
                                 class: "flex items-center gap-2 text-[11px] ml-4",
                                 span { class: "text-red-500", "✗" }
-                                span { class: "text-red-400 font-mono", "{name}" }
-                                span { class: "text-red-500/70 truncate", "{error}" }
+                                span { class: "text-red-400 font-mono", "{error.name}" }
+                                span { class: "text-red-500/70 truncate", "{error.error}" }
                             }
                         }
                     }
-                    SubAgentStreamMessage::Error { message } => {
+                    AgentMessage::Error { message } | AgentMessage::Cancelled { message } => {
                         rsx! {
                             div {
                                 class: "text-[11px] text-red-400 ml-4",
@@ -88,6 +90,15 @@ fn SubAgentStreamInline(
                 }
             }
         }
+    }
+}
+
+/// Truncate a string for display, adding "..." if truncated.
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len])
     }
 }
 

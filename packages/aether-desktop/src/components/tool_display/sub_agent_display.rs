@@ -1,5 +1,6 @@
-use crate::components::tool_display::types::{SpawnSubAgentDisplayMeta, SubAgentStreamMessage};
+use crate::components::tool_display::types::SpawnSubAgentDisplayMeta;
 use crate::state::{SubAgentStreamingState, SubAgentStreams};
+use agent_events::AgentMessage;
 use dioxus::prelude::*;
 
 /// Display a sub-agent execution with streaming progress.
@@ -74,21 +75,15 @@ pub fn SubAgentDisplay(
 
 #[component]
 fn SubAgentStreamContent(stream_id: String, state: SubAgentStreamingState) -> Element {
-    let text_content = if let Some(full_text) = state.messages.iter().find_map(|msg| match msg {
-        SubAgentStreamMessage::TextComplete { full_text } => Some(full_text.as_str()),
-        _ => None,
-    }) {
-        full_text.to_string()
-    } else {
-        state
-            .messages
-            .iter()
-            .filter_map(|msg| match msg {
-                SubAgentStreamMessage::Text { chunk } => Some(chunk.as_str()),
-                _ => None,
-            })
-            .collect::<String>()
-    };
+    // Collect text from Text messages (complete ones take precedence)
+    let text_content: String = state
+        .messages
+        .iter()
+        .filter_map(|msg| match msg {
+            AgentMessage::Text { chunk, .. } => Some(chunk.as_str()),
+            _ => None,
+        })
+        .collect();
 
     // Count tool events for unique test IDs
     let mut tool_started_idx = 0;
@@ -116,32 +111,34 @@ fn SubAgentStreamContent(stream_id: String, state: SubAgentStreamingState) -> El
             // Render other stream events (tool calls, errors)
             for msg in &state.messages {
                 match msg {
-                    SubAgentStreamMessage::ToolStarted { name, input_summary } => {
+                    AgentMessage::ToolCall { request, .. } => {
                         let idx = tool_started_idx;
                         tool_started_idx += 1;
+                        let input_summary = truncate_str(&request.arguments, 100);
                         Some(rsx! {
                             div {
                                 class: "flex items-center gap-2 text-[11px]",
                                 "data-testid": "sub-agent-tool-started-{idx}",
-                                span { class: "text-blue-400 font-mono", "⚒ {name}" }
+                                span { class: "text-blue-400 font-mono", "⚒ {request.name}" }
                                 span { class: "text-gray-500 italic truncate", "{input_summary}" }
                             }
                         })
                     }
-                    SubAgentStreamMessage::ToolCompleted { name, output_summary } => {
+                    AgentMessage::ToolResult { result, .. } => {
                         let idx = tool_completed_idx;
                         tool_completed_idx += 1;
+                        let output_summary = truncate_str(&result.result, 100);
                         Some(rsx! {
                             div {
                                 class: "flex items-center gap-2 text-[11px]",
                                 "data-testid": "sub-agent-tool-completed-{idx}",
                                 span { class: "text-green-500", "✓" }
-                                span { class: "text-gray-500 font-mono", "{name}" }
+                                span { class: "text-gray-500 font-mono", "{result.name}" }
                                 span { class: "text-gray-600 truncate", "{output_summary}" }
                             }
                         })
                     }
-                    SubAgentStreamMessage::ToolFailed { name, error } => {
+                    AgentMessage::ToolError { error, .. } => {
                         let idx = tool_failed_idx;
                         tool_failed_idx += 1;
                         Some(rsx! {
@@ -149,12 +146,12 @@ fn SubAgentStreamContent(stream_id: String, state: SubAgentStreamingState) -> El
                                 class: "flex items-center gap-2 text-[11px]",
                                 "data-testid": "sub-agent-tool-failed-{idx}",
                                 span { class: "text-red-500", "✗" }
-                                span { class: "text-red-400 font-mono", "{name}" }
-                                span { class: "text-red-500/70 truncate", "{error}" }
+                                span { class: "text-red-400 font-mono", "{error.name}" }
+                                span { class: "text-red-500/70 truncate", "{error.error}" }
                             }
                         })
                     }
-                    SubAgentStreamMessage::Error { message } => {
+                    AgentMessage::Error { message } | AgentMessage::Cancelled { message } => {
                         let idx = error_idx;
                         error_idx += 1;
                         Some(rsx! {
@@ -169,6 +166,15 @@ fn SubAgentStreamContent(stream_id: String, state: SubAgentStreamingState) -> El
                 }
             }
         }
+    }
+}
+
+/// Truncate a string for display, adding "..." if truncated.
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len])
     }
 }
 
@@ -203,69 +209,36 @@ mod tests {
     }
 
     #[test]
-    fn test_text_accumulation_with_complete() {
-        use crate::components::tool_display::types::SubAgentStreamMessage;
+    fn test_text_accumulation() {
         use crate::state::SubAgentStreamingState;
 
-        // Case 1: Only chunks
+        // Text chunks are accumulated by collecting all Text messages
         let state = SubAgentStreamingState {
             agent_name: "test-agent".to_string(),
             messages: vec![
-                SubAgentStreamMessage::Text {
+                AgentMessage::Text {
+                    message_id: "1".to_string(),
                     chunk: "Hello ".to_string(),
+                    is_complete: false,
+                    model_name: "test".to_string(),
                 },
-                SubAgentStreamMessage::Text {
+                AgentMessage::Text {
+                    message_id: "2".to_string(),
                     chunk: "world".to_string(),
+                    is_complete: true,
+                    model_name: "test".to_string(),
                 },
             ],
             is_complete: false,
         };
-        let text = if let Some(full_text) = state.messages.iter().find_map(|msg| match msg {
-            SubAgentStreamMessage::TextComplete { full_text } => Some(full_text.as_str()),
-            _ => None,
-        }) {
-            full_text.to_string()
-        } else {
-            state
-                .messages
-                .iter()
-                .filter_map(|msg| match msg {
-                    SubAgentStreamMessage::Text { chunk } => Some(chunk.as_str()),
-                    _ => None,
-                })
-                .collect::<String>()
-        };
+        let text: String = state
+            .messages
+            .iter()
+            .filter_map(|msg| match msg {
+                AgentMessage::Text { chunk, .. } => Some(chunk.as_str()),
+                _ => None,
+            })
+            .collect();
         assert_eq!(text, "Hello world");
-
-        // Case 2: Chunks followed by TextComplete (Fixed behavior)
-        let state = SubAgentStreamingState {
-            agent_name: "test-agent".to_string(),
-            messages: vec![
-                SubAgentStreamMessage::Text {
-                    chunk: "Hello ".to_string(),
-                },
-                SubAgentStreamMessage::TextComplete {
-                    full_text: "Hello world!".to_string(),
-                },
-            ],
-            is_complete: true,
-        };
-
-        let text = if let Some(full_text) = state.messages.iter().find_map(|msg| match msg {
-            SubAgentStreamMessage::TextComplete { full_text } => Some(full_text.as_str()),
-            _ => None,
-        }) {
-            full_text.to_string()
-        } else {
-            state
-                .messages
-                .iter()
-                .filter_map(|msg| match msg {
-                    SubAgentStreamMessage::Text { chunk } => Some(chunk.as_str()),
-                    _ => None,
-                })
-                .collect::<String>()
-        };
-        assert_eq!(text, "Hello world!");
     }
 }

@@ -3,13 +3,11 @@
 //! These events are emitted by agents (real or fake) and consumed by the UI
 //! to update state. This module is platform-agnostic.
 
-use crate::components::tool_display::SubAgentStreamMessage;
 use crate::platform::oneshot;
 use crate::state::{AgentStatus, DiffState, McpServerStatus};
 use aether_acp_client::transform::AcpEvent;
-use agent_client_protocol::{
-    RequestPermissionRequest, RequestPermissionResponse,
-};
+use agent_client_protocol::{RequestPermissionRequest, RequestPermissionResponse};
+use agent_events::AgentMessage;
 
 /// Top-level application events.
 #[derive(Debug)]
@@ -84,7 +82,7 @@ pub enum AgentEvent {
         parent_tool_id: String,
         sub_agent_id: String,
         agent_name: String,
-        message: SubAgentStreamMessage,
+        message: AgentMessage,
     },
 }
 

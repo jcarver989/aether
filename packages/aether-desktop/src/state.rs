@@ -1,5 +1,5 @@
 use crate::components::tool_display::ToolDisplayMeta;
-use crate::components::tool_display::types::SubAgentStreamMessage;
+use agent_events::AgentMessage;
 use crate::error::AetherDesktopError;
 use crate::platform::{AgentHandle, DockerProgress};
 
@@ -30,13 +30,6 @@ pub enum ToolCallStatus {
     Pending,
     Completed,
     Failed,
-}
-
-/// Identifies which output stream a terminal line came from.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TerminalStream {
-    Stdout,
-    Stderr,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -225,7 +218,7 @@ impl AgentSession {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct SubAgentStreamingState {
     pub agent_name: String,
-    pub messages: Vec<SubAgentStreamMessage>,
+    pub messages: Vec<AgentMessage>,
     pub is_complete: bool,
 }
 
