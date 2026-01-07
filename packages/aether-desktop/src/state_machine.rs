@@ -68,7 +68,9 @@ impl AgentSession {
                 // PermissionRequest is handled at event routing level, Progress is ignored
             }
             AcpEvent::SubAgentProgress { .. } => {
-                // SubAgentProgress is handled via AgentEvent::SubAgentProgress, not here
+                // This arm is unreachable in practice: AcpEvent::SubAgentProgress is converted
+                // to AgentEvent::SubAgentProgress (not wrapped in Protocol) by convert_to_agent_events()
+                // in acp_agent.rs. This arm exists for exhaustive matching only.
             }
         }
     }
@@ -92,35 +94,13 @@ impl AgentSession {
         let state = streams.get_or_create(sub_agent_id, agent_name);
 
         match message {
-            AgentMessage::Text {
-                chunk, is_complete, ..
-            } => {
-                if *is_complete {
-                    if let Some(AgentMessage::Text { .. }) = state.messages.last() {
-                        state.messages.pop();
-                    }
-                }
-                if let Some(AgentMessage::Text {
-                    chunk: existing,
-                    is_complete: false,
-                    ..
-                }) = state.messages.last_mut()
-                {
-                    existing.push_str(chunk);
-                } else {
-                    state.messages.push(message.clone());
-                }
-            }
-            AgentMessage::Done => {
-                state.is_complete = true;
-            }
+            AgentMessage::Text { .. } => state.accumulate_text(message),
+            AgentMessage::Done => state.is_complete = true,
             AgentMessage::ContextCompactionStarted { .. }
             | AgentMessage::ContextCompactionResult { .. }
             | AgentMessage::ContextUsageUpdate { .. }
             | AgentMessage::AutoContinue { .. } => {}
-            _ => {
-                state.messages.push(message.clone());
-            }
+            _ => state.messages.push(message.clone()),
         }
 
         debug!(

@@ -222,6 +222,44 @@ pub struct SubAgentStreamingState {
     pub is_complete: bool,
 }
 
+impl SubAgentStreamingState {
+    /// Accumulate a text message, merging with the previous chunk if it's incomplete.
+    ///
+    /// When `is_complete` is true, any previous incomplete text chunk is replaced.
+    /// When `is_complete` is false, the chunk is appended to the previous incomplete text
+    /// or a new text message is created.
+    pub fn accumulate_text(&mut self, message: &AgentMessage) {
+        let AgentMessage::Text {
+            chunk, is_complete, ..
+        } = message
+        else {
+            return;
+        };
+
+        // If this is the complete message, remove the incomplete placeholder
+        if *is_complete
+            && let Some(AgentMessage::Text {
+                is_complete: false,
+                ..
+            }) = self.messages.last()
+        {
+            self.messages.pop();
+        }
+
+        // Try to append to existing incomplete text, otherwise add new message
+        if let Some(AgentMessage::Text {
+            chunk: existing,
+            is_complete: false,
+            ..
+        }) = self.messages.last_mut()
+        {
+            existing.push_str(chunk);
+        } else {
+            self.messages.push(message.clone());
+        }
+    }
+}
+
 /// All sub-agent streams for a parent tool call
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct SubAgentStreams {

@@ -1,7 +1,105 @@
+use crate::components::tool_display::truncate_str;
 use crate::components::tool_display::types::SpawnSubAgentDisplayMeta;
 use crate::state::{SubAgentStreamingState, SubAgentStreams};
 use agent_events::AgentMessage;
 use dioxus::prelude::*;
+
+/// Shared component for rendering a list of agent messages.
+///
+/// Renders accumulated text content and tool events (calls, results, errors).
+/// Used by both `SubAgentStreamContent` and `SubAgentStreamInline`.
+#[component]
+pub fn AgentMessageList(
+    messages: Vec<AgentMessage>,
+    is_complete: bool,
+    /// Extra margin class to apply to content items (e.g., "ml-4")
+    #[props(default = "".to_string())]
+    content_margin: String,
+    /// Test ID prefix for data-testid attributes
+    #[props(default = "agent-message".to_string())]
+    testid_prefix: String,
+) -> Element {
+    let text_content: String = messages
+        .iter()
+        .filter_map(|msg| match msg {
+            AgentMessage::Text { chunk, .. } => Some(chunk.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    let margin_class = if content_margin.is_empty() {
+        "".to_string()
+    } else {
+        format!(" {}", content_margin)
+    };
+
+    rsx! {
+        if !text_content.is_empty() {
+            div {
+                class: "text-xs text-gray-400 whitespace-pre-wrap{margin_class}",
+                "data-testid": "{testid_prefix}-text",
+                "{text_content}"
+                if !is_complete {
+                    span { class: "inline-block w-1.5 h-3 ml-0.5 bg-blue-500 animate-pulse" }
+                }
+            }
+        }
+
+        for (idx, msg) in messages.iter().enumerate() {
+            {render_agent_message(msg, idx, &testid_prefix, &margin_class)}
+        }
+    }
+}
+
+fn render_agent_message(
+    msg: &AgentMessage,
+    idx: usize,
+    testid_prefix: &str,
+    margin_class: &str,
+) -> Option<Element> {
+    match msg {
+        AgentMessage::ToolCall { request, .. } => {
+            let input_summary = truncate_str(&request.arguments, 100);
+            Some(rsx! {
+                div {
+                    class: "flex items-center gap-2 text-[11px]{margin_class}",
+                    "data-testid": "{testid_prefix}-tool-call-{idx}",
+                    span { class: "text-blue-400 font-mono", "⚒ {request.name}" }
+                    span { class: "text-gray-500 italic truncate", "{input_summary}" }
+                }
+            })
+        }
+        AgentMessage::ToolResult { result, .. } => {
+            let output_summary = truncate_str(&result.result, 100);
+            Some(rsx! {
+                div {
+                    class: "flex items-center gap-2 text-[11px]{margin_class}",
+                    "data-testid": "{testid_prefix}-tool-result-{idx}",
+                    span { class: "text-green-500", "✓" }
+                    span { class: "text-gray-500 font-mono", "{result.name}" }
+                    span { class: "text-gray-600 truncate", "{output_summary}" }
+                }
+            })
+        }
+        AgentMessage::ToolError { error, .. } => Some(rsx! {
+            div {
+                class: "flex items-center gap-2 text-[11px]{margin_class}",
+                "data-testid": "{testid_prefix}-tool-error-{idx}",
+                span { class: "text-red-500", "✗" }
+                span { class: "text-red-400 font-mono", "{error.name}" }
+                span { class: "text-red-500/70 truncate", "{error.error}" }
+            }
+        }),
+        AgentMessage::Error { message } | AgentMessage::Cancelled { message } => Some(rsx! {
+            div {
+                class: "text-[11px] text-red-400 bg-red-900/20 px-1 py-0.5 rounded{margin_class}",
+                "data-testid": "{testid_prefix}-error-{idx}",
+                "Error: {message}"
+            }
+        }),
+        _ => None,
+    }
+}
 
 /// Display a sub-agent execution with streaming progress.
 ///
@@ -75,106 +173,16 @@ pub fn SubAgentDisplay(
 
 #[component]
 fn SubAgentStreamContent(stream_id: String, state: SubAgentStreamingState) -> Element {
-    // Collect text from Text messages (complete ones take precedence)
-    let text_content: String = state
-        .messages
-        .iter()
-        .filter_map(|msg| match msg {
-            AgentMessage::Text { chunk, .. } => Some(chunk.as_str()),
-            _ => None,
-        })
-        .collect();
-
-    // Count tool events for unique test IDs
-    let mut tool_started_idx = 0;
-    let mut tool_completed_idx = 0;
-    let mut tool_failed_idx = 0;
-    let mut error_idx = 0;
-
     rsx! {
         div {
             class: "flex flex-col gap-1 ml-4 mt-1 border-l-2 border-gray-700 pl-3",
             "data-testid": "sub-agent-stream-{stream_id}",
-
-            // Render accumulated text
-            if !text_content.is_empty() {
-                div {
-                    class: "text-xs text-gray-400 whitespace-pre-wrap",
-                    "data-testid": "sub-agent-stream-text",
-                    "{text_content}"
-                    if !state.is_complete {
-                        span { class: "inline-block w-1.5 h-3 ml-0.5 bg-blue-500 animate-pulse" }
-                    }
-                }
-            }
-
-            // Render other stream events (tool calls, errors)
-            for msg in &state.messages {
-                match msg {
-                    AgentMessage::ToolCall { request, .. } => {
-                        let idx = tool_started_idx;
-                        tool_started_idx += 1;
-                        let input_summary = truncate_str(&request.arguments, 100);
-                        Some(rsx! {
-                            div {
-                                class: "flex items-center gap-2 text-[11px]",
-                                "data-testid": "sub-agent-tool-started-{idx}",
-                                span { class: "text-blue-400 font-mono", "⚒ {request.name}" }
-                                span { class: "text-gray-500 italic truncate", "{input_summary}" }
-                            }
-                        })
-                    }
-                    AgentMessage::ToolResult { result, .. } => {
-                        let idx = tool_completed_idx;
-                        tool_completed_idx += 1;
-                        let output_summary = truncate_str(&result.result, 100);
-                        Some(rsx! {
-                            div {
-                                class: "flex items-center gap-2 text-[11px]",
-                                "data-testid": "sub-agent-tool-completed-{idx}",
-                                span { class: "text-green-500", "✓" }
-                                span { class: "text-gray-500 font-mono", "{result.name}" }
-                                span { class: "text-gray-600 truncate", "{output_summary}" }
-                            }
-                        })
-                    }
-                    AgentMessage::ToolError { error, .. } => {
-                        let idx = tool_failed_idx;
-                        tool_failed_idx += 1;
-                        Some(rsx! {
-                            div {
-                                class: "flex items-center gap-2 text-[11px]",
-                                "data-testid": "sub-agent-tool-failed-{idx}",
-                                span { class: "text-red-500", "✗" }
-                                span { class: "text-red-400 font-mono", "{error.name}" }
-                                span { class: "text-red-500/70 truncate", "{error.error}" }
-                            }
-                        })
-                    }
-                    AgentMessage::Error { message } | AgentMessage::Cancelled { message } => {
-                        let idx = error_idx;
-                        error_idx += 1;
-                        Some(rsx! {
-                            div {
-                                class: "text-[11px] text-red-400 bg-red-900/20 px-1 py-0.5 rounded",
-                                "data-testid": "sub-agent-error-{idx}",
-                                "Error: {message}"
-                            }
-                        })
-                    }
-                    _ => None,
-                }
+            AgentMessageList {
+                messages: state.messages.clone(),
+                is_complete: state.is_complete,
+                testid_prefix: "sub-agent-stream".to_string(),
             }
         }
-    }
-}
-
-/// Truncate a string for display, adding "..." if truncated.
-fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len])
     }
 }
 

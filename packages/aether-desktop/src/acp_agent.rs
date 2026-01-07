@@ -573,7 +573,6 @@ fn map_acp_event_to_agent_events(agent_id: &str, event: AcpEvent) -> Vec<AgentEv
             agent_name,
             event,
         } => {
-            // Filter out internal events not relevant for UI
             if matches!(
                 event,
                 AgentMessage::ContextCompactionStarted { .. }
