@@ -48,7 +48,7 @@ Your implementation plan must include these sections:
 **Implementation Steps**
 - Numbered, sequential steps in logical order
 - Each step should be atomic and completable independently where possible
-- Include specific details: function names, class structures, API endpoints
+- Include specific details: function names, class structures, API endpoints, pseudo-code
 
 **Dependencies**
 - External packages or services needed
