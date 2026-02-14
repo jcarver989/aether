@@ -21,12 +21,10 @@ pub async fn run_daemon(socket_path: PathBuf, idle_timeout: Option<Duration>) ->
         create_dir_all(parent).map_err(DaemonError::Io)?;
     }
 
-    {
-        let _ = PidLockfile::acquire(&socket_path.with_extension("lock"))
-            .map_err(|e| DaemonError::LockfileError(e.to_string()))?;
+    let _lockfile = PidLockfile::acquire(&socket_path.with_extension("lock"))
+        .map_err(|e| DaemonError::LockfileError(e.to_string()))?;
 
-        let _ = remove_file(&socket_path);
-    }
+    let _ = remove_file(&socket_path);
 
     let shutdown_rx = spawn_shutdown_signal_handler();
     let lsp_manager = LspManager::new();
