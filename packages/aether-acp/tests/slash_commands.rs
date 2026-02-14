@@ -59,8 +59,8 @@ fn test_map_prompt_to_command_with_arguments() {
 
     assert_eq!(command.name, "search");
     match command.input {
-        Some(acp::AvailableCommandInput::Unstructured { hint }) => {
-            assert_eq!(hint, "query pattern");
+        Some(acp::AvailableCommandInput::Unstructured(input)) => {
+            assert_eq!(input.hint, "query pattern");
         }
         _ => panic!("Expected Unstructured input with hint"),
     }

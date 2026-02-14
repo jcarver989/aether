@@ -125,6 +125,7 @@ impl<T: CodingTools + 'static> ServerHandler for CodingMcp<T> {
                 name: "coding-mcp".to_string(),
                 version: "0.1.0".to_string(),
                 title: None,
+                description: None,
                 icons: None,
                 website_url: None,
             },

@@ -1,7 +1,7 @@
 use crate::agent::{DockerProgress, ImageSource, ProgressTx};
 use crate::error::{ContainerError, Result};
 use bollard::Docker;
-use bollard::image::{BuildImageOptions, CreateImageOptions};
+use bollard::query_parameters::{BuildImageOptions, CreateImageOptions};
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use std::fs::{File, read_to_string};
@@ -36,7 +36,7 @@ pub async fn resolve_image(
 async fn pull_image(docker: &Docker, image: &str) -> Result<()> {
     info!("Pulling Docker image {image}");
     let options = CreateImageOptions {
-        from_image: image,
+        from_image: Some(image.to_string()),
         ..Default::default()
     };
 
@@ -49,8 +49,9 @@ async fn pull_image(docker: &Docker, image: &str) -> Result<()> {
                     debug!("Pull: {}", status);
                 }
 
-                if let Some(error) = output.error {
-                    return Err(ContainerError::ImageBuild(error));
+                if let Some(error_detail) = output.error_detail {
+                    let msg = error_detail.message.unwrap_or_default();
+                    return Err(ContainerError::ImageBuild(msg));
                 }
             }
             Err(e) => return Err(ContainerError::Docker(e)),
@@ -88,26 +89,30 @@ async fn build_dockerfile(
     info!("Building Docker image {} from {:?}", tag, path);
     let context_path = path.parent().unwrap_or(Path::new("."));
     let tar_bytes = create_tar_archive(context_path, path)?;
+    let dockerfile_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Dockerfile")
+        .to_string();
     let options = BuildImageOptions {
-        dockerfile: path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Dockerfile")
-            .to_string(),
-        t: tag.clone(),
+        dockerfile: dockerfile_name,
+        t: Some(tag.clone()),
         rm: true,
         ..Default::default()
     };
 
-    let mut stream = docker.build_image(options, None, Some(tar_bytes.into()));
+    let body =
+        http_body_util::Either::Left(http_body_util::Full::new(bytes::Bytes::from(tar_bytes)));
+    let mut stream = docker.build_image(options, None, Some(body));
     while let Some(msg) = stream.next().await {
         match msg {
             Ok(output) => {
                 if let Some(stream) = output.stream {
                     debug!("Build: {}", stream.trim());
                 }
-                if let Some(error) = output.error {
-                    return Err(ContainerError::ImageBuild(error));
+                if let Some(error_detail) = output.error_detail {
+                    let msg = error_detail.message.unwrap_or_default();
+                    return Err(ContainerError::ImageBuild(msg));
                 }
             }
             Err(e) => return Err(ContainerError::Docker(e)),

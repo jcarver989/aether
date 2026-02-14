@@ -164,10 +164,7 @@ impl From<ContextUsageParams> for ExtNotification {
     fn from(params: ContextUsageParams) -> Self {
         let raw_value =
             serde_json::value::to_raw_value(&params).expect("ContextUsageParams is serializable");
-        ExtNotification {
-            method: Arc::from(CONTEXT_USAGE_METHOD),
-            params: Arc::from(raw_value),
-        }
+        ExtNotification::new(CONTEXT_USAGE_METHOD, Arc::from(raw_value))
     }
 }
 
@@ -202,10 +199,7 @@ impl From<SubAgentProgressParams> for ExtNotification {
     fn from(params: SubAgentProgressParams) -> Self {
         let raw_value = serde_json::value::to_raw_value(&params)
             .expect("SubAgentProgressParams is serializable");
-        ExtNotification {
-            method: Arc::from(SUB_AGENT_PROGRESS_METHOD),
-            params: Arc::from(raw_value),
-        }
+        ExtNotification::new(SUB_AGENT_PROGRESS_METHOD, Arc::from(raw_value))
     }
 }
 

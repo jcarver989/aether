@@ -15,7 +15,7 @@ path = "src/main.rs"
 aether = { path = "../aether" }
 agent-events = { path = "../agent-events" }
 mcp_lexicon = { path = "../mcp-lexicon" }
-agent-client-protocol = "0.5.0"
+agent-client-protocol = "0.9.4"
 rmcp = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["compat"] }
@@ -27,4 +27,4 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
 futures = { workspace = true }
-dirs = "5.0"
+dirs = "6.0"

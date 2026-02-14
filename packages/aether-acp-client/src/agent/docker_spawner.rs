@@ -8,10 +8,10 @@ use crate::docker::{
 use crate::error::ContainerError;
 use async_trait::async_trait;
 use bollard::Docker;
-use bollard::container::{
+use bollard::exec::StartExecResults;
+use bollard::query_parameters::{
     AttachContainerOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
 };
-use bollard::exec::StartExecResults;
 use bytes::Bytes;
 use futures::StreamExt;
 use std::io;
@@ -88,17 +88,17 @@ impl DockerAgentProcess {
 
             let container_id = response.id;
             docker
-                .start_container(&container_id, None::<StartContainerOptions<String>>)
+                .start_container(&container_id, None::<StartContainerOptions>)
                 .await?;
 
             let attach_result = docker
                 .attach_container(
                     &container_id,
-                    Some(AttachContainerOptions::<String> {
-                        stdin: Some(true),
-                        stdout: Some(true),
-                        stderr: Some(true),
-                        stream: Some(true),
+                    Some(AttachContainerOptions {
+                        stdin: true,
+                        stdout: true,
+                        stderr: true,
+                        stream: true,
                         ..Default::default()
                     }),
                 )
@@ -141,7 +141,10 @@ impl DockerAgentProcess {
 impl AgentProcess for DockerAgentProcess {
     async fn terminate(&self, timeout_secs: i64) -> Result<(), AgentError> {
         debug!("Stopping container {}", self.container_id);
-        let stop_options = StopContainerOptions { t: timeout_secs };
+        let stop_options = StopContainerOptions {
+            t: Some(timeout_secs as i32),
+            ..Default::default()
+        };
         self.docker
             .stop_container(&self.container_id, Some(stop_options))
             .await
@@ -161,7 +164,10 @@ impl AgentProcess for DockerAgentProcess {
         debug!("Removing overlay volume {}", self.overlay.volume_name);
         if let Err(e) = self
             .docker
-            .remove_volume(&self.overlay.volume_name, None)
+            .remove_volume(
+                &self.overlay.volume_name,
+                None::<bollard::query_parameters::RemoveVolumeOptions>,
+            )
             .await
         {
             warn!("Failed to remove overlay volume: {}", e);
@@ -173,7 +179,10 @@ impl AgentProcess for DockerAgentProcess {
         );
         if let Err(e) = self
             .docker
-            .remove_volume(&self.overlay.writeable_volume_name, None)
+            .remove_volume(
+                &self.overlay.writeable_volume_name,
+                None::<bollard::query_parameters::RemoveVolumeOptions>,
+            )
             .await
         {
             warn!("Failed to remove support volume: {}", e);

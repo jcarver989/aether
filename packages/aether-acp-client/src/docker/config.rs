@@ -1,7 +1,7 @@
 //! Container configuration builder.
 
-use bollard::container::{Config, CreateContainerOptions};
-use bollard::models::{HostConfig, Mount};
+use bollard::models::{ContainerCreateBody, HostConfig, Mount};
+use bollard::query_parameters::CreateContainerOptions;
 
 /// Create container configuration with the specified parameters.
 pub fn create_container_config(
@@ -11,14 +11,14 @@ pub fn create_container_config(
     env: Vec<String>,
     cmd: Vec<String>,
     working_dir: Option<String>,
-) -> (CreateContainerOptions<String>, Config<String>) {
+) -> (CreateContainerOptions, ContainerCreateBody) {
     let host_config = HostConfig {
         mounts: Some(mounts),
         network_mode: Some("host".to_string()),
         ..Default::default()
     };
 
-    let config = Config {
+    let config = ContainerCreateBody {
         image: Some(image.to_string()),
         env: Some(env),
         cmd: Some(cmd),
@@ -34,7 +34,7 @@ pub fn create_container_config(
     };
 
     let options = CreateContainerOptions {
-        name: name.to_string(),
+        name: Some(name.to_string()),
         ..Default::default()
     };
 

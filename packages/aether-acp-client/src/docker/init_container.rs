@@ -5,12 +5,11 @@
 
 use crate::error::{ContainerError, Result};
 use bollard::Docker;
-use bollard::container::{
-    Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
+use bollard::models::{ContainerCreateBody, HostConfig, Mount};
+use bollard::query_parameters::{
+    CreateContainerOptions, CreateImageOptions, RemoveContainerOptions, StartContainerOptions,
     WaitContainerOptions,
 };
-use bollard::image::CreateImageOptions;
-use bollard::models::{HostConfig, Mount};
 use futures::StreamExt;
 use futures::TryStreamExt;
 use tracing::{debug, info};
@@ -28,10 +27,10 @@ pub async fn run_init_container(
     docker
         .create_container(
             Some(CreateContainerOptions {
-                name: container_name.clone(),
+                name: Some(container_name.clone()),
                 ..Default::default()
             }),
-            Config {
+            ContainerCreateBody {
                 image: Some(image.to_string()),
                 cmd: Some(cmd),
                 host_config: Some(HostConfig {
@@ -44,13 +43,13 @@ pub async fn run_init_container(
         .await?;
 
     docker
-        .start_container(&container_name, None::<StartContainerOptions<String>>)
+        .start_container(&container_name, None::<StartContainerOptions>)
         .await?;
 
     let mut wait_stream = docker.wait_container(
         &container_name,
         Some(WaitContainerOptions {
-            condition: "not-running",
+            condition: "not-running".to_string(),
         }),
     );
 
@@ -74,7 +73,7 @@ async fn create_image_if_not_exists(docker: &Docker, image: &str) -> Result<()> 
     info!("Pulling {image} for init container");
     let mut stream = docker.create_image(
         Some(CreateImageOptions {
-            from_image: image,
+            from_image: Some(image.to_string()),
             ..Default::default()
         }),
         None,

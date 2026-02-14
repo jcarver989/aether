@@ -1,4 +1,4 @@
-use rmcp::model::CallToolRequestParam;
+use rmcp::model::CallToolRequestParams;
 use serde::{Deserialize, Serialize};
 
 use crate::mcp::manager::split_on_server_name;
@@ -14,8 +14,10 @@ pub struct ToolDefinition {
     pub server: Option<String>,
 }
 
-/// Convert a ToolCallRequest to rmcp::CallToolRequestParam
-pub fn tool_call_request_to_mcp(request: &ToolCallRequest) -> Result<CallToolRequestParam, String> {
+/// Convert a ToolCallRequest to rmcp::CallToolRequestParams
+pub fn tool_call_request_to_mcp(
+    request: &ToolCallRequest,
+) -> Result<CallToolRequestParams, String> {
     // Parse the tool name to remove namespace prefix if present
     let tool_name = split_on_server_name(&request.name)
         .map(|(_, tool_name)| tool_name.to_string())
@@ -27,9 +29,11 @@ pub fn tool_call_request_to_mcp(request: &ToolCallRequest) -> Result<CallToolReq
         .as_object()
         .cloned();
 
-    Ok(CallToolRequestParam {
+    Ok(CallToolRequestParams {
+        meta: None,
         name: tool_name.into(),
         arguments,
+        task: None,
     })
 }
 

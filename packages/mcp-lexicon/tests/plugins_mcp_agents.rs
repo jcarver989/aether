@@ -2,7 +2,7 @@ mod common;
 
 use common::mcp::connect;
 use mcp_lexicon::PluginsMcp;
-use rmcp::model::{CallToolRequestParam, ClientInfo, Implementation};
+use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -74,7 +74,7 @@ async fn test_list_agents_tool() {
 
     // Test list_subagents tool
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "list_subagents".into(),
             arguments: None,
         })
@@ -131,7 +131,7 @@ async fn test_list_agents_empty_directory() {
 
     // Test list_subagents tool with empty directory
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "list_subagents".into(),
             arguments: None,
         })
@@ -190,7 +190,7 @@ async fn test_spawn_subagents_empty_tasks() {
     let mut args = serde_json::Map::new();
     args.insert("tasks".to_string(), serde_json::json!([]));
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "spawn_subagent".into(),
             arguments: Some(args),
         })
@@ -238,7 +238,7 @@ async fn test_spawn_subagent_agent_not_found() {
         }]),
     );
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "spawn_subagent".into(),
             arguments: Some(args),
         })
@@ -309,7 +309,7 @@ async fn test_spawn_subagents_task_id_assignment() {
         ]),
     );
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "spawn_subagent".into(),
             arguments: Some(args),
         })

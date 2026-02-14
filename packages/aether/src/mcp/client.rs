@@ -3,7 +3,7 @@ use rmcp::{
     ClientHandler, RoleClient,
     handler::client::progress::ProgressDispatcher,
     model::{
-        ClientInfo, CreateElicitationRequestParam, CreateElicitationResult, ElicitationAction,
+        ClientInfo, CreateElicitationRequestParams, CreateElicitationResult, ElicitationAction,
         ErrorData, ListRootsResult, ProgressNotificationParam,
     },
     service::{NotificationContext, RequestContext},
@@ -53,7 +53,7 @@ impl ClientHandler for McpClient {
 
     async fn create_elicitation(
         &self,
-        request: CreateElicitationRequestParam,
+        request: CreateElicitationRequestParams,
         _context: RequestContext<RoleClient>,
     ) -> Result<CreateElicitationResult, ErrorData> {
         let (response_tx, response_rx) = oneshot::channel();

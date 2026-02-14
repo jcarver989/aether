@@ -8,7 +8,7 @@ use crate::{
 use rmcp::{
     RoleClient, ServiceExt,
     model::{
-        ClientCapabilities, ClientInfo, CreateElicitationRequestParam, CreateElicitationResult,
+        ClientCapabilities, ClientInfo, CreateElicitationRequestParams, CreateElicitationResult,
         ElicitationAction, Implementation, Root, Tool as RmcpTool,
     },
     serve_client,
@@ -28,7 +28,7 @@ const SERVERNAME_DELIMITER: &str = "__";
 
 #[derive(Debug)]
 pub struct ElicitationRequest {
-    pub request: CreateElicitationRequestParam,
+    pub request: CreateElicitationRequestParams,
     pub response_sender: oneshot::Sender<CreateElicitationResult>,
 }
 
@@ -56,6 +56,7 @@ impl McpManager {
             tools: HashMap::new(),
             tool_definitions: Vec::new(),
             client_info: ClientInfo {
+                meta: None,
                 protocol_version: Default::default(),
                 capabilities: ClientCapabilities::builder()
                     .enable_elicitation()
@@ -64,6 +65,7 @@ impl McpManager {
                 client_info: Implementation {
                     name: "aether".to_string(),
                     version: "0.1.0".to_string(),
+                    description: None,
                     title: None,
                     icons: None,
                     website_url: None,
@@ -372,7 +374,8 @@ impl McpManager {
             .get(server_name)
             .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?;
 
-        let request = rmcp::model::GetPromptRequestParam {
+        let request = rmcp::model::GetPromptRequestParams {
+            meta: None,
             name: prompt_name.into(),
             arguments,
         };

@@ -1,8 +1,6 @@
 use crate::auth::{AuthError, Result};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rand::RngCore;
-use rand::rngs::OsRng;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -167,7 +165,7 @@ fn tokens_from_response(
 
 fn generate_code_verifier() -> String {
     let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    rand::fill(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 

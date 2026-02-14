@@ -89,15 +89,11 @@ impl AcpClient {
 
     /// Returns the client capabilities for ACP initialization.
     pub fn capabilities() -> ClientCapabilities {
-        ClientCapabilities {
-            fs: FileSystemCapability {
-                read_text_file: true,
-                write_text_file: true,
-                meta: None,
-            },
-            terminal: true,
-            meta: None,
-        }
+        ClientCapabilities::new()
+            .fs(FileSystemCapability::new()
+                .read_text_file(true)
+                .write_text_file(true))
+            .terminal(true)
     }
 }
 
@@ -109,7 +105,7 @@ impl Client for AcpClient {
     ) -> Result<RequestPermissionResponse> {
         debug!("Permission request: {:?}", args.tool_call);
         let (response_tx, response_rx) = oneshot::channel();
-        let err = || Error::internal_error().with_data("Permission response channel closed");
+        let err = || Error::internal_error().data("Permission response channel closed");
         self.event_tx
             .send(RawAgentEvent::PermissionRequest {
                 request: args,
@@ -124,7 +120,7 @@ impl Client for AcpClient {
         debug!("Session notification: {:?}", notification.update);
         self.event_tx
             .send(RawAgentEvent::SessionNotification(notification))
-            .map_err(|_| Error::internal_error().with_data("Notification channel closed"))?;
+            .map_err(|_| Error::internal_error().data("Notification channel closed"))?;
 
         Ok(())
     }
@@ -133,7 +129,7 @@ impl Client for AcpClient {
         debug!("Extension notification: {}", notification.method);
         self.event_tx
             .send(RawAgentEvent::ExtNotification(notification))
-            .map_err(|_| Error::internal_error().with_data("Notification channel closed"))?;
+            .map_err(|_| Error::internal_error().data("Notification channel closed"))?;
 
         Ok(())
     }
@@ -143,7 +139,7 @@ impl Client for AcpClient {
 
         let content = tokio::fs::read_to_string(&args.path)
             .await
-            .map_err(|e| Error::internal_error().with_data(e.to_string()))?;
+            .map_err(|e| Error::internal_error().data(e.to_string()))?;
 
         let content = if args.line.is_some() || args.limit.is_some() {
             let lines: Vec<&str> = content.lines().collect();
@@ -160,26 +156,23 @@ impl Client for AcpClient {
             content
         };
 
-        Ok(ReadTextFileResponse {
-            content,
-            meta: None,
-        })
+        Ok(ReadTextFileResponse::new(content))
     }
 
     async fn write_text_file(&self, args: WriteTextFileRequest) -> Result<WriteTextFileResponse> {
         debug!("Write text file: {:?}", args.path);
 
         if let Some(parent) = args.path.parent() {
-            create_dir_all(parent).await.map_err(|e| {
-                agent_client_protocol::Error::internal_error().with_data(e.to_string())
-            })?;
+            create_dir_all(parent)
+                .await
+                .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
         }
 
         write(&args.path, &args.content)
             .await
-            .map_err(|e| agent_client_protocol::Error::internal_error().with_data(e.to_string()))?;
+            .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
 
-        Ok(WriteTextFileResponse { meta: None })
+        Ok(WriteTextFileResponse::new())
     }
 
     async fn create_terminal(&self, args: CreateTerminalRequest) -> Result<CreateTerminalResponse> {
@@ -202,7 +195,7 @@ impl Client for AcpClient {
             }
 
             cmd.spawn()
-                .map_err(|e| Error::internal_error().with_data(format!("Failed to spawn: {e}")))?
+                .map_err(|e| Error::internal_error().data(format!("Failed to spawn: {e}")))?
         };
 
         let mut abort_handles = Vec::new();
@@ -240,10 +233,7 @@ impl Client for AcpClient {
             .borrow_mut()
             .insert(terminal_id_str, terminal_process);
 
-        Ok(CreateTerminalResponse {
-            terminal_id,
-            meta: None,
-        })
+        Ok(CreateTerminalResponse::new(terminal_id))
     }
 
     async fn terminal_output(&self, args: TerminalOutputRequest) -> Result<TerminalOutputResponse> {
@@ -252,28 +242,20 @@ impl Client for AcpClient {
         let terminal_id = args.terminal_id.to_string();
         let mut terminals = self.terminal_state.terminals.borrow_mut();
         let terminal = terminals.get_mut(&terminal_id).ok_or_else(|| {
-            Error::internal_error().with_data(format!("Terminal not found: {terminal_id}"))
+            Error::internal_error().data(format!("Terminal not found: {terminal_id}"))
         })?;
 
         if terminal.exit_status.is_none()
             && let Ok(Some(status)) = terminal.child.try_wait()
         {
-            terminal.exit_status = Some(TerminalExitStatus {
-                exit_code: status.code().map(|c| c as u32),
-                signal: None,
-                meta: None,
-            });
+            terminal.exit_status =
+                Some(TerminalExitStatus::new().exit_code(status.code().map(|c| c as u32)));
         }
 
         let output = terminal.accumulated_output.borrow().clone();
         let exit_status = terminal.exit_status.clone();
 
-        Ok(TerminalOutputResponse {
-            output,
-            truncated: false,
-            exit_status,
-            meta: None,
-        })
+        Ok(TerminalOutputResponse::new(output, false).exit_status(exit_status))
     }
 
     async fn wait_for_terminal_exit(
@@ -285,7 +267,7 @@ impl Client for AcpClient {
         let mut terminal = {
             let mut terminals = self.terminal_state.terminals.borrow_mut();
             terminals.remove(&terminal_id).ok_or_else(|| {
-                Error::internal_error().with_data(format!("Terminal not found: {terminal_id}"))
+                Error::internal_error().data(format!("Terminal not found: {terminal_id}"))
             })?
         };
 
@@ -295,13 +277,9 @@ impl Client for AcpClient {
             .child
             .wait()
             .await
-            .map_err(|e| Error::internal_error().with_data(format!("Wait failed: {e}")))?;
+            .map_err(|e| Error::internal_error().data(format!("Wait failed: {e}")))?;
 
-        let exit_status = TerminalExitStatus {
-            exit_code: status.code().map(|c| c as u32),
-            signal: None,
-            meta: None,
-        };
+        let exit_status = TerminalExitStatus::new().exit_code(status.code().map(|c| c as u32));
 
         terminal.exit_status = Some(exit_status.clone());
         self.terminal_state
@@ -309,10 +287,7 @@ impl Client for AcpClient {
             .borrow_mut()
             .insert(terminal_id, terminal);
 
-        Ok(WaitForTerminalExitResponse {
-            exit_status,
-            meta: None,
-        })
+        Ok(WaitForTerminalExitResponse::new(exit_status))
     }
 
     async fn release_terminal(
@@ -337,7 +312,7 @@ impl Client for AcpClient {
             let _ = terminal.child.kill().await;
         }
 
-        Ok(ReleaseTerminalResponse { meta: None })
+        Ok(ReleaseTerminalResponse::new())
     }
 }
 

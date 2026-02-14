@@ -46,15 +46,18 @@ impl CodingTools for AcpCodingTools {
     async fn read_file(&self, args: ReadFileArgs) -> Result<ReadFileResult, CodingError> {
         debug!("ACP read_file: {}", args.file_path);
 
+        let mut request =
+            acp::ReadTextFileRequest::new(self.session_id.clone(), args.file_path.clone());
+        if let Some(offset) = args.offset {
+            request = request.line(offset as u32);
+        }
+        if let Some(limit) = args.limit {
+            request = request.limit(limit as u32);
+        }
+
         let response = self
             .actor_handle
-            .read_text_file(acp::ReadTextFileRequest {
-                session_id: self.session_id.clone(),
-                path: args.file_path.clone().into(),
-                line: args.offset.map(|o| o as u32),
-                limit: args.limit.map(|l| l as u32),
-                meta: None,
-            })
+            .read_text_file(request)
             .await
             .map_err(|e| FileError::ReadFailed {
                 path: args.file_path.clone(),
@@ -106,12 +109,11 @@ impl CodingTools for AcpCodingTools {
         let bytes_written = args.content.len();
 
         self.actor_handle
-            .write_text_file(acp::WriteTextFileRequest {
-                session_id: self.session_id.clone(),
-                path: args.file_path.clone().into(),
-                content: args.content,
-                meta: None,
-            })
+            .write_text_file(acp::WriteTextFileRequest::new(
+                self.session_id.clone(),
+                args.file_path.clone(),
+                args.content,
+            ))
             .await
             .map_err(|e| FileError::WriteFailed {
                 path: args.file_path.clone(),
@@ -138,13 +140,10 @@ impl CodingTools for AcpCodingTools {
 
         let read_response = self
             .actor_handle
-            .read_text_file(acp::ReadTextFileRequest {
-                session_id: self.session_id.clone(),
-                path: args.file_path.clone().into(),
-                line: None,
-                limit: None,
-                meta: None,
-            })
+            .read_text_file(acp::ReadTextFileRequest::new(
+                self.session_id.clone(),
+                args.file_path.clone(),
+            ))
             .await
             .map_err(|e| FileError::ReadFailed {
                 path: args.file_path.clone(),
@@ -176,12 +175,11 @@ impl CodingTools for AcpCodingTools {
 
         // Write back
         self.actor_handle
-            .write_text_file(acp::WriteTextFileRequest {
-                session_id: self.session_id.clone(),
-                path: args.file_path.clone().into(),
-                content: new_content.clone(),
-                meta: None,
-            })
+            .write_text_file(acp::WriteTextFileRequest::new(
+                self.session_id.clone(),
+                args.file_path.clone(),
+                new_content.clone(),
+            ))
             .await
             .map_err(|e| FileError::WriteFailed {
                 path: args.file_path.clone(),
@@ -224,15 +222,10 @@ impl CodingTools for AcpCodingTools {
 
         let response = self
             .actor_handle
-            .create_terminal(acp::CreateTerminalRequest {
-                session_id: self.session_id.clone(),
-                command: args.command.clone(),
-                args: vec![],
-                cwd: None,
-                env: vec![],
-                output_byte_limit: None,
-                meta: None,
-            })
+            .create_terminal(acp::CreateTerminalRequest::new(
+                self.session_id.clone(),
+                args.command.clone(),
+            ))
             .await
             .map_err(|e| BashError::SpawnFailed {
                 command: args.command.clone(),
@@ -266,33 +259,30 @@ impl CodingTools for AcpCodingTools {
             // Wait for the terminal to exit
             let exit_response = self
                 .actor_handle
-                .wait_for_terminal_exit(acp::WaitForTerminalExitRequest {
-                    session_id: self.session_id.clone(),
-                    terminal_id: terminal_id.clone(),
-                    meta: None,
-                })
+                .wait_for_terminal_exit(acp::WaitForTerminalExitRequest::new(
+                    self.session_id.clone(),
+                    terminal_id.clone(),
+                ))
                 .await
                 .map_err(BashError::WaitFailed)?;
 
             // Get the output
             let output_response = self
                 .actor_handle
-                .terminal_output(acp::TerminalOutputRequest {
-                    session_id: self.session_id.clone(),
-                    terminal_id: terminal_id.clone(),
-                    meta: None,
-                })
+                .terminal_output(acp::TerminalOutputRequest::new(
+                    self.session_id.clone(),
+                    terminal_id.clone(),
+                ))
                 .await
                 .map_err(BashError::WaitFailed)?;
 
             // Release the terminal
             let _ = self
                 .actor_handle
-                .release_terminal(acp::ReleaseTerminalRequest {
-                    session_id: self.session_id.clone(),
+                .release_terminal(acp::ReleaseTerminalRequest::new(
+                    self.session_id.clone(),
                     terminal_id,
-                    meta: None,
-                })
+                ))
                 .await;
 
             let exit_code = exit_response.exit_status.exit_code.unwrap_or(0) as i32;
@@ -332,11 +322,10 @@ impl CodingTools for AcpCodingTools {
         // Get output
         let output_response = self
             .actor_handle
-            .terminal_output(acp::TerminalOutputRequest {
-                session_id: self.session_id.clone(),
-                terminal_id: terminal_id.clone(),
-                meta: None,
-            })
+            .terminal_output(acp::TerminalOutputRequest::new(
+                self.session_id.clone(),
+                terminal_id.clone(),
+            ))
             .await
             .map_err(BashError::WaitFailed)?;
 
@@ -378,11 +367,10 @@ impl CodingTools for AcpCodingTools {
             // Completed, release the terminal and remove from map
             let _ = self
                 .actor_handle
-                .release_terminal(acp::ReleaseTerminalRequest {
-                    session_id: self.session_id.clone(),
+                .release_terminal(acp::ReleaseTerminalRequest::new(
+                    self.session_id.clone(),
                     terminal_id,
-                    meta: None,
-                })
+                ))
                 .await;
 
             self.terminal_map.lock().unwrap().remove(&handle.shell_id);
