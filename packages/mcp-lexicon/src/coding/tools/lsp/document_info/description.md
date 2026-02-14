@@ -13,7 +13,7 @@
 - Read only those sections with `read_file(offset, limit)`
 
 **Example:**
-```
+```text
 # Don't read 800 lines of model.rs blindly
 # Instead:
 lsp_document(file_path: "model.rs", operation: "symbols")

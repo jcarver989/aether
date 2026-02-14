@@ -39,6 +39,7 @@ async fn create_test_client(
             icons: None,
             title: None,
             website_url: None,
+            description: None,
         },
         ..Default::default()
     };
@@ -76,6 +77,8 @@ async fn test_list_agents_tool() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "list_subagents".into(),
+            meta: None,
+            task: None,
             arguments: None,
         })
         .await
@@ -133,6 +136,8 @@ async fn test_list_agents_empty_directory() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "list_subagents".into(),
+            meta: None,
+            task: None,
             arguments: None,
         })
         .await
@@ -192,6 +197,8 @@ async fn test_spawn_subagents_empty_tasks() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "spawn_subagent".into(),
+            meta: None,
+            task: None,
             arguments: Some(args),
         })
         .await
@@ -240,6 +247,8 @@ async fn test_spawn_subagent_agent_not_found() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "spawn_subagent".into(),
+            meta: None,
+            task: None,
             arguments: Some(args),
         })
         .await
@@ -311,6 +320,8 @@ async fn test_spawn_subagents_task_id_assignment() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "spawn_subagent".into(),
+            meta: None,
+            task: None,
             arguments: Some(args),
         })
         .await
