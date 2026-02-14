@@ -17,6 +17,8 @@ pub enum ChatMessage {
     },
     Assistant {
         content: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reasoning_content: Option<String>,
         timestamp: IsoString,
         tool_calls: Vec<ToolCallRequest>,
     },

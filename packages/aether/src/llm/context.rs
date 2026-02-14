@@ -89,6 +89,7 @@ mod tests {
             },
             ChatMessage::Assistant {
                 content: "Hi there!".to_string(),
+                reasoning_content: None,
                 timestamp: IsoString::now(),
                 tool_calls: vec![],
             },

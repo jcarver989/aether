@@ -133,6 +133,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 io::stdout().flush().unwrap();
                 response_text.push_str(&chunk);
             }
+            LlmResponse::Reasoning { .. } => {}
+
             LlmResponse::ToolRequestStart { id, name } => {
                 println!("\n🔧 Tool call started: {name} ({id})");
                 current_tool_call = Some((id.clone(), name, String::new()));

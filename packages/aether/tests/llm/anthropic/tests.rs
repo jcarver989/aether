@@ -90,6 +90,7 @@ mod integration_tests {
                 },
                 ChatMessage::Assistant {
                     content: "I'll check the weather for you.".to_string(),
+                    reasoning_content: None,
                     timestamp: IsoString::now(),
                     tool_calls: vec![ToolCallRequest {
                         id: "call_123".to_string(),
