@@ -25,7 +25,7 @@ you can jump directly:
 3. You're now in the dependency's source
 
 **Example workflow:**
-```
+```text
 # In your code:
 use rmcp::{ServerHandler, ...};
 

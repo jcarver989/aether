@@ -16,6 +16,7 @@ async fn test_read_file_tool() {
             icons: None,
             title: None,
             website_url: None,
+            description: None,
         },
         ..Default::default()
     };
@@ -34,6 +35,8 @@ async fn test_read_file_tool() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "read_file".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "filePath": "/tmp/test_read_file.txt"
@@ -81,6 +84,7 @@ async fn test_write_file_tool() {
             icons: None,
             title: None,
             website_url: None,
+            description: None,
         },
         ..Default::default()
     };
@@ -96,6 +100,8 @@ async fn test_write_file_tool() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "write_file".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "filePath": test_path,
@@ -151,6 +157,7 @@ async fn test_bash_tool() {
             icons: None,
             title: None,
             website_url: None,
+            description: None,
         },
         ..Default::default()
     };
@@ -163,6 +170,8 @@ async fn test_bash_tool() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "bash".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "command": "echo 'Hello from bash'"
@@ -208,6 +217,7 @@ async fn test_edit_file_tool() {
             icons: None,
             title: None,
             website_url: None,
+            description: None,
         },
         ..Default::default()
     };
@@ -228,6 +238,8 @@ async fn test_edit_file_tool() {
     client
         .call_tool(CallToolRequestParams {
             name: "read_file".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "filePath": test_path
@@ -244,6 +256,8 @@ async fn test_edit_file_tool() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "edit_file".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "filePath": test_path,
@@ -288,6 +302,8 @@ async fn test_edit_file_tool() {
     client
         .call_tool(CallToolRequestParams {
             name: "read_file".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "filePath": test_path
@@ -303,6 +319,8 @@ async fn test_edit_file_tool() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "edit_file".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "filePath": test_path,
@@ -346,6 +364,7 @@ async fn test_list_files_tool() {
             icons: None,
             title: None,
             website_url: None,
+            description: None,
         },
         ..Default::default()
     };
@@ -371,6 +390,8 @@ async fn test_list_files_tool() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "list_files".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "path": test_dir
@@ -415,6 +436,8 @@ async fn test_list_files_tool() {
     let result_with_hidden = client
         .call_tool(CallToolRequestParams {
             name: "list_files".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "path": test_dir,

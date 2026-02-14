@@ -45,6 +45,7 @@ async fn create_test_client(
             icons: None,
             title: None,
             website_url: None,
+            description: None,
         },
         ..Default::default()
     };
@@ -134,6 +135,8 @@ async fn test_load_skills_tool() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "get_skills".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "skills": ["skill-1", "skill-2", "skill-3"]
@@ -193,6 +196,8 @@ async fn test_load_skills_tool() {
     let result_with_missing = client
         .call_tool(CallToolRequestParams {
             name: "get_skills".into(),
+            meta: None,
+            task: None,
             arguments: Some(
                 serde_json::json!({
                     "skills": ["skill-1", "nonexistent-skill", "skill-2"]
@@ -246,6 +251,8 @@ async fn test_list_skills_tool() {
     let result = client
         .call_tool(CallToolRequestParams {
             name: "list_skills".into(),
+            meta: None,
+            task: None,
             arguments: None,
         })
         .await
