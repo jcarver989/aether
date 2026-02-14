@@ -352,7 +352,7 @@ mod tests {
     fn test_format_embedded_resource_text() {
         let resource =
             acp::EmbeddedResource::new(acp::EmbeddedResourceResource::TextResourceContents(
-                acp::TextResourceContents::new("file://test.rs", "let x = 1;"),
+                acp::TextResourceContents::new("let x = 1;", "file://test.rs"),
             ));
 
         let result = format_embedded_resource(&resource);
@@ -366,7 +366,7 @@ mod tests {
             acp::ContentBlock::Text(acp::TextContent::new("Check this file:")),
             acp::ContentBlock::Resource(acp::EmbeddedResource::new(
                 acp::EmbeddedResourceResource::TextResourceContents(
-                    acp::TextResourceContents::new("file://src/lib.rs", "pub fn hello() {}")
+                    acp::TextResourceContents::new("pub fn hello() {}", "file://src/lib.rs")
                         .mime_type("text/x-rust"),
                 ),
             )),
