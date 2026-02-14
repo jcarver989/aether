@@ -412,3 +412,58 @@ async fn test_auto_continue_disabled_with_zero() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<(), Box<dyn Error>>
+{
+    use aether::llm::LlmResponse;
+
+    let tool_request = AddNumbersRequest::new(2, 3);
+
+    let llm_responses = [
+        vec![
+            LlmResponse::start("msg_1"),
+            LlmResponse::reasoning("internal plan"),
+            LlmResponse::tool_request_start("call_1", "test__add_numbers"),
+            LlmResponse::tool_request_arg("call_1", &tool_request.json()?),
+            LlmResponse::tool_request_complete(
+                "call_1",
+                "test__add_numbers",
+                &tool_request.json()?,
+            ),
+            LlmResponse::Done,
+        ],
+        llm_response("msg_2")
+            .text(&["Done ", COMPLETION_SIGNAL])
+            .build(),
+    ];
+
+    let result = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(&[UserMessage::text("do something")])
+        .run_with_context()
+        .await?;
+
+    let contexts = result.captured_contexts.lock().unwrap();
+    let second_context = contexts
+        .get(1)
+        .expect("expected second LLM request context");
+
+    let assistant_with_tool_call = second_context.messages().iter().find(|message| {
+        matches!(
+            message,
+            ChatMessage::Assistant { tool_calls, .. } if !tool_calls.is_empty()
+        )
+    });
+
+    let Some(ChatMessage::Assistant {
+        reasoning_content, ..
+    }) = assistant_with_tool_call
+    else {
+        panic!("expected assistant message with tool call");
+    };
+
+    assert_eq!(reasoning_content.as_deref(), Some("internal plan"));
+
+    Ok(())
+}

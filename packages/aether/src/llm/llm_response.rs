@@ -11,6 +11,9 @@ pub enum LlmResponse {
     Text {
         chunk: String,
     },
+    Reasoning {
+        chunk: String,
+    },
     ToolRequestStart {
         id: String,
         name: String,
@@ -41,6 +44,12 @@ impl LlmResponse {
 
     pub fn text(chunk: &str) -> Self {
         Self::Text {
+            chunk: chunk.to_string(),
+        }
+    }
+
+    pub fn reasoning(chunk: &str) -> Self {
+        Self::Reasoning {
             chunk: chunk.to_string(),
         }
     }

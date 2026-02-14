@@ -124,7 +124,11 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
             if state.is_complete()
                 && let Some(ref id) = state.current_message_id
             {
-                self.update_context(&state.message_content, &state.completed_tool_calls);
+                self.update_context(
+                    &state.message_content,
+                    &state.reasoning_content,
+                    &state.completed_tool_calls,
+                );
                 let _ = self
                     .agent_message_tx
                     .send(AgentMessage::Text {
@@ -240,6 +244,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         if !previous_response.is_empty() {
             self.context.add_message(ChatMessage::Assistant {
                 content: previous_response.to_string(),
+                reasoning_content: None,
                 timestamp: IsoString::now(),
                 tool_calls: Vec::new(),
             });
@@ -280,6 +285,10 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 self.handle_llm_text(chunk, state).await;
             }
 
+            Reasoning { chunk } => {
+                self.handle_llm_reasoning(chunk, state);
+            }
+
             ToolRequestStart { id, name } => {
                 self.handle_tool_request_start(id, name).await;
             }
@@ -315,6 +324,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
     fn handle_llm_start(&mut self, message_id: String, state: &mut IterationState) {
         state.current_message_id = Some(message_id);
         state.message_content.clear();
+        state.reasoning_content.clear();
     }
 
     async fn handle_llm_text(&mut self, chunk: String, state: &mut IterationState) {
@@ -331,6 +341,10 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                 })
                 .await;
         }
+    }
+
+    fn handle_llm_reasoning(&mut self, chunk: String, state: &mut IterationState) {
+        state.reasoning_content.push_str(&chunk);
     }
 
     async fn handle_tool_request_start(&mut self, id: String, name: String) {
@@ -567,6 +581,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
     fn update_context(
         &mut self,
         message_content: &str,
+        reasoning_content: &str,
         completed_tools: &[Result<ToolCallResult, ToolCallError>],
     ) {
         let tool_requests: Vec<_> = completed_tools
@@ -587,6 +602,8 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 
         self.context.add_message(ChatMessage::Assistant {
             content: message_content.to_string(),
+            reasoning_content: (!reasoning_content.is_empty())
+                .then_some(reasoning_content.to_string()),
             timestamp: IsoString::now(),
             tool_calls: tool_requests,
         });
@@ -602,6 +619,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 struct IterationState {
     pub current_message_id: Option<String>,
     pub message_content: String,
+    pub reasoning_content: String,
     pub pending_tool_calls: HashMap<String, ToolCallRequest>,
     pub completed_tool_calls: Vec<Result<ToolCallResult, ToolCallError>>,
     pub llm_done: bool,
@@ -613,6 +631,7 @@ impl IterationState {
         Self {
             current_message_id: None,
             message_content: String::new(),
+            reasoning_content: String::new(),
             pending_tool_calls: HashMap::new(),
             completed_tool_calls: Vec::new(),
             llm_done: false,
