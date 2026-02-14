@@ -34,4 +34,4 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.29", default-features = false, features = ["signal"] }
+nix = { workspace = true, features = ["signal"] }
