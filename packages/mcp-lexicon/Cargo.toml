@@ -33,7 +33,7 @@ htmd = "0.5"
 url = "2.5"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

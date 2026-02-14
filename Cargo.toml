@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["packages/aether", "packages/mcp-lexicon", "packages/wisp", "packages/crucible", "packages/aether-acp", "packages/agent-events", "packages/planning-agent", "packages/aether-desktop", "packages/aether-acp-client", "packages/aether-voice", "packages/aether-lspd"]
+members = ["packages/aether", "packages/mcp-lexicon", "packages/wisp", "packages/crucible", "packages/aether-acp", "packages/agent-events", "packages/planning-agent", "packages/aether-acp-client", "packages/aether-lspd"]
 
 [workspace.dependencies]
 # Async runtime
@@ -44,6 +44,10 @@ rand = "0.8"
 # Error handling
 color-eyre = "0.6.3"
 thiserror = "2.0"
+
+# Unix-specific
+nix = { version = "0.31", default-features = false }
+libc = "0.2"
 
 # File system and pattern matching
 glob = "0.3"
