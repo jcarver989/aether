@@ -2,7 +2,7 @@ mod common;
 
 use common::mcp::connect;
 use mcp_lexicon::CodingMcp;
-use rmcp::model::{CallToolRequestParam, ClientInfo, Implementation};
+use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
 use std::fs;
 
 #[tokio::test]
@@ -32,7 +32,7 @@ async fn test_read_file_tool() {
 
     // Test read_file tool
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "read_file".into(),
             arguments: Some(
                 serde_json::json!({
@@ -94,7 +94,7 @@ async fn test_write_file_tool() {
 
     // Test write_file tool with new simplified API
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "write_file".into(),
             arguments: Some(
                 serde_json::json!({
@@ -161,7 +161,7 @@ async fn test_bash_tool() {
 
     // Test bash tool with a simple command
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "bash".into(),
             arguments: Some(
                 serde_json::json!({
@@ -226,7 +226,7 @@ async fn test_edit_file_tool() {
 
     // First, read the file (required by safety check)
     client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "read_file".into(),
             arguments: Some(
                 serde_json::json!({
@@ -242,7 +242,7 @@ async fn test_edit_file_tool() {
 
     // Test edit_file tool - replace single occurrence
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "edit_file".into(),
             arguments: Some(
                 serde_json::json!({
@@ -286,7 +286,7 @@ async fn test_edit_file_tool() {
 
     // Read the file again before editing
     client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "read_file".into(),
             arguments: Some(
                 serde_json::json!({
@@ -301,7 +301,7 @@ async fn test_edit_file_tool() {
         .expect("Failed to read file before second edit");
 
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "edit_file".into(),
             arguments: Some(
                 serde_json::json!({
@@ -369,7 +369,7 @@ async fn test_list_files_tool() {
 
     // Test list_files tool
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "list_files".into(),
             arguments: Some(
                 serde_json::json!({
@@ -413,7 +413,7 @@ async fn test_list_files_tool() {
 
     // Test including hidden files
     let result_with_hidden = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "list_files".into(),
             arguments: Some(
                 serde_json::json!({

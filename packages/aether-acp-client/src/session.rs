@@ -6,7 +6,7 @@
 use crate::client::AcpClient;
 use agent_client_protocol::{
     Agent, AgentCapabilities, ClientSideConnection, InitializeRequest, NewSessionRequest,
-    SessionId, VERSION,
+    ProtocolVersion, SessionId,
 };
 use std::path::PathBuf;
 
@@ -48,22 +48,15 @@ pub async fn start_session(
     conn: &ClientSideConnection,
     cwd: PathBuf,
 ) -> Result<SessionInfo, SessionError> {
-    let init_req = InitializeRequest {
-        protocol_version: VERSION,
-        client_capabilities: AcpClient::capabilities(),
-        meta: None,
-    };
+    let init_req = InitializeRequest::new(ProtocolVersion::LATEST)
+        .client_capabilities(AcpClient::capabilities());
 
     let init_response = conn
         .initialize(init_req)
         .await
         .map_err(|e| SessionError::InitFailed(e.to_string()))?;
 
-    let session_req = NewSessionRequest {
-        cwd,
-        mcp_servers: vec![],
-        meta: None,
-    };
+    let session_req = NewSessionRequest::new(cwd);
 
     let session_response = conn
         .new_session(session_req)

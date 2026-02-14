@@ -71,23 +71,18 @@ impl acp::Agent for SessionManager {
         args: acp::InitializeRequest,
     ) -> Result<acp::InitializeResponse, acp::Error> {
         info!("Received initialize request: {:?}", args);
-        Ok(acp::InitializeResponse {
-            protocol_version: acp::V1,
-            agent_capabilities: acp::AgentCapabilities {
-                // We don't support loading sessions initially
-                load_session: false,
-                prompt_capabilities: acp::PromptCapabilities {
-                    embedded_context: true,
-                    image: false,
-                    audio: false,
-                    meta: None,
-                },
-                mcp_capabilities: Default::default(),
-                meta: None,
-            },
-            auth_methods: Vec::new(),
-            meta: None,
-        })
+        Ok(
+            acp::InitializeResponse::new(acp::ProtocolVersion::V1).agent_capabilities(
+                acp::AgentCapabilities::new()
+                    .load_session(false)
+                    .prompt_capabilities(
+                        acp::PromptCapabilities::new()
+                            .embedded_context(true)
+                            .image(false)
+                            .audio(false),
+                    ),
+            ),
+        )
     }
 
     async fn authenticate(
@@ -106,7 +101,7 @@ impl acp::Agent for SessionManager {
         info!("Creating new session with cwd: {:?}", args.cwd);
 
         let session_id = self.generate_session_id().await;
-        let acp_session_id = acp::SessionId(session_id.clone().into());
+        let acp_session_id = acp::SessionId::new(session_id.clone());
 
         // Parse the model provider
         let parser = ModelProviderParser::default();
@@ -145,21 +140,18 @@ impl acp::Agent for SessionManager {
         info!("Session {} created successfully", session_id);
 
         // Prepare the response to return first
-        let response = acp::NewSessionResponse {
-            session_id: acp_session_id.clone(),
-            modes: None,
-            meta: None,
-        };
+        let response = acp::NewSessionResponse::new(acp_session_id.clone());
 
         // Send available commands update notification asynchronously (don't await)
         // This allows the response to be sent first, then the notification follows
         if !available_commands.is_empty() {
             let command_count = available_commands.len();
-            let notification = acp::SessionNotification {
-                session_id: acp_session_id,
-                update: acp::SessionUpdate::AvailableCommandsUpdate { available_commands },
-                meta: None,
-            };
+            let notification = acp::SessionNotification::new(
+                acp_session_id,
+                acp::SessionUpdate::AvailableCommandsUpdate(acp::AvailableCommandsUpdate::new(
+                    available_commands,
+                )),
+            );
 
             // Spawn task to send notification after response is returned
             let actor_handle = self.actor_handle.clone();
@@ -292,10 +284,7 @@ impl acp::Agent for SessionManager {
 
         info!("Prompt completed with stop reason: {:?}", final_stop_reason);
 
-        Ok(acp::PromptResponse {
-            stop_reason: final_stop_reason,
-            meta: None,
-        })
+        Ok(acp::PromptResponse::new(final_stop_reason))
     }
 
     async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
@@ -331,7 +320,9 @@ impl acp::Agent for SessionManager {
             "Received extension method: {}, params: {:?}",
             args.method, args.params
         );
-        Ok(serde_json::value::RawValue::NULL.to_owned().into())
+        let null_value: Arc<serde_json::value::RawValue> =
+            serde_json::from_str("null").expect("null is valid JSON");
+        Ok(null_value.into())
     }
 
     async fn ext_notification(&self, args: acp::ExtNotification) -> Result<(), acp::Error> {

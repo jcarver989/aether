@@ -2,8 +2,8 @@ use super::init_container::run_init_container;
 use crate::agent::DockerConfig;
 use crate::error::Result;
 use bollard::Docker;
+use bollard::models::VolumeCreateRequest;
 use bollard::models::{Mount, MountTypeEnum};
-use bollard::volume::CreateVolumeOptions;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -94,8 +94,8 @@ pub async fn create_overlay_volumes(
 /// Configuration for creating overlay volumes (pure data, no side effects).
 struct OverlayVolumeConfig {
     overlay_volumes: OverlayVolumes,
-    writeable_volume_opts: CreateVolumeOptions<String>,
-    overlay_volume_opts: CreateVolumeOptions<String>,
+    writeable_volume_opts: VolumeCreateRequest,
+    overlay_volume_opts: VolumeCreateRequest,
 }
 
 impl OverlayVolumeConfig {
@@ -117,21 +117,28 @@ impl OverlayVolumeConfig {
                 writeable_volume_name: writeable_volume_name.clone(),
             },
 
-            writeable_volume_opts: CreateVolumeOptions {
-                name: writeable_volume_name,
-                labels: HashMap::from([("aether.managed".to_string(), "true".to_string())]),
+            writeable_volume_opts: VolumeCreateRequest {
+                name: Some(writeable_volume_name),
+                labels: Some(HashMap::from([(
+                    "aether.managed".to_string(),
+                    "true".to_string(),
+                )])),
                 ..Default::default()
             },
 
-            overlay_volume_opts: CreateVolumeOptions {
-                name: volume_name.clone(),
-                labels: HashMap::from([("aether.managed".to_string(), "true".to_string())]),
-                driver: "local".to_string(),
-                driver_opts: HashMap::from([
+            overlay_volume_opts: VolumeCreateRequest {
+                name: Some(volume_name.clone()),
+                labels: Some(HashMap::from([(
+                    "aether.managed".to_string(),
+                    "true".to_string(),
+                )])),
+                driver: Some("local".to_string()),
+                driver_opts: Some(HashMap::from([
                     ("type".to_string(), "overlay".to_string()),
                     ("device".to_string(), "overlay".to_string()),
                     ("o".to_string(), overlay_opts),
-                ]),
+                ])),
+                ..Default::default()
             },
         }
     }

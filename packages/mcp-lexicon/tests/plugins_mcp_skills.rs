@@ -2,7 +2,7 @@ mod common;
 
 use common::mcp::connect;
 use mcp_lexicon::{MarkdownFile, PluginsMcp};
-use rmcp::model::{CallToolRequestParam, ClientInfo, Implementation};
+use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -132,7 +132,7 @@ async fn test_load_skills_tool() {
 
     // Test loading multiple skills
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "get_skills".into(),
             arguments: Some(
                 serde_json::json!({
@@ -191,7 +191,7 @@ async fn test_load_skills_tool() {
 
     // Test loading with some missing skills
     let result_with_missing = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "get_skills".into(),
             arguments: Some(
                 serde_json::json!({
@@ -244,7 +244,7 @@ async fn test_list_skills_tool() {
 
     // Test list_skills tool
     let result = client
-        .call_tool(CallToolRequestParam {
+        .call_tool(CallToolRequestParams {
             name: "list_skills".into(),
             arguments: None,
         })

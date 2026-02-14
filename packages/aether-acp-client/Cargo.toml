@@ -7,11 +7,12 @@ edition = "2024"
 [dependencies]
 # ACP protocol
 agent-events = { path = "../agent-events" }
-agent-client-protocol = "0.5.0"
+agent-client-protocol = "0.9.4"
 
 # Docker support
-bollard = "0.18.1"
-bytes = "1.9"
+bollard = "0.20.1"
+bytes = "1.11"
+http-body-util = "0.1"
 dirs = "6.0"
 hex = "0.4"
 tar = "0.4"

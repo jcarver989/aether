@@ -8,8 +8,8 @@ use rmcp::{
         wrapper::{Json, Parameters},
     },
     model::{
-        GetPromptRequestParam, GetPromptResult, Implementation, ListPromptsResult,
-        PaginatedRequestParam, ProgressNotificationParam, PromptMessage, PromptMessageRole,
+        GetPromptRequestParams, GetPromptResult, Implementation, ListPromptsResult,
+        PaginatedRequestParams, ProgressNotificationParam, PromptMessage, PromptMessageRole,
         ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
@@ -133,6 +133,7 @@ impl ServerHandler for PluginsMcp {
                 name: "plugins-mcp".to_string(),
                 version: "0.1.0".to_string(),
                 title: None,
+                description: None,
                 icons: None,
                 website_url: None,
             },
@@ -147,7 +148,7 @@ impl ServerHandler for PluginsMcp {
 
     async fn list_prompts(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, McpError> {
         let command_files_with_paths = match PromptFile::from_dir(&self.commands_dir).await {
@@ -183,7 +184,7 @@ impl ServerHandler for PluginsMcp {
 
     async fn get_prompt(
         &self,
-        request: GetPromptRequestParam,
+        request: GetPromptRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResult, McpError> {
         let prompt_path = self.commands_dir.join(format!("{}.md", request.name));

@@ -5,7 +5,7 @@
 
 use crate::client::{OutputStream, RawAgentEvent};
 use agent_client_protocol::{
-    AvailableCommand, ContentBlock, ExtNotification, RequestPermissionRequest,
+    AvailableCommand, Content, ContentBlock, ExtNotification, RequestPermissionRequest,
     RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCall, ToolCallContent,
     ToolCallStatus, ToolCallUpdateFields,
 };
@@ -174,8 +174,8 @@ impl TryFrom<ExtNotification> for AcpEvent {
 /// A vector of transformed events (may be empty for ignored notifications)
 pub fn transform_session_notification(notif: SessionNotification) -> Vec<AcpEvent> {
     match notif.update {
-        SessionUpdate::AgentMessageChunk { content } => {
-            if let ContentBlock::Text(text_content) = content {
+        SessionUpdate::AgentMessageChunk(chunk) => {
+            if let ContentBlock::Text(text_content) = chunk.content {
                 vec![AcpEvent::MessageChunk {
                     text: text_content.text,
                 }]
@@ -184,22 +184,22 @@ pub fn transform_session_notification(notif: SessionNotification) -> Vec<AcpEven
             }
         }
 
-        SessionUpdate::UserMessageChunk { content } => {
-            if let ContentBlock::Text(text_content) = content {
+        SessionUpdate::UserMessageChunk(chunk) => {
+            if let ContentBlock::Text(text_content) = chunk.content {
                 debug!("User message chunk: {}", text_content.text);
             }
             vec![]
         }
 
-        SessionUpdate::AgentThoughtChunk { content } => {
-            if let ContentBlock::Text(text_content) = content {
+        SessionUpdate::AgentThoughtChunk(chunk) => {
+            if let ContentBlock::Text(text_content) = chunk.content {
                 debug!("Agent thought: {}", text_content.text);
             }
             vec![]
         }
 
         SessionUpdate::ToolCall(tc) => {
-            let tool_id = tc.id.0.to_string();
+            let tool_id = tc.tool_call_id.0.to_string();
             info!("Tool call started: {} - {}", tool_id, tc.title);
 
             vec![AcpEvent::ToolCallStarted {
@@ -209,7 +209,7 @@ pub fn transform_session_notification(notif: SessionNotification) -> Vec<AcpEven
         }
 
         SessionUpdate::ToolCallUpdate(update) => {
-            let tool_id = update.id.0.to_string();
+            let tool_id = update.tool_call_id.0.to_string();
             debug!("Tool call update: {} - {:?}", tool_id, update.fields.status);
 
             if let Some(status) = &update.fields.status {
@@ -252,15 +252,23 @@ pub fn transform_session_notification(notif: SessionNotification) -> Vec<AcpEven
             vec![]
         }
 
-        SessionUpdate::AvailableCommandsUpdate { available_commands } => {
-            debug!("Available commands updated: {:?}", available_commands);
+        SessionUpdate::AvailableCommandsUpdate(update) => {
+            debug!(
+                "Available commands updated: {:?}",
+                update.available_commands
+            );
             vec![AcpEvent::AvailableCommandsUpdate {
-                commands: available_commands,
+                commands: update.available_commands,
             }]
         }
 
-        SessionUpdate::CurrentModeUpdate { current_mode_id } => {
-            debug!("Mode changed to: {}", current_mode_id);
+        SessionUpdate::CurrentModeUpdate(update) => {
+            debug!("Mode changed to: {}", update.current_mode_id);
+            vec![]
+        }
+
+        _ => {
+            debug!("Ignoring unknown session update variant");
             vec![]
         }
     }
@@ -272,7 +280,7 @@ pub fn transform_session_notification(notif: SessionNotification) -> Vec<AcpEven
 pub fn extract_tool_content(fields: &ToolCallUpdateFields) -> Option<String> {
     fields.content.as_ref().and_then(|contents| {
         contents.iter().find_map(|c| match c {
-            ToolCallContent::Content { content } => {
+            ToolCallContent::Content(Content { content, .. }) => {
                 if let ContentBlock::Text(t) = content {
                     Some(t.text.clone())
                 } else {
@@ -296,13 +304,10 @@ mod tests {
             "tokens_used": 75000,
             "context_limit": 100000
         });
-        let raw_value =
-            serde_json::value::RawValue::from_string(params.to_string()).expect("valid JSON");
+        let raw_value: Arc<serde_json::value::RawValue> =
+            serde_json::from_str(&params.to_string()).expect("valid JSON");
 
-        let notif = ExtNotification {
-            method: Arc::from(CONTEXT_USAGE_METHOD),
-            params: Arc::from(raw_value),
-        };
+        let notif = ExtNotification::new(CONTEXT_USAGE_METHOD, raw_value);
 
         let event = AcpEvent::try_from(notif).expect("should convert");
 
@@ -325,13 +330,10 @@ mod tests {
         let params = serde_json::json!({
             "usage_ratio": 0.75
         });
-        let raw_value =
-            serde_json::value::RawValue::from_string(params.to_string()).expect("valid JSON");
+        let raw_value: Arc<serde_json::value::RawValue> =
+            serde_json::from_str(&params.to_string()).expect("valid JSON");
 
-        let notif = ExtNotification {
-            method: Arc::from(CONTEXT_USAGE_METHOD),
-            params: Arc::from(raw_value),
-        };
+        let notif = ExtNotification::new(CONTEXT_USAGE_METHOD, raw_value);
 
         assert!(AcpEvent::try_from(notif).is_err());
     }
@@ -341,13 +343,10 @@ mod tests {
         let params = serde_json::json!({
             "some_field": "some_value"
         });
-        let raw_value =
-            serde_json::value::RawValue::from_string(params.to_string()).expect("valid JSON");
+        let raw_value: Arc<serde_json::value::RawValue> =
+            serde_json::from_str(&params.to_string()).expect("valid JSON");
 
-        let notif = ExtNotification {
-            method: Arc::from("_unknown/notification"),
-            params: Arc::from(raw_value),
-        };
+        let notif = ExtNotification::new("_unknown/notification", raw_value);
 
         assert!(AcpEvent::try_from(notif).is_err());
     }

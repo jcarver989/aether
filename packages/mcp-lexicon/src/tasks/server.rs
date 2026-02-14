@@ -85,6 +85,7 @@ impl ServerHandler for TasksMcp {
                 name: "tasks-mcp".to_string(),
                 version: "0.1.0".to_string(),
                 title: None,
+                description: None,
                 icons: None,
                 website_url: None,
             },

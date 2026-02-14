@@ -26,30 +26,29 @@ pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::Available
                 .map(|arg| arg.name.as_str())
                 .collect::<Vec<_>>()
                 .join(" ");
-            Some(acp::AvailableCommandInput::Unstructured { hint })
+            Some(acp::AvailableCommandInput::Unstructured(
+                acp::UnstructuredCommandInput::new(hint),
+            ))
         } else {
             // Even if no formal arguments, provide a generic hint
-            Some(acp::AvailableCommandInput::Unstructured {
-                hint: "optional arguments".to_string(),
-            })
+            Some(acp::AvailableCommandInput::Unstructured(
+                acp::UnstructuredCommandInput::new("optional arguments"),
+            ))
         }
     } else {
         // No arguments defined, provide a generic hint for optional input
-        Some(acp::AvailableCommandInput::Unstructured {
-            hint: "optional arguments".to_string(),
-        })
+        Some(acp::AvailableCommandInput::Unstructured(
+            acp::UnstructuredCommandInput::new("optional arguments"),
+        ))
     };
 
-    acp::AvailableCommand {
-        name: command_name,
-        description: prompt
-            .description
-            .as_ref()
-            .map(|d| d.to_string())
-            .unwrap_or_else(|| "No description available".to_string()),
-        input,
-        meta: None,
-    }
+    let description = prompt
+        .description
+        .as_ref()
+        .map(|d| d.to_string())
+        .unwrap_or_else(|| "No description available".to_string());
+
+    acp::AvailableCommand::new(command_name, description).input(input)
 }
 
 /// Converts ACP ContentBlock to plain text for Aether agent.
@@ -67,6 +66,7 @@ pub fn map_content_blocks_to_text(blocks: Vec<acp::ContentBlock>) -> String {
                 format!("[Resource: {}]", link.uri)
             }
             acp::ContentBlock::Resource(resource) => format_embedded_resource(&resource),
+            _ => "[Unknown content]".to_string(),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -81,6 +81,7 @@ pub fn format_embedded_resource(resource: &acp::EmbeddedResource) -> String {
         acp::EmbeddedResourceResource::BlobResourceContents(blob) => {
             format!("[Binary resource: {}]", blob.uri)
         }
+        _ => "[Unknown resource type]".to_string(),
     }
 }
 
@@ -102,77 +103,52 @@ pub fn map_agent_message_to_session_notification(
                 return None;
             }
 
-            Some(acp::SessionNotification {
+            Some(acp::SessionNotification::new(
                 session_id,
-                update: acp::SessionUpdate::AgentMessageChunk {
-                    content: acp::ContentBlock::Text(acp::TextContent {
-                        annotations: None,
-                        text: chunk.clone(),
-                        meta: None,
-                    }),
-                },
-                meta: None,
-            })
+                acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
+                    acp::ContentBlock::Text(acp::TextContent::new(chunk.clone())),
+                )),
+            ))
         }
 
         AgentMessage::ToolCall { request, .. } => {
             let raw_input = serde_json::from_str(&request.arguments).ok();
-            Some(acp::SessionNotification {
+            Some(acp::SessionNotification::new(
                 session_id,
-                update: acp::SessionUpdate::ToolCall(acp::ToolCall {
-                    id: request.id.clone().into(),
-                    title: request.name.clone(),
-                    kind: acp::ToolKind::default(),
-                    status: acp::ToolCallStatus::InProgress,
-                    content: vec![],
-                    locations: vec![],
-                    raw_input,
-                    raw_output: None,
-                    meta: None,
-                }),
-                meta: None,
-            })
+                acp::SessionUpdate::ToolCall(
+                    acp::ToolCall::new(
+                        acp::ToolCallId::new(request.id.clone()),
+                        request.name.clone(),
+                    )
+                    .status(acp::ToolCallStatus::InProgress)
+                    .raw_input(raw_input),
+                ),
+            ))
         }
 
-        AgentMessage::ToolResult { result, .. } => Some(acp::SessionNotification {
+        AgentMessage::ToolResult { result, .. } => Some(acp::SessionNotification::new(
             session_id,
-            update: acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate {
-                id: result.id.clone().into(),
-                fields: acp::ToolCallUpdateFields {
-                    status: Some(acp::ToolCallStatus::Completed),
-                    content: Some(vec![acp::ToolCallContent::Content {
-                        content: acp::ContentBlock::Text(acp::TextContent {
-                            annotations: None,
-                            text: result.result.clone(),
-                            meta: None,
-                        }),
-                    }]),
-                    ..Default::default()
-                },
-                meta: None,
-            }),
-            meta: None,
-        }),
+            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                acp::ToolCallId::new(result.id.clone()),
+                acp::ToolCallUpdateFields::new()
+                    .status(acp::ToolCallStatus::Completed)
+                    .content(vec![acp::ToolCallContent::Content(acp::Content::new(
+                        acp::ContentBlock::Text(acp::TextContent::new(result.result.clone())),
+                    ))]),
+            )),
+        )),
 
-        AgentMessage::ToolError { error, .. } => Some(acp::SessionNotification {
+        AgentMessage::ToolError { error, .. } => Some(acp::SessionNotification::new(
             session_id,
-            update: acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate {
-                id: error.id.clone().into(),
-                fields: acp::ToolCallUpdateFields {
-                    status: Some(acp::ToolCallStatus::Failed),
-                    content: Some(vec![acp::ToolCallContent::Content {
-                        content: acp::ContentBlock::Text(acp::TextContent {
-                            annotations: None,
-                            text: error.error.clone(),
-                            meta: None,
-                        }),
-                    }]),
-                    ..Default::default()
-                },
-                meta: None,
-            }),
-            meta: None,
-        }),
+            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                acp::ToolCallId::new(error.id.clone()),
+                acp::ToolCallUpdateFields::new()
+                    .status(acp::ToolCallStatus::Failed)
+                    .content(vec![acp::ToolCallContent::Content(acp::Content::new(
+                        acp::ContentBlock::Text(acp::TextContent::new(error.error.clone())),
+                    ))]),
+            )),
+        )),
 
         AgentMessage::ToolProgress {
             request,
@@ -212,25 +188,17 @@ pub fn map_agent_message_to_session_notification(
                     )
                 });
 
-            Some(acp::SessionNotification {
+            Some(acp::SessionNotification::new(
                 session_id,
-                update: acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate {
-                    id: request.id.clone().into(),
-                    fields: acp::ToolCallUpdateFields {
-                        status: Some(acp::ToolCallStatus::InProgress),
-                        content: Some(vec![acp::ToolCallContent::Content {
-                            content: acp::ContentBlock::Text(acp::TextContent {
-                                annotations: None,
-                                text: progress_text,
-                                meta: None,
-                            }),
-                        }]),
-                        ..Default::default()
-                    },
-                    meta: None,
-                }),
-                meta: None,
-            })
+                acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                    acp::ToolCallId::new(request.id.clone()),
+                    acp::ToolCallUpdateFields::new()
+                        .status(acp::ToolCallStatus::InProgress)
+                        .content(vec![acp::ToolCallContent::Content(acp::Content::new(
+                            acp::ContentBlock::Text(acp::TextContent::new(progress_text)),
+                        ))]),
+                )),
+            ))
         }
 
         AgentMessage::ContextUsageUpdate { .. }
@@ -298,11 +266,10 @@ mod tests {
     use super::*;
     use aether::llm::ToolCallRequest;
     use agent_events::SUB_AGENT_PROGRESS_METHOD;
-    use std::sync::Arc;
 
     #[test]
     fn test_tool_progress_with_sub_agent_payload_emits_ext_notification() {
-        let session_id = acp::SessionId(Arc::from("test-session"));
+        let session_id = acp::SessionId::new("test-session");
 
         let payload = SubAgentProgressPayload {
             task_id: "task_1".to_string(),
@@ -345,7 +312,7 @@ mod tests {
 
     #[test]
     fn test_tool_progress_with_invalid_json_falls_back_to_simple_message() {
-        let session_id = acp::SessionId(Arc::from("test-session"));
+        let session_id = acp::SessionId::new("test-session");
 
         // Simulate a tool progress message with invalid JSON
         let tool_progress = AgentMessage::ToolProgress {
@@ -369,8 +336,8 @@ mod tests {
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 if let Some(content) = &update.fields.content {
-                    if let acp::ToolCallContent::Content { content: block } = &content[0] {
-                        if let acp::ContentBlock::Text(text) = block {
+                    if let acp::ToolCallContent::Content(c) = &content[0] {
+                        if let acp::ContentBlock::Text(text) = &c.content {
                             // Should contain the original message
                             assert!(text.text.contains("not valid json"));
                         }
@@ -383,18 +350,10 @@ mod tests {
 
     #[test]
     fn test_format_embedded_resource_text() {
-        let resource = acp::EmbeddedResource {
-            resource: acp::EmbeddedResourceResource::TextResourceContents(
-                acp::TextResourceContents {
-                    uri: "file://test.rs".to_string(),
-                    mime_type: None,
-                    text: "let x = 1;".to_string(),
-                    meta: None,
-                },
-            ),
-            annotations: None,
-            meta: None,
-        };
+        let resource =
+            acp::EmbeddedResource::new(acp::EmbeddedResourceResource::TextResourceContents(
+                acp::TextResourceContents::new("file://test.rs", "let x = 1;"),
+            ));
 
         let result = format_embedded_resource(&resource);
 
@@ -404,23 +363,13 @@ mod tests {
     #[test]
     fn test_map_content_blocks_to_text_with_embedded_resource() {
         let blocks = vec![
-            acp::ContentBlock::Text(acp::TextContent {
-                text: "Check this file:".to_string(),
-                annotations: None,
-                meta: None,
-            }),
-            acp::ContentBlock::Resource(acp::EmbeddedResource {
-                resource: acp::EmbeddedResourceResource::TextResourceContents(
-                    acp::TextResourceContents {
-                        uri: "file://src/lib.rs".to_string(),
-                        mime_type: Some("text/x-rust".to_string()),
-                        text: "pub fn hello() {}".to_string(),
-                        meta: None,
-                    },
+            acp::ContentBlock::Text(acp::TextContent::new("Check this file:")),
+            acp::ContentBlock::Resource(acp::EmbeddedResource::new(
+                acp::EmbeddedResourceResource::TextResourceContents(
+                    acp::TextResourceContents::new("file://src/lib.rs", "pub fn hello() {}")
+                        .mime_type("text/x-rust"),
                 ),
-                annotations: None,
-                meta: None,
-            }),
+            )),
         ];
 
         let result = map_content_blocks_to_text(blocks);

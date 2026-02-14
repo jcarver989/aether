@@ -12,4 +12,4 @@ pub mod transport;
 pub mod types;
 
 // Re-export rmcp types needed by consumers
-pub use rmcp::model::{CreateElicitationRequestParam, CreateElicitationResult, ElicitationAction};
+pub use rmcp::model::{CreateElicitationRequestParams, CreateElicitationResult, ElicitationAction};
