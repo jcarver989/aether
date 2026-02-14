@@ -57,6 +57,8 @@ pub struct ChatCompletionStreamChoice {
 pub struct ChatCompletionStreamResponseDelta {
     pub role: Option<Role>,
     pub content: Option<String>,
+    #[serde(default)]
+    pub reasoning_content: Option<String>,
     pub tool_calls: Option<Vec<ToolCallDelta>>,
 }
 
