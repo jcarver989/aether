@@ -20,6 +20,7 @@ async fn test_openrouter_negative_token_handling() {
                 delta: ChatCompletionStreamResponseDelta {
                     role: None,
                     content: None,
+                    reasoning_content: None,
                     tool_calls: None,
                 },
                 finish_reason: Some(aether::llm::openai_compatible::types::FinishReason::Stop),
@@ -83,6 +84,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
                 delta: ChatCompletionStreamResponseDelta {
                     role: Some(Role::Assistant),
                     content: Some("Hello world".to_string()),
+                    reasoning_content: None,
                     tool_calls: None,
                 },
                 finish_reason: None,
@@ -102,6 +104,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
                 delta: ChatCompletionStreamResponseDelta {
                     role: None,
                     content: None,
+                    reasoning_content: None,
                     tool_calls: None,
                 },
                 finish_reason: Some(aether::llm::openai_compatible::types::FinishReason::Stop),
