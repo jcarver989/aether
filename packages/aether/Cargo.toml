@@ -12,24 +12,25 @@ tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 async-openai = { workspace = true }
 async-stream = { workspace = true }
-rmcp = { workspace = true, features = ["transport-streamable-http-client-reqwest", "transport-child-process"] }
-reqwest = { workspace = true }
+rmcp = { workspace = true }
+regex = { workspace = true }
 schemars = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 clap = { workspace = true }
-regex = { workspace = true }
 sha2 = { workspace = true }
 base64 = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 tempfile = { workspace = true }
-async-trait = { workspace = true }
-oauth2 = "5.0"
+mcp_utils = { path = "../mcp-utils"}
 agent-events = { path = "../agent-events" }
 llm = { path = "../llm" }
+
+[dev-dependencies]
+reqwest = { workspace = true }
 
 [[example]]
 name = "basic_agent"

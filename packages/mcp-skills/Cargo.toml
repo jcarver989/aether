@@ -1,0 +1,19 @@
+[package]
+name = "mcp-skills"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+tokio = { workspace = true }
+rmcp = { workspace = true }
+schemars = { workspace = true }
+tracing = { workspace = true }
+clap = { workspace = true, features = ["env"] }
+aether = { path = "../aether" }
+mcp_utils = { path = "../mcp-utils" }
+
+[dev-dependencies]
+tempfile = { workspace = true }

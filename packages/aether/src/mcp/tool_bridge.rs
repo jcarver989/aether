@@ -1,7 +1,7 @@
+use mcp_utils::client::manager::split_on_server_name;
 use rmcp::model::CallToolRequestParams;
 use serde_json;
 
-use super::manager::split_on_server_name;
 use crate::{ToolCallError, ToolCallRequest, ToolCallResult};
 
 /// Convert a ToolCallRequest to rmcp::CallToolRequestParams

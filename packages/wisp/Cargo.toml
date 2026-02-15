@@ -6,8 +6,11 @@ edition = "2024"
 [dependencies]
 aether = { path = "../aether"}
 agent-events = { path = "../agent-events"}
-mcp_lexicon = { path = "../mcp-lexicon"}
+mcp_utils = { path = "../mcp-utils"}
 mcp-coding = { path = "../mcp-coding" }
+mcp-skills = { path = "../mcp-skills" }
+mcp-subagents = { path = "../mcp-subagents" }
+mcp-tasks = { path = "../mcp-tasks" }
 futures = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
