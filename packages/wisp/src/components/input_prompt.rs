@@ -1,16 +1,13 @@
-use super::commands::TerminalCommand;
 use crate::render_context::{Component, RenderContext};
-use crossterm::style::Stylize;
+use crate::screen::Line;
+use crossterm::style::{Stylize, StyledContent};
 
-pub struct InputPrompt {}
+pub struct InputPrompt;
 
-impl Component<()> for InputPrompt {
-    fn render(&self, _props: (), context: &RenderContext) -> Vec<TerminalCommand> {
-        vec![
-            TerminalCommand::Print("\r\n".to_string()),
-            TerminalCommand::MoveToColumn(0),
-            TerminalCommand::PrintStyled("> ".to_string().with(context.theme.primary)),
-        ]
+impl Component for InputPrompt {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
+        let styled: StyledContent<String> = "> ".to_string().with(context.theme.primary);
+        vec![Line::new(format!("{styled}"))]
     }
 }
 
@@ -19,45 +16,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_input_prompt_implements_component() {
-        let input_prompt = InputPrompt {};
-        let render_context = RenderContext::new((0, 0), (0, 0));
-        let commands = input_prompt.render((), &render_context);
-
-        // Verify we get the expected commands
-        assert_eq!(commands.len(), 3);
-
-        // Check first command is a newline
-        match &commands[0] {
-            TerminalCommand::Print(s) => assert_eq!(s, "\r\n"),
-            _ => panic!("Expected Print command"),
-        }
-
-        // Check second command is MoveToColumn(0)
-        match &commands[1] {
-            TerminalCommand::MoveToColumn(col) => assert_eq!(*col, 0),
-            _ => panic!("Expected MoveToColumn command"),
-        }
-
-        // Check third command is PrintStyled with cyan "> "
-        match &commands[2] {
-            TerminalCommand::PrintStyled(_) => {
-                // We can't easily test the styled content without extracting the style,
-                // but we can verify it's the right variant
-            }
-            _ => panic!("Expected PrintStyled command"),
-        }
+    fn renders_single_prompt_line() {
+        let prompt = InputPrompt;
+        let ctx = RenderContext::new((80, 24));
+        let lines = prompt.render(&ctx);
+        assert_eq!(lines.len(), 1);
+        // The line contains "> " (with ANSI codes around it)
+        assert!(lines[0].as_str().contains("> "));
     }
 
     #[test]
-    fn test_input_prompt_renders_consistently() {
-        let input_prompt = InputPrompt {};
-        let render_context1 = RenderContext::new((0, 0), (0, 0));
-        let render_context2 = RenderContext::new((0, 0), (0, 0));
-        let commands1 = input_prompt.render((), &render_context1);
-        let commands2 = input_prompt.render((), &render_context2);
-
-        // Verify renders are consistent
-        assert_eq!(commands1.len(), commands2.len());
+    fn renders_consistently() {
+        let prompt = InputPrompt;
+        let ctx = RenderContext::new((80, 24));
+        let a = prompt.render(&ctx);
+        let b = prompt.render(&ctx);
+        assert_eq!(a, b);
     }
 }

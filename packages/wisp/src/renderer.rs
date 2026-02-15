@@ -1,21 +1,14 @@
 use std::io::Write;
 
 use agent_events::{AgentMessage, UserMessage};
-use crossterm::{
-    cursor::position,
-    event::{self, KeyCode, KeyEvent},
-    terminal::size,
-};
+use crossterm::event::{self, KeyCode, KeyEvent};
+use crossterm::terminal::size;
 use tokio::sync::mpsc;
 
-use crate::{
-    components::{
-        commands::{ExecuteCommands, TerminalCommand},
-        input_prompt::InputPrompt,
-        tool_call_statuses::ToolCallStatuses,
-    },
-    render_context::{Component, RenderContext},
-};
+use crate::components::input_prompt::InputPrompt;
+use crate::components::tool_call_statuses::ToolCallStatuses;
+use crate::render_context::{Component, RenderContext};
+use crate::screen::{Line, Screen};
 
 pub enum LoopAction {
     Continue,
@@ -24,6 +17,7 @@ pub enum LoopAction {
 
 pub struct Renderer<W: Write> {
     writer: W,
+    screen: Screen,
     tool_call_statuses: ToolCallStatuses,
     current_assistant_message_id: Option<String>,
     current_message_buffer: String,
@@ -32,14 +26,15 @@ pub struct Renderer<W: Write> {
 }
 
 impl<W: Write> Renderer<W> {
-    pub fn new(writer: W) -> Self {
+    pub fn new(writer: W, origin_row: u16) -> Self {
         Self {
             writer,
+            screen: Screen::new(origin_row),
             tool_call_statuses: ToolCallStatuses::new(),
             current_assistant_message_id: None,
             current_message_buffer: String::new(),
             input_buffer: String::new(),
-            context: RenderContext::new((0, 0), (0, 0)),
+            context: RenderContext::new((0, 0)),
         }
     }
 
@@ -55,6 +50,26 @@ impl<W: Write> Renderer<W> {
         &mut self.writer
     }
 
+    /// Build the current frame from component state.
+    fn build_frame(&self) -> Vec<Line> {
+        let mut lines = Vec::new();
+
+        // Active tool calls
+        lines.extend(self.tool_call_statuses.render(&self.context));
+
+        // Input prompt (always at the bottom of the managed region)
+        lines.extend(InputPrompt.render(&self.context));
+
+        lines
+    }
+
+    /// Render the current frame to the terminal.
+    fn render_frame(&mut self) -> std::io::Result<()> {
+        let frame = self.build_frame();
+        self.screen.render(&frame, &mut self.writer)?;
+        Ok(())
+    }
+
     pub async fn on_key_event(
         &mut self,
         key_event: KeyEvent,
@@ -67,36 +82,33 @@ impl<W: Write> Renderer<W> {
 
             KeyCode::Char(c) => {
                 self.input_buffer.push(c);
-                print!("{c}");
+                // Append char inline — no need to re-render the whole frame
+                write!(self.writer, "{c}")?;
                 self.writer.flush()?;
             }
 
             KeyCode::Backspace => {
                 if !self.input_buffer.is_empty() {
                     self.input_buffer.pop();
-                    self.writer.flush_commands(&[
-                        TerminalCommand::MoveLeft,
-                        TerminalCommand::Print(" ".to_string()),
-                        TerminalCommand::MoveLeft,
-                    ])?;
+                    // Erase one char inline
+                    write!(self.writer, "\x1b[D \x1b[D")?;
                     self.writer.flush()?;
                 }
             }
 
             KeyCode::Enter => {
                 if self.input_buffer.trim().is_empty() {
-                    let input_prompt = InputPrompt {};
-                    let commands = input_prompt.render((), &self.context);
-                    self.writer.flush_commands(&commands)?;
+                    // Just re-render the prompt
+                    self.render_frame()?;
                 } else {
                     let user_input = self.input_buffer.trim().to_string();
+                    self.input_buffer.clear();
 
-                    // Clear the current line and print the user's message
-                    self.writer.flush_commands(&[
-                        TerminalCommand::MoveToColumn(0),
-                        TerminalCommand::ClearLine,
-                        TerminalCommand::Print(format!("{user_input}\r\n")),
-                    ])?;
+                    // Push the user's message line to scrollback
+                    self.screen.push_to_scrollback(
+                        &[Line::new(user_input.clone())],
+                        &mut self.writer,
+                    )?;
 
                     if let Err(e) = tx
                         .send(UserMessage::Text {
@@ -107,12 +119,8 @@ impl<W: Write> Renderer<W> {
                         eprintln!("Failed to send message: {e}");
                     }
 
-                    self.input_buffer.clear();
-
-                    // Render a new prompt
-                    let input_prompt = InputPrompt {};
-                    let commands = input_prompt.render((), &self.context);
-                    self.writer.flush_commands(&commands)?;
+                    // Render fresh prompt
+                    self.render_frame()?;
                 }
             }
             _ => {}
@@ -124,11 +132,6 @@ impl<W: Write> Renderer<W> {
         &mut self,
         message: AgentMessage,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // The last line should be the input prompt
-        // which we need to clear, print the agent message and re-render the prompt at the bottom of the screen
-        let mut commands = vec![];
-        let mut should_render_prompt = false;
-
         match message {
             AgentMessage::Text {
                 message_id,
@@ -144,88 +147,74 @@ impl<W: Write> Renderer<W> {
                 self.current_message_buffer.push_str(&chunk);
 
                 if is_complete {
-                    // Message complete - clear prompt line, print buffered message
-                    // Note: InputPrompt adds a newline, so we don't add one here
-                    let terminal_text = self.current_message_buffer.replace('\n', "\r\n");
-                    commands.push(TerminalCommand::ClearLine);
-                    commands.push(TerminalCommand::Print(terminal_text));
-                    self.current_message_buffer.clear();
+                    let text = std::mem::take(&mut self.current_message_buffer);
                     self.current_assistant_message_id = None;
-                    should_render_prompt = true;
+
+                    // Push completed text + any finished tool calls to scrollback
+                    let mut scrollback_lines: Vec<Line> = self
+                        .tool_call_statuses
+                        .render(&self.context);
+
+                    // Add the assistant text
+                    for text_line in text.lines() {
+                        scrollback_lines.push(Line::new(text_line.to_string()));
+                    }
+
+                    self.tool_call_statuses.clear();
+                    self.screen
+                        .push_to_scrollback(&scrollback_lines, &mut self.writer)?;
+
+                    // Render fresh prompt
+                    self.render_frame()?;
                 }
             }
 
             AgentMessage::ToolCall { request, .. } => {
-                let tool_commands = self
-                    .tool_call_statuses
-                    .on_tool_request(&request, &self.context);
-
-                // Only clear line and render prompt if this is a new tool call
-                if !tool_commands.is_empty() {
-                    commands.push(TerminalCommand::MoveToColumn(0));
-                    commands.push(TerminalCommand::ClearLine);
-                    commands.extend(tool_commands);
-                    should_render_prompt = true;
-                }
+                self.tool_call_statuses.on_tool_request(&request);
+                self.render_frame()?;
             }
 
             AgentMessage::ToolResult { result, .. } => {
-                // Tool results use SavePosition/RestorePosition to update in place
-                // so we don't need to render a new prompt
-                commands.extend(
-                    self.tool_call_statuses
-                        .on_tool_result(&result, &self.context),
-                );
-                should_render_prompt = false;
+                self.tool_call_statuses.on_tool_result(&result);
+                self.render_frame()?;
             }
 
             AgentMessage::ToolError { error, .. } => {
-                // Tool errors use SavePosition/RestorePosition to update in place
-                // so we don't need to render a new prompt
-                commands.extend(self.tool_call_statuses.on_tool_error(&error, &self.context));
-                should_render_prompt = false;
+                self.tool_call_statuses.on_tool_error(&error);
+                self.render_frame()?;
             }
 
-            _ => {
-                return Ok(());
-            }
-        }
-
-        // Only render prompt if we have commands to execute and should render prompt
-        if !commands.is_empty() {
-            if should_render_prompt {
-                let input_prompt = InputPrompt {};
-                commands.extend(input_prompt.render((), &self.context));
-            }
-            self.writer.flush_commands(&commands)?;
+            _ => {}
         }
 
         Ok(())
     }
 
     pub fn update_render_context(&mut self) {
-        let position = match position() {
-            Ok(p) => p,
-            Err(e) => {
-                println!("Failed to get position: {e}");
-                (0, 1)
-            }
-        };
-
-        let size = match size() {
+        let sz = match size() {
             Ok(s) => s,
             Err(e) => {
-                println!("Failed to get size: {e}");
-                (1, 1)
+                eprintln!("Failed to get size: {e}");
+                (80, 24)
             }
         };
-
-        self.context = RenderContext::new(position, size);
+        self.context = RenderContext::new(sz);
     }
 
-    /// Update render context with provided position and size (useful for testing)
+    /// Update render context with provided size (useful for testing)
     #[allow(dead_code)]
-    pub fn update_render_context_with(&mut self, position: (u16, u16), size: (u16, u16)) {
-        self.context = RenderContext::new(position, size);
+    pub fn update_render_context_with(&mut self, size: (u16, u16)) {
+        self.context = RenderContext::new(size);
+    }
+
+    /// Render the initial frame (just the prompt).
+    pub fn initial_render(&mut self) -> std::io::Result<()> {
+        self.render_frame()
+    }
+
+    /// Get a reference to the screen (useful for testing)
+    #[allow(dead_code)]
+    pub fn screen(&self) -> &Screen {
+        &self.screen
     }
 }

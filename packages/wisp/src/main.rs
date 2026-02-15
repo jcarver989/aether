@@ -4,12 +4,11 @@ mod components;
 mod output_formatters;
 mod render_context;
 mod renderer;
+mod screen;
 use clap::Parser;
-use crossterm::cursor::{MoveTo, position};
+use crossterm::cursor::position;
 use crossterm::event::{Event, KeyEventKind, poll, read};
-use crossterm::queue;
-use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode, size};
-use render_context::RenderContext;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use renderer::LoopAction;
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -18,9 +17,6 @@ use tokio::{select, time};
 mod app_state;
 use crate::app_state::AppState;
 use crate::cli::Cli;
-use crate::components::commands::ExecuteCommands;
-use crate::components::input_prompt::InputPrompt;
-use crate::render_context::Component;
 use crate::renderer::Renderer;
 
 #[tokio::main]
@@ -69,16 +65,17 @@ async fn main() -> ExitCode {
 
 async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
+    let stdout = io::stdout();
 
-    let input_prompt = InputPrompt {};
-    let context = RenderContext::new(position()?, size()?);
-    stdout.flush_commands(&input_prompt.render((), &context))?;
+    // The Screen's origin row is wherever the cursor currently is
+    let (_, origin_row) = position()?;
 
     let user_msg_tx = state.agent_tx;
     let mut agent_msg_rx = state.agent_rx;
-    let mut renderer = Renderer::new(stdout);
+    let mut renderer = Renderer::new(stdout, origin_row);
+
+    renderer.update_render_context();
+    renderer.initial_render()?;
 
     loop {
         renderer.update_render_context();

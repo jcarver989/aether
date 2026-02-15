@@ -1,23 +1,21 @@
 use crate::colors::Theme;
-use crate::components::commands::TerminalCommand;
+use crate::screen::Line;
 
 pub struct RenderContext {
-    pub cursor_position: (u16, u16),
     #[allow(dead_code)]
     pub size: (u16, u16),
     pub theme: Theme,
 }
 
 impl RenderContext {
-    pub fn new(cursor_position: (u16, u16), size: (u16, u16)) -> Self {
+    pub fn new(size: (u16, u16)) -> Self {
         Self {
-            cursor_position,
             size,
             theme: Theme::default(),
         }
     }
 }
 
-pub trait Component<T> {
-    fn render(&self, props: T, context: &RenderContext) -> Vec<TerminalCommand>;
+pub trait Component {
+    fn render(&self, context: &RenderContext) -> Vec<Line>;
 }
