@@ -15,6 +15,7 @@ path = "src/main.rs"
 aether = { path = "../aether" }
 agent-events = { path = "../agent-events" }
 mcp_lexicon = { path = "../mcp-lexicon" }
+mcp-coding = { path = "../mcp-coding" }
 agent-client-protocol = "0.9.4"
 rmcp = { workspace = true }
 tokio = { workspace = true }

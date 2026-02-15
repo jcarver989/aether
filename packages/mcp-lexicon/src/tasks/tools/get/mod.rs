@@ -1,9 +1,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::coding::display_meta::ToolDisplayMeta;
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
 use crate::tasks::types::{Task, TaskId, TaskStatus};
+use mcp_coding::display_meta::ToolDisplayMeta;
 
 /// Input for the task_get tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

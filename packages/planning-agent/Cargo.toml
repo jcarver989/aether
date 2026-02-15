@@ -5,8 +5,11 @@ edition = "2024"
 
 [dependencies]
 mcp_lexicon = { path = "../mcp-lexicon" }
+mcp-coding = { path = "../mcp-coding" }
 crucible = { path = "../crucible" }
 aether = { path = "../aether" }
+
+rmcp = { workspace = true }
 
 # CLI
 clap = { workspace = true }

@@ -7,6 +7,7 @@ edition = "2024"
 aether = { path = "../aether"}
 agent-events = { path = "../agent-events"}
 mcp_lexicon = { path = "../mcp-lexicon"}
+mcp-coding = { path = "../mcp-coding" }
 futures = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

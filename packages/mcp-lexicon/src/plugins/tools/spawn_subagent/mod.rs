@@ -1,5 +1,3 @@
-use crate::coding::CodingMcp;
-use crate::coding::display_meta::ToolDisplayMeta;
 use crate::plugins::files::AgentFile;
 use crate::plugins::server::PluginsMcp;
 use crate::tasks::TasksMcp;
@@ -10,6 +8,8 @@ use aether::{
 };
 use agent_events::{AgentMessage, UserMessage};
 use futures::FutureExt;
+use mcp_coding::CodingMcp;
+use mcp_coding::display_meta::ToolDisplayMeta;
 use rmcp::ServiceExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

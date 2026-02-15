@@ -60,6 +60,7 @@ dependencies = [
  "clap",
  "dirs",
  "futures",
+ "mcp-coding",
  "mcp_lexicon",
  "rmcp",
  "serde",
@@ -1960,15 +1961,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
-name = "mcp_lexicon"
+name = "mcp-coding"
 version = "0.1.0"
 dependencies = [
  "aether",
  "aether-lspd",
- "agent-events",
  "chrono",
  "clap",
- "crucible",
  "futures",
  "glob",
  "globset",
@@ -1983,6 +1982,29 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "mcp_lexicon"
+version = "0.1.0"
+dependencies = [
+ "aether",
+ "agent-events",
+ "chrono",
+ "clap",
+ "crucible",
+ "futures",
+ "mcp-coding",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
  "serde_yaml",
  "tempfile",
  "thiserror 2.0.18",
@@ -1990,7 +2012,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "url",
  "uuid",
 ]
 
@@ -2368,9 +2389,11 @@ dependencies = [
  "clap",
  "crucible",
  "futures",
+ "mcp-coding",
  "mcp_lexicon",
  "regex",
  "reqwest 0.13.2",
+ "rmcp",
  "serde",
  "serde_json",
  "tokio",
@@ -4401,6 +4424,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "futures",
+ "mcp-coding",
  "mcp_lexicon",
  "serde_json",
  "tokio",
