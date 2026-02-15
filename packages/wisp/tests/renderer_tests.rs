@@ -1,7 +1,7 @@
 mod test_terminal;
 
-use aether::agent::AgentMessage;
 use aether::llm::{ToolCallRequest, ToolCallResult};
+use agent_events::{AgentMessage, UserMessage};
 use test_terminal::{TestTerminal, assert_buffer_eq};
 use wisp::colors::Theme;
 use wisp::renderer::Renderer;
@@ -217,7 +217,7 @@ fn tool_result_with_id(name: &str, id: &str, args: &str, result: &str) -> AgentM
 async fn type_string<W: std::io::Write>(
     renderer: &mut Renderer<W>,
     text: &str,
-    tx: &tokio::sync::mpsc::Sender<aether::agent::UserMessage>,
+    tx: &tokio::sync::mpsc::Sender<UserMessage>,
 ) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -234,7 +234,7 @@ async fn type_string<W: std::io::Write>(
 
 async fn press_enter<W: std::io::Write>(
     renderer: &mut Renderer<W>,
-    tx: &tokio::sync::mpsc::Sender<aether::agent::UserMessage>,
+    tx: &tokio::sync::mpsc::Sender<UserMessage>,
 ) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

@@ -6,6 +6,7 @@ pub mod mcp_builder;
 pub mod oauth;
 pub mod roots;
 pub mod run_mcp_task;
+pub mod tool_bridge;
 pub mod variables;
 
 pub use config::*;

@@ -1,6 +1,6 @@
 use aether::{
     agent::{AgentEvent, MiddlewareAction, Prompt, agent},
-    llm::openrouter::OpenRouterProvider,
+    llm::providers::openrouter::OpenRouterProvider,
 };
 use tokio::process::Command;
 

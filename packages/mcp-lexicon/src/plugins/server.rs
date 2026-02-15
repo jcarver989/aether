@@ -1,4 +1,5 @@
-use aether::agent::{AgentMessage, substitute_parameters};
+use aether::agent::substitute_parameters;
+use agent_events::AgentMessage;
 use agent_events::SubAgentProgressPayload;
 use clap::Parser;
 use rmcp::{

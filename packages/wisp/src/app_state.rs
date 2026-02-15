@@ -2,9 +2,10 @@ use crate::cli::Cli;
 use aether::mcp::McpServerConfig;
 use aether::mcp::oauth::BrowserOAuthHandler;
 use aether::{
-    agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent},
+    agent::{AgentHandle, Prompt, agent},
     mcp::{McpSpawnResult, mcp},
 };
+use agent_events::{AgentMessage, UserMessage};
 use mcp_lexicon::coding::{DefaultCodingTools, LspCodingTools};
 use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt, TasksMcp};
 use std::env::current_dir;

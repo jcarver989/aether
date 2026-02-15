@@ -1,12 +1,13 @@
 use crate::acp_actor::AcpActorHandle;
 use crate::acp_coding_tools::AcpCodingTools;
 use crate::mappers::map_mcp_prompt_to_available_command;
-use aether::agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent};
+use aether::agent::{AgentHandle, Prompt, agent};
 use aether::llm::provider::StreamingModelProvider;
 use aether::mcp::McpSpawnResult;
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
+use agent_events::{AgentMessage, UserMessage};
 use futures::FutureExt;
 use mcp_lexicon::{CodingMcp, LspCodingTools, PluginsMcp, ServiceExt, TasksMcp};
 use std::path::PathBuf;

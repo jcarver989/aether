@@ -1,4 +1,4 @@
-use crate::llm::ToolDefinition;
+use crate::ToolDefinition;
 use crate::mcp::oauth::OAuthHandler;
 
 use super::{

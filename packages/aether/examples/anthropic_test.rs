@@ -1,4 +1,4 @@
-use aether::llm::anthropic::*;
+use aether::llm::providers::anthropic::*;
 use aether::llm::{
     ChatMessage, Context, LlmResponse, ProviderFactory, StreamingModelProvider, ToolDefinition,
 };

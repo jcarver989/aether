@@ -1,6 +1,6 @@
-use aether::agent::AgentMessage;
 use aether::llm::parser::ModelProviderParser;
 use agent_client_protocol as acp;
+use agent_events::AgentMessage;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
