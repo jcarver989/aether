@@ -2,7 +2,7 @@ use crate::cli::Cli;
 use aether::mcp::McpServerConfig;
 use aether::mcp::oauth::BrowserOAuthHandler;
 use aether::{
-    agent::{AgentHandle, Prompt, agent},
+    core::{AgentHandle, Prompt, agent},
     mcp::{McpSpawnResult, mcp},
 };
 use agent_events::{AgentMessage, UserMessage};

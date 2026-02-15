@@ -2,7 +2,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use aether::{
-    agent::COMPLETION_SIGNAL,
+    core::COMPLETION_SIGNAL,
     llm::ChatMessage,
     testing::{
         agent_message, llm_response, test_agent,

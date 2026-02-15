@@ -1,6 +1,6 @@
-use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
-use crate::agent::{Agent, Prompt, Result};
 use crate::context::CompactionConfig;
+use crate::core::middleware::{AgentEvent, Middleware, MiddlewareAction};
+use crate::core::{Agent, Prompt, Result};
 use crate::mcp::ServerInstructions;
 use crate::mcp::run_mcp_task::McpCommand;
 use crate::types::IsoString;

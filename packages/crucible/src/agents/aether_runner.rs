@@ -1,4 +1,4 @@
-use aether::agent::agent;
+use aether::core::agent;
 use aether::llm::{StreamingModelProvider, ToolCallRequest};
 use aether::mcp::{McpBuilder, McpSpawnResult, ServerFactory, mcp};
 use agent_events::{AgentMessage, UserMessage};

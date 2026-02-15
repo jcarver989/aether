@@ -1,4 +1,4 @@
-use aether::agent::Prompt;
+use aether::core::Prompt;
 use aether::mcp::{McpSpawnResult, ServerInstructions, mcp};
 use aether::testing::{FakeLlmProvider, FakeMcpServer, fake_mcp};
 use agent_events::{AgentMessage, UserMessage};
@@ -96,7 +96,7 @@ fn test_format_mcp_instructions_xml_structure() {
         instructions: "Use absolute paths.".to_string(),
     }];
 
-    let formatted = aether::agent::format_mcp_instructions(&instructions);
+    let formatted = aether::core::format_mcp_instructions(&instructions);
 
     // Check for XML tags with server names
     assert!(formatted.contains("<mcp-server-instructions name=\"coding\">"));
@@ -118,7 +118,7 @@ fn test_format_mcp_instructions_multiple_servers() {
         },
     ];
 
-    let formatted = aether::agent::format_mcp_instructions(&instructions);
+    let formatted = aether::core::format_mcp_instructions(&instructions);
 
     // Check for XML tags with both server names
     assert!(formatted.contains("<mcp-server-instructions name=\"coding\">"));
@@ -129,7 +129,7 @@ fn test_format_mcp_instructions_multiple_servers() {
 
 #[tokio::test]
 async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
-    use aether::agent::agent;
+    use aether::core::agent;
 
     let instructions = vec![ServerInstructions {
         server_name: "test-server".to_string(),
@@ -188,7 +188,7 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
 
 #[tokio::test]
 async fn test_agent_builder_works_without_mcp_instructions() {
-    use aether::agent::agent;
+    use aether::core::agent;
 
     let llm = FakeLlmProvider::new(vec![]);
     let captured_contexts = llm.captured_contexts();
