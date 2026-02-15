@@ -1,10 +1,9 @@
-pub mod auth;
 mod client;
 pub mod config;
 pub mod error;
 pub mod manager;
 pub mod mcp_builder;
-pub mod oauth_integration;
+pub mod oauth;
 pub mod roots;
 pub mod run_mcp_task;
 pub mod variables;

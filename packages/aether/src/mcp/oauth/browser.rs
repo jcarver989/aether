@@ -1,63 +1,120 @@
-use crate::auth::{AuthError, Result};
+use super::error::OAuthError;
+use super::handler::{OAuthCallback, OAuthHandler};
+use futures::future::BoxFuture;
+use std::process::Command;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
-/// OAuth callback data containing both the authorization code and state (CSRF token)
-#[derive(Debug, Clone)]
-pub struct OAuthCallback {
-    pub code: String,
-    pub state: String,
+/// Default `OAuthHandler` that opens the system browser and listens
+/// for the OAuth callback on a dynamically-assigned local port.
+pub struct BrowserOAuthHandler {
+    listener: TcpListener,
+    redirect_uri: String,
+}
+
+impl BrowserOAuthHandler {
+    pub fn new() -> Result<Self, std::io::Error> {
+        let std_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        let port = std_listener.local_addr()?.port();
+        std_listener.set_nonblocking(true)?;
+        let listener = TcpListener::from_std(std_listener)?;
+        Ok(Self {
+            listener,
+            redirect_uri: format!("http://127.0.0.1:{port}/oauth2callback"),
+        })
+    }
+}
+
+impl OAuthHandler for BrowserOAuthHandler {
+    fn redirect_uri(&self) -> &str {
+        &self.redirect_uri
+    }
+
+    fn authorize(&self, auth_url: &str) -> BoxFuture<'_, Result<OAuthCallback, OAuthError>> {
+        let auth_url = auth_url.to_string();
+        Box::pin(async move {
+            if let Err(e) = open_browser(&auth_url) {
+                tracing::warn!("Failed to open browser: {e}. Open manually: {auth_url}");
+            }
+
+            accept_oauth_callback(&self.listener).await
+        })
+    }
+}
+
+/// Accept a single OAuth callback on an already-bound listener.
+///
+/// Waits for one HTTP request, parses the authorization code and state,
+/// sends a success response, and returns the callback data.
+pub async fn accept_oauth_callback(listener: &TcpListener) -> Result<OAuthCallback, OAuthError> {
+    let (mut socket, _) = listener.accept().await?;
+
+    let mut reader = BufReader::new(&mut socket);
+    let mut request_line = String::new();
+    reader.read_line(&mut request_line).await?;
+
+    let callback = parse_callback_from_request(&request_line)?;
+
+    socket
+        .write_all(create_success_response().as_bytes())
+        .await?;
+
+    Ok(callback)
 }
 
 /// Start a local callback server to capture the OAuth authorization code and state
 ///
 /// Listens on the specified port and waits for the OAuth redirect.
 /// Returns the authorization code and state (CSRF token) from the callback URL.
-pub async fn wait_for_callback(port: u16) -> Result<OAuthCallback> {
+pub async fn wait_for_callback(port: u16) -> Result<OAuthCallback, OAuthError> {
     let addr = format!("127.0.0.1:{port}");
-    let listener = TcpListener::bind(&addr)
-        .await
-        .map_err(|e| AuthError::Io(format!("Failed to bind to {addr}: {e}")))?;
+    let listener = TcpListener::bind(&addr).await?;
+    accept_oauth_callback(&listener).await
+}
 
-    let (mut socket, _) = listener
-        .accept()
-        .await
-        .map_err(|e| AuthError::Io(format!("Failed to accept connection: {e}")))?;
+/// Open a URL in the default browser
+pub fn open_browser(url: &str) -> Result<(), OAuthError> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(std::io::Error::other)?;
+    }
 
-    let mut reader = BufReader::new(&mut socket);
-    let mut request_line = String::new();
-    reader
-        .read_line(&mut request_line)
-        .await
-        .map_err(|e| AuthError::Io(format!("Failed to read request: {e}")))?;
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(std::io::Error::other)?;
+    }
 
-    // Parse the request line: GET /oauth2callback?code=XXX&state=YYY HTTP/1.1
-    let callback = parse_callback_from_request(&request_line)?;
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", url])
+            .spawn()
+            .map_err(std::io::Error::other)?;
+    }
 
-    // Send a success response
-    let response = create_success_response();
-    socket
-        .write_all(response.as_bytes())
-        .await
-        .map_err(|e| AuthError::Io(format!("Failed to write response: {e}")))?;
-
-    Ok(callback)
+    Ok(())
 }
 
 /// Parse the authorization code and state from the HTTP request line
-fn parse_callback_from_request(request_line: &str) -> Result<OAuthCallback> {
+fn parse_callback_from_request(request_line: &str) -> Result<OAuthCallback, OAuthError> {
     // Request format: GET /oauth2callback?code=XXX&state=YYY HTTP/1.1
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
-        return Err(AuthError::InvalidResponse(
+        return Err(OAuthError::InvalidCallback(
             "Invalid HTTP request format".to_string(),
         ));
     }
 
     let path = parts[1];
-    let query_start = path
-        .find('?')
-        .ok_or_else(|| AuthError::InvalidResponse("No query parameters in callback".to_string()))?;
+    let query_start = path.find('?').ok_or_else(|| {
+        OAuthError::InvalidCallback("No query parameters in callback".to_string())
+    })?;
 
     let query = &path[query_start + 1..];
 
@@ -74,7 +131,9 @@ fn parse_callback_from_request(request_line: &str) -> Result<OAuthCallback> {
                         .map(|(_, v)| urlencoding_decode(v))
                 })
                 .unwrap_or_else(|| value.to_string());
-            return Err(AuthError::Other(format!("OAuth error: {error_desc}")));
+            return Err(OAuthError::InvalidCallback(format!(
+                "OAuth error: {error_desc}"
+            )));
         }
     }
 
@@ -92,10 +151,10 @@ fn parse_callback_from_request(request_line: &str) -> Result<OAuthCallback> {
         }
     }
 
-    let code =
-        code.ok_or_else(|| AuthError::InvalidResponse("No authorization code in callback".into()))?;
-    let state =
-        state.ok_or_else(|| AuthError::InvalidResponse("No state parameter in callback".into()))?;
+    let code = code
+        .ok_or_else(|| OAuthError::InvalidCallback("No authorization code in callback".into()))?;
+    let state = state
+        .ok_or_else(|| OAuthError::InvalidCallback("No state parameter in callback".into()))?;
 
     Ok(OAuthCallback { code, state })
 }
@@ -165,35 +224,6 @@ fn create_success_response() -> String {
         body.len(),
         body
     )
-}
-
-/// Open a URL in the default browser
-pub fn open_browser(url: &str) -> Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(url)
-            .spawn()
-            .map_err(|e| AuthError::Other(format!("Failed to open browser: {e}")))?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(url)
-            .spawn()
-            .map_err(|e| AuthError::Other(format!("Failed to open browser: {e}")))?;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", url])
-            .spawn()
-            .map_err(|e| AuthError::Other(format!("Failed to open browser: {e}")))?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

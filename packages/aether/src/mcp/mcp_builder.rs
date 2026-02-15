@@ -1,4 +1,5 @@
 use crate::llm::ToolDefinition;
+use crate::mcp::oauth::OAuthHandler;
 
 use super::{
     ElicitationRequest, McpError, McpManager, McpServerConfig, ParseError, RawMcpConfig,
@@ -7,6 +8,7 @@ use super::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::{
     sync::mpsc::{self, Sender},
     task::JoinHandle,
@@ -29,6 +31,7 @@ pub struct McpBuilder {
     factories: HashMap<String, ServerFactory>,
     mcp_channel_capacity: usize,
     roots: Vec<PathBuf>,
+    oauth_handler: Option<Arc<dyn OAuthHandler>>,
 }
 
 impl Default for McpBuilder {
@@ -38,6 +41,7 @@ impl Default for McpBuilder {
             factories: HashMap::new(),
             mcp_channel_capacity: 1000,
             roots: Vec::new(),
+            oauth_handler: None,
         }
     }
 }
@@ -71,6 +75,11 @@ impl McpBuilder {
         self
     }
 
+    pub fn with_oauth_handler<H: OAuthHandler + 'static>(mut self, handler: H) -> Self {
+        self.oauth_handler = Some(Arc::new(handler));
+        self
+    }
+
     pub async fn from_json_file(mut self, path: &str) -> Result<Self, ParseError> {
         let raw_config = RawMcpConfig::from_json_file(path)?;
         let mcp_configs = raw_config.into_configs(&self.factories).await?;
@@ -84,7 +93,7 @@ impl McpBuilder {
         let (elicitation_tx, _elicitation_rx) =
             mpsc::channel::<ElicitationRequest>(self.mcp_channel_capacity);
 
-        let mut mcp_manager = McpManager::new(elicitation_tx);
+        let mut mcp_manager = McpManager::new(elicitation_tx, self.oauth_handler);
         mcp_manager.add_mcps(self.mcp_configs).await?;
 
         // Set workspace roots if provided
