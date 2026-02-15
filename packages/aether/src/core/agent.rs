@@ -1,10 +1,13 @@
-use crate::agent::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::context::{CompactionConfig, Compactor, TokenTracker};
+use crate::core::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::mcp::run_mcp_task::{McpCommand, ToolExecutionEvent};
-use llm::types::IsoString;
-use llm::{ChatMessage, Context, LlmError, LlmResponse, StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult};
 use agent_events::{AgentMessage, UserMessage};
 use futures::Stream;
+use llm::types::IsoString;
+use llm::{
+    ChatMessage, Context, LlmError, LlmResponse, StreamingModelProvider, ToolCallError,
+    ToolCallRequest, ToolCallResult,
+};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
