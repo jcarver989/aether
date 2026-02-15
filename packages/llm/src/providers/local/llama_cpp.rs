@@ -8,7 +8,7 @@ pub struct LlamaCppProvider {
 }
 
 impl LlamaCppProvider {
-    pub fn new(&self, base_url: &str) -> Self {
+    pub fn new(base_url: &str) -> Self {
         Self {
             client: Client::with_config(get_local_config(base_url)),
         }

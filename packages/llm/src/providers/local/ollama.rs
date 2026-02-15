@@ -9,7 +9,7 @@ pub struct OllamaProvider {
 }
 
 impl OllamaProvider {
-    pub fn new(&self, model: &str, base_url: &str) -> Self {
+    pub fn new(model: &str, base_url: &str) -> Self {
         Self {
             model: model.to_string(),
             client: Client::with_config(get_local_config(base_url)),
