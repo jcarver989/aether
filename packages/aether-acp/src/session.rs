@@ -1,7 +1,7 @@
 use crate::acp_actor::AcpActorHandle;
 use crate::acp_coding_tools::AcpCodingTools;
 use crate::mappers::map_mcp_prompt_to_available_command;
-use aether::agent::{AgentHandle, Prompt, agent};
+use aether::core::{AgentHandle, Prompt, agent};
 use aether::llm::provider::StreamingModelProvider;
 use aether::mcp::McpSpawnResult;
 use aether::mcp::mcp;

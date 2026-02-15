@@ -1,5 +1,5 @@
 use aether::{
-    agent::agent,
+    core::agent,
     llm::providers::openrouter::OpenRouterProvider,
     mcp::{McpSpawnResult, mcp},
 };

@@ -1,4 +1,4 @@
-use aether::{agent::agent, llm::providers::openrouter::OpenRouterProvider};
+use aether::{core::agent, llm::providers::openrouter::OpenRouterProvider};
 use agent_events::{AgentMessage, UserMessage};
 use std::io::{self, Write};
 

@@ -1,5 +1,5 @@
 use aether::{
-    agent::{Prompt, agent},
+    core::{Prompt, agent},
     llm::{StreamingModelProvider, parser::ModelProviderParser},
     mcp::{McpError, McpServerConfig, McpSpawnResult, RawMcpConfig, mcp},
 };

@@ -185,39 +185,7 @@ fn urlencoding_decode(s: &str) -> String {
 
 /// Create an HTML success response
 fn create_success_response() -> String {
-    let body = r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>Authentication Successful</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        .container {
-            text-align: center;
-            padding: 40px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 16px;
-            backdrop-filter: blur(10px);
-        }
-        h1 { margin-bottom: 16px; }
-        p { opacity: 0.9; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Authentication Successful!</h1>
-        <p>You can close this window and return to your terminal.</p>
-    </div>
-</body>
-</html>"#;
+    let body = include_str!("oauth_success.html");
 
     format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

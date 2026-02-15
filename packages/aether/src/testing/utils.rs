@@ -5,7 +5,7 @@ use std::time::Duration;
 use agent_events::{AgentMessage, UserMessage};
 use futures::future::join_all;
 
-use crate::agent::agent;
+use crate::core::agent;
 use crate::mcp::McpSpawnResult;
 use crate::mcp::mcp;
 use crate::testing::FakeMcpServer;

@@ -1,6 +1,6 @@
 use crate::subagent_file::AgentFile;
 use aether::{
-    agent::{AgentHandle, agent},
+    core::{AgentHandle, agent},
     llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser},
     mcp::{McpSpawnResult, ServerInstructions, mcp, run_mcp_task::McpCommand},
 };
