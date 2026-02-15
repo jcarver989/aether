@@ -1,4 +1,4 @@
-use aether::mcp::{McpServerConfig, ParseError, RawMcpConfig};
+use mcp_utils::client::{McpServerConfig, ParseError, RawMcpConfig};
 use std::collections::HashMap;
 use std::env;
 

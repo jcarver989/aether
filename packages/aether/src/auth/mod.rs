@@ -1,9 +1,7 @@
 use thiserror::Error;
 
-pub mod credentials;
 pub mod file_store;
 
-pub use credentials::ProviderCredential;
 pub use file_store::FileCredentialStore;
 
 #[derive(Debug, Error)]

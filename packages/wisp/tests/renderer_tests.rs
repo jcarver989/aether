@@ -1,6 +1,6 @@
 mod test_terminal;
 
-use aether::llm::{ToolCallRequest, ToolCallResult};
+use llm::{ToolCallRequest, ToolCallResult};
 use agent_events::{AgentMessage, UserMessage};
 use test_terminal::{TestTerminal, assert_buffer_eq};
 use wisp::renderer::Renderer;

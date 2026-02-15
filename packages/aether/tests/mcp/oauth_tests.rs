@@ -1,5 +1,6 @@
-use aether::mcp::oauth::{BrowserOAuthHandler, OAuthCallback, OAuthError, OAuthHandler};
-use aether::mcp::{ElicitationRequest, McpServerConfig, McpSpawnResult, mcp};
+use aether::mcp::{McpSpawnResult, mcp};
+use mcp_utils::client::oauth::{BrowserOAuthHandler, OAuthCallback, OAuthError, OAuthHandler};
+use mcp_utils::client::{ElicitationRequest, McpServerConfig};
 use futures::future::BoxFuture;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::sync::Arc;
@@ -83,7 +84,7 @@ async fn builder_with_oauth_handler_spawns_successfully() {
 #[tokio::test]
 async fn http_server_without_handler_returns_error() {
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut manager = aether::mcp::McpManager::new(elicitation_tx, None);
+    let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, None);
 
     let config = StreamableHttpClientTransportConfig {
         uri: "http://localhost:19999/mcp".into(),
@@ -103,7 +104,7 @@ async fn http_server_without_handler_returns_error() {
 async fn http_server_with_handler_attempts_oauth_on_failure() {
     let handler = FakeOAuthHandler::new("test_code", "test_state");
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut manager = aether::mcp::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
+    let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
 
     let config = StreamableHttpClientTransportConfig {
         uri: "http://localhost:19999/mcp".into(),
@@ -129,7 +130,7 @@ async fn http_server_with_handler_attempts_oauth_on_failure() {
 async fn add_mcps_continues_on_oauth_failure() {
     let handler = FakeOAuthHandler::new("code", "state");
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut manager = aether::mcp::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
+    let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
 
     let configs = vec![
         McpServerConfig::Http {

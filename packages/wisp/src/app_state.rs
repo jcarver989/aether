@@ -1,10 +1,10 @@
 use crate::cli::Cli;
-use aether::mcp::McpServerConfig;
-use aether::mcp::oauth::BrowserOAuthHandler;
 use aether::{
     core::{AgentHandle, Prompt, agent},
     mcp::{McpSpawnResult, mcp},
 };
+use mcp_utils::client::config::McpServerConfig;
+use mcp_utils::client::oauth::BrowserOAuthHandler;
 use agent_events::{AgentMessage, UserMessage};
 use mcp_coding::{CodingMcp, DefaultCodingTools, LspCodingTools};
 use mcp_skills::SkillsMcp;

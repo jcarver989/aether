@@ -1,7 +1,7 @@
 use mcp_utils::client::McpManager;
 use mcp_utils::client::mcp_client::McpClient;
 
-use crate::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
+use llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use futures::future::Either;
 use futures::stream::{self, StreamExt};
 use rmcp::RoleClient;

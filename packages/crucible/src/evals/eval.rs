@@ -11,7 +11,7 @@ use crate::{
     evals::assertion::{EvalAssertion, EvalAssertionResult},
     hooks::Hook,
 };
-use aether::llm::StreamingModelProvider;
+use llm::StreamingModelProvider;
 use std::path::{Path, PathBuf};
 
 pub struct Eval {

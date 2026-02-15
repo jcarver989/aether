@@ -1,6 +1,8 @@
 use aether::core::Prompt;
-use aether::mcp::{McpSpawnResult, ServerInstructions, mcp};
-use aether::testing::{FakeLlmProvider, FakeMcpServer, fake_mcp};
+use aether::mcp::{McpSpawnResult, mcp};
+use mcp_utils::client::ServerInstructions;
+use aether::testing::{FakeMcpServer, fake_mcp};
+use llm::testing::FakeLlmProvider;
 use agent_events::{AgentMessage, UserMessage};
 
 #[tokio::test]
@@ -175,7 +177,7 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
 
     // The system message should contain our MCP instructions
     if let Some(first_msg) = contexts[0].messages().first() {
-        if let aether::llm::ChatMessage::System { content, .. } = first_msg {
+        if let llm::ChatMessage::System { content, .. } = first_msg {
             assert!(content.contains("<mcp-server-instructions name=\"test-server\">"));
             assert!(content.contains("Test instructions"));
         } else {

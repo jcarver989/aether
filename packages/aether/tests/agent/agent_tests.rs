@@ -3,12 +3,13 @@ use std::time::Duration;
 
 use aether::{
     core::COMPLETION_SIGNAL,
-    llm::ChatMessage,
     testing::{
-        agent_message, llm_response, test_agent,
+        agent_message, test_agent,
         {AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, SlowToolRequest},
     },
 };
+use llm::ChatMessage;
+use llm::testing::llm_response;
 use agent_events::{AgentMessage, UserMessage};
 
 #[tokio::test]
@@ -417,7 +418,7 @@ async fn test_auto_continue_disabled_with_zero() -> Result<(), Box<dyn Error>> {
 #[tokio::test]
 async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<(), Box<dyn Error>>
 {
-    use aether::llm::LlmResponse;
+    use llm::LlmResponse;
 
     let tool_request = AddNumbersRequest::new(2, 3);
 
