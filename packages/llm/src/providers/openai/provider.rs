@@ -29,7 +29,10 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
         let tools = if context.tools().is_empty() {
             None
         } else {
-            Some(map_tools(context.tools()))
+            match map_tools(context.tools()) {
+                Ok(t) => Some(t),
+                Err(e) => return Box::pin(async_stream::stream! { yield Err(e); }),
+            }
         };
 
         Box::pin(async_stream::stream! {

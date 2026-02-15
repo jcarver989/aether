@@ -1,5 +1,5 @@
-use aether::mcp::{RawMcpConfig, RawMcpServerConfig};
 use clap::Parser;
+use mcp_utils::client::{RawMcpConfig, RawMcpServerConfig};
 use rmcp::{
     ServerHandler,
     handler::server::{

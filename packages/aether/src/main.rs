@@ -37,7 +37,11 @@ pub async fn main() {
         }
     };
 
-    let system_prompt = match cli.system.clone().or(Prompt::agents_md().build().ok()) {
+    let system_prompt = match cli
+        .system
+        .clone()
+        .or(Prompt::agents_md().build().await.ok())
+    {
         Some(p) => p,
         None => {
             eprintln!("Error: AGENTS.md or --system is required");

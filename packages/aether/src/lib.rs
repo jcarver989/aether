@@ -3,7 +3,6 @@
 pub mod agent;
 pub mod auth;
 pub mod context;
-pub mod fs;
 pub mod mcp;
 pub mod testing;
 pub mod tools;

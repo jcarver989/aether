@@ -62,7 +62,7 @@ impl FileCredentialStore {
 
     /// Load the credentials file
     async fn load_file(&self) -> Result<CredentialsFile> {
-        if let Some(file) = self.cache.read().unwrap().clone() {
+        if let Some(file) = self.cache.read().unwrap_or_else(|e| e.into_inner()).clone() {
             return Ok(file);
         }
 
@@ -72,7 +72,7 @@ impl FileCredentialStore {
             Err(e) => return Err(AuthError::Io(e.to_string())),
         };
 
-        *self.cache.write().unwrap() = Some(file.clone());
+        *self.cache.write().unwrap_or_else(|e| e.into_inner()) = Some(file.clone());
 
         Ok(file)
     }
@@ -92,7 +92,7 @@ impl FileCredentialStore {
         fs::rename(&temp_path, &self.path).await?;
         set_permissions(&self.path).await?;
 
-        *self.cache.write().unwrap() = Some(file.clone());
+        *self.cache.write().unwrap_or_else(|e| e.into_inner()) = Some(file.clone());
 
         Ok(())
     }
@@ -170,6 +170,34 @@ mod tests {
 
         store.remove_provider("test").await.unwrap();
         assert!(store.get_provider("test").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_poisoned_lock_recovery() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("credentials.json");
+        let store = FileCredentialStore::with_path(path);
+
+        // Store a credential first
+        store
+            .set_provider("anthropic", ProviderCredential::api_key("sk-test"))
+            .await
+            .unwrap();
+
+        // Poison the lock by panicking while holding a write guard
+        let cache = store.cache.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = cache.write().unwrap();
+            panic!("intentional panic to poison the lock");
+        })
+        .join();
+
+        // The lock is now poisoned — operations should still work
+        let loaded = store.get_provider("anthropic").await.unwrap();
+        assert!(loaded.is_some());
+        match loaded.unwrap() {
+            ProviderCredential::ApiKey { key } => assert_eq!(key, "sk-test"),
+        }
     }
 
     #[tokio::test]

@@ -26,7 +26,8 @@ pub struct Session {
     pub id: String,
     pub agent_tx: mpsc::Sender<UserMessage>,
     pub agent_rx: mpsc::Receiver<AgentMessage>,
-    pub _agent_handle: AgentHandle,
+    #[allow(dead_code)]
+    pub agent_handle: AgentHandle,
     pub _mcp_handle: JoinHandle<()>,
     pub cancel_flag: Arc<AtomicBool>,
     pub mcp_tx: mpsc::Sender<McpCommand>,
@@ -126,7 +127,9 @@ impl Session {
                 parts.push(Prompt::text(custom_prompt));
             }
 
-            Prompt::build_all(&parts).map_err(|e| format!("Failed to build system prompt: {e}"))?
+            Prompt::build_all(&parts)
+                .await
+                .map_err(|e| format!("Failed to build system prompt: {e}"))?
         };
 
         let builder = agent(llm)
@@ -141,7 +144,7 @@ impl Session {
             id,
             agent_tx,
             agent_rx,
-            _agent_handle: agent_handle,
+            agent_handle,
             _mcp_handle: mcp_handle,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             mcp_tx,

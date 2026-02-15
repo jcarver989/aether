@@ -41,7 +41,10 @@ impl ProviderFactory for ZAiProvider {
 
 impl StreamingModelProvider for ZAiProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        let request = build_chat_request(&self.model, context);
+        let request = match build_chat_request(&self.model, context) {
+            Ok(req) => req,
+            Err(e) => return Box::pin(async_stream::stream! { yield Err(e); }),
+        };
         create_custom_stream(&self.client, request)
     }
 

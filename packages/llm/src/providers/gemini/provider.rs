@@ -74,7 +74,13 @@ impl StreamingModelProvider for GeminiProvider {
 
             tracing::info!("Using Gemini API with API key (OpenAI-compatible endpoint)");
             let client = Self::build_openai_client(&api_key);
-            let request = build_chat_request(&provider.model, &context);
+            let request = match build_chat_request(&provider.model, &context) {
+                Ok(req) => req,
+                Err(e) => {
+                    yield Err(e);
+                    return;
+                }
+            };
             let mut inner_stream = create_custom_stream(&client, request);
 
             while let Some(result) = inner_stream.next().await {

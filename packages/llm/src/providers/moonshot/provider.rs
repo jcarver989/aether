@@ -102,19 +102,22 @@ fn map_messages(messages: &[ChatMessage]) -> Vec<MoonshotChatMessage> {
         .collect()
 }
 
-fn build_moonshot_request(model: &str, context: &Context) -> MoonshotChatRequest {
+fn build_moonshot_request(
+    model: &str,
+    context: &Context,
+) -> std::result::Result<MoonshotChatRequest, LlmError> {
     let tools = if context.tools().is_empty() {
         None
     } else {
-        Some(map_tools(context.tools()))
+        Some(map_tools(context.tools())?)
     };
 
-    MoonshotChatRequest {
+    Ok(MoonshotChatRequest {
         model: model.to_string(),
         messages: map_messages(context.messages()),
         stream: Some(true),
         tools,
-    }
+    })
 }
 
 pub struct MoonshotProvider {
@@ -154,7 +157,10 @@ impl ProviderFactory for MoonshotProvider {
 
 impl StreamingModelProvider for MoonshotProvider {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        let request = build_moonshot_request(&self.model, context);
+        let request = match build_moonshot_request(&self.model, context) {
+            Ok(req) => req,
+            Err(e) => return Box::pin(async_stream::stream! { yield Err(e); }),
+        };
         create_custom_stream_generic(&self.client, request)
     }
 
@@ -203,7 +209,7 @@ mod tests {
     #[test]
     fn test_build_request_includes_reasoning_content_on_assistant_tool_message() {
         let context = context_with_assistant_message(assistant_with_tool_call(Some("trace chunk")));
-        let request = build_moonshot_request("kimi-k2.5", &context);
+        let request = build_moonshot_request("kimi-k2.5", &context).unwrap();
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["messages"][1]["role"], "assistant");
@@ -213,7 +219,7 @@ mod tests {
     #[test]
     fn test_build_request_omits_reasoning_content_when_empty() {
         let context = context_with_assistant_message(assistant_with_tool_call(None));
-        let request = build_moonshot_request("kimi-k2.5", &context);
+        let request = build_moonshot_request("kimi-k2.5", &context).unwrap();
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["messages"][1]["role"], "assistant");

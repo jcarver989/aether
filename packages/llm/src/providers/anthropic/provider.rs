@@ -231,11 +231,19 @@ fn build_client() -> Result<Client> {
         .map_err(|e| LlmError::HttpClientCreation(e.to_string()))
 }
 
+fn should_redact_header(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower == "authorization"
+        || lower == "x-api-key"
+        || lower.contains("secret")
+        || lower.contains("token")
+}
+
 fn format_headers(headers: &header::HeaderMap) -> String {
     let mut parts = Vec::new();
     for (name, value) in headers.iter() {
         let name_str = name.as_str();
-        let value_str = if name_str.eq_ignore_ascii_case("authorization") {
+        let value_str = if should_redact_header(name_str) {
             "<redacted>".to_string()
         } else {
             value.to_str().unwrap_or("<non-utf8>").to_string()
@@ -444,5 +452,42 @@ mod tests {
             provider.display_name(),
             "Anthropic (claude-sonnet-4-5-20250929)"
         );
+    }
+
+    #[test]
+    fn format_headers_redacts_x_api_key() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("sk-secret-123"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+        let formatted = format_headers(&headers);
+        assert!(formatted.contains("x-api-key=<redacted>"));
+        assert!(formatted.contains("content-type=application/json"));
+        assert!(!formatted.contains("sk-secret-123"));
+    }
+
+    #[test]
+    fn format_headers_redacts_authorization() {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer token123"));
+
+        let formatted = format_headers(&headers);
+        assert!(formatted.contains("authorization=<redacted>"));
+        assert!(!formatted.contains("token123"));
+    }
+
+    #[test]
+    fn format_headers_redacts_secret_and_token_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-client-secret", HeaderValue::from_static("mysecret"));
+        headers.insert("x-auth-token", HeaderValue::from_static("mytoken"));
+        headers.insert("accept", HeaderValue::from_static("text/plain"));
+
+        let formatted = format_headers(&headers);
+        assert!(formatted.contains("x-client-secret=<redacted>"));
+        assert!(formatted.contains("x-auth-token=<redacted>"));
+        assert!(formatted.contains("accept=text/plain"));
+        assert!(!formatted.contains("mysecret"));
+        assert!(!formatted.contains("mytoken"));
     }
 }

@@ -1,12 +1,10 @@
-use async_openai::types::chat::{
-    ChatCompletionMessageToolCallChunk, CreateChatCompletionStreamResponse,
-};
+use async_openai::types::chat::CreateChatCompletionStreamResponse;
 use async_stream;
-use std::collections::HashMap;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
 
-use crate::{LlmError, LlmResponse, Result, ToolCallRequest};
+use crate::providers::tool_call_collector::ToolCallCollector;
+use crate::{LlmError, LlmResponse, Result};
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard async_openai CreateChatCompletionStreamResponse types.
@@ -19,7 +17,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
         let message_id = uuid::Uuid::new_v4().to_string();
         yield Ok(LlmResponse::Start { message_id });
 
-        let mut tool_collector = ToolCallCollector::new();
+        let mut collector = ToolCallCollector::<u32>::new();
 
         while let Some(result) = stream.next().await {
             match result {
@@ -41,16 +39,19 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                             && !content.is_empty() {
                                 // If we have pending tool calls and now we're getting content,
                                 // complete all tool calls first
-                                for tool_call in tool_collector.complete_all_tool_calls() {
+                                for tool_call in collector.complete_all() {
                                     yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                                 }
                                 yield Ok(LlmResponse::Text { chunk: content });
                             }
 
                         if let Some(tool_calls) = delta.tool_calls {
-                            for tool_call in tool_calls {
-                                let responses = tool_collector.handle_tool_call_delta(tool_call);
-                                for response in responses {
+                            for tc in tool_calls {
+                                let (id, name, args) = match tc.function {
+                                    Some(f) => (tc.id, f.name, f.arguments),
+                                    None => (tc.id, None, None),
+                                };
+                                for response in collector.handle_delta(tc.index, id, name, args) {
                                     yield Ok(response);
                                 }
                             }
@@ -60,7 +61,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                             let finish_reason_str = format!("{finish_reason:?}");
                             debug!("Received finish reason: {finish_reason_str}");
 
-                            for tool_call in tool_collector.complete_all_tool_calls() {
+                            for tool_call in collector.complete_all() {
                                 yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                             }
                             // Don't break yet - continue to capture usage from subsequent chunks
@@ -73,7 +74,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                         // 2. Stream is done (some providers)
                         // We already extracted usage above if present
                         debug!("No choices in response, ending stream");
-                        for tool_call in tool_collector.complete_all_tool_calls() {
+                        for tool_call in collector.complete_all() {
                             yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                         }
                         break;
@@ -87,69 +88,5 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
         }
 
         yield Ok(LlmResponse::Done);
-    }
-}
-
-struct ToolCallCollector {
-    active_tool_calls: HashMap<u32, (String, String, String)>,
-}
-
-impl ToolCallCollector {
-    fn new() -> Self {
-        Self {
-            active_tool_calls: HashMap::new(),
-        }
-    }
-
-    pub fn handle_tool_call_delta(
-        &mut self,
-        tool_call: ChatCompletionMessageToolCallChunk,
-    ) -> Vec<LlmResponse> {
-        let mut responses = Vec::new();
-        let index = tool_call.index;
-
-        if let Some(function) = tool_call.function {
-            if let Some(name) = function.name {
-                let id = tool_call.id.unwrap_or_else(|| format!("tool_call_{index}"));
-                self.start_tool_call(index, id.clone(), name.clone());
-                responses.push(LlmResponse::ToolRequestStart { id, name });
-            }
-
-            if let Some(arguments) = function.arguments
-                && !arguments.is_empty()
-                && let Some(id) = self.add_arguments(index, &arguments)
-            {
-                responses.push(LlmResponse::ToolRequestArg {
-                    id,
-                    chunk: arguments,
-                });
-            }
-        }
-
-        responses
-    }
-
-    pub fn complete_all_tool_calls(&mut self) -> Vec<ToolCallRequest> {
-        self.active_tool_calls
-            .drain()
-            .map(|(_, (id, name, arguments))| ToolCallRequest {
-                id,
-                name,
-                arguments,
-            })
-            .collect()
-    }
-
-    fn start_tool_call(&mut self, index: u32, id: String, name: String) {
-        self.active_tool_calls
-            .insert(index, (id, name, String::new()));
-    }
-
-    fn add_arguments(&mut self, index: u32, arguments: &str) -> Option<String> {
-        if let Some((id, _, accumulated_args)) = self.active_tool_calls.get_mut(&index) {
-            accumulated_args.push_str(arguments);
-            return Some(id.clone());
-        }
-        None
     }
 }

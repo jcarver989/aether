@@ -7,7 +7,7 @@ use async_openai::types::chat::{
     FunctionObject,
 };
 
-use crate::{ChatMessage, ToolDefinition};
+use crate::{ChatMessage, LlmError, ToolDefinition};
 
 impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
     fn from(msg: ChatMessage) -> Self {
@@ -89,17 +89,60 @@ pub fn map_messages(messages: &[ChatMessage]) -> Vec<ChatCompletionRequestMessag
     messages.iter().filter_map(Into::into).collect()
 }
 
-pub fn map_tools(tools: &[ToolDefinition]) -> Vec<ChatCompletionTools> {
+pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<ChatCompletionTools>, LlmError> {
     tools.iter().map(tool_definition_to_openai).collect()
 }
 
-fn tool_definition_to_openai(tool: &ToolDefinition) -> ChatCompletionTools {
-    ChatCompletionTools::Function(ChatCompletionTool {
+fn tool_definition_to_openai(tool: &ToolDefinition) -> Result<ChatCompletionTools, LlmError> {
+    let parameters =
+        serde_json::from_str(&tool.parameters).map_err(|e| LlmError::ToolParameterParsing {
+            tool_name: tool.name.clone(),
+            error: e.to_string(),
+        })?;
+
+    Ok(ChatCompletionTools::Function(ChatCompletionTool {
         function: FunctionObject {
             name: tool.name.clone(),
             description: Some(tool.description.clone()),
-            parameters: Some(serde_json::from_str(&tool.parameters).unwrap_or_default()),
+            parameters: Some(parameters),
             strict: Some(false),
         },
-    })
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_tools_with_valid_json() {
+        let tools = vec![ToolDefinition {
+            name: "search".to_string(),
+            description: "Search for things".to_string(),
+            parameters: r#"{"type": "object", "properties": {"q": {"type": "string"}}}"#
+                .to_string(),
+            server: None,
+        }];
+        let result = map_tools(&tools);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn map_tools_with_invalid_json_returns_error() {
+        let tools = vec![ToolDefinition {
+            name: "broken_tool".to_string(),
+            description: "A tool with bad params".to_string(),
+            parameters: "not valid json{{{".to_string(),
+            server: None,
+        }];
+        let result = map_tools(&tools);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            LlmError::ToolParameterParsing { tool_name, .. } => {
+                assert_eq!(tool_name, "broken_tool");
+            }
+            other => panic!("Expected ToolParameterParsing, got: {other}"),
+        }
+    }
 }

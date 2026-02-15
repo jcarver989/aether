@@ -14,7 +14,24 @@ use tokio::task::JoinHandle;
 
 /// Handle for communicating with a running Agent
 pub struct AgentHandle {
-    _agent_handle: JoinHandle<()>,
+    handle: JoinHandle<()>,
+}
+
+impl AgentHandle {
+    /// Abort the agent task immediately.
+    pub fn abort(&self) {
+        self.handle.abort();
+    }
+
+    /// Returns `true` if the agent task has finished.
+    pub fn is_finished(&self) -> bool {
+        self.handle.is_finished()
+    }
+
+    /// Wait for the agent task to complete.
+    pub async fn await_completion(self) {
+        let _ = self.handle.await;
+    }
 }
 
 pub struct AgentBuilder<T: StreamingModelProvider> {
@@ -165,7 +182,7 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
         let mut messages = Vec::new();
 
         if !self.prompts.is_empty() {
-            let system_content = Prompt::build_all(&self.prompts)?;
+            let system_content = Prompt::build_all(&self.prompts).await?;
             if !system_content.is_empty() {
                 messages.push(ChatMessage::System {
                     content: system_content,
@@ -200,8 +217,35 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
             user_message_tx,
             agent_message_rx,
             AgentHandle {
-                _agent_handle: agent_handle,
+                handle: agent_handle,
             },
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_agent_handle_is_finished() {
+        let handle = AgentHandle {
+            handle: tokio::spawn(async {}),
+        };
+        handle.await_completion().await;
+    }
+
+    #[tokio::test]
+    async fn test_agent_handle_abort() {
+        let handle = AgentHandle {
+            handle: tokio::spawn(async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+            }),
+        };
+        assert!(!handle.is_finished());
+        handle.abort();
+        // Give the runtime a moment to process the abort
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(handle.is_finished());
     }
 }

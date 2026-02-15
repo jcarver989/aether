@@ -153,7 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Create Agent
     let (tx, mut rx, _handle) = agent(llm)
-        .system(&Prompt::agents_md().build()?) // <-- Load system prompt from AGENTS.md (recursively searches parent directories)
+        .system(&Prompt::agents_md().build().await?) // <-- Load system prompt from AGENTS.md (recursively searches parent directories)
         .tools(mcp_tx, tools) // <-- Give the agent MCP tools
         .spawn()
         .await?;

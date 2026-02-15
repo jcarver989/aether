@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
-use super::types::{ChatCompletionStreamResponse, ToolCallDelta};
-use crate::{LlmError, LlmResponse, LlmResponseStream, Result, ToolCallRequest};
+use super::types::ChatCompletionStreamResponse;
+use crate::providers::tool_call_collector::ToolCallCollector;
+use crate::{LlmError, LlmResponse, LlmResponseStream, Result};
 use async_openai::{Client, config::OpenAIConfig, types::chat::CreateChatCompletionRequest};
 use async_stream;
 use serde::Serialize;
@@ -53,7 +52,7 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
         let message_id = uuid::Uuid::new_v4().to_string();
         yield Ok(LlmResponse::Start { message_id });
 
-        let mut tool_collector = ToolCallCollector::new();
+        let mut collector = ToolCallCollector::<i32>::new();
         let mut chunk_count: u32 = 0;
         let mut had_text = false;
         let mut had_reasoning = false;
@@ -83,7 +82,7 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
                         if let Some(content) = delta.content
                             && !content.is_empty() {
                                 had_text = true;
-                                for tool_call in tool_collector.complete_all_tool_calls() {
+                                for tool_call in collector.complete_all() {
                                     yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                                 }
                                 yield Ok(LlmResponse::Text { chunk: content });
@@ -91,9 +90,12 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
 
                         if let Some(tool_calls) = delta.tool_calls {
                             had_tool_calls = true;
-                            for tool_call in tool_calls {
-                                let responses = tool_collector.handle_tool_call_delta(tool_call);
-                                for response in responses {
+                            for tc in tool_calls {
+                                let (id, name, args) = match tc.function {
+                                    Some(f) => (tc.id, f.name, f.arguments),
+                                    None => (tc.id, None, None),
+                                };
+                                for response in collector.handle_delta(tc.index, id, name, args) {
                                     yield Ok(response);
                                 }
                             }
@@ -103,7 +105,7 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
                             let finish_reason_str = format!("{finish_reason:?}");
                             debug!("Received finish reason: {finish_reason_str}");
 
-                            for tool_call in tool_collector.complete_all_tool_calls() {
+                            for tool_call in collector.complete_all() {
                                 yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                             }
                             // Continue stream to capture usage chunks after finish_reason.
@@ -113,7 +115,7 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
                         // 1. Final usage-only chunk after finish_reason (OpenRouter)
                         // 2. Stream is done (some providers)
                         info!(chunk_count, had_text, had_reasoning, had_tool_calls, "No choices in chunk, ending stream");
-                        for tool_call in tool_collector.complete_all_tool_calls() {
+                        for tool_call in collector.complete_all() {
                             yield Ok(LlmResponse::ToolRequestComplete { tool_call });
                         }
                         break;
@@ -136,78 +138,12 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
     }
 }
 
-struct ToolCallCollector {
-    active_tool_calls: HashMap<i32, (String, String, String)>,
-}
-
-impl ToolCallCollector {
-    fn new() -> Self {
-        Self {
-            active_tool_calls: HashMap::new(),
-        }
-    }
-
-    fn handle_tool_call_delta(&mut self, tool_call: ToolCallDelta) -> Vec<LlmResponse> {
-        let mut responses = Vec::new();
-        let ToolCallDelta {
-            index,
-            id,
-            function,
-            ..
-        } = tool_call;
-
-        if let Some(function) = function {
-            if let Some(name) = function.name {
-                let id = id.unwrap_or_else(|| format!("tool_call_{index}"));
-                self.start_tool_call(index, id.clone(), name.clone());
-                responses.push(LlmResponse::ToolRequestStart { id, name });
-            }
-
-            if let Some(arguments) = function.arguments
-                && !arguments.is_empty()
-                && let Some(id) = self.add_arguments(index, &arguments)
-            {
-                responses.push(LlmResponse::ToolRequestArg {
-                    id,
-                    chunk: arguments,
-                });
-            }
-        }
-
-        responses
-    }
-
-    fn complete_all_tool_calls(&mut self) -> Vec<ToolCallRequest> {
-        self.active_tool_calls
-            .drain()
-            .map(|(_, (id, name, arguments))| ToolCallRequest {
-                id,
-                name,
-                arguments,
-            })
-            .collect()
-    }
-
-    fn start_tool_call(&mut self, index: i32, id: String, name: String) {
-        self.active_tool_calls
-            .insert(index, (id, name, String::new()));
-    }
-
-    fn add_arguments(&mut self, index: i32, arguments: &str) -> Option<String> {
-        if let Some((id, _, accumulated_args)) = self.active_tool_calls.get_mut(&index) {
-            accumulated_args.push_str(arguments);
-            return Some(id.clone());
-        }
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::providers::openai_compatible::types::{
         ChatCompletionStreamChoice, ChatCompletionStreamResponseDelta, FinishReason,
-        FunctionCallDelta,
+        FunctionCallDelta, ToolCallDelta,
     };
     use tokio_stream::StreamExt;
 
