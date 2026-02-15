@@ -3,15 +3,14 @@ mod test_terminal;
 use aether::llm::{ToolCallRequest, ToolCallResult};
 use agent_events::{AgentMessage, UserMessage};
 use test_terminal::{TestTerminal, assert_buffer_eq};
-use wisp::colors::Theme;
 use wisp::renderer::Renderer;
 
 #[tokio::test]
 async fn test_agent_message_text_chunks() {
-    let (renderer, _theme) = render(vec![
+    let renderer = render(vec![
         text_chunk("Hello"),
         text_chunk(" World"),
-        text_complete(""), // Signal completion
+        text_complete(""),
     ])
     .await;
 
@@ -20,7 +19,7 @@ async fn test_agent_message_text_chunks() {
 
 #[tokio::test]
 async fn test_agent_message_tool_call() {
-    let (renderer, _theme) = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]).await;
+    let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]).await;
 
     assert_buffer_eq(
         renderer.writer(),
@@ -31,14 +30,12 @@ async fn test_agent_message_tool_call() {
 #[tokio::test]
 async fn test_agent_message_tool_result() {
     let args = r#"{"arg1": "value1"}"#;
-    let (renderer, _theme) = render(vec![
+    let renderer = render(vec![
         tool_call("test_tool", args),
         tool_result("test_tool", args, "success"),
     ])
     .await;
 
-    // The tool result should have overwritten the tool call on the same line
-    // So we should only see the success message with a single prompt
     assert_buffer_eq(
         renderer.writer(),
         &["● test_tool ✓ {\"arg1\": \"value1\"}", ">"],
@@ -48,7 +45,7 @@ async fn test_agent_message_tool_result() {
 #[tokio::test]
 async fn test_multiple_messages_sequence() {
     let args = r#"{"query": "test"}"#;
-    let (renderer, _theme) = render(vec![
+    let renderer = render(vec![
         text_complete("Processing your request"),
         tool_call("search", args),
         tool_result("search", args, "found items"),
@@ -56,14 +53,14 @@ async fn test_multiple_messages_sequence() {
     ])
     .await;
 
-    // The tool call clears the previous prompt line, and the tool result
-    // updates the tool call line in place without adding a new prompt
+    // After the first text_complete, tool calls + text are pushed to scrollback.
+    // Then tool_call + tool_result happen, then text_complete pushes everything to scrollback again.
     assert_buffer_eq(
         renderer.writer(),
         &[
             "Processing your request",
             "● search ✓ {\"query\": \"test\"}",
-            "  Found results", // Has leading spaces from clear line position
+            "Found results",
             ">",
         ],
     );
@@ -75,8 +72,7 @@ async fn test_streaming_tool_call_arguments() {
     let args2 = r#"{"file": "test.rs"#;
     let args_complete = r#"{"file": "test.rs"}"#;
 
-    let (renderer, _theme) = render(vec![
-        // Simulate streaming arguments - same tool ID, arguments build up
+    let renderer = render(vec![
         tool_call_with_id("Read", "call_1", args1),
         tool_call_with_id("Read", "call_1", args2),
         tool_call_with_id("Read", "call_1", args_complete),
@@ -84,8 +80,6 @@ async fn test_streaming_tool_call_arguments() {
     ])
     .await;
 
-    // Should only render one line for the tool call, updated as arguments stream in
-    // The duplicate tool call detection should prevent multiple lines
     assert_buffer_eq(
         renderer.writer(),
         &["● Read ✓ {\"file\": \"test.rs\"}", ">"],
@@ -98,7 +92,7 @@ async fn test_multiple_parallel_tool_calls() {
     let args2 = r#"{"pattern": "foo"}"#;
     let args3 = r#"{"path": "src/"}"#;
 
-    let (renderer, _theme) = render(vec![
+    let renderer = render(vec![
         tool_call("Read", args1),
         tool_call("Grep", args2),
         tool_call("Glob", args3),
@@ -108,8 +102,6 @@ async fn test_multiple_parallel_tool_calls() {
     ])
     .await;
 
-    // Each tool call should render on its own line with the last one adding a prompt
-    // Tool results should update their respective lines in-place without adding new prompts
     assert_buffer_eq(
         renderer.writer(),
         &[
@@ -121,19 +113,16 @@ async fn test_multiple_parallel_tool_calls() {
     );
 }
 
-async fn render(messages: Vec<AgentMessage>) -> (Renderer<TestTerminal>, Theme) {
+async fn render(messages: Vec<AgentMessage>) -> Renderer<TestTerminal> {
     let terminal = TestTerminal::new(200, 40);
-    let mut renderer = Renderer::new(terminal);
+    let mut renderer = Renderer::new(terminal, 0);
+    renderer.update_render_context_with((200, 40));
 
     for msg in messages {
-        // Update context with current terminal state
-        let position = renderer.writer().cursor_position();
-        let size = renderer.writer().size();
-        renderer.update_render_context_with(position, size);
         renderer.on_agent_message(msg).await.unwrap();
     }
 
-    (renderer, Theme::default())
+    renderer
 }
 
 #[tokio::test]
@@ -141,26 +130,25 @@ async fn test_user_message_submission() {
     use tokio::sync::mpsc;
 
     let terminal = TestTerminal::new(200, 40);
-    let mut renderer = Renderer::new(terminal);
+    let mut renderer = Renderer::new(terminal, 0);
+    renderer.update_render_context_with((200, 40));
+
     let (tx, _rx) = mpsc::channel(10);
 
-    // Update context with current terminal state
-    let position = renderer.writer().cursor_position();
-    let size = renderer.writer().size();
-    renderer.update_render_context_with(position, size);
+    // Render initial prompt
+    renderer.initial_render().unwrap();
 
     // Simulate typing "Hello world" and pressing Enter
     type_string(&mut renderer, "Hello world", &tx).await;
     press_enter(&mut renderer, &tx).await;
 
-    // Verify the terminal output shows the user's message followed by a new prompt
-    // Note: InputPrompt adds a blank line (\r\n) before the prompt
+    // push_to_scrollback clears the managed region (row 0 prompt), writes "Hello world"
+    // at row 0, then render_frame draws the new prompt at row 1
     assert_buffer_eq(
         renderer.writer(),
         &[
-            "Hello world",
-            "", // Blank line from InputPrompt's \r\n
-            ">",
+            "Hello world", // User message in scrollback (overwrites initial prompt)
+            ">",           // New prompt
         ],
     );
 }
