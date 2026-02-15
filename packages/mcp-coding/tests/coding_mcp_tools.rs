@@ -1,7 +1,5 @@
-mod common;
-
-use common::mcp::connect;
 use mcp_coding::CodingMcp;
+use mcp_utils::testing::connect;
 use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
 use std::fs;
 

@@ -14,8 +14,11 @@ path = "src/main.rs"
 [dependencies]
 aether = { path = "../aether" }
 agent-events = { path = "../agent-events" }
-mcp_lexicon = { path = "../mcp-lexicon" }
+mcp_utils = { path = "../mcp-utils" }
 mcp-coding = { path = "../mcp-coding" }
+mcp-skills = { path = "../mcp-skills" }
+mcp-subagents = { path = "../mcp-subagents" }
+mcp-tasks = { path = "../mcp-tasks" }
 agent-client-protocol = "0.9.4"
 rmcp = { workspace = true }
 tokio = { workspace = true }

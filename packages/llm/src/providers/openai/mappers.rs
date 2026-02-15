@@ -85,29 +85,21 @@ impl From<&ChatMessage> for Option<ChatCompletionRequestMessage> {
     }
 }
 
-impl From<ToolDefinition> for ChatCompletionTools {
-    fn from(tool: ToolDefinition) -> Self {
-        ChatCompletionTools::Function(ChatCompletionTool {
-            function: FunctionObject {
-                name: tool.name,
-                description: Some(tool.description),
-                parameters: Some(serde_json::from_str(&tool.parameters).unwrap_or_default()),
-                strict: Some(false),
-            },
-        })
-    }
-}
-
-impl From<&ToolDefinition> for ChatCompletionTools {
-    fn from(tool: &ToolDefinition) -> Self {
-        tool.clone().into()
-    }
-}
-
 pub fn map_messages(messages: &[ChatMessage]) -> Vec<ChatCompletionRequestMessage> {
     messages.iter().filter_map(Into::into).collect()
 }
 
 pub fn map_tools(tools: &[ToolDefinition]) -> Vec<ChatCompletionTools> {
-    tools.iter().map(Into::into).collect()
+    tools.iter().map(tool_definition_to_openai).collect()
+}
+
+fn tool_definition_to_openai(tool: &ToolDefinition) -> ChatCompletionTools {
+    ChatCompletionTools::Function(ChatCompletionTool {
+        function: FunctionObject {
+            name: tool.name.clone(),
+            description: Some(tool.description.clone()),
+            parameters: Some(serde_json::from_str(&tool.parameters).unwrap_or_default()),
+            strict: Some(false),
+        },
+    })
 }

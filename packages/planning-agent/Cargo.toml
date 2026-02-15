@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-mcp_lexicon = { path = "../mcp-lexicon" }
+mcp_utils = { path = "../mcp-utils" }
 mcp-coding = { path = "../mcp-coding" }
 crucible = { path = "../crucible" }
 aether = { path = "../aether" }

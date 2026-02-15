@@ -1,4 +1,6 @@
-use crate::mcp::McpManager;
+use mcp_utils::client::McpManager;
+use mcp_utils::client::mcp_client::McpClient;
+
 use crate::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use futures::future::Either;
 use futures::stream::{self, StreamExt};
@@ -9,8 +11,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-
-use super::client::McpClient;
 
 /// Events emitted during tool execution lifecycle
 #[derive(Debug)]

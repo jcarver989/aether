@@ -9,7 +9,11 @@ use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol as acp;
 use agent_events::{AgentMessage, UserMessage};
 use futures::FutureExt;
-use mcp_lexicon::{CodingMcp, LspCodingTools, PluginsMcp, ServiceExt, TasksMcp};
+use mcp_coding::{CodingMcp, LspCodingTools};
+use mcp_skills::SkillsMcp;
+use mcp_subagents::SubAgentsMcp;
+use mcp_tasks::TasksMcp;
+use mcp_utils::ServiceExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -72,11 +76,22 @@ impl Session {
                 }),
             )
             .register_in_memory_server(
-                "plugins",
+                "skills",
                 Box::new(|args| {
                     async move {
-                        PluginsMcp::from_args(args)
-                            .expect("Failed to parse PluginsMcp args")
+                        SkillsMcp::from_args(args)
+                            .expect("Failed to parse SkillsMcp args")
+                            .into_dyn()
+                    }
+                    .boxed()
+                }),
+            )
+            .register_in_memory_server(
+                "subagents",
+                Box::new(|args| {
+                    async move {
+                        SubAgentsMcp::from_args(args)
+                            .expect("Failed to parse SubAgentsMcp args")
                             .into_dyn()
                     }
                     .boxed()

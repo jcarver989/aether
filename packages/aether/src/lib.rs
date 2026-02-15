@@ -7,7 +7,6 @@ pub mod fs;
 pub mod mcp;
 pub mod testing;
 pub mod tools;
-pub mod transport;
 pub mod types;
 
 // Re-export the llm crate so `aether::llm::*` paths continue to work

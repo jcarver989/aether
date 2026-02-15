@@ -7,7 +7,10 @@ use aether::{
 };
 use agent_events::{AgentMessage, UserMessage};
 use mcp_coding::{CodingMcp, DefaultCodingTools, LspCodingTools};
-use mcp_lexicon::{PluginsMcp, ServiceExt, TasksMcp};
+use mcp_skills::SkillsMcp;
+use mcp_subagents::SubAgentsMcp;
+use mcp_tasks::TasksMcp;
+use mcp_utils::ServiceExt;
 use std::env::current_dir;
 use std::error::Error;
 use std::path::PathBuf;
@@ -43,7 +46,7 @@ impl AppState {
         let root_path = current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let lsp_tools = LspCodingTools::new(DefaultCodingTools::new(), root_path.clone());
 
-        // Get ~/.aether path for plugins
+        // Get ~/.aether path for skills and sub-agents
         let aether_dir = dirs::home_dir()
             .map(|h| h.join(".aether"))
             .unwrap_or_else(|| PathBuf::from(".aether"));
@@ -61,8 +64,12 @@ impl AppState {
                     server: CodingMcp::with_tools(lsp_tools).into_dyn(),
                 },
                 McpServerConfig::InMemory {
-                    name: "plugins".to_string(),
-                    server: PluginsMcp::new(aether_dir).into_dyn(),
+                    name: "skills".to_string(),
+                    server: SkillsMcp::new(aether_dir.clone()).into_dyn(),
+                },
+                McpServerConfig::InMemory {
+                    name: "subagents".to_string(),
+                    server: SubAgentsMcp::new(aether_dir).into_dyn(),
                 },
                 McpServerConfig::InMemory {
                     name: "tasks".to_string(),

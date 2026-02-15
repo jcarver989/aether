@@ -24,13 +24,12 @@ dependencies = [
  "agent-events",
  "async-openai",
  "async-stream",
- "async-trait",
  "base64",
  "chrono",
  "clap",
  "futures",
  "llm",
- "oauth2",
+ "mcp_utils",
  "rand 0.10.0",
  "regex",
  "reqwest 0.12.28",
@@ -61,7 +60,10 @@ dependencies = [
  "dirs",
  "futures",
  "mcp-coding",
- "mcp_lexicon",
+ "mcp-skills",
+ "mcp-subagents",
+ "mcp-tasks",
+ "mcp_utils",
  "rmcp",
  "serde",
  "serde_json",
@@ -1976,6 +1978,7 @@ dependencies = [
  "ignore",
  "libc",
  "lsp-types",
+ "mcp_utils",
  "regex",
  "reqwest 0.12.28",
  "rmcp",
@@ -1991,18 +1994,71 @@ dependencies = [
 ]
 
 [[package]]
-name = "mcp_lexicon"
+name = "mcp-skills"
+version = "0.1.0"
+dependencies = [
+ "aether",
+ "clap",
+ "mcp_utils",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "mcp-subagents"
 version = "0.1.0"
 dependencies = [
  "aether",
  "agent-events",
+ "clap",
+ "futures",
+ "mcp-coding",
+ "mcp-skills",
+ "mcp-tasks",
+ "mcp_utils",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "mcp-tasks"
+version = "0.1.0"
+dependencies = [
  "chrono",
  "clap",
- "crucible",
- "futures",
  "mcp-coding",
  "rmcp",
  "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "mcp_utils"
+version = "0.1.0"
+dependencies = [
+ "agent-events",
+ "async-trait",
+ "futures",
+ "oauth2",
+ "regex",
+ "reqwest 0.12.28",
+ "rmcp",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2010,9 +2066,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]
@@ -2390,7 +2443,7 @@ dependencies = [
  "crucible",
  "futures",
  "mcp-coding",
- "mcp_lexicon",
+ "mcp_utils",
  "regex",
  "reqwest 0.13.2",
  "rmcp",
@@ -4425,7 +4478,10 @@ dependencies = [
  "dirs",
  "futures",
  "mcp-coding",
- "mcp_lexicon",
+ "mcp-skills",
+ "mcp-subagents",
+ "mcp-tasks",
+ "mcp_utils",
  "serde_json",
  "tokio",
  "tokio-stream",

@@ -17,6 +17,15 @@ pub const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
 /// Per ACP extensibility spec, custom notifications must start with underscore.
 pub const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
 
+/// Definition of a tool available to the LLM
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: String,
+    pub server: Option<String>,
+}
+
 /// Tool call request from the LLM
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCallRequest {

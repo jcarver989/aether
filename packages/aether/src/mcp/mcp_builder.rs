@@ -1,11 +1,12 @@
 use crate::ToolDefinition;
-use crate::mcp::oauth::OAuthHandler;
+use mcp_utils::client::oauth::OAuthHandler;
 
-use super::{
+use mcp_utils::client::{
     ElicitationRequest, McpError, McpManager, McpServerConfig, ParseError, RawMcpConfig,
     ServerFactory, ServerInstructions, root_from_path,
-    run_mcp_task::{McpCommand, run_mcp_task},
 };
+
+use super::run_mcp_task::{McpCommand, run_mcp_task};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;

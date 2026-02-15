@@ -1,0 +1,39 @@
+[package]
+name = "mcp_utils"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["client", "server"]
+client = [
+    "dep:agent-events",
+    "dep:oauth2",
+    "dep:regex",
+    "dep:reqwest",
+    "dep:async-trait",
+    "dep:thiserror",
+    "dep:serde_json",
+    "rmcp/transport-streamable-http-client-reqwest",
+    "rmcp/transport-child-process",
+]
+server = []
+
+[dependencies]
+futures = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+rmcp = { workspace = true }
+tracing = { workspace = true }
+serde_yaml = "0.9"
+
+# client-only deps
+agent-events = { path = "../agent-events", optional = true }
+serde_json = { workspace = true, optional = true }
+oauth2 = { version = "5.0", optional = true }
+regex = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
