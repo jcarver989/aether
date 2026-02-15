@@ -1,20 +1,10 @@
 use thiserror::Error;
 
-pub mod anthropic;
 pub mod credentials;
 pub mod file_store;
-pub mod google;
-pub mod oauth_handler;
-pub mod rmcp_adapter;
 
-pub use anthropic::{
-    AnthropicAuthMode, AuthorizeInit, OAuthTokens, authorize_url, create_api_key, exchange_code,
-    refresh,
-};
-pub use credentials::{CredentialsFile, McpCredential, ProviderCredential};
+pub use credentials::ProviderCredential;
 pub use file_store::FileCredentialStore;
-pub use oauth_handler::{OAuthCallback, open_browser, wait_for_callback};
-pub use rmcp_adapter::RmcpCredentialStoreAdapter;
 
 #[derive(Debug, Error)]
 pub enum AuthError {
@@ -24,10 +14,6 @@ pub enum AuthError {
     Io(String),
     #[error("Auth JSON error: {0}")]
     Json(String),
-    #[error("Auth HTTP error: {0}")]
-    Http(String),
-    #[error("Auth response error: {0}")]
-    InvalidResponse(String),
     #[error("{0}")]
     Other(String),
 }
@@ -41,12 +27,6 @@ impl From<std::io::Error> for AuthError {
 impl From<serde_json::Error> for AuthError {
     fn from(error: serde_json::Error) -> Self {
         AuthError::Json(error.to_string())
-    }
-}
-
-impl From<reqwest::Error> for AuthError {
-    fn from(error: reqwest::Error) -> Self {
-        AuthError::Http(error.to_string())
     }
 }
 

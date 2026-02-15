@@ -1,14 +1,24 @@
-use crate::auth::credentials::{CredentialsFile, McpCredential, ProviderCredential};
+use crate::auth::credentials::ProviderCredential;
 use crate::auth::{AuthError, Result};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tokio::fs;
 
-/// Async file-based credential store
+/// Internal file format for provider credentials.
 ///
-/// Stores credentials in `~/.aether/credentials.json` with the following structure:
-/// - `providers`: LLM provider credentials (API keys or OAuth tokens)
-/// - `mcp_servers`: MCP server OAuth credentials
+/// Uses the `providers` key for backward compatibility with the old
+/// unified credentials file that also stored MCP server credentials.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct CredentialsFile {
+    #[serde(default)]
+    providers: HashMap<String, ProviderCredential>,
+}
+
+/// Async file-based credential store for LLM provider API keys.
+///
+/// Stores credentials in `~/.aether/credentials.json`.
 #[derive(Clone)]
 pub struct FileCredentialStore {
     path: PathBuf,
@@ -47,26 +57,6 @@ impl FileCredentialStore {
     pub async fn remove_provider(&self, name: &str) -> Result<()> {
         let mut file = self.load_file().await?;
         file.providers.remove(name);
-        self.save_file(&file).await
-    }
-
-    /// Get an MCP server credential by server ID
-    pub async fn get_mcp_server(&self, server_id: &str) -> Result<Option<McpCredential>> {
-        let file = self.load_file().await?;
-        Ok(file.mcp_servers.get(server_id).cloned())
-    }
-
-    /// Set an MCP server credential
-    pub async fn set_mcp_server(&self, server_id: &str, credential: McpCredential) -> Result<()> {
-        let mut file = self.load_file().await?;
-        file.mcp_servers.insert(server_id.to_string(), credential);
-        self.save_file(&file).await
-    }
-
-    /// Remove an MCP server credential
-    pub async fn remove_mcp_server(&self, server_id: &str) -> Result<()> {
-        let mut file = self.load_file().await?;
-        file.mcp_servers.remove(server_id);
         self.save_file(&file).await
     }
 
@@ -153,33 +143,7 @@ mod tests {
         assert!(loaded.is_some());
         match loaded.unwrap() {
             ProviderCredential::ApiKey { key } => assert_eq!(key, "sk-test"),
-            _ => panic!("Expected ApiKey"),
         }
-    }
-
-    #[tokio::test]
-    async fn test_mcp_server_roundtrip() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let path = temp_dir.path().join("credentials.json");
-        let store = FileCredentialStore::with_path(path);
-
-        let credential = McpCredential {
-            client_id: "client-123".to_string(),
-            access_token: "token-abc".to_string(),
-            refresh_token: Some("refresh-xyz".to_string()),
-            expires_at: Some(1703001600),
-        };
-
-        store
-            .set_mcp_server("github-server", credential)
-            .await
-            .unwrap();
-
-        let loaded = store.get_mcp_server("github-server").await.unwrap();
-        assert!(loaded.is_some());
-        let loaded = loaded.unwrap();
-        assert_eq!(loaded.client_id, "client-123");
-        assert_eq!(loaded.access_token, "token-abc");
     }
 
     #[tokio::test]
@@ -190,9 +154,6 @@ mod tests {
 
         let provider = store.get_provider("nonexistent").await.unwrap();
         assert!(provider.is_none());
-
-        let mcp = store.get_mcp_server("nonexistent").await.unwrap();
-        assert!(mcp.is_none());
     }
 
     #[tokio::test]

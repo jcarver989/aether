@@ -1,17 +1,15 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
-use super::types::{CacheControl, Request, SystemContent, SystemContentBlock};
-use crate::auth::{
-    AuthError, FileCredentialStore, OAuthTokens, ProviderCredential, refresh as refresh_oauth,
-};
+use super::types::Request;
+use crate::auth::{AuthError, FileCredentialStore, ProviderCredential};
 use crate::llm::provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
 use crate::llm::{Context, LlmError, Result};
 use async_stream;
 use futures::StreamExt;
-use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{Client, header};
 use std::env;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
 use tokio_stream::wrappers::LinesStream;
 use tokio_util::io::StreamReader;
@@ -82,7 +80,7 @@ impl AnthropicProvider {
         self
     }
 
-    pub(crate) fn build_request(&self, context: &Context, oauth_mode: bool) -> Result<Request> {
+    pub(crate) fn build_request(&self, context: &Context) -> Result<Request> {
         let (system_prompt, messages) = map_messages(context.messages())?;
         let tools = if context.tools().is_empty() {
             None
@@ -98,21 +96,7 @@ impl AnthropicProvider {
             request = request.with_temperature(temp);
         }
 
-        if oauth_mode {
-            let mut blocks = vec![SystemContentBlock::Text {
-                text: "You are Claude Code, Anthropic's official CLI for Claude.".to_string(),
-                cache_control: Some(CacheControl::ephemeral()),
-            }];
-
-            if let Some(system) = system_prompt {
-                blocks.push(SystemContentBlock::Text {
-                    text: system,
-                    cache_control: Some(CacheControl::ephemeral()),
-                });
-            }
-
-            request.system = Some(SystemContent::Blocks(blocks));
-        } else if let Some(system) = system_prompt {
+        if let Some(system) = system_prompt {
             request = if self.enable_prompt_caching {
                 request.with_system_cached(system)
             } else {
@@ -145,63 +129,17 @@ impl AnthropicProvider {
             })
     }
 
-    async fn build_headers(&self) -> Result<(header::HeaderMap, bool)> {
-        let mut headers = header::HeaderMap::new();
+    async fn build_headers(&self) -> Result<HeaderMap> {
+        let mut headers = HeaderMap::new();
         headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-        let credential = self.get_credential().await?;
-        let oauth_mode = matches!(credential, ProviderCredential::OAuth { .. });
-
-        match credential {
+        match self.get_credential().await? {
             ProviderCredential::ApiKey { key } => {
                 headers.insert("x-api-key", HeaderValue::from_str(&key)?);
             }
-            ProviderCredential::OAuth {
-                access_token,
-                refresh_token,
-                expires_at,
-            } => {
-                let tokens = if expires_at <= now_millis() {
-                    self.refresh_oauth_tokens(&refresh_token).await?
-                } else {
-                    OAuthTokens {
-                        access: access_token,
-                        refresh: refresh_token,
-                        expires: expires_at,
-                    }
-                };
-
-                headers.insert(
-                    AUTHORIZATION,
-                    HeaderValue::from_str(&format!("Bearer {}", tokens.access))?,
-                );
-                headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-                headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("*"));
-                headers.insert("sec-fetch-mode", HeaderValue::from_static("cors"));
-                let beta = merge_anthropic_beta(headers.get("anthropic-beta"))?;
-                headers.insert("anthropic-beta", beta);
-            }
         }
 
-        Ok((headers, oauth_mode))
-    }
-
-    async fn refresh_oauth_tokens(&self, refresh: &str) -> Result<OAuthTokens> {
-        let tokens = refresh_oauth(refresh).await.map_err(auth_error_to_llm)?;
-
-        let new_credential = ProviderCredential::OAuth {
-            access_token: tokens.access.clone(),
-            refresh_token: tokens.refresh.clone(),
-            expires_at: tokens.expires,
-        };
-
-        self.store
-            .set_provider(PROVIDER_NAME, new_credential)
-            .await
-            .map_err(auth_error_to_llm)?;
-
-        Ok(tokens)
+        Ok(headers)
     }
 
     async fn send_request(
@@ -272,7 +210,7 @@ impl StreamingModelProvider for AnthropicProvider {
         let context = context.clone();
 
         Box::pin(async_stream::stream! {
-            let (headers, oauth_mode) = match provider.build_headers().await {
+            let headers = match provider.build_headers().await {
                 Ok(result) => result,
                 Err(e) => {
                     yield Err(e);
@@ -280,7 +218,7 @@ impl StreamingModelProvider for AnthropicProvider {
                 }
             };
 
-            let request = match provider.build_request(&context, oauth_mode) {
+            let request = match provider.build_request(&context) {
                 Ok(req) => req,
                 Err(e) => {
                     yield Err(e);
@@ -308,33 +246,6 @@ impl StreamingModelProvider for AnthropicProvider {
     }
 }
 
-fn merge_anthropic_beta(existing: Option<&HeaderValue>) -> Result<HeaderValue> {
-    const REQUIRED_BETAS: [&str; 3] = [
-        "claude-code-20250219",
-        "oauth-2025-04-20",
-        "interleaved-thinking-2025-05-14",
-    ];
-
-    let mut values: Vec<String> = Vec::new();
-    if let Some(value) = existing {
-        let value_str = value.to_str().map_err(|e| LlmError::Other(e.to_string()))?;
-        values.extend(
-            value_str
-                .split(',')
-                .map(|item| item.trim().to_string())
-                .filter(|item| !item.is_empty()),
-        );
-    }
-
-    for beta in REQUIRED_BETAS {
-        if !values.iter().any(|value| value == beta) {
-            values.push(beta.to_string());
-        }
-    }
-
-    HeaderValue::from_str(&values.join(", ")).map_err(Into::into)
-}
-
 fn build_client() -> Result<Client> {
     Client::builder()
         .timeout(Duration::from_secs(60))
@@ -360,13 +271,6 @@ fn auth_error_to_llm(error: AuthError) -> LlmError {
     LlmError::Other(error.to_string())
 }
 
-fn now_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,33 +278,13 @@ mod tests {
     use crate::llm::anthropic::types::{SystemContent, SystemContentBlock};
     use crate::llm::tools::ToolDefinition;
     use crate::types::IsoString;
+    use reqwest::header::AUTHORIZATION;
 
     async fn create_test_store_with_api_key(api_key: &str) -> FileCredentialStore {
         let temp_dir = tempfile::tempdir().unwrap();
         let store = FileCredentialStore::with_path(temp_dir.path().join("credentials.json"));
         store
             .set_provider(PROVIDER_NAME, ProviderCredential::api_key(api_key))
-            .await
-            .unwrap();
-        store
-    }
-
-    async fn create_test_store_with_oauth(
-        access_token: &str,
-        refresh_token: &str,
-        expires_at: u64,
-    ) -> FileCredentialStore {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let store = FileCredentialStore::with_path(temp_dir.path().join("credentials.json"));
-        store
-            .set_provider(
-                PROVIDER_NAME,
-                ProviderCredential::OAuth {
-                    access_token: access_token.to_string(),
-                    refresh_token: refresh_token.to_string(),
-                    expires_at,
-                },
-            )
             .await
             .unwrap();
         store
@@ -427,8 +311,7 @@ mod tests {
     async fn build_headers_uses_api_key() {
         let store = create_test_store_with_api_key("test-api-key").await;
         let provider = AnthropicProvider::new(store).unwrap();
-        let (headers, oauth_mode) = provider.build_headers().await.expect("headers");
-        assert!(!oauth_mode);
+        let headers = provider.build_headers().await.expect("headers");
         assert_eq!(
             headers
                 .get("x-api-key")
@@ -437,34 +320,6 @@ mod tests {
         );
         assert!(headers.get(AUTHORIZATION).is_none());
         assert!(headers.get("anthropic-beta").is_none());
-    }
-
-    #[tokio::test]
-    async fn build_headers_uses_oauth_bearer() {
-        let store =
-            create_test_store_with_oauth("access-token", "refresh-token", now_millis() + 60_000)
-                .await;
-        let provider = AnthropicProvider::new(store).unwrap();
-        let (headers, oauth_mode) = provider.build_headers().await.expect("headers");
-        assert!(oauth_mode);
-        assert_eq!(
-            headers
-                .get(AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("Bearer access-token")
-        );
-        assert!(headers.get("x-api-key").is_none());
-        let betas = headers
-            .get("anthropic-beta")
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("");
-        let betas: Vec<&str> = betas
-            .split(',')
-            .map(|item| item.trim())
-            .filter(|item| !item.is_empty())
-            .collect();
-        assert!(betas.contains(&"oauth-2025-04-20"));
-        assert!(betas.contains(&"claude-code-20250219"));
     }
 
     #[tokio::test]
@@ -479,7 +334,7 @@ mod tests {
             vec![],
         );
 
-        let request = provider.build_request(&context, false).unwrap();
+        let request = provider.build_request(&context).unwrap();
         assert_eq!(request.model, "claude-sonnet-4-5-20250929");
         assert_eq!(request.max_tokens, 1000);
         assert_eq!(request.messages.len(), 1);
@@ -511,7 +366,7 @@ mod tests {
             }],
         );
 
-        let request = provider.build_request(&context, false).unwrap();
+        let request = provider.build_request(&context).unwrap();
         if let Some(system) = &request.system {
             match system {
                 SystemContent::Text(text) => {
@@ -552,7 +407,7 @@ mod tests {
             }],
         );
 
-        let request = provider.build_request(&context, false).unwrap();
+        let request = provider.build_request(&context).unwrap();
 
         // With caching enabled, system prompt should be cached
         if let Some(system) = &request.system {
@@ -599,7 +454,7 @@ mod tests {
             vec![],
         );
 
-        let request = provider.build_request(&context, false).unwrap();
+        let request = provider.build_request(&context).unwrap();
 
         // With caching disabled, system prompt should be simple text
         if let Some(system) = &request.system {

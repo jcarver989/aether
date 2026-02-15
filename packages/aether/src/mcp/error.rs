@@ -48,9 +48,6 @@ pub enum McpError {
     /// Generic error for other cases
     #[error("{0}")]
     Other(String),
-    /// OAuth authentication is required
-    #[error("OAuth required for server {server_id}")]
-    OAuthRequired { server_id: String, base_url: String },
 }
 
 impl From<serde_json::Error> for McpError {

@@ -29,7 +29,7 @@ async fn test_tool_namespacing_desired_behavior() {
 
     // Test that demonstrates the fix: tools are now properly namespaced
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let _client = McpManager::new(elicitation_tx);
+    let _client = McpManager::new(elicitation_tx, None);
 
     // Since we can't directly call discover_tools without actual servers,
     // we test the namespacing logic by verifying the format

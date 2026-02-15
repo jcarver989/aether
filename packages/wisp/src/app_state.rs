@@ -1,5 +1,6 @@
 use crate::cli::Cli;
 use aether::mcp::McpServerConfig;
+use aether::mcp::oauth::BrowserOAuthHandler;
 use aether::{
     agent::{AgentHandle, AgentMessage, Prompt, UserMessage, agent},
     mcp::{McpSpawnResult, mcp},
@@ -52,6 +53,7 @@ impl AppState {
             command_tx,
             handle: mcp_handle,
         } = mcp()
+            .with_oauth_handler(BrowserOAuthHandler::new()?)
             .with_servers(vec![
                 McpServerConfig::InMemory {
                     name: "coding".to_string(),

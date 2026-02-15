@@ -20,7 +20,7 @@ pub const TEST_TOOL_ID: &str = "call_123";
 
 pub fn create_test_mcp_client() -> McpManager {
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    McpManager::new(elicitation_tx)
+    McpManager::new(elicitation_tx, None)
 }
 
 // Tool Registry Test Helpers
