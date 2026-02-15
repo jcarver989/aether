@@ -1,5 +1,5 @@
 use crate::core::{AgentError, Result, substitute_parameters};
-use crate::mcp::ServerInstructions;
+use mcp_utils::client::ServerInstructions;
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};

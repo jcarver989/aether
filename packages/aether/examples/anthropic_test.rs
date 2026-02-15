@@ -1,8 +1,8 @@
-use aether::llm::providers::anthropic::*;
-use aether::llm::{
+use llm::providers::anthropic::*;
+use llm::{
     ChatMessage, Context, LlmResponse, ProviderFactory, StreamingModelProvider, ToolDefinition,
 };
-use aether::types::IsoString;
+use llm::types::IsoString;
 use clap::Parser;
 use futures::StreamExt;
 use serde_json::json;

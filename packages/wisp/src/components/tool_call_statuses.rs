@@ -1,6 +1,6 @@
 use crate::render_context::{Component, RenderContext};
 use crate::screen::Line;
-use aether::llm::{ToolCallError, ToolCallRequest, ToolCallResult};
+use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use crossterm::style::Stylize;
 use std::collections::HashMap;
 

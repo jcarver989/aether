@@ -13,7 +13,7 @@ pub use middleware::{AgentEvent, Middleware, MiddlewareAction};
 pub use prompt::*;
 pub use substitution::*;
 
-use crate::StreamingModelProvider;
+use llm::StreamingModelProvider;
 
 pub fn agent<T: StreamingModelProvider + 'static>(llm: T) -> AgentBuilder<T> {
     AgentBuilder::new(llm)

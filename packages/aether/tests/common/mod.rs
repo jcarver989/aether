@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use aether::llm::{
+use llm::{
     Context, LlmResponse, LlmResponseStream, Result, StreamingModelProvider, ToolCallRequest,
     ToolDefinition,
 };
-use aether::mcp::{ElicitationRequest, McpManager};
+use mcp_utils::client::{ElicitationRequest, McpManager};
 use rmcp::model::Tool as RmcpTool;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;

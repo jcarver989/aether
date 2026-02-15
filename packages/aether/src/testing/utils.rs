@@ -10,9 +10,9 @@ use crate::mcp::McpSpawnResult;
 use crate::mcp::mcp;
 use crate::testing::FakeMcpServer;
 use crate::testing::fake_mcp::fake_mcp;
-use crate::{Context, LlmResponse};
+use llm::{Context, LlmResponse};
 
-use super::FakeLlmProvider;
+use llm::testing::FakeLlmProvider;
 
 pub fn test_agent() -> TestAgentBuilder {
     TestAgentBuilder::new()

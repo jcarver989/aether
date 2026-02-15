@@ -249,7 +249,7 @@ pub fn map_agent_message_to_stop_reason(msg: &AgentMessage) -> acp::StopReason {
 /// Attempt to parse a tool progress message as sub-agent progress.
 fn try_parse_sub_agent_progress(
     message: &str,
-    request: &aether::llm::ToolCallRequest,
+    request: &llm::ToolCallRequest,
 ) -> Option<SubAgentProgressParams> {
     let payload: SubAgentProgressPayload = serde_json::from_str(message).ok()?;
 
@@ -264,7 +264,7 @@ fn try_parse_sub_agent_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether::llm::ToolCallRequest;
+    use llm::ToolCallRequest;
     use agent_events::SUB_AGENT_PROGRESS_METHOD;
 
     #[test]

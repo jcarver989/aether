@@ -33,11 +33,9 @@ aether = "0.1"
 
 ### Minimal Agent (No Tools)
 
-```rust,no_run
-use aether::{
-    agent::{AgentMessage, UserMessage, agent},
-    llm::providers::openrouter::OpenRouterProvider,
-};
+```rust,ignore
+use aether::core::{AgentMessage, UserMessage, agent};
+use llm::providers::openrouter::OpenRouterProvider;
 use std::io::{self, Write};
 
 #[tokio::main]
@@ -127,12 +125,10 @@ You are Mr. BotBot, a kickass coding agent equipped with SOTA filesystem and web
 
 And bring Mr. BotBot to life!
 
-```rust,no_run
-use aether::{
-    agent::{AgentMessage, UserMessage, agent, Prompt},
-    llm::providers::openrouter::OpenRouterProvider,
-    mcp::{mcp, McpSpawnResult},
-};
+```rust,ignore
+use aether::core::{AgentMessage, UserMessage, Prompt, agent};
+use aether::mcp::{mcp, McpSpawnResult};
+use llm::providers::openrouter::OpenRouterProvider;
 use std::io::{self, Write};
 
 #[tokio::main]

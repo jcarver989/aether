@@ -1,7 +1,5 @@
-use aether::{
-    core::{AgentEvent, MiddlewareAction, Prompt, agent},
-    llm::providers::openrouter::OpenRouterProvider,
-};
+use aether::core::{AgentEvent, MiddlewareAction, Prompt, agent};
+use llm::providers::openrouter::OpenRouterProvider;
 use tokio::process::Command;
 
 /// Example demonstrating middleware/hooks functionality

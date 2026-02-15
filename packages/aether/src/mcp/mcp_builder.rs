@@ -1,4 +1,4 @@
-use crate::ToolDefinition;
+use llm::ToolDefinition;
 use mcp_utils::client::oauth::OAuthHandler;
 
 use mcp_utils::client::{

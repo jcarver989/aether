@@ -1,4 +1,4 @@
-use crate::auth::credentials::ProviderCredential;
+use llm::ProviderCredential;
 use crate::auth::{AuthError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

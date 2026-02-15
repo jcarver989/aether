@@ -1,5 +1,5 @@
 use crate::agents::AgentRunner;
-use aether::llm::StreamingModelProvider;
+use llm::StreamingModelProvider;
 use owo_colors::OwoColorize;
 use std::path::PathBuf;
 use std::sync::Arc;

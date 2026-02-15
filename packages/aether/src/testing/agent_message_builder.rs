@@ -45,7 +45,7 @@ impl AgentMessageBuilder {
         let request_json = serde_json::to_string(request).expect("Failed to serialize request");
         let result_json = serde_json::to_string(result).expect("Failed to serialize result");
 
-        use crate::{ToolCallRequest, ToolCallResult};
+        use llm::{ToolCallRequest, ToolCallResult};
 
         // Tool call start
         self.chunks.push(AgentMessage::ToolCall {
@@ -104,7 +104,7 @@ impl AgentMessageBuilder {
             "Tool execution error: Annotated {{ raw: Text(RawTextContent {{ text: \"{error_message}\", meta: None }}), annotations: None }}"
         );
 
-        use crate::{ToolCallError, ToolCallRequest};
+        use llm::{ToolCallError, ToolCallRequest};
 
         // Tool call start
         self.chunks.push(AgentMessage::ToolCall {

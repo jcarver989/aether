@@ -8,6 +8,7 @@ mcp_utils = { path = "../mcp-utils" }
 mcp-coding = { path = "../mcp-coding" }
 crucible = { path = "../crucible" }
 aether = { path = "../aether" }
+llm = { path = "../llm" }
 
 rmcp = { workspace = true }
 

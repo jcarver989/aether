@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use tokio_stream::StreamExt;
 
-use crate::types::IsoString;
-use crate::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
+use llm::types::IsoString;
+use llm::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
 
 const SUMMARIZATION_PROMPT: &str = include_str!("prompts/summarization.md");
 
@@ -132,8 +132,8 @@ impl<T: StreamingModelProvider> Compactor<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ChatMessage;
-    use crate::types::IsoString;
+    use llm::ChatMessage;
+    use llm::types::IsoString;
 
     #[test]
     fn test_compaction_config_default() {
@@ -149,7 +149,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_compactor_generates_summary() {
-        use crate::testing::FakeLlmProvider;
+        use llm::testing::FakeLlmProvider;
 
         let summary_response = vec![
             LlmResponse::start("msg-1"),
@@ -184,7 +184,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_compactor_handles_error() {
-        use crate::testing::FakeLlmProvider;
+        use llm::testing::FakeLlmProvider;
 
         let error_response = vec![LlmResponse::Error {
             message: "API error".to_string(),
@@ -216,7 +216,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_compactor_empty_context() {
-        use crate::testing::FakeLlmProvider;
+        use llm::testing::FakeLlmProvider;
 
         let fake_llm = Arc::new(FakeLlmProvider::with_single_response(vec![]));
         let compactor = Compactor::new(fake_llm);

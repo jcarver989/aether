@@ -1,15 +1,16 @@
 use crate::subagent_file::AgentFile;
 use aether::{
     core::{AgentHandle, agent},
-    llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser},
-    mcp::{McpSpawnResult, ServerInstructions, mcp, run_mcp_task::McpCommand},
+    mcp::{McpSpawnResult, mcp, run_mcp_task::McpCommand},
 };
 use agent_events::{AgentMessage, UserMessage};
+use llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser};
 use futures::FutureExt;
 use mcp_coding::CodingMcp;
 use mcp_coding::display_meta::ToolDisplayMeta;
 use mcp_skills::SkillsMcp;
 use mcp_tasks::TasksMcp;
+use mcp_utils::client::ServerInstructions;
 use rmcp::ServiceExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
