@@ -1,9 +1,67 @@
 mod common;
 
-use aether_lspd::LanguageId;
+use aether_lspd::{ClientError, LanguageId};
 use common::{CargoProject, DaemonHarness, RA_INIT_TIMEOUT, did_open_params};
 use lsp_types::GotoDefinitionResponse;
+use std::future::Future;
 use std::time::Duration;
+
+/// Retry an LSP request while RA is still indexing.
+///
+/// Retries on any `LspError` (e.g. "content modified", "file not found") and
+/// also when `should_retry` returns true for a successful result (e.g. empty
+/// results or `{unknown}` types before RA finishes inference).
+async fn retry_lsp<T, F, Fut>(
+    timeout: Duration,
+    mut f: F,
+    should_retry: impl Fn(&T) -> bool,
+) -> Result<T, ClientError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, ClientError>>,
+{
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let at_deadline = tokio::time::Instant::now() >= deadline;
+        match f().await {
+            Err(ClientError::LspError { .. }) if !at_deadline => {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            Ok(val) if should_retry(&val) && !at_deadline => {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            result => return result,
+        }
+    }
+}
+
+fn is_goto_empty(r: &GotoDefinitionResponse) -> bool {
+    match r {
+        GotoDefinitionResponse::Scalar(_) => false,
+        GotoDefinitionResponse::Array(a) => a.is_empty(),
+        GotoDefinitionResponse::Link(l) => l.is_empty(),
+    }
+}
+
+fn extract_hover_text(hover: &Option<lsp_types::Hover>) -> Option<String> {
+    let hover = hover.as_ref()?;
+    let text = match &hover.contents {
+        lsp_types::HoverContents::Scalar(t) => match t {
+            lsp_types::MarkedString::String(s) => s.clone(),
+            lsp_types::MarkedString::LanguageString(ls) => ls.value.clone(),
+        },
+        lsp_types::HoverContents::Array(arr) => arr
+            .iter()
+            .map(|m| match m {
+                lsp_types::MarkedString::String(s) => s.clone(),
+                lsp_types::MarkedString::LanguageString(ls) => ls.value.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        lsp_types::HoverContents::Markup(markup) => markup.value.clone(),
+    };
+    Some(text)
+}
 
 /// Test: GotoDefinition resolves function definitions
 #[tokio::test]
@@ -38,12 +96,13 @@ fn main() {
         .await
         .expect("Failed to send didOpen");
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
-    let result = client
-        .goto_definition(uri.clone(), 5, 5)
-        .await
-        .expect("GotoDefinition failed");
+    let result = retry_lsp(
+        RA_INIT_TIMEOUT,
+        || client.goto_definition(uri.clone(), 5, 5),
+        is_goto_empty,
+    )
+    .await
+    .expect("GotoDefinition failed");
 
     match result {
         GotoDefinitionResponse::Scalar(loc) => {
@@ -94,31 +153,20 @@ async fn test_hover() {
         .await
         .expect("Failed to send didOpen");
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
-    let hover = client
-        .hover(uri.clone(), 1, 10)
-        .await
-        .expect("Hover failed");
-
-    assert!(hover.is_some(), "Expected hover information");
-    let hover = hover.unwrap();
-
-    let content_str = match &hover.contents {
-        lsp_types::HoverContents::Scalar(text) => match text {
-            lsp_types::MarkedString::String(s) => s.clone(),
-            lsp_types::MarkedString::LanguageString(ls) => ls.value.clone(),
+    // RA may return None or {unknown} types while still inferring — retry until resolved
+    let hover = retry_lsp(
+        RA_INIT_TIMEOUT,
+        || client.hover(uri.clone(), 1, 10),
+        |h| {
+            extract_hover_text(h)
+                .map(|t| !t.contains("Vec") && !t.contains("i32"))
+                .unwrap_or(true)
         },
-        lsp_types::HoverContents::Array(arr) => arr
-            .iter()
-            .map(|m| match m {
-                lsp_types::MarkedString::String(s) => s.clone(),
-                lsp_types::MarkedString::LanguageString(ls) => ls.value.clone(),
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-        lsp_types::HoverContents::Markup(markup) => markup.value.clone(),
-    };
+    )
+    .await
+    .expect("Hover failed");
+
+    let content_str = extract_hover_text(&hover).expect("Expected hover information");
 
     assert!(
         content_str.contains("Vec") || content_str.contains("i32"),
@@ -164,12 +212,13 @@ fn main() {
         .await
         .expect("Failed to send didOpen");
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
-    let refs = client
-        .find_references(uri.clone(), 0, 4, true)
-        .await
-        .expect("FindReferences failed");
+    let refs = retry_lsp(
+        RA_INIT_TIMEOUT,
+        || client.find_references(uri.clone(), 0, 4, true),
+        |r| r.len() < 2,
+    )
+    .await
+    .expect("FindReferences failed");
 
     assert!(
         refs.len() >= 2,
@@ -218,12 +267,16 @@ fn main() {
         .await
         .expect("Failed to send didOpen");
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
-    let symbols = client
-        .document_symbol(uri.clone())
-        .await
-        .expect("DocumentSymbol failed");
+    let symbols = retry_lsp(
+        RA_INIT_TIMEOUT,
+        || client.document_symbol(uri.clone()),
+        |s| match s {
+            lsp_types::DocumentSymbolResponse::Flat(v) => v.is_empty(),
+            lsp_types::DocumentSymbolResponse::Nested(v) => v.is_empty(),
+        },
+    )
+    .await
+    .expect("DocumentSymbol failed");
 
     let symbol_names: Vec<String> = match symbols {
         lsp_types::DocumentSymbolResponse::Flat(syms) => {
@@ -286,12 +339,13 @@ fn main() { utils::special_helper(); }
         .await
         .expect("rust-analyzer not ready");
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    let symbols = client
-        .workspace_symbol("special_helper".to_string())
-        .await
-        .expect("WorkspaceSymbol failed");
+    let symbols = retry_lsp(
+        RA_INIT_TIMEOUT,
+        || client.workspace_symbol("special_helper".to_string()),
+        |s| s.is_empty(),
+    )
+    .await
+    .expect("WorkspaceSymbol failed");
 
     assert!(!symbols.is_empty(), "Should find special_helper symbol");
     assert!(
