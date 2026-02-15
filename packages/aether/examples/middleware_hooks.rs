@@ -17,7 +17,7 @@ async fn run_command(cmd: &str) {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let llm = OpenRouterProvider::default("anthropic/claude-3.5-sonnet")?;
-    let prompt = Prompt::text("You are a helpful assistant").build()?;
+    let prompt = Prompt::text("You are a helpful assistant").build().await?;
     let _agent = agent(llm)
         .system(&prompt)
         .on_event(|event| async move {

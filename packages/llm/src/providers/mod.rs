@@ -6,4 +6,5 @@ pub mod moonshot;
 pub mod openai;
 pub mod openai_compatible;
 pub mod openrouter;
+pub(crate) mod tool_call_collector;
 pub mod z_ai;

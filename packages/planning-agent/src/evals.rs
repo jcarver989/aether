@@ -1,6 +1,6 @@
 use crate::PrInfo;
 use crate::claude_code::ClaudeCode;
-use aether::agent::{AgentError, Prompt};
+use aether::agent::{AgentError, substitute_parameters};
 use crucible::{Eval, EvalAssertion, EvalMetric, WorkingDirectory};
 use std::collections::HashMap;
 use std::fs;
@@ -60,8 +60,7 @@ fn eval(eval_path: &str, repo_url: &str) -> Result<Eval, Box<dyn std::error::Err
     let tests_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
     let eval_dir = tests_dir.join("evals").join(eval_path);
     let prompt_path = eval_dir.join("issue.md");
-    let prompt =
-        Prompt::file(prompt_path.to_str().ok_or("Invalid issue.md path")?, false).build()?;
+    let prompt = fs::read_to_string(&prompt_path)?;
 
     let pr_json_path = eval_dir.join("pr.json");
     let pr_json_content = fs::read_to_string(&pr_json_path)?;
@@ -94,18 +93,15 @@ fn code_quality_scorer() -> Result<EvalAssertion, AgentError> {
         let agent_diff = ctx.git_diff(None).unwrap_or_default();
         let gold_diff = ctx.git_diff(gold_commit).unwrap_or_default();
 
-        Prompt::file_with_args(
-            "./src/ten_point_scorer.md",
-            false,
-            HashMap::from([
-                ("working_directory".to_string(), dir),
-                ("original_task".to_string(), ctx.original_prompt.to_string()),
-                ("gold_diff".to_string(), gold_diff),
-                ("agent_diff".to_string(), agent_diff),
-                ("json_schema".to_string(), EvalMetric::json_schema()),
-            ]),
-        )
-        .build()
-        .expect("Failed to build prompt")
+        let template =
+            fs::read_to_string("./src/ten_point_scorer.md").expect("Failed to read scorer prompt");
+        let args = Some(HashMap::from([
+            ("working_directory".to_string(), dir),
+            ("original_task".to_string(), ctx.original_prompt.to_string()),
+            ("gold_diff".to_string(), gold_diff),
+            ("agent_diff".to_string(), agent_diff),
+            ("json_schema".to_string(), EvalMetric::json_schema()),
+        ]));
+        substitute_parameters(&template, &args)
     }))
 }

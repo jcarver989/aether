@@ -39,7 +39,7 @@ impl AppState {
                 parts.push(Prompt::text(prompt.as_str()));
             }
             parts.push(Prompt::system_env());
-            Prompt::build_all(&parts)?
+            Prompt::build_all(&parts).await?
         };
 
         let agent_builder = agent(llm).system(&system_prompt);

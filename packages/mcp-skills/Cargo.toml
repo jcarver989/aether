@@ -12,7 +12,6 @@ rmcp = { workspace = true }
 schemars = { workspace = true }
 tracing = { workspace = true }
 clap = { workspace = true, features = ["env"] }
-aether = { path = "../aether" }
 mcp_utils = { path = "../mcp-utils" }
 
 [dev-dependencies]

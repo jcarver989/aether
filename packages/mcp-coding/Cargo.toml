@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 mcp_utils = { path = "../mcp-utils" }
-aether = { path = "../aether" }
 aether-lspd = { path = "../aether-lspd" }
 futures = { workspace = true }
 serde = { workspace = true }

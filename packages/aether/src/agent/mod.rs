@@ -6,6 +6,7 @@ mod prompt;
 mod substitution;
 
 pub use agent_builder::*;
+pub use agent_events::{AgentMessage, UserMessage};
 pub use core::*;
 pub use error::*;
 pub use middleware::{AgentEvent, Middleware, MiddlewareAction};

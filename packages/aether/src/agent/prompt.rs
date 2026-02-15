@@ -2,9 +2,9 @@ use crate::agent::{AgentError, Result, substitute_parameters};
 use crate::mcp::ServerInstructions;
 use std::collections::HashMap;
 use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use tokio::fs;
+use tokio::process::Command;
 
 #[derive(Debug, Clone)]
 pub enum Prompt {
@@ -56,7 +56,7 @@ impl Prompt {
     }
 
     /// Resolve this SystemPrompt to a String
-    pub fn build(&self) -> Result<String> {
+    pub async fn build(&self) -> Result<String> {
         match self {
             Prompt::Text(text) => Ok(text.clone()),
             Prompt::File {
@@ -65,39 +65,46 @@ impl Prompt {
                 args,
             } => {
                 let content = if *ancestors {
-                    Self::resolve_file_with_ancestors(path)?
+                    Self::resolve_file_with_ancestors(path).await?
                 } else {
-                    Self::resolve_file(&PathBuf::from(path))?
+                    Self::resolve_file(&PathBuf::from(path)).await?
                 };
 
                 Ok(substitute_parameters(&content, args))
             }
-            Prompt::SystemEnv => Self::resolve_system_env(),
+            Prompt::SystemEnv => Self::resolve_system_env().await,
             Prompt::McpInstructions(instructions) => Ok(format_mcp_instructions(instructions)),
         }
     }
 
     /// Resolve multiple SystemPrompts and join them with double newlines
-    pub fn build_all(prompts: &[Prompt]) -> Result<String> {
-        let content: Result<Vec<_>> = prompts.iter().map(|p| p.build()).collect();
-        Ok(content?.join("\n\n"))
+    pub async fn build_all(prompts: &[Prompt]) -> Result<String> {
+        let mut parts = Vec::with_capacity(prompts.len());
+        for p in prompts {
+            parts.push(p.build().await?);
+        }
+        Ok(parts.join("\n\n"))
     }
 
-    fn resolve_file(path: &Path) -> Result<String> {
-        fs::read_to_string(path).map_err(|e| {
+    async fn resolve_file(path: &Path) -> Result<String> {
+        fs::read_to_string(path).await.map_err(|e| {
             AgentError::IoError(format!("Failed to read file '{}': {e}", path.display()))
         })
     }
 
-    fn resolve_file_with_ancestors(filename: &str) -> Result<String> {
+    async fn resolve_file_with_ancestors(filename: &str) -> Result<String> {
         let mut prompt = Vec::new();
         let mut current_dir = env::current_dir()
             .map_err(|e| AgentError::IoError(format!("Failed to get current directory: {e}")))?;
 
         loop {
             let file_path = current_dir.join(filename);
-            if file_path.exists() && file_path.is_file() {
-                let content = Self::resolve_file(&file_path)?;
+            if fs::metadata(&file_path)
+                .await
+                .map(|m| m.is_file())
+                .unwrap_or(false)
+            {
+                let content = Self::resolve_file(&file_path).await?;
                 prompt.push(content);
             }
 
@@ -124,13 +131,14 @@ impl Prompt {
         Ok(prompt.join("\n\n"))
     }
 
-    fn resolve_system_env() -> Result<String> {
+    async fn resolve_system_env() -> Result<String> {
         let cwd = env::current_dir()
             .map_err(|e| AgentError::IoError(format!("Failed to get current directory: {e}")))?;
 
         let os_version = Command::new("uname")
             .arg("-a")
             .output()
+            .await
             .ok()
             .and_then(|output| String::from_utf8(output.stdout).ok())
             .and_then(|version| {
@@ -142,7 +150,11 @@ impl Prompt {
                 }
             });
 
-        let is_git_repo = if cwd.join(".git").exists() {
+        let is_git_repo = if fs::metadata(cwd.join(".git"))
+            .await
+            .map(|m| m.is_dir())
+            .unwrap_or(false)
+        {
             "Yes"
         } else {
             "No"
@@ -182,4 +194,34 @@ pub fn format_mcp_instructions(instructions: &[ServerInstructions]) -> String {
     }
 
     parts.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn build_text_prompt() {
+        let prompt = Prompt::text("Hello, world!");
+        let result = prompt.build().await.unwrap();
+        assert_eq!(result, "Hello, world!");
+    }
+
+    #[tokio::test]
+    async fn build_all_concatenates_prompts() {
+        let prompts = vec![Prompt::text("Part one"), Prompt::text("Part two")];
+        let result = Prompt::build_all(&prompts).await.unwrap();
+        assert_eq!(result, "Part one\n\nPart two");
+    }
+
+    #[tokio::test]
+    async fn resolve_system_env_contains_expected_fields() {
+        let result = Prompt::resolve_system_env().await.unwrap();
+        assert!(result.contains("<env>"));
+        assert!(result.contains("</env>"));
+        assert!(result.contains("Working directory:"));
+        assert!(result.contains("Platform:"));
+        assert!(result.contains("Today's date:"));
+        assert!(result.contains("Is directory a git repo:"));
+    }
 }

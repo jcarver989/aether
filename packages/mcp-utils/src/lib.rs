@@ -1,4 +1,5 @@
 pub mod markdown_file;
+pub mod substitution;
 pub mod testing;
 pub mod transport;
 

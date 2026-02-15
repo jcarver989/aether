@@ -67,7 +67,10 @@ impl StreamingModelProvider for OpenRouterProvider {
         // Build base request and convert to OpenRouter-specific format
         // The From trait automatically adds usage tracking parameters
         // See: https://openrouter.ai/docs/use-cases/usage-accounting
-        let request: OpenRouterChatRequest = build_chat_request(&self.model, context).into();
+        let request: OpenRouterChatRequest = match build_chat_request(&self.model, context) {
+            Ok(req) => req.into(),
+            Err(e) => return Box::pin(async_stream::stream! { yield Err(e); }),
+        };
         create_custom_stream_generic(&self.client, request)
     }
 
