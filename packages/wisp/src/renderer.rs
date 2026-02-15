@@ -150,17 +150,16 @@ impl<W: Write> Renderer<W> {
                     let text = std::mem::take(&mut self.current_message_buffer);
                     self.current_assistant_message_id = None;
 
-                    // Push completed text + any finished tool calls to scrollback
-                    let mut scrollback_lines: Vec<Line> = self
-                        .tool_call_statuses
-                        .render(&self.context);
+                    // Push completed tool calls + text to scrollback,
+                    // keeping Running tool calls in the managed frame.
+                    let mut scrollback_lines: Vec<Line> =
+                        self.tool_call_statuses.drain_completed(&self.context);
 
                     // Add the assistant text
                     for text_line in text.lines() {
                         scrollback_lines.push(Line::new(text_line.to_string()));
                     }
 
-                    self.tool_call_statuses.clear();
                     self.screen
                         .push_to_scrollback(&scrollback_lines, &mut self.writer)?;
 
@@ -170,6 +169,11 @@ impl<W: Write> Renderer<W> {
             }
 
             AgentMessage::ToolCall { request, .. } => {
+                self.tool_call_statuses.on_tool_request(&request);
+                self.render_frame()?;
+            }
+
+            AgentMessage::ToolProgress { request, .. } => {
                 self.tool_call_statuses.on_tool_request(&request);
                 self.render_frame()?;
             }

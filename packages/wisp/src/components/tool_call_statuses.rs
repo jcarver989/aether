@@ -1,7 +1,7 @@
 use crate::render_context::{Component, RenderContext};
 use crate::screen::Line;
-use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use crossterm::style::Stylize;
+use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use std::collections::HashMap;
 
 const MAX_TOOL_ARG_LENGTH: usize = 200;
@@ -81,9 +81,21 @@ impl ToolCallStatuses {
     }
 
     pub fn on_tool_request(&mut self, request: &ToolCallRequest) {
-        if self.tool_calls.contains_key(&request.id) {
+        if let Some(existing) = self.tool_calls.get_mut(&request.id) {
+            if !request.name.is_empty() {
+                existing.name = request.name.clone();
+            }
+
+            if !request.arguments.is_empty() {
+                if request.name.is_empty() {
+                    existing.arguments.push_str(&request.arguments);
+                } else {
+                    existing.arguments = request.arguments.clone();
+                }
+            }
             return;
         }
+
         self.tool_order.push(request.id.clone());
         self.tool_calls.insert(
             request.id.clone(),
@@ -112,9 +124,50 @@ impl ToolCallStatuses {
     }
 
     /// Clear all tracked tool calls (e.g., after pushing to scrollback).
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.tool_order.clear();
         self.tool_calls.clear();
+    }
+
+    /// Render and remove only completed (Success/Error) tool calls,
+    /// leaving Running ones in place for continued display.
+    pub fn drain_completed(&mut self, context: &RenderContext) -> Vec<Line> {
+        let mut lines = Vec::new();
+        let mut completed_ids = Vec::new();
+
+        for id in &self.tool_order {
+            if let Some(tc) = self.tool_calls.get(id) {
+                match &tc.status {
+                    TrackedStatus::Running => continue,
+                    TrackedStatus::Success => {
+                        let view = ToolCallStatusView {
+                            name: tc.name.clone(),
+                            arguments: tc.arguments.clone(),
+                            status: ToolCallStatus::Success,
+                        };
+                        lines.extend(view.render(context));
+                        completed_ids.push(id.clone());
+                    }
+                    TrackedStatus::Error(msg) => {
+                        let view = ToolCallStatusView {
+                            name: tc.name.clone(),
+                            arguments: tc.arguments.clone(),
+                            status: ToolCallStatus::Error(msg.clone()),
+                        };
+                        lines.extend(view.render(context));
+                        completed_ids.push(id.clone());
+                    }
+                }
+            }
+        }
+
+        for id in &completed_ids {
+            self.tool_calls.remove(id);
+        }
+        self.tool_order.retain(|id| !completed_ids.contains(id));
+
+        lines
     }
 
     #[allow(dead_code)]
@@ -174,17 +227,30 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_request_is_ignored() {
+    fn duplicate_request_updates_existing_tool() {
         let mut statuses = ToolCallStatuses::new();
-        let request = ToolCallRequest {
+        statuses.on_tool_request(&ToolCallRequest {
             id: "tool-1".to_string(),
             name: "Read".to_string(),
             arguments: "".to_string(),
-        };
-        statuses.on_tool_request(&request);
-        statuses.on_tool_request(&request);
+        });
+
+        // Streaming arg chunks for same ID should be merged.
+        statuses.on_tool_request(&ToolCallRequest {
+            id: "tool-1".to_string(),
+            name: "".to_string(),
+            arguments: "{\"file\":".to_string(),
+        });
+        statuses.on_tool_request(&ToolCallRequest {
+            id: "tool-1".to_string(),
+            name: "".to_string(),
+            arguments: "\"test.rs\"}".to_string(),
+        });
+
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
+        assert!(lines[0].as_str().contains("Read"));
+        assert!(lines[0].as_str().contains("{\"file\":\"test.rs\"}"));
     }
 
     #[test]
@@ -294,6 +360,118 @@ mod tests {
         statuses.clear();
         assert!(statuses.is_empty());
         assert!(statuses.render(&ctx()).is_empty());
+    }
+
+    #[test]
+    fn drain_completed_only_removes_success_and_error() {
+        let mut statuses = ToolCallStatuses::new();
+
+        // Add a Running tool call
+        statuses.on_tool_request(&ToolCallRequest {
+            id: "tool-1".to_string(),
+            name: "Read".to_string(),
+            arguments: "file.rs".to_string(),
+        });
+
+        // Add a Success tool call
+        statuses.on_tool_request(&ToolCallRequest {
+            id: "tool-2".to_string(),
+            name: "Write".to_string(),
+            arguments: "out.rs".to_string(),
+        });
+        statuses.on_tool_result(&ToolCallResult {
+            id: "tool-2".to_string(),
+            name: "Write".to_string(),
+            arguments: "out.rs".to_string(),
+            result: "ok".to_string(),
+        });
+
+        // Add an Error tool call
+        statuses.on_tool_request(&ToolCallRequest {
+            id: "tool-3".to_string(),
+            name: "Grep".to_string(),
+            arguments: "pattern".to_string(),
+        });
+        statuses.on_tool_error(&ToolCallError {
+            id: "tool-3".to_string(),
+            name: "Grep".to_string(),
+            arguments: None,
+            error: "not found".to_string(),
+        });
+
+        // Drain should return only the completed (Success + Error) tool calls
+        let drained = statuses.drain_completed(&ctx());
+        assert_eq!(drained.len(), 2); // Write (success) + Grep (error)
+        assert!(drained[0].as_str().contains("Write"));
+        assert!(drained[0].as_str().contains("✓"));
+        assert!(drained[1].as_str().contains("Grep"));
+        assert!(drained[1].as_str().contains("X"));
+
+        // Running tool call should still be tracked
+        let remaining = statuses.render(&ctx());
+        assert_eq!(remaining.len(), 1);
+        assert!(remaining[0].as_str().contains("Read"));
+    }
+
+    #[test]
+    fn drain_completed_with_no_completed_returns_empty() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_request(&ToolCallRequest {
+            id: "tool-1".to_string(),
+            name: "Read".to_string(),
+            arguments: "".to_string(),
+        });
+        statuses.on_tool_request(&ToolCallRequest {
+            id: "tool-2".to_string(),
+            name: "Write".to_string(),
+            arguments: "".to_string(),
+        });
+
+        let drained = statuses.drain_completed(&ctx());
+        assert!(drained.is_empty());
+
+        // Both should still be tracked
+        let remaining = statuses.render(&ctx());
+        assert_eq!(remaining.len(), 2);
+    }
+
+    #[test]
+    fn drain_completed_allows_late_arriving_results() {
+        let mut statuses = ToolCallStatuses::new();
+
+        // Two tool calls, one completes
+        statuses.on_tool_request(&ToolCallRequest {
+            id: "tool-1".to_string(),
+            name: "Read".to_string(),
+            arguments: "".to_string(),
+        });
+        statuses.on_tool_request(&ToolCallRequest {
+            id: "tool-2".to_string(),
+            name: "Write".to_string(),
+            arguments: "".to_string(),
+        });
+        statuses.on_tool_result(&ToolCallResult {
+            id: "tool-1".to_string(),
+            name: "Read".to_string(),
+            arguments: "".to_string(),
+            result: "ok".to_string(),
+        });
+
+        // Drain the completed one
+        statuses.drain_completed(&ctx());
+
+        // Late result for remaining Running call should still work
+        statuses.on_tool_result(&ToolCallResult {
+            id: "tool-2".to_string(),
+            name: "Write".to_string(),
+            arguments: "done".to_string(),
+            result: "ok".to_string(),
+        });
+
+        let remaining = statuses.render(&ctx());
+        assert_eq!(remaining.len(), 1);
+        assert!(remaining[0].as_str().contains("Write"));
+        assert!(remaining[0].as_str().contains("✓"));
     }
 
     #[test]

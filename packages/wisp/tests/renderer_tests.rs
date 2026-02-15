@@ -87,6 +87,33 @@ async fn test_streaming_tool_call_arguments() {
 }
 
 #[tokio::test]
+async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
+    let renderer = render(vec![
+        tool_call_with_id("Read", "call_1", ""),
+        tool_call_with_id("", "call_1", r#"{"file":"#),
+        tool_call_with_id("", "call_1", r#""test.rs"}"#),
+    ])
+    .await;
+
+    assert_buffer_eq(renderer.writer(), &["● Read {\"file\":\"test.rs\"}", ">"]);
+}
+
+#[tokio::test]
+async fn test_tool_progress_renders_running_tool_before_completion() {
+    let renderer = render(vec![tool_progress_with_id(
+        "Read",
+        "call_1",
+        r#"{"file":"test.rs"}"#,
+        50.0,
+        Some(100.0),
+        Some("Reading file"),
+    )])
+    .await;
+
+    assert_buffer_eq(renderer.writer(), &["● Read {\"file\":\"test.rs\"}", ">"]);
+}
+
+#[tokio::test]
 async fn test_multiple_parallel_tool_calls() {
     let args1 = r#"{"file": "test.rs"}"#;
     let args2 = r#"{"pattern": "foo"}"#;
@@ -108,6 +135,59 @@ async fn test_multiple_parallel_tool_calls() {
             "● Read ✓ {\"file\": \"test.rs\"}",
             "● Grep ✓ {\"pattern\": \"foo\"}",
             "● Glob ✓ {\"path\": \"src/\"}",
+            ">",
+        ],
+    );
+}
+
+#[tokio::test]
+async fn test_text_complete_preserves_running_tool_calls() {
+    let renderer = render(vec![
+        // Two tool calls start
+        tool_call_with_id("Read", "call_1", r#"{"file": "a.rs"}"#),
+        tool_call_with_id("Write", "call_2", r#"{"file": "b.rs"}"#),
+        // Only Read completes
+        tool_result_with_id("Read", "call_1", r#"{"file": "a.rs"}"#, "contents"),
+        // Text completes — should push completed tool calls to scrollback
+        // but keep the Running "Write" tool call in the managed frame
+        text_complete("Done reading"),
+    ])
+    .await;
+
+    // Scrollback: completed Read + text. Managed frame: running Write + prompt.
+    assert_buffer_eq(
+        renderer.writer(),
+        &[
+            "● Read ✓ {\"file\": \"a.rs\"}",
+            "Done reading",
+            "● Write {\"file\": \"b.rs\"}",
+            ">",
+        ],
+    );
+}
+
+#[tokio::test]
+async fn test_late_result_after_text_complete() {
+    let renderer = render(vec![
+        // Two tool calls start
+        tool_call_with_id("Read", "call_1", r#"{"file": "a.rs"}"#),
+        tool_call_with_id("Write", "call_2", r#"{"file": "b.rs"}"#),
+        // Only Read completes
+        tool_result_with_id("Read", "call_1", r#"{"file": "a.rs"}"#, "contents"),
+        // Text completes — drain completed, keep running
+        text_complete("Done reading"),
+        // Late result for Write arrives
+        tool_result_with_id("Write", "call_2", r#"{"file": "b.rs"}"#, "written"),
+    ])
+    .await;
+
+    // After the late result, Write should show as completed (✓) in the managed frame
+    assert_buffer_eq(
+        renderer.writer(),
+        &[
+            "● Read ✓ {\"file\": \"a.rs\"}",
+            "Done reading",
+            "● Write ✓ {\"file\": \"b.rs\"}",
             ">",
         ],
     );
@@ -199,6 +279,26 @@ fn tool_result_with_id(name: &str, id: &str, args: &str, result: &str) -> AgentM
             result: result.to_string(),
         },
         model_name: "test".to_string(),
+    }
+}
+
+fn tool_progress_with_id(
+    name: &str,
+    id: &str,
+    args: &str,
+    progress: f64,
+    total: Option<f64>,
+    message: Option<&str>,
+) -> AgentMessage {
+    AgentMessage::ToolProgress {
+        request: ToolCallRequest {
+            id: id.to_string(),
+            name: name.to_string(),
+            arguments: args.to_string(),
+        },
+        progress,
+        total,
+        message: message.map(str::to_string),
     }
 }
 
