@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{llm, mcp};
+use crate::mcp;
 
 #[derive(Debug, Error)]
 pub enum AgentError {
@@ -9,7 +9,7 @@ pub enum AgentError {
     McpError(#[from] mcp::McpError),
     /// LLM provider error
     #[error("LLM error: {0}")]
-    LlmError(#[from] llm::LlmError),
+    LlmError(#[from] crate::LlmError),
     /// IO error (file operations, etc.)
     #[error("IO error: {0}")]
     IoError(String),

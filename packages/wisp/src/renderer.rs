@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use aether::agent::{AgentMessage, UserMessage};
+use agent_events::{AgentMessage, UserMessage};
 use crossterm::{
     cursor::position,
     event::{self, KeyCode, KeyEvent},

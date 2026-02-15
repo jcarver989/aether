@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use tokio_stream::StreamExt;
 
-use crate::llm::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
 use crate::types::IsoString;
+use crate::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
 
 const SUMMARIZATION_PROMPT: &str = include_str!("prompts/summarization.md");
 
@@ -132,7 +132,7 @@ impl<T: StreamingModelProvider> Compactor<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm::ChatMessage;
+    use crate::ChatMessage;
     use crate::types::IsoString;
 
     #[test]

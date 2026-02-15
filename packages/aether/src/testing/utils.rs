@@ -2,14 +2,15 @@ use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use agent_events::{AgentMessage, UserMessage};
 use futures::future::join_all;
 
-use crate::agent::{AgentMessage, UserMessage, agent};
-use crate::llm::{Context, LlmResponse};
+use crate::agent::agent;
 use crate::mcp::McpSpawnResult;
 use crate::mcp::mcp;
 use crate::testing::FakeMcpServer;
 use crate::testing::fake_mcp::fake_mcp;
+use crate::{Context, LlmResponse};
 
 use super::FakeLlmProvider;
 

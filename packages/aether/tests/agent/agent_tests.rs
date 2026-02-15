@@ -2,13 +2,14 @@ use std::error::Error;
 use std::time::Duration;
 
 use aether::{
-    agent::{AgentMessage, COMPLETION_SIGNAL, UserMessage},
+    agent::COMPLETION_SIGNAL,
     llm::ChatMessage,
     testing::{
         agent_message, llm_response, test_agent,
         {AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, SlowToolRequest},
     },
 };
+use agent_events::{AgentMessage, UserMessage};
 
 #[tokio::test]
 async fn test_text_message() -> Result<(), Box<dyn Error>> {

@@ -29,6 +29,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures",
+ "llm",
  "oauth2",
  "rand 0.10.0",
  "regex",
@@ -730,6 +731,7 @@ name = "crucible"
 version = "0.1.0"
 dependencies = [
  "aether",
+ "agent-events",
  "async-trait",
  "axum",
  "chrono",
@@ -1846,6 +1848,27 @@ name = "litrs"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
+
+[[package]]
+name = "llm"
+version = "0.1.0"
+dependencies = [
+ "agent-events",
+ "async-openai",
+ "async-stream",
+ "chrono",
+ "futures",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
 
 [[package]]
 name = "lock_api"
@@ -4373,6 +4396,7 @@ name = "wisp"
 version = "0.1.0"
 dependencies = [
  "aether",
+ "agent-events",
  "clap",
  "crossterm",
  "dirs",

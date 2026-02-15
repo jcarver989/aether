@@ -1,6 +1,7 @@
-use aether::agent::{AgentMessage, UserMessage, agent};
+use aether::agent::agent;
 use aether::llm::{StreamingModelProvider, ToolCallRequest};
 use aether::mcp::{McpBuilder, McpSpawnResult, ServerFactory, mcp};
+use agent_events::{AgentMessage, UserMessage};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;

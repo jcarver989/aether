@@ -29,6 +29,7 @@ tempfile = { workspace = true }
 async-trait = { workspace = true }
 oauth2 = "5.0"
 agent-events = { path = "../agent-events" }
+llm = { path = "../llm" }
 
 [[example]]
 name = "basic_agent"

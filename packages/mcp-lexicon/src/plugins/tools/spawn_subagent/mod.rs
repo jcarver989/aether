@@ -4,10 +4,11 @@ use crate::plugins::files::AgentFile;
 use crate::plugins::server::PluginsMcp;
 use crate::tasks::TasksMcp;
 use aether::{
-    agent::{AgentHandle, AgentMessage, UserMessage, agent},
+    agent::{AgentHandle, agent},
     llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser},
     mcp::{McpSpawnResult, ServerInstructions, mcp, run_mcp_task::McpCommand},
 };
+use agent_events::{AgentMessage, UserMessage};
 use futures::FutureExt;
 use rmcp::ServiceExt;
 use schemars::JsonSchema;

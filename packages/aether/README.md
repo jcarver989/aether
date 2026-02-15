@@ -36,7 +36,7 @@ aether = "0.1"
 ```rust,no_run
 use aether::{
     agent::{AgentMessage, UserMessage, agent},
-    llm::openrouter::OpenRouterProvider,
+    llm::providers::openrouter::OpenRouterProvider,
 };
 use std::io::{self, Write};
 
@@ -130,7 +130,7 @@ And bring Mr. BotBot to life!
 ```rust,no_run
 use aether::{
     agent::{AgentMessage, UserMessage, agent, Prompt},
-    llm::openrouter::OpenRouterProvider,
+    llm::providers::openrouter::OpenRouterProvider,
     mcp::{mcp, McpSpawnResult},
 };
 use std::io::{self, Write};

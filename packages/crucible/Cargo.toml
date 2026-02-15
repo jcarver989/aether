@@ -41,6 +41,7 @@ tokio-stream = { workspace = true, features = ["sync"] }
 
 # Internal dependencies
 aether = { path = "../aether" }
+agent-events = { path = "../agent-events" }
 uuid = { workspace = true, features = ["v4", "serde"] }
 async-trait.workspace = true
 

@@ -1,8 +1,10 @@
 use aether::{
-    agent::{AgentMessage::*, Prompt, UserMessage, agent},
+    agent::{Prompt, agent},
     llm::{StreamingModelProvider, parser::ModelProviderParser},
     mcp::{McpError, McpServerConfig, McpSpawnResult, RawMcpConfig, mcp},
 };
+use agent_events::AgentMessage::*;
+use agent_events::UserMessage;
 use clap::Parser;
 
 #[derive(Parser)]

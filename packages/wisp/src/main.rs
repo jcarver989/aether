@@ -124,7 +124,7 @@ async fn run_non_interactive(
     state: AppState,
     prompt: &str,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    use aether::agent::{AgentMessage, UserMessage};
+    use agent_events::{AgentMessage, UserMessage};
 
     let user_msg_tx = state.agent_tx;
     let mut agent_msg_rx = state.agent_rx;

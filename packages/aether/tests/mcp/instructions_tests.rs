@@ -1,6 +1,7 @@
 use aether::agent::Prompt;
 use aether::mcp::{McpSpawnResult, ServerInstructions, mcp};
 use aether::testing::{FakeLlmProvider, FakeMcpServer, fake_mcp};
+use agent_events::{AgentMessage, UserMessage};
 
 #[tokio::test]
 async fn test_fake_mcp_server_has_instructions() {
@@ -158,14 +159,12 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
         .unwrap();
 
     // Send a simple message to trigger context capture
-    tx.send(aether::agent::UserMessage::text("test"))
-        .await
-        .unwrap();
+    tx.send(UserMessage::text("test")).await.unwrap();
     drop(tx);
 
     // Wait for the agent to process
     while let Some(msg) = rx.recv().await {
-        if matches!(msg, aether::agent::AgentMessage::Done) {
+        if matches!(msg, AgentMessage::Done) {
             break;
         }
     }
@@ -214,14 +213,12 @@ async fn test_agent_builder_works_without_mcp_instructions() {
         .unwrap();
 
     // Send a simple message
-    tx.send(aether::agent::UserMessage::text("test"))
-        .await
-        .unwrap();
+    tx.send(UserMessage::text("test")).await.unwrap();
     drop(tx);
 
     // Wait for the agent to process
     while let Some(msg) = rx.recv().await {
-        if matches!(msg, aether::agent::AgentMessage::Done) {
+        if matches!(msg, AgentMessage::Done) {
             break;
         }
     }

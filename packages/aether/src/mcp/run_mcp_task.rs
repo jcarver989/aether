@@ -1,5 +1,5 @@
-use crate::llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use crate::mcp::McpManager;
+use crate::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use futures::future::Either;
 use futures::stream::{self, StreamExt};
 use rmcp::RoleClient;
@@ -142,8 +142,7 @@ async fn try_execute_tool(
     tool_call_id: String,
     event_tx: mpsc::Sender<ToolExecutionEvent>,
 ) -> Result<ToolCallResult, ToolCallError> {
-    use crate::llm::mcp_result_to_tool_call_result;
-    use crate::llm::tool_call_request_to_mcp;
+    use super::tool_bridge::{mcp_result_to_tool_call_result, tool_call_request_to_mcp};
     use rmcp::model::{ClientRequest::CallToolRequest, Request, ServerResult};
     use rmcp::service::PeerRequestOptions;
 
