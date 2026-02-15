@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["packages/aether", "packages/mcp-lexicon", "packages/wisp", "packages/crucible", "packages/aether-acp", "packages/agent-events", "packages/planning-agent", "packages/aether-lspd", "packages/llm"]
+members = ["packages/aether", "packages/mcp-lexicon", "packages/wisp", "packages/crucible", "packages/aether-acp", "packages/agent-events", "packages/planning-agent", "packages/aether-lspd", "packages/llm", "packages/mcp-coding"]
 
 [workspace.dependencies]
 # Async runtime

@@ -16,7 +16,8 @@ use aether::{agent::Prompt, llm::parser::ModelProviderParser};
 use clap::Parser;
 use crucible::{AetherRunner, EvalRunner, EvalsConfig, FileSystemStore};
 use futures::FutureExt;
-use mcp_lexicon::{CodingMcp, ServiceExt};
+use mcp_coding::CodingMcp;
+use rmcp::ServiceExt;
 use std::{sync::Arc, time::Duration};
 
 #[derive(Parser)]

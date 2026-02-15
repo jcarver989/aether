@@ -6,8 +6,8 @@ use aether::{
     mcp::{McpSpawnResult, mcp},
 };
 use agent_events::{AgentMessage, UserMessage};
-use mcp_lexicon::coding::{DefaultCodingTools, LspCodingTools};
-use mcp_lexicon::{CodingMcp, PluginsMcp, ServiceExt, TasksMcp};
+use mcp_coding::{CodingMcp, DefaultCodingTools, LspCodingTools};
+use mcp_lexicon::{PluginsMcp, ServiceExt, TasksMcp};
 use std::env::current_dir;
 use std::error::Error;
 use std::path::PathBuf;
