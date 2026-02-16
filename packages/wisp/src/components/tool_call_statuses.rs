@@ -1,7 +1,8 @@
+use agent_client_protocol as acp;
+
 use crate::render_context::{Component, RenderContext};
 use crate::screen::Line;
 use crossterm::style::Stylize;
-use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use std::collections::HashMap;
 
 const MAX_TOOL_ARG_LENGTH: usize = 200;
@@ -80,46 +81,57 @@ impl ToolCallStatuses {
         }
     }
 
-    pub fn on_tool_request(&mut self, request: &ToolCallRequest) {
-        if let Some(existing) = self.tool_calls.get_mut(&request.id) {
-            if !request.name.is_empty() {
-                existing.name = request.name.clone();
-            }
+    /// Handle a new tool call from ACP SessionUpdate::ToolCall.
+    pub fn on_tool_call(&mut self, tool_call: &acp::ToolCall) {
+        let id = tool_call.tool_call_id.0.to_string();
+        let arguments = tool_call
+            .raw_input
+            .as_ref()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
 
-            if !request.arguments.is_empty() {
-                if request.name.is_empty() {
-                    existing.arguments.push_str(&request.arguments);
-                } else {
-                    existing.arguments = request.arguments.clone();
-                }
+        if let Some(existing) = self.tool_calls.get_mut(&id) {
+            if !tool_call.title.is_empty() {
+                existing.name = tool_call.title.clone();
             }
+            existing.arguments = arguments;
             return;
         }
 
-        self.tool_order.push(request.id.clone());
+        self.tool_order.push(id.clone());
         self.tool_calls.insert(
-            request.id.clone(),
+            id,
             TrackedToolCall {
-                name: request.name.clone(),
-                arguments: request.arguments.clone(),
+                name: tool_call.title.clone(),
+                arguments,
                 status: TrackedStatus::Running,
             },
         );
     }
 
-    pub fn on_tool_result(&mut self, result: &ToolCallResult) {
-        if let Some(tc) = self.tool_calls.get_mut(&result.id) {
-            tc.arguments = result.arguments.clone();
-            tc.status = TrackedStatus::Success;
-        }
-    }
+    /// Handle a tool call update from ACP SessionUpdate::ToolCallUpdate.
+    pub fn on_tool_call_update(&mut self, update: &acp::ToolCallUpdate) {
+        let id = update.tool_call_id.0.to_string();
 
-    pub fn on_tool_error(&mut self, error: &ToolCallError) {
-        if let Some(tc) = self.tool_calls.get_mut(&error.id) {
-            if let Some(args) = &error.arguments {
-                tc.arguments = args.clone();
+        if let Some(tc) = self.tool_calls.get_mut(&id) {
+            if let Some(title) = &update.fields.title {
+                tc.name = title.clone();
             }
-            tc.status = TrackedStatus::Error(error.error.clone());
+            if let Some(raw_input) = &update.fields.raw_input {
+                tc.arguments = raw_input.to_string();
+            }
+            if let Some(status) = &update.fields.status {
+                match status {
+                    acp::ToolCallStatus::Completed => tc.status = TrackedStatus::Success,
+                    acp::ToolCallStatus::Failed => {
+                        tc.status = TrackedStatus::Error("failed".to_string());
+                    }
+                    acp::ToolCallStatus::InProgress | acp::ToolCallStatus::Pending => {
+                        tc.status = TrackedStatus::Running;
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -212,112 +224,66 @@ mod tests {
         RenderContext::new((80, 24))
     }
 
+    fn make_tool_call(id: &str, title: &str, raw_input: Option<&str>) -> acp::ToolCall {
+        let mut tc = acp::ToolCall::new(id.to_string(), title);
+        if let Some(input) = raw_input {
+            tc = tc.raw_input(serde_json::from_str::<serde_json::Value>(input).unwrap());
+        }
+        tc
+    }
+
+    fn make_tool_call_update(
+        id: &str,
+        status: acp::ToolCallStatus,
+    ) -> acp::ToolCallUpdate {
+        acp::ToolCallUpdate::new(
+            id.to_string(),
+            acp::ToolCallUpdateFields::new().status(status),
+        )
+    }
+
     #[test]
     fn request_tracks_tool() {
         let mut statuses = ToolCallStatuses::new();
-        let request = ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "/path/to/file".to_string(),
-        };
-        statuses.on_tool_request(&request);
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", Some(r#""/path/to/file""#)));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].as_str().contains("Read"));
     }
 
     #[test]
-    fn duplicate_request_updates_existing_tool() {
+    fn update_to_success() {
         let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-        });
-
-        // Streaming arg chunks for same ID should be merged.
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "".to_string(),
-            arguments: "{\"file\":".to_string(),
-        });
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "".to_string(),
-            arguments: "\"test.rs\"}".to_string(),
-        });
-
-        let lines = statuses.render(&ctx());
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].as_str().contains("Read"));
-        assert!(lines[0].as_str().contains("{\"file\":\"test.rs\"}"));
-    }
-
-    #[test]
-    fn result_updates_to_success() {
-        let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-        });
-        statuses.on_tool_result(&ToolCallResult {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "success".to_string(),
-            result: "contents".to_string(),
-        });
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+        statuses.on_tool_call_update(&make_tool_call_update("tool-1", acp::ToolCallStatus::Completed));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].as_str().contains("✓"));
     }
 
     #[test]
-    fn unknown_result_is_ignored() {
+    fn unknown_update_is_ignored() {
         let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_result(&ToolCallResult {
-            id: "unknown".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-            result: "".to_string(),
-        });
+        statuses.on_tool_call_update(&make_tool_call_update("unknown", acp::ToolCallStatus::Completed));
         let lines = statuses.render(&ctx());
         assert!(lines.is_empty());
     }
 
     #[test]
-    fn error_updates_to_error_state() {
+    fn update_to_error() {
         let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-        });
-        statuses.on_tool_error(&ToolCallError {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: None,
-            error: "not found".to_string(),
-        });
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+        statuses.on_tool_call_update(&make_tool_call_update("tool-1", acp::ToolCallStatus::Failed));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].as_str().contains("X"));
-        assert!(lines[0].as_str().contains("not found"));
     }
 
     #[test]
     fn multiple_tools_render_in_order() {
         let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-        });
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-2".to_string(),
-            name: "Write".to_string(),
-            arguments: "".to_string(),
-        });
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+        statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 2);
         assert!(lines[0].as_str().contains("Read"));
@@ -327,22 +293,9 @@ mod tests {
     #[test]
     fn multiple_tools_complete_independently() {
         let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-        });
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-2".to_string(),
-            name: "Write".to_string(),
-            arguments: "".to_string(),
-        });
-        statuses.on_tool_result(&ToolCallResult {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-            result: "".to_string(),
-        });
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+        statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
+        statuses.on_tool_call_update(&make_tool_call_update("tool-1", acp::ToolCallStatus::Completed));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 2);
         assert!(lines[0].as_str().contains("✓")); // Read completed
@@ -352,11 +305,7 @@ mod tests {
     #[test]
     fn clear_removes_all() {
         let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-        });
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
         statuses.clear();
         assert!(statuses.is_empty());
         assert!(statuses.render(&ctx()).is_empty());
@@ -366,48 +315,19 @@ mod tests {
     fn drain_completed_only_removes_success_and_error() {
         let mut statuses = ToolCallStatuses::new();
 
-        // Add a Running tool call
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "file.rs".to_string(),
-        });
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", Some(r#""file.rs""#)));
+        statuses.on_tool_call(&make_tool_call("tool-2", "Write", Some(r#""out.rs""#)));
+        statuses.on_tool_call_update(&make_tool_call_update("tool-2", acp::ToolCallStatus::Completed));
+        statuses.on_tool_call(&make_tool_call("tool-3", "Grep", Some(r#""pattern""#)));
+        statuses.on_tool_call_update(&make_tool_call_update("tool-3", acp::ToolCallStatus::Failed));
 
-        // Add a Success tool call
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-2".to_string(),
-            name: "Write".to_string(),
-            arguments: "out.rs".to_string(),
-        });
-        statuses.on_tool_result(&ToolCallResult {
-            id: "tool-2".to_string(),
-            name: "Write".to_string(),
-            arguments: "out.rs".to_string(),
-            result: "ok".to_string(),
-        });
-
-        // Add an Error tool call
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-3".to_string(),
-            name: "Grep".to_string(),
-            arguments: "pattern".to_string(),
-        });
-        statuses.on_tool_error(&ToolCallError {
-            id: "tool-3".to_string(),
-            name: "Grep".to_string(),
-            arguments: None,
-            error: "not found".to_string(),
-        });
-
-        // Drain should return only the completed (Success + Error) tool calls
         let drained = statuses.drain_completed(&ctx());
-        assert_eq!(drained.len(), 2); // Write (success) + Grep (error)
+        assert_eq!(drained.len(), 2);
         assert!(drained[0].as_str().contains("Write"));
         assert!(drained[0].as_str().contains("✓"));
         assert!(drained[1].as_str().contains("Grep"));
         assert!(drained[1].as_str().contains("X"));
 
-        // Running tool call should still be tracked
         let remaining = statuses.render(&ctx());
         assert_eq!(remaining.len(), 1);
         assert!(remaining[0].as_str().contains("Read"));
@@ -416,21 +336,12 @@ mod tests {
     #[test]
     fn drain_completed_with_no_completed_returns_empty() {
         let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-        });
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-2".to_string(),
-            name: "Write".to_string(),
-            arguments: "".to_string(),
-        });
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+        statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
 
         let drained = statuses.drain_completed(&ctx());
         assert!(drained.is_empty());
 
-        // Both should still be tracked
         let remaining = statuses.render(&ctx());
         assert_eq!(remaining.len(), 2);
     }
@@ -439,34 +350,13 @@ mod tests {
     fn drain_completed_allows_late_arriving_results() {
         let mut statuses = ToolCallStatuses::new();
 
-        // Two tool calls, one completes
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-        });
-        statuses.on_tool_request(&ToolCallRequest {
-            id: "tool-2".to_string(),
-            name: "Write".to_string(),
-            arguments: "".to_string(),
-        });
-        statuses.on_tool_result(&ToolCallResult {
-            id: "tool-1".to_string(),
-            name: "Read".to_string(),
-            arguments: "".to_string(),
-            result: "ok".to_string(),
-        });
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+        statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
+        statuses.on_tool_call_update(&make_tool_call_update("tool-1", acp::ToolCallStatus::Completed));
 
-        // Drain the completed one
         statuses.drain_completed(&ctx());
 
-        // Late result for remaining Running call should still work
-        statuses.on_tool_result(&ToolCallResult {
-            id: "tool-2".to_string(),
-            name: "Write".to_string(),
-            arguments: "done".to_string(),
-            result: "ok".to_string(),
-        });
+        statuses.on_tool_call_update(&make_tool_call_update("tool-2", acp::ToolCallStatus::Completed));
 
         let remaining = statuses.render(&ctx());
         assert_eq!(remaining.len(), 1);

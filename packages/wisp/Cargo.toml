@@ -4,21 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-aether = { path = "../aether"}
-agent-events = { path = "../agent-events"}
-llm = { path = "../llm" }
-mcp_utils = { path = "../mcp-utils"}
-mcp-coding = { path = "../mcp-coding" }
-mcp-skills = { path = "../mcp-skills" }
-mcp-subagents = { path = "../mcp-subagents" }
-mcp-tasks = { path = "../mcp-tasks" }
+agent-client-protocol = "0.9.4"
+async-trait = "0.1"
 futures = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
+tokio-util = { workspace = true, features = ["compat"] }
 serde_json = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
 crossterm = { workspace = true }
-dirs = "6.0.0"

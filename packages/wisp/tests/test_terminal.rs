@@ -92,8 +92,14 @@ impl TestTerminal {
     fn write_char(&mut self, ch: char) {
         match ch {
             '\n' => {
-                // Move to next line, column 0
-                self.cursor.1 = (self.cursor.1 + 1).min(self.size.1.saturating_sub(1));
+                if self.cursor.1 >= self.size.1.saturating_sub(1) {
+                    // At last row: scroll buffer up by 1
+                    self.buffer.remove(0);
+                    self.buffer.push(vec![' '; self.size.0 as usize]);
+                    // Cursor stays at last row
+                } else {
+                    self.cursor.1 += 1;
+                }
                 self.cursor.0 = 0;
             }
             '\r' => {

@@ -3,7 +3,7 @@
     "coding": {
       "type": "in-memory"
     },
-    "plugins": {
+    "skills": {
       "type": "in-memory",
       "args": ["--dir", "$HOME/.aether"]
     },

@@ -1,12 +1,16 @@
+mod acp_connection;
+mod app_state;
 mod cli;
 mod colors;
 mod components;
-mod output_formatters;
+mod error;
 mod render_context;
 mod renderer;
 mod screen;
+mod terminal_manager;
+
+use agent_client_protocol as acp;
 use clap::Parser;
-use crossterm::cursor::position;
 use crossterm::event::{Event, KeyEventKind, poll, read};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use renderer::LoopAction;
@@ -14,7 +18,8 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 use std::time::Duration;
 use tokio::{select, time};
-mod app_state;
+
+use crate::acp_connection::AcpEvent;
 use crate::app_state::AppState;
 use crate::cli::Cli;
 use crate::renderer::Renderer;
@@ -63,16 +68,11 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let stdout = io::stdout();
 
-    // The Screen's origin row is wherever the cursor currently is
-    let (_, origin_row) = position()?;
-
-    let user_msg_tx = state.agent_tx;
-    let mut agent_msg_rx = state.agent_rx;
-    let mut renderer = Renderer::new(stdout, origin_row);
+    let mut renderer = Renderer::new(stdout);
 
     renderer.update_render_context();
     renderer.initial_render()?;
@@ -80,9 +80,24 @@ async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Erro
     loop {
         renderer.update_render_context();
         select! {
-            Some(message) = agent_msg_rx.recv() => {
-                if let Err(e) = renderer.on_agent_message(message).await {
-                    eprintln!("Error handling agent message: {e}");
+            Some(event) = state.event_rx.recv() => {
+                match event {
+                    AcpEvent::SessionUpdate(update) => {
+                        if let Err(e) = renderer.on_session_update(*update) {
+                            eprintln!("Error handling session update: {e}");
+                        }
+                    }
+                    AcpEvent::PromptDone(_stop_reason) => {
+                        if let Err(e) = renderer.on_prompt_done() {
+                            eprintln!("Error handling prompt done: {e}");
+                        }
+                    }
+                    AcpEvent::PromptError(e) => {
+                        eprintln!("Prompt error: {e}");
+                    }
+                    AcpEvent::ConnectionClosed => {
+                        break;
+                    }
                 }
             }
 
@@ -91,7 +106,11 @@ async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Erro
                     match read() {
                         Ok(Event::Key(key_event)) => {
                             if key_event.kind == KeyEventKind::Press {
-                                match renderer.on_key_event(key_event, &user_msg_tx).await {
+                                match renderer.on_key_event(
+                                    key_event,
+                                    &state.prompt_handle,
+                                    &state.session_id,
+                                ) {
                                     Ok(LoopAction::Exit) => {
                                         break;
                                     }
@@ -118,93 +137,55 @@ async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Erro
 }
 
 async fn run_non_interactive(
-    state: AppState,
+    mut state: AppState,
     prompt: &str,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    use agent_events::{AgentMessage, UserMessage};
+    state
+        .prompt_handle
+        .prompt(&state.session_id, prompt);
 
-    let user_msg_tx = state.agent_tx;
-    let mut agent_msg_rx = state.agent_rx;
-
-    user_msg_tx
-        .send(UserMessage::Text {
-            content: prompt.to_string(),
-        })
-        .await?;
-
-    while let Some(message) = agent_msg_rx.recv().await {
-        match message {
-            AgentMessage::Text {
-                chunk, is_complete, ..
-            } => {
-                if is_complete {
-                    println!();
-                } else {
-                    print!("{chunk}");
-                    io::stdout().flush()?;
+    while let Some(event) = state.event_rx.recv().await {
+        match event {
+            AcpEvent::SessionUpdate(update) => match *update {
+                acp::SessionUpdate::AgentMessageChunk(chunk) => {
+                    if let acp::ContentBlock::Text(text_content) = chunk.content {
+                        print!("{}", text_content.text);
+                        io::stdout().flush()?;
+                    }
                 }
+                acp::SessionUpdate::ToolCall(tool_call) => {
+                    println!("[Tool: {}] Starting...", tool_call.title);
+                }
+                acp::SessionUpdate::ToolCallUpdate(update) => {
+                    if let Some(status) = &update.fields.status {
+                        match status {
+                            acp::ToolCallStatus::Completed => {
+                                println!(
+                                    "[Tool: {}] ✓ Completed",
+                                    update.tool_call_id
+                                );
+                            }
+                            acp::ToolCallStatus::Failed => {
+                                eprintln!(
+                                    "[Tool: {}] ✗ Failed",
+                                    update.tool_call_id
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            },
+            AcpEvent::PromptDone(_) => {
+                println!();
+                break;
             }
-
-            AgentMessage::ToolCall { request, .. } => {
-                println!("[Tool: {}] Starting...", request.name);
-            }
-
-            AgentMessage::ToolProgress {
-                request,
-                progress,
-                total,
-                message,
-            } => {
-                let progress_str = total
-                    .map(|t| format!("{:.0}/{:.0}", progress, t))
-                    .unwrap_or_else(|| format!("{:.0}", progress));
-                let msg = message.as_deref().unwrap_or("");
-                println!("[Tool: {}] {} {}", request.name, msg, progress_str);
-            }
-
-            AgentMessage::ToolResult { result, .. } => {
-                println!("[Tool: {}] ✓ Completed", result.name);
-            }
-
-            AgentMessage::ToolError { error, .. } => {
-                eprintln!("[Tool: {}] ✗ Error: {}", error.name, error.error);
-            }
-
-            AgentMessage::Error { message } => {
-                eprintln!("Error: {message}");
+            AcpEvent::PromptError(e) => {
+                eprintln!("Error: {e}");
                 return Ok(ExitCode::FAILURE);
             }
-
-            AgentMessage::Cancelled { message } => {
-                eprintln!("Cancelled: {message}");
-                return Ok(ExitCode::FAILURE);
-            }
-
-            AgentMessage::ContextCompactionStarted { message_count } => {
-                println!("[Context compaction: {} messages]", message_count);
-            }
-
-            AgentMessage::ContextCompactionResult {
-                messages_removed, ..
-            } => {
-                println!("[Context compacted: {} messages removed]", messages_removed);
-            }
-
-            AgentMessage::ContextUsageUpdate { .. } => {
-                // Silently ignore context usage updates in CLI output
-            }
-
-            AgentMessage::AutoContinue {
-                attempt,
-                max_attempts,
-            } => {
-                println!(
-                    "[Auto-continuing: {}/{} - LLM stopped without completion signal]",
-                    attempt, max_attempts
-                );
-            }
-
-            AgentMessage::Done => {
+            AcpEvent::ConnectionClosed => {
                 break;
             }
         }

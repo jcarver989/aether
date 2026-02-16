@@ -9,7 +9,7 @@ fn test_non_interactive_help_works() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("A TUI for the Aether AI assistant"),
+        stdout.contains("A TUI for AI coding agents via the Agent Client Protocol"),
         "Help text should be displayed"
     );
 }

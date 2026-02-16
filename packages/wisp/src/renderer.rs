@@ -1,10 +1,10 @@
 use std::io::Write;
 
-use agent_events::{AgentMessage, UserMessage};
+use agent_client_protocol as acp;
 use crossterm::event::{self, KeyCode, KeyEvent};
 use crossterm::terminal::size;
-use tokio::sync::mpsc;
 
+use crate::acp_connection::AcpPromptHandle;
 use crate::components::input_prompt::InputPrompt;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::render_context::{Component, RenderContext};
@@ -19,19 +19,17 @@ pub struct Renderer<W: Write> {
     writer: W,
     screen: Screen,
     tool_call_statuses: ToolCallStatuses,
-    current_assistant_message_id: Option<String>,
     current_message_buffer: String,
     input_buffer: String,
     context: RenderContext,
 }
 
 impl<W: Write> Renderer<W> {
-    pub fn new(writer: W, origin_row: u16) -> Self {
+    pub fn new(writer: W) -> Self {
         Self {
             writer,
-            screen: Screen::new(origin_row),
+            screen: Screen::new(),
             tool_call_statuses: ToolCallStatuses::new(),
-            current_assistant_message_id: None,
             current_message_buffer: String::new(),
             input_buffer: String::new(),
             context: RenderContext::new((0, 0)),
@@ -70,11 +68,12 @@ impl<W: Write> Renderer<W> {
         Ok(())
     }
 
-    pub async fn on_key_event(
+    pub fn on_key_event(
         &mut self,
         key_event: KeyEvent,
-        tx: &mpsc::Sender<UserMessage>,
-    ) -> Result<LoopAction, Box<dyn std::error::Error>> {
+        prompt_handle: &AcpPromptHandle,
+        session_id: &acp::SessionId,
+    ) -> Result<LoopAction, std::io::Error> {
         match key_event.code {
             KeyCode::Char('c') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
                 return Ok(LoopAction::Exit);
@@ -110,14 +109,7 @@ impl<W: Write> Renderer<W> {
                         &mut self.writer,
                     )?;
 
-                    if let Err(e) = tx
-                        .send(UserMessage::Text {
-                            content: user_input,
-                        })
-                        .await
-                    {
-                        eprintln!("Failed to send message: {e}");
-                    }
+                    prompt_handle.prompt(session_id, &user_input);
 
                     // Render fresh prompt
                     self.render_frame()?;
@@ -128,69 +120,51 @@ impl<W: Write> Renderer<W> {
         Ok(LoopAction::Continue)
     }
 
-    pub async fn on_agent_message(
-        &mut self,
-        message: AgentMessage,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        match message {
-            AgentMessage::Text {
-                message_id,
-                chunk,
-                is_complete,
-                ..
-            } => {
-                if self.current_assistant_message_id.as_ref() != Some(&message_id) {
-                    self.current_message_buffer.clear();
-                    self.current_assistant_message_id = Some(message_id.clone());
-                }
-
-                self.current_message_buffer.push_str(&chunk);
-
-                if is_complete {
-                    let text = std::mem::take(&mut self.current_message_buffer);
-                    self.current_assistant_message_id = None;
-
-                    // Push completed tool calls + text to scrollback,
-                    // keeping Running tool calls in the managed frame.
-                    let mut scrollback_lines: Vec<Line> =
-                        self.tool_call_statuses.drain_completed(&self.context);
-
-                    // Add the assistant text
-                    for text_line in text.lines() {
-                        scrollback_lines.push(Line::new(text_line.to_string()));
-                    }
-
-                    self.screen
-                        .push_to_scrollback(&scrollback_lines, &mut self.writer)?;
-
-                    // Render fresh prompt
-                    self.render_frame()?;
+    /// Handle a streaming session update from ACP.
+    pub fn on_session_update(&mut self, update: acp::SessionUpdate) -> std::io::Result<()> {
+        match update {
+            acp::SessionUpdate::AgentMessageChunk(chunk) => {
+                if let acp::ContentBlock::Text(text_content) = chunk.content {
+                    self.current_message_buffer.push_str(&text_content.text);
                 }
             }
 
-            AgentMessage::ToolCall { request, .. } => {
-                self.tool_call_statuses.on_tool_request(&request);
+            acp::SessionUpdate::ToolCall(tool_call) => {
+                self.tool_call_statuses.on_tool_call(&tool_call);
                 self.render_frame()?;
             }
 
-            AgentMessage::ToolProgress { request, .. } => {
-                self.tool_call_statuses.on_tool_request(&request);
-                self.render_frame()?;
-            }
-
-            AgentMessage::ToolResult { result, .. } => {
-                self.tool_call_statuses.on_tool_result(&result);
-                self.render_frame()?;
-            }
-
-            AgentMessage::ToolError { error, .. } => {
-                self.tool_call_statuses.on_tool_error(&error);
+            acp::SessionUpdate::ToolCallUpdate(update) => {
+                self.tool_call_statuses.on_tool_call_update(&update);
                 self.render_frame()?;
             }
 
             _ => {}
         }
 
+        Ok(())
+    }
+
+    /// Called when the agent's prompt response is complete.
+    /// Flushes accumulated text and completed tool calls to scrollback.
+    pub fn on_prompt_done(&mut self) -> std::io::Result<()> {
+        let text = std::mem::take(&mut self.current_message_buffer);
+
+        let mut scrollback_lines: Vec<Line> =
+            self.tool_call_statuses.drain_completed(&self.context);
+
+        if !text.is_empty() {
+            for text_line in text.lines() {
+                scrollback_lines.push(Line::new(text_line.to_string()));
+            }
+        }
+
+        if !scrollback_lines.is_empty() {
+            self.screen
+                .push_to_scrollback(&scrollback_lines, &mut self.writer)?;
+        }
+
+        self.render_frame()?;
         Ok(())
     }
 
