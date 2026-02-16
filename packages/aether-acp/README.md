@@ -2,8 +2,6 @@
 
 [Agent Client Protocol (ACP)](https://agentclientprotocol.com/overview/introduction) server for Aether agents, enabling AI coding assistance using in editors like Zed.
 
-![Aether ACP in action](screenshot.png)
-
 ## Quick Start
 
 ### 1. Build the Server
