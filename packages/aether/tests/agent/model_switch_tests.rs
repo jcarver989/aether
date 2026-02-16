@@ -1,5 +1,5 @@
 use aether::core::{COMPLETION_SIGNAL, agent};
-use agent_events::{AgentMessage, UserMessage};
+use aether::events::{AgentMessage, UserMessage};
 use llm::LlmResponse;
 use llm::testing::FakeLlmProvider;
 

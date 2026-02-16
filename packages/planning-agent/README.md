@@ -240,4 +240,4 @@ planning-agent/
 
 - **crucible**: Evaluation framework powering the test runner
 - **aether**: Core LLM and MCP integration
-- **mcp-lexicon**: MCP tool definitions for coding tasks
+- **mcp-coding**: MCP tool definitions for coding tasks

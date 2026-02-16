@@ -13,7 +13,6 @@ path = "src/main.rs"
 
 [dependencies]
 aether = { path = "../aether" }
-agent-events = { path = "../agent-events" }
 llm = { path = "../llm" }
 mcp_utils = { path = "../mcp-utils" }
 mcp-coding = { path = "../mcp-coding" }

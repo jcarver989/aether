@@ -1,6 +1,6 @@
 use aether::core::agent;
+use aether::events::{AgentMessage, UserMessage};
 use aether::mcp::{McpBuilder, McpSpawnResult, mcp};
-use agent_events::{AgentMessage, UserMessage};
 use llm::{StreamingModelProvider, ToolCallRequest};
 use mcp_utils::client::ServerFactory;
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ use super::{AgentConfig, AgentRunner, AgentRunnerMessage, RunError};
 ///
 /// ```ignore
 /// use crucible::aether_runner::AetherRunner;
-/// use mcp_lexicon::{CodingMcp, ServiceExt};
+/// use mcp_coding::CodingMcp;
 ///
 /// // Assume you have an LLM provider
 /// let llm = /* your LLM provider */;

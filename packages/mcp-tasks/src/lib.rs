@@ -9,7 +9,7 @@
 //! # Usage
 //!
 //! ```rust,ignore
-//! use mcp_lexicon::{TasksMcp, ServiceExt};
+//! use mcp_tasks::{TasksMcp, ServiceExt};
 //!
 //! let server = TasksMcp::new(".".into()).into_dyn();
 //! ```

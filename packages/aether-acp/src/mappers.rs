@@ -1,11 +1,11 @@
+use aether::events::AgentMessage;
+use aether::events::{ContextUsageParams, SubAgentProgressParams, SubAgentProgressPayload};
 use agent_client_protocol as acp;
-use agent_events::AgentMessage;
-use agent_events::{ContextUsageParams, SubAgentProgressParams, SubAgentProgressPayload};
 use rmcp::model::Prompt as McpPrompt;
 
 /// Converts an MCP Prompt to an ACP AvailableCommand
 ///
-/// Strips the MCP namespace from the prompt name (e.g., "mcp-lexicon__web" -> "web")
+/// Strips the MCP namespace from the prompt name (e.g., "coding__web" -> "web")
 /// and creates a slash command that clients can invoke.
 pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::AvailableCommand {
     // Extract the base command name by removing the namespace prefix
@@ -231,7 +231,7 @@ fn try_parse_sub_agent_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_events::SUB_AGENT_PROGRESS_METHOD;
+    use aether::events::SUB_AGENT_PROGRESS_METHOD;
     use llm::ToolCallRequest;
 
     #[test]

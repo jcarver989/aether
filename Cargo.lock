@@ -34,7 +34,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "aether"
 version = "0.1.0"
 dependencies = [
- "agent-events",
+ "agent-client-protocol",
  "async-openai",
  "chrono",
  "clap",
@@ -61,7 +61,6 @@ dependencies = [
  "acp_utils",
  "aether",
  "agent-client-protocol",
- "agent-events",
  "async-trait",
  "clap",
  "dirs",
@@ -131,16 +130,6 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
-]
-
-[[package]]
-name = "agent-events"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "llm",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -723,7 +712,6 @@ name = "crucible"
 version = "0.1.0"
 dependencies = [
  "aether",
- "agent-events",
  "async-trait",
  "axum",
  "chrono",
@@ -2008,7 +1996,6 @@ name = "mcp-subagents"
 version = "0.1.0"
 dependencies = [
  "aether",
- "agent-events",
  "clap",
  "futures",
  "llm",

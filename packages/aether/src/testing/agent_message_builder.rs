@@ -1,4 +1,4 @@
-use agent_events::AgentMessage;
+use crate::events::AgentMessage;
 use serde::Serialize;
 
 pub fn agent_message(message_id: &str) -> AgentMessageBuilder {
