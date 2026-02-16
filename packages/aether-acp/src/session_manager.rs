@@ -108,6 +108,13 @@ fn provider_required_env_var(models: &[LlmModel], provider: &str) -> Option<&'st
         .and_then(|m| m.required_env_var())
 }
 
+fn unavailable_reason(model: &LlmModel) -> String {
+    model
+        .required_env_var()
+        .map(|var| format!("Unavailable: set {var}"))
+        .unwrap_or_else(|| "Unavailable: provider is not configured".to_string())
+}
+
 /// Extract the provider portion from a "provider:model_id" string
 fn provider_from_model_str(model_str: &str) -> &str {
     model_str.split(':').next().unwrap_or(model_str)
@@ -167,10 +174,26 @@ fn build_model_config_option(
     current_provider: &str,
     current_model: &str,
 ) -> SessionConfigOption {
-    let options: Vec<acp::SessionConfigSelectOption> = available
+    let all_models = catalog::LlmModel::all();
+    let available_models: HashSet<String> = available.iter().map(provider_model_str).collect();
+    let options: Vec<acp::SessionConfigSelectOption> = all_models
         .iter()
         .filter(|m| m.provider() == current_provider)
-        .map(|m| acp::SessionConfigSelectOption::new(provider_model_str(m), m.display_name()))
+        .map(|m| {
+            let value = provider_model_str(m);
+            let is_available = available_models.contains(&value);
+            let name = if is_available {
+                m.display_name().to_string()
+            } else {
+                format!("{} (unavailable)", m.display_name())
+            };
+            let option = acp::SessionConfigSelectOption::new(value, name);
+            if is_available {
+                option
+            } else {
+                option.description(unavailable_reason(m))
+            }
+        })
         .collect();
 
     SessionConfigOption::select("model", "Model", current_model.to_string(), options)
@@ -691,7 +714,7 @@ mod tests {
         };
 
         // Only anthropic models should be listed
-        assert_eq!(options.len(), 2);
+        assert!(options.len() >= 2);
         for o in options {
             assert!(
                 o.value.0.starts_with("anthropic:"),
@@ -699,6 +722,28 @@ mod tests {
                 o.value.0
             );
         }
+    }
+
+    #[test]
+    fn build_model_config_option_marks_unavailable_models_with_reason() {
+        let models = test_models();
+        let opt = build_model_config_option(&models, "openrouter", "openrouter:openai/gpt-4o");
+
+        let SessionConfigKind::Select(ref select) = opt.kind else {
+            panic!("Expected Select kind");
+        };
+        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
+            panic!("Expected Ungrouped options");
+        };
+        assert!(!options.is_empty());
+        let first = &options[0];
+        assert!(first.name.contains("unavailable"));
+        assert!(
+            first
+                .description
+                .as_deref()
+                .is_some_and(|d| d.starts_with("Unavailable:"))
+        );
     }
 
     #[test]
@@ -723,8 +768,13 @@ mod tests {
         let SessionConfigSelectOptions::Ungrouped(ref model_options) = model_select.options else {
             panic!("Expected Ungrouped options");
         };
-        assert_eq!(model_options.len(), 1);
-        assert!(model_options[0].value.0.starts_with("deepseek:"));
+        assert!(!model_options.is_empty());
+        assert!(model_options.iter().all(|o| o.value.0.starts_with("deepseek:")));
+        assert!(
+            model_options
+                .iter()
+                .any(|o| o.value.0.as_ref() == "deepseek:deepseek-chat")
+        );
     }
 
     #[test]
