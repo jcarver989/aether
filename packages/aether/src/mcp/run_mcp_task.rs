@@ -1,9 +1,9 @@
 use mcp_utils::client::McpManager;
 use mcp_utils::client::mcp_client::McpClient;
 
-use llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use futures::future::Either;
 use futures::stream::{self, StreamExt};
+use llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use rmcp::RoleClient;
 use rmcp::model::{GetPromptResult, ProgressNotificationParam, Prompt};
 use rmcp::service::RunningService;

@@ -5,6 +5,7 @@ members = [
     "packages/wisp",
     "packages/crucible",
     "packages/aether-acp",
+    "packages/acp-utils",
     "packages/agent-events",
     "packages/planning-agent",
     "packages/aether-lspd",
@@ -35,6 +36,9 @@ clap = { version = "4.5", features = ["derive"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 tracing-appender = "0.2"
+
+# ACP
+agent-client-protocol = "0.9.4"
 
 # MCP and API clients
 rmcp = { version = "^0.15.0", features = ["client", "server", "macros", "schemars", "auth"] }

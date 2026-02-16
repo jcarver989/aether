@@ -1,14 +1,11 @@
-mod acp_connection;
 mod app_state;
 mod cli;
-mod colors;
 mod components;
 mod error;
-mod render_context;
 mod renderer;
-mod screen;
-mod terminal_manager;
+mod tui;
 
+use acp_utils::client::AcpEvent;
 use agent_client_protocol as acp;
 use clap::Parser;
 use crossterm::event::{Event, KeyEventKind, poll, read};
@@ -19,7 +16,6 @@ use std::process::ExitCode;
 use std::time::Duration;
 use tokio::{select, time};
 
-use crate::acp_connection::AcpEvent;
 use crate::app_state::AppState;
 use crate::cli::Cli;
 use crate::renderer::Renderer;
@@ -72,13 +68,12 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
     enable_raw_mode()?;
     let stdout = io::stdout();
 
-    let mut renderer = Renderer::new(stdout);
+    let mut renderer = Renderer::new(stdout, state.agent_name.clone(), &state.config_options);
 
     renderer.update_render_context();
     renderer.initial_render()?;
 
     loop {
-        renderer.update_render_context();
         select! {
             Some(event) = state.event_rx.recv() => {
                 match event {
@@ -93,6 +88,9 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                         }
                     }
                     AcpEvent::PromptError(e) => {
+                        if let Err(render_err) = renderer.on_prompt_error() {
+                            eprintln!("Error handling prompt error render: {render_err}");
+                        }
                         eprintln!("Prompt error: {e}");
                     }
                     AcpEvent::ConnectionClosed => {
@@ -102,6 +100,9 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
             }
 
             _ = time::sleep(Duration::from_millis(50)) => {
+                if let Err(e) = renderer.on_tick() {
+                    eprintln!("Error on tick: {e}");
+                }
                 if let Ok(true) = poll(Duration::from_millis(0)) {
                     match read() {
                         Ok(Event::Key(key_event)) => {
@@ -119,6 +120,11 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                                         eprintln!("Error handling key event: {e}");
                                     }
                                 }
+                            }
+                        }
+                        Ok(Event::Resize(cols, rows)) => {
+                            if let Err(e) = renderer.on_resize(cols, rows) {
+                                eprintln!("Error handling resize: {e}");
                             }
                         }
                         Err(e) => {
@@ -140,9 +146,7 @@ async fn run_non_interactive(
     mut state: AppState,
     prompt: &str,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    state
-        .prompt_handle
-        .prompt(&state.session_id, prompt);
+    state.prompt_handle.prompt(&state.session_id, prompt);
 
     while let Some(event) = state.event_rx.recv().await {
         match event {
@@ -160,16 +164,10 @@ async fn run_non_interactive(
                     if let Some(status) = &update.fields.status {
                         match status {
                             acp::ToolCallStatus::Completed => {
-                                println!(
-                                    "[Tool: {}] ✓ Completed",
-                                    update.tool_call_id
-                                );
+                                println!("[Tool: {}] ✓ Completed", update.tool_call_id);
                             }
                             acp::ToolCallStatus::Failed => {
-                                eprintln!(
-                                    "[Tool: {}] ✗ Failed",
-                                    update.tool_call_id
-                                );
+                                eprintln!("[Tool: {}] ✗ Failed", update.tool_call_id);
                             }
                             _ => {}
                         }

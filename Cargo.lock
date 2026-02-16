@@ -3,6 +3,19 @@
 version = 4
 
 [[package]]
+name = "acp_utils"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "async-trait",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -45,6 +58,7 @@ dependencies = [
 name = "aether-acp"
 version = "0.1.0"
 dependencies = [
+ "acp_utils",
  "aether",
  "agent-client-protocol",
  "agent-events",
@@ -4429,14 +4443,13 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 name = "wisp"
 version = "0.1.0"
 dependencies = [
+ "acp_utils",
  "agent-client-protocol",
- "async-trait",
  "clap",
  "crossterm",
  "futures",
  "serde_json",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

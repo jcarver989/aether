@@ -1,0 +1,23 @@
+[package]
+name = "acp_utils"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["client", "server"]
+client = ["dep:thiserror", "dep:tokio-util"]
+server = ["dep:thiserror"]
+
+[dependencies]
+agent-client-protocol = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+
+# Optional (feature-gated)
+thiserror = { workspace = true, optional = true }
+tokio-util = { workspace = true, features = ["compat"], optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+serde_json = { workspace = true }

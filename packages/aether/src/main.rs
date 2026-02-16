@@ -2,11 +2,11 @@ use aether::{
     core::{Prompt, agent},
     mcp::{McpSpawnResult, mcp},
 };
-use llm::{StreamingModelProvider, parser::ModelProviderParser};
-use mcp_utils::client::{McpError, McpServerConfig, RawMcpConfig};
 use agent_events::AgentMessage::*;
 use agent_events::UserMessage;
 use clap::Parser;
+use llm::{StreamingModelProvider, parser::ModelProviderParser};
+use mcp_utils::client::{McpError, McpServerConfig, RawMcpConfig};
 
 #[derive(Parser)]
 #[command(name = "aether-cli")]

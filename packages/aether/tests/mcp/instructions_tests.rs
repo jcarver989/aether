@@ -1,9 +1,9 @@
 use aether::core::Prompt;
 use aether::mcp::{McpSpawnResult, mcp};
-use mcp_utils::client::ServerInstructions;
 use aether::testing::{FakeMcpServer, fake_mcp};
-use llm::testing::FakeLlmProvider;
 use agent_events::{AgentMessage, UserMessage};
+use llm::testing::FakeLlmProvider;
+use mcp_utils::client::ServerInstructions;
 
 #[tokio::test]
 async fn test_fake_mcp_server_has_instructions() {

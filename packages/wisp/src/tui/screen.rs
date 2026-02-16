@@ -1,4 +1,8 @@
-use crossterm::{QueueableCommand, cursor::MoveUp, terminal::{Clear, ClearType}};
+use crossterm::{
+    QueueableCommand,
+    cursor::MoveUp,
+    terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate},
+};
 use std::io::{self, Write};
 
 /// A single line of pre-formatted terminal output.
@@ -33,6 +37,7 @@ impl std::fmt::Display for Line {
 /// cursor sits at the end of the last managed line.
 pub struct Screen {
     prev_frame: Vec<Line>,
+    last_width: u16,
 }
 
 impl Default for Screen {
@@ -45,35 +50,81 @@ impl Screen {
     pub fn new() -> Self {
         Self {
             prev_frame: Vec::new(),
+            last_width: 0,
         }
     }
 
-    /// Render `new_frame`, replacing the previous managed region in-place.
+    /// Render `new_frame`, replacing only the changed portion of the managed region.
     /// Returns the number of lines written.
-    pub fn render<W: Write>(&mut self, new_frame: &[Line], writer: &mut W) -> io::Result<usize> {
+    ///
+    /// When `width` changes from the previous call, the previous frame is discarded
+    /// to force a full re-render (line content depends on terminal width).
+    pub fn render<W: Write>(
+        &mut self,
+        new_frame: &[Line],
+        width: u16,
+        writer: &mut W,
+    ) -> io::Result<usize> {
+        // Remember actual on-screen line count before any clear, since the
+        // cursor position still reflects the previously rendered frame.
+        let prev_on_screen = self.prev_frame.len();
+
+        if width != self.last_width {
+            self.prev_frame.clear();
+            self.last_width = width;
+        }
+
         if new_frame == self.prev_frame {
             return Ok(0);
         }
 
-        // Move cursor to column 0 of the first managed line
-        if self.prev_frame.len() > 1 {
-            writer.queue(MoveUp((self.prev_frame.len() - 1) as u16))?;
+        writer.queue(BeginSynchronizedUpdate)?;
+
+        // Find first line that differs between old and new
+        let first_diff = self
+            .prev_frame
+            .iter()
+            .zip(new_frame.iter())
+            .position(|(old, new)| old != new)
+            .unwrap_or(self.prev_frame.len().min(new_frame.len()));
+
+        // Clamp so we always rewrite at least the last line of new_frame,
+        // ensuring the cursor ends at the correct position when the frame shrinks.
+        let rewrite_from = if new_frame.is_empty() {
+            0
+        } else {
+            first_diff.min(new_frame.len() - 1)
+        };
+
+        // Position cursor at the start of the rewrite_from line.
+        // Use prev_on_screen (not prev_frame.len()) because the cursor is
+        // still at the end of whatever was last rendered, even if prev_frame
+        // was cleared by a width change.
+        if rewrite_from < prev_on_screen {
+            let lines_up = prev_on_screen - 1 - rewrite_from;
+            if lines_up > 0 {
+                writer.queue(MoveUp(lines_up as u16))?;
+            }
+            write!(writer, "\r")?;
+            writer.queue(Clear(ClearType::FromCursorDown))?;
+        } else if prev_on_screen > 0 {
+            // Appending past the end of the previous frame
+            write!(writer, "\r\n")?;
+            writer.queue(Clear(ClearType::FromCursorDown))?;
         }
-        write!(writer, "\r")?;
 
-        // Clear everything from here to end of screen
-        writer.queue(Clear(ClearType::FromCursorDown))?;
-
-        // Write all new frame lines
-        for (i, line) in new_frame.iter().enumerate() {
+        // Write new_frame[rewrite_from..]
+        let to_write = &new_frame[rewrite_from..];
+        for (i, line) in to_write.iter().enumerate() {
             write!(writer, "{line}")?;
-            if i < new_frame.len() - 1 {
+            if i < to_write.len() - 1 {
                 write!(writer, "\r\n")?;
             }
         }
 
+        writer.queue(EndSynchronizedUpdate)?;
         writer.flush()?;
-        let lines_written = new_frame.len();
+        let lines_written = to_write.len();
         self.prev_frame = new_frame.to_vec();
         Ok(lines_written)
     }
@@ -93,6 +144,8 @@ impl Screen {
             return Ok(());
         }
 
+        writer.queue(BeginSynchronizedUpdate)?;
+
         // Move cursor to column 0 of the first managed line
         if self.prev_frame.len() > 1 {
             writer.queue(MoveUp((self.prev_frame.len() - 1) as u16))?;
@@ -107,6 +160,7 @@ impl Screen {
             write!(writer, "{line}\r\n")?;
         }
 
+        writer.queue(EndSynchronizedUpdate)?;
         writer.flush()?;
         self.prev_frame.clear();
         Ok(())
@@ -147,7 +201,7 @@ mod tests {
     fn empty_to_empty_is_noop() {
         let mut screen = Screen::new();
         let mut w = FakeWriter::new();
-        let written = screen.render(&[], &mut w).unwrap();
+        let written = screen.render(&[], 80, &mut w).unwrap();
         assert_eq!(written, 0);
         assert!(w.bytes.is_empty());
     }
@@ -157,7 +211,7 @@ mod tests {
         let mut screen = Screen::new();
         let mut w = FakeWriter::new();
         let frame = vec![Line::new("hello"), Line::new("world")];
-        let written = screen.render(&frame, &mut w).unwrap();
+        let written = screen.render(&frame, 80, &mut w).unwrap();
         assert_eq!(written, 2);
         let output = String::from_utf8_lossy(&w.bytes);
         assert!(output.contains("hello"));
@@ -169,26 +223,26 @@ mod tests {
         let mut screen = Screen::new();
         let mut w = FakeWriter::new();
         let frame = vec![Line::new("hello"), Line::new("world")];
-        screen.render(&frame, &mut w).unwrap();
+        screen.render(&frame, 80, &mut w).unwrap();
 
         let mut w2 = FakeWriter::new();
-        let written = screen.render(&frame, &mut w2).unwrap();
+        let written = screen.render(&frame, 80, &mut w2).unwrap();
         assert_eq!(written, 0);
         assert!(w2.bytes.is_empty());
     }
 
     #[test]
-    fn changing_line_rewrites_entire_frame() {
+    fn changing_middle_line_rewrites_from_diff() {
         let mut screen = Screen::new();
         let mut w = FakeWriter::new();
         let frame1 = vec![Line::new("aaa"), Line::new("bbb"), Line::new("ccc")];
-        screen.render(&frame1, &mut w).unwrap();
+        screen.render(&frame1, 80, &mut w).unwrap();
 
         let mut w2 = FakeWriter::new();
         let frame2 = vec![Line::new("aaa"), Line::new("BBB"), Line::new("ccc")];
-        let written = screen.render(&frame2, &mut w2).unwrap();
-        // Now rewrites all lines since we use clear-and-rewrite
-        assert_eq!(written, 3);
+        let written = screen.render(&frame2, 80, &mut w2).unwrap();
+        // Differential: rewrites from line 1 onward (2 lines)
+        assert_eq!(written, 2);
         let output = String::from_utf8_lossy(&w2.bytes);
         assert!(output.contains("BBB"));
         assert!(output.contains("ccc"));
@@ -199,29 +253,58 @@ mod tests {
         let mut screen = Screen::new();
         let mut w = FakeWriter::new();
         let frame1 = vec![Line::new("a"), Line::new("b"), Line::new("c")];
-        screen.render(&frame1, &mut w).unwrap();
+        screen.render(&frame1, 80, &mut w).unwrap();
 
         let mut w2 = FakeWriter::new();
         let frame2 = vec![Line::new("a")];
-        let written = screen.render(&frame2, &mut w2).unwrap();
+        let written = screen.render(&frame2, 80, &mut w2).unwrap();
         // Rewrites 1 line (clear from cursor down handles the rest)
         assert_eq!(written, 1);
     }
 
     #[test]
-    fn growing_frame_writes_new_lines() {
+    fn growing_frame_writes_only_new_lines() {
         let mut screen = Screen::new();
         let mut w = FakeWriter::new();
         let frame1 = vec![Line::new("a")];
-        screen.render(&frame1, &mut w).unwrap();
+        screen.render(&frame1, 80, &mut w).unwrap();
 
         let mut w2 = FakeWriter::new();
         let frame2 = vec![Line::new("a"), Line::new("b"), Line::new("c")];
-        let written = screen.render(&frame2, &mut w2).unwrap();
-        assert_eq!(written, 3);
+        let written = screen.render(&frame2, 80, &mut w2).unwrap();
+        // Differential: first line matches, writes only 2 new lines
+        assert_eq!(written, 2);
         let output = String::from_utf8_lossy(&w2.bytes);
         assert!(output.contains("b"));
         assert!(output.contains("c"));
+    }
+
+    #[test]
+    fn appending_lines_only_writes_new_ones() {
+        let mut screen = Screen::new();
+        let mut w = FakeWriter::new();
+        let frame1 = vec![Line::new("a"), Line::new("b")];
+        screen.render(&frame1, 80, &mut w).unwrap();
+
+        let mut w2 = FakeWriter::new();
+        let frame2 = vec![Line::new("a"), Line::new("b"), Line::new("c")];
+        let written = screen.render(&frame2, 80, &mut w2).unwrap();
+        // Only the appended line is written
+        assert_eq!(written, 1);
+    }
+
+    #[test]
+    fn only_last_line_changed() {
+        let mut screen = Screen::new();
+        let mut w = FakeWriter::new();
+        let frame1 = vec![Line::new("a"), Line::new("b"), Line::new("c")];
+        screen.render(&frame1, 80, &mut w).unwrap();
+
+        let mut w2 = FakeWriter::new();
+        let frame2 = vec![Line::new("a"), Line::new("b"), Line::new("X")];
+        let written = screen.render(&frame2, 80, &mut w2).unwrap();
+        // Only the last changed line is written
+        assert_eq!(written, 1);
     }
 
     #[test]
@@ -230,7 +313,7 @@ mod tests {
         let mut w = FakeWriter::new();
 
         let frame = vec![Line::new("managed line")];
-        screen.render(&frame, &mut w).unwrap();
+        screen.render(&frame, 80, &mut w).unwrap();
 
         screen
             .push_to_scrollback(&[Line::new("scrolled")], &mut w)
@@ -252,7 +335,20 @@ mod tests {
         let mut screen = Screen::new();
         let mut w = FakeWriter::new();
         let frame = vec![Line::new("x"), Line::new("y")];
-        screen.render(&frame, &mut w).unwrap();
+        screen.render(&frame, 80, &mut w).unwrap();
         assert_eq!(screen.prev_frame(), &frame);
+    }
+
+    #[test]
+    fn width_change_forces_full_rerender() {
+        let mut screen = Screen::new();
+        let mut w = FakeWriter::new();
+        let frame = vec![Line::new("a"), Line::new("b")];
+        screen.render(&frame, 80, &mut w).unwrap();
+
+        // Same frame but different width → full re-render
+        let mut w2 = FakeWriter::new();
+        let written = screen.render(&frame, 120, &mut w2).unwrap();
+        assert_eq!(written, 2);
     }
 }

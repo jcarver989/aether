@@ -1,6 +1,6 @@
 use aether::core::agent;
-use llm::providers::openrouter::OpenRouterProvider;
 use agent_events::{AgentMessage, UserMessage};
+use llm::providers::openrouter::OpenRouterProvider;
 use std::io::{self, Write};
 
 #[tokio::main]

@@ -3,9 +3,9 @@ use crate::agents::AgentRunnerMessage;
 use crate::evals::assertion::{EvalAssertionResult, ToolCallCount};
 use crate::evals::eval::WorkingDirectory;
 use crate::metrics::EvalMetric;
-use llm::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
-use llm::types::IsoString;
 use futures::StreamExt;
+use llm::types::IsoString;
+use llm::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
 use std::path::Path;
 
 /// Check if a file exists at the specified path

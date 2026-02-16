@@ -1,5 +1,5 @@
-use llm::ProviderCredential;
 use crate::auth::{AuthError, Result};
+use llm::ProviderCredential;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

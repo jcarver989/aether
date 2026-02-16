@@ -1,7 +1,7 @@
 use aether::mcp::{McpSpawnResult, mcp};
+use futures::future::BoxFuture;
 use mcp_utils::client::oauth::{BrowserOAuthHandler, OAuthCallback, OAuthError, OAuthHandler};
 use mcp_utils::client::{ElicitationRequest, McpServerConfig};
-use futures::future::BoxFuture;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::sync::Arc;
 use tokio::sync::mpsc;
