@@ -107,7 +107,12 @@ async fn test_thought_and_text_chunks_stream_before_prompt_done() {
         ))
         .unwrap();
 
-    let expected = expected_with_prompt(&["Thought: Thinking", "Done"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(
+        &["Thought: Thinking", "", "Done"],
+        TEST_WIDTH,
+        "",
+        TEST_AGENT,
+    );
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -134,7 +139,12 @@ async fn test_text_and_thought_chunks_stream_in_arrival_order() {
         ))
         .unwrap();
 
-    let expected = expected_with_prompt(&["A", "Thought: B", "C"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(
+        &["A", "", "Thought: B", "", "C"],
+        TEST_WIDTH,
+        "",
+        TEST_AGENT,
+    );
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -149,7 +159,7 @@ async fn test_thought_prefix_resets_after_non_thought_boundary() {
     .await;
 
     let expected = expected_with_prompt(
-        &["Thought: Plan", "Answer", "Thought: Refine"],
+        &["Thought: Plan", "", "Answer", "", "Thought: Refine"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -180,7 +190,13 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
     .await;
 
     let expected = expected_with_prompt(
-        &["Thought: Thinking", r#"⠋ search {"q":"rust"}"#, "Done"],
+        &[
+            "Thought: Thinking",
+            "",
+            r#"⠋ search {"q":"rust"}"#,
+            "",
+            "Done",
+        ],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -236,6 +252,7 @@ async fn test_multiple_messages_sequence() {
         &[
             "Processing your request",
             r#"● search ✓ {"query":"test"}"#,
+            "",
             "Found results",
         ],
         TEST_WIDTH,
@@ -341,6 +358,7 @@ async fn test_text_complete_preserves_running_tool_calls() {
     let expected = expected_with_prompt(
         &[
             r#"● Read ✓ {"file":"a.rs"}"#,
+            "",
             "Done reading",
             r#"⠋ Write {"file":"b.rs"}"#,
         ],
@@ -366,6 +384,7 @@ async fn test_late_result_after_prompt_done() {
     let expected = expected_with_prompt(
         &[
             r#"● Read ✓ {"file":"a.rs"}"#,
+            "",
             "Done reading",
             r#"● Write ✓ {"file":"b.rs"}"#,
         ],
