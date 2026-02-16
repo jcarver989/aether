@@ -53,7 +53,7 @@ impl Component for ConfigMenuComponent<'_> {
                     .values
                     .get(entry.current_value_index)
                     .is_some_and(|v| v.is_disabled);
-                let text = format!("{}{}: < {} >", prefix, entry.title, current_name);
+                let text = format!("{}{}: {}", prefix, entry.title, current_name);
                 if current_disabled {
                     Line::new(text.with(context.theme.muted).to_string())
                 } else if selected {
