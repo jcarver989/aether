@@ -1,5 +1,6 @@
 use aether::core::agent;
-use agent_events::{AgentMessage, UserMessage};
+use agent_events::AgentMessage;
+use agent_events::UserMessage;
 use llm::providers::openrouter::OpenRouterProvider;
 use std::io::{self, Write};
 
@@ -95,6 +96,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "Auto-continuing: attempt {}/{} (LLM stopped without completion signal)",
                     attempt, max_attempts
                 );
+            }
+            Some(ModelSwitched { previous, new }) => {
+                println!("Model switched: {} -> {}", previous, new);
             }
             None => {
                 println!("Channel closed");

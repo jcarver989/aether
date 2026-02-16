@@ -34,9 +34,9 @@ pub struct Session {
 
 impl Session {
     /// Creates a new session with the given LLM provider and configuration
-    pub async fn new<T: StreamingModelProvider + 'static>(
+    pub async fn new(
         id: String,
-        llm: T,
+        llm: impl StreamingModelProvider + 'static,
         system_prompt: Option<String>,
         mcp_config_path: std::path::PathBuf,
         cwd: PathBuf,

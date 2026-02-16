@@ -1,11 +1,13 @@
 //! Shared types for agent events.
 //!
 //! This crate provides types used across multiple Aether packages:
-//! - Tool execution types (ToolCallRequest, ToolCallResult, ToolCallError)
 //! - Agent message types (AgentMessage, UserMessage)
 //! - ACP protocol extension types (ContextUsageParams, SubAgentProgressParams)
+//!
+//! Tool types and model identity types are defined in the `llm` crate.
 
 use agent_client_protocol::ExtNotification;
+use llm::{StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -16,41 +18,6 @@ pub const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
 /// Custom notification method for sub-agent progress updates.
 /// Per ACP extensibility spec, custom notifications must start with underscore.
 pub const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
-
-/// Definition of a tool available to the LLM
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
-    pub parameters: String,
-    pub server: Option<String>,
-}
-
-/// Tool call request from the LLM
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ToolCallRequest {
-    pub id: String,
-    pub name: String,
-    pub arguments: String,
-}
-
-/// Successful result of a tool call
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ToolCallResult {
-    pub id: String,
-    pub name: String,
-    pub arguments: String,
-    pub result: String,
-}
-
-/// Error result of a tool call
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ToolCallError {
-    pub id: String,
-    pub name: String,
-    pub arguments: Option<String>,
-    pub error: String,
-}
 
 /// Message from the agent to the user
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -121,14 +88,35 @@ pub enum AgentMessage {
         max_attempts: u32,
     },
 
+    /// The model was successfully switched
+    ModelSwitched {
+        previous: String,
+        new: String,
+    },
+
     Done,
 }
 
 /// Message from the user to the agent
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UserMessage {
     Text { content: String },
     Cancel,
+    SwitchModel(Box<dyn StreamingModelProvider>),
+}
+
+impl std::fmt::Debug for UserMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UserMessage::Text { content } => {
+                f.debug_struct("Text").field("content", content).finish()
+            }
+            UserMessage::Cancel => write!(f, "Cancel"),
+            UserMessage::SwitchModel(provider) => f
+                .debug_tuple("SwitchModel")
+                .field(&provider.display_name())
+                .finish(),
+        }
+    }
 }
 
 impl AgentMessage {
@@ -215,6 +203,7 @@ impl From<SubAgentProgressParams> for ExtNotification {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use llm::{ModelProvider, ProviderModel, ToolCallRequest};
 
     #[test]
     fn test_context_usage_params_roundtrip() {
@@ -333,5 +322,69 @@ mod tests {
         let parsed: SubAgentProgressParams =
             serde_json::from_str(notification.params.get()).expect("valid JSON");
         assert_eq!(parsed, params);
+    }
+
+    #[test]
+    fn test_model_provider_display_roundtrips_through_from_str() {
+        let providers = [
+            ModelProvider::Anthropic,
+            ModelProvider::DeepSeek,
+            ModelProvider::Gemini,
+            ModelProvider::Moonshot,
+            ModelProvider::OpenRouter,
+            ModelProvider::Ollama,
+            ModelProvider::ZAi,
+            ModelProvider::LlamaCpp,
+        ];
+        for provider in providers {
+            let s = provider.to_string();
+            let parsed: ModelProvider = s.parse().unwrap();
+            assert_eq!(parsed, provider);
+        }
+    }
+
+    #[test]
+    fn test_model_provider_from_str_unknown() {
+        let result: ModelProvider = "custom".parse().unwrap();
+        assert_eq!(result, ModelProvider::Other("custom".to_string()));
+    }
+
+    #[test]
+    fn test_provider_model_from_str() {
+        let pm: ProviderModel = "anthropic:claude-3.5-sonnet".parse().unwrap();
+        assert_eq!(pm.provider, ModelProvider::Anthropic);
+        assert_eq!(pm.model, "claude-3.5-sonnet");
+    }
+
+    #[test]
+    fn test_provider_model_from_str_no_model() {
+        let pm: ProviderModel = "llamacpp".parse().unwrap();
+        assert_eq!(pm.provider, ModelProvider::LlamaCpp);
+        assert_eq!(pm.model, "");
+    }
+
+    #[test]
+    fn test_provider_model_display() {
+        let pm = ProviderModel::new(ModelProvider::Ollama, "llama3.2");
+        assert_eq!(pm.to_string(), "ollama:llama3.2");
+    }
+
+    #[test]
+    fn test_provider_model_serde_roundtrip() {
+        let pm = ProviderModel::new(ModelProvider::Anthropic, "claude-3.5-sonnet");
+        let json = serde_json::to_string(&pm).unwrap();
+        let parsed: ProviderModel = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, pm);
+    }
+
+    #[test]
+    fn test_model_switched_serde_roundtrip() {
+        let msg = AgentMessage::ModelSwitched {
+            previous: "anthropic:claude-3.5-sonnet".to_string(),
+            new: "ollama:llama3.2".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, msg);
     }
 }

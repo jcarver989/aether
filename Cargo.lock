@@ -138,6 +138,7 @@ name = "agent-events"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "llm",
  "serde",
  "serde_json",
 ]
@@ -1851,7 +1852,6 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 name = "llm"
 version = "0.1.0"
 dependencies = [
- "agent-events",
  "async-openai",
  "async-stream",
  "chrono",
@@ -2046,9 +2046,9 @@ dependencies = [
 name = "mcp_utils"
 version = "0.1.0"
 dependencies = [
- "agent-events",
  "async-trait",
  "futures",
+ "llm",
  "oauth2",
  "regex",
  "reqwest 0.12.28",

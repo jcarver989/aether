@@ -214,9 +214,7 @@ impl<T: Write> Renderer<T> {
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
-                KeyCode::Char('p')
-                    if key_event.modifiers.contains(KeyModifiers::CONTROL) =>
-                {
+                KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                     picker.move_selection_up();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
@@ -226,9 +224,7 @@ impl<T: Write> Renderer<T> {
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
-                KeyCode::Char('n')
-                    if key_event.modifiers.contains(KeyModifiers::CONTROL) =>
-                {
+                KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                     picker.move_selection_down();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
@@ -347,8 +343,7 @@ impl<T: Write> Renderer<T> {
                 } else if self.input_buffer.trim() == "/config" {
                     self.input_buffer.clear();
                     self.file_picker = None;
-                    self.config_menu =
-                        Some(ConfigMenu::from_config_options(&self.config_options));
+                    self.config_menu = Some(ConfigMenu::from_config_options(&self.config_options));
                     self.render_frame()?;
                 } else {
                     let user_input = self.input_buffer.trim().to_string();

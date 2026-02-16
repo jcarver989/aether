@@ -30,8 +30,8 @@ enum StreamEvent {
 
 type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
 
-pub struct Agent<T: StreamingModelProvider> {
-    llm: Arc<T>,
+pub struct Agent {
+    llm: Arc<dyn StreamingModelProvider>,
     context: Context,
     mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
     agent_message_tx: mpsc::Sender<AgentMessage>,
@@ -49,10 +49,10 @@ pub struct Agent<T: StreamingModelProvider> {
     has_made_tool_calls: bool,
 }
 
-impl<T: StreamingModelProvider + 'static> Agent<T> {
+impl Agent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        llm: Arc<T>,
+        llm: Arc<dyn StreamingModelProvider>,
         context: Context,
         mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
         user_message_rx: mpsc::Receiver<UserMessage>,
@@ -95,7 +95,6 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 
     pub async fn run(mut self) {
         let mut state = IterationState::new();
-        let model_name = self.llm.display_name();
 
         while let Some((_, event)) = self.streams.next().await {
             use UserMessage::*;
@@ -106,6 +105,10 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
 
                 StreamEvent::UserMessage(Text { content }) => {
                     self.on_user_text(content).await;
+                }
+
+                StreamEvent::UserMessage(SwitchModel(new_provider)) => {
+                    self.on_switch_model(new_provider).await;
                 }
 
                 StreamEvent::Llm(llm_event) => {
@@ -135,7 +138,7 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
                         message_id: id.clone(),
                         chunk: state.message_content.clone(), // Send full message content
                         is_complete: true,
-                        model_name: model_name.clone(),
+                        model_name: self.llm.display_name(),
                     })
                     .await;
 
@@ -226,6 +229,16 @@ impl<T: StreamingModelProvider + 'static> Agent<T> {
         });
 
         self.start_llm_stream();
+    }
+
+    async fn on_switch_model(&mut self, new_provider: Box<dyn StreamingModelProvider>) {
+        let previous = self.llm.display_name();
+        self.llm = Arc::from(new_provider);
+        let new = self.llm.display_name();
+        let _ = self
+            .agent_message_tx
+            .send(AgentMessage::ModelSwitched { previous, new })
+            .await;
     }
 
     fn start_llm_stream(&mut self) {

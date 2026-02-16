@@ -8,7 +8,9 @@ mod tui;
 use acp_utils::client::AcpEvent;
 use agent_client_protocol as acp;
 use clap::Parser;
-use crossterm::event::{Event, KeyEventKind, poll, read, EnableBracketedPaste, DisableBracketedPaste};
+use crossterm::event::{
+    DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind, poll, read,
+};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use renderer::LoopAction;
 use std::io::{self, Write};

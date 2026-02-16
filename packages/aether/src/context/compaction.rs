@@ -64,12 +64,12 @@ impl CompactionConfig {
 }
 
 /// Compacts context by generating an LLM summary
-pub struct Compactor<T: StreamingModelProvider> {
-    llm: Arc<T>,
+pub struct Compactor {
+    llm: Arc<dyn StreamingModelProvider>,
 }
 
-impl<T: StreamingModelProvider> Compactor<T> {
-    pub fn new(llm: Arc<T>) -> Self {
+impl Compactor {
+    pub fn new(llm: Arc<dyn StreamingModelProvider>) -> Self {
         Self { llm }
     }
 

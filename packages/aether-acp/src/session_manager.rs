@@ -106,9 +106,9 @@ impl acp::Agent for SessionManager {
 
         // Parse the model provider
         let parser = ModelProviderParser::default();
-        let llm = parser.parse(&self.model_provider).map_err(|e| {
+        let (llm, _) = parser.parse(&self.model_provider).map_err(|e| {
             error!(
-                "Failed to parse model provider '{}': {}",
+                "Failed to create provider for '{}': {}",
                 self.model_provider, e
             );
             acp::Error::internal_error()

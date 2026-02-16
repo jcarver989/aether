@@ -173,7 +173,8 @@ pub fn map_agent_message_to_session_notification(
         | AgentMessage::Done
         | AgentMessage::ContextCompactionStarted { .. }
         | AgentMessage::ContextCompactionResult { .. }
-        | AgentMessage::AutoContinue { .. } => None,
+        | AgentMessage::AutoContinue { .. }
+        | AgentMessage::ModelSwitched { .. } => None,
     }
 }
 

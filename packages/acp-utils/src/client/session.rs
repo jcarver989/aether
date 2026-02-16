@@ -4,8 +4,8 @@ use super::prompt_handle::{AcpPromptHandle, PromptCommand};
 use agent_client_protocol::{
     self as acp, Agent, Client, ConfigOptionUpdate, InitializeRequest, PermissionOptionKind,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionConfigOption, SessionId, SessionNotification,
-    SessionUpdate, SetSessionConfigOptionRequest,
+    SelectedPermissionOutcome, SessionConfigOption, SessionId, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest,
 };
 use std::process::Stdio;
 use std::thread::spawn;
@@ -268,10 +268,9 @@ where
                 match conn.set_session_config_option(req).await {
                     Ok(resp) => {
                         let update = ConfigOptionUpdate::new(resp.config_options);
-                        let _ =
-                            event_tx.send(AcpEvent::SessionUpdate(Box::new(
-                                SessionUpdate::ConfigOptionUpdate(update),
-                            )));
+                        let _ = event_tx.send(AcpEvent::SessionUpdate(Box::new(
+                            SessionUpdate::ConfigOptionUpdate(update),
+                        )));
                     }
                     Err(e) => {
                         tracing::warn!("set_session_config_option failed: {e:?}");

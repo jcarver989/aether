@@ -22,7 +22,7 @@ async fn test_text_message() -> Result<(), Box<dyn Error>> {
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("hi")])
+        .user_messages(vec![UserMessage::text("hi")])
         .run()
         .await?;
     assert_eq!(messages, expected_messages);
@@ -59,7 +59,7 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("3+5 = ?")])
+        .user_messages(vec![UserMessage::text("3+5 = ?")])
         .run()
         .await?;
     assert_eq!(messages, expected_messages);
@@ -111,7 +111,7 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("10 / 0 = ?")])
+        .user_messages(vec![UserMessage::text("10 / 0 = ?")])
         .run()
         .await?;
     assert_eq!(messages, expected_messages);
@@ -137,7 +137,7 @@ async fn test_cancellation() -> Result<(), Box<dyn Error>> {
     let llm_responses = [llm_response("message_1").text(&chunks).build()];
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("hi"), UserMessage::Cancel])
+        .user_messages(vec![UserMessage::text("hi"), UserMessage::Cancel])
         .run()
         .await?;
 
@@ -179,7 +179,7 @@ async fn test_tool_timeout() -> Result<(), Box<dyn Error>> {
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("run slow tool")])
+        .user_messages(vec![UserMessage::text("run slow tool")])
         .tool_timeout(Duration::from_millis(tool_timeout))
         .run()
         .await?;
@@ -206,7 +206,7 @@ async fn test_simple_message_content() -> Result<(), Box<dyn Error>> {
 
     let result = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("Just a simple message")])
+        .user_messages(vec![UserMessage::text("Just a simple message")])
         .run_with_context()
         .await?;
 
@@ -237,7 +237,7 @@ async fn test_auto_continue_stops_with_completion_signal() -> Result<(), Box<dyn
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("do something")])
+        .user_messages(vec![UserMessage::text("do something")])
         .max_auto_continues(3)
         .run()
         .await?;
@@ -267,7 +267,7 @@ async fn test_auto_continue_not_triggered_for_opening_message() -> Result<(), Bo
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("hello")])
+        .user_messages(vec![UserMessage::text("hello")])
         .max_auto_continues(3)
         .run()
         .await?;
@@ -307,7 +307,7 @@ async fn test_auto_continue_triggers_without_completion_signal() -> Result<(), B
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("do something")])
+        .user_messages(vec![UserMessage::text("do something")])
         .max_auto_continues(5)
         .run()
         .await?;
@@ -355,7 +355,7 @@ async fn test_auto_continue_respects_max_limit() -> Result<(), Box<dyn Error>> {
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("do something")])
+        .user_messages(vec![UserMessage::text("do something")])
         .max_auto_continues(2)
         .run()
         .await?;
@@ -393,7 +393,7 @@ async fn test_auto_continue_disabled_with_zero() -> Result<(), Box<dyn Error>> {
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("do something")])
+        .user_messages(vec![UserMessage::text("do something")])
         .max_auto_continues(0)
         .run()
         .await?;
@@ -442,7 +442,7 @@ async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<
 
     let result = test_agent()
         .llm_responses(&llm_responses)
-        .user_messages(&[UserMessage::text("do something")])
+        .user_messages(vec![UserMessage::text("do something")])
         .run_with_context()
         .await?;
 

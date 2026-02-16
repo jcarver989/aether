@@ -34,8 +34,8 @@ impl AgentHandle {
     }
 }
 
-pub struct AgentBuilder<T: StreamingModelProvider> {
-    llm: T,
+pub struct AgentBuilder {
+    llm: Box<dyn StreamingModelProvider>,
     prompts: Vec<Prompt>,
     middleware: Middleware,
     tool_definitions: Vec<ToolDefinition>,
@@ -46,8 +46,8 @@ pub struct AgentBuilder<T: StreamingModelProvider> {
     max_auto_continues: u32,
 }
 
-impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
-    pub fn new(llm: T) -> Self {
+impl AgentBuilder {
+    pub fn new(llm: Box<dyn StreamingModelProvider>) -> Self {
         Self {
             llm,
             prompts: Vec::new(),
@@ -199,8 +199,10 @@ impl<T: StreamingModelProvider + 'static> AgentBuilder<T> {
 
         let context = Context::new(messages, self.tool_definitions);
 
+        let llm: Arc<dyn StreamingModelProvider> = Arc::from(self.llm);
+
         let agent = Agent::new(
-            Arc::new(self.llm),
+            llm,
             context,
             self.mcp_tx,
             user_message_rx,
