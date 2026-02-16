@@ -1,3 +1,4 @@
+use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPickerComponent};
 use crate::components::config_menu::{ConfigMenu, ConfigMenuComponent};
 use crate::components::config_picker::{ConfigPicker, ConfigPickerComponent};
 use crate::components::file_picker::{FilePicker, FilePickerComponent};
@@ -11,7 +12,8 @@ use crate::tui::soft_wrap::soft_wrap_lines_with_map;
 use crate::tui::{Component, FrameRenderer, Line, RenderContext, Screen};
 use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol::{
-    self as acp, SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions, SessionUpdate,
+    self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
+    SessionConfigSelectOptions, SessionUpdate,
 };
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashSet;
@@ -76,10 +78,13 @@ pub struct Renderer<T: Write> {
     waiting_for_response: bool,
     animation_tick: u16,
     pub file_picker: Option<FilePicker>,
+    pub command_picker: Option<CommandPicker>,
     pub config_menu: Option<ConfigMenu>,
     pub config_picker: Option<ConfigPicker>,
+    pub available_commands: Vec<CommandEntry>,
     pending_open_model_picker: bool,
     selected_mentions: Vec<SelectedFileMention>,
+    context_usage_pct: Option<u8>,
 }
 
 impl<T: Write> Renderer<T> {
@@ -97,10 +102,13 @@ impl<T: Write> Renderer<T> {
             waiting_for_response: false,
             animation_tick: 0,
             file_picker: None,
+            command_picker: None,
             config_menu: None,
             config_picker: None,
+            available_commands: Vec::new(),
             pending_open_model_picker: false,
             selected_mentions: Vec::new(),
+            context_usage_pct: None,
         }
     }
 
@@ -166,6 +174,12 @@ impl<T: Write> Renderer<T> {
             logical_lines.extend(picker_component.render(context));
         }
 
+        if let Some(ref picker) = self.command_picker {
+            cursor_logical_row = logical_lines.len();
+            cursor_col = Self::command_picker_cursor_col(picker);
+            logical_lines.extend(CommandPickerComponent { picker }.render(context));
+        }
+
         if let Some(ref picker) = self.config_picker {
             cursor_logical_row = logical_lines.len();
             cursor_col = Self::config_picker_cursor_col(picker);
@@ -179,6 +193,7 @@ impl<T: Write> Renderer<T> {
         let status_line = StatusLine {
             agent_name: &self.agent_name,
             model_display: self.model_display.as_deref(),
+            context_pct_left: self.context_usage_pct,
         };
         logical_lines.extend(status_line.render(context));
 
@@ -210,6 +225,11 @@ impl<T: Write> Renderer<T> {
     fn config_picker_cursor_col(picker: &ConfigPicker) -> usize {
         let prefix = format!("  {} search: ", picker.title);
         UnicodeWidthStr::width(prefix.as_str()) + UnicodeWidthStr::width(picker.query.as_str())
+    }
+
+    fn command_picker_cursor_col(picker: &CommandPicker) -> usize {
+        let prefix = "  / search: ";
+        UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(picker.query.as_str())
     }
 
     fn input_cursor_index(&self) -> usize {
@@ -301,6 +321,86 @@ impl<T: Write> Renderer<T> {
                     return Ok(LoopAction::Continue);
                 }
                 _ => {}
+            }
+        }
+
+        if self.command_picker.is_some() {
+            match key_event.code {
+                KeyCode::Esc => {
+                    self.command_picker = None;
+                    self.input_buffer.clear();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Up => {
+                    self.command_picker.as_mut().unwrap().move_selection_up();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.command_picker.as_mut().unwrap().move_selection_up();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Down => {
+                    self.command_picker.as_mut().unwrap().move_selection_down();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.command_picker.as_mut().unwrap().move_selection_down();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Enter => {
+                    if let Some(cmd) = self
+                        .command_picker
+                        .as_ref()
+                        .and_then(|p| p.selected_command().cloned())
+                    {
+                        self.command_picker = None;
+                        if cmd.builtin && cmd.name == "config" {
+                            self.input_buffer.clear();
+                            self.file_picker = None;
+                            self.config_picker = None;
+                            self.pending_open_model_picker = false;
+                            self.config_menu =
+                                Some(ConfigMenu::from_config_options(&self.config_options));
+                            self.render_frame()?;
+                        } else if cmd.has_input {
+                            self.input_buffer = format!("/{} ", cmd.name);
+                            self.render_frame()?;
+                        } else {
+                            self.input_buffer = format!("/{}", cmd.name);
+                            return self.execute_input(prompt_handle, session_id);
+                        }
+                    } else {
+                        self.command_picker = None;
+                        self.input_buffer.clear();
+                        self.render_frame()?;
+                    }
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Char(c) => {
+                    if !c.is_control() {
+                        self.command_picker.as_mut().unwrap().push_query_char(c);
+                        self.render_frame()?;
+                    }
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Backspace => {
+                    let picker = self.command_picker.as_ref().unwrap();
+                    if picker.query.is_empty() {
+                        self.command_picker = None;
+                        self.input_buffer.clear();
+                        self.render_frame()?;
+                    } else {
+                        self.command_picker.as_mut().unwrap().pop_query_char();
+                        self.render_frame()?;
+                    }
+                    return Ok(LoopAction::Continue);
+                }
+                _ => return Ok(LoopAction::Continue),
             }
         }
 
@@ -396,6 +496,14 @@ impl<T: Write> Renderer<T> {
         }
 
         match key_event.code {
+            KeyCode::Char('/') if self.input_buffer.is_empty() => {
+                self.input_buffer.push('/');
+                let mut commands = builtin_commands();
+                commands.extend(self.available_commands.clone());
+                self.command_picker = Some(CommandPicker::new(commands));
+                self.render_frame()?;
+            }
+
             KeyCode::Char('@') => {
                 self.input_buffer.push('@');
                 self.file_picker = Some(FilePicker::new());
@@ -415,46 +523,48 @@ impl<T: Write> Renderer<T> {
             }
 
             KeyCode::Enter => {
-                if self.input_buffer.trim().is_empty() {
-                    // Just re-render the prompt
-                    self.render_frame()?;
-                } else if self.input_buffer.trim() == "/config" {
-                    self.input_buffer.clear();
-                    self.file_picker = None;
-                    self.config_picker = None;
-                    self.pending_open_model_picker = false;
-                    self.config_menu = Some(ConfigMenu::from_config_options(&self.config_options));
-                    self.render_frame()?;
-                } else {
-                    let user_input = self.input_buffer.trim().to_string();
-                    self.input_buffer.clear();
-                    self.file_picker = None;
-
-                    // Push the user's message line to scrollback
-                    self.tui
-                        .push_to_scrollback(&[Line::new(user_input.clone())])?;
-
-                    let content_blocks = self.build_attachment_blocks(&user_input)?;
-                    prompt_handle.prompt(
-                        session_id,
-                        &user_input,
-                        if content_blocks.is_empty() {
-                            None
-                        } else {
-                            Some(content_blocks)
-                        },
-                    )?;
-
-                    self.waiting_for_response = true;
-                    self.animation_tick = 0;
-                    self.grid_loader.visible = true;
-                    self.grid_loader.tick = 0;
-
-                    // Render fresh prompt
-                    self.render_frame()?;
-                }
+                return self.execute_input(prompt_handle, session_id);
             }
             _ => {}
+        }
+        Ok(LoopAction::Continue)
+    }
+
+    fn execute_input(
+        &mut self,
+        prompt_handle: &AcpPromptHandle,
+        session_id: &acp::SessionId,
+    ) -> Result<LoopAction, WispError> {
+        if self.input_buffer.trim().is_empty() {
+            self.render_frame()?;
+        } else {
+            let user_input = self.input_buffer.trim().to_string();
+            self.input_buffer.clear();
+            self.file_picker = None;
+            self.command_picker = None;
+
+            // Push the user's message line to scrollback
+            self.tui
+                .push_to_scrollback(&[Line::new(user_input.clone())])?;
+
+            let content_blocks = self.build_attachment_blocks(&user_input)?;
+            prompt_handle.prompt(
+                session_id,
+                &user_input,
+                if content_blocks.is_empty() {
+                    None
+                } else {
+                    Some(content_blocks)
+                },
+            )?;
+
+            self.waiting_for_response = true;
+            self.animation_tick = 0;
+            self.grid_loader.visible = true;
+            self.grid_loader.tick = 0;
+
+            // Render fresh prompt
+            self.render_frame()?;
         }
         Ok(LoopAction::Continue)
     }
@@ -630,6 +740,28 @@ impl<T: Write> Renderer<T> {
                     self.ensure_tool_segment(&update.tool_call_id.0);
                 }
                 should_render = true;
+            }
+
+            SessionUpdate::AvailableCommandsUpdate(update) => {
+                self.available_commands = update
+                    .available_commands
+                    .into_iter()
+                    .map(|cmd| {
+                        let hint = match cmd.input {
+                            Some(acp::AvailableCommandInput::Unstructured(ref input)) => {
+                                Some(input.hint.clone())
+                            }
+                            _ => None,
+                        };
+                        CommandEntry {
+                            name: cmd.name,
+                            description: cmd.description,
+                            has_input: cmd.input.is_some(),
+                            hint,
+                            builtin: false,
+                        }
+                    })
+                    .collect();
             }
 
             SessionUpdate::ConfigOptionUpdate(update) => {
@@ -811,6 +943,21 @@ impl<T: Write> Renderer<T> {
         Ok(())
     }
 
+    /// Handle an extension notification from ACP.
+    pub fn on_ext_notification(&mut self, notification: ExtNotification) -> std::io::Result<()> {
+        if notification.method.as_ref() == CONTEXT_USAGE_METHOD {
+            if let Some(ratio) = serde_json::from_str::<serde_json::Value>(notification.params.get())
+                .ok()
+                .and_then(|v| v.get("usage_ratio")?.as_f64())
+            {
+                let pct_left = ((1.0 - ratio) * 100.0).round() as u8;
+                self.context_usage_pct = Some(pct_left);
+                self.render_frame()?;
+            }
+        }
+        Ok(())
+    }
+
     /// Called when the agent prompt errors out.
     pub fn on_prompt_error(&mut self) -> std::io::Result<()> {
         self.waiting_for_response = false;
@@ -824,8 +971,9 @@ impl<T: Write> Renderer<T> {
 
     /// Handle a bracketed paste event: insert all text at once and render once.
     pub fn on_paste(&mut self, text: &str) -> std::io::Result<()> {
-        // Close file picker if open — pasted text is treated as literal input
+        // Close pickers if open — pasted text is treated as literal input
         self.file_picker = None;
+        self.command_picker = None;
         self.config_picker = None;
         // Strip newlines from paste (single-line input field)
         for c in text.chars() {
@@ -859,6 +1007,18 @@ impl<T: Write> Renderer<T> {
         self.tui.screen()
     }
 }
+
+fn builtin_commands() -> Vec<CommandEntry> {
+    vec![CommandEntry {
+        name: "config".into(),
+        description: "Open configuration settings".into(),
+        has_input: false,
+        hint: None,
+        builtin: true,
+    }]
+}
+
+const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
 
 /// Extract a human-readable model display string from config options.
 ///
