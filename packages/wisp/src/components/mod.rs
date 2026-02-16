@@ -1,3 +1,4 @@
+pub mod config_menu;
 pub mod file_picker;
 pub mod grid_loader;
 pub mod input_prompt;

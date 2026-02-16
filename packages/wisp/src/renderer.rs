@@ -1,3 +1,4 @@
+use crate::components::config_menu::{ConfigMenu, ConfigMenuComponent};
 use crate::components::file_picker::{FilePicker, FilePickerComponent};
 use crate::components::grid_loader::GridLoader;
 use crate::components::input_prompt::InputPrompt;
@@ -62,9 +63,11 @@ pub struct Renderer<T: Write> {
     input_buffer: String,
     agent_name: String,
     model_display: Option<String>,
+    config_options: Vec<SessionConfigOption>,
     waiting_for_response: bool,
     animation_tick: u16,
     pub file_picker: Option<FilePicker>,
+    pub config_menu: Option<ConfigMenu>,
     selected_mentions: Vec<SelectedFileMention>,
 }
 
@@ -78,9 +81,11 @@ impl<T: Write> Renderer<T> {
             input_buffer: String::new(),
             agent_name,
             model_display: extract_model_display(config_options),
+            config_options: config_options.to_vec(),
             waiting_for_response: false,
             animation_tick: 0,
             file_picker: None,
+            config_menu: None,
             selected_mentions: Vec::new(),
         }
     }
@@ -135,6 +140,11 @@ impl<T: Write> Renderer<T> {
         if let Some(ref picker) = self.file_picker {
             let picker_component = FilePickerComponent { picker };
             logical_lines.extend(picker_component.render(context));
+        }
+
+        if let Some(ref menu) = self.config_menu {
+            let menu_component = ConfigMenuComponent { menu };
+            logical_lines.extend(menu_component.render(context));
         }
 
         let status_line = StatusLine {
@@ -265,6 +275,52 @@ impl<T: Write> Renderer<T> {
             }
         }
 
+        if let Some(ref mut menu) = self.config_menu {
+            match key_event.code {
+                KeyCode::Esc => {
+                    self.config_menu = None;
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Up => {
+                    menu.move_selection_up();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Down => {
+                    menu.move_selection_down();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Right => {
+                    if let Some(change) = menu.cycle_value_right() {
+                        let _ = prompt_handle.set_config_option(
+                            session_id,
+                            &change.config_id,
+                            &change.new_value,
+                        );
+                    }
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Left => {
+                    if let Some(change) = menu.cycle_value_left() {
+                        let _ = prompt_handle.set_config_option(
+                            session_id,
+                            &change.config_id,
+                            &change.new_value,
+                        );
+                    }
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                _ => {
+                    // Swallow all other keys while config menu is open
+                    return Ok(LoopAction::Continue);
+                }
+            }
+        }
+
         match key_event.code {
             KeyCode::Char('@') => {
                 self.input_buffer.push('@');
@@ -287,6 +343,12 @@ impl<T: Write> Renderer<T> {
             KeyCode::Enter => {
                 if self.input_buffer.trim().is_empty() {
                     // Just re-render the prompt
+                    self.render_frame()?;
+                } else if self.input_buffer.trim() == "/config" {
+                    self.input_buffer.clear();
+                    self.file_picker = None;
+                    self.config_menu =
+                        Some(ConfigMenu::from_config_options(&self.config_options));
                     self.render_frame()?;
                 } else {
                     let user_input = self.input_buffer.trim().to_string();
@@ -470,6 +532,10 @@ impl<T: Write> Renderer<T> {
 
             SessionUpdate::ConfigOptionUpdate(update) => {
                 self.model_display = extract_model_display(&update.config_options);
+                self.config_options = update.config_options.clone();
+                if let Some(ref mut menu) = self.config_menu {
+                    menu.update_options(&update.config_options);
+                }
                 should_render = true;
             }
 
