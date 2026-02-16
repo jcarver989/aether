@@ -9,7 +9,7 @@ use agent_client_protocol::{
 };
 use llm::catalog::{self, LlmModel};
 use llm::parser::ModelProviderParser;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::spawn;
@@ -101,6 +101,13 @@ fn unique_providers(available: &[LlmModel]) -> Vec<&'static str> {
     seen
 }
 
+fn provider_required_env_var(models: &[LlmModel], provider: &str) -> Option<&'static str> {
+    models
+        .iter()
+        .find(|m| m.provider() == provider)
+        .and_then(|m| m.required_env_var())
+}
+
 /// Extract the provider portion from a "provider:model_id" string
 fn provider_from_model_str(model_str: &str) -> &str {
     model_str.split(':').next().unwrap_or(model_str)
@@ -119,10 +126,30 @@ fn build_provider_config_option(
     available: &[LlmModel],
     current_provider: &str,
 ) -> SessionConfigOption {
-    let providers = unique_providers(available);
+    let all_models = catalog::LlmModel::all();
+    let providers = unique_providers(&all_models);
+    let available_providers: HashSet<&str> = available.iter().map(|m| m.provider()).collect();
     let options: Vec<acp::SessionConfigSelectOption> = providers
         .iter()
-        .map(|p| acp::SessionConfigSelectOption::new(p.to_string(), provider_display_name(p)))
+        .map(|p| {
+            let is_available = available_providers.contains(p);
+            let display_name = provider_display_name(p);
+            let name = if is_available {
+                display_name.to_string()
+            } else {
+                format!("{display_name} (unavailable)")
+            };
+
+            let option = acp::SessionConfigSelectOption::new(p.to_string(), name);
+            if is_available {
+                option
+            } else {
+                let description = provider_required_env_var(&all_models, p)
+                    .map(|var| format!("Unavailable: set {var}"))
+                    .unwrap_or_else(|| "Unavailable: provider is not configured".to_string());
+                option.description(description)
+            }
+        })
         .collect();
 
     SessionConfigOption::select(
@@ -606,11 +633,46 @@ mod tests {
         let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
             panic!("Expected Ungrouped options");
         };
-        assert_eq!(options.len(), 3);
-        assert_eq!(options[0].value.0.as_ref(), "anthropic");
-        assert_eq!(options[0].name, "Anthropic");
-        assert_eq!(options[1].value.0.as_ref(), "deepseek");
-        assert_eq!(options[2].value.0.as_ref(), "gemini");
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.as_ref() == "anthropic" && o.name == "Anthropic")
+        );
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.as_ref() == "deepseek" && o.name == "DeepSeek")
+        );
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.as_ref() == "gemini" && o.name == "Gemini")
+        );
+    }
+
+    #[test]
+    fn build_provider_config_option_marks_unavailable_providers() {
+        let models = test_models();
+        let opt = build_provider_config_option(&models, "anthropic");
+
+        let SessionConfigKind::Select(ref select) = opt.kind else {
+            panic!("Expected Select kind");
+        };
+        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
+            panic!("Expected Ungrouped options");
+        };
+
+        let openrouter = options
+            .iter()
+            .find(|o| o.value.0.as_ref() == "openrouter")
+            .expect("expected openrouter provider option");
+        assert!(openrouter.name.contains("unavailable"));
+        assert!(
+            openrouter
+                .description
+                .as_deref()
+                .is_some_and(|d| d.starts_with("Unavailable:"))
+        );
     }
 
     #[test]

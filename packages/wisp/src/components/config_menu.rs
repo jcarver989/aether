@@ -14,9 +14,12 @@ pub struct ConfigMenuEntry {
     pub current_value_index: usize,
 }
 
+#[derive(Debug, Clone)]
 pub struct ConfigMenuValue {
     pub value: String,
     pub name: String,
+    pub description: Option<String>,
+    pub is_disabled: bool,
 }
 
 pub struct ConfigChange {
@@ -46,8 +49,14 @@ impl Component for ConfigMenuComponent<'_> {
                     .get(entry.current_value_index)
                     .map(|v| v.name.as_str())
                     .unwrap_or("?");
+                let current_disabled = entry
+                    .values
+                    .get(entry.current_value_index)
+                    .is_some_and(|v| v.is_disabled);
                 let text = format!("{}{}: < {} >", prefix, entry.title, current_name);
-                if selected {
+                if current_disabled {
+                    Line::new(text.with(context.theme.muted).to_string())
+                } else if selected {
                     Line::new(text.with(context.theme.primary).to_string())
                 } else {
                     Line::new(text)
@@ -84,6 +93,11 @@ impl ConfigMenu {
                     .map(|o| ConfigMenuValue {
                         value: o.value.0.to_string(),
                         name: o.name,
+                        is_disabled: o
+                            .description
+                            .as_deref()
+                            .is_some_and(|d| d.starts_with("Unavailable:")),
+                        description: o.description,
                     })
                     .collect();
                 Some(ConfigMenuEntry {
@@ -121,44 +135,20 @@ impl ConfigMenu {
         }
     }
 
-    pub fn cycle_value_right(&mut self) -> Option<ConfigChange> {
-        let entry = self.options.get_mut(self.selected_index)?;
-        if entry.values.len() <= 1 {
-            return None;
-        }
-        let new_index = if entry.current_value_index < entry.values.len() - 1 {
-            entry.current_value_index + 1
-        } else {
-            0
-        };
-        entry.current_value_index = new_index;
-        Some(ConfigChange {
-            config_id: entry.config_id.clone(),
-            new_value: entry.values[new_index].value.clone(),
-        })
-    }
-
-    pub fn cycle_value_left(&mut self) -> Option<ConfigChange> {
-        let entry = self.options.get_mut(self.selected_index)?;
-        if entry.values.len() <= 1 {
-            return None;
-        }
-        let new_index = if entry.current_value_index > 0 {
-            entry.current_value_index - 1
-        } else {
-            entry.values.len() - 1
-        };
-        entry.current_value_index = new_index;
-        Some(ConfigChange {
-            config_id: entry.config_id.clone(),
-            new_value: entry.values[new_index].value.clone(),
-        })
-    }
-
     pub fn update_options(&mut self, options: &[SessionConfigOption]) {
         let prev_index = self.selected_index;
         *self = Self::from_config_options(options);
         self.selected_index = prev_index.min(self.options.len().saturating_sub(1));
+    }
+
+    pub fn selected_entry(&self) -> Option<&ConfigMenuEntry> {
+        self.options.get(self.selected_index)
+    }
+
+    pub fn entry_by_id(&self, config_id: &str) -> Option<&ConfigMenuEntry> {
+        self.options
+            .iter()
+            .find(|entry| entry.config_id == config_id)
     }
 }
 
@@ -246,51 +236,6 @@ mod tests {
         menu.move_selection_down();
         menu.move_selection_down();
         assert_eq!(menu.selected_index, 0);
-    }
-
-    #[test]
-    fn cycle_value_right_wraps() {
-        let opts = vec![make_select_option(
-            "model",
-            "Model",
-            "a",
-            &[("a", "A"), ("b", "B"), ("c", "C")],
-        )];
-        let mut menu = ConfigMenu::from_config_options(&opts);
-
-        let change = menu.cycle_value_right().unwrap();
-        assert_eq!(change.new_value, "b");
-        assert_eq!(menu.options[0].current_value_index, 1);
-
-        menu.cycle_value_right();
-        assert_eq!(menu.options[0].current_value_index, 2);
-
-        let change = menu.cycle_value_right().unwrap();
-        assert_eq!(change.new_value, "a");
-        assert_eq!(menu.options[0].current_value_index, 0);
-    }
-
-    #[test]
-    fn cycle_value_left_wraps() {
-        let opts = vec![make_select_option(
-            "model",
-            "Model",
-            "a",
-            &[("a", "A"), ("b", "B"), ("c", "C")],
-        )];
-        let mut menu = ConfigMenu::from_config_options(&opts);
-
-        let change = menu.cycle_value_left().unwrap();
-        assert_eq!(change.new_value, "c");
-        assert_eq!(menu.options[0].current_value_index, 2);
-    }
-
-    #[test]
-    fn single_value_returns_none() {
-        let opts = vec![make_select_option("x", "X", "only", &[("only", "Only")])];
-        let mut menu = ConfigMenu::from_config_options(&opts);
-        assert!(menu.cycle_value_right().is_none());
-        assert!(menu.cycle_value_left().is_none());
     }
 
     #[test]

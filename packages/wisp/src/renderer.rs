@@ -1,4 +1,5 @@
 use crate::components::config_menu::{ConfigMenu, ConfigMenuComponent};
+use crate::components::config_picker::{ConfigPicker, ConfigPickerComponent};
 use crate::components::file_picker::{FilePicker, FilePickerComponent};
 use crate::components::grid_loader::GridLoader;
 use crate::components::input_prompt::InputPrompt;
@@ -15,6 +16,7 @@ use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use unicode_width::UnicodeWidthStr;
 use url::Url;
 
 const MAX_EMBED_TEXT_BYTES: usize = 1024 * 1024;
@@ -67,6 +69,8 @@ pub struct Renderer<T: Write> {
     animation_tick: u16,
     pub file_picker: Option<FilePicker>,
     pub config_menu: Option<ConfigMenu>,
+    pub config_picker: Option<ConfigPicker>,
+    pending_open_model_picker: bool,
     selected_mentions: Vec<SelectedFileMention>,
 }
 
@@ -85,6 +89,8 @@ impl<T: Write> Renderer<T> {
             animation_tick: 0,
             file_picker: None,
             config_menu: None,
+            config_picker: None,
+            pending_open_model_picker: false,
             selected_mentions: Vec::new(),
         }
     }
@@ -132,8 +138,8 @@ impl<T: Write> Renderer<T> {
             cursor_index: self.input_cursor_index(),
         };
         let input_layout = input_prompt.layout(context);
-        let input_cursor_logical_row = logical_lines.len() + input_layout.cursor_row;
-        let input_cursor_col = input_layout.cursor_col;
+        let mut cursor_logical_row = logical_lines.len() + input_layout.cursor_row;
+        let mut cursor_col = input_layout.cursor_col as usize;
         logical_lines.extend(input_layout.lines);
 
         if let Some(ref picker) = self.file_picker {
@@ -141,7 +147,12 @@ impl<T: Write> Renderer<T> {
             logical_lines.extend(picker_component.render(context));
         }
 
-        if let Some(ref menu) = self.config_menu {
+        if let Some(ref picker) = self.config_picker {
+            cursor_logical_row = logical_lines.len();
+            cursor_col = Self::config_picker_cursor_col(picker);
+            let picker_component = ConfigPickerComponent { picker };
+            logical_lines.extend(picker_component.render(context));
+        } else if let Some(ref menu) = self.config_menu {
             let menu_component = ConfigMenuComponent { menu };
             logical_lines.extend(menu_component.render(context));
         }
@@ -156,11 +167,10 @@ impl<T: Write> Renderer<T> {
             soft_wrap_lines_with_map(&logical_lines, context.size.0);
 
         let mut cursor_row = logical_to_visual
-            .get(input_cursor_logical_row)
+            .get(cursor_logical_row)
             .copied()
             .unwrap_or_else(|| visual_lines.len().saturating_sub(1));
         let width = context.size.0 as usize;
-        let mut cursor_col = input_cursor_col as usize;
         if width > 0 {
             cursor_row += cursor_col / width;
             cursor_col %= width;
@@ -176,6 +186,11 @@ impl<T: Write> Renderer<T> {
             cursor_row,
             cursor_col: cursor_col as u16,
         }
+    }
+
+    fn config_picker_cursor_col(picker: &ConfigPicker) -> usize {
+        let prefix = format!("  {} search: ", picker.title);
+        UnicodeWidthStr::width(prefix.as_str()) + UnicodeWidthStr::width(picker.query.as_str())
     }
 
     fn input_cursor_index(&self) -> usize {
@@ -270,10 +285,72 @@ impl<T: Write> Renderer<T> {
             }
         }
 
+        if let Some(ref mut picker) = self.config_picker {
+            match key_event.code {
+                KeyCode::Esc => {
+                    self.config_picker = None;
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Up => {
+                    picker.move_selection_up();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    picker.move_selection_up();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Down => {
+                    picker.move_selection_down();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    picker.move_selection_down();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Enter => {
+                    let confirmed_change = picker.confirm_selection();
+                    let was_provider = picker.config_id == "provider";
+                    self.config_picker = None;
+                    if let Some(change) = confirmed_change {
+                        let _ = prompt_handle.set_config_option(
+                            session_id,
+                            &change.config_id,
+                            &change.new_value,
+                        );
+                        if was_provider {
+                            self.pending_open_model_picker = true;
+                        }
+                    }
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Char(c) => {
+                    if !c.is_control() {
+                        picker.push_query_char(c);
+                        self.render_frame()?;
+                    }
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Backspace => {
+                    picker.pop_query_char();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                _ => return Ok(LoopAction::Continue),
+            }
+        }
+
         if let Some(ref mut menu) = self.config_menu {
             match key_event.code {
                 KeyCode::Esc => {
                     self.config_menu = None;
+                    self.config_picker = None;
+                    self.pending_open_model_picker = false;
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
@@ -287,25 +364,8 @@ impl<T: Write> Renderer<T> {
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
-                KeyCode::Right => {
-                    if let Some(change) = menu.cycle_value_right() {
-                        let _ = prompt_handle.set_config_option(
-                            session_id,
-                            &change.config_id,
-                            &change.new_value,
-                        );
-                    }
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Left => {
-                    if let Some(change) = menu.cycle_value_left() {
-                        let _ = prompt_handle.set_config_option(
-                            session_id,
-                            &change.config_id,
-                            &change.new_value,
-                        );
-                    }
+                KeyCode::Enter => {
+                    self.config_picker = menu.selected_entry().and_then(ConfigPicker::from_entry);
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
@@ -342,6 +402,8 @@ impl<T: Write> Renderer<T> {
                 } else if self.input_buffer.trim() == "/config" {
                     self.input_buffer.clear();
                     self.file_picker = None;
+                    self.config_picker = None;
+                    self.pending_open_model_picker = false;
                     self.config_menu = Some(ConfigMenu::from_config_options(&self.config_options));
                     self.render_frame()?;
                 } else {
@@ -414,6 +476,20 @@ impl<T: Write> Renderer<T> {
         } else {
             None
         }
+    }
+
+    fn open_config_picker_for(&mut self, config_id: &str) -> bool {
+        let Some(menu) = self.config_menu.as_ref() else {
+            return false;
+        };
+        let Some(entry) = menu.entry_by_id(config_id) else {
+            return false;
+        };
+        let Some(picker) = ConfigPicker::from_entry(entry) else {
+            return false;
+        };
+        self.config_picker = Some(picker);
+        true
     }
 
     fn build_attachment_blocks(
@@ -530,6 +606,10 @@ impl<T: Write> Renderer<T> {
                 if let Some(ref mut menu) = self.config_menu {
                     menu.update_options(&update.config_options);
                 }
+                if self.pending_open_model_picker {
+                    self.pending_open_model_picker = false;
+                    let _ = self.open_config_picker_for("model");
+                }
                 should_render = true;
             }
 
@@ -594,6 +674,7 @@ impl<T: Write> Renderer<T> {
     pub fn on_paste(&mut self, text: &str) -> std::io::Result<()> {
         // Close file picker if open — pasted text is treated as literal input
         self.file_picker = None;
+        self.config_picker = None;
         // Strip newlines from paste (single-line input field)
         for c in text.chars() {
             if !c.is_control() {

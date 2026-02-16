@@ -44,6 +44,11 @@ impl TestTerminal {
             .collect()
     }
 
+    /// Get current cursor position as (column, row).
+    pub fn cursor_position(&self) -> (u16, u16) {
+        self.cursor
+    }
+
     /// Clear the entire buffer
     pub fn clear(&mut self) {
         for row in &mut self.buffer {
