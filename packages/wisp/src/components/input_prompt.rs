@@ -108,7 +108,7 @@ fn style_mentions(input: &str, context: &RenderContext) -> String {
             .unwrap_or(input.len());
         styled.push_str(
             &input[at_pos..mention_end]
-                .with(crossterm::style::Color::Cyan)
+                .with(context.theme.info)
                 .to_string(),
         );
         last_pos = mention_end;
