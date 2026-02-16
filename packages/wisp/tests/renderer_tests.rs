@@ -960,6 +960,67 @@ async fn test_on_tick_noop_when_not_waiting() {
     );
 }
 
+#[tokio::test]
+async fn test_paste_inserts_all_text_at_once() {
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    renderer.on_paste("hello world").unwrap();
+
+    let expected = expected_prompt(80, "hello world", TEST_AGENT);
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_paste_strips_control_characters() {
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    renderer.on_paste("line1\nline2\ttab").unwrap();
+
+    let expected = expected_prompt(80, "line1line2tab", TEST_AGENT);
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_paste_closes_file_picker() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    // Open file picker with @
+    renderer
+        .on_key_event(
+            KeyEvent {
+                code: KeyCode::Char('@'),
+                modifiers: KeyModifiers::empty(),
+                kind: crossterm::event::KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            },
+            &handle,
+            &session_id,
+        )
+        .unwrap();
+    assert!(renderer.file_picker.is_some());
+
+    // Paste should close the picker and append text
+    renderer.on_paste("pasted text").unwrap();
+
+    assert!(renderer.file_picker.is_none());
+    let expected = expected_prompt(80, "@pasted text", TEST_AGENT);
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
 fn press_backspace<W: std::io::Write>(
     renderer: &mut Renderer<W>,
     handle: &AcpPromptHandle,

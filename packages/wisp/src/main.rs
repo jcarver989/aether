@@ -66,6 +66,7 @@ async fn main() -> ExitCode {
 
 async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
+    crossterm::execute!(io::stdout(), EnableBracketedPaste)?;
     let mut renderer = Renderer::new(
         io::stdout(),
         state.agent_name.clone(),
@@ -124,6 +125,11 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                                 }
                             }
                         }
+                        Ok(Event::Paste(text)) => {
+                            if let Err(e) = renderer.on_paste(&text) {
+                                eprintln!("Error handling paste: {e}");
+                            }
+                        }
                         Ok(Event::Resize(cols, rows)) => {
                             if let Err(e) = renderer.on_resize(cols, rows) {
                                 eprintln!("Error handling resize: {e}");
@@ -139,6 +145,7 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
         }
     }
 
+    crossterm::execute!(io::stdout(), DisableBracketedPaste)?;
     disable_raw_mode()?;
     println!("\nGoodbye!");
     Ok(())
