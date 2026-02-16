@@ -20,17 +20,9 @@ mod session_manager;
 #[derive(Parser, Debug)]
 #[clap(name = "aether-acp", about = "Aether Agent Client Protocol Server")]
 struct Args {
-    /// Model provider in the format "provider:model" (e.g., "anthropic:claude-3.5-sonnet", "ollama:llama3.2")
-    #[clap(long)]
-    model: String,
-
     /// System prompt for the agent
     #[clap(long)]
     system_prompt: Option<String>,
-
-    /// Path to MCP configuration file
-    #[clap(long)]
-    mcp_config: PathBuf,
 
     /// Path to log file directory (default: /tmp/aether-acp-logs)
     #[clap(long, default_value = "/tmp/aether-acp-logs")]
@@ -41,8 +33,6 @@ struct Args {
 async fn main() -> acp::Result<()> {
     let args = Args::parse();
     info!("Starting Aether ACP server");
-    info!("Model: {}", args.model);
-    info!("MCP config: {:?}", args.mcp_config);
 
     setup_logging(&args);
     let stdout = stdout().compat_write();
@@ -56,12 +46,7 @@ async fn main() -> acp::Result<()> {
         .run_until(async move {
             let (actor_request_tx, actor_request_rx) = mpsc::unbounded_channel();
             let actor_handle = AcpActorHandle::new(actor_request_tx);
-            let agent = SessionManager::new(
-                args.model,
-                args.system_prompt,
-                args.mcp_config,
-                actor_handle.clone(),
-            );
+            let agent = SessionManager::new(args.system_prompt, actor_handle.clone());
 
             let (conn, handle_io) = AgentSideConnection::new(agent, stdout, stdin, |fut| {
                 spawn_local(fut);

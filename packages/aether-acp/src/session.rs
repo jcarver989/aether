@@ -4,6 +4,7 @@ use aether::events::{AgentMessage, UserMessage};
 use aether::mcp::McpSpawnResult;
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
+use llm::parser::ModelProviderParser;
 use llm::provider::StreamingModelProvider;
 use mcp_utils::client::McpServerConfig;
 
@@ -39,24 +40,17 @@ impl Session {
         id: String,
         llm: impl StreamingModelProvider + 'static,
         system_prompt: Option<String>,
-        mcp_config_path: std::path::PathBuf,
+        mcp_config_path: Option<PathBuf>,
         cwd: PathBuf,
         extra_mcp_servers: Vec<McpServerConfig>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         debug!("Creating new session: {}", id);
-        debug!("Loading MCP configuration from: {:?}", mcp_config_path);
+        debug!("MCP config: {:?}", mcp_config_path);
         debug!("Using project root: {:?}", cwd);
 
-        let config_str = mcp_config_path.to_str().ok_or("Invalid MCP config path")?;
         let tasks_cwd = cwd.clone();
         let roots_path = cwd.clone();
-
-        let McpSpawnResult {
-            tool_definitions,
-            instructions,
-            command_tx: mcp_tx,
-            handle: mcp_handle,
-        } = mcp()
+        let mut builder = mcp()
             .register_in_memory_server(
                 "coding",
                 Box::new(move |_args| {
@@ -112,11 +106,19 @@ impl Session {
                 }),
             )
             .with_roots(vec![roots_path.clone()])
-            .with_servers(extra_mcp_servers)
-            .from_json_file(config_str)
-            .await?
-            .spawn()
-            .await?;
+            .with_servers(extra_mcp_servers);
+
+        if let Some(ref config_path) = mcp_config_path {
+            let config_str = config_path.to_str().ok_or("Invalid MCP config path")?;
+            builder = builder.from_json_file(config_str).await?;
+        }
+
+        let McpSpawnResult {
+            tool_definitions,
+            instructions,
+            command_tx: mcp_tx,
+            handle: mcp_handle,
+        } = builder.spawn().await?;
 
         let system_prompt = {
             let mut parts = vec![
@@ -124,6 +126,7 @@ impl Session {
                 Prompt::system_env().with_cwd(roots_path),
                 Prompt::mcp_instructions(instructions),
             ];
+
             if let Some(ref custom_prompt) = system_prompt {
                 parts.push(Prompt::text(custom_prompt));
             }
@@ -159,6 +162,22 @@ impl Session {
             .send(UserMessage::text(&text))
             .await
             .map_err(|e| format!("Failed to send prompt: {e}"))?;
+        Ok(())
+    }
+
+    /// Switches the active LLM provider for this session in-place.
+    pub async fn switch_model(&self, model: &str) -> Result<(), Box<dyn std::error::Error>> {
+        debug!("Switching session {} model to {}", self.id, model);
+        let parser = ModelProviderParser::default();
+        let (provider, _) = parser
+            .parse(model)
+            .map_err(|e| format!("Failed to parse model '{}': {e}", model))?;
+
+        self.agent_tx
+            .send(UserMessage::SwitchModel(provider))
+            .await
+            .map_err(|e| format!("Failed to send model switch: {e}"))?;
+
         Ok(())
     }
 
