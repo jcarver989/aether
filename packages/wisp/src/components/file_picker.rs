@@ -171,7 +171,7 @@ pub struct FilePickerComponent<'a> {
 }
 
 impl Component for FilePickerComponent<'_> {
-    fn render(&self, _context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
 
         if self.picker.files.is_empty() {
@@ -188,7 +188,7 @@ impl Component for FilePickerComponent<'_> {
 
             let line_text = format!("{}{}", prefix, file.display_name);
             let line = if i == self.picker.selected_index {
-                Line::new(line_text.cyan().to_string())
+                Line::new(line_text.with(context.theme.primary).to_string())
             } else {
                 Line::new(line_text)
             };
