@@ -5,6 +5,7 @@ use aether::mcp::McpSpawnResult;
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use llm::provider::StreamingModelProvider;
+use mcp_utils::client::McpServerConfig;
 
 use agent_client_protocol as acp;
 use futures::FutureExt;
@@ -40,6 +41,7 @@ impl Session {
         system_prompt: Option<String>,
         mcp_config_path: std::path::PathBuf,
         cwd: PathBuf,
+        extra_mcp_servers: Vec<McpServerConfig>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         debug!("Creating new session: {}", id);
         debug!("Loading MCP configuration from: {:?}", mcp_config_path);
@@ -109,14 +111,19 @@ impl Session {
                     .boxed()
                 }),
             )
-            .with_roots(vec![roots_path])
+            .with_roots(vec![roots_path.clone()])
+            .with_servers(extra_mcp_servers)
             .from_json_file(config_str)
             .await?
             .spawn()
             .await?;
 
         let system_prompt = {
-            let mut parts = vec![Prompt::agents_md(), Prompt::mcp_instructions(instructions)];
+            let mut parts = vec![
+                Prompt::agents_md().with_cwd(roots_path.clone()),
+                Prompt::system_env().with_cwd(roots_path),
+                Prompt::mcp_instructions(instructions),
+            ];
             if let Some(ref custom_prompt) = system_prompt {
                 parts.push(Prompt::text(custom_prompt));
             }

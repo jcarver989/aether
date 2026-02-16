@@ -8,8 +8,8 @@ use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
 use crate::mappers::{
-    map_agent_message_to_session_notification, map_agent_message_to_stop_reason,
-    try_into_ext_notification,
+    map_acp_mcp_servers, map_agent_message_to_session_notification,
+    map_agent_message_to_stop_reason, try_into_ext_notification,
 };
 use crate::session::Session;
 use acp_utils::content::map_content_blocks_to_text;
@@ -114,12 +114,15 @@ impl acp::Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
+        let extra_mcp_servers = map_acp_mcp_servers(args.mcp_servers);
+
         let session = Session::new(
             session_id.clone(),
             llm,
             self.system_prompt.clone(),
             self.mcp_config_path.clone(),
             args.cwd,
+            extra_mcp_servers,
         )
         .await
         .map_err(|e| {
