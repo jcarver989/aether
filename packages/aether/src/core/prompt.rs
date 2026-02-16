@@ -13,8 +13,9 @@ pub enum Prompt {
         path: String,
         ancestors: bool,
         args: Option<HashMap<String, String>>,
+        cwd: Option<PathBuf>,
     },
-    SystemEnv,
+    SystemEnv(Option<PathBuf>),
     McpInstructions(Vec<ServerInstructions>),
 }
 
@@ -28,6 +29,7 @@ impl Prompt {
             path: path.to_string(),
             ancestors,
             args: None,
+            cwd: None,
         }
     }
 
@@ -36,6 +38,7 @@ impl Prompt {
             path: path.to_string(),
             ancestors,
             args: Some(args),
+            cwd: None,
         }
     }
 
@@ -44,11 +47,30 @@ impl Prompt {
             path: "AGENTS.md".to_string(),
             ancestors: true,
             args: None,
+            cwd: None,
         }
     }
 
     pub fn system_env() -> Self {
-        Self::SystemEnv
+        Self::SystemEnv(None)
+    }
+
+    pub fn with_cwd(self, cwd: PathBuf) -> Self {
+        match self {
+            Self::File {
+                path,
+                ancestors,
+                args,
+                ..
+            } => Self::File {
+                path,
+                ancestors,
+                args,
+                cwd: Some(cwd),
+            },
+            Self::SystemEnv(_) => Self::SystemEnv(Some(cwd)),
+            Self::Text(_) | Self::McpInstructions(_) => self,
+        }
     }
 
     pub fn mcp_instructions(instructions: Vec<ServerInstructions>) -> Self {
@@ -63,16 +85,17 @@ impl Prompt {
                 path,
                 ancestors,
                 args,
+                cwd,
             } => {
                 let content = if *ancestors {
-                    Self::resolve_file_with_ancestors(path).await?
+                    Self::resolve_file_with_ancestors(path, cwd.as_deref()).await?
                 } else {
                     Self::resolve_file(&PathBuf::from(path)).await?
                 };
 
                 Ok(substitute_parameters(&content, args))
             }
-            Prompt::SystemEnv => Self::resolve_system_env().await,
+            Prompt::SystemEnv(cwd) => Self::resolve_system_env(cwd.as_deref()).await,
             Prompt::McpInstructions(instructions) => Ok(format_mcp_instructions(instructions)),
         }
     }
@@ -92,10 +115,14 @@ impl Prompt {
         })
     }
 
-    async fn resolve_file_with_ancestors(filename: &str) -> Result<String> {
+    async fn resolve_file_with_ancestors(filename: &str, cwd: Option<&Path>) -> Result<String> {
         let mut prompt = Vec::new();
-        let mut current_dir = env::current_dir()
-            .map_err(|e| AgentError::IoError(format!("Failed to get current directory: {e}")))?;
+        let mut current_dir = match cwd {
+            Some(dir) => dir.to_path_buf(),
+            None => env::current_dir().map_err(|e| {
+                AgentError::IoError(format!("Failed to get current directory: {e}"))
+            })?,
+        };
 
         loop {
             let file_path = current_dir.join(filename);
@@ -131,9 +158,13 @@ impl Prompt {
         Ok(prompt.join("\n\n"))
     }
 
-    async fn resolve_system_env() -> Result<String> {
-        let cwd = env::current_dir()
-            .map_err(|e| AgentError::IoError(format!("Failed to get current directory: {e}")))?;
+    async fn resolve_system_env(cwd: Option<&Path>) -> Result<String> {
+        let cwd = match cwd {
+            Some(dir) => dir.to_path_buf(),
+            None => env::current_dir().map_err(|e| {
+                AgentError::IoError(format!("Failed to get current directory: {e}"))
+            })?,
+        };
 
         let os_version = Command::new("uname")
             .arg("-a")
@@ -216,12 +247,30 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_system_env_contains_expected_fields() {
-        let result = Prompt::resolve_system_env().await.unwrap();
+        let result = Prompt::resolve_system_env(None).await.unwrap();
         assert!(result.contains("<env>"));
         assert!(result.contains("</env>"));
         assert!(result.contains("Working directory:"));
         assert!(result.contains("Platform:"));
         assert!(result.contains("Today's date:"));
         assert!(result.contains("Is directory a git repo:"));
+    }
+
+    #[tokio::test]
+    async fn resolve_system_env_uses_provided_cwd() {
+        let cwd = std::env::temp_dir();
+        let result = Prompt::resolve_system_env(Some(cwd.as_path()))
+            .await
+            .unwrap();
+        assert!(result.contains(&cwd.display().to_string()));
+    }
+
+    #[tokio::test]
+    async fn resolve_file_with_ancestors_uses_provided_cwd() {
+        let dir = std::env::temp_dir();
+        let result = Prompt::resolve_file_with_ancestors("AGENTS.md", Some(dir.as_path())).await;
+        // Should fail because no AGENTS.md in temp dir, but importantly it shouldn't
+        // look in the process's cwd
+        assert!(result.is_err());
     }
 }

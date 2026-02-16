@@ -1,7 +1,13 @@
 use aether::events::AgentMessage;
 use aether::events::{ContextUsageParams, SubAgentProgressParams, SubAgentProgressPayload};
-use agent_client_protocol as acp;
+use agent_client_protocol::{
+    self as acp, Content, ContentBlock, ContentChunk, HttpHeader, McpServer, SessionId,
+    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
+    ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
+};
+use mcp_utils::client::McpServerConfig;
 use rmcp::model::Prompt as McpPrompt;
+use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
 /// Converts an MCP Prompt to an ACP AvailableCommand
 ///
@@ -51,11 +57,61 @@ pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::Available
     acp::AvailableCommand::new(command_name, description).input(input)
 }
 
+/// Maps ACP MCP server definitions to internal McpServerConfig, skipping unsupported transports.
+pub fn map_acp_mcp_servers(servers: Vec<McpServer>) -> Vec<McpServerConfig> {
+    servers
+        .into_iter()
+        .filter_map(|s| {
+            try_map_mcp_server(s).or_else(|| {
+                tracing::warn!("Unsupported ACP MCP server transport, skipping");
+                None
+            })
+        })
+        .collect()
+}
+
+fn try_map_mcp_server(server: McpServer) -> Option<McpServerConfig> {
+    use McpServer::*;
+    match server {
+        Stdio(stdio) => Some(McpServerConfig::Stdio {
+            name: stdio.name,
+            command: stdio.command.to_string_lossy().into_owned(),
+            args: stdio.args,
+            env: stdio.env.into_iter().map(|e| (e.name, e.value)).collect(),
+        }),
+
+        Http(http) => Some(McpServerConfig::Http {
+            name: http.name,
+            config: http_config(http.url, &http.headers),
+        }),
+
+        Sse(sse) => Some(McpServerConfig::Http {
+            name: sse.name,
+            config: http_config(sse.url, &sse.headers),
+        }),
+
+        _ => None,
+    }
+}
+
+fn http_config(url: String, headers: &[HttpHeader]) -> StreamableHttpClientTransportConfig {
+    let auth_header = headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case("authorization"))
+        .map(|h| h.value.clone());
+
+    StreamableHttpClientTransportConfig {
+        uri: url.into(),
+        auth_header,
+        ..Default::default()
+    }
+}
+
 /// Converts Aether AgentMessage to ACP SessionUpdate
 pub fn map_agent_message_to_session_notification(
-    session_id: acp::SessionId,
+    session_id: SessionId,
     msg: &AgentMessage,
-) -> Option<acp::SessionNotification> {
+) -> Option<SessionNotification> {
     match msg {
         AgentMessage::Text {
             message_id: _,
@@ -71,47 +127,44 @@ pub fn map_agent_message_to_session_notification(
 
             Some(acp::SessionNotification::new(
                 session_id,
-                acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
-                    acp::ContentBlock::Text(acp::TextContent::new(chunk.clone())),
-                )),
+                SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                    TextContent::new(chunk.clone()),
+                ))),
             ))
         }
 
         AgentMessage::ToolCall { request, .. } => {
             let raw_input = serde_json::from_str(&request.arguments).ok();
-            Some(acp::SessionNotification::new(
+            Some(SessionNotification::new(
                 session_id,
-                acp::SessionUpdate::ToolCall(
-                    acp::ToolCall::new(
-                        acp::ToolCallId::new(request.id.clone()),
-                        request.name.clone(),
-                    )
-                    .status(acp::ToolCallStatus::InProgress)
-                    .raw_input(raw_input),
+                SessionUpdate::ToolCall(
+                    ToolCall::new(ToolCallId::new(request.id.clone()), request.name.clone())
+                        .status(acp::ToolCallStatus::InProgress)
+                        .raw_input(raw_input),
                 ),
             ))
         }
 
-        AgentMessage::ToolResult { result, .. } => Some(acp::SessionNotification::new(
+        AgentMessage::ToolResult { result, .. } => Some(SessionNotification::new(
             session_id,
-            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
-                acp::ToolCallId::new(result.id.clone()),
-                acp::ToolCallUpdateFields::new()
-                    .status(acp::ToolCallStatus::Completed)
-                    .content(vec![acp::ToolCallContent::Content(acp::Content::new(
-                        acp::ContentBlock::Text(acp::TextContent::new(result.result.clone())),
+            SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                ToolCallId::new(result.id.clone()),
+                ToolCallUpdateFields::new()
+                    .status(ToolCallStatus::Completed)
+                    .content(vec![ToolCallContent::Content(Content::new(
+                        ContentBlock::Text(TextContent::new(result.result.clone())),
                     ))]),
             )),
         )),
 
-        AgentMessage::ToolError { error, .. } => Some(acp::SessionNotification::new(
+        AgentMessage::ToolError { error, .. } => Some(SessionNotification::new(
             session_id,
-            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
-                acp::ToolCallId::new(error.id.clone()),
-                acp::ToolCallUpdateFields::new()
-                    .status(acp::ToolCallStatus::Failed)
-                    .content(vec![acp::ToolCallContent::Content(acp::Content::new(
-                        acp::ContentBlock::Text(acp::TextContent::new(error.error.clone())),
+            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                ToolCallId::new(error.id.clone()),
+                ToolCallUpdateFields::new()
+                    .status(ToolCallStatus::Failed)
+                    .content(vec![ToolCallContent::Content(Content::new(
+                        ContentBlock::Text(TextContent::new(error.error.clone())),
                     ))]),
             )),
         )),
@@ -154,14 +207,14 @@ pub fn map_agent_message_to_session_notification(
                     )
                 });
 
-            Some(acp::SessionNotification::new(
+            Some(SessionNotification::new(
                 session_id,
-                acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
-                    acp::ToolCallId::new(request.id.clone()),
-                    acp::ToolCallUpdateFields::new()
-                        .status(acp::ToolCallStatus::InProgress)
-                        .content(vec![acp::ToolCallContent::Content(acp::Content::new(
-                            acp::ContentBlock::Text(acp::TextContent::new(progress_text)),
+                SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                    ToolCallId::new(request.id.clone()),
+                    ToolCallUpdateFields::new()
+                        .status(ToolCallStatus::InProgress)
+                        .content(vec![ToolCallContent::Content(Content::new(
+                            ContentBlock::Text(TextContent::new(progress_text)),
                         ))]),
                 )),
             ))
@@ -206,10 +259,10 @@ pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotificat
 /// Determines the stop reason from the final agent message
 pub fn map_agent_message_to_stop_reason(msg: &AgentMessage) -> acp::StopReason {
     match msg {
-        AgentMessage::Done => acp::StopReason::EndTurn,
-        AgentMessage::Cancelled { .. } => acp::StopReason::Cancelled,
-        AgentMessage::Error { .. } => acp::StopReason::EndTurn, // Map error to EndTurn
-        _ => acp::StopReason::EndTurn,
+        AgentMessage::Done => StopReason::EndTurn,
+        AgentMessage::Cancelled { .. } => StopReason::Cancelled,
+        AgentMessage::Error { .. } => StopReason::EndTurn, // Map error to EndTurn
+        _ => StopReason::EndTurn,
     }
 }
 
@@ -312,6 +365,74 @@ mod tests {
                 }
             }
             _ => panic!("Expected ToolCallUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_map_acp_stdio_server() {
+        let server = acp::McpServer::Stdio(
+            acp::McpServerStdio::new("my-server", "/usr/bin/server")
+                .args(vec!["--port".into(), "8080".into()])
+                .env(vec![acp::EnvVariable::new("FOO", "bar")]),
+        );
+
+        let configs = map_acp_mcp_servers(vec![server]);
+        assert_eq!(configs.len(), 1);
+
+        match &configs[0] {
+            McpServerConfig::Stdio {
+                name,
+                command,
+                args,
+                env,
+            } => {
+                assert_eq!(name, "my-server");
+                assert_eq!(command, "/usr/bin/server");
+                assert_eq!(args, &["--port", "8080"]);
+                assert_eq!(env.get("FOO").unwrap(), "bar");
+            }
+            other => panic!("Expected Stdio, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_map_acp_http_server() {
+        let server = acp::McpServer::Http(
+            acp::McpServerHttp::new("http-server", "https://example.com/mcp").headers(vec![
+                acp::HttpHeader::new("Authorization", "Bearer token123"),
+            ]),
+        );
+
+        let configs = map_acp_mcp_servers(vec![server]);
+        assert_eq!(configs.len(), 1);
+
+        match &configs[0] {
+            McpServerConfig::Http { name, config } => {
+                assert_eq!(name, "http-server");
+                assert_eq!(config.uri.as_ref(), "https://example.com/mcp");
+                assert_eq!(config.auth_header.as_deref(), Some("Bearer token123"));
+            }
+            other => panic!("Expected Http, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_map_acp_sse_server() {
+        let server = acp::McpServer::Sse(acp::McpServerSse::new(
+            "sse-server",
+            "https://example.com/sse",
+        ));
+
+        let configs = map_acp_mcp_servers(vec![server]);
+        assert_eq!(configs.len(), 1);
+
+        match &configs[0] {
+            McpServerConfig::Http { name, config } => {
+                assert_eq!(name, "sse-server");
+                assert_eq!(config.uri.as_ref(), "https://example.com/sse");
+                assert_eq!(config.auth_header, None);
+            }
+            other => panic!("Expected Http, got {:?}", other),
         }
     }
 }
