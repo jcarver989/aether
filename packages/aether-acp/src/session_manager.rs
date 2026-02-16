@@ -1,16 +1,17 @@
 use aether::events::AgentMessage;
 use agent_client_protocol::{
     self as acp, Agent, AgentCapabilities, AuthenticateRequest, AuthenticateResponse,
-    AvailableCommandsUpdate, InitializeRequest, InitializeResponse, LoadSessionRequest,
-    LoadSessionResponse, NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptResponse,
-    ProtocolVersion, SessionConfigOption, SessionConfigOptionCategory, SessionNotification,
-    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
-    SetSessionModeRequest, SetSessionModeResponse,
+    AvailableCommandsUpdate, Implementation, InitializeRequest, InitializeResponse,
+    LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse,
+    PromptCapabilities, PromptResponse, ProtocolVersion, SessionConfigOption,
+    SessionConfigOptionCategory, SessionConfigSelectOption, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse,
 };
 use llm::catalog::{self, LlmModel};
 use llm::parser::ModelProviderParser;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::spawn;
 use tokio::sync::Mutex;
@@ -136,7 +137,7 @@ fn build_provider_config_option(
     let all_models = catalog::LlmModel::all();
     let providers = unique_providers(&all_models);
     let available_providers: HashSet<&str> = available.iter().map(|m| m.provider()).collect();
-    let options: Vec<acp::SessionConfigSelectOption> = providers
+    let options: Vec<SessionConfigSelectOption> = providers
         .iter()
         .map(|p| {
             let is_available = available_providers.contains(p);
@@ -147,7 +148,7 @@ fn build_provider_config_option(
                 format!("{display_name} (unavailable)")
             };
 
-            let option = acp::SessionConfigSelectOption::new(p.to_string(), name);
+            let option = SessionConfigSelectOption::new(p.to_string(), name);
             if is_available {
                 option
             } else {
@@ -221,7 +222,7 @@ fn pick_default_model(available: &[LlmModel]) -> Option<&LlmModel> {
 
 /// Resolve MCP config path from the session's CWD.
 /// Returns Some if `cwd/mcp.json` exists.
-fn resolve_mcp_config(cwd: &std::path::Path) -> Option<PathBuf> {
+fn resolve_mcp_config(cwd: &Path) -> Option<PathBuf> {
     let path = cwd.join("mcp.json");
     path.exists().then_some(path)
 }
@@ -230,8 +231,9 @@ fn resolve_mcp_config(cwd: &std::path::Path) -> Option<PathBuf> {
 impl Agent for SessionManager {
     async fn initialize(&self, args: InitializeRequest) -> Result<InitializeResponse, acp::Error> {
         info!("Received initialize request: {:?}", args);
-        Ok(
-            InitializeResponse::new(ProtocolVersion::V1).agent_capabilities(
+        Ok(InitializeResponse::new(ProtocolVersion::V1)
+            .agent_info(Implementation::new("Aether", "0.1.0"))
+            .agent_capabilities(
                 AgentCapabilities::new()
                     .load_session(false)
                     .prompt_capabilities(
@@ -240,8 +242,7 @@ impl Agent for SessionManager {
                             .image(false)
                             .audio(false),
                     ),
-            ),
-        )
+            ))
     }
 
     async fn authenticate(
@@ -769,7 +770,11 @@ mod tests {
             panic!("Expected Ungrouped options");
         };
         assert!(!model_options.is_empty());
-        assert!(model_options.iter().all(|o| o.value.0.starts_with("deepseek:")));
+        assert!(
+            model_options
+                .iter()
+                .all(|o| o.value.0.starts_with("deepseek:"))
+        );
         assert!(
             model_options
                 .iter()
