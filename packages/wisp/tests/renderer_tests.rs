@@ -1979,3 +1979,261 @@ async fn test_config_with_no_options_shows_placeholder() {
         lines.join("\n")
     );
 }
+
+// ── Command picker tests ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_slash_opens_command_picker() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    send_key(
+        &mut renderer,
+        KeyCode::Char('/'),
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+
+    assert!(
+        renderer.command_picker.is_some(),
+        "Typing / on empty buffer should open command picker"
+    );
+}
+
+#[tokio::test]
+async fn test_slash_mid_input_no_picker() {
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "hello/", &handle, &session_id);
+
+    assert!(
+        renderer.command_picker.is_none(),
+        "Typing / mid-input should not open command picker"
+    );
+}
+
+#[tokio::test]
+async fn test_command_picker_esc_clears() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    send_key(
+        &mut renderer,
+        KeyCode::Char('/'),
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert!(renderer.command_picker.is_some());
+
+    send_key(
+        &mut renderer,
+        KeyCode::Esc,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+
+    assert!(
+        renderer.command_picker.is_none(),
+        "Esc should close command picker"
+    );
+    let lines = renderer.writer().get_lines();
+    assert!(
+        !lines.iter().any(|l| l.contains("/")),
+        "Input buffer should be cleared after Esc.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_command_picker_backspace_empty_closes() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    send_key(
+        &mut renderer,
+        KeyCode::Char('/'),
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert!(renderer.command_picker.is_some());
+
+    send_key(
+        &mut renderer,
+        KeyCode::Backspace,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+
+    assert!(
+        renderer.command_picker.is_none(),
+        "Backspace on empty query should close command picker"
+    );
+}
+
+#[tokio::test]
+async fn test_available_commands_update_stored() {
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    renderer
+        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
+            acp::AvailableCommandsUpdate::new(vec![
+                acp::AvailableCommand::new("search", "Search code"),
+                acp::AvailableCommand::new("web", "Browse the web"),
+            ]),
+        ))
+        .unwrap();
+
+    assert_eq!(renderer.available_commands.len(), 2);
+    assert_eq!(renderer.available_commands[0].name, "search");
+    assert_eq!(renderer.available_commands[1].name, "web");
+}
+
+#[tokio::test]
+async fn test_available_commands_update_extracts_hint() {
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    renderer
+        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
+            acp::AvailableCommandsUpdate::new(vec![
+                acp::AvailableCommand::new("search", "Search code").input(
+                    acp::AvailableCommandInput::Unstructured(
+                        acp::UnstructuredCommandInput::new("query pattern"),
+                    ),
+                ),
+                acp::AvailableCommand::new("config", "Open settings"),
+            ]),
+        ))
+        .unwrap();
+
+    assert_eq!(renderer.available_commands.len(), 2);
+    assert_eq!(
+        renderer.available_commands[0].hint.as_deref(),
+        Some("query pattern"),
+        "Command with Unstructured input should have hint"
+    );
+    assert_eq!(
+        renderer.available_commands[1].hint, None,
+        "Command without input should have no hint"
+    );
+}
+
+#[tokio::test]
+async fn test_command_picker_shows_mcp_commands() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    // Feed available commands
+    renderer
+        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
+            acp::AvailableCommandsUpdate::new(vec![acp::AvailableCommand::new(
+                "search",
+                "Search code",
+            )]),
+        ))
+        .unwrap();
+
+    // Open picker
+    send_key(
+        &mut renderer,
+        KeyCode::Char('/'),
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+
+    let picker = renderer.command_picker.as_ref().unwrap();
+    let names: Vec<&str> = picker.matches.iter().map(|m| m.name.as_str()).collect();
+    assert!(
+        names.contains(&"config"),
+        "Picker should include built-in config command. Got: {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"search"),
+        "Picker should include MCP search command. Got: {:?}",
+        names
+    );
+}
+
+#[tokio::test]
+async fn test_command_picker_ctrl_c_exits() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use wisp::renderer::LoopAction;
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    send_key(
+        &mut renderer,
+        KeyCode::Char('/'),
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert!(renderer.command_picker.is_some());
+
+    let action = renderer
+        .on_key_event(
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: crossterm::event::KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            },
+            &handle,
+            &session_id,
+        )
+        .unwrap();
+
+    assert!(matches!(action, LoopAction::Exit));
+}

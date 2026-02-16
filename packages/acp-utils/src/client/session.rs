@@ -2,10 +2,10 @@ use super::error::AcpClientError;
 use super::event::AcpEvent;
 use super::prompt_handle::{AcpPromptHandle, PromptCommand};
 use agent_client_protocol::{
-    self as acp, Agent, Client, ConfigOptionUpdate, InitializeRequest, PermissionOptionKind,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionConfigOption, SessionId, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest,
+    self as acp, Agent, Client, ConfigOptionUpdate, ExtNotification, InitializeRequest,
+    PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigOption, SessionId,
+    SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
 };
 use std::process::Stdio;
 use std::thread::spawn;
@@ -64,6 +64,11 @@ impl Client for AutoApproveClient {
             .event_tx
             .send(AcpEvent::SessionUpdate(Box::new(args.update)));
 
+        Ok(())
+    }
+
+    async fn ext_notification(&self, args: ExtNotification) -> acp::Result<()> {
+        let _ = self.event_tx.send(AcpEvent::ExtNotification(args));
         Ok(())
     }
 }

@@ -135,6 +135,11 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                             eprintln!("Error handling session update: {e}");
                         }
                     }
+                    AcpEvent::ExtNotification(notification) => {
+                        if let Err(e) = renderer.on_ext_notification(notification) {
+                            eprintln!("Error handling ext notification: {e}");
+                        }
+                    }
                     AcpEvent::PromptDone(_stop_reason) => {
                         if let Err(e) = renderer.on_prompt_done() {
                             eprintln!("Error handling prompt done: {e}");
@@ -256,6 +261,7 @@ async fn run_non_interactive(
                     }
                 }
             },
+            AcpEvent::ExtNotification(_) => {}
             AcpEvent::PromptDone(_) => {
                 if let Some(output) = thought_state.on_non_thought_update() {
                     print!("{output}");
