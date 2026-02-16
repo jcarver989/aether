@@ -133,21 +133,23 @@ impl<T: Write> Renderer<T> {
         let context = self.tui.context();
         let mut logical_lines: Vec<Line> = Vec::new();
         logical_lines.extend(self.grid_loader.render(context));
+        let mut last_segment_kind: Option<std::mem::Discriminant<StreamSegment>> = None;
 
         for segment in &self.stream_segments {
-            match segment {
-                StreamSegment::Thought(text) => {
-                    let streaming_thought = ThoughtMessage { text };
-                    logical_lines.extend(streaming_thought.render(context));
-                }
-                StreamSegment::Text(text) => {
-                    let streaming_message = StreamingMessage { text };
-                    logical_lines.extend(streaming_message.render(context));
-                }
-                StreamSegment::ToolCall(id) => {
-                    logical_lines.extend(self.tool_call_statuses.render_tool(id, context));
-                }
+            let kind = std::mem::discriminant(segment);
+            let segment_lines = self.render_stream_segment(segment, context);
+            if segment_lines.is_empty() {
+                continue;
             }
+
+            if let Some(prev_kind) = last_segment_kind
+                && prev_kind != kind
+            {
+                logical_lines.push(Line::new(String::new()));
+            }
+
+            logical_lines.extend(segment_lines);
+            last_segment_kind = Some(kind);
         }
 
         let input_prompt = InputPrompt {
@@ -668,17 +670,31 @@ impl<T: Write> Renderer<T> {
         let context = self.tui.context();
 
         let mut scrollback_lines: Vec<Line> = Vec::new();
+        let mut last_segment_kind: Option<std::mem::Discriminant<StreamSegment>> = None;
 
         for segment in stream_segments {
+            let kind = std::mem::discriminant(&segment);
             match segment {
                 StreamSegment::Thought(text) => {
-                    let thought = ThoughtMessage { text: &text };
-                    scrollback_lines.extend(thought.render(context));
+                    let segment_lines = ThoughtMessage { text: &text }.render(context);
+                    Self::extend_with_vertical_margin(
+                        &mut scrollback_lines,
+                        &mut last_segment_kind,
+                        kind,
+                        segment_lines,
+                    );
                 }
                 StreamSegment::Text(text) => {
-                    for text_line in text.lines() {
-                        scrollback_lines.push(Line::new(text_line.to_string()));
-                    }
+                    let segment_lines = text
+                        .lines()
+                        .map(|text_line| Line::new(text_line.to_string()))
+                        .collect();
+                    Self::extend_with_vertical_margin(
+                        &mut scrollback_lines,
+                        &mut last_segment_kind,
+                        kind,
+                        segment_lines,
+                    );
                 }
                 StreamSegment::ToolCall(id) => {
                     if self.tool_call_statuses.is_tool_running(&id) {
@@ -686,7 +702,13 @@ impl<T: Write> Renderer<T> {
                         continue;
                     }
 
-                    scrollback_lines.extend(self.tool_call_statuses.render_tool(&id, context));
+                    let segment_lines = self.tool_call_statuses.render_tool(&id, context);
+                    Self::extend_with_vertical_margin(
+                        &mut scrollback_lines,
+                        &mut last_segment_kind,
+                        kind,
+                        segment_lines,
+                    );
                     self.tool_call_statuses.remove_tool(&id);
                 }
             }
@@ -748,6 +770,34 @@ impl<T: Write> Renderer<T> {
             self.stream_segments
                 .push(StreamSegment::ToolCall(tool_id.to_string()));
         }
+    }
+
+    fn render_stream_segment(&self, segment: &StreamSegment, context: &RenderContext) -> Vec<Line> {
+        match segment {
+            StreamSegment::Thought(text) => ThoughtMessage { text }.render(context),
+            StreamSegment::Text(text) => StreamingMessage { text }.render(context),
+            StreamSegment::ToolCall(id) => self.tool_call_statuses.render_tool(id, context),
+        }
+    }
+
+    fn extend_with_vertical_margin(
+        target: &mut Vec<Line>,
+        last_segment_kind: &mut Option<std::mem::Discriminant<StreamSegment>>,
+        kind: std::mem::Discriminant<StreamSegment>,
+        lines: Vec<Line>,
+    ) {
+        if lines.is_empty() {
+            return;
+        }
+
+        if let Some(prev_kind) = *last_segment_kind
+            && prev_kind != kind
+        {
+            target.push(Line::new(String::new()));
+        }
+
+        target.extend(lines);
+        *last_segment_kind = Some(kind);
     }
 
     /// Advance the loader animation by one tick. No-op when nothing is animating.
