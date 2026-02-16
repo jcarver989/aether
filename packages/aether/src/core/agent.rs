@@ -299,7 +299,7 @@ impl Agent {
             }
 
             Reasoning { chunk } => {
-                self.handle_llm_reasoning(chunk, state);
+                self.handle_llm_reasoning(chunk, state).await;
             }
 
             ToolRequestStart { id, name } => {
@@ -356,8 +356,19 @@ impl Agent {
         }
     }
 
-    fn handle_llm_reasoning(&mut self, chunk: String, state: &mut IterationState) {
+    async fn handle_llm_reasoning(&mut self, chunk: String, state: &mut IterationState) {
         state.reasoning_content.push_str(&chunk);
+
+        if let Some(id) = &state.current_message_id {
+            let _ = self
+                .agent_message_tx
+                .send(AgentMessage::Thought {
+                    message_id: id.clone(),
+                    chunk,
+                    model_name: self.llm.display_name(),
+                })
+                .await;
+        }
     }
 
     async fn handle_tool_request_start(&mut self, id: String, name: String) {

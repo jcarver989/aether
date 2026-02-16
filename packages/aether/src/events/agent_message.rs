@@ -11,6 +11,12 @@ pub enum AgentMessage {
         model_name: String,
     },
 
+    Thought {
+        message_id: String,
+        chunk: String,
+        model_name: String,
+    },
+
     ToolCall {
         request: ToolCallRequest,
         model_name: String,
@@ -88,6 +94,14 @@ impl AgentMessage {
             model_name: model_name.to_string(),
         }
     }
+
+    pub fn thought(message_id: &str, chunk: &str, model_name: &str) -> Self {
+        AgentMessage::Thought {
+            message_id: message_id.to_string(),
+            chunk: chunk.to_string(),
+            model_name: model_name.to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -99,6 +113,18 @@ mod tests {
         let msg = AgentMessage::ModelSwitched {
             previous: "anthropic:claude-3.5-sonnet".to_string(),
             new: "ollama:llama3.2".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn test_thought_serde_roundtrip() {
+        let msg = AgentMessage::Thought {
+            message_id: "msg_1".to_string(),
+            chunk: "thinking".to_string(),
+            model_name: "test-model".to_string(),
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: AgentMessage = serde_json::from_str(&json).unwrap();

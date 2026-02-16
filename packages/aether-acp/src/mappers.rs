@@ -133,6 +133,17 @@ pub fn map_agent_message_to_session_notification(
             ))
         }
 
+        AgentMessage::Thought {
+            message_id: _,
+            chunk,
+            model_name: _,
+        } => Some(acp::SessionNotification::new(
+            session_id,
+            SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(chunk.clone()),
+            ))),
+        )),
+
         AgentMessage::ToolCall { request, .. } => {
             let raw_input = serde_json::from_str(&request.arguments).ok();
             Some(SessionNotification::new(
@@ -328,6 +339,27 @@ mod tests {
         assert_eq!(parsed.task_id, "task_1");
         assert_eq!(parsed.agent_name, "sub-agent");
         assert!(matches!(parsed.event, AgentMessage::Text { .. }));
+    }
+
+    #[test]
+    fn test_thought_maps_to_agent_thought_chunk() {
+        let session_id = acp::SessionId::new("test-session");
+        let thought = AgentMessage::Thought {
+            message_id: "msg_1".to_string(),
+            chunk: "thinking...".to_string(),
+            model_name: "TestModel".to_string(),
+        };
+
+        let notification =
+            map_agent_message_to_session_notification(session_id, &thought).expect("notification");
+
+        match notification.update {
+            acp::SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
+                acp::ContentBlock::Text(text) => assert_eq!(text.text, "thinking..."),
+                other => panic!("Expected text content, got {other:?}"),
+            },
+            other => panic!("Expected AgentThoughtChunk, got {other:?}"),
+        }
     }
 
     #[test]

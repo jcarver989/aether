@@ -4,6 +4,7 @@ use crate::components::file_picker::{FilePicker, FilePickerComponent};
 use crate::components::grid_loader::GridLoader;
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
+use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::error::WispError;
 use crate::tui::soft_wrap::soft_wrap_lines_with_map;
@@ -50,6 +51,12 @@ impl Component for StreamingMessage<'_> {
     }
 }
 
+enum StreamSegment {
+    Text(String),
+    Thought(String),
+    ToolCall(String),
+}
+
 struct FrameSnapshot {
     visual_lines: Vec<Line>,
     cursor_row: usize,
@@ -60,7 +67,8 @@ pub struct Renderer<T: Write> {
     tui: FrameRenderer<T>,
     tool_call_statuses: ToolCallStatuses,
     grid_loader: GridLoader,
-    current_message_buffer: String,
+    stream_segments: Vec<StreamSegment>,
+    thought_block_open: bool,
     input_buffer: String,
     agent_name: String,
     model_display: Option<String>,
@@ -80,7 +88,8 @@ impl<T: Write> Renderer<T> {
             tui: FrameRenderer::new(writer),
             tool_call_statuses: ToolCallStatuses::new(),
             grid_loader: GridLoader::new(),
-            current_message_buffer: String::new(),
+            stream_segments: Vec::new(),
+            thought_block_open: false,
             input_buffer: String::new(),
             agent_name,
             model_display: extract_model_display(config_options),
@@ -123,14 +132,22 @@ impl<T: Write> Renderer<T> {
     fn build_frame_snapshot(&self) -> FrameSnapshot {
         let context = self.tui.context();
         let mut logical_lines: Vec<Line> = Vec::new();
-        logical_lines.extend(self.tool_call_statuses.render(context));
         logical_lines.extend(self.grid_loader.render(context));
 
-        if !self.current_message_buffer.is_empty() {
-            let streaming_message = StreamingMessage {
-                text: &self.current_message_buffer,
-            };
-            logical_lines.extend(streaming_message.render(context));
+        for segment in &self.stream_segments {
+            match segment {
+                StreamSegment::Thought(text) => {
+                    let streaming_thought = ThoughtMessage { text };
+                    logical_lines.extend(streaming_thought.render(context));
+                }
+                StreamSegment::Text(text) => {
+                    let streaming_message = StreamingMessage { text };
+                    logical_lines.extend(streaming_message.render(context));
+                }
+                StreamSegment::ToolCall(id) => {
+                    logical_lines.extend(self.tool_call_statuses.render_tool(id, context));
+                }
+            }
         }
 
         let input_prompt = InputPrompt {
@@ -585,22 +602,36 @@ impl<T: Write> Renderer<T> {
         match update {
             SessionUpdate::AgentMessageChunk(chunk) => {
                 if let acp::ContentBlock::Text(text_content) = chunk.content {
-                    self.current_message_buffer.push_str(&text_content.text);
+                    self.append_text_chunk(&text_content.text);
+                    should_render = true;
+                }
+            }
+
+            SessionUpdate::AgentThoughtChunk(chunk) => {
+                if let acp::ContentBlock::Text(text_content) = chunk.content {
+                    self.append_thought_chunk(&text_content.text);
                     should_render = true;
                 }
             }
 
             SessionUpdate::ToolCall(tool_call) => {
+                self.close_thought_block();
                 self.tool_call_statuses.on_tool_call(&tool_call);
+                self.ensure_tool_segment(&tool_call.tool_call_id.0);
                 should_render = true;
             }
 
             SessionUpdate::ToolCallUpdate(update) => {
+                self.close_thought_block();
                 self.tool_call_statuses.on_tool_call_update(&update);
+                if self.tool_call_statuses.has_tool(&update.tool_call_id.0) {
+                    self.ensure_tool_segment(&update.tool_call_id.0);
+                }
                 should_render = true;
             }
 
             SessionUpdate::ConfigOptionUpdate(update) => {
+                self.close_thought_block();
                 self.model_display = extract_model_display(&update.config_options);
                 self.config_options = update.config_options.clone();
                 if let Some(ref mut menu) = self.config_menu {
@@ -613,7 +644,9 @@ impl<T: Write> Renderer<T> {
                 should_render = true;
             }
 
-            _ => {}
+            _ => {
+                self.close_thought_block();
+            }
         }
 
         if should_render {
@@ -628,17 +661,38 @@ impl<T: Write> Renderer<T> {
     pub fn on_prompt_done(&mut self) -> std::io::Result<()> {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
+        self.close_thought_block();
 
-        let text = std::mem::take(&mut self.current_message_buffer);
+        let stream_segments = std::mem::take(&mut self.stream_segments);
+        let mut remaining_segments = Vec::new();
+        let context = self.tui.context();
 
-        let mut scrollback_lines: Vec<Line> =
-            self.tool_call_statuses.drain_completed(self.tui.context());
+        let mut scrollback_lines: Vec<Line> = Vec::new();
 
-        if !text.is_empty() {
-            for text_line in text.lines() {
-                scrollback_lines.push(Line::new(text_line.to_string()));
+        for segment in stream_segments {
+            match segment {
+                StreamSegment::Thought(text) => {
+                    let thought = ThoughtMessage { text: &text };
+                    scrollback_lines.extend(thought.render(context));
+                }
+                StreamSegment::Text(text) => {
+                    for text_line in text.lines() {
+                        scrollback_lines.push(Line::new(text_line.to_string()));
+                    }
+                }
+                StreamSegment::ToolCall(id) => {
+                    if self.tool_call_statuses.is_tool_running(&id) {
+                        remaining_segments.push(StreamSegment::ToolCall(id));
+                        continue;
+                    }
+
+                    scrollback_lines.extend(self.tool_call_statuses.render_tool(&id, context));
+                    self.tool_call_statuses.remove_tool(&id);
+                }
             }
         }
+
+        self.stream_segments = remaining_segments;
 
         if !scrollback_lines.is_empty() {
             self.tui.push_to_scrollback(&scrollback_lines)?;
@@ -646,6 +700,54 @@ impl<T: Write> Renderer<T> {
 
         self.render_frame()?;
         Ok(())
+    }
+
+    fn append_text_chunk(&mut self, chunk: &str) {
+        if chunk.is_empty() {
+            return;
+        }
+
+        self.close_thought_block();
+
+        match self.stream_segments.last_mut() {
+            Some(StreamSegment::Text(existing)) => existing.push_str(chunk),
+            _ => self
+                .stream_segments
+                .push(StreamSegment::Text(chunk.to_string())),
+        }
+    }
+
+    fn append_thought_chunk(&mut self, chunk: &str) {
+        if chunk.is_empty() {
+            return;
+        }
+
+        if self.thought_block_open {
+            if let Some(StreamSegment::Thought(existing)) = self.stream_segments.last_mut() {
+                existing.push_str(chunk);
+                return;
+            }
+        }
+
+        self.stream_segments
+            .push(StreamSegment::Thought(chunk.to_string()));
+        self.thought_block_open = true;
+    }
+
+    fn close_thought_block(&mut self) {
+        self.thought_block_open = false;
+    }
+
+    fn ensure_tool_segment(&mut self, tool_id: &str) {
+        let has_segment = self
+            .stream_segments
+            .iter()
+            .any(|segment| matches!(segment, StreamSegment::ToolCall(id) if id == tool_id));
+
+        if !has_segment {
+            self.stream_segments
+                .push(StreamSegment::ToolCall(tool_id.to_string()));
+        }
     }
 
     /// Advance the loader animation by one tick. No-op when nothing is animating.
