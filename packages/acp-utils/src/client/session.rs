@@ -214,8 +214,7 @@ where
             .authenticate(acp::AuthenticateRequest::new(method_id))
             .await
         {
-            let _ = session_tx.send(Err(AcpClientError::Protocol(e)));
-            return;
+            tracing::warn!("authenticate call failed, continuing anyway: {e:?}");
         }
     }
 

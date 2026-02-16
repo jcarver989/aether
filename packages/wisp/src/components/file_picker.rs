@@ -76,6 +76,15 @@ impl FilePicker {
         }
     }
 
+    pub fn from_matches(files: Vec<FileMatch>) -> Self {
+        Self {
+            query: String::new(),
+            files,
+            selected_index: 0,
+            search_engine: FileSearchEngine::from_entries(vec![]),
+        }
+    }
+
     #[cfg(test)]
     fn new_with_entries(entries: Vec<IndexedFile>) -> Self {
         let mut picker = Self {

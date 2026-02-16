@@ -199,14 +199,24 @@ impl<T: Write> Renderer<T> {
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
-                KeyCode::Up | KeyCode::Char('p')
+                KeyCode::Up => {
+                    picker.move_selection_up();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Char('p')
                     if key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                 {
                     picker.move_selection_up();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
-                KeyCode::Down | KeyCode::Char('n')
+                KeyCode::Down => {
+                    picker.move_selection_down();
+                    self.render_frame()?;
+                    return Ok(LoopAction::Continue);
+                }
+                KeyCode::Char('n')
                     if key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                 {
                     picker.move_selection_down();
