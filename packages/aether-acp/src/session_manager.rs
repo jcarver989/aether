@@ -1,9 +1,16 @@
 use aether::events::AgentMessage;
-use agent_client_protocol as acp;
+use agent_client_protocol::{
+    self as acp, Agent, AgentCapabilities, AuthenticateRequest, AuthenticateResponse,
+    AvailableCommandsUpdate, InitializeRequest, InitializeResponse, LoadSessionRequest,
+    LoadSessionResponse, NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptResponse,
+    ProtocolVersion, SessionConfigOption, SessionConfigOptionCategory, SessionNotification,
+    SessionUpdate,
+};
 use llm::parser::ModelProviderParser;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::spawn;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
@@ -66,18 +73,15 @@ impl SessionManager {
 }
 
 #[async_trait::async_trait(?Send)]
-impl acp::Agent for SessionManager {
-    async fn initialize(
-        &self,
-        args: acp::InitializeRequest,
-    ) -> Result<acp::InitializeResponse, acp::Error> {
+impl Agent for SessionManager {
+    async fn initialize(&self, args: InitializeRequest) -> Result<InitializeResponse, acp::Error> {
         info!("Received initialize request: {:?}", args);
         Ok(
-            acp::InitializeResponse::new(acp::ProtocolVersion::V1).agent_capabilities(
-                acp::AgentCapabilities::new()
+            InitializeResponse::new(ProtocolVersion::V1).agent_capabilities(
+                AgentCapabilities::new()
                     .load_session(false)
                     .prompt_capabilities(
-                        acp::PromptCapabilities::new()
+                        PromptCapabilities::new()
                             .embedded_context(true)
                             .image(false)
                             .audio(false),
@@ -88,23 +92,18 @@ impl acp::Agent for SessionManager {
 
     async fn authenticate(
         &self,
-        args: acp::AuthenticateRequest,
-    ) -> Result<acp::AuthenticateResponse, acp::Error> {
+        args: AuthenticateRequest,
+    ) -> Result<AuthenticateResponse, acp::Error> {
         info!("Received authenticate request: {:?}", args);
         // No authentication required
-        Ok(acp::AuthenticateResponse::default())
+        Ok(AuthenticateResponse::default())
     }
 
-    async fn new_session(
-        &self,
-        args: acp::NewSessionRequest,
-    ) -> Result<acp::NewSessionResponse, acp::Error> {
+    async fn new_session(&self, args: NewSessionRequest) -> Result<NewSessionResponse, acp::Error> {
         info!("Creating new session with cwd: {:?}", args.cwd);
-
         let session_id = self.generate_session_id().await;
         let acp_session_id = acp::SessionId::new(session_id.clone());
 
-        // Parse the model provider
         let parser = ModelProviderParser::default();
         let (llm, _) = parser.parse(&self.model_provider).map_err(|e| {
             error!(
@@ -114,15 +113,13 @@ impl acp::Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
-        let extra_mcp_servers = map_acp_mcp_servers(args.mcp_servers);
-
         let session = Session::new(
             session_id.clone(),
             llm,
             self.system_prompt.clone(),
             self.mcp_config_path.clone(),
             args.cwd,
-            extra_mcp_servers,
+            map_acp_mcp_servers(args.mcp_servers),
         )
         .await
         .map_err(|e| {
@@ -130,7 +127,6 @@ impl acp::Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
-        // Get available commands from the session before inserting it
         let available_commands = session.list_available_commands().await.map_err(|e| {
             error!("Failed to list available commands: {}", e);
             acp::Error::internal_error()
@@ -141,13 +137,12 @@ impl acp::Agent for SessionManager {
 
         info!("Session {} created successfully", session_id);
 
-        // Build model config option for the client
         let (provider_name, model_name) = self
             .model_provider
             .split_once(':')
             .unwrap_or(("unknown", &self.model_provider));
 
-        let model_option = acp::SessionConfigOption::select(
+        let model_option = SessionConfigOption::select(
             "model",
             "Model",
             self.model_provider.clone(),
@@ -156,27 +151,25 @@ impl acp::Agent for SessionManager {
                     .description(format!("Provider: {provider_name}")),
             ],
         )
-        .category(acp::SessionConfigOptionCategory::Model);
+        .category(SessionConfigOptionCategory::Model);
 
-        // Prepare the response to return first
         let response =
-            acp::NewSessionResponse::new(acp_session_id.clone()).config_options(vec![model_option]);
+            NewSessionResponse::new(acp_session_id.clone()).config_options(vec![model_option]);
 
         // Send available commands update notification asynchronously (don't await)
         // This allows the response to be sent first, then the notification follows
         if !available_commands.is_empty() {
             let command_count = available_commands.len();
-            let notification = acp::SessionNotification::new(
+            let notification = SessionNotification::new(
                 acp_session_id,
-                acp::SessionUpdate::AvailableCommandsUpdate(acp::AvailableCommandsUpdate::new(
+                SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(
                     available_commands,
                 )),
             );
 
-            // Spawn task to send notification after response is returned
             let actor_handle = self.actor_handle.clone();
             let session_id_log = session_id.clone();
-            tokio::spawn(async move {
+            spawn(async move {
                 if let Err(e) = actor_handle.send_session_notification(notification).await {
                     error!("Failed to send available commands notification: {:?}", e);
                 } else {
@@ -193,8 +186,8 @@ impl acp::Agent for SessionManager {
 
     async fn load_session(
         &self,
-        args: acp::LoadSessionRequest,
-    ) -> Result<acp::LoadSessionResponse, acp::Error> {
+        args: LoadSessionRequest,
+    ) -> Result<LoadSessionResponse, acp::Error> {
         info!("Received load_session request: {:?}", args);
         // Not supported yet
         Err(acp::Error::method_not_found())
@@ -202,26 +195,20 @@ impl acp::Agent for SessionManager {
 
     async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
         info!("Received prompt for session: {:?}", args.session_id);
-
         let session_id_str = args.session_id.0.to_string();
         let session_id = args.session_id.clone();
-
-        // Get the session
         let mut sessions = self.sessions.lock().await;
         let session = sessions.get_mut(&session_id_str).ok_or_else(|| {
             error!("Session not found: {}", session_id_str);
             acp::Error::invalid_params()
         })?;
 
-        // Convert prompt to text
         let mut prompt_text = map_content_blocks_to_text(args.prompt);
         debug!("Prompt text: {}", prompt_text);
 
-        // Check if this is a slash command and expand it if so
         if let Some(slash_command_text) = prompt_text.strip_prefix('/') {
             info!("Detected slash command in prompt");
 
-            // Parse command name and arguments
             let (command_name, args_text) =
                 if let Some(space_idx) = slash_command_text.find(char::is_whitespace) {
                     let (cmd, args) = slash_command_text.split_at(space_idx);
@@ -230,7 +217,6 @@ impl acp::Agent for SessionManager {
                     (slash_command_text, "")
                 };
 
-            // Expand the slash command
             match session.expand_slash_command(command_name, args_text).await {
                 Ok(expanded_prompt) => {
                     info!(
@@ -248,21 +234,17 @@ impl acp::Agent for SessionManager {
             }
         }
 
-        // Send the prompt to the agent (either expanded or original)
         session.send_prompt(prompt_text).await.map_err(|e| {
             error!("Failed to send prompt: {}", e);
             acp::Error::internal_error()
         })?;
 
-        // Stream agent messages back as session updates
         let final_stop_reason;
-
         loop {
             match session.recv().await {
                 Some(msg) => {
                     info!("Received agent message: {:?}", &msg);
 
-                    // Send session update for non-terminal messages
                     if let Some(notification) =
                         map_agent_message_to_session_notification(session_id.clone(), &msg)
                     {
@@ -278,7 +260,6 @@ impl acp::Agent for SessionManager {
                         info!("No notification generated for this message");
                     }
 
-                    // Check if this is a terminal message
                     match &msg {
                         AgentMessage::Done
                         | AgentMessage::Cancelled { .. }
@@ -304,14 +285,12 @@ impl acp::Agent for SessionManager {
 
         info!("Prompt completed with stop reason: {:?}", final_stop_reason);
 
-        Ok(acp::PromptResponse::new(final_stop_reason))
+        Ok(PromptResponse::new(final_stop_reason))
     }
 
     async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
         info!("Received cancel for session: {:?}", args.session_id);
-
         let session_id_str = args.session_id.0.to_string();
-
         let sessions = self.sessions.lock().await;
         let session = sessions.get(&session_id_str).ok_or_else(|| {
             error!("Session not found for cancel: {}", session_id_str);
@@ -331,7 +310,6 @@ impl acp::Agent for SessionManager {
         args: acp::SetSessionModeRequest,
     ) -> Result<acp::SetSessionModeResponse, acp::Error> {
         info!("Received set_session_mode request: {:?}", args);
-        // Not supported yet
         Err(acp::Error::method_not_found())
     }
 

@@ -21,7 +21,7 @@ mod session_manager;
 #[clap(name = "aether-acp", about = "Aether Agent Client Protocol Server")]
 struct Args {
     /// Model provider in the format "provider:model" (e.g., "anthropic:claude-3.5-sonnet", "ollama:llama3.2")
-    #[clap(long, default_value = "zai:GLM-4.6")]
+    #[clap(long)]
     model: String,
 
     /// System prompt for the agent
