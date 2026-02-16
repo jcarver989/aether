@@ -156,10 +156,9 @@ impl ConfigMenu {
     }
 
     pub fn update_options(&mut self, options: &[SessionConfigOption]) {
+        let prev_index = self.selected_index;
         *self = Self::from_config_options(options);
-        if self.selected_index >= self.options.len() {
-            self.selected_index = self.options.len().saturating_sub(1);
-        }
+        self.selected_index = prev_index.min(self.options.len().saturating_sub(1));
     }
 }
 
@@ -307,6 +306,24 @@ mod tests {
         let fewer = vec![make_select_option("a", "A", "v1", &[("v1", "V1")])];
         menu.update_options(&fewer);
         assert_eq!(menu.selected_index, 0);
+    }
+
+    #[test]
+    fn update_options_preserves_index_when_within_bounds() {
+        let opts = vec![
+            make_select_option("provider", "Provider", "a", &[("a", "A"), ("b", "B")]),
+            make_select_option("model", "Model", "m1", &[("m1", "M1"), ("m2", "M2")]),
+        ];
+        let mut menu = ConfigMenu::from_config_options(&opts);
+        menu.selected_index = 1; // Select "Model" row
+
+        // Update with different values but same number of rows
+        let new_opts = vec![
+            make_select_option("provider", "Provider", "b", &[("a", "A"), ("b", "B")]),
+            make_select_option("model", "Model", "m3", &[("m3", "M3")]),
+        ];
+        menu.update_options(&new_opts);
+        assert_eq!(menu.selected_index, 1); // Should still be on "Model" row
     }
 
     #[test]

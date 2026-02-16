@@ -9,8 +9,7 @@ use crate::tui::soft_wrap::soft_wrap_lines_with_map;
 use crate::tui::{Component, FrameRenderer, Line, RenderContext, Screen};
 use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol::{
-    self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOptions, SessionUpdate,
+    self as acp, SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions, SessionUpdate,
 };
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashSet;
@@ -630,14 +629,10 @@ impl<T: Write> Renderer<T> {
 
 /// Extract a human-readable model display string from config options.
 ///
-/// Finds the first option with `category == Model`, reads its `Select` kind,
+/// Finds the option with `id == "model"`, reads its `Select` kind,
 /// and looks up the `current_value` in the options list to return its `name`.
 fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
-    let option = config_options.iter().find(|o| {
-        o.category
-            .as_ref()
-            .is_some_and(|c| *c == SessionConfigOptionCategory::Model)
-    })?;
+    let option = config_options.iter().find(|o| o.id.0.as_ref() == "model")?;
 
     let SessionConfigKind::Select(ref select) = option.kind else {
         return None;

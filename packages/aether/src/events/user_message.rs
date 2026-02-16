@@ -40,58 +40,36 @@ impl From<&str> for UserMessage {
 
 #[cfg(test)]
 mod tests {
-    use llm::{ModelProvider, ProviderModel};
+    use llm::LlmModel;
 
     #[test]
-    fn test_model_provider_display_roundtrips_through_from_str() {
-        let providers = [
-            ModelProvider::Anthropic,
-            ModelProvider::DeepSeek,
-            ModelProvider::Gemini,
-            ModelProvider::Moonshot,
-            ModelProvider::OpenRouter,
-            ModelProvider::Ollama,
-            ModelProvider::ZAi,
-            ModelProvider::LlamaCpp,
+    fn test_llm_model_from_str_roundtrip() {
+        let models = [
+            "anthropic:claude-opus-4-6",
+            "deepseek:deepseek-chat",
+            "gemini:gemini-2.5-flash",
+            "ollama:llama3.2",
+            "llamacpp:",
         ];
-        for provider in providers {
-            let s = provider.to_string();
-            let parsed: ModelProvider = s.parse().unwrap();
-            assert_eq!(parsed, provider);
+        for input in models {
+            let model: LlmModel = input.parse().unwrap();
+            let round_tripped = format!("{}:{}", model.provider(), model.model_id());
+            assert_eq!(round_tripped, input);
         }
     }
 
     #[test]
-    fn test_model_provider_from_str_unknown() {
-        let result: ModelProvider = "custom".parse().unwrap();
-        assert_eq!(result, ModelProvider::Other("custom".to_string()));
+    fn test_llm_model_from_str_unknown_provider() {
+        let result: Result<LlmModel, _> = "custom:foo".parse();
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_provider_model_from_str() {
-        let pm: ProviderModel = "anthropic:claude-3.5-sonnet".parse().unwrap();
-        assert_eq!(pm.provider, ModelProvider::Anthropic);
-        assert_eq!(pm.model, "claude-3.5-sonnet");
-    }
+    fn test_llm_model_dynamic_providers() {
+        let ollama: LlmModel = "ollama:llama3.2".parse().unwrap();
+        assert_eq!(ollama, LlmModel::Ollama("llama3.2".to_string()));
 
-    #[test]
-    fn test_provider_model_from_str_no_model() {
-        let pm: ProviderModel = "llamacpp".parse().unwrap();
-        assert_eq!(pm.provider, ModelProvider::LlamaCpp);
-        assert_eq!(pm.model, "");
-    }
-
-    #[test]
-    fn test_provider_model_display() {
-        let pm = ProviderModel::new(ModelProvider::Ollama, "llama3.2");
-        assert_eq!(pm.to_string(), "ollama:llama3.2");
-    }
-
-    #[test]
-    fn test_provider_model_serde_roundtrip() {
-        let pm = ProviderModel::new(ModelProvider::Anthropic, "claude-3.5-sonnet");
-        let json = serde_json::to_string(&pm).unwrap();
-        let parsed: ProviderModel = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, pm);
+        let llamacpp: LlmModel = "llamacpp".parse().unwrap();
+        assert_eq!(llamacpp, LlmModel::LlamaCpp(String::new()));
     }
 }
