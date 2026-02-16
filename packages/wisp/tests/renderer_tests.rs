@@ -1021,6 +1021,262 @@ async fn test_paste_closes_file_picker() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
+fn send_key<W: std::io::Write>(
+    renderer: &mut Renderer<W>,
+    code: crossterm::event::KeyCode,
+    modifiers: crossterm::event::KeyModifiers,
+    handle: &AcpPromptHandle,
+    session_id: &acp::SessionId,
+) {
+    renderer
+        .on_key_event(
+            crossterm::event::KeyEvent {
+                code,
+                modifiers,
+                kind: crossterm::event::KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            },
+            handle,
+            session_id,
+        )
+        .unwrap();
+}
+
+fn open_picker_with_files<W: std::io::Write>(
+    renderer: &mut Renderer<W>,
+    files: Vec<&str>,
+    handle: &AcpPromptHandle,
+    session_id: &acp::SessionId,
+) {
+    use wisp::components::file_picker::{FileMatch, FilePicker};
+
+    // Type @ to set input_buffer state correctly
+    send_key(
+        renderer,
+        crossterm::event::KeyCode::Char('@'),
+        crossterm::event::KeyModifiers::empty(),
+        handle,
+        session_id,
+    );
+
+    // Replace the picker with known entries
+    let matches: Vec<FileMatch> = files
+        .into_iter()
+        .map(|name| FileMatch {
+            path: std::path::PathBuf::from(name),
+            display_name: name.to_string(),
+        })
+        .collect();
+    renderer.file_picker = Some(FilePicker::from_matches(matches));
+
+    // Trigger re-render with the injected picker
+    renderer.on_resize(80, 24).unwrap();
+}
+
+fn picker_selected_display_name<W: std::io::Write>(renderer: &Renderer<W>) -> Option<String> {
+    let picker = renderer.file_picker.as_ref()?;
+    picker
+        .files
+        .get(picker.selected_index)
+        .map(|f| f.display_name.clone())
+}
+
+fn assert_picker_renders_selected(terminal: &TestTerminal, expected_file: &str) {
+    let lines = terminal.get_lines();
+    let marker = format!("▶ {}", expected_file);
+    assert!(
+        lines.iter().any(|l| l.contains(&marker)),
+        "Expected '{}' to be selected in rendered output.\nBuffer:\n{}",
+        expected_file,
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_file_picker_down_arrow_moves_selection() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    open_picker_with_files(
+        &mut renderer,
+        vec!["alpha.rs", "beta.rs", "gamma.rs"],
+        &handle,
+        &session_id,
+    );
+
+    // Initially selected_index=0
+    assert_eq!(
+        picker_selected_display_name(&renderer).as_deref(),
+        Some("alpha.rs")
+    );
+    assert_picker_renders_selected(renderer.writer(), "alpha.rs");
+
+    // Down arrow → beta.rs
+    send_key(
+        &mut renderer,
+        KeyCode::Down,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert_eq!(
+        picker_selected_display_name(&renderer).as_deref(),
+        Some("beta.rs")
+    );
+    assert_picker_renders_selected(renderer.writer(), "beta.rs");
+
+    // Down arrow → gamma.rs
+    send_key(
+        &mut renderer,
+        KeyCode::Down,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert_eq!(
+        picker_selected_display_name(&renderer).as_deref(),
+        Some("gamma.rs")
+    );
+    assert_picker_renders_selected(renderer.writer(), "gamma.rs");
+
+    // Down arrow wraps → alpha.rs
+    send_key(
+        &mut renderer,
+        KeyCode::Down,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert_eq!(
+        picker_selected_display_name(&renderer).as_deref(),
+        Some("alpha.rs")
+    );
+    assert_picker_renders_selected(renderer.writer(), "alpha.rs");
+}
+
+#[tokio::test]
+async fn test_file_picker_up_arrow_moves_selection() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    open_picker_with_files(
+        &mut renderer,
+        vec!["alpha.rs", "beta.rs", "gamma.rs"],
+        &handle,
+        &session_id,
+    );
+
+    // Up from index 0 wraps → gamma.rs
+    send_key(
+        &mut renderer,
+        KeyCode::Up,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert_eq!(
+        picker_selected_display_name(&renderer).as_deref(),
+        Some("gamma.rs")
+    );
+    assert_picker_renders_selected(renderer.writer(), "gamma.rs");
+
+    // Up again → beta.rs
+    send_key(
+        &mut renderer,
+        KeyCode::Up,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert_eq!(
+        picker_selected_display_name(&renderer).as_deref(),
+        Some("beta.rs")
+    );
+    assert_picker_renders_selected(renderer.writer(), "beta.rs");
+}
+
+#[tokio::test]
+async fn test_file_picker_ctrl_n_moves_down() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    open_picker_with_files(
+        &mut renderer,
+        vec!["alpha.rs", "beta.rs"],
+        &handle,
+        &session_id,
+    );
+
+    // Ctrl+N → beta.rs
+    send_key(
+        &mut renderer,
+        KeyCode::Char('n'),
+        KeyModifiers::CONTROL,
+        &handle,
+        &session_id,
+    );
+    assert_eq!(
+        picker_selected_display_name(&renderer).as_deref(),
+        Some("beta.rs")
+    );
+    assert_picker_renders_selected(renderer.writer(), "beta.rs");
+}
+
+#[tokio::test]
+async fn test_file_picker_ctrl_p_moves_up() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    open_picker_with_files(
+        &mut renderer,
+        vec!["alpha.rs", "beta.rs"],
+        &handle,
+        &session_id,
+    );
+
+    // Ctrl+P from index 0 wraps → beta.rs
+    send_key(
+        &mut renderer,
+        KeyCode::Char('p'),
+        KeyModifiers::CONTROL,
+        &handle,
+        &session_id,
+    );
+    assert_eq!(
+        picker_selected_display_name(&renderer).as_deref(),
+        Some("beta.rs")
+    );
+    assert_picker_renders_selected(renderer.writer(), "beta.rs");
+}
+
 fn press_backspace<W: std::io::Write>(
     renderer: &mut Renderer<W>,
     handle: &AcpPromptHandle,
