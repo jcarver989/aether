@@ -2,7 +2,7 @@ use crossterm::style::Stylize;
 
 use crate::tui::{Component, Line, RenderContext};
 
-const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+pub(crate) const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 #[derive(Default)]
 pub struct GridLoader {

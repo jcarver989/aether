@@ -19,29 +19,3 @@ impl RenderContext {
 pub trait Component {
     fn render(&self, context: &RenderContext) -> Vec<Line>;
 }
-
-pub struct Container<'a> {
-    children: Vec<&'a dyn Component>,
-}
-
-impl<'a> Container<'a> {
-    pub fn new() -> Self {
-        Self {
-            children: Vec::new(),
-        }
-    }
-
-    pub fn add(&mut self, component: &'a dyn Component) -> &mut Self {
-        self.children.push(component);
-        self
-    }
-}
-
-impl Component for Container<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
-        self.children
-            .iter()
-            .flat_map(|c| c.render(context))
-            .collect()
-    }
-}

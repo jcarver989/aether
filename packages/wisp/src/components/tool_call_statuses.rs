@@ -1,5 +1,6 @@
 use agent_client_protocol as acp;
 
+use crate::components::grid_loader::FRAMES;
 use crate::tui::{Component, Line, RenderContext};
 use crossterm::style::Stylize;
 use std::collections::HashMap;
@@ -11,6 +12,7 @@ pub struct ToolCallStatusView {
     pub name: String,
     pub arguments: String,
     pub status: ToolCallStatus,
+    pub tick: u16,
 }
 
 pub enum ToolCallStatus {
@@ -21,13 +23,16 @@ pub enum ToolCallStatus {
 
 impl Component for ToolCallStatusView {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
-        let (suffix, indicator_color) = match &self.status {
-            ToolCallStatus::Running => ("", context.theme.info),
-            ToolCallStatus::Success => (" ✓", context.theme.success),
-            ToolCallStatus::Error(_) => (" X", context.theme.error),
+        let (indicator, suffix, indicator_color) = match &self.status {
+            ToolCallStatus::Running => {
+                let frame = FRAMES[self.tick as usize % FRAMES.len()];
+                (frame, "", context.theme.info)
+            }
+            ToolCallStatus::Success => ('●', " ✓", context.theme.success),
+            ToolCallStatus::Error(_) => ('●', " X", context.theme.error),
         };
 
-        let name_styled = format!("● {}{}", self.name, suffix).with(indicator_color);
+        let name_styled = format!("{indicator} {}{}", self.name, suffix).with(indicator_color);
         let args = Self::format_arguments(&self.arguments, context);
 
         let mut line_text = format!("{name_styled}{args}");
@@ -56,6 +61,8 @@ pub struct ToolCallStatuses {
     tool_order: Vec<String>,
     /// Tool call info by ID
     tool_calls: HashMap<String, TrackedToolCall>,
+    /// Animation tick for the spinner on running tool calls
+    tick: u16,
 }
 
 #[derive(Clone)]
@@ -77,7 +84,20 @@ impl ToolCallStatuses {
         Self {
             tool_order: Vec::new(),
             tool_calls: HashMap::new(),
+            tick: 0,
         }
+    }
+
+    /// Update the animation tick for running tool call spinners.
+    pub fn set_tick(&mut self, tick: u16) {
+        self.tick = tick;
+    }
+
+    /// Returns true if any tool calls are still running.
+    pub fn has_running(&self) -> bool {
+        self.tool_calls
+            .values()
+            .any(|tc| matches!(tc.status, TrackedStatus::Running))
     }
 
     /// Handle a new tool call from ACP SessionUpdate::ToolCall.
@@ -156,6 +176,7 @@ impl ToolCallStatuses {
                             name: tc.name.clone(),
                             arguments: tc.arguments.clone(),
                             status: ToolCallStatus::Success,
+                            tick: 0,
                         };
                         lines.extend(view.render(context));
                         completed_ids.push(id.clone());
@@ -165,6 +186,7 @@ impl ToolCallStatuses {
                             name: tc.name.clone(),
                             arguments: tc.arguments.clone(),
                             status: ToolCallStatus::Error(msg.clone()),
+                            tick: 0,
                         };
                         lines.extend(view.render(context));
                         completed_ids.push(id.clone());
@@ -207,6 +229,7 @@ impl Component for ToolCallStatuses {
                     name: tc.name.clone(),
                     arguments: tc.arguments.clone(),
                     status,
+                    tick: self.tick,
                 };
                 lines.extend(view.render(context));
             }
@@ -389,16 +412,38 @@ mod tests {
     }
 
     #[test]
-    fn view_renders_running() {
+    fn view_renders_running_with_spinner() {
         let view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             status: ToolCallStatus::Running,
+            tick: 0,
         };
         let lines = view.render(&ctx());
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].as_str().contains("TestTool"));
-        assert!(lines[0].as_str().contains("test args"));
+        let text = lines[0].as_str();
+        assert!(text.contains("TestTool"));
+        assert!(text.contains("test args"));
+        assert!(text.contains('⠋'));
+    }
+
+    #[test]
+    fn view_running_spinner_changes_with_tick() {
+        let view_a = ToolCallStatusView {
+            name: "TestTool".to_string(),
+            arguments: "".to_string(),
+            status: ToolCallStatus::Running,
+            tick: 0,
+        };
+        let view_b = ToolCallStatusView {
+            name: "TestTool".to_string(),
+            arguments: "".to_string(),
+            status: ToolCallStatus::Running,
+            tick: 1,
+        };
+        let a = view_a.render(&ctx())[0].as_str().to_string();
+        let b = view_b.render(&ctx())[0].as_str().to_string();
+        assert_ne!(a, b);
     }
 
     #[test]
@@ -407,6 +452,7 @@ mod tests {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             status: ToolCallStatus::Success,
+            tick: 0,
         };
         let lines = view.render(&ctx());
         assert_eq!(lines.len(), 1);
@@ -419,6 +465,7 @@ mod tests {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             status: ToolCallStatus::Error("boom".to_string()),
+            tick: 0,
         };
         let lines = view.render(&ctx());
         assert_eq!(lines.len(), 1);

@@ -44,16 +44,6 @@ impl TestTerminal {
             .collect()
     }
 
-    /// Get the current cursor position (column, row)
-    pub fn cursor_position(&self) -> (u16, u16) {
-        self.cursor
-    }
-
-    /// Get the terminal size (columns, rows)
-    pub fn size(&self) -> (u16, u16) {
-        self.size
-    }
-
     /// Clear the entire buffer
     pub fn clear(&mut self) {
         for row in &mut self.buffer {

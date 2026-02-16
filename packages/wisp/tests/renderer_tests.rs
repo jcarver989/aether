@@ -55,11 +55,33 @@ async fn test_agent_message_text_chunks() {
 }
 
 #[tokio::test]
+async fn test_agent_message_chunks_stream_before_prompt_done() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Hello"))),
+        ))
+        .unwrap();
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(" World"))),
+        ))
+        .unwrap();
+
+    let expected = expected_with_prompt(&["Hello World"], TEST_WIDTH, "", TEST_AGENT);
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
 async fn test_agent_message_tool_call() {
     let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]).await;
 
     let expected = expected_with_prompt(
-        &[r#"● test_tool {"arg1":"value1"}"#],
+        &[r#"⠋ test_tool {"arg1":"value1"}"#],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -138,7 +160,7 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
     .await;
 
     let expected = expected_with_prompt(
-        &[r#"● Read {"file":"test.rs"}"#],
+        &[r#"⠋ Read {"file":"test.rs"}"#],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -156,7 +178,7 @@ async fn test_tool_progress_renders_running_tool() {
     .await;
 
     let expected = expected_with_prompt(
-        &[r#"● Read {"file":"test.rs"}"#],
+        &[r#"⠋ Read {"file":"test.rs"}"#],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -208,7 +230,7 @@ async fn test_text_complete_preserves_running_tool_calls() {
         &[
             r#"● Read ✓ {"file":"a.rs"}"#,
             "Done reading",
-            r#"● Write {"file":"b.rs"}"#,
+            r#"⠋ Write {"file":"b.rs"}"#,
         ],
         TEST_WIDTH,
         "",
@@ -388,7 +410,7 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
         .unwrap();
 
     let expected = expected_with_prompt(
-        &[r#"● Read {"file":"test.rs"}"#],
+        &[r#"⠋ Read {"file":"test.rs"}"#],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -413,7 +435,7 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
     // Terminal resize triggers full re-render at new width
     renderer.on_resize(100, 30).unwrap();
 
-    let expected = expected_with_prompt(&[r#"● Read {"file":"test.rs"}"#], 100, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[r#"⠋ Read {"file":"test.rs"}"#], 100, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -469,6 +491,33 @@ async fn test_tool_updates_in_place_after_scrollback_push() {
 }
 
 #[tokio::test]
+async fn test_wrapped_tool_update_does_not_duplicate_lines() {
+    let long_args = r#"{"file":"src/some/really/long/path/that/forces/tool/status/wrapping.rs"}"#;
+    let renderer = render_with_size(
+        vec![
+            tool_call_with_id("Read", "call_1", long_args),
+            tool_complete("call_1"),
+        ],
+        (40, 12),
+    )
+    .await;
+
+    let lines = renderer.writer().get_lines();
+    let read_count = lines.iter().filter(|l| l.contains("Read")).count();
+    assert_eq!(
+        read_count,
+        1,
+        "Wrapped tool line should update in place, got {read_count} Read rows.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("✓")),
+        "Completed status should be visible after wrapped update.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
 async fn test_multiple_scrollback_pushes_tiny_terminal() {
     let renderer = render_with_size(
         vec![
@@ -511,6 +560,49 @@ async fn test_typing_renders_within_bordered_input() {
 }
 
 #[tokio::test]
+async fn test_wrapped_input_prompt_rerender_has_single_box() {
+    let terminal = TestTerminal::new(32, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((32, 24));
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    renderer.initial_render().unwrap();
+    type_string(
+        &mut renderer,
+        "this input prompt is long enough to wrap across multiple rows",
+        &handle,
+        &session_id,
+    );
+    press_backspace(&mut renderer, &handle, &session_id);
+    press_backspace(&mut renderer, &handle, &session_id);
+
+    let lines = renderer.writer().get_lines();
+    let top_count = lines.iter().filter(|l| l.contains('╭')).count();
+    let bottom_count = lines.iter().filter(|l| l.contains('╰')).count();
+    let content_rows = lines.iter().filter(|l| l.starts_with('│')).count();
+
+    assert_eq!(
+        top_count,
+        1,
+        "Expected a single prompt top border after wrapped rerender.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert_eq!(
+        bottom_count,
+        1,
+        "Expected a single prompt bottom border after wrapped rerender.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        content_rows >= 2,
+        "Expected wrapped prompt content rows.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
 async fn test_backspace_updates_within_border() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
@@ -526,6 +618,91 @@ async fn test_backspace_updates_within_border() {
 
     let expected = expected_prompt(80, "hell", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_ctrl_c_exits_while_file_picker_is_open() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use wisp::renderer::LoopAction;
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    renderer
+        .on_key_event(
+            KeyEvent {
+                code: KeyCode::Char('@'),
+                modifiers: KeyModifiers::empty(),
+                kind: crossterm::event::KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            },
+            &handle,
+            &session_id,
+        )
+        .unwrap();
+    assert!(renderer.file_picker.is_some());
+
+    let action = renderer
+        .on_key_event(
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: crossterm::event::KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            },
+            &handle,
+            &session_id,
+        )
+        .unwrap();
+
+    assert!(matches!(action, LoopAction::Exit));
+}
+
+#[tokio::test]
+async fn test_space_closes_file_picker_without_selection() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    renderer
+        .on_key_event(
+            KeyEvent {
+                code: KeyCode::Char('@'),
+                modifiers: KeyModifiers::empty(),
+                kind: crossterm::event::KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            },
+            &handle,
+            &session_id,
+        )
+        .unwrap();
+    assert!(renderer.file_picker.is_some());
+
+    renderer
+        .on_key_event(
+            KeyEvent {
+                code: KeyCode::Char(' '),
+                modifiers: KeyModifiers::empty(),
+                kind: crossterm::event::KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            },
+            &handle,
+            &session_id,
+        )
+        .unwrap();
+
+    assert!(renderer.file_picker.is_none());
 }
 
 #[tokio::test]

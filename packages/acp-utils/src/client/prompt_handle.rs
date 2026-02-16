@@ -8,6 +8,7 @@ pub(crate) enum PromptCommand {
     Prompt {
         session_id: acp::SessionId,
         text: String,
+        content: Option<Vec<acp::ContentBlock>>,
     },
     Cancel {
         session_id: acp::SessionId,
@@ -29,11 +30,17 @@ impl AcpPromptHandle {
         Self { cmd_tx }
     }
 
-    pub fn prompt(&self, session_id: &acp::SessionId, text: &str) -> Result<(), AcpClientError> {
+    pub fn prompt(
+        &self,
+        session_id: &acp::SessionId,
+        text: &str,
+        content: Option<Vec<acp::ContentBlock>>,
+    ) -> Result<(), AcpClientError> {
         self.cmd_tx
             .send(PromptCommand::Prompt {
                 session_id: session_id.clone(),
                 text: text.to_string(),
+                content,
             })
             .map_err(|_| AcpClientError::AgentCrashed("prompt channel closed".into()))
     }
@@ -56,7 +63,7 @@ mod tests {
         let handle = AcpPromptHandle::noop();
         let session_id = acp::SessionId::new("test");
 
-        assert!(handle.prompt(&session_id, "hello").is_ok());
+        assert!(handle.prompt(&session_id, "hello", None).is_ok());
         assert!(handle.cancel(&session_id).is_ok());
     }
 
@@ -66,11 +73,13 @@ mod tests {
         let handle = AcpPromptHandle { cmd_tx: tx };
         let session_id = acp::SessionId::new("sess-1");
 
-        handle.prompt(&session_id, "hello").unwrap();
+        handle.prompt(&session_id, "hello", None).unwrap();
 
         let cmd = rx.try_recv().unwrap();
         match cmd {
-            PromptCommand::Prompt { session_id, text } => {
+            PromptCommand::Prompt {
+                session_id, text, ..
+            } => {
                 assert_eq!(session_id.0.as_ref(), "sess-1");
                 assert_eq!(text, "hello");
             }
@@ -88,5 +97,31 @@ mod tests {
 
         let cmd = rx.try_recv().unwrap();
         assert!(matches!(cmd, PromptCommand::Cancel { .. }));
+    }
+
+    #[test]
+    fn test_prompt_with_content_sends_blocks() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let handle = AcpPromptHandle { cmd_tx: tx };
+        let session_id = acp::SessionId::new("sess-1");
+        let content = vec![acp::ContentBlock::Text(acp::TextContent::new("attached"))];
+
+        handle
+            .prompt(&session_id, "hello", Some(content.clone()))
+            .unwrap();
+
+        let cmd = rx.try_recv().unwrap();
+        match cmd {
+            PromptCommand::Prompt {
+                session_id,
+                text,
+                content: Some(extra),
+            } => {
+                assert_eq!(session_id.0.as_ref(), "sess-1");
+                assert_eq!(text, "hello");
+                assert_eq!(extra, content);
+            }
+            _ => panic!("Expected Prompt command with content"),
+        }
     }
 }
