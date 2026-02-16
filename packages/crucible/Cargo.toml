@@ -41,7 +41,6 @@ tokio-stream = { workspace = true, features = ["sync"] }
 
 # Internal dependencies
 aether = { path = "../aether" }
-agent-events = { path = "../agent-events" }
 llm = { path = "../llm" }
 mcp_utils = { path = "../mcp-utils" }
 uuid = { workspace = true, features = ["v4", "serde"] }

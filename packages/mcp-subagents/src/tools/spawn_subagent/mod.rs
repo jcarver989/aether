@@ -1,9 +1,9 @@
 use crate::subagent_file::AgentFile;
 use aether::{
     core::{AgentHandle, agent},
+    events::{AgentMessage, UserMessage},
     mcp::{McpSpawnResult, mcp, run_mcp_task::McpCommand},
 };
-use agent_events::{AgentMessage, UserMessage};
 use futures::FutureExt;
 use llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser};
 use mcp_coding::CodingMcp;

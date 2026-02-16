@@ -1,7 +1,7 @@
 use aether::core::Prompt;
+use aether::events::{AgentMessage, UserMessage};
 use aether::mcp::{McpSpawnResult, mcp};
 use aether::testing::{FakeMcpServer, fake_mcp};
-use agent_events::{AgentMessage, UserMessage};
 use llm::testing::FakeLlmProvider;
 use mcp_utils::client::ServerInstructions;
 

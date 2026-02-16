@@ -30,7 +30,7 @@ uuid = { workspace = true }
 # Hashing for socket paths
 sha2 = { workspace = true }
 
-# LSP types - shared with mcp-lexicon
+# LSP types shared across Aether packages
 lsp-types = { workspace = true }
 
 # Error handling

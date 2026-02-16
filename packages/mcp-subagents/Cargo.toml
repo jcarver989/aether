@@ -12,7 +12,6 @@ schemars = { workspace = true }
 futures = { workspace = true }
 clap = { workspace = true, features = ["env"] }
 tracing = { workspace = true }
-agent-events = { path = "../agent-events" }
 aether = { path = "../aether" }
 llm = { path = "../llm" }
 mcp-coding = { path = "../mcp-coding" }

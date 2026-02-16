@@ -2,10 +2,10 @@ use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use agent_events::{AgentMessage, UserMessage};
 use futures::future::join_all;
 
 use crate::core::agent;
+use crate::events::{AgentMessage, UserMessage};
 use crate::mcp::McpSpawnResult;
 use crate::mcp::mcp;
 use crate::testing::FakeMcpServer;

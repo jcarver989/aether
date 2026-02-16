@@ -1,10 +1,10 @@
 use aether::{
     core::agent,
+    events::{AgentMessage, UserMessage},
     mcp::{McpSpawnResult, mcp},
 };
 use llm::providers::openrouter::OpenRouterProvider;
 
-use agent_events::{AgentMessage, UserMessage};
 use std::io::{self, Write};
 
 #[tokio::main]

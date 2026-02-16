@@ -3,12 +3,12 @@ use std::time::Duration;
 
 use aether::{
     core::COMPLETION_SIGNAL,
+    events::{AgentMessage, UserMessage},
     testing::{
         agent_message, test_agent,
         {AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, SlowToolRequest},
     },
 };
-use agent_events::{AgentMessage, UserMessage};
 use llm::ChatMessage;
 use llm::testing::llm_response;
 

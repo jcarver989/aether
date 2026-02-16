@@ -6,7 +6,7 @@
 //! 3. Query diagnostics through the tools abstraction
 //!
 //! Usage:
-//!   cargo run -p mcp_lexicon --example lsp_diagnostics -- /path/to/rust/project
+//!   cargo run -p mcp-coding --example lsp_diagnostics -- /path/to/rust/project
 //!
 //! Requirements:
 //! - rust-analyzer must be installed and in PATH (for Rust projects)

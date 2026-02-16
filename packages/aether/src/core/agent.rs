@@ -1,7 +1,7 @@
 use crate::context::{CompactionConfig, Compactor, TokenTracker};
 use crate::core::middleware::{AgentEvent, Middleware, MiddlewareAction};
+use crate::events::{AgentMessage, UserMessage};
 use crate::mcp::run_mcp_task::{McpCommand, ToolExecutionEvent};
-use agent_events::{AgentMessage, UserMessage};
 use futures::Stream;
 use llm::types::IsoString;
 use llm::{
