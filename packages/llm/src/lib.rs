@@ -1,10 +1,10 @@
 pub mod alloyed;
+pub mod catalog;
 mod chat_message;
 mod context;
 mod credential;
 pub mod error;
 mod llm_response;
-pub mod model_identity;
 pub mod parser;
 pub mod provider;
 pub mod providers;
@@ -12,11 +12,11 @@ pub mod testing;
 mod tools;
 pub mod types;
 
+pub use catalog::LlmModel;
 pub use chat_message::ChatMessage;
 pub use context::Context;
 pub use credential::ProviderCredential;
 pub use error::{LlmError, Result};
 pub use llm_response::LlmResponse;
-pub use model_identity::{ModelProvider, ProviderModel};
 pub use provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
 pub use tools::*;
