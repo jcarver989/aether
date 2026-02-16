@@ -520,6 +520,19 @@ impl<T: Write> Renderer<T> {
         self.tui.update_context_from_terminal();
     }
 
+    /// Handle a bracketed paste event: insert all text at once and render once.
+    pub fn on_paste(&mut self, text: &str) -> std::io::Result<()> {
+        // Close file picker if open — pasted text is treated as literal input
+        self.file_picker = None;
+        // Strip newlines from paste (single-line input field)
+        for c in text.chars() {
+            if !c.is_control() {
+                self.input_buffer.push(c);
+            }
+        }
+        self.render_frame()
+    }
+
     /// Handle terminal resize: update context and re-render.
     pub fn on_resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
         self.tui.update_context((cols, rows));
