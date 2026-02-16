@@ -1,10 +1,14 @@
-use acp_utils::client::AcpPromptHandle;
 use crate::components::grid_loader::GridLoader;
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
 use crate::components::tool_call_statuses::ToolCallStatuses;
+use crate::error::WispError;
 use crate::tui::{Container, FrameRenderer, Line, Screen};
-use agent_client_protocol::{self as acp, SessionConfigOption};
+use acp_utils::client::AcpPromptHandle;
+use agent_client_protocol::{
+    self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
+    SessionConfigSelectOptions, SessionUpdate,
+};
 use crossterm::event::{self, KeyCode, KeyEvent};
 use std::io::Write;
 
@@ -84,7 +88,7 @@ impl<T: Write> Renderer<T> {
         key_event: KeyEvent,
         prompt_handle: &AcpPromptHandle,
         session_id: &acp::SessionId,
-    ) -> Result<LoopAction, std::io::Error> {
+    ) -> Result<LoopAction, WispError> {
         match key_event.code {
             KeyCode::Char('c') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
                 return Ok(LoopAction::Exit);
@@ -114,7 +118,7 @@ impl<T: Write> Renderer<T> {
                     self.tui
                         .push_to_scrollback(&[Line::new(user_input.clone())])?;
 
-                    prompt_handle.prompt(session_id, &user_input);
+                    prompt_handle.prompt(session_id, &user_input)?;
 
                     self.waiting_for_response = true;
                     self.animation_tick = 0;
@@ -137,23 +141,23 @@ impl<T: Write> Renderer<T> {
         self.grid_loader.visible = false;
 
         match update {
-            acp::SessionUpdate::AgentMessageChunk(chunk) => {
+            SessionUpdate::AgentMessageChunk(chunk) => {
                 if let acp::ContentBlock::Text(text_content) = chunk.content {
                     self.current_message_buffer.push_str(&text_content.text);
                 }
             }
 
-            acp::SessionUpdate::ToolCall(tool_call) => {
+            SessionUpdate::ToolCall(tool_call) => {
                 self.tool_call_statuses.on_tool_call(&tool_call);
                 self.render_frame()?;
             }
 
-            acp::SessionUpdate::ToolCallUpdate(update) => {
+            SessionUpdate::ToolCallUpdate(update) => {
                 self.tool_call_statuses.on_tool_call_update(&update);
                 self.render_frame()?;
             }
 
-            acp::SessionUpdate::ConfigOptionUpdate(update) => {
+            SessionUpdate::ConfigOptionUpdate(update) => {
                 self.model_display = extract_model_display(&update.config_options);
                 self.render_frame()?;
             }
@@ -245,18 +249,18 @@ impl<T: Write> Renderer<T> {
 ///
 /// Finds the first option with `category == Model`, reads its `Select` kind,
 /// and looks up the `current_value` in the options list to return its `name`.
-fn extract_model_display(config_options: &[acp::SessionConfigOption]) -> Option<String> {
+fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
     let option = config_options.iter().find(|o| {
         o.category
             .as_ref()
-            .is_some_and(|c| *c == acp::SessionConfigOptionCategory::Model)
+            .is_some_and(|c| *c == SessionConfigOptionCategory::Model)
     })?;
 
-    let acp::SessionConfigKind::Select(ref select) = option.kind else {
+    let SessionConfigKind::Select(ref select) = option.kind else {
         return None;
     };
 
-    let acp::SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
+    let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
         return None;
     };
 

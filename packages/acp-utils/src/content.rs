@@ -99,9 +99,10 @@ mod tests {
 
     #[test]
     fn test_map_content_blocks_resource_link() {
-        let blocks = vec![acp::ContentBlock::ResourceLink(
-            acp::ResourceLink::new("readme.md", "file://readme.md"),
-        )];
+        let blocks = vec![acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+            "readme.md",
+            "file://readme.md",
+        ))];
 
         let result = map_content_blocks_to_text(blocks);
         assert_eq!(result, "[Resource: file://readme.md]");

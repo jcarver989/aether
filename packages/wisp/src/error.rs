@@ -30,3 +30,9 @@ impl From<std::io::Error> for WispError {
         Self::IoError(e)
     }
 }
+
+impl From<AcpClientError> for WispError {
+    fn from(e: AcpClientError) -> Self {
+        Self::Acp(e)
+    }
+}

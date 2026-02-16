@@ -66,9 +66,11 @@ async fn main() -> ExitCode {
 
 async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
-    let stdout = io::stdout();
-
-    let mut renderer = Renderer::new(stdout, state.agent_name.clone(), &state.config_options);
+    let mut renderer = Renderer::new(
+        io::stdout(),
+        state.agent_name.clone(),
+        &state.config_options,
+    );
 
     renderer.update_render_context();
     renderer.initial_render()?;
@@ -146,7 +148,7 @@ async fn run_non_interactive(
     mut state: AppState,
     prompt: &str,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    state.prompt_handle.prompt(&state.session_id, prompt);
+    state.prompt_handle.prompt(&state.session_id, prompt)?;
 
     while let Some(event) = state.event_rx.recv().await {
         match event {
