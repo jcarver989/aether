@@ -1,4 +1,4 @@
-use super::component::{Component, RenderContext};
+use super::component::RenderContext;
 use super::screen::{Line, Screen};
 use crossterm::QueueableCommand;
 use crossterm::cursor::MoveDown;
@@ -28,15 +28,11 @@ impl<T: Write> FrameRenderer<T> {
         }
     }
 
-    /// Render a component tree as the current frame.
-    ///
-    /// Restores the cursor to end-of-frame first, then delegates the
-    /// rendered lines to `Screen::render` for diff-based output.
-    pub fn render_frame(&mut self, root: &dyn Component) -> io::Result<()> {
+    /// Render precomputed visual lines as the current frame.
+    pub fn render_lines(&mut self, lines: &[Line]) -> io::Result<()> {
         self.restore_cursor_position()?;
-        let frame = root.render(&self.context);
         self.screen
-            .render(&frame, self.context.size.0, &mut self.writer)?;
+            .render(lines, self.context.size.0, &mut self.writer)?;
         Ok(())
     }
 

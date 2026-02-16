@@ -5,6 +5,7 @@ use std::fmt;
 pub enum WispError {
     Acp(AcpClientError),
     IoError(std::io::Error),
+    Other(String),
 }
 
 impl fmt::Display for WispError {
@@ -12,6 +13,7 @@ impl fmt::Display for WispError {
         match self {
             Self::Acp(e) => write!(f, "{e}"),
             Self::IoError(e) => write!(f, "I/O error: {e}"),
+            Self::Other(e) => write!(f, "Error: {e}"),
         }
     }
 }
@@ -21,6 +23,7 @@ impl std::error::Error for WispError {
         match self {
             Self::Acp(e) => Some(e),
             Self::IoError(e) => Some(e),
+            Self::Other(_) => None,
         }
     }
 }

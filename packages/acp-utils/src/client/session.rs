@@ -235,8 +235,15 @@ where
 
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
-            PromptCommand::Prompt { session_id, text } => {
-                let prompt = vec![acp::ContentBlock::Text(acp::TextContent::new(text))];
+            PromptCommand::Prompt {
+                session_id,
+                text,
+                content,
+            } => {
+                let mut prompt = vec![acp::ContentBlock::Text(acp::TextContent::new(text))];
+                if let Some(extra_content) = content {
+                    prompt.extend(extra_content);
+                }
                 match conn
                     .prompt(acp::PromptRequest::new(session_id, prompt))
                     .await

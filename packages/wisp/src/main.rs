@@ -8,7 +8,7 @@ mod tui;
 use acp_utils::client::AcpEvent;
 use agent_client_protocol as acp;
 use clap::Parser;
-use crossterm::event::{Event, KeyEventKind, poll, read};
+use crossterm::event::{Event, KeyEventKind, poll, read, EnableBracketedPaste, DisableBracketedPaste};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use renderer::LoopAction;
 use std::io::{self, Write};
@@ -148,7 +148,9 @@ async fn run_non_interactive(
     mut state: AppState,
     prompt: &str,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    state.prompt_handle.prompt(&state.session_id, prompt)?;
+    state
+        .prompt_handle
+        .prompt(&state.session_id, prompt, None)?;
 
     while let Some(event) = state.event_rx.recv().await {
         match event {
