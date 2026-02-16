@@ -1,4 +1,4 @@
-use agent_events::ToolDefinition;
+use llm::ToolDefinition;
 
 use super::{
     McpError, Result,

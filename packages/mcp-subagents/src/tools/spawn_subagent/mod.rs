@@ -380,9 +380,10 @@ async fn create_llm(
             )
         })?;
 
-    ModelProviderParser::default()
+    let (llm, _) = ModelProviderParser::default()
         .parse(&model_spec)
-        .map_err(|e| format!("Failed to parse model spec '{}': {}", model_spec, e))
+        .map_err(|e| format!("Failed to create provider for '{}': {}", model_spec, e))?;
+    Ok(llm)
 }
 
 async fn spawn_mcps(agent_dir: &Path, roots: Vec<PathBuf>) -> Result<McpSpawnResult, String> {

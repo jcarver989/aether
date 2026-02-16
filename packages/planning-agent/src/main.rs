@@ -86,12 +86,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let parser = ModelProviderParser::default();
 
-    let llm = parser
+    let (llm, _) = parser
         .parse(&cli.model)
-        .map_err(|e| format!("Error parsing model spec '{}': {}", cli.model, e))?;
+        .map_err(|e| format!("Error creating provider for '{}': {}", cli.model, e))?;
 
     let judge_model = cli.judge_model.as_ref().unwrap_or(&cli.model);
-    let judge_llm = parser
+    let (judge_llm, _) = parser
         .parse(judge_model)
         .map_err(|e| format!("Error parsing judge model spec '{}': {}", judge_model, e))?;
 

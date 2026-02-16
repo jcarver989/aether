@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-agent-events = { path = "../agent-events" }
 async-openai = { workspace = true }
 async-stream = { workspace = true }
 chrono = { workspace = true }

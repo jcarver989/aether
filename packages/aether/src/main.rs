@@ -30,10 +30,11 @@ struct Cli {
 pub async fn main() {
     let cli = Cli::parse();
 
-    let llm = match ModelProviderParser::default().parse(&cli.model) {
-        Ok(llm) => llm,
+    let parser = ModelProviderParser::default();
+    let (llm, _) = match parser.parse(&cli.model) {
+        Ok(result) => result,
         Err(e) => {
-            eprintln!("Error parsing model spec '{}': {}", cli.model, e);
+            eprintln!("Error creating provider for '{}': {}", cli.model, e);
             std::process::exit(1);
         }
     };
@@ -183,6 +184,10 @@ async fn run_agent(
                     "[Auto-continuing: attempt {}/{} - LLM stopped without completion signal]",
                     attempt, max_attempts
                 );
+            }
+
+            ModelSwitched { previous, new } => {
+                println!("Model switched: {} -> {}", previous, new);
             }
 
             Done => {

@@ -9,7 +9,9 @@ use crate::providers::{
     openrouter::OpenRouterProvider,
     z_ai::ZAiProvider,
 };
-use crate::{LlmError, ProviderFactory, StreamingModelProvider, alloyed::AlloyedModelProvider};
+use crate::{
+    LlmError, ProviderFactory, ProviderModel, StreamingModelProvider, alloyed::AlloyedModelProvider,
+};
 
 /// Parser that turns a provider:model string (e.g. anthropic:claude-sonnet-4.5) into
 /// a StreamingLlmProvider
@@ -52,22 +54,41 @@ impl ModelProviderParser {
         self
     }
 
-    /// Parse a model specification string and create a provider instance
+    /// Create a provider from a typed `ProviderModel`
+    pub fn create_provider(
+        &self,
+        provider_model: &ProviderModel,
+    ) -> crate::Result<Box<dyn StreamingModelProvider>> {
+        let key = provider_model.provider.to_string();
+        let factory = self
+            .factories
+            .get(&key)
+            .ok_or_else(|| LlmError::Other(format!("Unknown provider: {key}")))?;
+        factory(&provider_model.model)
+    }
+
+    /// Parse a model specification string and create a provider instance.
     ///
-    /// Supports both single specs and comma-separated specs for alloyed providers.
+    /// Returns both the provider and a `ProviderModel` describing the identity
+    /// of the first (or only) provider in the spec.
     ///
     /// # Format
     ///
     /// - `"provider:model"` - Single provider (e.g., "anthropic:claude-3.5-sonnet")
     /// - `"provider1:model1,provider2:model2"` - Multiple providers create an AlloyedModelProvider
     ///
-    pub fn parse(&self, models_str: &str) -> crate::Result<Box<dyn StreamingModelProvider>> {
+    pub fn parse(
+        &self,
+        models_str: &str,
+    ) -> crate::Result<(Box<dyn StreamingModelProvider>, ProviderModel)> {
         let provider_model_pairs: Vec<&str> = models_str.split(',').map(|s| s.trim()).collect();
         if provider_model_pairs.is_empty() {
             return Err(LlmError::Other("No models provided".to_string()));
         }
 
         let mut providers = Vec::new();
+        let mut first_identity: Option<ProviderModel> = None;
+
         for pair in provider_model_pairs {
             let (provider_name, model) = if let Some((name, model)) = pair.split_once(':') {
                 (name, model)
@@ -82,7 +103,16 @@ impl ModelProviderParser {
                 .ok_or_else(|| LlmError::Other(format!("Unknown provider: {provider_name}")))?;
 
             providers.push(factory(model)?);
+
+            if first_identity.is_none() {
+                let mp: crate::ModelProvider = provider_name
+                    .parse()
+                    .map_err(|e: String| LlmError::Other(e))?;
+                first_identity = Some(ProviderModel::new(mp, model));
+            }
         }
+
+        let identity = first_identity.expect("at least one provider parsed");
 
         let provider: Box<dyn StreamingModelProvider> = if providers.len() == 1 {
             providers.into_iter().next().unwrap()
@@ -90,7 +120,7 @@ impl ModelProviderParser {
             Box::new(AlloyedModelProvider::new(providers))
         };
 
-        Ok(provider)
+        Ok((provider, identity))
     }
 }
 
@@ -103,12 +133,16 @@ pub type CreateProviderFn =
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ModelProvider;
 
     #[test]
     fn test_parse_llamacpp() {
         let parser = ModelProviderParser::default();
         let result = parser.parse("llamacpp");
         assert!(result.is_ok());
+        let (_, pm) = result.unwrap();
+        assert_eq!(pm.provider, ModelProvider::LlamaCpp);
+        assert_eq!(pm.model, "");
     }
 
     #[test]
@@ -116,15 +150,21 @@ mod tests {
         let parser = ModelProviderParser::default();
         let result = parser.parse("anthropic:claude-3.5-sonnet");
         // Will fail without API key or credentials, but should parse successfully
-        if let Err(e) = result {
-            let err = e.to_string();
-            assert!(
-                err.contains("API")
-                    || err.contains("ANTHROPIC")
-                    || err.contains("credentials")
-                    || err.contains("JSON"),
-                "Should fail on API key or credentials, not parsing. Got: {err}"
-            );
+        match result {
+            Ok((_, pm)) => {
+                assert_eq!(pm.provider, ModelProvider::Anthropic);
+                assert_eq!(pm.model, "claude-3.5-sonnet");
+            }
+            Err(e) => {
+                let err = e.to_string();
+                assert!(
+                    err.contains("API")
+                        || err.contains("ANTHROPIC")
+                        || err.contains("credentials")
+                        || err.contains("JSON"),
+                    "Should fail on API key or credentials, not parsing. Got: {err}"
+                );
+            }
         }
     }
 
@@ -133,6 +173,9 @@ mod tests {
         let parser = ModelProviderParser::default();
         let result = parser.parse("ollama:llama3.2");
         assert!(result.is_ok());
+        let (_, pm) = result.unwrap();
+        assert_eq!(pm.provider, ModelProvider::Ollama);
+        assert_eq!(pm.model, "llama3.2");
     }
 
     #[test]
@@ -207,7 +250,9 @@ mod tests {
         let parser = ModelProviderParser::default();
         let result = parser.parse("llamacpp,ollama:llama3.2");
         assert!(result.is_ok());
-        // Should return AlloyedModelProvider
+        let (_, pm) = result.unwrap();
+        // For alloyed, uses the first provider's identity
+        assert_eq!(pm.provider, ModelProvider::LlamaCpp);
     }
 
     #[test]

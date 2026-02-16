@@ -112,6 +112,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     attempt, max_attempts
                 );
             }
+            Some(ModelSwitched { previous, new }) => {
+                println!("Model switched: {} -> {}", previous, new);
+            }
             None => {
                 println!("Channel closed");
                 break;

@@ -47,8 +47,8 @@ impl TestAgentBuilder {
         }
     }
 
-    pub fn user_messages(mut self, user_messages: &[UserMessage]) -> Self {
-        self.messages = Vec::from(user_messages);
+    pub fn user_messages(mut self, user_messages: Vec<UserMessage>) -> Self {
+        self.messages = user_messages;
         self
     }
 
@@ -99,7 +99,7 @@ impl TestAgentBuilder {
         }
 
         let (tx, mut rx, _handle) = builder.spawn().await?;
-        let futures: Vec<_> = self.messages.iter().map(|m| tx.send(m.clone())).collect();
+        let futures: Vec<_> = self.messages.into_iter().map(|m| tx.send(m)).collect();
 
         join_all(futures).await;
         drop(tx);

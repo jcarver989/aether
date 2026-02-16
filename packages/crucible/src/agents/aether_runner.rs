@@ -246,6 +246,9 @@ async fn stream_agent_messages(
                     max_attempts
                 );
             }
+            AgentMessage::ModelSwitched { previous, new } => {
+                tracing::debug!("Model switched: {} -> {}", previous, new);
+            }
         }
     }
 

@@ -15,6 +15,6 @@ pub use substitution::*;
 
 use llm::StreamingModelProvider;
 
-pub fn agent<T: StreamingModelProvider + 'static>(llm: T) -> AgentBuilder<T> {
-    AgentBuilder::new(llm)
+pub fn agent(llm: impl StreamingModelProvider + 'static) -> AgentBuilder {
+    AgentBuilder::new(Box::new(llm))
 }

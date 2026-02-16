@@ -1338,12 +1338,16 @@ async fn test_config_command_opens_menu() {
     assert!(renderer.config_menu.is_some());
     let lines = renderer.writer().get_lines();
     assert!(
-        lines.iter().any(|l| l.contains("Model") && l.contains("GPT-4o")),
+        lines
+            .iter()
+            .any(|l| l.contains("Model") && l.contains("GPT-4o")),
         "Config menu should show Model option.\nBuffer:\n{}",
         lines.join("\n")
     );
     assert!(
-        lines.iter().any(|l| l.contains("Mode") && l.contains("Code")),
+        lines
+            .iter()
+            .any(|l| l.contains("Mode") && l.contains("Code")),
         "Config menu should show Mode option.\nBuffer:\n{}",
         lines.join("\n")
     );
@@ -1580,16 +1584,18 @@ async fn test_config_menu_updates_on_config_option_event() {
     assert!(renderer.config_menu.is_some());
 
     // Simulate the agent responding with updated config
-    let new_config = vec![acp::SessionConfigOption::select(
-        "model".to_string(),
-        "Model".to_string(),
-        "claude".to_string(),
-        vec![
-            acp::SessionConfigSelectOption::new("gpt-4o".to_string(), "GPT-4o".to_string()),
-            acp::SessionConfigSelectOption::new("claude".to_string(), "Claude".to_string()),
-        ],
-    )
-    .category(acp::SessionConfigOptionCategory::Model)];
+    let new_config = vec![
+        acp::SessionConfigOption::select(
+            "model".to_string(),
+            "Model".to_string(),
+            "claude".to_string(),
+            vec![
+                acp::SessionConfigSelectOption::new("gpt-4o".to_string(), "GPT-4o".to_string()),
+                acp::SessionConfigSelectOption::new("claude".to_string(), "Claude".to_string()),
+            ],
+        )
+        .category(acp::SessionConfigOptionCategory::Model),
+    ];
 
     renderer
         .on_session_update(acp::SessionUpdate::ConfigOptionUpdate(

@@ -1,7 +1,5 @@
 use crate::tui::{Component, Line, RenderContext};
-use agent_client_protocol::{
-    SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions,
-};
+use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
 use crossterm::style::Stylize;
 
 pub struct ConfigMenu {
@@ -182,14 +180,29 @@ mod tests {
             .iter()
             .map(|(v, n)| SessionConfigSelectOption::new(v.to_string(), n.to_string()))
             .collect();
-        SessionConfigOption::select(id.to_string(), name.to_string(), current.to_string(), options)
+        SessionConfigOption::select(
+            id.to_string(),
+            name.to_string(),
+            current.to_string(),
+            options,
+        )
     }
 
     #[test]
     fn from_config_options_builds_entries() {
         let opts = vec![
-            make_select_option("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o"), ("claude", "Claude")]),
-            make_select_option("mode", "Mode", "code", &[("code", "Code"), ("chat", "Chat")]),
+            make_select_option(
+                "model",
+                "Model",
+                "gpt-4o",
+                &[("gpt-4o", "GPT-4o"), ("claude", "Claude")],
+            ),
+            make_select_option(
+                "mode",
+                "Mode",
+                "code",
+                &[("code", "Code"), ("chat", "Chat")],
+            ),
         ];
         let menu = ConfigMenu::from_config_options(&opts);
         assert_eq!(menu.options.len(), 2);
@@ -201,8 +214,14 @@ mod tests {
     #[test]
     fn from_config_options_finds_current_value() {
         let opts = vec![make_select_option(
-            "model", "Model", "claude",
-            &[("gpt-4o", "GPT-4o"), ("claude", "Claude"), ("llama", "Llama")],
+            "model",
+            "Model",
+            "claude",
+            &[
+                ("gpt-4o", "GPT-4o"),
+                ("claude", "Claude"),
+                ("llama", "Llama"),
+            ],
         )];
         let menu = ConfigMenu::from_config_options(&opts);
         assert_eq!(menu.options[0].current_value_index, 1);
@@ -233,7 +252,9 @@ mod tests {
     #[test]
     fn cycle_value_right_wraps() {
         let opts = vec![make_select_option(
-            "model", "Model", "a",
+            "model",
+            "Model",
+            "a",
             &[("a", "A"), ("b", "B"), ("c", "C")],
         )];
         let mut menu = ConfigMenu::from_config_options(&opts);
@@ -253,7 +274,9 @@ mod tests {
     #[test]
     fn cycle_value_left_wraps() {
         let opts = vec![make_select_option(
-            "model", "Model", "a",
+            "model",
+            "Model",
+            "a",
             &[("a", "A"), ("b", "B"), ("c", "C")],
         )];
         let mut menu = ConfigMenu::from_config_options(&opts);
@@ -289,8 +312,18 @@ mod tests {
     #[test]
     fn component_renders_selected_row() {
         let opts = vec![
-            make_select_option("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o"), ("claude", "Claude")]),
-            make_select_option("mode", "Mode", "code", &[("code", "Code"), ("chat", "Chat")]),
+            make_select_option(
+                "model",
+                "Model",
+                "gpt-4o",
+                &[("gpt-4o", "GPT-4o"), ("claude", "Claude")],
+            ),
+            make_select_option(
+                "mode",
+                "Mode",
+                "code",
+                &[("code", "Code"), ("chat", "Chat")],
+            ),
         ];
         let menu = ConfigMenu::from_config_options(&opts);
         let component = ConfigMenuComponent { menu: &menu };
@@ -320,7 +353,8 @@ mod tests {
 
     #[test]
     fn from_config_options_skips_empty_values() {
-        let empty = SessionConfigOption::select("x", "X", "v", Vec::<SessionConfigSelectOption>::new());
+        let empty =
+            SessionConfigOption::select("x", "X", "v", Vec::<SessionConfigSelectOption>::new());
         let opts = vec![
             empty,
             make_select_option("model", "Model", "a", &[("a", "A")]),
@@ -332,10 +366,8 @@ mod tests {
 
     #[test]
     fn from_config_options_with_category() {
-        let opt = make_select_option(
-            "model", "Model", "gpt-4o",
-            &[("gpt-4o", "GPT-4o")],
-        ).category(SessionConfigOptionCategory::Model);
+        let opt = make_select_option("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o")])
+            .category(SessionConfigOptionCategory::Model);
         let menu = ConfigMenu::from_config_options(&[opt]);
         assert_eq!(menu.options.len(), 1);
         assert_eq!(menu.options[0].title, "Model");
