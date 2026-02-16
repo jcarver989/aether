@@ -2,9 +2,10 @@ use super::error::AcpClientError;
 use super::event::AcpEvent;
 use super::prompt_handle::{AcpPromptHandle, PromptCommand};
 use agent_client_protocol::{
-    self as acp, Agent, Client, InitializeRequest, PermissionOptionKind, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionConfigOption, SessionId, SessionNotification,
+    self as acp, Agent, Client, ConfigOptionUpdate, InitializeRequest, PermissionOptionKind,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionConfigOption, SessionId, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest,
 };
 use std::process::Stdio;
 use std::thread::spawn;
@@ -257,6 +258,25 @@ where
             }
             PromptCommand::Cancel { session_id } => {
                 let _ = conn.cancel(acp::CancelNotification::new(session_id)).await;
+            }
+            PromptCommand::SetConfigOption {
+                session_id,
+                config_id,
+                value,
+            } => {
+                let req = SetSessionConfigOptionRequest::new(session_id, config_id, value);
+                match conn.set_session_config_option(req).await {
+                    Ok(resp) => {
+                        let update = ConfigOptionUpdate::new(resp.config_options);
+                        let _ =
+                            event_tx.send(AcpEvent::SessionUpdate(Box::new(
+                                SessionUpdate::ConfigOptionUpdate(update),
+                            )));
+                    }
+                    Err(e) => {
+                        tracing::warn!("set_session_config_option failed: {e:?}");
+                    }
+                }
             }
         }
     }

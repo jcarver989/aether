@@ -1294,3 +1294,363 @@ fn press_backspace<W: std::io::Write>(
         .on_key_event(backspace_event, handle, session_id)
         .unwrap();
 }
+
+// ── Config menu tests ────────────────────────────────────────────────
+
+fn make_config_options() -> Vec<acp::SessionConfigOption> {
+    vec![
+        acp::SessionConfigOption::select(
+            "model".to_string(),
+            "Model".to_string(),
+            "gpt-4o".to_string(),
+            vec![
+                acp::SessionConfigSelectOption::new("gpt-4o".to_string(), "GPT-4o".to_string()),
+                acp::SessionConfigSelectOption::new("claude".to_string(), "Claude".to_string()),
+            ],
+        )
+        .category(acp::SessionConfigOptionCategory::Model),
+        acp::SessionConfigOption::select(
+            "mode".to_string(),
+            "Mode".to_string(),
+            "code".to_string(),
+            vec![
+                acp::SessionConfigSelectOption::new("code".to_string(), "Code".to_string()),
+                acp::SessionConfigSelectOption::new("chat".to_string(), "Chat".to_string()),
+            ],
+        ),
+    ]
+}
+
+#[tokio::test]
+async fn test_config_command_opens_menu() {
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+
+    assert!(renderer.config_menu.is_some());
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("Model") && l.contains("GPT-4o")),
+        "Config menu should show Model option.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("Mode") && l.contains("Code")),
+        "Config menu should show Mode option.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_config_menu_esc_closes() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+    assert!(renderer.config_menu.is_some());
+
+    send_key(
+        &mut renderer,
+        KeyCode::Esc,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert!(renderer.config_menu.is_none());
+}
+
+#[tokio::test]
+async fn test_config_menu_arrow_navigation() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+
+    // Initially Model is selected (index 0)
+    assert_eq!(renderer.config_menu.as_ref().unwrap().selected_index, 0);
+
+    // Down arrow → Mode (index 1)
+    send_key(
+        &mut renderer,
+        KeyCode::Down,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert_eq!(renderer.config_menu.as_ref().unwrap().selected_index, 1);
+
+    // Down wraps → Model (index 0)
+    send_key(
+        &mut renderer,
+        KeyCode::Down,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert_eq!(renderer.config_menu.as_ref().unwrap().selected_index, 0);
+
+    // Up wraps → Mode (index 1)
+    send_key(
+        &mut renderer,
+        KeyCode::Up,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert_eq!(renderer.config_menu.as_ref().unwrap().selected_index, 1);
+}
+
+#[tokio::test]
+async fn test_config_menu_right_cycles_value() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+
+    // Right arrow cycles Model from GPT-4o → Claude
+    send_key(
+        &mut renderer,
+        KeyCode::Right,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("Claude")),
+        "Should show Claude after cycling right.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_config_menu_left_cycles_value() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+
+    // Left arrow cycles Model from GPT-4o → Claude (wrap around)
+    send_key(
+        &mut renderer,
+        KeyCode::Left,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("Claude")),
+        "Should show Claude after cycling left (wraps).\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_config_menu_swallows_other_keys() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+    assert!(renderer.config_menu.is_some());
+
+    // Typing a character should not modify input buffer
+    send_key(
+        &mut renderer,
+        KeyCode::Char('x'),
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+
+    // Menu should still be open
+    assert!(renderer.config_menu.is_some());
+    // Input buffer should be empty (was cleared when /config opened)
+    let lines = renderer.writer().get_lines();
+    // The input prompt should show empty (just "> ")
+    assert!(
+        lines.iter().any(|l| l.contains("> ") && !l.contains("x")),
+        "Typed char should be swallowed while config menu is open.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_config_menu_ctrl_c_exits() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use wisp::renderer::LoopAction;
+
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+    assert!(renderer.config_menu.is_some());
+
+    let action = renderer
+        .on_key_event(
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: crossterm::event::KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            },
+            &handle,
+            &session_id,
+        )
+        .unwrap();
+
+    assert!(matches!(action, LoopAction::Exit));
+}
+
+#[tokio::test]
+async fn test_config_menu_updates_on_config_option_event() {
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+    assert!(renderer.config_menu.is_some());
+
+    // Simulate the agent responding with updated config
+    let new_config = vec![acp::SessionConfigOption::select(
+        "model".to_string(),
+        "Model".to_string(),
+        "claude".to_string(),
+        vec![
+            acp::SessionConfigSelectOption::new("gpt-4o".to_string(), "GPT-4o".to_string()),
+            acp::SessionConfigSelectOption::new("claude".to_string(), "Claude".to_string()),
+        ],
+    )
+    .category(acp::SessionConfigOptionCategory::Model)];
+
+    renderer
+        .on_session_update(acp::SessionUpdate::ConfigOptionUpdate(
+            acp::ConfigOptionUpdate::new(new_config),
+        ))
+        .unwrap();
+
+    // The menu should now show Claude as the current value
+    let menu = renderer.config_menu.as_ref().unwrap();
+    assert_eq!(menu.options[0].current_value_index, 1);
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("Claude")),
+        "Menu should reflect updated config.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_config_clears_input_buffer() {
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+
+    // Input buffer should be cleared
+    let lines = renderer.writer().get_lines();
+    // The prompt line should not contain "/config"
+    assert!(
+        !lines.iter().any(|l| l.contains("/config")),
+        "Input buffer should be cleared after /config.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_config_with_no_options_shows_placeholder() {
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((80, 24));
+    renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
+
+    assert!(renderer.config_menu.is_some());
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("no config options")),
+        "Should show placeholder when no options.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}

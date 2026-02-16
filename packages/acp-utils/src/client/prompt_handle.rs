@@ -13,6 +13,11 @@ pub(crate) enum PromptCommand {
     Cancel {
         session_id: acp::SessionId,
     },
+    SetConfigOption {
+        session_id: acp::SessionId,
+        config_id: String,
+        value: String,
+    },
 }
 
 /// Send-safe handle for issuing prompt commands to the !Send ACP connection.
@@ -51,6 +56,21 @@ impl AcpPromptHandle {
                 session_id: session_id.clone(),
             })
             .map_err(|_| AcpClientError::AgentCrashed("cancel channel closed".into()))
+    }
+
+    pub fn set_config_option(
+        &self,
+        session_id: &acp::SessionId,
+        config_id: &str,
+        value: &str,
+    ) -> Result<(), AcpClientError> {
+        self.cmd_tx
+            .send(PromptCommand::SetConfigOption {
+                session_id: session_id.clone(),
+                config_id: config_id.to_string(),
+                value: value.to_string(),
+            })
+            .map_err(|_| AcpClientError::AgentCrashed("set_config_option channel closed".into()))
     }
 }
 
@@ -97,6 +117,31 @@ mod tests {
 
         let cmd = rx.try_recv().unwrap();
         assert!(matches!(cmd, PromptCommand::Cancel { .. }));
+    }
+
+    #[test]
+    fn test_set_config_option_sends_command() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let handle = AcpPromptHandle { cmd_tx: tx };
+        let session_id = acp::SessionId::new("sess-1");
+
+        handle
+            .set_config_option(&session_id, "model", "gpt-4o")
+            .unwrap();
+
+        let cmd = rx.try_recv().unwrap();
+        match cmd {
+            PromptCommand::SetConfigOption {
+                session_id,
+                config_id,
+                value,
+            } => {
+                assert_eq!(session_id.0.as_ref(), "sess-1");
+                assert_eq!(config_id, "model");
+                assert_eq!(value, "gpt-4o");
+            }
+            _ => panic!("Expected SetConfigOption command"),
+        }
     }
 
     #[test]
