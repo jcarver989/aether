@@ -313,5 +313,4 @@ mod tests {
             _ => panic!("Expected ToolCallUpdate"),
         }
     }
-
 }

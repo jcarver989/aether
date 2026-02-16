@@ -62,9 +62,9 @@ mod tests {
         let session_id = acp::SessionId::new("test");
         let notification = acp::SessionNotification::new(
             session_id,
-            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
-                acp::ContentBlock::Text(acp::TextContent::new("test")),
-            )),
+            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+                acp::TextContent::new("test"),
+            ))),
         );
 
         let result = handle.send_session_notification(notification).await;

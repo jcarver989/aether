@@ -1,8 +1,8 @@
 mod test_terminal;
 
+use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol as acp;
 use test_terminal::{TestTerminal, assert_buffer_eq};
-use acp_utils::client::AcpPromptHandle;
 use wisp::renderer::Renderer;
 
 const TEST_AGENT: &str = "test-agent";
@@ -271,7 +271,7 @@ async fn test_user_message_submission() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with((TEST_WIDTH, 40));
 
-    let handle = AcpPromptHandle::disconnected();
+    let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
     renderer.initial_render().unwrap();
@@ -499,7 +499,7 @@ async fn test_typing_renders_within_bordered_input() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with((80, 24));
 
-    let handle = AcpPromptHandle::disconnected();
+    let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
     renderer.initial_render().unwrap();
@@ -516,7 +516,7 @@ async fn test_backspace_updates_within_border() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with((80, 24));
 
-    let handle = AcpPromptHandle::disconnected();
+    let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
     renderer.initial_render().unwrap();
@@ -648,7 +648,7 @@ async fn test_grid_loader_visible_after_prompt_submit() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with((TEST_WIDTH, 40));
 
-    let handle = AcpPromptHandle::disconnected();
+    let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
     renderer.initial_render().unwrap();
@@ -671,7 +671,7 @@ async fn test_grid_loader_disappears_on_session_update() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with((TEST_WIDTH, 40));
 
-    let handle = AcpPromptHandle::disconnected();
+    let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
     renderer.initial_render().unwrap();
@@ -703,7 +703,7 @@ async fn test_grid_loader_disappears_on_prompt_done() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with((TEST_WIDTH, 40));
 
-    let handle = AcpPromptHandle::disconnected();
+    let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
     renderer.initial_render().unwrap();
@@ -742,7 +742,7 @@ async fn test_on_tick_advances_animation() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with((TEST_WIDTH, 40));
 
-    let handle = AcpPromptHandle::disconnected();
+    let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
     renderer.initial_render().unwrap();

@@ -7,13 +7,13 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
-use acp_utils::content::map_content_blocks_to_text;
-use acp_utils::server::AcpActorHandle;
 use crate::mappers::{
     map_agent_message_to_session_notification, map_agent_message_to_stop_reason,
     try_into_ext_notification,
 };
 use crate::session::Session;
+use acp_utils::content::map_content_blocks_to_text;
+use acp_utils::server::AcpActorHandle;
 
 /// Managers ACP sessions, each session has its own agent and state
 pub struct SessionManager {

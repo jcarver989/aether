@@ -1,11 +1,11 @@
-use acp_utils::client::{
-    AcpEvent, AcpPromptHandle, AutoApproveClient, SpawnConfig, spawn_acp_session,
-};
-use agent_client_protocol as acp;
-use tokio::sync::mpsc;
-
 use crate::cli::Cli;
 use crate::error::WispError;
+use acp_utils::client::{AcpEvent, AcpPromptHandle, AutoApproveClient, spawn_acp_session};
+use agent_client_protocol::{
+    self as acp, Implementation, InitializeRequest, NewSessionRequest, ProtocolVersion,
+};
+use std::env::current_dir;
+use tokio::sync::mpsc;
 
 pub struct AppState {
     pub session_id: acp::SessionId,
@@ -17,18 +17,19 @@ pub struct AppState {
 
 impl AppState {
     pub async fn from_cli(cli: &Cli) -> Result<Self, WispError> {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let cwd = current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let new_session_request = NewSessionRequest::new(cwd);
+        let init_request = InitializeRequest::new(ProtocolVersion::LATEST)
+            .client_info(Implementation::new("wisp", env!("CARGO_PKG_VERSION")));
 
-        let config = SpawnConfig {
-            agent_command: cli.agent.clone(),
-            client_name: "wisp".to_string(),
-            client_version: env!("CARGO_PKG_VERSION").to_string(),
-            cwd,
-        };
-
-        let session = spawn_acp_session(config, AutoApproveClient::new)
-            .await
-            .map_err(WispError::Acp)?;
+        let session = spawn_acp_session(
+            &cli.agent,
+            init_request,
+            new_session_request,
+            AutoApproveClient::new,
+        )
+        .await
+        .map_err(WispError::Acp)?;
 
         Ok(Self {
             session_id: session.session_id,
