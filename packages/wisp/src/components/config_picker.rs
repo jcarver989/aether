@@ -226,6 +226,15 @@ impl Component for ConfigPickerComponent<'_> {
             } else {
                 format!("{} ({})", option.name, option.value)
             };
+            let label = if option.is_disabled {
+                if let Some(reason) = option.description.as_deref() {
+                    format!("{label} - {reason}")
+                } else {
+                    label
+                }
+            } else {
+                label
+            };
 
             let line_text = format!("{}{}", prefix, label);
             let line = if option.is_disabled {
