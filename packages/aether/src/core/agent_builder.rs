@@ -1,11 +1,11 @@
 use crate::context::CompactionConfig;
 use crate::core::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::core::{Agent, Prompt, Result};
-use mcp_utils::client::ServerInstructions;
 use crate::mcp::run_mcp_task::McpCommand;
+use agent_events::{AgentMessage, UserMessage};
 use llm::types::IsoString;
 use llm::{ChatMessage, Context, StreamingModelProvider, ToolDefinition};
-use agent_events::{AgentMessage, UserMessage};
+use mcp_utils::client::ServerInstructions;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;

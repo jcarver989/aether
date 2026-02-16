@@ -5,13 +5,9 @@ use tokio::sync::mpsc;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::info;
 
-use crate::{
-    acp_actor::{AcpActor, AcpActorHandle},
-    session_manager::SessionManager,
-};
+use acp_utils::server::{AcpActor, AcpActorHandle};
+use crate::session_manager::SessionManager;
 
-mod acp_actor;
-mod acp_coding_tools;
 mod mappers;
 mod session;
 mod session_manager;

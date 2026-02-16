@@ -1,10 +1,10 @@
+use clap::Parser;
+use futures::StreamExt;
 use llm::providers::anthropic::*;
+use llm::types::IsoString;
 use llm::{
     ChatMessage, Context, LlmResponse, ProviderFactory, StreamingModelProvider, ToolDefinition,
 };
-use llm::types::IsoString;
-use clap::Parser;
-use futures::StreamExt;
 use serde_json::json;
 use std::error::Error;
 use std::io::{self, Write};

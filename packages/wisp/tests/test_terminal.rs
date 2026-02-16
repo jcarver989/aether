@@ -2,6 +2,10 @@ use std::io::{self, Write};
 
 /// A virtual terminal buffer for testing terminal output.
 /// Captures all writes, tracks cursor position, and parses ANSI escape sequences.
+///
+/// Implements delayed wrapping (DEC-style): when the cursor reaches the last
+/// column, it stays there with a pending-wrap flag. The next printable character
+/// triggers the wrap to column 0 of the next line. A `\r` clears the flag.
 #[derive(Debug, Clone)]
 pub struct TestTerminal {
     /// 2D buffer of characters (row, column)
@@ -14,6 +18,8 @@ pub struct TestTerminal {
     size: (u16, u16),
     /// Buffer for incomplete escape sequences
     escape_buffer: Vec<u8>,
+    /// Delayed wrap: cursor hit last column but hasn't wrapped yet
+    pending_wrap: bool,
 }
 
 impl TestTerminal {
@@ -26,6 +32,7 @@ impl TestTerminal {
             saved_cursor: None,
             size: (columns, rows),
             escape_buffer: Vec::new(),
+            pending_wrap: false,
         }
     }
 
@@ -71,27 +78,32 @@ impl TestTerminal {
             col.min(self.size.0.saturating_sub(1)),
             row.min(self.size.1.saturating_sub(1)),
         );
+        self.pending_wrap = false;
     }
 
     /// Move cursor to column (keep same row)
     pub fn move_to_column(&mut self, col: u16) {
         self.cursor.0 = col.min(self.size.0.saturating_sub(1));
+        self.pending_wrap = false;
     }
 
     /// Move cursor left by n positions
     pub fn move_left(&mut self, n: u16) {
         self.cursor.0 = self.cursor.0.saturating_sub(n);
+        self.pending_wrap = false;
     }
 
     /// Move cursor right by n positions
     pub fn move_right(&mut self, n: u16) {
         self.cursor.0 = (self.cursor.0 + n).min(self.size.0.saturating_sub(1));
+        self.pending_wrap = false;
     }
 
     /// Write a single character at current cursor position and advance cursor
     fn write_char(&mut self, ch: char) {
         match ch {
             '\n' => {
+                self.pending_wrap = false;
                 if self.cursor.1 >= self.size.1.saturating_sub(1) {
                     // At last row: scroll buffer up by 1
                     self.buffer.remove(0);
@@ -103,8 +115,9 @@ impl TestTerminal {
                 self.cursor.0 = 0;
             }
             '\r' => {
-                // Move to column 0
+                // Move to column 0, clear pending wrap
                 self.cursor.0 = 0;
+                self.pending_wrap = false;
             }
             '\t' => {
                 // Tab = 4 spaces
@@ -118,16 +131,32 @@ impl TestTerminal {
         }
     }
 
-    /// Write a character at the current cursor position
+    /// Write a character at the current cursor position (delayed wrap).
+    ///
+    /// When the cursor is at the last column with pending_wrap set,
+    /// the next printable character triggers the wrap first.
     fn write_char_at_cursor(&mut self, ch: char) {
+        // If pending wrap, commit the wrap now before writing
+        if self.pending_wrap {
+            self.pending_wrap = false;
+            self.cursor.0 = 0;
+            if self.cursor.1 >= self.size.1.saturating_sub(1) {
+                self.buffer.remove(0);
+                self.buffer.push(vec![' '; self.size.0 as usize]);
+            } else {
+                self.cursor.1 += 1;
+            }
+        }
+
         if let Some(row) = self.buffer.get_mut(self.cursor.1 as usize) {
             if let Some(cell) = row.get_mut(self.cursor.0 as usize) {
                 *cell = ch;
-                // Advance cursor
                 self.cursor.0 += 1;
                 if self.cursor.0 >= self.size.0 {
-                    self.cursor.0 = 0;
-                    self.cursor.1 = (self.cursor.1 + 1).min(self.size.1.saturating_sub(1));
+                    // Don't wrap immediately — set pending flag.
+                    // Cursor stays at last column visually.
+                    self.cursor.0 = self.size.0 - 1;
+                    self.pending_wrap = true;
                 }
             }
         }
@@ -163,6 +192,14 @@ impl TestTerminal {
 
     /// Process a CSI (Control Sequence Introducer) escape sequence
     fn process_csi_sequence(&mut self, chars: &mut std::iter::Peekable<std::str::Chars>) {
+        // Detect private mode prefix (e.g., `?` in `CSI ?2026h`)
+        let private_mode = if chars.peek() == Some(&'?') {
+            chars.next();
+            true
+        } else {
+            false
+        };
+
         let mut params = String::new();
 
         // Collect parameters (numbers and semicolons)
@@ -173,6 +210,12 @@ impl TestTerminal {
             } else {
                 break;
             }
+        }
+
+        // Consume the final command character for private mode sequences and return
+        if private_mode {
+            chars.next(); // consume 'h', 'l', etc.
+            return;
         }
 
         // Get the command character
@@ -190,11 +233,13 @@ impl TestTerminal {
                     // Cursor Up
                     let n = params.parse().unwrap_or(1);
                     self.cursor.1 = self.cursor.1.saturating_sub(n);
+                    self.pending_wrap = false;
                 }
                 'B' => {
                     // Cursor Down
                     let n = params.parse().unwrap_or(1);
                     self.cursor.1 = (self.cursor.1 + n).min(self.size.1.saturating_sub(1));
+                    self.pending_wrap = false;
                 }
                 'C' => {
                     // Cursor Forward (Right)
@@ -264,6 +309,7 @@ impl TestTerminal {
                     // Restore cursor position
                     if let Some(saved) = self.saved_cursor {
                         self.cursor = saved;
+                        self.pending_wrap = false;
                     }
                 }
                 'm' => {
@@ -410,6 +456,16 @@ mod tests {
         term.flush().unwrap();
 
         assert_buffer_eq(&term, &["Expected"]);
+    }
+
+    #[test]
+    fn test_private_mode_sequences_ignored() {
+        let mut term = TestTerminal::new(80, 24);
+        // Synchronized update begin/end sequences should not leak into buffer
+        write!(term, "\x1b[?2026hHello\x1b[?2026l").unwrap();
+        term.flush().unwrap();
+        let lines = term.get_lines();
+        assert_eq!(lines[0], "Hello");
     }
 
     #[test]

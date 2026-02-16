@@ -1,16 +1,14 @@
-use crate::acp_actor::AcpActorHandle;
-use crate::acp_coding_tools::AcpCodingTools;
 use crate::mappers::map_mcp_prompt_to_available_command;
 use aether::core::{AgentHandle, Prompt, agent};
-use llm::provider::StreamingModelProvider;
 use aether::mcp::McpSpawnResult;
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
+use llm::provider::StreamingModelProvider;
 
 use agent_client_protocol as acp;
 use agent_events::{AgentMessage, UserMessage};
 use futures::FutureExt;
-use mcp_coding::{CodingMcp, LspCodingTools};
+use mcp_coding::{CodingMcp, DefaultCodingTools, LspCodingTools};
 use mcp_skills::SkillsMcp;
 use mcp_subagents::SubAgentsMcp;
 use mcp_tasks::TasksMcp;
@@ -42,8 +40,6 @@ impl Session {
         system_prompt: Option<String>,
         mcp_config_path: std::path::PathBuf,
         cwd: PathBuf,
-        actor_handle: AcpActorHandle,
-        acp_session_id: acp::SessionId,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         debug!("Creating new session: {}", id);
         debug!("Loading MCP configuration from: {:?}", mcp_config_path);
@@ -62,13 +58,10 @@ impl Session {
             .register_in_memory_server(
                 "coding",
                 Box::new(move |_args| {
-                    let actor_handle = actor_handle.clone();
-                    let acp_session_id = acp_session_id.clone();
                     let project_path = cwd.clone();
                     async move {
-                        let acp_tools =
-                            AcpCodingTools::new(actor_handle.clone(), acp_session_id.clone());
-                        let lsp_tools = LspCodingTools::new(acp_tools, project_path.clone());
+                        let lsp_tools =
+                            LspCodingTools::new(DefaultCodingTools::new(), project_path.clone());
                         debug!("LspCodingTools created with lazy LSP spawning");
                         CodingMcp::with_tools(lsp_tools)
                             .with_root_dir(project_path)

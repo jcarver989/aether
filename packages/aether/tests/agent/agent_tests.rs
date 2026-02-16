@@ -8,9 +8,9 @@ use aether::{
         {AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, SlowToolRequest},
     },
 };
+use agent_events::{AgentMessage, UserMessage};
 use llm::ChatMessage;
 use llm::testing::llm_response;
-use agent_events::{AgentMessage, UserMessage};
 
 #[tokio::test]
 async fn test_text_message() -> Result<(), Box<dyn Error>> {

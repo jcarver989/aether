@@ -1,10 +1,6 @@
-pub mod acp_connection;
 pub mod app_state;
 pub mod cli;
-pub mod colors;
 pub mod components;
 pub mod error;
-pub mod render_context;
 pub mod renderer;
-pub mod screen;
-pub mod terminal_manager;
+pub mod tui;

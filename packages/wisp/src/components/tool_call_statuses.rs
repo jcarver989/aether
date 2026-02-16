@@ -1,7 +1,6 @@
 use agent_client_protocol as acp;
 
-use crate::render_context::{Component, RenderContext};
-use crate::screen::Line;
+use crate::tui::{Component, Line, RenderContext};
 use crossterm::style::Stylize;
 use std::collections::HashMap;
 
@@ -232,10 +231,7 @@ mod tests {
         tc
     }
 
-    fn make_tool_call_update(
-        id: &str,
-        status: acp::ToolCallStatus,
-    ) -> acp::ToolCallUpdate {
+    fn make_tool_call_update(id: &str, status: acp::ToolCallStatus) -> acp::ToolCallUpdate {
         acp::ToolCallUpdate::new(
             id.to_string(),
             acp::ToolCallUpdateFields::new().status(status),
@@ -245,7 +241,11 @@ mod tests {
     #[test]
     fn request_tracks_tool() {
         let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_call(&make_tool_call("tool-1", "Read", Some(r#""/path/to/file""#)));
+        statuses.on_tool_call(&make_tool_call(
+            "tool-1",
+            "Read",
+            Some(r#""/path/to/file""#),
+        ));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].as_str().contains("Read"));
@@ -255,7 +255,10 @@ mod tests {
     fn update_to_success() {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
-        statuses.on_tool_call_update(&make_tool_call_update("tool-1", acp::ToolCallStatus::Completed));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-1",
+            acp::ToolCallStatus::Completed,
+        ));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].as_str().contains("✓"));
@@ -264,7 +267,10 @@ mod tests {
     #[test]
     fn unknown_update_is_ignored() {
         let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_call_update(&make_tool_call_update("unknown", acp::ToolCallStatus::Completed));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "unknown",
+            acp::ToolCallStatus::Completed,
+        ));
         let lines = statuses.render(&ctx());
         assert!(lines.is_empty());
     }
@@ -273,7 +279,10 @@ mod tests {
     fn update_to_error() {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
-        statuses.on_tool_call_update(&make_tool_call_update("tool-1", acp::ToolCallStatus::Failed));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-1",
+            acp::ToolCallStatus::Failed,
+        ));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].as_str().contains("X"));
@@ -295,7 +304,10 @@ mod tests {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
         statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
-        statuses.on_tool_call_update(&make_tool_call_update("tool-1", acp::ToolCallStatus::Completed));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-1",
+            acp::ToolCallStatus::Completed,
+        ));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 2);
         assert!(lines[0].as_str().contains("✓")); // Read completed
@@ -317,9 +329,15 @@ mod tests {
 
         statuses.on_tool_call(&make_tool_call("tool-1", "Read", Some(r#""file.rs""#)));
         statuses.on_tool_call(&make_tool_call("tool-2", "Write", Some(r#""out.rs""#)));
-        statuses.on_tool_call_update(&make_tool_call_update("tool-2", acp::ToolCallStatus::Completed));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-2",
+            acp::ToolCallStatus::Completed,
+        ));
         statuses.on_tool_call(&make_tool_call("tool-3", "Grep", Some(r#""pattern""#)));
-        statuses.on_tool_call_update(&make_tool_call_update("tool-3", acp::ToolCallStatus::Failed));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-3",
+            acp::ToolCallStatus::Failed,
+        ));
 
         let drained = statuses.drain_completed(&ctx());
         assert_eq!(drained.len(), 2);
@@ -352,11 +370,17 @@ mod tests {
 
         statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
         statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
-        statuses.on_tool_call_update(&make_tool_call_update("tool-1", acp::ToolCallStatus::Completed));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-1",
+            acp::ToolCallStatus::Completed,
+        ));
 
         statuses.drain_completed(&ctx());
 
-        statuses.on_tool_call_update(&make_tool_call_update("tool-2", acp::ToolCallStatus::Completed));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-2",
+            acp::ToolCallStatus::Completed,
+        ));
 
         let remaining = statuses.render(&ctx());
         assert_eq!(remaining.len(), 1);

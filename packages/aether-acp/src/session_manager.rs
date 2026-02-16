@@ -1,16 +1,17 @@
-use llm::parser::ModelProviderParser;
 use agent_client_protocol as acp;
 use agent_events::AgentMessage;
+use llm::parser::ModelProviderParser;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
-use crate::acp_actor::AcpActorHandle;
+use acp_utils::content::map_content_blocks_to_text;
+use acp_utils::server::AcpActorHandle;
 use crate::mappers::{
     map_agent_message_to_session_notification, map_agent_message_to_stop_reason,
-    map_content_blocks_to_text, try_into_ext_notification,
+    try_into_ext_notification,
 };
 use crate::session::Session;
 
@@ -119,8 +120,6 @@ impl acp::Agent for SessionManager {
             self.system_prompt.clone(),
             self.mcp_config_path.clone(),
             args.cwd,
-            self.actor_handle.clone(),
-            acp_session_id.clone(),
         )
         .await
         .map_err(|e| {
@@ -139,8 +138,26 @@ impl acp::Agent for SessionManager {
 
         info!("Session {} created successfully", session_id);
 
+        // Build model config option for the client
+        let (provider_name, model_name) = self
+            .model_provider
+            .split_once(':')
+            .unwrap_or(("unknown", &self.model_provider));
+
+        let model_option = acp::SessionConfigOption::select(
+            "model",
+            "Model",
+            self.model_provider.clone(),
+            vec![
+                acp::SessionConfigSelectOption::new(self.model_provider.clone(), model_name)
+                    .description(format!("Provider: {provider_name}")),
+            ],
+        )
+        .category(acp::SessionConfigOptionCategory::Model);
+
         // Prepare the response to return first
-        let response = acp::NewSessionResponse::new(acp_session_id.clone());
+        let response =
+            acp::NewSessionResponse::new(acp_session_id.clone()).config_options(vec![model_option]);
 
         // Send available commands update notification asynchronously (don't await)
         // This allows the response to be sent first, then the notification follows
