@@ -55,6 +55,19 @@ async fn test_agent_message_text_chunks() {
 }
 
 #[tokio::test]
+async fn test_agent_thought_chunks() {
+    let renderer = render(vec![
+        thought_chunk("Plan"),
+        thought_chunk(" this"),
+        prompt_done(),
+    ])
+    .await;
+
+    let expected = expected_with_prompt(&["Thought: Plan this"], TEST_WIDTH, "", TEST_AGENT);
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
 async fn test_agent_message_chunks_stream_before_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
@@ -73,6 +86,105 @@ async fn test_agent_message_chunks_stream_before_prompt_done() {
         .unwrap();
 
     let expected = expected_with_prompt(&["Hello World"], TEST_WIDTH, "", TEST_AGENT);
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_thought_and_text_chunks_stream_before_prompt_done() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentThoughtChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Thinking"))),
+        ))
+        .unwrap();
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Done"))),
+        ))
+        .unwrap();
+
+    let expected = expected_with_prompt(&["Thought: Thinking", "Done"], TEST_WIDTH, "", TEST_AGENT);
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_text_and_thought_chunks_stream_in_arrival_order() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.update_render_context_with((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("A"))),
+        ))
+        .unwrap();
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentThoughtChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("B"))),
+        ))
+        .unwrap();
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("C"))),
+        ))
+        .unwrap();
+
+    let expected = expected_with_prompt(&["A", "Thought: B", "C"], TEST_WIDTH, "", TEST_AGENT);
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_thought_prefix_resets_after_non_thought_boundary() {
+    let renderer = render(vec![
+        thought_chunk("Plan"),
+        text_chunk("Answer"),
+        thought_chunk("Refine"),
+        prompt_done(),
+    ])
+    .await;
+
+    let expected = expected_with_prompt(
+        &["Thought: Plan", "Answer", "Thought: Refine"],
+        TEST_WIDTH,
+        "",
+        TEST_AGENT,
+    );
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_multiline_thought_prefixes_only_first_line() {
+    let renderer = render(vec![thought_chunk("line one\nline two"), prompt_done()]).await;
+
+    let expected = expected_with_prompt(
+        &["Thought: line one", "line two"],
+        TEST_WIDTH,
+        "",
+        TEST_AGENT,
+    );
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
+    let renderer = render(vec![
+        thought_chunk("Thinking"),
+        tool_call("search", r#"{"q":"rust"}"#),
+        text_chunk("Done"),
+    ])
+    .await;
+
+    let expected = expected_with_prompt(
+        &["Thought: Thinking", r#"⠋ search {"q":"rust"}"#, "Done"],
+        TEST_WIDTH,
+        "",
+        TEST_AGENT,
+    );
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -312,6 +424,12 @@ async fn test_user_message_submission() {
 
 fn text_chunk(text: &str) -> TestEvent {
     TestEvent::Update(acp::SessionUpdate::AgentMessageChunk(
+        acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(text))),
+    ))
+}
+
+fn thought_chunk(text: &str) -> TestEvent {
+    TestEvent::Update(acp::SessionUpdate::AgentThoughtChunk(
         acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(text))),
     ))
 }

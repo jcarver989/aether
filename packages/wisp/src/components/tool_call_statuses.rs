@@ -154,6 +154,28 @@ impl ToolCallStatuses {
         }
     }
 
+    pub fn has_tool(&self, id: &str) -> bool {
+        self.tool_calls.contains_key(id)
+    }
+
+    pub fn is_tool_running(&self, id: &str) -> bool {
+        self.tool_calls
+            .get(id)
+            .map(|tc| matches!(tc.status, TrackedStatus::Running))
+            .unwrap_or(false)
+    }
+
+    pub fn remove_tool(&mut self, id: &str) {
+        self.tool_calls.remove(id);
+        self.tool_order.retain(|tool_id| tool_id != id);
+    }
+
+    pub fn render_tool(&self, id: &str, context: &RenderContext) -> Vec<Line> {
+        self.view_for(id, self.tick)
+            .map(|view| view.render(context))
+            .unwrap_or_default()
+    }
+
     /// Clear all tracked tool calls (e.g., after pushing to scrollback).
     #[allow(dead_code)]
     pub fn clear(&mut self) {
@@ -163,6 +185,7 @@ impl ToolCallStatuses {
 
     /// Render and remove only completed (Success/Error) tool calls,
     /// leaving Running ones in place for continued display.
+    #[allow(dead_code)]
     pub fn drain_completed(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let mut completed_ids = Vec::new();
@@ -207,6 +230,22 @@ impl ToolCallStatuses {
     pub fn is_empty(&self) -> bool {
         self.tool_calls.is_empty()
     }
+
+    fn view_for(&self, id: &str, tick: u16) -> Option<ToolCallStatusView> {
+        let tc = self.tool_calls.get(id)?;
+        let status = match &tc.status {
+            TrackedStatus::Running => ToolCallStatus::Running,
+            TrackedStatus::Success => ToolCallStatus::Success,
+            TrackedStatus::Error(msg) => ToolCallStatus::Error(msg.clone()),
+        };
+
+        Some(ToolCallStatusView {
+            name: tc.name.clone(),
+            arguments: tc.arguments.clone(),
+            status,
+            tick,
+        })
+    }
 }
 
 impl Default for ToolCallStatuses {
@@ -219,18 +258,7 @@ impl Component for ToolCallStatuses {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         for id in &self.tool_order {
-            if let Some(tc) = self.tool_calls.get(id) {
-                let status = match &tc.status {
-                    TrackedStatus::Running => ToolCallStatus::Running,
-                    TrackedStatus::Success => ToolCallStatus::Success,
-                    TrackedStatus::Error(msg) => ToolCallStatus::Error(msg.clone()),
-                };
-                let view = ToolCallStatusView {
-                    name: tc.name.clone(),
-                    arguments: tc.arguments.clone(),
-                    status,
-                    tick: self.tick,
-                };
+            if let Some(view) = self.view_for(id, self.tick) {
                 lines.extend(view.render(context));
             }
         }

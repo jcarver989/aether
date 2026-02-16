@@ -469,3 +469,36 @@ async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_reasoning_chunks_emit_thought_messages() -> Result<(), Box<dyn Error>> {
+    use llm::LlmResponse;
+
+    let llm_responses = [vec![
+        LlmResponse::start("msg_1"),
+        LlmResponse::reasoning("internal plan"),
+        LlmResponse::text("Done "),
+        LlmResponse::text(COMPLETION_SIGNAL),
+        LlmResponse::Done,
+    ]];
+
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(vec![UserMessage::text("do something")])
+        .run()
+        .await?;
+
+    assert!(
+        messages.iter().any(|m| matches!(
+            m,
+            AgentMessage::Thought { chunk, .. } if chunk == "internal plan"
+        )),
+        "Expected at least one Thought message from reasoning chunks, got: {messages:?}"
+    );
+    assert!(
+        messages.iter().any(|m| matches!(m, AgentMessage::Done)),
+        "Expected Done message"
+    );
+
+    Ok(())
+}
