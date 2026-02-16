@@ -1,16 +1,22 @@
 mod test_terminal;
 
-use llm::{ToolCallRequest, ToolCallResult};
-use agent_events::{AgentMessage, UserMessage};
+use agent_client_protocol as acp;
 use test_terminal::{TestTerminal, assert_buffer_eq};
+use wisp::acp_connection::AcpPromptHandle;
 use wisp::renderer::Renderer;
+
+/// Test events that can be fed to the renderer.
+enum TestEvent {
+    Update(acp::SessionUpdate),
+    PromptDone,
+}
 
 #[tokio::test]
 async fn test_agent_message_text_chunks() {
     let renderer = render(vec![
         text_chunk("Hello"),
         text_chunk(" World"),
-        text_complete(""),
+        prompt_done(),
     ])
     .await;
 
@@ -23,7 +29,7 @@ async fn test_agent_message_tool_call() {
 
     assert_buffer_eq(
         renderer.writer(),
-        &["● test_tool {\"arg1\": \"value1\"}", ">"],
+        &[r#"● test_tool {"arg1":"value1"}"#, ">"],
     );
 }
 
@@ -32,13 +38,13 @@ async fn test_agent_message_tool_result() {
     let args = r#"{"arg1": "value1"}"#;
     let renderer = render(vec![
         tool_call("test_tool", args),
-        tool_result("test_tool", args, "success"),
+        tool_complete("call_test_tool"),
     ])
     .await;
 
     assert_buffer_eq(
         renderer.writer(),
-        &["● test_tool ✓ {\"arg1\": \"value1\"}", ">"],
+        &[r#"● test_tool ✓ {"arg1":"value1"}"#, ">"],
     );
 }
 
@@ -46,20 +52,20 @@ async fn test_agent_message_tool_result() {
 async fn test_multiple_messages_sequence() {
     let args = r#"{"query": "test"}"#;
     let renderer = render(vec![
-        text_complete("Processing your request"),
+        text_chunk("Processing your request"),
+        prompt_done(),
         tool_call("search", args),
-        tool_result("search", args, "found items"),
-        text_complete("Found results"),
+        tool_complete("call_search"),
+        text_chunk("Found results"),
+        prompt_done(),
     ])
     .await;
 
-    // After the first text_complete, tool calls + text are pushed to scrollback.
-    // Then tool_call + tool_result happen, then text_complete pushes everything to scrollback again.
     assert_buffer_eq(
         renderer.writer(),
         &[
             "Processing your request",
-            "● search ✓ {\"query\": \"test\"}",
+            r#"● search ✓ {"query":"test"}"#,
             "Found results",
             ">",
         ],
@@ -68,49 +74,48 @@ async fn test_multiple_messages_sequence() {
 
 #[tokio::test]
 async fn test_streaming_tool_call_arguments() {
-    let args1 = r#"{"file":"#;
-    let args2 = r#"{"file": "test.rs"#;
-    let args_complete = r#"{"file": "test.rs"}"#;
-
+    // In ACP, streaming args come via ToolCallUpdate with raw_input
     let renderer = render(vec![
-        tool_call_with_id("Read", "call_1", args1),
-        tool_call_with_id("Read", "call_1", args2),
-        tool_call_with_id("Read", "call_1", args_complete),
-        tool_result_with_id("Read", "call_1", args_complete, "file contents"),
+        tool_call_with_id("Read", "call_1", ""),
+        tool_update_with_args("call_1", r#"{"file":"test.rs"}"#),
+        tool_complete("call_1"),
     ])
     .await;
 
     assert_buffer_eq(
         renderer.writer(),
-        &["● Read ✓ {\"file\": \"test.rs\"}", ">"],
+        &[r#"● Read ✓ {"file":"test.rs"}"#, ">"],
     );
 }
 
 #[tokio::test]
 async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
+    // Repeated ToolCall messages with same ID update the entry, preserving name
     let renderer = render(vec![
         tool_call_with_id("Read", "call_1", ""),
-        tool_call_with_id("", "call_1", r#"{"file":"#),
-        tool_call_with_id("", "call_1", r#""test.rs"}"#),
+        tool_call_with_id("", "call_1", r#"{"file":"test.rs"}"#),
     ])
     .await;
 
-    assert_buffer_eq(renderer.writer(), &["● Read {\"file\":\"test.rs\"}", ">"]);
+    assert_buffer_eq(
+        renderer.writer(),
+        &[r#"● Read {"file":"test.rs"}"#, ">"],
+    );
 }
 
 #[tokio::test]
-async fn test_tool_progress_renders_running_tool_before_completion() {
-    let renderer = render(vec![tool_progress_with_id(
+async fn test_tool_progress_renders_running_tool() {
+    let renderer = render(vec![tool_call_with_id(
         "Read",
         "call_1",
         r#"{"file":"test.rs"}"#,
-        50.0,
-        Some(100.0),
-        Some("Reading file"),
     )])
     .await;
 
-    assert_buffer_eq(renderer.writer(), &["● Read {\"file\":\"test.rs\"}", ">"]);
+    assert_buffer_eq(
+        renderer.writer(),
+        &[r#"● Read {"file":"test.rs"}"#, ">"],
+    );
 }
 
 #[tokio::test]
@@ -123,18 +128,18 @@ async fn test_multiple_parallel_tool_calls() {
         tool_call("Read", args1),
         tool_call("Grep", args2),
         tool_call("Glob", args3),
-        tool_result("Read", args1, "file contents"),
-        tool_result("Grep", args2, "matches"),
-        tool_result("Glob", args3, "files"),
+        tool_complete("call_Read"),
+        tool_complete("call_Grep"),
+        tool_complete("call_Glob"),
     ])
     .await;
 
     assert_buffer_eq(
         renderer.writer(),
         &[
-            "● Read ✓ {\"file\": \"test.rs\"}",
-            "● Grep ✓ {\"pattern\": \"foo\"}",
-            "● Glob ✓ {\"path\": \"src/\"}",
+            r#"● Read ✓ {"file":"test.rs"}"#,
+            r#"● Grep ✓ {"pattern":"foo"}"#,
+            r#"● Glob ✓ {"path":"src/"}"#,
             ">",
         ],
     );
@@ -143,169 +148,144 @@ async fn test_multiple_parallel_tool_calls() {
 #[tokio::test]
 async fn test_text_complete_preserves_running_tool_calls() {
     let renderer = render(vec![
-        // Two tool calls start
         tool_call_with_id("Read", "call_1", r#"{"file": "a.rs"}"#),
         tool_call_with_id("Write", "call_2", r#"{"file": "b.rs"}"#),
-        // Only Read completes
-        tool_result_with_id("Read", "call_1", r#"{"file": "a.rs"}"#, "contents"),
-        // Text completes — should push completed tool calls to scrollback
-        // but keep the Running "Write" tool call in the managed frame
-        text_complete("Done reading"),
+        tool_complete("call_1"),
+        text_chunk("Done reading"),
+        prompt_done(),
     ])
     .await;
 
-    // Scrollback: completed Read + text. Managed frame: running Write + prompt.
     assert_buffer_eq(
         renderer.writer(),
         &[
-            "● Read ✓ {\"file\": \"a.rs\"}",
+            r#"● Read ✓ {"file":"a.rs"}"#,
             "Done reading",
-            "● Write {\"file\": \"b.rs\"}",
+            r#"● Write {"file":"b.rs"}"#,
             ">",
         ],
     );
 }
 
 #[tokio::test]
-async fn test_late_result_after_text_complete() {
+async fn test_late_result_after_prompt_done() {
     let renderer = render(vec![
-        // Two tool calls start
         tool_call_with_id("Read", "call_1", r#"{"file": "a.rs"}"#),
         tool_call_with_id("Write", "call_2", r#"{"file": "b.rs"}"#),
-        // Only Read completes
-        tool_result_with_id("Read", "call_1", r#"{"file": "a.rs"}"#, "contents"),
-        // Text completes — drain completed, keep running
-        text_complete("Done reading"),
-        // Late result for Write arrives
-        tool_result_with_id("Write", "call_2", r#"{"file": "b.rs"}"#, "written"),
+        tool_complete("call_1"),
+        text_chunk("Done reading"),
+        prompt_done(),
+        tool_complete("call_2"),
     ])
     .await;
 
-    // After the late result, Write should show as completed (✓) in the managed frame
     assert_buffer_eq(
         renderer.writer(),
         &[
-            "● Read ✓ {\"file\": \"a.rs\"}",
+            r#"● Read ✓ {"file":"a.rs"}"#,
             "Done reading",
-            "● Write ✓ {\"file\": \"b.rs\"}",
+            r#"● Write ✓ {"file":"b.rs"}"#,
             ">",
         ],
     );
 }
 
-async fn render(messages: Vec<AgentMessage>) -> Renderer<TestTerminal> {
-    let terminal = TestTerminal::new(200, 40);
-    let mut renderer = Renderer::new(terminal, 0);
-    renderer.update_render_context_with((200, 40));
+fn render_sync(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer<TestTerminal> {
+    let terminal = TestTerminal::new(size.0, size.1);
+    let mut renderer = Renderer::new(terminal);
+    renderer.update_render_context_with(size);
 
-    for msg in messages {
-        renderer.on_agent_message(msg).await.unwrap();
+    for event in events {
+        match event {
+            TestEvent::Update(update) => renderer.on_session_update(update).unwrap(),
+            TestEvent::PromptDone => renderer.on_prompt_done().unwrap(),
+        }
     }
 
     renderer
 }
 
+async fn render(events: Vec<TestEvent>) -> Renderer<TestTerminal> {
+    render_sync(events, (200, 40))
+}
+
+async fn render_with_size(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer<TestTerminal> {
+    render_sync(events, size)
+}
+
 #[tokio::test]
 async fn test_user_message_submission() {
-    use tokio::sync::mpsc;
-
     let terminal = TestTerminal::new(200, 40);
-    let mut renderer = Renderer::new(terminal, 0);
+    let mut renderer = Renderer::new(terminal);
     renderer.update_render_context_with((200, 40));
 
-    let (tx, _rx) = mpsc::channel(10);
+    let handle = AcpPromptHandle::disconnected();
+    let session_id = acp::SessionId::new("test-session");
 
-    // Render initial prompt
     renderer.initial_render().unwrap();
 
-    // Simulate typing "Hello world" and pressing Enter
-    type_string(&mut renderer, "Hello world", &tx).await;
-    press_enter(&mut renderer, &tx).await;
+    type_string(&mut renderer, "Hello world", &handle, &session_id);
+    press_enter(&mut renderer, &handle, &session_id);
 
-    // push_to_scrollback clears the managed region (row 0 prompt), writes "Hello world"
-    // at row 0, then render_frame draws the new prompt at row 1
     assert_buffer_eq(
         renderer.writer(),
         &[
-            "Hello world", // User message in scrollback (overwrites initial prompt)
+            "Hello world", // User message in scrollback
             ">",           // New prompt
         ],
     );
 }
 
-fn text_chunk(chunk: &str) -> AgentMessage {
-    AgentMessage::Text {
-        message_id: "test_msg".to_string(),
-        chunk: chunk.to_string(),
-        is_complete: false,
-        model_name: "test".to_string(),
-    }
+// ── Test helpers ──────────────────────────────────────────────────────
+
+fn text_chunk(text: &str) -> TestEvent {
+    TestEvent::Update(acp::SessionUpdate::AgentMessageChunk(
+        acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(text))),
+    ))
 }
 
-fn text_complete(text: &str) -> AgentMessage {
-    AgentMessage::Text {
-        message_id: "test_msg".to_string(),
-        chunk: text.to_string(),
-        is_complete: true,
-        model_name: "test".to_string(),
-    }
+fn prompt_done() -> TestEvent {
+    TestEvent::PromptDone
 }
 
-fn tool_call(name: &str, args: &str) -> AgentMessage {
+fn tool_call(name: &str, args: &str) -> TestEvent {
     tool_call_with_id(name, &format!("call_{name}"), args)
 }
 
-fn tool_call_with_id(name: &str, id: &str, args: &str) -> AgentMessage {
-    AgentMessage::ToolCall {
-        request: ToolCallRequest {
-            id: id.to_string(),
-            name: name.to_string(),
-            arguments: args.to_string(),
-        },
-        model_name: "test".to_string(),
+fn tool_call_with_id(name: &str, id: &str, args: &str) -> TestEvent {
+    let mut tc = acp::ToolCall::new(id.to_string(), name);
+    if !args.is_empty() {
+        let value: serde_json::Value = serde_json::from_str(args)
+            .unwrap_or_else(|_| serde_json::Value::String(args.to_string()));
+        tc = tc.raw_input(value);
     }
+    TestEvent::Update(acp::SessionUpdate::ToolCall(tc))
 }
 
-fn tool_result(name: &str, args: &str, result: &str) -> AgentMessage {
-    tool_result_with_id(name, &format!("call_{name}"), args, result)
+fn tool_complete(id: &str) -> TestEvent {
+    TestEvent::Update(acp::SessionUpdate::ToolCallUpdate(
+        acp::ToolCallUpdate::new(
+            id.to_string(),
+            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
+        ),
+    ))
 }
 
-fn tool_result_with_id(name: &str, id: &str, args: &str, result: &str) -> AgentMessage {
-    AgentMessage::ToolResult {
-        result: ToolCallResult {
-            id: id.to_string(),
-            name: name.to_string(),
-            arguments: args.to_string(),
-            result: result.to_string(),
-        },
-        model_name: "test".to_string(),
-    }
+fn tool_update_with_args(id: &str, args: &str) -> TestEvent {
+    let value: serde_json::Value = serde_json::from_str(args).unwrap();
+    TestEvent::Update(acp::SessionUpdate::ToolCallUpdate(
+        acp::ToolCallUpdate::new(
+            id.to_string(),
+            acp::ToolCallUpdateFields::new().raw_input(value),
+        ),
+    ))
 }
 
-fn tool_progress_with_id(
-    name: &str,
-    id: &str,
-    args: &str,
-    progress: f64,
-    total: Option<f64>,
-    message: Option<&str>,
-) -> AgentMessage {
-    AgentMessage::ToolProgress {
-        request: ToolCallRequest {
-            id: id.to_string(),
-            name: name.to_string(),
-            arguments: args.to_string(),
-        },
-        progress,
-        total,
-        message: message.map(str::to_string),
-    }
-}
-
-async fn type_string<W: std::io::Write>(
+fn type_string<W: std::io::Write>(
     renderer: &mut Renderer<W>,
     text: &str,
-    tx: &tokio::sync::mpsc::Sender<UserMessage>,
+    handle: &AcpPromptHandle,
+    session_id: &acp::SessionId,
 ) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -316,13 +296,16 @@ async fn type_string<W: std::io::Write>(
             kind: crossterm::event::KeyEventKind::Press,
             state: crossterm::event::KeyEventState::empty(),
         };
-        renderer.on_key_event(key_event, tx).await.unwrap();
+        renderer
+            .on_key_event(key_event, handle, session_id)
+            .unwrap();
     }
 }
 
-async fn press_enter<W: std::io::Write>(
+fn press_enter<W: std::io::Write>(
     renderer: &mut Renderer<W>,
-    tx: &tokio::sync::mpsc::Sender<UserMessage>,
+    handle: &AcpPromptHandle,
+    session_id: &acp::SessionId,
 ) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -332,5 +315,79 @@ async fn press_enter<W: std::io::Write>(
         kind: crossterm::event::KeyEventKind::Press,
         state: crossterm::event::KeyEventState::empty(),
     };
-    renderer.on_key_event(enter_event, tx).await.unwrap();
+    renderer
+        .on_key_event(enter_event, handle, session_id)
+        .unwrap();
+}
+
+// ── Regression tests: small terminals that force scrolling ───────────
+
+#[tokio::test]
+async fn test_no_ghost_on_tool_completion_small_terminal() {
+    let args = r#"{"file": "a.rs"}"#;
+    let renderer = render_with_size(
+        vec![
+            tool_call("Read", args),
+            tool_complete("call_Read"),
+            text_chunk("Done"),
+            prompt_done(),
+        ],
+        (80, 4),
+    )
+    .await;
+
+    let lines = renderer.writer().get_lines();
+    let tool_count = lines.iter().filter(|l| l.contains("Read")).count();
+    assert_eq!(
+        tool_count, 1,
+        "Tool name should appear exactly once, got {tool_count}.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_tool_updates_in_place_after_scrollback_push() {
+    let renderer = render_with_size(
+        vec![
+            tool_call_with_id("Read", "call_1", r#"{"file": "a.rs"}"#),
+            tool_call_with_id("Write", "call_2", r#"{"file": "b.rs"}"#),
+            tool_complete("call_1"),
+            text_chunk("Halfway"),
+            prompt_done(),
+            tool_complete("call_2"),
+        ],
+        (80, 4),
+    )
+    .await;
+
+    let lines = renderer.writer().get_lines();
+    let write_count = lines.iter().filter(|l| l.contains("Write")).count();
+    assert_eq!(
+        write_count, 1,
+        "Write tool should appear exactly once, got {write_count}.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_multiple_scrollback_pushes_tiny_terminal() {
+    let renderer = render_with_size(
+        vec![
+            text_chunk("First message"),
+            prompt_done(),
+            text_chunk("Second message"),
+            prompt_done(),
+            text_chunk("Third message"),
+            prompt_done(),
+        ],
+        (80, 3),
+    )
+    .await;
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains(">")),
+        "Prompt should be visible.\nBuffer:\n{}",
+        lines.join("\n")
+    );
 }
