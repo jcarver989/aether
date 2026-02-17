@@ -7,7 +7,7 @@ use wisp::components::command_picker::CommandEntry;
 use wisp::components::screen_view::ScreenView;
 use wisp::controller::{ControllerEffect, ScreenController};
 use wisp::error::WispError;
-use wisp::renderer::Renderer as FrameRenderer;
+use wisp::tui::Renderer as FrameRenderer;
 
 const TEST_AGENT: &str = "test-agent";
 const TEST_WIDTH: u16 = 200;
@@ -48,8 +48,8 @@ impl Renderer {
     }
 
     fn initial_render(&mut self) -> std::io::Result<()> {
-        let layout = self.controller.layout(self.renderer.context());
-        self.renderer.render(&layout)
+        let root = self.controller.root();
+        self.renderer.render(&root)
     }
 
     fn on_key_event(
@@ -147,8 +147,8 @@ impl Renderer {
         }
 
         if should_render {
-            let layout = self.controller.layout(self.renderer.context());
-            self.renderer.render(&layout)?;
+            let root = self.controller.root();
+            self.renderer.render(&root)?;
         }
 
         Ok(action)
@@ -172,8 +172,8 @@ impl Renderer {
         }
 
         if should_render {
-            let layout = self.controller.layout(self.renderer.context());
-            self.renderer.render(&layout)?;
+            let root = self.controller.root();
+            self.renderer.render(&root)?;
         }
 
         Ok(())

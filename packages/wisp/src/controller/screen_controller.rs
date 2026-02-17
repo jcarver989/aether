@@ -6,7 +6,7 @@ use crate::components::conversation_window::{
 use crate::components::grid_loader::GridLoader;
 use crate::components::screen_view::{ScreenView, ScreenViewAction, ScreenViewRenderProps};
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::tui::{Line, RenderContext, ScreenLayout};
+use crate::tui::{CursorComponent, Line, RenderContext};
 use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
     SessionConfigSelectOptions, SessionUpdate,
@@ -295,8 +295,8 @@ impl ScreenController {
         vec![ControllerEffect::Render]
     }
 
-    pub fn layout(&self, context: &RenderContext) -> ScreenLayout {
-        self.screen_view.layout(self.render_props(), context)
+    pub fn root(&self) -> impl CursorComponent + '_ {
+        self.screen_view.root(self.render_props())
     }
 
     fn render_props(&self) -> ScreenViewRenderProps<'_> {
