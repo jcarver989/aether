@@ -8,7 +8,7 @@ use llm::{
     ChatMessage, Context, LlmError, LlmResponse, StreamingModelProvider, ToolCallError,
     ToolCallRequest, ToolCallResult,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,18 +40,12 @@ pub struct Agent {
     tool_timeout: Duration,
     token_tracker: TokenTracker,
     compaction_config: Option<CompactionConfig>,
-    /// Maximum number of times to auto-continue when LLM stops without completion signal
-    max_auto_continues: u32,
-    /// Current count of consecutive auto-continue attempts (resets after tool calls or completion)
-    auto_continue_count: u32,
-    /// Track whether any tool calls have been made in this conversation
-    /// Auto-continue should only trigger after at least one tool call has been made
-    has_made_tool_calls: bool,
+    auto_continue: AutoContinue,
+    active_requests: HashMap<String, ToolCallRequest>,
 }
 
 impl Agent {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         llm: Arc<dyn StreamingModelProvider>,
         context: Context,
         mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
@@ -60,7 +54,7 @@ impl Agent {
         middleware: Middleware,
         tool_timeout: Duration,
         compaction_config: Option<CompactionConfig>,
-        max_auto_continues: u32,
+        auto_continue: AutoContinue,
     ) -> Self {
         let mut streams: StreamMap<String, EventStream> = StreamMap::new();
         streams.insert(
@@ -78,9 +72,8 @@ impl Agent {
             tool_timeout,
             token_tracker: TokenTracker::new(200_000), // Default to Claude's 200k context limit
             compaction_config,
-            max_auto_continues,
-            auto_continue_count: 0,
-            has_made_tool_calls: false,
+            auto_continue,
+            active_requests: HashMap::new(),
         }
     }
 
@@ -148,29 +141,26 @@ impl Agent {
                 state = IterationState::new();
 
                 if has_tool_calls {
-                    self.has_made_tool_calls = true;
-                    self.auto_continue_count = 0;
+                    self.auto_continue.on_tool_calls();
                     self.start_llm_stream();
                 } else if has_completion_signal {
-                    self.auto_continue_count = 0;
+                    self.auto_continue.on_completion();
                     if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
                         tracing::warn!("Failed to send Done message: {:?}", e);
                     }
-                } else if self.has_made_tool_calls
-                    && self.auto_continue_count < self.max_auto_continues
-                {
-                    self.auto_continue_count += 1;
+                } else if self.auto_continue.should_continue() {
+                    self.auto_continue.advance();
                     tracing::info!(
                         "LLM stopped without completion signal or tool calls, auto-continuing (attempt {}/{})",
-                        self.auto_continue_count,
-                        self.max_auto_continues
+                        self.auto_continue.count(),
+                        self.auto_continue.max()
                     );
 
                     let _ = self
                         .agent_message_tx
                         .send(AgentMessage::AutoContinue {
-                            attempt: self.auto_continue_count,
-                            max_attempts: self.max_auto_continues,
+                            attempt: self.auto_continue.count(),
+                            max_attempts: self.auto_continue.max(),
                         })
                         .await;
 
@@ -179,9 +169,9 @@ impl Agent {
                 } else {
                     tracing::warn!(
                         "LLM stopped {} times without completion signal, giving up",
-                        self.max_auto_continues
+                        self.auto_continue.max()
                     );
-                    self.auto_continue_count = 0;
+                    self.auto_continue.on_completion();
                     if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
                         tracing::warn!("Failed to send Done message: {:?}", e);
                     }
@@ -424,8 +414,8 @@ impl Agent {
             return;
         }
 
-        state
-            .pending_tool_calls
+        state.pending_tool_ids.insert(tool_call.id.clone());
+        self.active_requests
             .insert(tool_call.id.clone(), tool_call.clone());
 
         let msg_future = self.agent_message_tx.send(AgentMessage::ToolCall {
@@ -548,7 +538,7 @@ impl Agent {
                     progress.total.unwrap_or(0.0)
                 );
 
-                if let Some(request) = state.pending_tool_calls.get(&tool_id) {
+                if let Some(request) = self.active_requests.get(&tool_id) {
                     let _ = self
                         .agent_message_tx
                         .send(AgentMessage::ToolProgress {
@@ -569,7 +559,8 @@ impl Agent {
                         tool_result.result.len()
                     );
 
-                    if let Some(_request) = state.pending_tool_calls.remove(&tool_result.id) {
+                    if state.pending_tool_ids.remove(&tool_result.id) {
+                        self.active_requests.remove(&tool_result.id);
                         state.completed_tool_calls.push(Ok(tool_result.clone()));
 
                         let msg = AgentMessage::ToolResult {
@@ -586,7 +577,8 @@ impl Agent {
                 }
 
                 Err(tool_error) => {
-                    if let Some(_request) = state.pending_tool_calls.remove(&tool_error.id) {
+                    if state.pending_tool_ids.remove(&tool_error.id) {
+                        self.active_requests.remove(&tool_error.id);
                         state.completed_tool_calls.push(Err(tool_error.clone()));
 
                         let _ = self
@@ -639,35 +631,76 @@ impl Agent {
     }
 }
 
+pub(crate) struct AutoContinue {
+    max: u32,
+    count: u32,
+    tools_used: bool,
+}
+
+impl AutoContinue {
+    pub(crate) fn new(max: u32) -> Self {
+        Self {
+            max,
+            count: 0,
+            tools_used: false,
+        }
+    }
+
+    fn on_tool_calls(&mut self) {
+        self.tools_used = true;
+        self.count = 0;
+    }
+
+    fn on_completion(&mut self) {
+        self.count = 0;
+    }
+
+    fn should_continue(&self) -> bool {
+        self.tools_used && self.count < self.max
+    }
+
+    fn advance(&mut self) {
+        self.count += 1;
+    }
+
+    fn count(&self) -> u32 {
+        self.count
+    }
+
+    fn max(&self) -> u32 {
+        self.max
+    }
+}
+
 #[derive(Debug)]
 struct IterationState {
-    pub current_message_id: Option<String>,
-    pub message_content: String,
-    pub reasoning_content: String,
-    pub pending_tool_calls: HashMap<String, ToolCallRequest>,
-    pub completed_tool_calls: Vec<Result<ToolCallResult, ToolCallError>>,
-    pub llm_done: bool,
-    pub cancelled: bool,
+    current_message_id: Option<String>,
+    message_content: String,
+    reasoning_content: String,
+    pending_tool_ids: HashSet<String>,
+    completed_tool_calls: Vec<Result<ToolCallResult, ToolCallError>>,
+    llm_done: bool,
+    cancelled: bool,
 }
 
 impl IterationState {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             current_message_id: None,
             message_content: String::new(),
             reasoning_content: String::new(),
-            pending_tool_calls: HashMap::new(),
+            pending_tool_ids: HashSet::new(),
             completed_tool_calls: Vec::new(),
             llm_done: false,
             cancelled: false,
         }
     }
 
-    pub fn is_complete(&self) -> bool {
-        self.llm_done && self.pending_tool_calls.is_empty()
+    fn is_complete(&self) -> bool {
+        self.llm_done && self.pending_tool_ids.is_empty()
     }
 
-    pub fn has_tool_calls(&self) -> bool {
+    fn has_tool_calls(&self) -> bool {
         !self.completed_tool_calls.is_empty()
     }
 }

@@ -21,7 +21,11 @@ agent-client-protocol = { workspace = true }
 mcp_utils = { path = "../mcp-utils"}
 llm = { path = "../llm" }
 
+[features]
+testing = []
+
 [dev-dependencies]
+aether = { path = ".", features = ["testing"] }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
 

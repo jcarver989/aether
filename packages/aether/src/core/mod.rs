@@ -14,7 +14,8 @@ pub use prompt::*;
 pub use substitution::*;
 
 use llm::StreamingModelProvider;
+use std::sync::Arc;
 
 pub fn agent(llm: impl StreamingModelProvider + 'static) -> AgentBuilder {
-    AgentBuilder::new(Box::new(llm))
+    AgentBuilder::new(Arc::new(llm))
 }
