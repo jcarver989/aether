@@ -456,8 +456,10 @@ impl<T: Write> Renderer<T> {
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Backspace => {
-                    picker.pop_query_char();
-                    self.render_frame()?;
+                    if !picker.query.is_empty() {
+                        picker.pop_query_char();
+                        self.render_frame()?;
+                    }
                     return Ok(LoopAction::Continue);
                 }
                 _ => return Ok(LoopAction::Continue),
@@ -946,9 +948,10 @@ impl<T: Write> Renderer<T> {
     /// Handle an extension notification from ACP.
     pub fn on_ext_notification(&mut self, notification: ExtNotification) -> std::io::Result<()> {
         if notification.method.as_ref() == CONTEXT_USAGE_METHOD {
-            if let Some(ratio) = serde_json::from_str::<serde_json::Value>(notification.params.get())
-                .ok()
-                .and_then(|v| v.get("usage_ratio")?.as_f64())
+            if let Some(ratio) =
+                serde_json::from_str::<serde_json::Value>(notification.params.get())
+                    .ok()
+                    .and_then(|v| v.get("usage_ratio")?.as_f64())
             {
                 let pct_left = ((1.0 - ratio) * 100.0).round() as u8;
                 self.context_usage_pct = Some(pct_left);

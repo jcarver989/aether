@@ -8,19 +8,25 @@ mod tui;
 use acp_utils::client::AcpEvent;
 use agent_client_protocol as acp;
 use clap::Parser;
-use crossterm::event::{
-    DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind, poll, read,
-};
+use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind, read};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use renderer::LoopAction;
 use std::io::{self, Write};
 use std::process::ExitCode;
 use std::time::Duration;
+use tokio::sync::mpsc;
 use tokio::{select, time};
 
 use crate::app_state::AppState;
 use crate::cli::Cli;
 use crate::renderer::Renderer;
+
+#[derive(Debug)]
+enum TerminalEvent {
+    Key(crossterm::event::KeyEvent),
+    Paste(String),
+    Resize(u16, u16),
+}
 
 #[derive(Debug, Clone)]
 struct NonInteractiveThoughtState {
@@ -68,6 +74,39 @@ impl NonInteractiveThoughtState {
             Some("\n")
         }
     }
+}
+
+fn spawn_terminal_event_task() -> mpsc::UnboundedReceiver<TerminalEvent> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    tokio::task::spawn_blocking(move || {
+        loop {
+            let event = match read() {
+                Ok(event) => event,
+                Err(e) => {
+                    eprintln!("Event read error: {e}");
+                    continue;
+                }
+            };
+
+            let terminal_event = match event {
+                Event::Key(key_event) => Some(TerminalEvent::Key(key_event)),
+                Event::Paste(text) => Some(TerminalEvent::Paste(text)),
+                Event::Resize(cols, rows) => Some(TerminalEvent::Resize(cols, rows)),
+                _ => None,
+            };
+
+            if let Some(event) = terminal_event
+                && tx.send(event).is_err()
+            {
+                break;
+            }
+        }
+    });
+    rx
+}
+
+fn should_handle_key_event(kind: KeyEventKind) -> bool {
+    matches!(kind, KeyEventKind::Press | KeyEventKind::Repeat)
 }
 
 #[tokio::main]
@@ -125,6 +164,9 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
 
     renderer.update_render_context();
     renderer.initial_render()?;
+    let mut terminal_event_rx = spawn_terminal_event_task();
+    let mut animation_interval = time::interval(Duration::from_millis(16));
+    animation_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
     loop {
         select! {
@@ -157,44 +199,41 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                 }
             }
 
-            _ = time::sleep(Duration::from_millis(50)) => {
-                if let Err(e) = renderer.on_tick() {
-                    eprintln!("Error on tick: {e}");
-                }
-                if let Ok(true) = poll(Duration::from_millis(0)) {
-                    match read() {
-                        Ok(Event::Key(key_event)) => {
-                            if key_event.kind == KeyEventKind::Press {
-                                match renderer.on_key_event(
-                                    key_event,
-                                    &state.prompt_handle,
-                                    &state.session_id,
-                                ) {
-                                    Ok(LoopAction::Exit) => {
-                                        break;
-                                    }
-                                    Ok(LoopAction::Continue) => {}
-                                    Err(e) => {
-                                        eprintln!("Error handling key event: {e}");
-                                    }
+            Some(terminal_event) = terminal_event_rx.recv() => {
+                match terminal_event {
+                    TerminalEvent::Key(key_event) => {
+                        if should_handle_key_event(key_event.kind) {
+                            match renderer.on_key_event(
+                                key_event,
+                                &state.prompt_handle,
+                                &state.session_id,
+                            ) {
+                                Ok(LoopAction::Exit) => {
+                                    break;
+                                }
+                                Ok(LoopAction::Continue) => {}
+                                Err(e) => {
+                                    eprintln!("Error handling key event: {e}");
                                 }
                             }
                         }
-                        Ok(Event::Paste(text)) => {
-                            if let Err(e) = renderer.on_paste(&text) {
-                                eprintln!("Error handling paste: {e}");
-                            }
-                        }
-                        Ok(Event::Resize(cols, rows)) => {
-                            if let Err(e) = renderer.on_resize(cols, rows) {
-                                eprintln!("Error handling resize: {e}");
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Event read error: {e}");
-                        }
-                        _ => {}
                     }
+                    TerminalEvent::Paste(text) => {
+                        if let Err(e) = renderer.on_paste(&text) {
+                            eprintln!("Error handling paste: {e}");
+                        }
+                    }
+                    TerminalEvent::Resize(cols, rows) => {
+                        if let Err(e) = renderer.on_resize(cols, rows) {
+                            eprintln!("Error handling resize: {e}");
+                        }
+                    }
+                }
+            }
+
+            _ = animation_interval.tick() => {
+                if let Err(e) = renderer.on_tick() {
+                    eprintln!("Error on tick: {e}");
                 }
             }
         }
@@ -293,7 +332,8 @@ async fn run_non_interactive(
 
 #[cfg(test)]
 mod tests {
-    use super::NonInteractiveThoughtState;
+    use super::{NonInteractiveThoughtState, should_handle_key_event};
+    use crossterm::event::KeyEventKind;
 
     #[test]
     fn non_interactive_prefixes_once_per_contiguous_block() {
@@ -318,5 +358,12 @@ mod tests {
             Some("Thought: plan\n".to_string())
         );
         assert_eq!(state.on_non_thought_update(), None);
+    }
+
+    #[test]
+    fn handles_press_and_repeat_key_events() {
+        assert!(should_handle_key_event(KeyEventKind::Press));
+        assert!(should_handle_key_event(KeyEventKind::Repeat));
+        assert!(!should_handle_key_event(KeyEventKind::Release));
     }
 }
