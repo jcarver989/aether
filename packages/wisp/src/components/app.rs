@@ -7,10 +7,10 @@ use crate::components::conversation_window::{
     extend_with_vertical_margin, render_stream_segment,
 };
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
-use crate::components::grid_loader::GridLoader;
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
 use crate::components::tool_call_statuses::ToolCallStatuses;
+use crate::tui::spinner::Spinner;
 use crate::tui::{
     Cursor, CursorComponent, HandlesInput, InputOutcome, Line, RenderContext, RenderOutput,
 };
@@ -51,7 +51,7 @@ struct SelectedFileMention {
 
 pub struct App {
     tool_call_statuses: ToolCallStatuses,
-    grid_loader: GridLoader,
+    grid_loader: Spinner,
     conversation: ConversationBuffer,
     input_buffer: String,
     agent_name: String,
@@ -73,7 +73,7 @@ impl App {
     pub fn new(agent_name: String, config_options: &[SessionConfigOption]) -> Self {
         Self {
             tool_call_statuses: ToolCallStatuses::new(),
-            grid_loader: GridLoader::default(),
+            grid_loader: Spinner::default(),
             conversation: ConversationBuffer::new(),
             input_buffer: String::new(),
             agent_name,
