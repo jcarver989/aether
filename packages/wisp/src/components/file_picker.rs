@@ -67,6 +67,7 @@ impl FilePicker {
         }
     }
 
+    #[allow(dead_code)]
     pub fn from_matches(files: Vec<FileMatch>) -> Self {
         Self {
             combobox: Combobox::from_matches(files),
@@ -88,6 +89,12 @@ impl FilePicker {
         } else {
             None
         }
+    }
+}
+
+impl Default for FilePicker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

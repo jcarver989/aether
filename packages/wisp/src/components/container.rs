@@ -17,6 +17,11 @@ impl<'a> Container<'a> {
         self.children.len()
     }
 
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.children.is_empty()
+    }
+
     pub fn render_with_offsets(&self, context: &RenderContext) -> (Vec<Line>, Vec<usize>) {
         let mut lines = Vec::new();
         let mut offsets = Vec::with_capacity(self.children.len());

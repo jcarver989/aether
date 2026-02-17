@@ -3,7 +3,6 @@ use super::theme::Theme;
 use crossterm::event::KeyEvent;
 
 pub struct RenderContext {
-    #[allow(dead_code)]
     pub size: (u16, u16),
     pub theme: Theme,
 }

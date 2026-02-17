@@ -66,7 +66,7 @@ impl InputPrompt<'_> {
             } else {
                 &continuation_prompt
             };
-            let pad_len = content_width.saturating_sub(display_width_ansi(&chunk));
+            let pad_len = content_width.saturating_sub(display_width_ansi(chunk));
             let middle = format!("{border_left} {prompt}{chunk}{:pad_len$}{border_right}", "");
             lines.push(Line::new(middle));
         }

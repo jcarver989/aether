@@ -1,14 +1,16 @@
 mod app_state;
 mod cli;
 mod components;
-mod controller;
 mod error;
 mod tui;
 
+use crate::app_state::AppState;
+use crate::cli::Cli;
+use crate::tui::Renderer;
 use acp_utils::client::AcpEvent;
 use agent_client_protocol as acp;
 use clap::Parser;
-use controller::{ControllerEffect, ScreenController};
+use components::app::{App, AppEvent};
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind, read};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use std::io::{self, Write};
@@ -16,10 +18,6 @@ use std::process::ExitCode;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::{select, time};
-
-use crate::app_state::AppState;
-use crate::cli::Cli;
-use crate::tui::Renderer;
 
 #[derive(Debug)]
 enum TerminalEvent {
@@ -109,27 +107,27 @@ fn should_handle_key_event(kind: KeyEventKind) -> bool {
     matches!(kind, KeyEventKind::Press | KeyEventKind::Repeat)
 }
 
-fn apply_controller_effects<T: Write>(
+fn apply_screen_effects<T: Write>(
     renderer: &mut Renderer<T>,
-    controller: &ScreenController,
+    screen: &App,
     prompt_handle: &acp_utils::client::AcpPromptHandle,
     session_id: &acp::SessionId,
-    effects: Vec<ControllerEffect>,
+    effects: Vec<AppEvent>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut should_render = false;
 
     for effect in effects {
         match effect {
-            ControllerEffect::Exit => return Ok(true),
-            ControllerEffect::Render => should_render = true,
-            ControllerEffect::PushScrollback(lines) => renderer.push_to_scrollback(&lines)?,
-            ControllerEffect::PromptSubmit {
+            AppEvent::Exit => return Ok(true),
+            AppEvent::Render => should_render = true,
+            AppEvent::PushScrollback(lines) => renderer.push_to_scrollback(&lines)?,
+            AppEvent::PromptSubmit {
                 user_input,
                 content_blocks,
             } => {
                 prompt_handle.prompt(session_id, &user_input, content_blocks)?;
             }
-            ControllerEffect::SetConfigOption {
+            AppEvent::SetConfigOption {
                 config_id,
                 new_value,
             } => {
@@ -139,8 +137,7 @@ fn apply_controller_effects<T: Write>(
     }
 
     if should_render {
-        let root = controller.root();
-        renderer.render(&root)?;
+        renderer.render(screen)?;
     }
 
     Ok(false)
@@ -193,11 +190,11 @@ async fn main() -> ExitCode {
 async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     crossterm::execute!(io::stdout(), EnableBracketedPaste)?;
-    let mut controller = ScreenController::new(state.agent_name.clone(), &state.config_options);
+    let mut screen = App::new(state.agent_name.clone(), &state.config_options);
     let mut renderer = Renderer::new(io::stdout());
 
     renderer.update_render_context();
-    renderer.render(&controller.root())?;
+    renderer.render(&screen)?;
     let mut terminal_event_rx = spawn_terminal_event_task();
     let mut animation_interval = time::interval(Duration::from_millis(16));
     animation_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -207,10 +204,10 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
             Some(event) = state.event_rx.recv() => {
                 match event {
                     AcpEvent::SessionUpdate(update) => {
-                        let effects = controller.on_session_update(*update);
-                        if let Err(e) = apply_controller_effects(
+                        let effects = screen.on_session_update(*update);
+                        if let Err(e) = apply_screen_effects(
                             &mut renderer,
-                            &controller,
+                            &screen,
                             &state.prompt_handle,
                             &state.session_id,
                             effects,
@@ -219,10 +216,10 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                         }
                     }
                     AcpEvent::ExtNotification(notification) => {
-                        let effects = controller.on_ext_notification(notification);
-                        if let Err(e) = apply_controller_effects(
+                        let effects = screen.on_ext_notification(notification);
+                        if let Err(e) = apply_screen_effects(
                             &mut renderer,
-                            &controller,
+                            &screen,
                             &state.prompt_handle,
                             &state.session_id,
                             effects,
@@ -231,10 +228,10 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                         }
                     }
                     AcpEvent::PromptDone(_stop_reason) => {
-                        let effects = controller.on_prompt_done(renderer.context().size);
-                        if let Err(e) = apply_controller_effects(
+                        let effects = screen.on_prompt_done(renderer.context().size);
+                        if let Err(e) = apply_screen_effects(
                             &mut renderer,
-                            &controller,
+                            &screen,
                             &state.prompt_handle,
                             &state.session_id,
                             effects,
@@ -243,10 +240,10 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                         }
                     }
                     AcpEvent::PromptError(e) => {
-                        let effects = controller.on_prompt_error();
-                        if let Err(render_err) = apply_controller_effects(
+                        let effects = screen.on_prompt_error();
+                        if let Err(render_err) = apply_screen_effects(
                             &mut renderer,
-                            &controller,
+                            &screen,
                             &state.prompt_handle,
                             &state.session_id,
                             effects,
@@ -265,10 +262,10 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                 match terminal_event {
                     TerminalEvent::Key(key_event) => {
                         if should_handle_key_event(key_event.kind) {
-                            let effects = controller.on_key_event(key_event);
-                            match apply_controller_effects(
+                            let effects = screen.on_key_event(key_event);
+                            match apply_screen_effects(
                                 &mut renderer,
-                                &controller,
+                                &screen,
                                 &state.prompt_handle,
                                 &state.session_id,
                                 effects,
@@ -282,10 +279,10 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                         }
                     }
                     TerminalEvent::Paste(text) => {
-                        let effects = controller.on_paste(&text);
-                        if let Err(e) = apply_controller_effects(
+                        let effects = screen.on_paste(&text);
+                        if let Err(e) = apply_screen_effects(
                             &mut renderer,
-                            &controller,
+                            &screen,
                             &state.prompt_handle,
                             &state.session_id,
                             effects,
@@ -295,10 +292,10 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                     }
                     TerminalEvent::Resize(cols, rows) => {
                         renderer.update_render_context_with((cols, rows));
-                        let effects = controller.on_resize(cols, rows);
-                        if let Err(e) = apply_controller_effects(
+                        let effects = screen.on_resize(cols, rows);
+                        if let Err(e) = apply_screen_effects(
                             &mut renderer,
-                            &controller,
+                            &screen,
                             &state.prompt_handle,
                             &state.session_id,
                             effects,
@@ -310,10 +307,10 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
             }
 
             _ = animation_interval.tick() => {
-                let effects = controller.on_tick();
-                if let Err(e) = apply_controller_effects(
+                let effects = screen.on_tick();
+                if let Err(e) = apply_screen_effects(
                     &mut renderer,
-                    &controller,
+                    &screen,
                     &state.prompt_handle,
                     &state.session_id,
                     effects,
@@ -344,11 +341,11 @@ async fn run_non_interactive(
         match event {
             AcpEvent::SessionUpdate(update) => match *update {
                 acp::SessionUpdate::AgentThoughtChunk(chunk) => {
-                    if let acp::ContentBlock::Text(text_content) = chunk.content {
-                        if let Some(output) = thought_state.on_thought_chunk(&text_content.text) {
-                            print!("{output}");
-                            io::stdout().flush()?;
-                        }
+                    if let acp::ContentBlock::Text(text_content) = chunk.content
+                        && let Some(output) = thought_state.on_thought_chunk(&text_content.text)
+                    {
+                        print!("{output}");
+                        io::stdout().flush()?;
                     }
                 }
 
