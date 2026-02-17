@@ -8,7 +8,7 @@ pub mod spinner;
 pub mod theme;
 
 pub use combobox::{Combobox, Searchable};
-pub use component::{Component, RenderContext};
+pub use component::{Component, HandlesInput, InputOutcome, RenderContext};
 pub use frame_renderer::FrameRenderer;
 pub use screen::{Line, Screen};
 pub use select_list::{SelectList, Selectable};
