@@ -1,6 +1,6 @@
 use agent_client_protocol as acp;
 
-use crate::components::grid_loader::FRAMES;
+use crate::tui::spinner::BRAILLE_FRAMES as FRAMES;
 use crate::tui::{Component, Line, RenderContext};
 use crossterm::style::Stylize;
 use std::collections::HashMap;
