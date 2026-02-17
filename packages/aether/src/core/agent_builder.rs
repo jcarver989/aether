@@ -1,3 +1,4 @@
+use super::agent::AutoContinue;
 use crate::context::CompactionConfig;
 use crate::core::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::core::{Agent, Prompt, Result};
@@ -34,7 +35,7 @@ impl AgentHandle {
 }
 
 pub struct AgentBuilder {
-    llm: Box<dyn StreamingModelProvider>,
+    llm: Arc<dyn StreamingModelProvider>,
     prompts: Vec<Prompt>,
     middleware: Middleware,
     tool_definitions: Vec<ToolDefinition>,
@@ -46,7 +47,7 @@ pub struct AgentBuilder {
 }
 
 impl AgentBuilder {
-    pub fn new(llm: Box<dyn StreamingModelProvider>) -> Self {
+    pub fn new(llm: Arc<dyn StreamingModelProvider>) -> Self {
         Self {
             llm,
             prompts: Vec::new(),
@@ -186,10 +187,8 @@ impl AgentBuilder {
 
         let context = Context::new(messages, self.tool_definitions);
 
-        let llm: Arc<dyn StreamingModelProvider> = Arc::from(self.llm);
-
         let agent = Agent::new(
-            llm,
+            self.llm,
             context,
             self.mcp_tx,
             user_message_rx,
@@ -197,7 +196,7 @@ impl AgentBuilder {
             self.middleware,
             self.tool_timeout,
             self.compaction_config,
-            self.max_auto_continues,
+            AutoContinue::new(self.max_auto_continues),
         );
 
         let agent_handle = tokio::spawn(agent.run());
