@@ -3,7 +3,6 @@ mod cli;
 mod components;
 mod controller;
 mod error;
-mod renderer;
 mod tui;
 
 use acp_utils::client::AcpEvent;
@@ -20,7 +19,7 @@ use tokio::{select, time};
 
 use crate::app_state::AppState;
 use crate::cli::Cli;
-use crate::renderer::Renderer;
+use crate::tui::Renderer;
 
 #[derive(Debug)]
 enum TerminalEvent {
@@ -140,8 +139,8 @@ fn apply_controller_effects<T: Write>(
     }
 
     if should_render {
-        let layout = controller.layout(renderer.context());
-        renderer.render(&layout)?;
+        let root = controller.root();
+        renderer.render(&root)?;
     }
 
     Ok(false)
@@ -198,8 +197,7 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
     let mut renderer = Renderer::new(io::stdout());
 
     renderer.update_render_context();
-    let initial_layout = controller.layout(renderer.context());
-    renderer.render(&initial_layout)?;
+    renderer.render(&controller.root())?;
     let mut terminal_event_rx = spawn_terminal_event_task();
     let mut animation_interval = time::interval(Duration::from_millis(16));
     animation_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);

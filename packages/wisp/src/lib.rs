@@ -3,5 +3,4 @@ pub mod cli;
 pub mod components;
 pub mod controller;
 pub mod error;
-pub mod renderer;
 pub mod tui;

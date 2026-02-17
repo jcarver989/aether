@@ -8,7 +8,9 @@ use crate::components::grid_loader::GridLoader;
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::tui::{HandlesInput, InputOutcome, LayoutCursor, RenderContext, ScreenLayout};
+use crate::tui::{
+    Cursor, CursorComponent, HandlesInput, InputOutcome, RenderContext, RenderOutput,
+};
 use agent_client_protocol::SessionConfigOption;
 use crossterm::event::KeyEvent;
 use std::path::PathBuf;
@@ -39,6 +41,11 @@ pub struct ScreenView {
     command_picker: Option<CommandPicker>,
     config_menu: Option<ConfigMenu>,
     config_picker: Option<ConfigPicker>,
+}
+
+pub(crate) struct ScreenViewRoot<'view, 'props> {
+    view: &'view ScreenView,
+    props: ScreenViewRenderProps<'props>,
 }
 
 impl ScreenView {
@@ -173,90 +180,13 @@ impl ScreenView {
         InputOutcome::ignored()
     }
 
-    // ── Layout ───────────────────────────────────────────────────────
+    // ── Root ─────────────────────────────────────────────────────────
 
-    pub(crate) fn layout(
-        &self,
-        props: ScreenViewRenderProps<'_>,
-        context: &RenderContext,
-    ) -> ScreenLayout {
-        let conversation_window = ConversationWindow {
-            loader: props.loader,
-            segments: props.segments,
-            tool_call_statuses: props.tool_call_statuses,
-        };
-        let input_prompt = InputPrompt {
-            input: props.input,
-            cursor_index: self.input_cursor_index(props.input, props.active_mention_start),
-        };
-        let input_layout = input_prompt.layout(context);
-        let status_line = StatusLine {
-            agent_name: props.agent_name,
-            model_display: props.model_display,
-            context_pct_left: props.context_pct_left,
-        };
-
-        let mut container: Container<'_> =
-            Container::new(vec![&conversation_window, &input_prompt]);
-        let input_component_index = 1;
-
-        if let Some(ref picker) = self.file_picker {
-            container.push(picker);
-        }
-
-        let command_picker_index = if let Some(ref picker) = self.command_picker {
-            let idx = container.len();
-            container.push(picker);
-            Some(idx)
-        } else {
-            None
-        };
-        let command_picker_col = self
-            .command_picker
-            .as_ref()
-            .map(Self::command_picker_cursor_col);
-
-        let config_picker_index = if let Some(ref picker) = self.config_picker {
-            let idx = container.len();
-            container.push(picker);
-            Some(idx)
-        } else {
-            if let Some(ref menu) = self.config_menu {
-                container.push(menu);
-            }
-            None
-        };
-        let config_picker_col = self
-            .config_picker
-            .as_ref()
-            .map(Self::config_picker_cursor_col);
-
-        container.push(&status_line);
-        let (logical_lines, offsets) = container.render_with_offsets(context);
-
-        let mut cursor = LayoutCursor {
-            logical_row: offsets[input_component_index] + input_layout.cursor_row,
-            col: input_layout.cursor_col as usize,
-        };
-
-        if let Some(idx) = command_picker_index {
-            cursor = LayoutCursor {
-                logical_row: offsets[idx],
-                col: command_picker_col.unwrap_or(0),
-            };
-        }
-
-        if let Some(idx) = config_picker_index {
-            cursor = LayoutCursor {
-                logical_row: offsets[idx],
-                col: config_picker_col.unwrap_or(0),
-            };
-        }
-
-        ScreenLayout {
-            logical_lines,
-            cursor,
-        }
+    pub(crate) fn root<'view, 'props>(
+        &'view self,
+        props: ScreenViewRenderProps<'props>,
+    ) -> ScreenViewRoot<'view, 'props> {
+        ScreenViewRoot { view: self, props }
     }
 
     fn input_cursor_index(&self, input: &str, active_mention_start: Option<usize>) -> usize {
@@ -379,6 +309,89 @@ impl ScreenView {
     }
 }
 
+impl CursorComponent for ScreenViewRoot<'_, '_> {
+    fn render_with_cursor(&self, context: &RenderContext) -> RenderOutput {
+        let conversation_window = ConversationWindow {
+            loader: self.props.loader,
+            segments: self.props.segments,
+            tool_call_statuses: self.props.tool_call_statuses,
+        };
+        let input_prompt = InputPrompt {
+            input: self.props.input,
+            cursor_index: self
+                .view
+                .input_cursor_index(self.props.input, self.props.active_mention_start),
+        };
+        let input_layout = input_prompt.layout(context);
+        let status_line = StatusLine {
+            agent_name: self.props.agent_name,
+            model_display: self.props.model_display,
+            context_pct_left: self.props.context_pct_left,
+        };
+
+        let mut container: Container<'_> =
+            Container::new(vec![&conversation_window, &input_prompt]);
+        let input_component_index = 1;
+
+        if let Some(ref picker) = self.view.file_picker {
+            container.push(picker);
+        }
+
+        let command_picker_index = if let Some(ref picker) = self.view.command_picker {
+            let idx = container.len();
+            container.push(picker);
+            Some(idx)
+        } else {
+            None
+        };
+        let command_picker_col = self
+            .view
+            .command_picker
+            .as_ref()
+            .map(ScreenView::command_picker_cursor_col);
+
+        let config_picker_index = if let Some(ref picker) = self.view.config_picker {
+            let idx = container.len();
+            container.push(picker);
+            Some(idx)
+        } else {
+            if let Some(ref menu) = self.view.config_menu {
+                container.push(menu);
+            }
+            None
+        };
+        let config_picker_col = self
+            .view
+            .config_picker
+            .as_ref()
+            .map(ScreenView::config_picker_cursor_col);
+
+        container.push(&status_line);
+        let (lines, offsets) = container.render_with_offsets(context);
+
+        let mut cursor = Cursor {
+            logical_row: offsets[input_component_index] + input_layout.cursor_row,
+            col: input_layout.cursor_col as usize,
+        };
+
+        if let Some(idx) = command_picker_index {
+            cursor = Cursor {
+                logical_row: offsets[idx],
+                col: command_picker_col.unwrap_or(0),
+            };
+        }
+
+        if let Some(idx) = config_picker_index {
+            cursor = Cursor {
+                logical_row: offsets[idx],
+                col: config_picker_col.unwrap_or(0),
+            };
+        }
+
+        RenderOutput { lines, cursor }
+    }
+}
+
 impl Default for ScreenView {
     fn default() -> Self {
         Self::new()
@@ -422,13 +435,15 @@ mod tests {
         let loader = GridLoader::default();
         let statuses = ToolCallStatuses::new();
 
-        let layout = view.layout(props(&loader, &statuses, ""), &context);
-        let row = layout
-            .logical_lines
+        let output = view
+            .root(props(&loader, &statuses, ""))
+            .render_with_cursor(&context);
+        let row = output
+            .lines
             .iter()
             .position(|line| line.as_str().contains("  / search: "))
             .expect("command picker header should exist");
-        assert_eq!(layout.cursor.logical_row, row);
+        assert_eq!(output.cursor.logical_row, row);
     }
 
     #[test]
@@ -448,9 +463,11 @@ mod tests {
         let loader = GridLoader::default();
         let statuses = ToolCallStatuses::new();
 
-        let layout = view.layout(props(&loader, &statuses, ""), &context);
-        let has_menu_row = layout
-            .logical_lines
+        let output = view
+            .root(props(&loader, &statuses, ""))
+            .render_with_cursor(&context);
+        let has_menu_row = output
+            .lines
             .iter()
             .any(|line| line.as_str().contains("Model: M1"));
         assert!(
