@@ -1,4 +1,4 @@
-use crate::components::combobox::{Combobox, Searchable};
+use crate::tui::{Combobox, Searchable};
 use crate::tui::{Component, Line, RenderContext};
 use crossterm::style::Stylize;
 use ignore::WalkBuilder;

@@ -92,7 +92,7 @@ impl<T: Write> Renderer<T> {
         Self {
             tui: FrameRenderer::new(writer),
             tool_call_statuses: ToolCallStatuses::new(),
-            grid_loader: GridLoader::new(),
+            grid_loader: GridLoader::default(),
             stream_segments: Vec::new(),
             thought_block_open: false,
             input_buffer: String::new(),
