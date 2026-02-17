@@ -1,6 +1,7 @@
-use crate::tui::{Combobox, Searchable};
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Combobox, Searchable};
+use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::Stylize;
 
 impl Searchable for ConfigMenuValue {
@@ -14,6 +15,11 @@ pub struct ConfigPicker {
     pub title: String,
     pub combobox: Combobox<ConfigMenuValue>,
     current_value: String,
+}
+
+pub enum ConfigPickerAction {
+    Close,
+    ApplySelection(Option<ConfigChange>),
 }
 
 impl ConfigPicker {
@@ -106,10 +112,7 @@ impl ConfigPicker {
 impl Component for ConfigPicker {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
-        let header = format!(
-            "  {} search: {}",
-            self.title, self.combobox.query
-        );
+        let header = format!("  {} search: {}", self.title, self.combobox.query);
         lines.push(Line::new(header.with(context.theme.muted).to_string()));
 
         if self.combobox.matches.is_empty() {
@@ -154,9 +157,60 @@ impl Component for ConfigPicker {
     }
 }
 
+impl HandlesInput for ConfigPicker {
+    type Action = ConfigPickerAction;
+
+    fn handle_key(
+        &mut self,
+        key_event: KeyEvent,
+        _input: &mut String,
+    ) -> InputOutcome<Self::Action> {
+        match key_event.code {
+            KeyCode::Esc => InputOutcome::action_and_render(ConfigPickerAction::Close),
+            KeyCode::Up => {
+                self.move_selection_up();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_selection_up();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Down => {
+                self.move_selection_down();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_selection_down();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Enter => {
+                let change = self.confirm_selection();
+                InputOutcome::action_and_render(ConfigPickerAction::ApplySelection(change))
+            }
+            KeyCode::Char(c) => {
+                if c.is_control() {
+                    return InputOutcome::consumed();
+                }
+                self.push_query_char(c);
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Backspace => {
+                if self.combobox.query.is_empty() {
+                    InputOutcome::consumed()
+                } else {
+                    self.pop_query_char();
+                    InputOutcome::consumed_and_render()
+                }
+            }
+            _ => InputOutcome::consumed(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn entry() -> ConfigMenuEntry {
         ConfigMenuEntry {
@@ -236,5 +290,39 @@ mod tests {
         let mut picker = ConfigPicker::from_entry(&entry).expect("picker");
         picker.update_query("disabled".to_string());
         assert!(picker.confirm_selection().is_none());
+    }
+
+    #[test]
+    fn handle_key_enter_returns_apply_selection_action() {
+        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        picker.move_selection_down();
+        let mut input = String::new();
+
+        let outcome = picker.handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut input,
+        );
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        match outcome.action {
+            Some(ConfigPickerAction::ApplySelection(Some(change))) => {
+                assert_eq!(change.config_id, "model");
+            }
+            _ => panic!("expected apply selection action"),
+        }
+    }
+
+    #[test]
+    fn handle_key_escape_returns_close_action() {
+        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let mut input = String::new();
+
+        let outcome =
+            picker.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut input);
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(outcome.action, Some(ConfigPickerAction::Close)));
     }
 }

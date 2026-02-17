@@ -169,11 +169,7 @@ mod tests {
 
     #[test]
     fn update_query_clamps_selected_index() {
-        let items = vec![
-            FakeItem::new("a"),
-            FakeItem::new("b"),
-            FakeItem::new("c"),
-        ];
+        let items = vec![FakeItem::new("a"), FakeItem::new("b"), FakeItem::new("c")];
         let mut combobox = Combobox::new(items);
         combobox.selected_index = 2;
         combobox.update_query("a".to_string());
@@ -205,11 +201,7 @@ mod tests {
 
     #[test]
     fn selection_wraps_around() {
-        let items = vec![
-            FakeItem::new("a"),
-            FakeItem::new("b"),
-            FakeItem::new("c"),
-        ];
+        let items = vec![FakeItem::new("a"), FakeItem::new("b"), FakeItem::new("c")];
         let mut combobox = Combobox::new(items);
 
         combobox.move_selection_up();

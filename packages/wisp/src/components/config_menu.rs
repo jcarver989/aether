@@ -1,5 +1,6 @@
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
+use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::style::Stylize;
 
 pub struct ConfigMenu {
@@ -25,6 +26,11 @@ pub struct ConfigMenuValue {
 pub struct ConfigChange {
     pub config_id: String,
     pub new_value: String,
+}
+
+pub enum ConfigMenuAction {
+    CloseAll,
+    OpenSelectedPicker,
 }
 
 impl Component for ConfigMenu {
@@ -58,6 +64,30 @@ impl Component for ConfigMenu {
                 }
             })
             .collect()
+    }
+}
+
+impl HandlesInput for ConfigMenu {
+    type Action = ConfigMenuAction;
+
+    fn handle_key(
+        &mut self,
+        key_event: KeyEvent,
+        _input: &mut String,
+    ) -> InputOutcome<Self::Action> {
+        match key_event.code {
+            KeyCode::Esc => InputOutcome::action_and_render(ConfigMenuAction::CloseAll),
+            KeyCode::Up => {
+                self.move_selection_up();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Down => {
+                self.move_selection_down();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Enter => InputOutcome::action_and_render(ConfigMenuAction::OpenSelectedPicker),
+            _ => InputOutcome::consumed(),
+        }
     }
 }
 
@@ -149,6 +179,7 @@ mod tests {
     use agent_client_protocol::{
         SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     };
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn make_select_option(
         id: &str,
@@ -324,5 +355,37 @@ mod tests {
         let menu = ConfigMenu::from_config_options(&[opt]);
         assert_eq!(menu.options.len(), 1);
         assert_eq!(menu.options[0].title, "Model");
+    }
+
+    #[test]
+    fn handle_key_enter_requests_open_picker() {
+        let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
+        let mut menu = ConfigMenu::from_config_options(&opts);
+        let mut input = String::new();
+
+        let outcome = menu.handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut input,
+        );
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(
+            outcome.action,
+            Some(ConfigMenuAction::OpenSelectedPicker)
+        ));
+    }
+
+    #[test]
+    fn handle_key_escape_requests_close() {
+        let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
+        let mut menu = ConfigMenu::from_config_options(&opts);
+        let mut input = String::new();
+
+        let outcome = menu.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut input);
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(outcome.action, Some(ConfigMenuAction::CloseAll)));
     }
 }

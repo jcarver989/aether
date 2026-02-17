@@ -1,7 +1,7 @@
-use crate::components::command_picker::{CommandEntry, CommandPicker};
-use crate::components::config_menu::ConfigMenu;
-use crate::components::config_picker::ConfigPicker;
-use crate::components::file_picker::FilePicker;
+use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPickerAction};
+use crate::components::config_menu::{ConfigMenu, ConfigMenuAction};
+use crate::components::config_picker::{ConfigPicker, ConfigPickerAction};
+use crate::components::file_picker::{FilePicker, FilePickerAction};
 use crate::components::grid_loader::GridLoader;
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
@@ -9,13 +9,15 @@ use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::error::WispError;
 use crate::tui::soft_wrap::soft_wrap_lines_with_map;
-use crate::tui::{Component, FrameRenderer, Line, RenderContext, Screen};
+use crate::tui::{
+    Component, FrameRenderer, HandlesInput, InputOutcome, Line, RenderContext, Screen,
+};
 use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
     SessionConfigSelectOptions, SessionUpdate,
 };
-use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, KeyCode, KeyEvent};
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -253,270 +255,38 @@ impl<T: Write> Renderer<T> {
             return Ok(LoopAction::Exit);
         }
 
-        if let Some(ref mut picker) = self.file_picker {
-            match key_event.code {
-                KeyCode::Esc => {
-                    self.file_picker = None;
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Up => {
-                    picker.combobox.move_selection_up();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    picker.combobox.move_selection_up();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Down => {
-                    picker.combobox.move_selection_down();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    picker.combobox.move_selection_down();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Enter => {
-                    self.confirm_file_selection()?;
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Char(c) => {
-                    if c.is_whitespace() {
-                        self.input_buffer.push(c);
-                        self.file_picker = None;
-                        self.render_frame()?;
-                        return Ok(LoopAction::Continue);
-                    }
-
-                    self.input_buffer.push(c);
-                    let query = if let Some(at_pos) = Self::mention_start(&self.input_buffer) {
-                        self.input_buffer[at_pos + 1..].to_string()
-                    } else {
-                        String::new()
-                    };
-                    picker.combobox.update_query(query);
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Backspace => {
-                    if !self.input_buffer.is_empty() {
-                        let last = self.input_buffer.pop();
-                        if last == Some('@') {
-                            self.file_picker = None;
-                        } else if let Some(at_pos) = Self::mention_start(&self.input_buffer) {
-                            let query = self.input_buffer[at_pos + 1..].to_string();
-                            picker.combobox.update_query(query);
-                        } else {
-                            self.file_picker = None;
-                        }
-                        self.render_frame()?;
-                    }
-                    return Ok(LoopAction::Continue);
-                }
-                _ => {}
+        if self.file_picker.is_some() {
+            let outcome = {
+                let picker = self.file_picker.as_mut().expect("file picker exists");
+                picker.handle_key(key_event, &mut self.input_buffer)
+            };
+            if self.handle_file_picker_input(outcome)? {
+                return Ok(LoopAction::Continue);
             }
         }
 
         if self.command_picker.is_some() {
-            match key_event.code {
-                KeyCode::Esc => {
-                    self.command_picker = None;
-                    self.input_buffer.clear();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Up => {
-                    self.command_picker
-                        .as_mut()
-                        .unwrap()
-                        .combobox
-                        .move_selection_up();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.command_picker
-                        .as_mut()
-                        .unwrap()
-                        .combobox
-                        .move_selection_up();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Down => {
-                    self.command_picker
-                        .as_mut()
-                        .unwrap()
-                        .combobox
-                        .move_selection_down();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.command_picker
-                        .as_mut()
-                        .unwrap()
-                        .combobox
-                        .move_selection_down();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Enter => {
-                    if let Some(cmd) = self
-                        .command_picker
-                        .as_ref()
-                        .and_then(|p| p.selected_command().cloned())
-                    {
-                        self.command_picker = None;
-                        if cmd.builtin && cmd.name == "config" {
-                            self.input_buffer.clear();
-                            self.file_picker = None;
-                            self.config_picker = None;
-                            self.pending_open_model_picker = false;
-                            self.config_menu =
-                                Some(ConfigMenu::from_config_options(&self.config_options));
-                            self.render_frame()?;
-                        } else if cmd.has_input {
-                            self.input_buffer = format!("/{} ", cmd.name);
-                            self.render_frame()?;
-                        } else {
-                            self.input_buffer = format!("/{}", cmd.name);
-                            return self.execute_input(prompt_handle, session_id);
-                        }
-                    } else {
-                        self.command_picker = None;
-                        self.input_buffer.clear();
-                        self.render_frame()?;
-                    }
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Char(c) => {
-                    if !c.is_control() {
-                        self.command_picker
-                            .as_mut()
-                            .unwrap()
-                            .combobox
-                            .push_query_char(c);
-                        self.render_frame()?;
-                    }
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Backspace => {
-                    let picker = self.command_picker.as_ref().unwrap();
-                    if picker.combobox.query.is_empty() {
-                        self.command_picker = None;
-                        self.input_buffer.clear();
-                        self.render_frame()?;
-                    } else {
-                        self.command_picker
-                            .as_mut()
-                            .unwrap()
-                            .combobox
-                            .pop_query_char();
-                        self.render_frame()?;
-                    }
-                    return Ok(LoopAction::Continue);
-                }
-                _ => return Ok(LoopAction::Continue),
-            }
+            let outcome = {
+                let picker = self.command_picker.as_mut().expect("command picker exists");
+                picker.handle_key(key_event, &mut self.input_buffer)
+            };
+            return self.handle_command_picker_input(outcome, prompt_handle, session_id);
         }
 
-        if let Some(ref mut picker) = self.config_picker {
-            match key_event.code {
-                KeyCode::Esc => {
-                    self.config_picker = None;
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Up => {
-                    picker.move_selection_up();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    picker.move_selection_up();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Down => {
-                    picker.move_selection_down();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    picker.move_selection_down();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Enter => {
-                    let confirmed_change = picker.confirm_selection();
-                    let was_provider = picker.config_id == "provider";
-                    self.config_picker = None;
-                    if let Some(change) = confirmed_change {
-                        let _ = prompt_handle.set_config_option(
-                            session_id,
-                            &change.config_id,
-                            &change.new_value,
-                        );
-                        if was_provider {
-                            self.pending_open_model_picker = true;
-                        }
-                    }
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Char(c) => {
-                    if !c.is_control() {
-                        picker.push_query_char(c);
-                        self.render_frame()?;
-                    }
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Backspace => {
-                    if !picker.combobox.query.is_empty() {
-                        picker.pop_query_char();
-                        self.render_frame()?;
-                    }
-                    return Ok(LoopAction::Continue);
-                }
-                _ => return Ok(LoopAction::Continue),
-            }
+        if self.config_picker.is_some() {
+            let outcome = {
+                let picker = self.config_picker.as_mut().expect("config picker exists");
+                picker.handle_key(key_event, &mut self.input_buffer)
+            };
+            return self.handle_config_picker_input(outcome, prompt_handle, session_id);
         }
 
-        if let Some(ref mut menu) = self.config_menu {
-            match key_event.code {
-                KeyCode::Esc => {
-                    self.config_menu = None;
-                    self.config_picker = None;
-                    self.pending_open_model_picker = false;
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Up => {
-                    menu.move_selection_up();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Down => {
-                    menu.move_selection_down();
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                KeyCode::Enter => {
-                    self.config_picker = menu.selected_entry().and_then(ConfigPicker::from_entry);
-                    self.render_frame()?;
-                    return Ok(LoopAction::Continue);
-                }
-                _ => {
-                    // Swallow all other keys while config menu is open
-                    return Ok(LoopAction::Continue);
-                }
-            }
+        if self.config_menu.is_some() {
+            let outcome = {
+                let menu = self.config_menu.as_mut().expect("config menu exists");
+                menu.handle_key(key_event, &mut self.input_buffer)
+            };
+            return self.handle_config_menu_input(outcome);
         }
 
         match key_event.code {
@@ -550,6 +320,146 @@ impl<T: Write> Renderer<T> {
                 return self.execute_input(prompt_handle, session_id);
             }
             _ => {}
+        }
+        Ok(LoopAction::Continue)
+    }
+
+    fn handle_file_picker_input(
+        &mut self,
+        outcome: InputOutcome<FilePickerAction>,
+    ) -> Result<bool, WispError> {
+        if !outcome.consumed {
+            return Ok(false);
+        }
+
+        if let Some(action) = outcome.action {
+            match action {
+                FilePickerAction::Close => {
+                    self.file_picker = None;
+                }
+                FilePickerAction::ConfirmSelection => {
+                    self.confirm_file_selection()?;
+                }
+            }
+        }
+
+        if outcome.needs_render {
+            self.render_frame()?;
+        }
+        Ok(true)
+    }
+
+    fn handle_command_picker_input(
+        &mut self,
+        outcome: InputOutcome<CommandPickerAction>,
+        prompt_handle: &AcpPromptHandle,
+        session_id: &acp::SessionId,
+    ) -> Result<LoopAction, WispError> {
+        if !outcome.consumed {
+            return Ok(LoopAction::Continue);
+        }
+
+        match outcome.action {
+            Some(CommandPickerAction::CloseAndClearInput) => {
+                self.command_picker = None;
+                self.input_buffer.clear();
+                if outcome.needs_render {
+                    self.render_frame()?;
+                }
+                Ok(LoopAction::Continue)
+            }
+            Some(CommandPickerAction::CommandChosen(cmd)) => {
+                self.command_picker = None;
+                if cmd.builtin && cmd.name == "config" {
+                    self.input_buffer.clear();
+                    self.file_picker = None;
+                    self.config_picker = None;
+                    self.pending_open_model_picker = false;
+                    self.config_menu = Some(ConfigMenu::from_config_options(&self.config_options));
+                    self.render_frame()?;
+                    Ok(LoopAction::Continue)
+                } else if cmd.has_input {
+                    self.input_buffer = format!("/{} ", cmd.name);
+                    self.render_frame()?;
+                    Ok(LoopAction::Continue)
+                } else {
+                    self.input_buffer = format!("/{}", cmd.name);
+                    self.execute_input(prompt_handle, session_id)
+                }
+            }
+            None => {
+                if outcome.needs_render {
+                    self.render_frame()?;
+                }
+                Ok(LoopAction::Continue)
+            }
+        }
+    }
+
+    fn handle_config_picker_input(
+        &mut self,
+        outcome: InputOutcome<ConfigPickerAction>,
+        prompt_handle: &AcpPromptHandle,
+        session_id: &acp::SessionId,
+    ) -> Result<LoopAction, WispError> {
+        if !outcome.consumed {
+            return Ok(LoopAction::Continue);
+        }
+
+        if let Some(action) = outcome.action {
+            match action {
+                ConfigPickerAction::Close => {
+                    self.config_picker = None;
+                }
+                ConfigPickerAction::ApplySelection(confirmed_change) => {
+                    self.config_picker = None;
+                    if let Some(change) = confirmed_change {
+                        let _ = prompt_handle.set_config_option(
+                            session_id,
+                            &change.config_id,
+                            &change.new_value,
+                        );
+                        if change.config_id == "provider" {
+                            self.pending_open_model_picker = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if outcome.needs_render {
+            self.render_frame()?;
+        }
+        Ok(LoopAction::Continue)
+    }
+
+    fn handle_config_menu_input(
+        &mut self,
+        outcome: InputOutcome<ConfigMenuAction>,
+    ) -> Result<LoopAction, WispError> {
+        if !outcome.consumed {
+            return Ok(LoopAction::Continue);
+        }
+
+        if let Some(action) = outcome.action {
+            match action {
+                ConfigMenuAction::CloseAll => {
+                    self.config_menu = None;
+                    self.config_picker = None;
+                    self.pending_open_model_picker = false;
+                }
+                ConfigMenuAction::OpenSelectedPicker => {
+                    self.config_picker = self
+                        .config_menu
+                        .as_ref()
+                        .and_then(|menu| menu.selected_entry())
+                        .and_then(ConfigPicker::from_entry);
+                }
+            }
+        }
+
+        if outcome.needs_render {
+            self.render_frame()?;
         }
         Ok(LoopAction::Continue)
     }

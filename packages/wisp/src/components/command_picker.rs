@@ -1,5 +1,6 @@
 use crate::tui::{Combobox, Searchable};
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::Stylize;
 
 #[derive(Debug, Clone)]
@@ -19,6 +20,11 @@ impl Searchable for CommandEntry {
 
 pub struct CommandPicker {
     pub combobox: Combobox<CommandEntry>,
+}
+
+pub enum CommandPickerAction {
+    CloseAndClearInput,
+    CommandChosen(CommandEntry),
 }
 
 impl CommandPicker {
@@ -80,9 +86,68 @@ impl Component for CommandPicker {
     }
 }
 
+impl HandlesInput for CommandPicker {
+    type Action = CommandPickerAction;
+
+    fn handle_key(
+        &mut self,
+        key_event: KeyEvent,
+        input: &mut String,
+    ) -> InputOutcome<Self::Action> {
+        match key_event.code {
+            KeyCode::Esc => {
+                input.clear();
+                InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
+            }
+            KeyCode::Up => {
+                self.combobox.move_selection_up();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.combobox.move_selection_up();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Down => {
+                self.combobox.move_selection_down();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.combobox.move_selection_down();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Enter => {
+                if let Some(command) = self.selected_command().cloned() {
+                    InputOutcome::action(CommandPickerAction::CommandChosen(command))
+                } else {
+                    input.clear();
+                    InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
+                }
+            }
+            KeyCode::Char(c) => {
+                if c.is_control() {
+                    return InputOutcome::consumed();
+                }
+                self.combobox.push_query_char(c);
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Backspace => {
+                if self.combobox.query.is_empty() {
+                    input.clear();
+                    InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
+                } else {
+                    self.combobox.pop_query_char();
+                    InputOutcome::consumed_and_render()
+                }
+            }
+            _ => InputOutcome::consumed(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn sample_commands() -> Vec<CommandEntry> {
         vec![
@@ -206,5 +271,42 @@ mod tests {
             "Config command should not have hint brackets. Got: {}",
             config_line.as_str()
         );
+    }
+
+    #[test]
+    fn handle_key_enter_returns_selected_command() {
+        let mut picker = CommandPicker::new(sample_commands());
+        let mut input = "/".to_string();
+
+        let outcome = picker.handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut input,
+        );
+
+        assert!(outcome.consumed);
+        assert!(matches!(
+            outcome.action,
+            Some(CommandPickerAction::CommandChosen(_))
+        ));
+    }
+
+    #[test]
+    fn handle_key_backspace_on_empty_query_requests_close() {
+        let mut picker = CommandPicker::new(sample_commands());
+        let mut input = "/".to_string();
+        picker.combobox.query.clear();
+
+        let outcome = picker.handle_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+            &mut input,
+        );
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(
+            outcome.action,
+            Some(CommandPickerAction::CloseAndClearInput)
+        ));
+        assert_eq!(input, "");
     }
 }

@@ -1,5 +1,6 @@
 use crate::tui::{Combobox, Searchable};
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::Stylize;
 use ignore::WalkBuilder;
 use std::env::current_dir;
@@ -9,6 +10,11 @@ const MAX_INDEXED_FILES: usize = 50_000;
 
 pub struct FilePicker {
     pub combobox: Combobox<FileMatch>,
+}
+
+pub enum FilePickerAction {
+    Close,
+    ConfirmSelection,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +79,16 @@ impl FilePicker {
             combobox: Combobox::new(entries),
         }
     }
+
+    fn mention_start(input: &str) -> Option<usize> {
+        let at_pos = input.rfind('@')?;
+        let prefix = &input[..at_pos];
+        if prefix.is_empty() || prefix.chars().last().is_some_and(char::is_whitespace) {
+            Some(at_pos)
+        } else {
+            None
+        }
+    }
 }
 
 fn should_exclude_path(path: &Path) -> bool {
@@ -111,9 +127,75 @@ impl Component for FilePicker {
     }
 }
 
+impl HandlesInput for FilePicker {
+    type Action = FilePickerAction;
+
+    fn handle_key(
+        &mut self,
+        key_event: KeyEvent,
+        input: &mut String,
+    ) -> InputOutcome<Self::Action> {
+        match key_event.code {
+            KeyCode::Esc => InputOutcome::action_and_render(FilePickerAction::Close),
+            KeyCode::Up => {
+                self.combobox.move_selection_up();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.combobox.move_selection_up();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Down => {
+                self.combobox.move_selection_down();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.combobox.move_selection_down();
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Enter => InputOutcome::action_and_render(FilePickerAction::ConfirmSelection),
+            KeyCode::Char(c) => {
+                if c.is_whitespace() {
+                    input.push(c);
+                    return InputOutcome::action_and_render(FilePickerAction::Close);
+                }
+
+                input.push(c);
+                let query = if let Some(at_pos) = Self::mention_start(input) {
+                    input[at_pos + 1..].to_string()
+                } else {
+                    String::new()
+                };
+                self.combobox.update_query(query);
+                InputOutcome::consumed_and_render()
+            }
+            KeyCode::Backspace => {
+                if input.is_empty() {
+                    return InputOutcome::consumed();
+                }
+
+                let last = input.pop();
+                if last == Some('@') {
+                    return InputOutcome::action_and_render(FilePickerAction::Close);
+                }
+
+                if let Some(at_pos) = Self::mention_start(input) {
+                    let query = input[at_pos + 1..].to_string();
+                    self.combobox.update_query(query);
+                    InputOutcome::consumed_and_render()
+                } else {
+                    InputOutcome::action_and_render(FilePickerAction::Close)
+                }
+            }
+            _ => InputOutcome::ignored(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn file_match(path: &str) -> FileMatch {
         FileMatch {
@@ -160,5 +242,56 @@ mod tests {
 
         picker.combobox.move_selection_down();
         assert_eq!(picker.combobox.selected_index, 0);
+    }
+
+    #[test]
+    fn handle_key_char_updates_input_and_query() {
+        let mut picker = FilePicker::new_with_entries(vec![file_match("src/renderer.rs")]);
+        let mut input = "@".to_string();
+
+        let outcome = picker.handle_key(
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+            &mut input,
+        );
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(outcome.action.is_none());
+        assert_eq!(input, "@r");
+        assert_eq!(picker.combobox.query, "r");
+    }
+
+    #[test]
+    fn handle_key_whitespace_closes_picker() {
+        let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
+        let mut input = "@main".to_string();
+
+        let outcome = picker.handle_key(
+            KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
+            &mut input,
+        );
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(outcome.action, Some(FilePickerAction::Close)));
+        assert_eq!(input, "@main ");
+    }
+
+    #[test]
+    fn handle_key_enter_requests_confirmation() {
+        let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
+        let mut input = "@main".to_string();
+
+        let outcome = picker.handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut input,
+        );
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(
+            outcome.action,
+            Some(FilePickerAction::ConfirmSelection)
+        ));
     }
 }

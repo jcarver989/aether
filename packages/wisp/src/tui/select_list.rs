@@ -173,10 +173,7 @@ mod tests {
 
     #[test]
     fn all_disabled_stays_put() {
-        let mut list = SelectList::new(vec![
-            FakeItem::disabled("a"),
-            FakeItem::disabled("b"),
-        ]);
+        let mut list = SelectList::new(vec![FakeItem::disabled("a"), FakeItem::disabled("b")]);
         list.move_down();
         // Should have cycled through all and landed somewhere (no panic)
         assert!(list.selected_index < 2);
@@ -193,10 +190,7 @@ mod tests {
 
     #[test]
     fn render_shows_pointer_on_selected() {
-        let list = SelectList::new(vec![
-            FakeItem::enabled("alpha"),
-            FakeItem::enabled("beta"),
-        ]);
+        let list = SelectList::new(vec![FakeItem::enabled("alpha"), FakeItem::enabled("beta")]);
         let ctx = RenderContext::new((80, 24));
         let lines = list.render(&ctx);
         assert_eq!(lines.len(), 2);

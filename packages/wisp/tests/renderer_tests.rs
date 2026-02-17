@@ -2184,7 +2184,12 @@ async fn test_command_picker_shows_mcp_commands() {
     );
 
     let picker = renderer.command_picker.as_ref().unwrap();
-    let names: Vec<&str> = picker.combobox.matches.iter().map(|m| m.name.as_str()).collect();
+    let names: Vec<&str> = picker
+        .combobox
+        .matches
+        .iter()
+        .map(|m| m.name.as_str())
+        .collect();
     assert!(
         names.contains(&"config"),
         "Picker should include built-in config command. Got: {:?}",
