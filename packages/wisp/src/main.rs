@@ -1,6 +1,7 @@
 mod app_state;
 mod cli;
 mod components;
+mod controller;
 mod error;
 mod renderer;
 mod tui;
@@ -8,9 +9,9 @@ mod tui;
 use acp_utils::client::AcpEvent;
 use agent_client_protocol as acp;
 use clap::Parser;
+use controller::{ControllerEffect, ScreenController};
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind, read};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use renderer::LoopAction;
 use std::io::{self, Write};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -109,6 +110,43 @@ fn should_handle_key_event(kind: KeyEventKind) -> bool {
     matches!(kind, KeyEventKind::Press | KeyEventKind::Repeat)
 }
 
+fn apply_controller_effects<T: Write>(
+    renderer: &mut Renderer<T>,
+    controller: &ScreenController,
+    prompt_handle: &acp_utils::client::AcpPromptHandle,
+    session_id: &acp::SessionId,
+    effects: Vec<ControllerEffect>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let mut should_render = false;
+
+    for effect in effects {
+        match effect {
+            ControllerEffect::Exit => return Ok(true),
+            ControllerEffect::Render => should_render = true,
+            ControllerEffect::PushScrollback(lines) => renderer.push_to_scrollback(&lines)?,
+            ControllerEffect::PromptSubmit {
+                user_input,
+                content_blocks,
+            } => {
+                prompt_handle.prompt(session_id, &user_input, content_blocks)?;
+            }
+            ControllerEffect::SetConfigOption {
+                config_id,
+                new_value,
+            } => {
+                let _ = prompt_handle.set_config_option(session_id, &config_id, &new_value);
+            }
+        }
+    }
+
+    if should_render {
+        let layout = controller.layout(renderer.context());
+        renderer.render(&layout)?;
+    }
+
+    Ok(false)
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -156,14 +194,12 @@ async fn main() -> ExitCode {
 async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     crossterm::execute!(io::stdout(), EnableBracketedPaste)?;
-    let mut renderer = Renderer::new(
-        io::stdout(),
-        state.agent_name.clone(),
-        &state.config_options,
-    );
+    let mut controller = ScreenController::new(state.agent_name.clone(), &state.config_options);
+    let mut renderer = Renderer::new(io::stdout());
 
     renderer.update_render_context();
-    renderer.initial_render()?;
+    let initial_layout = controller.layout(renderer.context());
+    renderer.render(&initial_layout)?;
     let mut terminal_event_rx = spawn_terminal_event_task();
     let mut animation_interval = time::interval(Duration::from_millis(16));
     animation_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -173,22 +209,50 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
             Some(event) = state.event_rx.recv() => {
                 match event {
                     AcpEvent::SessionUpdate(update) => {
-                        if let Err(e) = renderer.on_session_update(*update) {
+                        let effects = controller.on_session_update(*update);
+                        if let Err(e) = apply_controller_effects(
+                            &mut renderer,
+                            &controller,
+                            &state.prompt_handle,
+                            &state.session_id,
+                            effects,
+                        ) {
                             eprintln!("Error handling session update: {e}");
                         }
                     }
                     AcpEvent::ExtNotification(notification) => {
-                        if let Err(e) = renderer.on_ext_notification(notification) {
+                        let effects = controller.on_ext_notification(notification);
+                        if let Err(e) = apply_controller_effects(
+                            &mut renderer,
+                            &controller,
+                            &state.prompt_handle,
+                            &state.session_id,
+                            effects,
+                        ) {
                             eprintln!("Error handling ext notification: {e}");
                         }
                     }
                     AcpEvent::PromptDone(_stop_reason) => {
-                        if let Err(e) = renderer.on_prompt_done() {
+                        let effects = controller.on_prompt_done(renderer.context().size);
+                        if let Err(e) = apply_controller_effects(
+                            &mut renderer,
+                            &controller,
+                            &state.prompt_handle,
+                            &state.session_id,
+                            effects,
+                        ) {
                             eprintln!("Error handling prompt done: {e}");
                         }
                     }
                     AcpEvent::PromptError(e) => {
-                        if let Err(render_err) = renderer.on_prompt_error() {
+                        let effects = controller.on_prompt_error();
+                        if let Err(render_err) = apply_controller_effects(
+                            &mut renderer,
+                            &controller,
+                            &state.prompt_handle,
+                            &state.session_id,
+                            effects,
+                        ) {
                             eprintln!("Error handling prompt error render: {render_err}");
                         }
                         eprintln!("Prompt error: {e}");
@@ -203,28 +267,44 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
                 match terminal_event {
                     TerminalEvent::Key(key_event) => {
                         if should_handle_key_event(key_event.kind) {
-                            match renderer.on_key_event(
-                                key_event,
+                            let effects = controller.on_key_event(key_event);
+                            match apply_controller_effects(
+                                &mut renderer,
+                                &controller,
                                 &state.prompt_handle,
                                 &state.session_id,
+                                effects,
                             ) {
-                                Ok(LoopAction::Exit) => {
-                                    break;
-                                }
-                                Ok(LoopAction::Continue) => {}
-                                Err(e) => {
-                                    eprintln!("Error handling key event: {e}");
+                                Ok(true) => break,
+                                Ok(false) => {}
+                                Err(err) => {
+                                    eprintln!("Error handling key event: {err}");
                                 }
                             }
                         }
                     }
                     TerminalEvent::Paste(text) => {
-                        if let Err(e) = renderer.on_paste(&text) {
+                        let effects = controller.on_paste(&text);
+                        if let Err(e) = apply_controller_effects(
+                            &mut renderer,
+                            &controller,
+                            &state.prompt_handle,
+                            &state.session_id,
+                            effects,
+                        ) {
                             eprintln!("Error handling paste: {e}");
                         }
                     }
                     TerminalEvent::Resize(cols, rows) => {
-                        if let Err(e) = renderer.on_resize(cols, rows) {
+                        renderer.update_render_context_with((cols, rows));
+                        let effects = controller.on_resize(cols, rows);
+                        if let Err(e) = apply_controller_effects(
+                            &mut renderer,
+                            &controller,
+                            &state.prompt_handle,
+                            &state.session_id,
+                            effects,
+                        ) {
                             eprintln!("Error handling resize: {e}");
                         }
                     }
@@ -232,7 +312,14 @@ async fn run_terminal_ui(mut state: AppState) -> Result<(), Box<dyn std::error::
             }
 
             _ = animation_interval.tick() => {
-                if let Err(e) = renderer.on_tick() {
+                let effects = controller.on_tick();
+                if let Err(e) = apply_controller_effects(
+                    &mut renderer,
+                    &controller,
+                    &state.prompt_handle,
+                    &state.session_id,
+                    effects,
+                ) {
                     eprintln!("Error on tick: {e}");
                 }
             }

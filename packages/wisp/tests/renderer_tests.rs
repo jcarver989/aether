@@ -3,10 +3,182 @@ mod test_terminal;
 use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol as acp;
 use test_terminal::{TestTerminal, assert_buffer_eq};
-use wisp::renderer::Renderer;
+use wisp::components::command_picker::CommandEntry;
+use wisp::components::screen_view::ScreenView;
+use wisp::controller::{ControllerEffect, ScreenController};
+use wisp::error::WispError;
+use wisp::renderer::Renderer as FrameRenderer;
 
 const TEST_AGENT: &str = "test-agent";
 const TEST_WIDTH: u16 = 200;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopAction {
+    Continue,
+    Exit,
+}
+
+struct Renderer {
+    controller: ScreenController,
+    renderer: FrameRenderer<TestTerminal>,
+}
+
+impl Renderer {
+    fn new(
+        terminal: TestTerminal,
+        agent_name: String,
+        config_options: &[acp::SessionConfigOption],
+    ) -> Self {
+        Self {
+            controller: ScreenController::new(agent_name, config_options),
+            renderer: FrameRenderer::new(terminal),
+        }
+    }
+
+    fn writer(&self) -> &TestTerminal {
+        self.renderer.writer()
+    }
+
+    fn update_render_context(&mut self) {
+        self.renderer.update_render_context();
+    }
+
+    fn update_render_context_with(&mut self, size: (u16, u16)) {
+        self.renderer.update_render_context_with(size);
+    }
+
+    fn initial_render(&mut self) -> std::io::Result<()> {
+        let layout = self.controller.layout(self.renderer.context());
+        self.renderer.render(&layout)
+    }
+
+    fn on_key_event(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        prompt_handle: &AcpPromptHandle,
+        session_id: &acp::SessionId,
+    ) -> Result<LoopAction, WispError> {
+        let effects = self.controller.on_key_event(key_event);
+        self.apply_effects(effects, Some((prompt_handle, session_id)))
+    }
+
+    fn on_session_update(&mut self, update: acp::SessionUpdate) -> std::io::Result<()> {
+        let effects = self.controller.on_session_update(update);
+        self.apply_effects_no_prompt(effects)
+    }
+
+    fn on_prompt_done(&mut self) -> std::io::Result<()> {
+        let effects = self.controller.on_prompt_done(self.renderer.context().size);
+        self.apply_effects_no_prompt(effects)
+    }
+
+    fn on_tick(&mut self) -> std::io::Result<()> {
+        let effects = self.controller.on_tick();
+        self.apply_effects_no_prompt(effects)
+    }
+
+    fn on_ext_notification(&mut self, notification: acp::ExtNotification) -> std::io::Result<()> {
+        let effects = self.controller.on_ext_notification(notification);
+        self.apply_effects_no_prompt(effects)
+    }
+
+    fn on_prompt_error(&mut self) -> std::io::Result<()> {
+        let effects = self.controller.on_prompt_error();
+        self.apply_effects_no_prompt(effects)
+    }
+
+    fn on_paste(&mut self, text: &str) -> std::io::Result<()> {
+        let effects = self.controller.on_paste(text);
+        self.apply_effects_no_prompt(effects)
+    }
+
+    fn on_resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
+        self.renderer.update_render_context_with((cols, rows));
+        let effects = self.controller.on_resize(cols, rows);
+        self.apply_effects_no_prompt(effects)
+    }
+
+    fn screen_view(&self) -> &ScreenView {
+        self.controller.screen_view()
+    }
+
+    fn screen_view_mut(&mut self) -> &mut ScreenView {
+        self.controller.screen_view_mut()
+    }
+
+    fn available_commands(&self) -> &[CommandEntry] {
+        self.controller.available_commands()
+    }
+
+    fn apply_effects(
+        &mut self,
+        effects: Vec<ControllerEffect>,
+        prompt: Option<(&AcpPromptHandle, &acp::SessionId)>,
+    ) -> Result<LoopAction, WispError> {
+        let mut should_render = false;
+        let mut action = LoopAction::Continue;
+
+        for effect in effects {
+            match effect {
+                ControllerEffect::Exit => action = LoopAction::Exit,
+                ControllerEffect::Render => should_render = true,
+                ControllerEffect::PushScrollback(lines) => {
+                    self.renderer.push_to_scrollback(&lines)?;
+                }
+                ControllerEffect::PromptSubmit {
+                    user_input,
+                    content_blocks,
+                } => {
+                    let Some((prompt_handle, session_id)) = prompt else {
+                        return Err(WispError::Other("missing prompt context".to_string()));
+                    };
+                    prompt_handle.prompt(session_id, &user_input, content_blocks)?;
+                }
+                ControllerEffect::SetConfigOption {
+                    config_id,
+                    new_value,
+                } => {
+                    let Some((prompt_handle, session_id)) = prompt else {
+                        return Err(WispError::Other("missing prompt context".to_string()));
+                    };
+                    let _ = prompt_handle.set_config_option(session_id, &config_id, &new_value);
+                }
+            }
+        }
+
+        if should_render {
+            let layout = self.controller.layout(self.renderer.context());
+            self.renderer.render(&layout)?;
+        }
+
+        Ok(action)
+    }
+
+    fn apply_effects_no_prompt(&mut self, effects: Vec<ControllerEffect>) -> std::io::Result<()> {
+        let mut should_render = false;
+
+        for effect in effects {
+            match effect {
+                ControllerEffect::Exit => {}
+                ControllerEffect::Render => should_render = true,
+                ControllerEffect::PushScrollback(lines) => {
+                    self.renderer.push_to_scrollback(&lines)?;
+                }
+                ControllerEffect::PromptSubmit { .. }
+                | ControllerEffect::SetConfigOption { .. } => {
+                    panic!("unexpected prompt/config effect without prompt context");
+                }
+            }
+        }
+
+        if should_render {
+            let layout = self.controller.layout(self.renderer.context());
+            self.renderer.render(&layout)?;
+        }
+
+        Ok(())
+    }
+}
 
 /// Test events that can be fed to the renderer.
 enum TestEvent {
@@ -395,7 +567,7 @@ async fn test_late_result_after_prompt_done() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-fn render_sync(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer<TestTerminal> {
+fn render_sync(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer {
     let terminal = TestTerminal::new(size.0, size.1);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with(size);
@@ -410,11 +582,11 @@ fn render_sync(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer<TestTermina
     renderer
 }
 
-async fn render(events: Vec<TestEvent>) -> Renderer<TestTerminal> {
+async fn render(events: Vec<TestEvent>) -> Renderer {
     render_sync(events, (TEST_WIDTH, 40))
 }
 
-async fn render_with_size(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer<TestTerminal> {
+async fn render_with_size(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer {
     render_sync(events, size)
 }
 
@@ -490,8 +662,8 @@ fn tool_update_with_args(id: &str, args: &str) -> TestEvent {
     ))
 }
 
-fn type_string<W: std::io::Write>(
-    renderer: &mut Renderer<W>,
+fn type_string(
+    renderer: &mut Renderer,
     text: &str,
     handle: &AcpPromptHandle,
     session_id: &acp::SessionId,
@@ -511,11 +683,7 @@ fn type_string<W: std::io::Write>(
     }
 }
 
-fn press_enter<W: std::io::Write>(
-    renderer: &mut Renderer<W>,
-    handle: &AcpPromptHandle,
-    session_id: &acp::SessionId,
-) {
+fn press_enter(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id: &acp::SessionId) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let enter_event = KeyEvent {
@@ -760,7 +928,6 @@ async fn test_backspace_updates_within_border() {
 #[tokio::test]
 async fn test_ctrl_c_exits_while_file_picker_is_open() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use wisp::renderer::LoopAction;
 
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
@@ -782,7 +949,7 @@ async fn test_ctrl_c_exits_while_file_picker_is_open() {
             &session_id,
         )
         .unwrap();
-    assert!(renderer.file_picker.is_some());
+    assert!(renderer.screen_view().has_file_picker());
 
     let action = renderer
         .on_key_event(
@@ -824,7 +991,7 @@ async fn test_space_closes_file_picker_without_selection() {
             &session_id,
         )
         .unwrap();
-    assert!(renderer.file_picker.is_some());
+    assert!(renderer.screen_view().has_file_picker());
 
     renderer
         .on_key_event(
@@ -839,7 +1006,7 @@ async fn test_space_closes_file_picker_without_selection() {
         )
         .unwrap();
 
-    assert!(renderer.file_picker.is_none());
+    assert!(!renderer.screen_view().has_file_picker());
 }
 
 #[tokio::test]
@@ -1148,18 +1315,18 @@ async fn test_paste_closes_file_picker() {
             &session_id,
         )
         .unwrap();
-    assert!(renderer.file_picker.is_some());
+    assert!(renderer.screen_view().has_file_picker());
 
     // Paste should close the picker and append text
     renderer.on_paste("pasted text").unwrap();
 
-    assert!(renderer.file_picker.is_none());
+    assert!(!renderer.screen_view().has_file_picker());
     let expected = expected_prompt(80, "@pasted text", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-fn send_key<W: std::io::Write>(
-    renderer: &mut Renderer<W>,
+fn send_key(
+    renderer: &mut Renderer,
     code: crossterm::event::KeyCode,
     modifiers: crossterm::event::KeyModifiers,
     handle: &AcpPromptHandle,
@@ -1179,13 +1346,13 @@ fn send_key<W: std::io::Write>(
         .unwrap();
 }
 
-fn open_picker_with_files<W: std::io::Write>(
-    renderer: &mut Renderer<W>,
+fn open_picker_with_files(
+    renderer: &mut Renderer,
     files: Vec<&str>,
     handle: &AcpPromptHandle,
     session_id: &acp::SessionId,
 ) {
-    use wisp::components::file_picker::{FileMatch, FilePicker};
+    use wisp::components::file_picker::FileMatch;
 
     // Type @ to set input_buffer state correctly
     send_key(
@@ -1204,15 +1371,16 @@ fn open_picker_with_files<W: std::io::Write>(
             display_name: name.to_string(),
         })
         .collect();
-    renderer.file_picker = Some(FilePicker::from_matches(matches));
+    renderer
+        .screen_view_mut()
+        .open_file_picker_with_matches(matches);
 
     // Trigger re-render with the injected picker
     renderer.on_resize(80, 24).unwrap();
 }
 
-fn picker_selected_display_name<W: std::io::Write>(renderer: &Renderer<W>) -> Option<String> {
-    let picker = renderer.file_picker.as_ref()?;
-    picker.combobox.selected().map(|f| f.display_name.clone())
+fn picker_selected_display_name(renderer: &Renderer) -> Option<String> {
+    renderer.screen_view().file_picker_selected_display_name()
 }
 
 fn assert_picker_renders_selected(terminal: &TestTerminal, expected_file: &str) {
@@ -1411,11 +1579,7 @@ async fn test_file_picker_ctrl_p_moves_up() {
     assert_picker_renders_selected(renderer.writer(), "beta.rs");
 }
 
-fn press_backspace<W: std::io::Write>(
-    renderer: &mut Renderer<W>,
-    handle: &AcpPromptHandle,
-    session_id: &acp::SessionId,
-) {
+fn press_backspace(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id: &acp::SessionId) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let backspace_event = KeyEvent {
@@ -1481,7 +1645,7 @@ async fn test_config_command_opens_menu() {
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
 
-    assert!(renderer.config_menu.is_some());
+    assert!(renderer.screen_view().has_config_menu());
     let lines = renderer.writer().get_lines();
     assert!(
         lines
@@ -1514,7 +1678,7 @@ async fn test_config_menu_esc_closes() {
 
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
-    assert!(renderer.config_menu.is_some());
+    assert!(renderer.screen_view().has_config_menu());
 
     send_key(
         &mut renderer,
@@ -1523,7 +1687,7 @@ async fn test_config_menu_esc_closes() {
         &handle,
         &session_id,
     );
-    assert!(renderer.config_menu.is_none());
+    assert!(!renderer.screen_view().has_config_menu());
 }
 
 #[tokio::test]
@@ -1543,7 +1707,7 @@ async fn test_config_menu_arrow_navigation() {
     press_enter(&mut renderer, &handle, &session_id);
 
     // Initially Provider is selected (index 0)
-    assert_eq!(renderer.config_menu.as_ref().unwrap().selected_index, 0);
+    assert_eq!(renderer.screen_view().config_menu_selected_index(), Some(0));
 
     // Down arrow → Model (index 1)
     send_key(
@@ -1553,7 +1717,7 @@ async fn test_config_menu_arrow_navigation() {
         &handle,
         &session_id,
     );
-    assert_eq!(renderer.config_menu.as_ref().unwrap().selected_index, 1);
+    assert_eq!(renderer.screen_view().config_menu_selected_index(), Some(1));
 
     // Down wraps → Provider (index 0)
     send_key(
@@ -1563,7 +1727,7 @@ async fn test_config_menu_arrow_navigation() {
         &handle,
         &session_id,
     );
-    assert_eq!(renderer.config_menu.as_ref().unwrap().selected_index, 0);
+    assert_eq!(renderer.screen_view().config_menu_selected_index(), Some(0));
 
     // Up wraps → Model (index 1)
     send_key(
@@ -1573,7 +1737,7 @@ async fn test_config_menu_arrow_navigation() {
         &handle,
         &session_id,
     );
-    assert_eq!(renderer.config_menu.as_ref().unwrap().selected_index, 1);
+    assert_eq!(renderer.screen_view().config_menu_selected_index(), Some(1));
 }
 
 #[tokio::test]
@@ -1601,7 +1765,7 @@ async fn test_config_menu_enter_opens_overlay_picker() {
         &session_id,
     );
 
-    assert!(renderer.config_picker.is_some());
+    assert!(renderer.screen_view().has_config_picker());
     let lines = renderer.writer().get_lines();
     assert!(
         lines.iter().any(|l| l.contains("Provider search")),
@@ -1706,7 +1870,7 @@ async fn test_config_menu_swallows_other_keys() {
 
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
-    assert!(renderer.config_menu.is_some());
+    assert!(renderer.screen_view().has_config_menu());
 
     // Typing a character should not modify input buffer
     send_key(
@@ -1718,7 +1882,7 @@ async fn test_config_menu_swallows_other_keys() {
     );
 
     // Menu should still be open
-    assert!(renderer.config_menu.is_some());
+    assert!(renderer.screen_view().has_config_menu());
     // Input buffer should be empty (was cleared when /config opened)
     let lines = renderer.writer().get_lines();
     // The input prompt should show empty (just "> ")
@@ -1732,7 +1896,6 @@ async fn test_config_menu_swallows_other_keys() {
 #[tokio::test]
 async fn test_config_menu_ctrl_c_exits() {
     use crossterm::event::{KeyCode, KeyModifiers};
-    use wisp::renderer::LoopAction;
 
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
@@ -1745,7 +1908,7 @@ async fn test_config_menu_ctrl_c_exits() {
 
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
-    assert!(renderer.config_menu.is_some());
+    assert!(renderer.screen_view().has_config_menu());
 
     let action = renderer
         .on_key_event(
@@ -1776,7 +1939,7 @@ async fn test_config_menu_updates_on_config_option_event() {
 
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
-    assert!(renderer.config_menu.is_some());
+    assert!(renderer.screen_view().has_config_menu());
 
     // Simulate the agent responding with updated config
     let new_config = vec![
@@ -1820,10 +1983,6 @@ async fn test_config_menu_updates_on_config_option_event() {
         ))
         .unwrap();
 
-    // The menu should now show Claude as the current value
-    let menu = renderer.config_menu.as_ref().unwrap();
-    assert_eq!(menu.options[1].current_value_index, 1);
-
     let lines = renderer.writer().get_lines();
     assert!(
         lines.iter().any(|l| l.contains("Claude Sonnet")),
@@ -1856,7 +2015,7 @@ async fn test_provider_confirm_auto_opens_model_picker_on_update() {
         &handle,
         &session_id,
     );
-    assert!(renderer.config_picker.is_some());
+    assert!(renderer.screen_view().has_config_picker());
 
     // Select Anthropic provider and confirm.
     send_key(
@@ -1873,7 +2032,7 @@ async fn test_provider_confirm_auto_opens_model_picker_on_update() {
         &handle,
         &session_id,
     );
-    assert!(renderer.config_picker.is_none());
+    assert!(!renderer.screen_view().has_config_picker());
 
     // Provider update should auto-open model picker.
     let updated = vec![
@@ -1917,11 +2076,9 @@ async fn test_provider_confirm_auto_opens_model_picker_on_update() {
         ))
         .unwrap();
 
-    assert!(
-        renderer
-            .config_picker
-            .as_ref()
-            .is_some_and(|picker| picker.config_id == "model")
+    assert_eq!(
+        renderer.screen_view().config_picker_config_id(),
+        Some("model")
     );
     let lines = renderer.writer().get_lines();
     assert!(
@@ -1968,7 +2125,7 @@ async fn test_config_with_no_options_shows_placeholder() {
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
 
-    assert!(renderer.config_menu.is_some());
+    assert!(renderer.screen_view().has_config_menu());
     let lines = renderer.writer().get_lines();
     assert!(
         lines.iter().any(|l| l.contains("no config options")),
@@ -2000,7 +2157,7 @@ async fn test_slash_opens_command_picker() {
     );
 
     assert!(
-        renderer.command_picker.is_some(),
+        renderer.screen_view().has_command_picker(),
         "Typing / on empty buffer should open command picker"
     );
 }
@@ -2018,7 +2175,7 @@ async fn test_slash_mid_input_no_picker() {
     type_string(&mut renderer, "hello/", &handle, &session_id);
 
     assert!(
-        renderer.command_picker.is_none(),
+        !renderer.screen_view().has_command_picker(),
         "Typing / mid-input should not open command picker"
     );
 }
@@ -2042,7 +2199,7 @@ async fn test_command_picker_esc_clears() {
         &handle,
         &session_id,
     );
-    assert!(renderer.command_picker.is_some());
+    assert!(renderer.screen_view().has_command_picker());
 
     send_key(
         &mut renderer,
@@ -2053,7 +2210,7 @@ async fn test_command_picker_esc_clears() {
     );
 
     assert!(
-        renderer.command_picker.is_none(),
+        !renderer.screen_view().has_command_picker(),
         "Esc should close command picker"
     );
     let lines = renderer.writer().get_lines();
@@ -2083,7 +2240,7 @@ async fn test_command_picker_backspace_empty_closes() {
         &handle,
         &session_id,
     );
-    assert!(renderer.command_picker.is_some());
+    assert!(renderer.screen_view().has_command_picker());
 
     send_key(
         &mut renderer,
@@ -2094,7 +2251,7 @@ async fn test_command_picker_backspace_empty_closes() {
     );
 
     assert!(
-        renderer.command_picker.is_none(),
+        !renderer.screen_view().has_command_picker(),
         "Backspace on empty query should close command picker"
     );
 }
@@ -2115,9 +2272,9 @@ async fn test_available_commands_update_stored() {
         ))
         .unwrap();
 
-    assert_eq!(renderer.available_commands.len(), 2);
-    assert_eq!(renderer.available_commands[0].name, "search");
-    assert_eq!(renderer.available_commands[1].name, "web");
+    assert_eq!(renderer.available_commands().len(), 2);
+    assert_eq!(renderer.available_commands()[0].name, "search");
+    assert_eq!(renderer.available_commands()[1].name, "web");
 }
 
 #[tokio::test]
@@ -2140,14 +2297,15 @@ async fn test_available_commands_update_extracts_hint() {
         ))
         .unwrap();
 
-    assert_eq!(renderer.available_commands.len(), 2);
+    assert_eq!(renderer.available_commands().len(), 2);
     assert_eq!(
-        renderer.available_commands[0].hint.as_deref(),
+        renderer.available_commands()[0].hint.as_deref(),
         Some("query pattern"),
         "Command with Unstructured input should have hint"
     );
     assert_eq!(
-        renderer.available_commands[1].hint, None,
+        renderer.available_commands()[1].hint,
+        None,
         "Command without input should have no hint"
     );
 }
@@ -2183,13 +2341,7 @@ async fn test_command_picker_shows_mcp_commands() {
         &session_id,
     );
 
-    let picker = renderer.command_picker.as_ref().unwrap();
-    let names: Vec<&str> = picker
-        .combobox
-        .matches
-        .iter()
-        .map(|m| m.name.as_str())
-        .collect();
+    let names = renderer.screen_view().command_picker_match_names();
     assert!(
         names.contains(&"config"),
         "Picker should include built-in config command. Got: {:?}",
@@ -2205,7 +2357,6 @@ async fn test_command_picker_shows_mcp_commands() {
 #[tokio::test]
 async fn test_command_picker_ctrl_c_exits() {
     use crossterm::event::{KeyCode, KeyModifiers};
-    use wisp::renderer::LoopAction;
 
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
@@ -2222,7 +2373,7 @@ async fn test_command_picker_ctrl_c_exits() {
         &handle,
         &session_id,
     );
-    assert!(renderer.command_picker.is_some());
+    assert!(renderer.screen_view().has_command_picker());
 
     let action = renderer
         .on_key_event(
