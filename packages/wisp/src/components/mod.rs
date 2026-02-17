@@ -1,3 +1,4 @@
+pub mod combobox;
 pub mod command_picker;
 pub mod config_menu;
 pub mod config_picker;

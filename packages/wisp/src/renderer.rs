@@ -1,7 +1,7 @@
-use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPickerComponent};
-use crate::components::config_menu::{ConfigMenu, ConfigMenuComponent};
-use crate::components::config_picker::{ConfigPicker, ConfigPickerComponent};
-use crate::components::file_picker::{FilePicker, FilePickerComponent};
+use crate::components::command_picker::{CommandEntry, CommandPicker};
+use crate::components::config_menu::ConfigMenu;
+use crate::components::config_picker::ConfigPicker;
+use crate::components::file_picker::FilePicker;
 use crate::components::grid_loader::GridLoader;
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
@@ -170,24 +170,21 @@ impl<T: Write> Renderer<T> {
         logical_lines.extend(input_layout.lines);
 
         if let Some(ref picker) = self.file_picker {
-            let picker_component = FilePickerComponent { picker };
-            logical_lines.extend(picker_component.render(context));
+            logical_lines.extend(picker.render(context));
         }
 
         if let Some(ref picker) = self.command_picker {
             cursor_logical_row = logical_lines.len();
             cursor_col = Self::command_picker_cursor_col(picker);
-            logical_lines.extend(CommandPickerComponent { picker }.render(context));
+            logical_lines.extend(picker.render(context));
         }
 
         if let Some(ref picker) = self.config_picker {
             cursor_logical_row = logical_lines.len();
             cursor_col = Self::config_picker_cursor_col(picker);
-            let picker_component = ConfigPickerComponent { picker };
-            logical_lines.extend(picker_component.render(context));
+            logical_lines.extend(picker.render(context));
         } else if let Some(ref menu) = self.config_menu {
-            let menu_component = ConfigMenuComponent { menu };
-            logical_lines.extend(menu_component.render(context));
+            logical_lines.extend(menu.render(context));
         }
 
         let status_line = StatusLine {
@@ -224,12 +221,13 @@ impl<T: Write> Renderer<T> {
 
     fn config_picker_cursor_col(picker: &ConfigPicker) -> usize {
         let prefix = format!("  {} search: ", picker.title);
-        UnicodeWidthStr::width(prefix.as_str()) + UnicodeWidthStr::width(picker.query.as_str())
+        UnicodeWidthStr::width(prefix.as_str())
+            + UnicodeWidthStr::width(picker.combobox.query.as_str())
     }
 
     fn command_picker_cursor_col(picker: &CommandPicker) -> usize {
         let prefix = "  / search: ";
-        UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(picker.query.as_str())
+        UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(picker.combobox.query.as_str())
     }
 
     fn input_cursor_index(&self) -> usize {
@@ -237,7 +235,7 @@ impl<T: Write> Renderer<T> {
             let at_pos = self
                 .active_mention_start()
                 .unwrap_or_else(|| self.input_buffer.len());
-            at_pos + 1 + picker.query.len()
+            at_pos + 1 + picker.combobox.query.len()
         } else {
             self.input_buffer.len()
         }
@@ -263,22 +261,22 @@ impl<T: Write> Renderer<T> {
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Up => {
-                    picker.move_selection_up();
+                    picker.combobox.move_selection_up();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    picker.move_selection_up();
+                    picker.combobox.move_selection_up();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Down => {
-                    picker.move_selection_down();
+                    picker.combobox.move_selection_down();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    picker.move_selection_down();
+                    picker.combobox.move_selection_down();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
@@ -301,7 +299,7 @@ impl<T: Write> Renderer<T> {
                     } else {
                         String::new()
                     };
-                    picker.update_query(query);
+                    picker.combobox.update_query(query);
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
@@ -312,7 +310,7 @@ impl<T: Write> Renderer<T> {
                             self.file_picker = None;
                         } else if let Some(at_pos) = Self::mention_start(&self.input_buffer) {
                             let query = self.input_buffer[at_pos + 1..].to_string();
-                            picker.update_query(query);
+                            picker.combobox.update_query(query);
                         } else {
                             self.file_picker = None;
                         }
@@ -333,22 +331,38 @@ impl<T: Write> Renderer<T> {
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Up => {
-                    self.command_picker.as_mut().unwrap().move_selection_up();
+                    self.command_picker
+                        .as_mut()
+                        .unwrap()
+                        .combobox
+                        .move_selection_up();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.command_picker.as_mut().unwrap().move_selection_up();
+                    self.command_picker
+                        .as_mut()
+                        .unwrap()
+                        .combobox
+                        .move_selection_up();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Down => {
-                    self.command_picker.as_mut().unwrap().move_selection_down();
+                    self.command_picker
+                        .as_mut()
+                        .unwrap()
+                        .combobox
+                        .move_selection_down();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.command_picker.as_mut().unwrap().move_selection_down();
+                    self.command_picker
+                        .as_mut()
+                        .unwrap()
+                        .combobox
+                        .move_selection_down();
                     self.render_frame()?;
                     return Ok(LoopAction::Continue);
                 }
@@ -383,19 +397,27 @@ impl<T: Write> Renderer<T> {
                 }
                 KeyCode::Char(c) => {
                     if !c.is_control() {
-                        self.command_picker.as_mut().unwrap().push_query_char(c);
+                        self.command_picker
+                            .as_mut()
+                            .unwrap()
+                            .combobox
+                            .push_query_char(c);
                         self.render_frame()?;
                     }
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Backspace => {
                     let picker = self.command_picker.as_ref().unwrap();
-                    if picker.query.is_empty() {
+                    if picker.combobox.query.is_empty() {
                         self.command_picker = None;
                         self.input_buffer.clear();
                         self.render_frame()?;
                     } else {
-                        self.command_picker.as_mut().unwrap().pop_query_char();
+                        self.command_picker
+                            .as_mut()
+                            .unwrap()
+                            .combobox
+                            .pop_query_char();
                         self.render_frame()?;
                     }
                     return Ok(LoopAction::Continue);
@@ -456,7 +478,7 @@ impl<T: Write> Renderer<T> {
                     return Ok(LoopAction::Continue);
                 }
                 KeyCode::Backspace => {
-                    if !picker.query.is_empty() {
+                    if !picker.combobox.query.is_empty() {
                         picker.pop_query_char();
                         self.render_frame()?;
                     }
@@ -577,7 +599,7 @@ impl<T: Write> Renderer<T> {
             .take()
             .ok_or(WispError::Other("File picker not active".into()))?;
 
-        if let Some(selected) = picker.files.get(picker.selected_index) {
+        if let Some(selected) = picker.combobox.selected() {
             let mention = format!("@{}", selected.display_name);
             self.selected_mentions.push(SelectedFileMention {
                 mention: mention.clone(),
