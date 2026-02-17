@@ -1212,10 +1212,7 @@ fn open_picker_with_files<W: std::io::Write>(
 
 fn picker_selected_display_name<W: std::io::Write>(renderer: &Renderer<W>) -> Option<String> {
     let picker = renderer.file_picker.as_ref()?;
-    picker
-        .files
-        .get(picker.selected_index)
-        .map(|f| f.display_name.clone())
+    picker.combobox.selected().map(|f| f.display_name.clone())
 }
 
 fn assert_picker_renders_selected(terminal: &TestTerminal, expected_file: &str) {
@@ -2187,7 +2184,7 @@ async fn test_command_picker_shows_mcp_commands() {
     );
 
     let picker = renderer.command_picker.as_ref().unwrap();
-    let names: Vec<&str> = picker.matches.iter().map(|m| m.name.as_str()).collect();
+    let names: Vec<&str> = picker.combobox.matches.iter().map(|m| m.name.as_str()).collect();
     assert!(
         names.contains(&"config"),
         "Picker should include built-in config command. Got: {:?}",

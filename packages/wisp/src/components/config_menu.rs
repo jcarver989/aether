@@ -27,22 +27,17 @@ pub struct ConfigChange {
     pub new_value: String,
 }
 
-pub struct ConfigMenuComponent<'a> {
-    pub menu: &'a ConfigMenu,
-}
-
-impl Component for ConfigMenuComponent<'_> {
+impl Component for ConfigMenu {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
-        if self.menu.options.is_empty() {
+        if self.options.is_empty() {
             return vec![Line::new("  (no config options)".to_string())];
         }
 
-        self.menu
-            .options
+        self.options
             .iter()
             .enumerate()
             .map(|(i, entry)| {
-                let selected = i == self.menu.selected_index;
+                let selected = i == self.selected_index;
                 let prefix = if selected { "▶ " } else { "  " };
                 let current_name = entry
                     .values
@@ -116,22 +111,18 @@ impl ConfigMenu {
     }
 
     pub fn move_selection_up(&mut self) {
-        if !self.options.is_empty() {
-            if self.selected_index > 0 {
-                self.selected_index -= 1;
-            } else {
-                self.selected_index = self.options.len() - 1;
-            }
+        match self.selected_index {
+            _ if self.options.is_empty() => {}
+            0 => self.selected_index = self.options.len() - 1,
+            i => self.selected_index = i - 1,
         }
     }
 
     pub fn move_selection_down(&mut self) {
-        if !self.options.is_empty() {
-            if self.selected_index < self.options.len() - 1 {
-                self.selected_index += 1;
-            } else {
-                self.selected_index = 0;
-            }
+        match self.selected_index {
+            _ if self.options.is_empty() => {}
+            i if i >= self.options.len() - 1 => self.selected_index = 0,
+            _ => self.selected_index += 1,
         }
     }
 
@@ -288,9 +279,9 @@ mod tests {
             ),
         ];
         let menu = ConfigMenu::from_config_options(&opts);
-        let component = ConfigMenuComponent { menu: &menu };
+
         let context = RenderContext::new((80, 24));
-        let lines = component.render(&context);
+        let lines = menu.render(&context);
 
         assert_eq!(lines.len(), 2);
         // First line is selected (contains ▶)
@@ -306,9 +297,9 @@ mod tests {
     #[test]
     fn empty_options_renders_placeholder() {
         let menu = ConfigMenu::from_config_options(&[]);
-        let component = ConfigMenuComponent { menu: &menu };
+
         let context = RenderContext::new((80, 24));
-        let lines = component.render(&context);
+        let lines = menu.render(&context);
         assert_eq!(lines.len(), 1);
         assert!(lines[0].as_str().contains("no config options"));
     }

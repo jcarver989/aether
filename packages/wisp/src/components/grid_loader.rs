@@ -1,6 +1,5 @@
-use crossterm::style::Stylize;
-
 use crate::tui::{Component, Line, RenderContext};
+use crossterm::style::Stylize;
 
 pub(crate) const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
