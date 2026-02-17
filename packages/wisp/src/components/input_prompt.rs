@@ -21,9 +21,9 @@ impl InputPrompt<'_> {
         let width = context.size.0 as usize;
         let cursor_index = clamp_to_char_boundary(self.input, self.cursor_index);
         let cursor_display_width = plain_display_width(&self.input[..cursor_index]);
+        let styled_input = style_input(self.input, context);
 
         if width < 4 {
-            let styled_input = style_mentions(self.input, context);
             let line = format!("> {styled_input}");
             let total_col = 2 + cursor_display_width;
             let (cursor_row, cursor_col) = if width == 0 {
@@ -41,7 +41,6 @@ impl InputPrompt<'_> {
         let inner_width = width - 2; // space between │ and │
         // " " + marker area ("> " or "  ")
         let content_width = inner_width.saturating_sub(3).max(1);
-        let styled_input = style_mentions(self.input, context);
         let wrapped_chunks = soft_wrap_str(&styled_input, content_width as u16);
 
         let cursor_content_row = cursor_display_width / content_width;
@@ -54,16 +53,18 @@ impl InputPrompt<'_> {
         let bottom = format!("╰{}╯", "─".repeat(inner_width)).with(context.theme.muted);
         let border_left = "│".with(context.theme.muted);
         let border_right = "│".with(context.theme.muted);
+        let first_prompt = format!("{}", "> ".with(context.theme.primary));
+        let continuation_prompt = format!("{}", "  ".with(context.theme.muted));
 
         let mut lines = Vec::with_capacity(content_rows + 2);
         lines.push(Line::new(format!("{top}")));
 
         for row in 0..content_rows {
-            let chunk = wrapped_chunks.get(row).cloned().unwrap_or_default();
+            let chunk = wrapped_chunks.get(row).map_or("", String::as_str);
             let prompt = if row == 0 {
-                format!("{}", "> ".with(context.theme.primary))
+                &first_prompt
             } else {
-                format!("{}", "  ".with(context.theme.muted))
+                &continuation_prompt
             };
             let pad_len = content_width.saturating_sub(display_width_ansi(&chunk));
             let middle = format!("{border_left} {prompt}{chunk}{:pad_len$}{border_right}", "");
@@ -85,6 +86,13 @@ impl Component for InputPrompt<'_> {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
         self.layout(context).lines
     }
+}
+
+fn style_input(input: &str, context: &RenderContext) -> String {
+    if !input.contains('@') {
+        return input.with(context.theme.text_primary).to_string();
+    }
+    style_mentions(input, context)
 }
 
 fn style_mentions(input: &str, context: &RenderContext) -> String {
@@ -242,5 +250,17 @@ mod tests {
         assert!(lines.iter().all(|line| line.as_str().contains("│")
             || line.as_str().contains("╭")
             || line.as_str().contains("╰")));
+    }
+
+    #[test]
+    fn mention_and_plain_text_both_render() {
+        let prompt = InputPrompt {
+            input: "@main.rs explain this",
+            cursor_index: 20,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = prompt.render(&ctx);
+        assert!(lines[1].as_str().contains("@main.rs"));
+        assert!(lines[1].as_str().contains("explain this"));
     }
 }

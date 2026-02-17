@@ -2134,9 +2134,9 @@ async fn test_available_commands_update_extracts_hint() {
         .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
             acp::AvailableCommandsUpdate::new(vec![
                 acp::AvailableCommand::new("search", "Search code").input(
-                    acp::AvailableCommandInput::Unstructured(
-                        acp::UnstructuredCommandInput::new("query pattern"),
-                    ),
+                    acp::AvailableCommandInput::Unstructured(acp::UnstructuredCommandInput::new(
+                        "query pattern",
+                    )),
                 ),
                 acp::AvailableCommand::new("config", "Open settings"),
             ]),
