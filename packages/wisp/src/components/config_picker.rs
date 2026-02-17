@@ -41,6 +41,7 @@ impl ConfigPicker {
         Some(picker)
     }
 
+    #[allow(dead_code)]
     pub fn update_query(&mut self, query: String) {
         self.combobox.update_query(query);
         self.ensure_selectable();

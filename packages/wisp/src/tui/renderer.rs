@@ -131,11 +131,6 @@ impl<T: Write> Renderer<T> {
     }
 
     #[allow(dead_code)]
-    pub fn writer_mut(&mut self) -> &mut T {
-        &mut self.writer
-    }
-
-    #[allow(dead_code)]
     pub fn screen(&self) -> &Screen {
         &self.screen
     }

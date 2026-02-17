@@ -359,30 +359,6 @@ pub fn assert_buffer_eq<S: AsRef<str>>(terminal: &TestTerminal, expected: &[S]) 
     }
 }
 
-/// Convert a StyledContent to a string matching what TestTerminal captures.
-/// TestTerminal strips `\x1b[` prefixes from escape sequences, so this helper does the same.
-///
-/// # Example
-/// ```
-/// use crossterm::style::Stylize;
-/// let styled = "Hello".red();
-/// let terminal_string = styled_to_string(styled);
-/// // terminal_string will be "38;2;255;0;0mHello39m" (without \x1b[ prefix)
-/// ```
-#[allow(dead_code)]
-pub fn styled_to_string<T: std::fmt::Display + Clone>(
-    styled: crossterm::style::StyledContent<T>,
-) -> String {
-    use crossterm::Command;
-    use crossterm::style::PrintStyledContent;
-
-    let mut buffer = String::new();
-    PrintStyledContent(styled).write_ansi(&mut buffer).unwrap();
-
-    // Strip \x1b[ from escape sequences to match what TestTerminal captures
-    buffer.replace("\x1b[", "")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
