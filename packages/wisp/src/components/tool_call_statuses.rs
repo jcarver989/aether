@@ -23,19 +23,27 @@ pub enum ToolCallStatus {
 
 impl Component for ToolCallStatusView {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
-        let (indicator, suffix, indicator_color) = match &self.status {
+        // Only color the indicator/spinner, not the tool name
+        let (indicator, suffix) = match &self.status {
             ToolCallStatus::Running => {
                 let frame = FRAMES[self.tick as usize % FRAMES.len()];
-                (frame, "", context.theme.info)
+                (frame.with(context.theme.info), String::new())
             }
-            ToolCallStatus::Success => ('●', " ✓", context.theme.success),
-            ToolCallStatus::Error(_) => ('●', " X", context.theme.error),
+            ToolCallStatus::Success => (
+                '●'.with(context.theme.success),
+                " ✓".with(context.theme.success).to_string(),
+            ),
+            ToolCallStatus::Error(_) => (
+                '●'.with(context.theme.error),
+                " X".with(context.theme.error).to_string(),
+            ),
         };
 
-        let name_styled = format!("{indicator} {}{}", self.name, suffix).with(indicator_color);
+        // Tool name in default/white color (uncolored)
+        let name_styled = format!("{} {}", indicator, self.name);
         let args = Self::format_arguments(&self.arguments, context);
 
-        let mut line_text = format!("{name_styled}{args}");
+        let mut line_text = format!("{name_styled}{suffix}{args}");
 
         if let ToolCallStatus::Error(msg) = &self.status {
             let error_styled = msg.to_string().with(context.theme.error);

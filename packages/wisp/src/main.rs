@@ -11,27 +11,15 @@ use crate::cli::Cli;
 use crate::non_interactive::run_non_interactive;
 use crate::terminal_ui::run_terminal_ui;
 use clap::Parser;
+use std::fs::create_dir_all;
 use std::process::ExitCode;
+use tracing_appender::rolling::daily;
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-
-    let log_dir = cli
-        .log_dir
-        .clone()
-        .unwrap_or_else(|| "/tmp/wisp-logs".to_string());
-    std::fs::create_dir_all(&log_dir).ok();
-
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "wisp.log");
-    tracing_subscriber::fmt()
-        .with_writer(file_appender)
-        .with_ansi(false)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    setup_logging(&cli);
 
     let state = match AppState::from_cli(&cli).await {
         Ok(state) => state,
@@ -55,4 +43,20 @@ async fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn setup_logging(cli: &Cli) {
+    let log_dir = cli
+        .log_dir
+        .clone()
+        .unwrap_or_else(|| "/tmp/wisp-logs".to_string());
+
+    create_dir_all(&log_dir).ok();
+    tracing_subscriber::fmt()
+        .with_writer(daily(&log_dir, "wisp.log"))
+        .with_ansi(false)
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .init();
 }
