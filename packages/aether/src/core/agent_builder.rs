@@ -5,7 +5,6 @@ use crate::events::{AgentMessage, UserMessage};
 use crate::mcp::run_mcp_task::McpCommand;
 use llm::types::IsoString;
 use llm::{ChatMessage, Context, StreamingModelProvider, ToolDefinition};
-use mcp_utils::client::ServerInstructions;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -61,24 +60,12 @@ impl AgentBuilder {
         }
     }
 
-    pub fn system(mut self, text: &str) -> Self {
-        self.prompts.push(Prompt::text(text));
-        self
-    }
-
     /// Add a prompt to the system prompt.
     ///
     /// Multiple prompts are concatenated with double newlines.
-    pub fn prompt(mut self, prompt: Prompt) -> Self {
+    pub fn system_prompt(mut self, prompt: Prompt) -> Self {
         self.prompts.push(prompt);
         self
-    }
-
-    /// Add MCP server instructions to the system prompt.
-    ///
-    /// This is a convenience method equivalent to `.prompt(Prompt::mcp_instructions(instructions))`.
-    pub fn mcp_instructions(self, instructions: Vec<ServerInstructions>) -> Self {
-        self.prompt(Prompt::mcp_instructions(instructions))
     }
 
     /// Add an event handler for agent events

@@ -1,4 +1,4 @@
-use aether::core::agent;
+use aether::core::{Prompt, agent};
 use aether::events::{AgentMessage, UserMessage};
 use aether::mcp::{McpBuilder, McpSpawnResult, mcp};
 use llm::{StreamingModelProvider, ToolCallRequest};
@@ -277,11 +277,11 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
 
         let llm = self.llm.clone();
         let mut agent_builder = agent(llm)
-            .mcp_instructions(instructions)
+            .system_prompt(Prompt::mcp_instructions(instructions))
             .tools(command_tx, tool_definitions);
 
         if let Some(prompt) = config.system_prompt {
-            agent_builder = agent_builder.system(prompt);
+            agent_builder = agent_builder.system_prompt(Prompt::text(prompt));
         }
 
         let (agent_tx, agent_rx, _handle) = agent_builder

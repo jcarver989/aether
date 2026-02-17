@@ -153,8 +153,8 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
         .unwrap();
 
     let (tx, mut rx, _handle) = agent(llm)
-        .system("You are a test agent")
-        .prompt(Prompt::mcp_instructions(instructions))
+        .system_prompt(Prompt::text("You are a test agent"))
+        .system_prompt(Prompt::mcp_instructions(instructions))
         .tools(mcp_tx, tool_definitions)
         .spawn()
         .await
@@ -208,7 +208,7 @@ async fn test_agent_builder_works_without_mcp_instructions() {
 
     // No mcp_instructions provided - should still work
     let (tx, mut rx, _handle) = agent(llm)
-        .system("You are a test agent")
+        .system_prompt(Prompt::text("You are a test agent"))
         .tools(mcp_tx, tool_definitions)
         .spawn()
         .await

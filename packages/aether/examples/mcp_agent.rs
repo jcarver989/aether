@@ -1,5 +1,5 @@
 use aether::{
-    core::agent,
+    core::{Prompt, agent},
     events::{AgentMessage, UserMessage},
     mcp::{McpSpawnResult, mcp},
 };
@@ -23,7 +23,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .spawn()
         .await?;
     let (tx, mut rx, _handle) = agent(llm)
-        .system("You are a helpful assistant with access to web browsing tools via Playwright.")
+        .system_prompt(Prompt::text(
+            "You are a helpful assistant with access to web browsing tools via Playwright.",
+        ))
         .tools(mcp_tx, tools)
         .spawn()
         .await?;
