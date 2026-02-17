@@ -1,6 +1,7 @@
 pub mod command_picker;
 pub mod config_menu;
 pub mod config_picker;
+pub mod conversation_window;
 pub mod file_picker;
 pub mod grid_loader;
 pub mod input_prompt;
