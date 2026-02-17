@@ -1,4 +1,4 @@
-use aether::core::agent;
+use aether::core::{Prompt, agent};
 use aether::events::{AgentMessage, UserMessage};
 use llm::providers::openrouter::OpenRouterProvider;
 use std::io::{self, Write};
@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let llm = OpenRouterProvider::default("z-ai/glm-4.5-air")?;
     let (tx, mut rx, _handle) = agent(llm)
-        .system("You are a helpful assistant.")
+        .system_prompt(Prompt::text("You are a helpful assistant."))
         .spawn()
         .await?;
 

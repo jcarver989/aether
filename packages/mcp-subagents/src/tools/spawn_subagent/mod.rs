@@ -1,6 +1,6 @@
 use crate::subagent_file::AgentFile;
 use aether::{
-    core::{AgentHandle, agent},
+    core::{AgentHandle, Prompt, agent},
     events::{AgentMessage, UserMessage},
     mcp::{McpSpawnResult, mcp, run_mcp_task::McpCommand},
 };
@@ -451,8 +451,8 @@ async fn spawn_agent(
     String,
 > {
     let (user_tx, agent_rx, agent_handle) = agent(llm)
-        .system(system_prompt)
-        .mcp_instructions(instructions)
+        .system_prompt(Prompt::text(system_prompt))
+        .system_prompt(Prompt::mcp_instructions(instructions))
         .tools(mcp_tx, tools)
         .spawn()
         .await

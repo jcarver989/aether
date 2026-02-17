@@ -137,7 +137,7 @@ impl Session {
         };
 
         let builder = agent(llm)
-            .system(&system_prompt)
+            .system_prompt(Prompt::text(&system_prompt))
             .tools(mcp_tx.clone(), tool_definitions);
 
         let (agent_tx, agent_rx, agent_handle) = builder.spawn().await?;

@@ -34,7 +34,7 @@ aether = "0.1"
 ### Minimal Agent (No Tools)
 
 ```rust,ignore
-use aether::core::{AgentMessage, UserMessage, agent};
+use aether::core::{AgentMessage, Prompt, UserMessage, agent};
 use llm::providers::openrouter::OpenRouterProvider;
 use std::io::{self, Write};
 
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
    // 2. Create an Agent
     let (tx, mut rx, _handle) = agent(llm) // <-- Give it an LLM
-        .system("You are a helpful assistant.") // <-- Give it a system prompt
+        .prompt(Prompt::text("You are a helpful assistant.")) // <-- Give it a system prompt
         .spawn() // <-- Spawn it into a tokio task
         .await?;
 
@@ -149,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Create Agent
     let (tx, mut rx, _handle) = agent(llm)
-        .system(&Prompt::agents_md().build().await?) // <-- Load system prompt from AGENTS.md (recursively searches parent directories)
+        .prompt(Prompt::agents_md()) // <-- Load system prompt from AGENTS.md (recursively searches parent directories)
         .tools(mcp_tx, tools) // <-- Give the agent MCP tools
         .spawn()
         .await?;
