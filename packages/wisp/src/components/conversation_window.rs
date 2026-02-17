@@ -1,6 +1,6 @@
 use std::mem::take;
 
-use crate::components::grid_loader::GridLoader;
+use crate::tui::spinner::Spinner;
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::tui::{Component, Line, RenderContext};
@@ -102,7 +102,7 @@ impl ConversationBuffer {
 }
 
 pub(crate) struct ConversationWindow<'a> {
-    pub loader: &'a GridLoader,
+    pub loader: &'a Spinner,
     pub segments: &'a [StreamSegment],
     pub tool_call_statuses: &'a ToolCallStatuses,
 }
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn renders_empty_when_loader_and_segments_are_empty() {
-        let loader = GridLoader::default();
+        let loader = Spinner::default();
         let statuses = ToolCallStatuses::new();
         let view = ConversationWindow {
             loader: &loader,
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn inserts_vertical_margin_between_different_segment_kinds() {
-        let loader = GridLoader::default();
+        let loader = Spinner::default();
         let statuses = ToolCallStatuses::new();
         let segments = vec![
             StreamSegment::Text("one".to_string()),
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn does_not_insert_vertical_margin_for_same_kind_segments() {
-        let loader = GridLoader::default();
+        let loader = Spinner::default();
         let statuses = ToolCallStatuses::new();
         let segments = vec![
             StreamSegment::Text("first".to_string()),
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn renders_loader_before_segments() {
-        let mut loader = GridLoader::default();
+        let mut loader = Spinner::default();
         loader.visible = true;
         let statuses = ToolCallStatuses::new();
         let segments = vec![StreamSegment::Text("hello".to_string())];
