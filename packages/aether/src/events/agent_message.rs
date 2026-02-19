@@ -68,7 +68,7 @@ pub enum AgentMessage {
         context_limit: u32,
     },
 
-    /// Agent is auto-continuing because LLM stopped without completion signal.
+    /// Agent is auto-continuing because LLM stopped with a resumable stop reason.
     AutoContinue {
         /// Current attempt number (1-indexed).
         attempt: u32,

@@ -5,7 +5,7 @@ use crate::mcp::run_mcp_task::{McpCommand, ToolExecutionEvent};
 use futures::Stream;
 use llm::types::IsoString;
 use llm::{
-    ChatMessage, Context, LlmError, LlmResponse, StreamingModelProvider, ToolCallError,
+    ChatMessage, Context, LlmError, LlmResponse, StopReason, StreamingModelProvider, ToolCallError,
     ToolCallRequest, ToolCallResult,
 };
 use std::collections::{HashMap, HashSet};
@@ -16,9 +16,6 @@ use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::StreamMap;
 use tokio_stream::wrappers::ReceiverStream;
-
-/// Signal that must be present in the LLM response to indicate genuine task completion
-pub const COMPLETION_SIGNAL: &str = "<task-complete/>";
 
 /// Internal event type for merging LLM and tool result streams
 #[derive(Debug)]
@@ -137,22 +134,18 @@ impl Agent {
                     .await;
 
                 let has_tool_calls = state.has_tool_calls();
-                let has_completion_signal = state.message_content.contains(COMPLETION_SIGNAL);
                 let message_content = state.message_content.clone();
+                let stop_reason = state.stop_reason.clone();
                 state = IterationState::new();
 
                 if has_tool_calls {
                     self.auto_continue.on_tool_calls();
                     self.start_llm_stream();
-                } else if has_completion_signal {
-                    self.auto_continue.on_completion();
-                    if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
-                        tracing::warn!("Failed to send Done message: {:?}", e);
-                    }
-                } else if self.auto_continue.should_continue() {
+                } else if self.auto_continue.should_continue(stop_reason.as_ref()) {
                     self.auto_continue.advance();
                     tracing::info!(
-                        "LLM stopped without completion signal or tool calls, auto-continuing (attempt {}/{})",
+                        "LLM stopped with {:?}, auto-continuing (attempt {}/{})",
+                        stop_reason,
                         self.auto_continue.count(),
                         self.auto_continue.max()
                     );
@@ -165,13 +158,10 @@ impl Agent {
                         })
                         .await;
 
-                    self.inject_continuation_prompt(&message_content);
+                    self.inject_continuation_prompt(&message_content, stop_reason.as_ref());
                     self.start_llm_stream();
                 } else {
-                    tracing::warn!(
-                        "LLM stopped {} times without completion signal, giving up",
-                        self.auto_continue.max()
-                    );
+                    tracing::debug!("LLM completed turn with stop reason: {:?}", stop_reason);
                     self.auto_continue.on_completion();
                     if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
                         tracing::warn!("Failed to send Done message: {:?}", e);
@@ -243,8 +233,12 @@ impl Agent {
         self.streams.insert("llm".to_string(), Box::pin(llm_stream));
     }
 
-    /// Inject a continuation prompt when the LLM stops without completing the task
-    fn inject_continuation_prompt(&mut self, previous_response: &str) {
+    /// Inject a continuation prompt when the LLM stops due to a resumable reason.
+    fn inject_continuation_prompt(
+        &mut self,
+        previous_response: &str,
+        stop_reason: Option<&StopReason>,
+    ) {
         if !previous_response.is_empty() {
             self.context.add_message(ChatMessage::Assistant {
                 content: previous_response.to_string(),
@@ -254,8 +248,14 @@ impl Agent {
             });
         }
 
+        let reason = stop_reason
+            .map(|reason| format!("{reason:?}"))
+            .unwrap_or_else(|| "Unknown".to_string());
+
         self.context.add_message(ChatMessage::User {
-            content: format!("<system-notification>The LLM API stopped without a '{}' signal. If your task is complete, or you don't have a task, ensure your final response ends with {}. If you're still working, continue from where you left off.</system-notification>", COMPLETION_SIGNAL, COMPLETION_SIGNAL),
+            content: format!(
+                "<system-notification>The LLM API stopped with reason '{reason}'. Continue from where you left off and finish your task.</system-notification>"
+            ),
             timestamp: IsoString::now(),
         });
     }
@@ -305,8 +305,9 @@ impl Agent {
                 self.handle_tool_completion(tool_call, state).await;
             }
 
-            Done => {
+            Done { stop_reason } => {
                 state.llm_done = true;
+                state.stop_reason = stop_reason;
             }
 
             Error { message } => {
@@ -329,6 +330,7 @@ impl Agent {
         state.current_message_id = Some(message_id);
         state.message_content.clear();
         state.reasoning_content.clear();
+        state.stop_reason = None;
     }
 
     async fn handle_llm_text(&mut self, chunk: String, state: &mut IterationState) {
@@ -635,20 +637,14 @@ impl Agent {
 pub(crate) struct AutoContinue {
     max: u32,
     count: u32,
-    tools_used: bool,
 }
 
 impl AutoContinue {
     pub(crate) fn new(max: u32) -> Self {
-        Self {
-            max,
-            count: 0,
-            tools_used: false,
-        }
+        Self { max, count: 0 }
     }
 
     fn on_tool_calls(&mut self) {
-        self.tools_used = true;
         self.count = 0;
     }
 
@@ -656,8 +652,8 @@ impl AutoContinue {
         self.count = 0;
     }
 
-    fn should_continue(&self) -> bool {
-        self.tools_used && self.count < self.max
+    fn should_continue(&self, stop_reason: Option<&StopReason>) -> bool {
+        matches!(stop_reason, Some(StopReason::Length)) && self.count < self.max
     }
 
     fn advance(&mut self) {
@@ -681,6 +677,7 @@ struct IterationState {
     pending_tool_ids: HashSet<String>,
     completed_tool_calls: Vec<Result<ToolCallResult, ToolCallError>>,
     llm_done: bool,
+    stop_reason: Option<StopReason>,
     cancelled: bool,
 }
 
@@ -693,6 +690,7 @@ impl IterationState {
             pending_tool_ids: HashSet::new(),
             completed_tool_calls: Vec::new(),
             llm_done: false,
+            stop_reason: None,
             cancelled: false,
         }
     }

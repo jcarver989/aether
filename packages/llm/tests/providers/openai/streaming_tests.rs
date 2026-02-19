@@ -4,8 +4,8 @@ use async_openai::types::chat::{
 };
 use tokio_stream::StreamExt;
 
-use llm::LlmResponse;
 use llm::providers::openai::streaming::process_completion_stream;
+use llm::{LlmResponse, StopReason};
 
 #[tokio::test]
 async fn test_parallel_tool_calls() {
@@ -283,7 +283,12 @@ async fn test_parallel_tool_calls() {
     assert_eq!(tool_args, 4, "Should have 4 tool argument chunks");
     assert_eq!(tool_completions, 2, "Should have 2 tool completions");
 
-    assert!(matches!(events.last(), Some(LlmResponse::Done)));
+    assert!(matches!(
+        events.last(),
+        Some(LlmResponse::Done {
+            stop_reason: Some(StopReason::ToolCalls)
+        })
+    ));
 }
 
 #[tokio::test]

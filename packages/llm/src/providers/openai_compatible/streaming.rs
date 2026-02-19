@@ -1,6 +1,7 @@
 use super::types::ChatCompletionStreamResponse;
+use super::types::FinishReason;
 use crate::providers::tool_call_collector::ToolCallCollector;
-use crate::{LlmError, LlmResponse, LlmResponseStream, Result};
+use crate::{LlmError, LlmResponse, LlmResponseStream, Result, StopReason};
 use async_openai::{Client, config::OpenAIConfig, types::chat::CreateChatCompletionRequest};
 use async_stream;
 use serde::Serialize;
@@ -57,6 +58,7 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
         let mut had_text = false;
         let mut had_reasoning = false;
         let mut had_tool_calls = false;
+        let mut last_stop_reason: Option<StopReason> = None;
 
         while let Some(result) = stream.next().await {
             match result {
@@ -104,6 +106,7 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
                         if let Some(finish_reason) = choice.finish_reason {
                             let finish_reason_str = format!("{finish_reason:?}");
                             debug!("Received finish reason: {finish_reason_str}");
+                            last_stop_reason = Some(map_openai_compatible_finish_reason(finish_reason));
 
                             for tool_call in collector.complete_all() {
                                 yield Ok(LlmResponse::ToolRequestComplete { tool_call });
@@ -134,7 +137,20 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
             info!(chunk_count, had_text, had_reasoning, had_tool_calls, "Stream completed");
         }
 
-        yield Ok(LlmResponse::Done);
+        yield Ok(LlmResponse::Done {
+            stop_reason: last_stop_reason,
+        });
+    }
+}
+
+fn map_openai_compatible_finish_reason(reason: FinishReason) -> StopReason {
+    match reason {
+        FinishReason::Stop => StopReason::EndTurn,
+        FinishReason::Length => StopReason::Length,
+        FinishReason::ToolCalls => StopReason::ToolCalls,
+        FinishReason::ContentFilter => StopReason::ContentFilter,
+        FinishReason::FunctionCall => StopReason::FunctionCall,
+        FinishReason::Error => StopReason::Error,
     }
 }
 
@@ -183,7 +199,10 @@ mod tests {
             events[1],
             LlmResponse::Reasoning { ref chunk } if chunk == "thinking"
         ));
-        assert!(matches!(events.last(), Some(LlmResponse::Done)));
+        assert!(matches!(
+            events.last(),
+            Some(LlmResponse::Done { stop_reason: None })
+        ));
     }
 
     #[tokio::test]
@@ -227,6 +246,11 @@ mod tests {
 
         assert!(events.iter().any(|e| matches!(e, LlmResponse::ToolRequestStart { id, name } if id == "call_1" && name == "tool")));
         assert!(events.iter().any(|e| matches!(e, LlmResponse::ToolRequestComplete { tool_call } if tool_call.id == "call_1" && tool_call.arguments == "{}")));
-        assert!(matches!(events.last(), Some(LlmResponse::Done)));
+        assert!(matches!(
+            events.last(),
+            Some(LlmResponse::Done {
+                stop_reason: Some(StopReason::ToolCalls)
+            })
+        ));
     }
 }

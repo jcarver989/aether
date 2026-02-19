@@ -1,4 +1,4 @@
-use aether::core::{COMPLETION_SIGNAL, agent};
+use aether::core::agent;
 use aether::events::{AgentMessage, UserMessage};
 use llm::LlmResponse;
 use llm::testing::FakeLlmProvider;
@@ -8,18 +8,16 @@ async fn test_switch_model_emits_model_switched() {
     // The switched-to provider will produce this response
     let switch_responses = vec![vec![
         LlmResponse::start("after-switch"),
-        LlmResponse::text("Switched! "),
-        LlmResponse::text(COMPLETION_SIGNAL),
-        LlmResponse::Done,
+        LlmResponse::text("Switched!"),
+        LlmResponse::done(),
     ]];
     let new_provider = FakeLlmProvider::new(switch_responses);
 
     // Initial LLM produces a response, then we switch
     let initial_responses = vec![vec![
         LlmResponse::start("msg-1"),
-        LlmResponse::text("Hello "),
-        LlmResponse::text(COMPLETION_SIGNAL),
-        LlmResponse::Done,
+        LlmResponse::text("Hello"),
+        LlmResponse::done(),
     ]];
     let llm = FakeLlmProvider::new(initial_responses);
 

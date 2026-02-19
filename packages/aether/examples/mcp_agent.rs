@@ -110,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 max_attempts,
             }) => {
                 println!(
-                    "Auto-continuing: attempt {}/{} (LLM stopped without completion signal)",
+                    "Auto-continuing: attempt {}/{} (LLM stopped due to length)",
                     attempt, max_attempts
                 );
             }

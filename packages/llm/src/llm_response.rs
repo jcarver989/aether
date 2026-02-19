@@ -3,6 +3,18 @@ use serde::{Deserialize, Serialize};
 use super::ToolCallRequest;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StopReason {
+    EndTurn,
+    Length,
+    ToolCalls,
+    ContentFilter,
+    FunctionCall,
+    Error,
+    Unknown(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum LlmResponse {
     Start {
@@ -25,7 +37,9 @@ pub enum LlmResponse {
     ToolRequestComplete {
         tool_call: ToolCallRequest,
     },
-    Done,
+    Done {
+        stop_reason: Option<StopReason>,
+    },
     Error {
         message: String,
     },
@@ -82,6 +96,16 @@ impl LlmResponse {
         Self::Usage {
             input_tokens,
             output_tokens,
+        }
+    }
+
+    pub fn done() -> Self {
+        Self::Done { stop_reason: None }
+    }
+
+    pub fn done_with_stop_reason(stop_reason: StopReason) -> Self {
+        Self::Done {
+            stop_reason: Some(stop_reason),
         }
     }
 }
