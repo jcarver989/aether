@@ -1,31 +1,62 @@
 use super::screen::Line;
 use unicode_width::UnicodeWidthChar;
 
-pub fn display_width_ansi(s: &str) -> usize {
-    let mut width = 0;
-    let mut chars = s.chars().peekable();
+pub fn display_width_text(s: &str) -> usize {
+    s.chars()
+        .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(0))
+        .sum()
+}
 
-    while let Some(ch) = chars.next() {
-        if ch == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next();
-            for c in chars.by_ref() {
-                if ('@'..='~').contains(&c) {
-                    break;
-                }
-            }
-            continue;
-        }
-        width += UnicodeWidthChar::width(ch).unwrap_or(0);
-    }
-
-    width
+pub fn display_width_line(line: &Line) -> usize {
+    line.spans()
+        .iter()
+        .map(|span| display_width_text(span.text()))
+        .sum()
 }
 
 pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
-    soft_wrap_str(line.as_str(), width)
-        .into_iter()
-        .map(Line::new)
-        .collect()
+    if line.is_empty() {
+        return vec![Line::new("")];
+    }
+
+    let max_width = width as usize;
+    if max_width == 0 {
+        return vec![line.clone()];
+    }
+
+    let mut rows = Vec::new();
+    let mut current = Line::default();
+    let mut current_width = 0usize;
+
+    for span in line.spans() {
+        for ch in span.text().chars() {
+            if ch == '\n' {
+                rows.push(current);
+                current = Line::default();
+                current_width = 0;
+                continue;
+            }
+
+            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+            if ch_width > 0 && current_width + ch_width > max_width && !current.is_empty() {
+                rows.push(current);
+                current = Line::default();
+                current_width = 0;
+            }
+
+            match span.style().fg {
+                Some(color) => current.push_styled(ch.to_string(), color),
+                None => current.push_text(ch.to_string()),
+            }
+            current_width += ch_width;
+        }
+    }
+
+    rows.push(current);
+    if rows.is_empty() {
+        rows.push(Line::new(""));
+    }
+    rows
 }
 
 pub fn soft_wrap_lines_with_map(lines: &[Line], width: u16) -> (Vec<Line>, Vec<usize>) {
@@ -40,88 +71,42 @@ pub fn soft_wrap_lines_with_map(lines: &[Line], width: u16) -> (Vec<Line>, Vec<u
     (out, starts)
 }
 
-pub fn soft_wrap_str(s: &str, width: u16) -> Vec<String> {
-    if s.is_empty() {
-        return vec![String::new()];
-    }
-
-    let max_width = width as usize;
-    if max_width == 0 {
-        return vec![s.to_string()];
-    }
-
-    let mut rows = Vec::new();
-    let mut current = String::new();
-    let mut current_width = 0usize;
-
-    let mut chars = s.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\x1b' && chars.peek() == Some(&'[') {
-            current.push(ch);
-            current.push(chars.next().expect("peeked '[' must exist"));
-            for c in chars.by_ref() {
-                current.push(c);
-                if ('@'..='~').contains(&c) {
-                    break;
-                }
-            }
-            continue;
-        }
-
-        if ch == '\n' {
-            rows.push(current);
-            current = String::new();
-            current_width = 0;
-            continue;
-        }
-
-        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if ch_width > 0 && current_width + ch_width > max_width && !current.is_empty() {
-            rows.push(current);
-            current = String::new();
-            current_width = 0;
-        }
-
-        current.push(ch);
-        current_width += ch_width;
-    }
-
-    rows.push(current);
-    if rows.is_empty() {
-        rows.push(String::new());
-    }
-    rows
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::style::Color;
 
     #[test]
     fn wraps_ascii_to_width() {
-        let rows = soft_wrap_str("abcdef", 3);
-        assert_eq!(rows, vec!["abc", "def"]);
+        let rows = soft_wrap_line(&Line::new("abcdef"), 3);
+        assert_eq!(rows, vec![Line::new("abc"), Line::new("def")]);
     }
 
     #[test]
-    fn ansi_is_zero_width_for_measurement() {
-        let red = "\x1b[31mhello\x1b[39m";
-        assert_eq!(display_width_ansi(red), 5);
+    fn display_width_ignores_style() {
+        let mut line = Line::default();
+        line.push_styled("he", Color::Red);
+        line.push_text("llo");
+        assert_eq!(display_width_line(&line), 5);
     }
 
     #[test]
-    fn wraps_with_ansi_sequences() {
-        let s = "\x1b[31mabcdef\x1b[39m";
-        let rows = soft_wrap_str(s, 3);
+    fn wraps_preserving_style_spans() {
+        let line = Line::styled("abcdef", Color::Red);
+        let rows = soft_wrap_line(&line, 3);
         assert_eq!(rows.len(), 2);
-        assert!(rows[0].contains("abc"));
-        assert!(rows[1].contains("def"));
+        assert_eq!(rows[0].plain_text(), "abc");
+        assert_eq!(rows[1].plain_text(), "def");
+        assert_eq!(rows[0].spans().len(), 1);
+        assert_eq!(rows[1].spans().len(), 1);
+        assert_eq!(rows[0].spans()[0].style().fg, Some(Color::Red));
+        assert_eq!(rows[1].spans()[0].style().fg, Some(Color::Red));
     }
 
     #[test]
     fn counts_wide_unicode() {
-        assert_eq!(display_width_ansi("中a"), 3);
-        let rows = soft_wrap_str("中ab", 3);
-        assert_eq!(rows, vec!["中a", "b"]);
+        assert_eq!(display_width_text("中a"), 3);
+        let rows = soft_wrap_line(&Line::new("中ab"), 3);
+        assert_eq!(rows, vec![Line::new("中a"), Line::new("b")]);
     }
 }

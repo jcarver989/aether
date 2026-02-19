@@ -1,7 +1,6 @@
 use crate::tui::{Combobox, Searchable};
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crossterm::style::Stylize;
 use ignore::WalkBuilder;
 use std::env::current_dir;
 use std::path::{Path, PathBuf};
@@ -123,7 +122,7 @@ impl Component for FilePicker {
 
             let line_text = format!("{}{}", prefix, file.display_name);
             let line = if i == self.combobox.selected_index {
-                Line::new(line_text.with(context.theme.primary).to_string())
+                Line::styled(line_text, context.theme.primary)
             } else {
                 Line::new(line_text)
             };

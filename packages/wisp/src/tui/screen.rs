@@ -1,29 +1,207 @@
 use crossterm::{
     QueueableCommand,
     cursor::MoveUp,
+    style::{Attribute, Color, SetAttribute, SetForegroundColor},
     terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate},
 };
+use std::fmt::Write as _;
 use std::io::{self, Write};
 
 /// A single line of pre-formatted terminal output.
-/// May contain ANSI color codes. Equality is byte-identical.
+/// Holds text and style spans. ANSI is emitted only at write-time.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Line(String);
+pub struct Line {
+    spans: Vec<Span>,
+}
 
-impl Line {
-    pub fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Style {
+    pub fg: Option<Color>,
+    pub bold: bool,
+}
+
+impl Style {
+    pub fn fg(color: Color) -> Self {
+        Self::default().color(color)
+    }
+
+    pub fn color(mut self, color: Color) -> Self {
+        self.fg = Some(color);
+        self
     }
 
     #[allow(dead_code)]
-    pub fn as_str(&self) -> &str {
-        &self.0
+    pub fn bold(mut self) -> Self {
+        self.bold = true;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    text: String,
+    style: Style,
+}
+
+impl Span {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            style: Style::default(),
+        }
+    }
+
+    pub fn with_style(text: impl Into<String>, style: Style) -> Self {
+        Self {
+            text: text.into(),
+            style,
+        }
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn style(&self) -> Style {
+        self.style
+    }
+}
+
+impl Line {
+    pub fn new(s: impl Into<String>) -> Self {
+        let text = s.into();
+        if text.is_empty() {
+            return Self::default();
+        }
+
+        Self {
+            spans: vec![Span::new(text.clone())],
+        }
+    }
+
+    pub fn styled(text: impl Into<String>, color: Color) -> Self {
+        Self::with_style(text, Style::fg(color))
+    }
+
+    pub fn with_style(text: impl Into<String>, style: Style) -> Self {
+        let text = text.into();
+        if text.is_empty() {
+            return Self::default();
+        }
+
+        Self {
+            spans: vec![Span::with_style(text, style)],
+        }
+    }
+
+    pub fn spans(&self) -> &[Span] {
+        &self.spans
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.spans.is_empty()
+    }
+
+    pub fn push_text(&mut self, text: impl Into<String>) {
+        self.push_span(Span::new(text));
+    }
+
+    pub fn push_styled(&mut self, text: impl Into<String>, color: Color) {
+        self.push_with_style(text, Style::fg(color));
+    }
+
+    pub fn push_with_style(&mut self, text: impl Into<String>, style: Style) {
+        self.push_span(Span::with_style(text, style));
+    }
+
+    pub fn push_span(&mut self, span: Span) {
+        if span.text.is_empty() {
+            return;
+        }
+
+        if let Some(last) = self.spans.last_mut()
+            && last.style == span.style
+        {
+            last.text.push_str(&span.text);
+            return;
+        }
+        self.spans.push(span);
+    }
+
+    pub fn append_line(&mut self, other: &Line) {
+        for span in &other.spans {
+            self.push_span(span.clone());
+        }
+    }
+
+    pub fn to_ansi_string(&self) -> String {
+        if self.spans.is_empty() {
+            return String::new();
+        }
+
+        let mut out = String::new();
+        let mut active_style = Style::default();
+
+        for span in &self.spans {
+            if span.style != active_style {
+                emit_style_transition(&mut out, active_style, span.style);
+                active_style = span.style;
+            }
+            out.push_str(&span.text);
+        }
+
+        if active_style != Style::default() {
+            emit_style_transition(&mut out, active_style, Style::default());
+        }
+
+        out
+    }
+
+    #[allow(dead_code)]
+    pub fn plain_text(&self) -> String {
+        let mut text = String::new();
+        for span in &self.spans {
+            text.push_str(&span.text);
+        }
+        text
     }
 }
 
 impl std::fmt::Display for Line {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        for span in &self.spans {
+            f.write_str(&span.text)?;
+        }
+        Ok(())
+    }
+}
+
+impl Default for Line {
+    fn default() -> Self {
+        Self { spans: Vec::new() }
+    }
+}
+
+fn push_fg_sgr(out: &mut String, color: Option<Color>) {
+    let fg = color.unwrap_or(Color::Reset);
+    let _ = write!(out, "{}", SetForegroundColor(fg));
+}
+
+fn push_attr_sgr(out: &mut String, attr: Attribute) {
+    let _ = write!(out, "{}", SetAttribute(attr));
+}
+
+fn emit_style_transition(out: &mut String, from: Style, to: Style) {
+    if from.bold != to.bold {
+        if to.bold {
+            push_attr_sgr(out, Attribute::Bold);
+        } else {
+            push_attr_sgr(out, Attribute::NormalIntensity);
+        }
+    }
+
+    if from.fg != to.fg {
+        push_fg_sgr(out, to.fg);
     }
 }
 
@@ -116,7 +294,7 @@ impl Screen {
         // Write new_frame[rewrite_from..]
         let to_write = &new_frame[rewrite_from..];
         for (i, line) in to_write.iter().enumerate() {
-            write!(writer, "{line}")?;
+            write!(writer, "{}", line.to_ansi_string())?;
             if i < to_write.len() - 1 {
                 write!(writer, "\r\n")?;
             }
@@ -157,7 +335,7 @@ impl Screen {
 
         // Write scrollback lines (permanent, with \r\n)
         for line in lines {
-            write!(writer, "{line}\r\n")?;
+            write!(writer, "{}\r\n", line.to_ansi_string())?;
         }
 
         writer.queue(EndSynchronizedUpdate)?;
@@ -350,5 +528,27 @@ mod tests {
         let mut w2 = FakeWriter::new();
         let written = screen.render(&frame, 120, &mut w2).unwrap();
         assert_eq!(written, 2);
+    }
+
+    #[test]
+    fn builder_style_supports_bold_and_color() {
+        let mut line = Line::default();
+        line.push_with_style("hot", Style::default().bold().color(Color::Red));
+
+        let ansi = line.to_ansi_string();
+        let mut bold = String::new();
+        let mut normal = String::new();
+        let mut red = String::new();
+        let mut reset = String::new();
+        push_attr_sgr(&mut bold, Attribute::Bold);
+        push_attr_sgr(&mut normal, Attribute::NormalIntensity);
+        push_fg_sgr(&mut red, Some(Color::Red));
+        push_fg_sgr(&mut reset, None);
+
+        assert!(ansi.contains(&bold));
+        assert!(ansi.contains(&red));
+        assert!(ansi.contains("hot"));
+        assert!(ansi.contains(&normal));
+        assert!(ansi.contains(&reset));
     }
 }

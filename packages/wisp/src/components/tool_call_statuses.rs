@@ -2,7 +2,6 @@ use agent_client_protocol as acp;
 
 use crate::tui::spinner::BRAILLE_FRAMES as FRAMES;
 use crate::tui::{Component, Line, RenderContext};
-use crossterm::style::Stylize;
 use std::collections::HashMap;
 
 const MAX_TOOL_ARG_LENGTH: usize = 200;
@@ -24,41 +23,48 @@ pub enum ToolCallStatus {
 impl Component for ToolCallStatusView {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
         // Only color the indicator/spinner, not the tool name
-        let (indicator, suffix) = match &self.status {
+        let (indicator, indicator_color, suffix, suffix_color) = match &self.status {
             ToolCallStatus::Running => {
                 let frame = FRAMES[self.tick as usize % FRAMES.len()];
-                (frame.with(context.theme.info), String::new())
+                (frame.to_string(), context.theme.info, String::new(), None)
             }
             ToolCallStatus::Success => (
-                '●'.with(context.theme.success),
-                " ✓".with(context.theme.success).to_string(),
+                '●'.to_string(),
+                context.theme.success,
+                " ✓".to_string(),
+                Some(context.theme.success),
             ),
             ToolCallStatus::Error(_) => (
-                '●'.with(context.theme.error),
-                " X".with(context.theme.error).to_string(),
+                '●'.to_string(),
+                context.theme.error,
+                " X".to_string(),
+                Some(context.theme.error),
             ),
         };
 
-        // Tool name in default/white color (uncolored)
-        let name_styled = format!("{} {}", indicator, self.name);
-        let args = Self::format_arguments(&self.arguments, context);
-
-        let mut line_text = format!("{name_styled}{suffix}{args}");
+        let mut line = Line::default();
+        line.push_styled(indicator, indicator_color);
+        line.push_text(" ");
+        line.push_text(&self.name);
+        if let Some(color) = suffix_color {
+            line.push_styled(suffix, color);
+        }
+        line.push_styled(Self::format_arguments(&self.arguments), context.theme.muted);
 
         if let ToolCallStatus::Error(msg) = &self.status {
-            let error_styled = msg.to_string().with(context.theme.error);
-            line_text.push_str(&format!(" {error_styled}"));
+            line.push_text(" ");
+            line.push_styled(msg, context.theme.error);
         }
 
-        vec![Line::new(line_text)]
+        vec![line]
     }
 }
 
 impl ToolCallStatusView {
-    fn format_arguments(arguments: &str, context: &RenderContext) -> String {
+    fn format_arguments(arguments: &str) -> String {
         let mut formatted = format!(" {arguments}");
         formatted.truncate(MAX_TOOL_ARG_LENGTH);
-        format!("{}", formatted.with(context.theme.muted))
+        formatted
     }
 }
 
@@ -307,7 +313,7 @@ mod tests {
         ));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].as_str().contains("Read"));
+        assert!(lines[0].plain_text().contains("Read"));
     }
 
     #[test]
@@ -320,7 +326,7 @@ mod tests {
         ));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].as_str().contains("✓"));
+        assert!(lines[0].plain_text().contains("✓"));
     }
 
     #[test]
@@ -344,7 +350,7 @@ mod tests {
         ));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].as_str().contains("X"));
+        assert!(lines[0].plain_text().contains("X"));
     }
 
     #[test]
@@ -354,8 +360,8 @@ mod tests {
         statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].as_str().contains("Read"));
-        assert!(lines[1].as_str().contains("Write"));
+        assert!(lines[0].plain_text().contains("Read"));
+        assert!(lines[1].plain_text().contains("Write"));
     }
 
     #[test]
@@ -369,8 +375,8 @@ mod tests {
         ));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].as_str().contains("✓")); // Read completed
-        assert!(!lines[1].as_str().contains("✓")); // Write still running
+        assert!(lines[0].plain_text().contains("✓")); // Read completed
+        assert!(!lines[1].plain_text().contains("✓")); // Write still running
     }
 
     #[test]
@@ -400,14 +406,14 @@ mod tests {
 
         let drained = statuses.drain_completed(&ctx());
         assert_eq!(drained.len(), 2);
-        assert!(drained[0].as_str().contains("Write"));
-        assert!(drained[0].as_str().contains("✓"));
-        assert!(drained[1].as_str().contains("Grep"));
-        assert!(drained[1].as_str().contains("X"));
+        assert!(drained[0].plain_text().contains("Write"));
+        assert!(drained[0].plain_text().contains("✓"));
+        assert!(drained[1].plain_text().contains("Grep"));
+        assert!(drained[1].plain_text().contains("X"));
 
         let remaining = statuses.render(&ctx());
         assert_eq!(remaining.len(), 1);
-        assert!(remaining[0].as_str().contains("Read"));
+        assert!(remaining[0].plain_text().contains("Read"));
     }
 
     #[test]
@@ -443,8 +449,8 @@ mod tests {
 
         let remaining = statuses.render(&ctx());
         assert_eq!(remaining.len(), 1);
-        assert!(remaining[0].as_str().contains("Write"));
-        assert!(remaining[0].as_str().contains("✓"));
+        assert!(remaining[0].plain_text().contains("Write"));
+        assert!(remaining[0].plain_text().contains("✓"));
     }
 
     #[test]
@@ -457,7 +463,7 @@ mod tests {
         };
         let lines = view.render(&ctx());
         assert_eq!(lines.len(), 1);
-        let text = lines[0].as_str();
+        let text = lines[0].plain_text();
         assert!(text.contains("TestTool"));
         assert!(text.contains("test args"));
         assert!(text.contains('⠋'));
@@ -477,8 +483,8 @@ mod tests {
             status: ToolCallStatus::Running,
             tick: 1,
         };
-        let a = view_a.render(&ctx())[0].as_str().to_string();
-        let b = view_b.render(&ctx())[0].as_str().to_string();
+        let a = view_a.render(&ctx())[0].plain_text();
+        let b = view_b.render(&ctx())[0].plain_text();
         assert_ne!(a, b);
     }
 
@@ -492,7 +498,7 @@ mod tests {
         };
         let lines = view.render(&ctx());
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].as_str().contains("✓"));
+        assert!(lines[0].plain_text().contains("✓"));
     }
 
     #[test]
@@ -505,7 +511,7 @@ mod tests {
         };
         let lines = view.render(&ctx());
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].as_str().contains("X"));
-        assert!(lines[0].as_str().contains("boom"));
+        assert!(lines[0].plain_text().contains("X"));
+        assert!(lines[0].plain_text().contains("boom"));
     }
 }

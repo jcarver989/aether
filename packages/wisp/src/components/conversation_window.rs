@@ -202,12 +202,12 @@ mod tests {
 
         let lines = view.render(&context);
         assert_eq!(lines.len(), 5);
-        assert!(lines[0].as_str().contains("one"));
-        assert_eq!(lines[1].as_str(), "");
-        assert!(lines[2].as_str().contains("Thought:"));
-        assert!(lines[2].as_str().contains("two"));
-        assert_eq!(lines[3].as_str(), "");
-        assert!(lines[4].as_str().contains("three"));
+        assert!(lines[0].plain_text().contains("one"));
+        assert_eq!(lines[1].plain_text(), "");
+        assert!(lines[2].plain_text().contains("Thought:"));
+        assert!(lines[2].plain_text().contains("two"));
+        assert_eq!(lines[3].plain_text(), "");
+        assert!(lines[4].plain_text().contains("three"));
     }
 
     #[test]
@@ -227,8 +227,8 @@ mod tests {
 
         let lines = view.render(&context);
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].as_str().contains("first"));
-        assert!(lines[1].as_str().contains("second"));
+        assert!(lines[0].plain_text().contains("first"));
+        assert!(lines[1].plain_text().contains("second"));
     }
 
     #[test]
@@ -246,13 +246,13 @@ mod tests {
 
         let lines = view.render(&context);
         assert_eq!(lines.len(), 2);
-        let loader_line = lines[0].as_str();
+        let loader_line = lines[0].plain_text();
         assert!(
             BRAILLE_FRAMES
                 .iter()
                 .any(|frame| loader_line.contains(frame.to_string().as_str()))
         );
-        assert!(lines[1].as_str().contains("hello"));
+        assert!(lines[1].plain_text().contains("hello"));
     }
 
     #[test]

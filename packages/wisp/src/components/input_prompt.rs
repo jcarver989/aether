@@ -1,6 +1,5 @@
-use crate::tui::soft_wrap::{display_width_ansi, soft_wrap_str};
+use crate::tui::soft_wrap::{display_width_line, soft_wrap_line};
 use crate::tui::{Component, Line, RenderContext};
-use crossterm::style::Stylize;
 use unicode_width::UnicodeWidthChar;
 
 pub struct InputPrompt<'a> {
@@ -24,7 +23,8 @@ impl InputPrompt<'_> {
         let styled_input = style_input(self.input, context);
 
         if width < 4 {
-            let line = format!("> {styled_input}");
+            let mut line = Line::new("> ");
+            line.append_line(&styled_input);
             let total_col = 2 + cursor_display_width;
             let (cursor_row, cursor_col) = if width == 0 {
                 (0, 0)
@@ -32,7 +32,7 @@ impl InputPrompt<'_> {
                 (total_col / width, (total_col % width) as u16)
             };
             return InputPromptLayout {
-                lines: vec![Line::new(line)],
+                lines: vec![line],
                 cursor_row,
                 cursor_col,
             };
@@ -41,7 +41,7 @@ impl InputPrompt<'_> {
         let inner_width = width - 2; // space between │ and │
         // " " + marker area ("> " or "  ")
         let content_width = inner_width.saturating_sub(3).max(1);
-        let wrapped_chunks = soft_wrap_str(&styled_input, content_width as u16);
+        let wrapped_chunks = soft_wrap_line(&styled_input, content_width as u16);
 
         let cursor_content_row = cursor_display_width / content_width;
         let cursor_content_col = cursor_display_width % content_width;
@@ -49,29 +49,33 @@ impl InputPrompt<'_> {
         // Ensure we always render enough rows to place the cursor safely.
         let content_rows = wrapped_chunks.len().max(cursor_content_row + 1);
 
-        let top = format!("╭{}╮", "─".repeat(inner_width)).with(context.theme.muted);
-        let bottom = format!("╰{}╯", "─".repeat(inner_width)).with(context.theme.muted);
-        let border_left = "│".with(context.theme.muted);
-        let border_right = "│".with(context.theme.muted);
-        let first_prompt = format!("{}", "> ".with(context.theme.primary));
-        let continuation_prompt = format!("{}", "  ".with(context.theme.muted));
-
         let mut lines = Vec::with_capacity(content_rows + 2);
-        lines.push(Line::new(format!("{top}")));
+        lines.push(Line::styled(
+            format!("╭{}╮", "─".repeat(inner_width)),
+            context.theme.muted,
+        ));
 
         for row in 0..content_rows {
-            let chunk = wrapped_chunks.get(row).map_or("", String::as_str);
-            let prompt = if row == 0 {
-                &first_prompt
+            let chunk = wrapped_chunks.get(row).cloned().unwrap_or_default();
+            let pad_len = content_width.saturating_sub(display_width_line(&chunk));
+            let mut middle = Line::default();
+            middle.push_styled("│", context.theme.muted);
+            middle.push_text(" ");
+            if row == 0 {
+                middle.push_styled("> ", context.theme.primary);
             } else {
-                &continuation_prompt
-            };
-            let pad_len = content_width.saturating_sub(display_width_ansi(chunk));
-            let middle = format!("{border_left} {prompt}{chunk}{:pad_len$}{border_right}", "");
-            lines.push(Line::new(middle));
+                middle.push_styled("  ", context.theme.muted);
+            }
+            middle.append_line(&chunk);
+            middle.push_text(" ".repeat(pad_len));
+            middle.push_styled("│", context.theme.muted);
+            lines.push(middle);
         }
 
-        lines.push(Line::new(format!("{bottom}")));
+        lines.push(Line::styled(
+            format!("╰{}╯", "─".repeat(inner_width)),
+            context.theme.muted,
+        ));
 
         InputPromptLayout {
             lines,
@@ -88,15 +92,15 @@ impl Component for InputPrompt<'_> {
     }
 }
 
-fn style_input(input: &str, context: &RenderContext) -> String {
+fn style_input(input: &str, context: &RenderContext) -> Line {
     if !input.contains('@') {
-        return input.with(context.theme.text_primary).to_string();
+        return Line::styled(input, context.theme.text_primary);
     }
     style_mentions(input, context)
 }
 
-fn style_mentions(input: &str, context: &RenderContext) -> String {
-    let mut styled = String::new();
+fn style_mentions(input: &str, context: &RenderContext) -> Line {
+    let mut styled = Line::default();
     let mut last_pos = 0;
 
     for (at_pos, _) in input.match_indices('@') {
@@ -104,30 +108,18 @@ fn style_mentions(input: &str, context: &RenderContext) -> String {
             continue;
         }
 
-        styled.push_str(
-            &input[last_pos..at_pos]
-                .with(context.theme.text_primary)
-                .to_string(),
-        );
+        styled.push_styled(&input[last_pos..at_pos], context.theme.text_primary);
 
         let mention_end = input[at_pos..]
             .find(' ')
             .map(|i| at_pos + i)
             .unwrap_or(input.len());
-        styled.push_str(
-            &input[at_pos..mention_end]
-                .with(context.theme.info)
-                .to_string(),
-        );
+        styled.push_styled(&input[at_pos..mention_end], context.theme.info);
         last_pos = mention_end;
     }
 
     if last_pos < input.len() {
-        styled.push_str(
-            &input[last_pos..]
-                .with(context.theme.text_primary)
-                .to_string(),
-        );
+        styled.push_styled(&input[last_pos..], context.theme.text_primary);
     }
 
     styled
@@ -170,8 +162,8 @@ mod tests {
         };
         let ctx = RenderContext::new((80, 24));
         let lines = prompt.render(&ctx);
-        assert!(lines[0].as_str().contains("╭"));
-        assert!(lines[0].as_str().contains("╮"));
+        assert!(lines[0].plain_text().contains("╭"));
+        assert!(lines[0].plain_text().contains("╮"));
     }
 
     #[test]
@@ -182,8 +174,8 @@ mod tests {
         };
         let ctx = RenderContext::new((80, 24));
         let lines = prompt.render(&ctx);
-        assert!(lines[2].as_str().contains("╰"));
-        assert!(lines[2].as_str().contains("╯"));
+        assert!(lines[2].plain_text().contains("╰"));
+        assert!(lines[2].plain_text().contains("╯"));
     }
 
     #[test]
@@ -194,8 +186,8 @@ mod tests {
         };
         let ctx = RenderContext::new((80, 24));
         let lines = prompt.render(&ctx);
-        assert!(lines[1].as_str().contains("> "));
-        assert!(lines[1].as_str().contains("│"));
+        assert!(lines[1].plain_text().contains("> "));
+        assert!(lines[1].plain_text().contains("│"));
     }
 
     #[test]
@@ -206,7 +198,7 @@ mod tests {
         };
         let ctx = RenderContext::new((80, 24));
         let lines = prompt.render(&ctx);
-        assert!(lines[1].as_str().contains("hello"));
+        assert!(lines[1].plain_text().contains("hello"));
     }
 
     #[test]
@@ -235,7 +227,7 @@ mod tests {
         assert_eq!(narrow_lines.len(), 3);
         assert_eq!(wide_lines.len(), 3);
         // Wide border should be longer than narrow
-        assert!(wide_lines[0].as_str().len() > narrow_lines[0].as_str().len());
+        assert!(wide_lines[0].plain_text().len() > narrow_lines[0].plain_text().len());
     }
 
     #[test]
@@ -247,9 +239,9 @@ mod tests {
         let ctx = RenderContext::new((20, 24));
         let lines = prompt.render(&ctx);
         assert!(lines.len() > 3);
-        assert!(lines.iter().all(|line| line.as_str().contains("│")
-            || line.as_str().contains("╭")
-            || line.as_str().contains("╰")));
+        assert!(lines.iter().all(|line| line.plain_text().contains("│")
+            || line.plain_text().contains("╭")
+            || line.plain_text().contains("╰")));
     }
 
     #[test]
@@ -260,7 +252,7 @@ mod tests {
         };
         let ctx = RenderContext::new((80, 24));
         let lines = prompt.render(&ctx);
-        assert!(lines[1].as_str().contains("@main.rs"));
-        assert!(lines[1].as_str().contains("explain this"));
+        assert!(lines[1].plain_text().contains("@main.rs"));
+        assert!(lines[1].plain_text().contains("explain this"));
     }
 }
