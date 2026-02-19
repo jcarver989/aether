@@ -9,7 +9,7 @@ use std::io::{self, Write};
 
 /// A single line of pre-formatted terminal output.
 /// Holds text and style spans. ANSI is emitted only at write-time.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Line {
     spans: Vec<Span>,
 }
@@ -176,11 +176,6 @@ impl std::fmt::Display for Line {
     }
 }
 
-impl Default for Line {
-    fn default() -> Self {
-        Self { spans: Vec::new() }
-    }
-}
 
 fn push_fg_sgr(out: &mut String, color: Option<Color>) {
     let fg = color.unwrap_or(Color::Reset);
