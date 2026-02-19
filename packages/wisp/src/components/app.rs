@@ -538,9 +538,10 @@ impl App {
         self.input_buffer.clear();
         self.close_input_pickers();
 
-        let mut effects = vec![AppEvent::PushScrollback(vec![Line::new(
-            user_input.clone(),
-        )])];
+        let mut effects = vec![
+            AppEvent::PushScrollback(vec![Line::new(String::new())]),
+            AppEvent::PushScrollback(vec![Line::new(user_input.clone())]),
+        ];
 
         let (content_blocks, warning_lines) = self.build_attachment_blocks(&user_input);
         if !warning_lines.is_empty() {
