@@ -1,7 +1,7 @@
 
 ## Required Output Format
 
-You MUST respond with valid JSON matching this exact structure, followed by `<task-complete/>` to signal completion:
+You MUST respond with valid JSON matching this exact structure:
 
 ```json
 {
@@ -14,10 +14,9 @@ You MUST respond with valid JSON matching this exact structure, followed by `<ta
   "details": "Optional detailed output if needed"
 }
 ```
-<task-complete/>
 
 CRITICAL:
 - Include ALL file paths you examined or referenced (do not summarize these away)
 - Use absolute paths, not relative
 - Be explicit about decisions and reasoning
-- Output ONLY the JSON followed by `<task-complete/>` to signal you are done
+- Output ONLY the JSON
