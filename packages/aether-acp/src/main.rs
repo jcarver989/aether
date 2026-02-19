@@ -62,7 +62,7 @@ async fn main() -> acp::Result<()> {
         .await
 }
 
-fn setup_logging(args: &Args) -> () {
+fn setup_logging(args: &Args) {
     create_dir_all(&args.log_dir).ok();
     tracing_subscriber::fmt()
         .with_writer(daily(&args.log_dir, "aether-acp.log"))

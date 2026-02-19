@@ -45,6 +45,7 @@ pub struct Agent {
 }
 
 impl Agent {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         llm: Arc<dyn StreamingModelProvider>,
         context: Context,

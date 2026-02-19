@@ -135,7 +135,7 @@ fn build_provider_config_option(
     current_provider: &str,
 ) -> SessionConfigOption {
     let all_models = catalog::LlmModel::all();
-    let providers = unique_providers(&all_models);
+    let providers = unique_providers(all_models);
     let available_providers: HashSet<&str> = available.iter().map(|m| m.provider()).collect();
     let options: Vec<SessionConfigSelectOption> = providers
         .iter()
@@ -152,7 +152,7 @@ fn build_provider_config_option(
             if is_available {
                 option
             } else {
-                let description = provider_required_env_var(&all_models, p)
+                let description = provider_required_env_var(all_models, p)
                     .map(|var| format!("Unavailable: set {var}"))
                     .unwrap_or_else(|| "Unavailable: provider is not configured".to_string());
                 option.description(description)
