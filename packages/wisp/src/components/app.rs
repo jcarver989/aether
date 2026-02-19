@@ -861,7 +861,7 @@ mod tests {
         let row = output
             .lines
             .iter()
-            .position(|line| line.as_str().contains("  / search: "))
+            .position(|line| line.plain_text().contains("  / search: "))
             .expect("command picker header should exist");
         assert_eq!(output.cursor.logical_row, row);
     }
@@ -886,7 +886,7 @@ mod tests {
         let has_menu_row = output
             .lines
             .iter()
-            .any(|line| line.as_str().contains("Model: M1"));
+            .any(|line| line.plain_text().contains("Model: M1"));
         assert!(
             !has_menu_row,
             "config menu should be hidden when picker is open"

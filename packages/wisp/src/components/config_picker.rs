@@ -2,7 +2,6 @@ use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuVa
 use crate::tui::{Combobox, Searchable};
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crossterm::style::Stylize;
 
 impl Searchable for ConfigMenuValue {
     fn search_text(&self) -> String {
@@ -114,7 +113,7 @@ impl Component for ConfigPicker {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let header = format!("  {} search: {}", self.title, self.combobox.query);
-        lines.push(Line::new(header.with(context.theme.muted).to_string()));
+        lines.push(Line::styled(header, context.theme.muted));
 
         if self.combobox.matches.is_empty() {
             lines.push(Line::new("  (no matches found)".to_string()));
@@ -145,9 +144,9 @@ impl Component for ConfigPicker {
 
             let line_text = format!("{}{}", prefix, label);
             let line = if option.is_disabled {
-                Line::new(line_text.with(context.theme.muted).to_string())
+                Line::styled(line_text, context.theme.muted)
             } else if i == self.combobox.selected_index {
-                Line::new(line_text.with(context.theme.primary).to_string())
+                Line::styled(line_text, context.theme.primary)
             } else {
                 Line::new(line_text)
             };

@@ -1,7 +1,6 @@
 use crate::tui::{Combobox, Searchable};
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crossterm::style::Stylize;
 
 #[derive(Debug, Clone)]
 pub struct CommandEntry {
@@ -43,7 +42,7 @@ impl Component for CommandPicker {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let header = format!("  / search: {}", self.combobox.query);
-        lines.push(Line::new(header.with(context.theme.muted).to_string()));
+        lines.push(Line::styled(header, context.theme.muted));
 
         if self.combobox.matches.is_empty() {
             lines.push(Line::new("  (no matching commands)".to_string()));
@@ -67,17 +66,15 @@ impl Component for CommandPicker {
                 command.name, command.description, hint_suffix
             );
             let line = if i == self.combobox.selected_index {
-                Line::new(line_text.with(context.theme.primary).to_string())
+                Line::styled(line_text, context.theme.primary)
             } else {
                 let name_part = format!("{prefix}/{}", command.name);
                 let desc_part = format!(" - {}", command.description);
                 let hint_part = hint_suffix;
-                Line::new(format!(
-                    "{}{}{}",
-                    name_part,
-                    desc_part.with(context.theme.muted),
-                    hint_part.with(context.theme.muted),
-                ))
+                let mut line = Line::new(name_part);
+                line.push_styled(desc_part, context.theme.muted);
+                line.push_styled(hint_part, context.theme.muted);
+                line
             };
             lines.push(line);
         }
@@ -240,7 +237,7 @@ mod tests {
         let picker = CommandPicker::new(sample_commands());
         let context = RenderContext::new((120, 40));
         let lines = picker.render(&context);
-        let text: Vec<&str> = lines.iter().map(|l| l.as_str()).collect();
+        let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
 
         assert!(
             text.iter().any(|l| l.contains("[query pattern]")),
@@ -264,12 +261,12 @@ mod tests {
 
         let config_line = lines
             .iter()
-            .find(|l| l.as_str().contains("/config"))
+            .find(|l| l.plain_text().contains("/config"))
             .expect("config command should be rendered");
         assert!(
-            !config_line.as_str().contains("  ["),
+            !config_line.plain_text().contains("  ["),
             "Config command should not have hint brackets. Got: {}",
-            config_line.as_str()
+            config_line.plain_text()
         );
     }
 

@@ -1,7 +1,6 @@
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
 use crossterm::event::{KeyCode, KeyEvent};
-use crossterm::style::Stylize;
 
 pub struct ConfigMenu {
     pub options: Vec<ConfigMenuEntry>,
@@ -56,9 +55,9 @@ impl Component for ConfigMenu {
                     .is_some_and(|v| v.is_disabled);
                 let text = format!("{}{}: {}", prefix, entry.title, current_name);
                 if current_disabled {
-                    Line::new(text.with(context.theme.muted).to_string())
+                    Line::styled(text, context.theme.muted)
                 } else if selected {
-                    Line::new(text.with(context.theme.primary).to_string())
+                    Line::styled(text, context.theme.primary)
                 } else {
                     Line::new(text)
                 }
@@ -316,13 +315,13 @@ mod tests {
 
         assert_eq!(lines.len(), 2);
         // First line is selected (contains ▶)
-        assert!(lines[0].as_str().contains("▶"));
-        assert!(lines[0].as_str().contains("Model"));
-        assert!(lines[0].as_str().contains("GPT-4o"));
+        assert!(lines[0].plain_text().contains("▶"));
+        assert!(lines[0].plain_text().contains("Model"));
+        assert!(lines[0].plain_text().contains("GPT-4o"));
         // Second line is not selected
-        assert!(lines[1].as_str().contains("Mode"));
-        assert!(lines[1].as_str().contains("Code"));
-        assert!(!lines[1].as_str().contains("▶"));
+        assert!(lines[1].plain_text().contains("Mode"));
+        assert!(lines[1].plain_text().contains("Code"));
+        assert!(!lines[1].plain_text().contains("▶"));
     }
 
     #[test]
@@ -332,7 +331,7 @@ mod tests {
         let context = RenderContext::new((80, 24));
         let lines = menu.render(&context);
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].as_str().contains("no config options"));
+        assert!(lines[0].plain_text().contains("no config options"));
     }
 
     #[test]

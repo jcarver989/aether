@@ -1,23 +1,25 @@
 use crate::tui::theme::Theme;
 use crate::tui::{Component, Line, RenderContext};
-use crossterm::style::Stylize;
 
 pub struct ThoughtMessage<'a> {
     pub text: &'a str,
 }
 
 impl ThoughtMessage<'_> {
-    fn format_with_theme(text: &str, prefix: bool, theme: &Theme) -> String {
-        let body = text.with(theme.muted);
+    fn format_with_theme(text: &str, prefix: bool, theme: &Theme) -> Line {
+        let mut line = Line::default();
         if !prefix {
-            return format!("{body}");
+            line.push_styled(text, theme.muted);
+            return line;
         }
 
-        let prefix = "Thought:".with(theme.info);
-        format!("{prefix} {body}")
+        line.push_styled("Thought:", theme.info);
+        line.push_text(" ");
+        line.push_styled(text, theme.muted);
+        line
     }
 
-    fn format_lines(text: &str, theme: &Theme) -> Vec<String> {
+    fn format_lines(text: &str, theme: &Theme) -> Vec<Line> {
         let mut lines = text.lines();
         let Some(first) = lines.next() else {
             return vec![];
@@ -36,15 +38,13 @@ impl Component for ThoughtMessage<'_> {
         }
 
         Self::format_lines(self.text, &context.theme)
-            .into_iter()
-            .map(Line::new)
-            .collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::soft_wrap::soft_wrap_line;
 
     #[test]
     fn renders_prefixed_thought_line() {
@@ -52,8 +52,8 @@ mod tests {
         let context = RenderContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].as_str().contains("Thought:"));
-        assert!(lines[0].as_str().contains("check plan"));
+        assert!(lines[0].plain_text().contains("Thought:"));
+        assert!(lines[0].plain_text().contains("check plan"));
     }
 
     #[test]
@@ -64,9 +64,29 @@ mod tests {
         let context = RenderContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].as_str().contains("Thought:"));
-        assert!(lines[0].as_str().contains("line one"));
-        assert!(!lines[1].as_str().contains("Thought:"));
-        assert!(lines[1].as_str().contains("line two"));
+        assert!(lines[0].plain_text().contains("Thought:"));
+        assert!(lines[0].plain_text().contains("line one"));
+        assert!(!lines[1].plain_text().contains("Thought:"));
+        assert!(lines[1].plain_text().contains("line two"));
+    }
+
+    #[test]
+    fn wrapped_continuation_rows_remain_muted() {
+        let component = ThoughtMessage {
+            text: "abcdefghijklmnopqrstuvwxyz",
+        };
+        let context = RenderContext::new((80, 24));
+        let lines = component.render(&context);
+        let wrapped = soft_wrap_line(&lines[0], 12);
+        assert!(wrapped.len() > 1);
+
+        for row in wrapped.iter().skip(1) {
+            assert!(!row.spans().is_empty());
+            assert!(
+                row.spans()
+                    .iter()
+                    .all(|span| span.style().fg == Some(context.theme.muted))
+            );
+        }
     }
 }

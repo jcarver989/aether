@@ -1,7 +1,6 @@
 use super::component::RenderContext;
 use super::screen::Line;
 use crate::tui::Component;
-use crossterm::style::Stylize;
 
 pub const BRAILLE_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -42,8 +41,10 @@ impl Component for Spinner {
         }
 
         let frame = self.current_frame();
-        let styled = format!("{}", frame.with(context.theme.info));
-        vec![Line::new(format!("  {styled}"))]
+        let mut line = Line::default();
+        line.push_text("  ");
+        line.push_styled(frame.to_string(), context.theme.info);
+        vec![line]
     }
 }
 
@@ -90,8 +91,8 @@ mod tests {
             ..Spinner::default()
         };
 
-        let a = spinner_a.render(&ctx)[0].as_str().to_string();
-        let b = spinner_b.render(&ctx)[0].as_str().to_string();
+        let a = spinner_a.render(&ctx)[0].plain_text();
+        let b = spinner_b.render(&ctx)[0].plain_text();
 
         assert_ne!(a, b);
     }
@@ -111,8 +112,8 @@ mod tests {
             ..Spinner::default()
         };
 
-        let a = spinner_a.render(&ctx)[0].as_str().to_string();
-        let b = spinner_b.render(&ctx)[0].as_str().to_string();
+        let a = spinner_a.render(&ctx)[0].plain_text();
+        let b = spinner_b.render(&ctx)[0].plain_text();
 
         assert_eq!(a, b);
     }
