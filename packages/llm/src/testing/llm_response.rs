@@ -48,7 +48,7 @@ impl LlmResponseBuilder {
     }
 
     pub fn build(mut self) -> Vec<LlmResponse> {
-        self.chunks.push(LlmResponse::Done);
+        self.chunks.push(LlmResponse::done());
         self.chunks
     }
 }

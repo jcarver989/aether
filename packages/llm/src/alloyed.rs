@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn test_alloyed_provider_display_name_single() {
-        let fake_provider = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
+        let fake_provider = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
         let provider = AlloyedModelProvider::new(vec![Box::new(fake_provider)]);
 
         // Should return the individual provider's display name
@@ -76,8 +76,8 @@ mod tests {
 
     #[test]
     fn test_alloyed_provider_display_name_multiple() {
-        let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
-        let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
+        let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
+        let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
         let provider =
             AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
 
@@ -88,8 +88,8 @@ mod tests {
 
     #[test]
     fn test_alloyed_provider_cycling() {
-        let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
-        let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
+        let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
+        let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
         let provider =
             AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
 
@@ -113,8 +113,8 @@ mod tests {
 
     #[test]
     fn test_display_name_doesnt_advance_counter() {
-        let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
-        let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::Done]]);
+        let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
+        let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
         let provider =
             AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
 

@@ -1,5 +1,5 @@
 use super::types::{ContentBlockDeltaData, ContentBlockStartData, StreamEvent};
-use crate::{LlmError, LlmResponse, Result, ToolCallRequest};
+use crate::{LlmError, LlmResponse, Result, StopReason, ToolCallRequest};
 use async_stream;
 use futures::Stream;
 use std::collections::HashMap;
@@ -16,6 +16,7 @@ pub fn process_anthropic_stream<T: Stream<Item = Result<String>> + Send + Sync +
         let mut active_tool_calls: HashMap<String, (String, String)> = HashMap::new();
         let mut index_to_id: HashMap<u32, String> = HashMap::new();
         let mut stream = Box::pin(stream);
+        let mut last_stop_reason: Option<StopReason> = None;
 
         while let Some(result) = stream.next().await {
             match result {
@@ -39,8 +40,14 @@ pub fn process_anthropic_stream<T: Stream<Item = Result<String>> + Send + Sync +
                     };
 
                     match process_stream_event(event, &mut active_tool_calls, &mut index_to_id) {
-                        Ok(Some(response)) => yield Ok(response),
-                        Ok(None) => {}, // Event processed but no response to emit
+                        Ok((response, stop_reason)) => {
+                            if let Some(stop_reason) = stop_reason {
+                                last_stop_reason = Some(stop_reason);
+                            }
+                            if let Some(response) = response {
+                                yield Ok(response);
+                            }
+                        }
                         Err(e) => {
                             yield Err(e);
                             break;
@@ -59,7 +66,9 @@ pub fn process_anthropic_stream<T: Stream<Item = Result<String>> + Send + Sync +
             yield Ok(LlmResponse::ToolRequestComplete { tool_call });
         }
 
-        yield Ok(LlmResponse::Done);
+        yield Ok(LlmResponse::Done {
+            stop_reason: last_stop_reason,
+        });
     }
 }
 
@@ -67,33 +76,33 @@ fn process_stream_event(
     event: StreamEvent,
     active_tool_calls: &mut HashMap<String, (String, String)>,
     index_to_id: &mut HashMap<u32, String>,
-) -> Result<Option<LlmResponse>> {
+) -> Result<(Option<LlmResponse>, Option<StopReason>)> {
     use StreamEvent::*;
     match event {
         MessageStart { data: _start_data } => {
             debug!("Message started");
-            Ok(None)
+            Ok((None, None))
         }
 
         ContentBlockStart { data: start_data } => match start_data.content_block {
             ContentBlockStartData::Text { .. } => {
                 debug!("Text block started at index {}", start_data.index);
-                Ok(None)
+                Ok((None, None))
             }
             ContentBlockStartData::ToolUse { id, name } => {
                 debug!("Tool use started: {} ({})", name, id);
                 index_to_id.insert(start_data.index, id.clone());
                 active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
-                Ok(Some(LlmResponse::ToolRequestStart { id, name }))
+                Ok((Some(LlmResponse::ToolRequestStart { id, name }), None))
             }
         },
 
         ContentBlockDelta { data: delta_data } => match delta_data.delta {
             ContentBlockDeltaData::TextDelta { text } => {
                 if !text.is_empty() {
-                    Ok(Some(LlmResponse::Text { chunk: text }))
+                    Ok((Some(LlmResponse::Text { chunk: text }), None))
                 } else {
-                    Ok(None)
+                    Ok((None, None))
                 }
             }
 
@@ -101,20 +110,23 @@ fn process_stream_event(
                 if let Some(id) = index_to_id.get(&delta_data.index) {
                     if let Some((_name, arguments)) = active_tool_calls.get_mut(id) {
                         arguments.push_str(&partial_json);
-                        Ok(Some(LlmResponse::ToolRequestArg {
-                            id: id.clone(),
-                            chunk: partial_json,
-                        }))
+                        Ok((
+                            Some(LlmResponse::ToolRequestArg {
+                                id: id.clone(),
+                                chunk: partial_json,
+                            }),
+                            None,
+                        ))
                     } else {
                         warn!("Received tool input delta for unknown tool call id: {}", id);
-                        Ok(None)
+                        Ok((None, None))
                     }
                 } else {
                     warn!(
                         "Received tool input delta for unknown tool call index: {}",
                         delta_data.index
                     );
-                    Ok(None)
+                    Ok((None, None))
                 }
             }
         },
@@ -126,36 +138,45 @@ fn process_stream_event(
                         name,
                         arguments,
                     };
-                    Ok(Some(LlmResponse::ToolRequestComplete { tool_call }))
+                    Ok((Some(LlmResponse::ToolRequestComplete { tool_call }), None))
                 } else {
                     debug!(
                         "Content block stopped but tool call not found for id: {}",
                         id
                     );
-                    Ok(None)
+                    Ok((None, None))
                 }
             } else {
                 debug!("Content block stopped at index {}", stop_data.index);
-                Ok(None)
+                Ok((None, None))
             }
         }
 
         MessageDelta { data: delta_data } => {
             debug!("Message delta received");
+            let stop_reason = delta_data
+                .delta
+                .stop_reason
+                .as_deref()
+                .map(map_anthropic_stop_reason);
+
             // Emit complete usage at message completion
             if let Some(usage) = &delta_data.delta.usage {
-                Ok(Some(LlmResponse::Usage {
-                    input_tokens: usage.input_tokens,
-                    output_tokens: usage.output_tokens,
-                }))
+                Ok((
+                    Some(LlmResponse::Usage {
+                        input_tokens: usage.input_tokens,
+                        output_tokens: usage.output_tokens,
+                    }),
+                    stop_reason,
+                ))
             } else {
-                Ok(None)
+                Ok((None, stop_reason))
             }
         }
 
         MessageStop { data: _stop_data } => {
             debug!("Message stopped");
-            Ok(None)
+            Ok((None, None))
         }
 
         Error { data: error_data } => Err(LlmError::ApiError(format!(
@@ -165,8 +186,18 @@ fn process_stream_event(
 
         Ping => {
             debug!("Received ping event");
-            Ok(None)
+            Ok((None, None))
         }
+    }
+}
+
+fn map_anthropic_stop_reason(reason: &str) -> StopReason {
+    match reason {
+        "end_turn" => StopReason::EndTurn,
+        "tool_use" => StopReason::ToolCalls,
+        "max_tokens" => StopReason::Length,
+        "stop_sequence" => StopReason::EndTurn,
+        _ => StopReason::Unknown(reason.to_string()),
     }
 }
 
@@ -205,7 +236,12 @@ mod tests {
                 output_tokens: 25
             }
         ));
-        assert!(matches!(responses[4], LlmResponse::Done));
+        assert!(matches!(
+            responses[4],
+            LlmResponse::Done {
+                stop_reason: Some(StopReason::EndTurn)
+            }
+        ));
     }
 
     #[tokio::test]
@@ -241,7 +277,12 @@ mod tests {
                 output_tokens: 15
             }
         ));
-        assert!(matches!(responses[4], LlmResponse::Done));
+        assert!(matches!(
+            responses[4],
+            LlmResponse::Done {
+                stop_reason: Some(StopReason::ToolCalls)
+            }
+        ));
     }
 
     #[tokio::test]

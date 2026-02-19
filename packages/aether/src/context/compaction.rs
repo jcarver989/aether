@@ -102,7 +102,7 @@ impl Compactor {
                 Ok(LlmResponse::Text { chunk }) => {
                     summary.push_str(&chunk);
                 }
-                Ok(LlmResponse::Done) => break,
+                Ok(LlmResponse::Done { .. }) => break,
                 Ok(LlmResponse::Error { message }) => {
                     return Err(CompactionError::SummarizationFailed(message));
                 }
@@ -154,7 +154,7 @@ mod tests {
         let summary_response = vec![
             LlmResponse::start("msg-1"),
             LlmResponse::text("## Session Intent\nTest the compaction feature"),
-            LlmResponse::Done,
+            LlmResponse::done(),
         ];
 
         let fake_llm = Arc::new(FakeLlmProvider::with_single_response(summary_response));

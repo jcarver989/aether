@@ -73,7 +73,7 @@ impl FakeLlmProvider {
             LlmResponse::Text {
                 chunk: content.to_string(),
             },
-            LlmResponse::Done,
+            LlmResponse::done(),
         ];
         Self { chunks }
     }
@@ -85,7 +85,7 @@ impl FakeLlmProvider {
                 chunk: s.to_string(),
             })
             .collect();
-        chunks.push(LlmResponse::Done);
+        chunks.push(LlmResponse::done());
         Self { chunks }
     }
 
@@ -109,7 +109,7 @@ impl FakeLlmProvider {
                     arguments: arguments.to_string(),
                 },
             },
-            LlmResponse::Done,
+            LlmResponse::done(),
         ];
         Self { chunks }
     }
@@ -175,7 +175,7 @@ pub async fn collect_stream_content(
         let chunk = chunk_result?;
         if let LlmResponse::Text { chunk: text } = chunk {
             content.push_str(&text);
-        } else if let LlmResponse::Done = chunk {
+        } else if matches!(chunk, LlmResponse::Done { .. }) {
             break;
         }
     }
@@ -190,7 +190,7 @@ pub async fn collect_stream_chunks(
     let mut chunks = Vec::new();
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
-        let is_done = matches!(chunk, LlmResponse::Done);
+        let is_done = matches!(chunk, LlmResponse::Done { .. });
         chunks.push(chunk);
         if is_done {
             break;
@@ -281,7 +281,7 @@ pub fn assert_stream_event_matches(actual: &LlmResponse, expected: &LlmResponse)
             assert_eq!(tc1.name, tc2.name);
             assert_eq!(tc1.arguments, tc2.arguments);
         }
-        (LlmResponse::Done, LlmResponse::Done) => {}
+        (LlmResponse::Done { .. }, LlmResponse::Done { .. }) => {}
         _ => panic!("Stream chunk mismatch:\nActual: {actual:?}\nExpected: {expected:?}"),
     }
 }

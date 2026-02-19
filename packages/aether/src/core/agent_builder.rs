@@ -144,9 +144,9 @@ impl AgentBuilder {
 
     /// Configure the maximum number of auto-continue attempts.
     ///
-    /// When the LLM stops without making tool calls and without including
-    /// the completion signal (TASK_COMPLETE), the agent will automatically
-    /// inject a continuation prompt and restart the LLM stream.
+    /// When the LLM stops without making tool calls, the agent may inject a
+    /// continuation prompt and restart the LLM stream for resumable stop
+    /// reasons (for example, token length limits).
     ///
     /// This setting limits how many times the agent will attempt to continue
     /// before giving up and returning `AgentMessage::Done`.

@@ -241,7 +241,7 @@ async fn stream_agent_messages(
                 max_attempts,
             } => {
                 tracing::debug!(
-                    "Auto-continuing: attempt {}/{} - LLM stopped without completion signal",
+                    "Auto-continuing: attempt {}/{} - LLM stopped with resumable stop reason",
                     attempt,
                     max_attempts
                 );

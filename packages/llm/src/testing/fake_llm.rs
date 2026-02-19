@@ -43,7 +43,7 @@ impl StreamingModelProvider for FakeLlmProvider {
         let response = if current_call < self.responses.len() {
             self.responses[current_call].clone()
         } else {
-            vec![LlmResponse::Done]
+            vec![LlmResponse::done()]
         };
 
         Box::pin(tokio_stream::iter(response.into_iter().map(Ok)))

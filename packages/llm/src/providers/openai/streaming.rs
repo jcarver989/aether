@@ -1,10 +1,12 @@
-use async_openai::types::chat::CreateChatCompletionStreamResponse;
+use async_openai::types::chat::{
+    CreateChatCompletionStreamResponse, FinishReason as OpenAiFinishReason,
+};
 use async_stream;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
 
 use crate::providers::tool_call_collector::ToolCallCollector;
-use crate::{LlmError, LlmResponse, Result};
+use crate::{LlmError, LlmResponse, Result, StopReason};
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard async_openai CreateChatCompletionStreamResponse types.
@@ -18,6 +20,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
         yield Ok(LlmResponse::Start { message_id });
 
         let mut collector = ToolCallCollector::<u32>::new();
+        let mut last_stop_reason: Option<StopReason> = None;
 
         while let Some(result) = stream.next().await {
             match result {
@@ -60,6 +63,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                         if let Some(finish_reason) = choice.finish_reason {
                             let finish_reason_str = format!("{finish_reason:?}");
                             debug!("Received finish reason: {finish_reason_str}");
+                            last_stop_reason = Some(map_openai_finish_reason(finish_reason));
 
                             for tool_call in collector.complete_all() {
                                 yield Ok(LlmResponse::ToolRequestComplete { tool_call });
@@ -87,6 +91,18 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
             }
         }
 
-        yield Ok(LlmResponse::Done);
+        yield Ok(LlmResponse::Done {
+            stop_reason: last_stop_reason,
+        });
+    }
+}
+
+fn map_openai_finish_reason(reason: OpenAiFinishReason) -> StopReason {
+    match reason {
+        OpenAiFinishReason::Stop => StopReason::EndTurn,
+        OpenAiFinishReason::Length => StopReason::Length,
+        OpenAiFinishReason::ToolCalls => StopReason::ToolCalls,
+        OpenAiFinishReason::ContentFilter => StopReason::ContentFilter,
+        OpenAiFinishReason::FunctionCall => StopReason::FunctionCall,
     }
 }

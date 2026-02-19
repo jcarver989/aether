@@ -2,20 +2,19 @@ use std::error::Error;
 use std::time::Duration;
 
 use aether::{
-    core::COMPLETION_SIGNAL,
     events::{AgentMessage, UserMessage},
     testing::{
         agent_message, test_agent,
         {AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, SlowToolRequest},
     },
 };
-use llm::ChatMessage;
 use llm::testing::llm_response;
+use llm::{ChatMessage, LlmResponse, StopReason};
 
 #[tokio::test]
 async fn test_text_message() -> Result<(), Box<dyn Error>> {
     let id = "message_1";
-    let chunks = ["Hello", "user", COMPLETION_SIGNAL];
+    let chunks = ["Hello", "user"];
     let llm_responses = [llm_response(id).text(&chunks).build()];
     let mut expected_messages = agent_message(id).text(&chunks).build();
     expected_messages.push(AgentMessage::Done);
@@ -35,7 +34,7 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
     let tool_result = AddNumbersResult::new(8);
     let (m1_id, t1_id, t1_name) = ("message_1", "call_1", "test__add_numbers");
     let m2_id = "message-2";
-    let chunks = ["The", " sum", " is", " 8", COMPLETION_SIGNAL];
+    let chunks = ["The", " sum", " is", " 8"];
 
     let llm_responses = [
         llm_response(m1_id)
@@ -81,7 +80,6 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
         " not",
         " allowed",
         ".",
-        COMPLETION_SIGNAL,
     ];
 
     let llm_responses = [
@@ -231,8 +229,8 @@ async fn test_simple_message_content() -> Result<(), Box<dyn Error>> {
 }
 
 #[tokio::test]
-async fn test_auto_continue_stops_with_completion_signal() -> Result<(), Box<dyn Error>> {
-    let chunks = ["I have completed the task. ", COMPLETION_SIGNAL];
+async fn test_auto_continue_not_triggered_for_end_turn() -> Result<(), Box<dyn Error>> {
+    let chunks = ["I have completed the task."];
     let llm_responses = [llm_response("msg_1").text(&chunks).build()];
 
     let messages = test_agent()
@@ -248,7 +246,7 @@ async fn test_auto_continue_stops_with_completion_signal() -> Result<(), Box<dyn
         .count();
     assert_eq!(
         auto_continue_count, 0,
-        "Expected no AutoContinue messages when completion signal is present"
+        "Expected no AutoContinue messages for normal end-turn completion"
     );
 
     assert!(
@@ -290,19 +288,27 @@ async fn test_auto_continue_not_triggered_for_opening_message() -> Result<(), Bo
 }
 
 #[tokio::test]
-async fn test_auto_continue_triggers_without_completion_signal() -> Result<(), Box<dyn Error>> {
+async fn test_auto_continue_triggers_on_length_stop_reason() -> Result<(), Box<dyn Error>> {
     let tool_request = AddNumbersRequest::new(2, 3);
-    let final_chunks = ["Done! ", COMPLETION_SIGNAL];
-
     let llm_responses = [
         llm_response("msg_1")
             .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
             .build(),
-        llm_response("msg_2")
-            .text(&["I'm thinking about the problem..."])
-            .build(),
-        llm_response("msg_3").text(&["Let me continue..."]).build(),
-        llm_response("msg_4").text(&final_chunks).build(),
+        vec![
+            LlmResponse::start("msg_2"),
+            LlmResponse::text("I'm thinking about the problem..."),
+            LlmResponse::done_with_stop_reason(StopReason::Length),
+        ],
+        vec![
+            LlmResponse::start("msg_3"),
+            LlmResponse::text("Let me continue..."),
+            LlmResponse::done_with_stop_reason(StopReason::Length),
+        ],
+        vec![
+            LlmResponse::start("msg_4"),
+            LlmResponse::text("Done!"),
+            LlmResponse::done_with_stop_reason(StopReason::EndTurn),
+        ],
     ];
 
     let messages = test_agent()
@@ -318,7 +324,7 @@ async fn test_auto_continue_triggers_without_completion_signal() -> Result<(), B
         .count();
     assert_eq!(
         auto_continue_count, 2,
-        "Expected 2 AutoContinue messages after tool call, got {}",
+        "Expected 2 AutoContinue messages after length stop reasons, got {}",
         auto_continue_count
     );
 
@@ -345,12 +351,21 @@ async fn test_auto_continue_respects_max_limit() -> Result<(), Box<dyn Error>> {
         llm_response("msg_1")
             .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
             .build(),
-        llm_response("msg_2").text(&["Thinking..."]).build(),
-        llm_response("msg_3").text(&["Still thinking..."]).build(),
-        llm_response("msg_4").text(&["More thinking..."]).build(),
-        llm_response("msg_5")
-            .text(&["This should not appear"])
-            .build(),
+        vec![
+            LlmResponse::start("msg_2"),
+            LlmResponse::text("Thinking..."),
+            LlmResponse::done_with_stop_reason(StopReason::Length),
+        ],
+        vec![
+            LlmResponse::start("msg_3"),
+            LlmResponse::text("Still thinking..."),
+            LlmResponse::done_with_stop_reason(StopReason::Length),
+        ],
+        vec![
+            LlmResponse::start("msg_4"),
+            LlmResponse::text("More thinking..."),
+            LlmResponse::done_with_stop_reason(StopReason::Length),
+        ],
     ];
 
     let messages = test_agent()
@@ -386,9 +401,11 @@ async fn test_auto_continue_disabled_with_zero() -> Result<(), Box<dyn Error>> {
         llm_response("msg_1")
             .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
             .build(),
-        llm_response("msg_2")
-            .text(&["No completion signal here"])
-            .build(),
+        vec![
+            LlmResponse::start("msg_2"),
+            LlmResponse::text("No completion signal here"),
+            LlmResponse::done_with_stop_reason(StopReason::Length),
+        ],
     ];
 
     let messages = test_agent()
@@ -418,8 +435,6 @@ async fn test_auto_continue_disabled_with_zero() -> Result<(), Box<dyn Error>> {
 #[tokio::test]
 async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<(), Box<dyn Error>>
 {
-    use llm::LlmResponse;
-
     let tool_request = AddNumbersRequest::new(2, 3);
 
     let llm_responses = [
@@ -433,11 +448,9 @@ async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<
                 "test__add_numbers",
                 &tool_request.json()?,
             ),
-            LlmResponse::Done,
+            LlmResponse::done(),
         ],
-        llm_response("msg_2")
-            .text(&["Done ", COMPLETION_SIGNAL])
-            .build(),
+        llm_response("msg_2").text(&["Done"]).build(),
     ];
 
     let result = test_agent()
@@ -472,14 +485,11 @@ async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<
 
 #[tokio::test]
 async fn test_reasoning_chunks_emit_thought_messages() -> Result<(), Box<dyn Error>> {
-    use llm::LlmResponse;
-
     let llm_responses = [vec![
         LlmResponse::start("msg_1"),
         LlmResponse::reasoning("internal plan"),
-        LlmResponse::text("Done "),
-        LlmResponse::text(COMPLETION_SIGNAL),
-        LlmResponse::Done,
+        LlmResponse::text("Done"),
+        LlmResponse::done(),
     ]];
 
     let messages = test_agent()
