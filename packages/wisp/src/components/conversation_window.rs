@@ -1,8 +1,8 @@
 use std::mem::take;
 
-use crate::tui::spinner::Spinner;
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
+use crate::tui::spinner::Spinner;
 use crate::tui::{Component, Line, RenderContext};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
