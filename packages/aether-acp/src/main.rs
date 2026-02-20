@@ -14,6 +14,7 @@ use tracing_appender::rolling::daily;
 use tracing_subscriber::EnvFilter;
 
 mod mappers;
+mod relay;
 mod session;
 mod session_manager;
 
