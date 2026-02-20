@@ -249,41 +249,62 @@ where
                 if let Some(extra_content) = content {
                     prompt.extend(extra_content);
                 }
-                match conn
-                    .prompt(acp::PromptRequest::new(session_id, prompt))
-                    .await
-                {
-                    Ok(resp) => {
-                        let _ = event_tx.send(AcpEvent::PromptDone(resp.stop_reason));
-                    }
-                    Err(e) => {
-                        let _ = event_tx.send(AcpEvent::PromptError(e));
-                    }
-                }
-            }
-            PromptCommand::Cancel { session_id } => {
-                let _ = conn.cancel(acp::CancelNotification::new(session_id)).await;
-            }
-            PromptCommand::SetConfigOption {
-                session_id,
-                config_id,
-                value,
-            } => {
-                let req = SetSessionConfigOptionRequest::new(session_id, config_id, value);
-                match conn.set_session_config_option(req).await {
-                    Ok(resp) => {
-                        let update = ConfigOptionUpdate::new(resp.config_options);
-                        let _ = event_tx.send(AcpEvent::SessionUpdate(Box::new(
-                            SessionUpdate::ConfigOptionUpdate(update),
-                        )));
-                    }
-                    Err(e) => {
-                        tracing::warn!("set_session_config_option failed: {e:?}");
+                let prompt_fut = conn.prompt(acp::PromptRequest::new(session_id, prompt));
+                tokio::pin!(prompt_fut);
+
+                // Process cancel/config commands while the prompt is in-flight
+                loop {
+                    tokio::select! {
+                        result = &mut prompt_fut => {
+                            let event = match result {
+                                Ok(resp) => AcpEvent::PromptDone(resp.stop_reason),
+                                Err(e) => AcpEvent::PromptError(e),
+                            };
+                            let _ = event_tx.send(event);
+                            break;
+                        }
+                        Some(cmd) = cmd_rx.recv() => {
+                            handle_side_command(&conn, &event_tx, cmd).await;
+                        }
                     }
                 }
             }
+            cmd => handle_side_command(&conn, &event_tx, cmd).await,
         }
     }
 
     let _ = event_tx.send(AcpEvent::ConnectionClosed);
+}
+
+async fn handle_side_command(
+    conn: &acp::ClientSideConnection,
+    event_tx: &mpsc::UnboundedSender<AcpEvent>,
+    cmd: PromptCommand,
+) {
+    match cmd {
+        PromptCommand::Cancel { session_id } => {
+            let _ = conn.cancel(acp::CancelNotification::new(session_id)).await;
+        }
+        PromptCommand::SetConfigOption {
+            session_id,
+            config_id,
+            value,
+        } => {
+            let req = SetSessionConfigOptionRequest::new(session_id, config_id, value);
+            match conn.set_session_config_option(req).await {
+                Ok(resp) => {
+                    let update = ConfigOptionUpdate::new(resp.config_options);
+                    let _ = event_tx.send(AcpEvent::SessionUpdate(Box::new(
+                        SessionUpdate::ConfigOptionUpdate(update),
+                    )));
+                }
+                Err(e) => {
+                    tracing::warn!("set_session_config_option failed: {e:?}");
+                }
+            }
+        }
+        PromptCommand::Prompt { .. } => {
+            tracing::warn!("ignoring duplicate Prompt while one is in-flight");
+        }
+    }
 }
