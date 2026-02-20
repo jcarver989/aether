@@ -177,6 +177,7 @@ impl SubAgentsMcp {
                             let _ = peer
                                 .notify_progress(ProgressNotificationParam {
                                     progress_token: token,
+                                    // Precision loss acceptable for progress display
                                     #[allow(clippy::cast_precision_loss)]
                                     progress: counter as f64,
                                     total: None,

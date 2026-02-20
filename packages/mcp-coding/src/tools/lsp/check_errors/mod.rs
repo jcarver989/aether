@@ -136,7 +136,7 @@ mod tests {
             )],
         );
 
-        let result = get_diagnostics(None, &cache).unwrap();
+        let result = get_diagnostics(None, &cache);
 
         assert_eq!(result.diagnostics.len(), 3);
         assert_eq!(result.summary.errors, 2);
@@ -167,7 +167,7 @@ mod tests {
             )],
         );
 
-        let result = get_diagnostics(Some("main.rs".to_string()), &cache).unwrap();
+        let result = get_diagnostics(Some("main.rs".to_string()), &cache);
 
         assert_eq!(result.diagnostics.len(), 1);
         assert!(result.diagnostics[0].file.contains("main.rs"));
@@ -179,7 +179,7 @@ mod tests {
     fn test_empty_diagnostics() {
         let cache: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
-        let result = get_diagnostics(None, &cache).unwrap();
+        let result = get_diagnostics(None, &cache);
 
         assert_eq!(result.diagnostics.len(), 0);
         assert_eq!(result.summary.total, 0);
@@ -198,7 +198,7 @@ mod tests {
             vec![make_diagnostic(DiagnosticSeverity::ERROR, "error in a", 10)],
         );
 
-        let result = get_diagnostics(None, &cache).unwrap();
+        let result = get_diagnostics(None, &cache);
 
         // Should be sorted by file path
         assert!(result.diagnostics[0].file.contains("a.rs"));

@@ -69,8 +69,7 @@ pub struct TaskListOutput {
     pub _meta: Option<serde_json::Value>,
 }
 
-#[allow(clippy::needless_pass_by_value)]
-pub fn execute_task_list(input: TaskListInput, store: &TaskStore) -> TaskListOutput {
+pub fn execute_task_list(input: &TaskListInput, store: &TaskStore) -> TaskListOutput {
     let tasks: Vec<TaskSummary> = if input.ready_only.unwrap_or(false) {
         store
             .get_ready()
@@ -110,7 +109,7 @@ pub fn execute_task_list(input: TaskListInput, store: &TaskStore) -> TaskListOut
     };
 
     let count = tasks.len();
-    let filter_desc = build_filter_description(&input);
+    let filter_desc = build_filter_description(input);
 
     let message = if count == 0 {
         format!("No tasks found{filter_desc}")
@@ -188,7 +187,7 @@ mod tests {
         store.add_subtask(&root.id, "Subtask 2").unwrap();
 
         let output = execute_task_list(
-            TaskListInput {
+            &TaskListInput {
                 assignee: None,
                 status: None,
                 tree_id: None,
@@ -213,7 +212,7 @@ mod tests {
         store.add_subtask(&root2.id, "Subtask 2.2").unwrap();
 
         let output = execute_task_list(
-            TaskListInput {
+            &TaskListInput {
                 assignee: None,
                 status: None,
                 tree_id: Some(root2.id.to_string()),
@@ -254,7 +253,7 @@ mod tests {
             .unwrap();
 
         let output = execute_task_list(
-            TaskListInput {
+            &TaskListInput {
                 assignee: Some("worker-1".to_string()),
                 status: None,
                 tree_id: None,
@@ -285,7 +284,7 @@ mod tests {
             .unwrap();
 
         let output = execute_task_list(
-            TaskListInput {
+            &TaskListInput {
                 assignee: None,
                 status: Some(TaskStatusFilter::InProgress),
                 tree_id: None,
@@ -317,7 +316,7 @@ mod tests {
             .unwrap();
 
         let output = execute_task_list(
-            TaskListInput {
+            &TaskListInput {
                 assignee: None,
                 status: None,
                 tree_id: None,
@@ -340,7 +339,7 @@ mod tests {
             .unwrap();
 
         let output = execute_task_list(
-            TaskListInput {
+            &TaskListInput {
                 assignee: None,
                 status: None,
                 tree_id: None,
@@ -359,7 +358,7 @@ mod tests {
         let (_temp, store) = setup();
 
         let output = execute_task_list(
-            TaskListInput {
+            &TaskListInput {
                 assignee: None,
                 status: None,
                 tree_id: None,
@@ -377,7 +376,7 @@ mod tests {
         let (_temp, store) = setup();
 
         let output = execute_task_list(
-            TaskListInput {
+            &TaskListInput {
                 assignee: None,
                 status: None,
                 tree_id: Some("at-nonexistent".to_string()),

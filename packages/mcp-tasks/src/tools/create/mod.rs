@@ -48,9 +48,8 @@ pub struct TaskCreateOutput {
 }
 
 /// Create a new task or subtask
-#[allow(clippy::needless_pass_by_value)]
 pub fn execute_task_create(
-    input: TaskCreateInput,
+    input: &TaskCreateInput,
     store: &mut TaskStore,
 ) -> Result<TaskCreateOutput, TaskStoreError> {
     let task = if let Some(parent_id) = &input.parent_id {
@@ -127,7 +126,7 @@ mod tests {
             deps: None,
         };
 
-        let output = execute_task_create(input, &mut store).unwrap();
+        let output = execute_task_create(&input, &mut store).unwrap();
 
         assert_eq!(output.status, "success");
         assert_eq!(output.task.title, "Research AI agents");
@@ -146,7 +145,7 @@ mod tests {
             assignee: None,
             deps: None,
         };
-        let root = execute_task_create(root_input, &mut store).unwrap();
+        let root = execute_task_create(&root_input, &mut store).unwrap();
 
         let sub_input = TaskCreateInput {
             title: "Subtask 1".to_string(),
@@ -156,7 +155,7 @@ mod tests {
             deps: None,
         };
 
-        let output = execute_task_create(sub_input, &mut store).unwrap();
+        let output = execute_task_create(&sub_input, &mut store).unwrap();
 
         assert_eq!(output.status, "success");
         assert_eq!(output.task.title, "Subtask 1");
@@ -179,7 +178,7 @@ mod tests {
             deps: Some(vec![sub1.id.to_string()]),
         };
 
-        let output = execute_task_create(input, &mut store).unwrap();
+        let output = execute_task_create(&input, &mut store).unwrap();
 
         assert_eq!(output.task.deps, vec![sub1.id.to_string()]);
     }
@@ -196,7 +195,7 @@ mod tests {
             deps: None,
         };
 
-        let result = execute_task_create(input, &mut store);
+        let result = execute_task_create(&input, &mut store);
         assert!(result.is_err());
     }
 }

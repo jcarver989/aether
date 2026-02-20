@@ -46,7 +46,6 @@ pub fn create_custom_stream_generic<R: Serialize + Send + 'static>(
     })
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn process_compatible_stream<E: Into<LlmError> + Send>(
     mut stream: impl Stream<Item = std::result::Result<ChatCompletionStreamResponse, E>> + Send + Unpin,
 ) -> impl Stream<Item = Result<LlmResponse>> + Send {
@@ -68,8 +67,8 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
 
                     if let Some(usage) = response.usage {
                         yield Ok(LlmResponse::Usage {
-                            input_tokens: usage.prompt_tokens.max(0) as u32,
-                            output_tokens: usage.completion_tokens.max(0) as u32,
+                            input_tokens: u32::try_from(usage.prompt_tokens.max(0)).unwrap_or(0),
+                            output_tokens: u32::try_from(usage.completion_tokens.max(0)).unwrap_or(0),
                         });
                     }
 

@@ -6,8 +6,8 @@ use aether_lspd::extensions_for_alias as extensions_for_type;
 use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 use globset::{Glob, GlobSetBuilder};
 use grep::{
-    regex::RegexMatcherBuilder,
-    searcher::{BinaryDetection, SearcherBuilder},
+    regex::{RegexMatcher, RegexMatcherBuilder},
+    searcher::{BinaryDetection, Searcher, SearcherBuilder},
 };
 use ignore::{WalkBuilder, WalkState};
 use schemars::JsonSchema;
@@ -148,41 +148,112 @@ fn should_include_file(
     true
 }
 
-#[allow(clippy::too_many_lines)]
 pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
-    // Build glob set if glob pattern is provided
-    let glob_set = if let Some(glob_pattern) = &args.glob {
-        let mut builder = GlobSetBuilder::new();
-        builder.add(
-            Glob::new(glob_pattern).map_err(|e| GrepError::InvalidGlobPattern {
-                pattern: glob_pattern.clone(),
-                reason: e.to_string(),
-            })?,
-        );
-        Some(
-            builder
-                .build()
-                .map_err(|e| GrepError::GlobSetBuildFailed(e.to_string()))?,
-        )
-    } else {
-        None
+    let glob_set = build_glob_set(args.glob.as_deref())?;
+
+    let matcher = build_matcher(&args.pattern, args.case_insensitive, args.multiline)?;
+
+    let output_mode = args.output_mode.unwrap_or(OutputMode::Content);
+    let line_numbers = args.line_numbers.unwrap_or(true);
+    let searcher_builder = build_searcher(&args);
+
+    let search_path = args.path.as_deref().unwrap_or(".");
+    let path_obj = Path::new(search_path);
+
+    let config = SearchConfig {
+        output_mode,
+        line_numbers,
+        file_type: args.file_type.as_ref(),
     };
 
-    // Create the matcher with case sensitivity and multiline support
-    let mut matcher_builder = RegexMatcherBuilder::new();
-    matcher_builder.case_insensitive(args.case_insensitive.unwrap_or(false));
+    let results = if path_obj.is_file() {
+        search_single_file(
+            path_obj,
+            search_path,
+            args.head_limit,
+            &matcher,
+            glob_set.as_ref(),
+            &config,
+            &searcher_builder,
+        )?
+    } else {
+        search_directory(
+            search_path,
+            &args,
+            glob_set,
+            matcher,
+            &config,
+            &searcher_builder,
+        )
+    };
 
-    if args.multiline.unwrap_or(false) {
+    Ok(build_grep_output(
+        results,
+        output_mode,
+        &args.pattern,
+        search_path,
+    ))
+}
+
+/// Common search parameters shared across single-file and directory search paths.
+struct SearchConfig<'a> {
+    output_mode: OutputMode,
+    line_numbers: bool,
+    file_type: Option<&'a String>,
+}
+
+/// Collected search results across all searched files.
+struct SearchResults {
+    matches: Vec<MatchData>,
+    files_with_matches: Vec<String>,
+    file_counts: Vec<GrepFileCount>,
+}
+
+impl SearchResults {
+    fn empty() -> Self {
+        Self {
+            matches: Vec::new(),
+            files_with_matches: Vec::new(),
+            file_counts: Vec::new(),
+        }
+    }
+}
+
+fn build_glob_set(glob_pattern: Option<&str>) -> Result<Option<globset::GlobSet>, GrepError> {
+    let Some(glob_pattern) = glob_pattern else {
+        return Ok(None);
+    };
+    let mut builder = GlobSetBuilder::new();
+    builder.add(
+        Glob::new(glob_pattern).map_err(|e| GrepError::InvalidGlobPattern {
+            pattern: glob_pattern.to_owned(),
+            reason: e.to_string(),
+        })?,
+    );
+    builder
+        .build()
+        .map(Some)
+        .map_err(|e| GrepError::GlobSetBuildFailed(e.to_string()))
+}
+
+fn build_matcher(
+    pattern: &str,
+    case_insensitive: Option<bool>,
+    multiline: Option<bool>,
+) -> Result<RegexMatcher, GrepError> {
+    let mut matcher_builder = RegexMatcherBuilder::new();
+    matcher_builder.case_insensitive(case_insensitive.unwrap_or(false));
+
+    if multiline.unwrap_or(false) {
         matcher_builder.multi_line(true).dot_matches_new_line(true);
     }
 
-    let matcher = matcher_builder
-        .build(&args.pattern)
-        .map_err(|e| GrepError::InvalidRegex(e.to_string()))?;
+    matcher_builder
+        .build(pattern)
+        .map_err(|e| GrepError::InvalidRegex(e.to_string()))
+}
 
-    let output_mode = args.output_mode.unwrap_or(OutputMode::Content);
-
-    // Determine context lines
+fn build_searcher(args: &GrepInput) -> SearcherBuilder {
     let (context_before, context_after) = if let Some(around) = args.context_around {
         (around, around)
     } else {
@@ -192,237 +263,258 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
         )
     };
 
-    let mut searcher_builder = SearcherBuilder::new();
-    searcher_builder
+    let mut builder = SearcherBuilder::new();
+    builder
         .binary_detection(BinaryDetection::quit(b'\x00'))
         .line_number(args.line_numbers.unwrap_or(true))
         .before_context(context_before as usize)
         .after_context(context_after as usize);
 
-    // Enable multiline in searcher if multiline pattern matching is requested
     if args.multiline.unwrap_or(false) {
-        searcher_builder.multi_line(true);
+        builder.multi_line(true);
+    }
+
+    builder
+}
+
+fn search_single_file(
+    path_obj: &Path,
+    search_path: &str,
+    head_limit: Option<usize>,
+    matcher: &RegexMatcher,
+    glob_set: Option<&globset::GlobSet>,
+    config: &SearchConfig<'_>,
+    searcher_builder: &SearcherBuilder,
+) -> Result<SearchResults, GrepError> {
+    if !should_include_file(path_obj, config.file_type, glob_set) {
+        return Ok(SearchResults::empty());
     }
 
     let mut searcher = searcher_builder.build();
+    let mut results = SearchResults::empty();
 
-    let mut all_matches = Vec::new();
-    let mut files_with_matches = Vec::new();
-    let mut file_counts = Vec::new();
-
-    // Directory search
-    let search_path = args.path.as_deref().unwrap_or(".");
-    let path_obj = Path::new(search_path);
-
-    // Determine if searching a single file or directory
-    let is_single_file = path_obj.is_file();
-
-    if is_single_file {
-        // Single file search
-        if !should_include_file(path_obj, args.file_type.as_ref(), glob_set.as_ref()) {
-            // Return empty results if file doesn't match filters
-            let empty_meta =
-                ToolDisplayMeta::grep(args.pattern.clone(), search_path.to_string(), 0);
-            let meta = empty_meta.into_meta();
-            return match output_mode {
-                OutputMode::Content => Ok(GrepOutput::Content(GrepContentOutput {
-                    matches: vec![],
-                    total_matches: 0,
-                    _meta: meta,
-                })),
-                OutputMode::FilesWithMatches => Ok(GrepOutput::Files(GrepFilesOutput {
-                    files: vec![],
-                    count: 0,
-                    _meta: meta,
-                })),
-                OutputMode::Count => Ok(GrepOutput::Count(GrepCountOutput {
-                    counts: vec![],
-                    total: 0,
-                    _meta: meta,
-                })),
-            };
+    match config.output_mode {
+        OutputMode::Content => {
+            let mut sink =
+                MatchCollectorSink::with_max_results(path_obj, config.line_numbers, head_limit);
+            searcher
+                .search_path(matcher, path_obj, &mut sink)
+                .map_err(|e| GrepError::SearchFailed(e.to_string()))?;
+            results.matches = sink.matches;
         }
-
-        // Search the single file
-        match output_mode {
-            OutputMode::Content => {
-                let mut sink = MatchCollectorSink::with_max_results(
-                    path_obj,
-                    args.line_numbers.unwrap_or(true),
-                    args.head_limit,
-                );
-                searcher
-                    .search_path(&matcher, path_obj, &mut sink)
-                    .map_err(|e| GrepError::SearchFailed(e.to_string()))?;
-                all_matches = sink.matches;
+        OutputMode::FilesWithMatches => {
+            let mut sink = HasMatchSink::new();
+            searcher
+                .search_path(matcher, path_obj, &mut sink)
+                .map_err(|e| GrepError::SearchFailed(e.to_string()))?;
+            if sink.has_match {
+                results.files_with_matches.push(search_path.to_string());
             }
-            OutputMode::FilesWithMatches => {
-                let mut sink = HasMatchSink::new();
-                searcher
-                    .search_path(&matcher, path_obj, &mut sink)
-                    .map_err(|e| GrepError::SearchFailed(e.to_string()))?;
-                if sink.has_match {
-                    files_with_matches.push(search_path.to_string());
+        }
+        OutputMode::Count => {
+            let mut sink = CountSink::new();
+            searcher
+                .search_path(matcher, path_obj, &mut sink)
+                .map_err(|e| GrepError::SearchFailed(e.to_string()))?;
+            if sink.count > 0 {
+                results.file_counts.push(GrepFileCount {
+                    file: search_path.to_string(),
+                    count: sink.count,
+                });
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+fn search_directory(
+    search_path: &str,
+    args: &GrepInput,
+    glob_set: Option<globset::GlobSet>,
+    matcher: RegexMatcher,
+    config: &SearchConfig<'_>,
+    searcher_builder: &SearcherBuilder,
+) -> SearchResults {
+    let walker = WalkBuilder::new(search_path)
+        .hidden(false)
+        .git_ignore(true)
+        .build_parallel();
+
+    let max_items = args.head_limit.unwrap_or(usize::MAX);
+    let state = Arc::new(ParallelGrepState::new(max_items));
+    let matcher = Arc::new(matcher);
+    let glob_set = Arc::new(glob_set);
+    let file_type = args.file_type.clone();
+    let output_mode = config.output_mode;
+    let line_numbers = config.line_numbers;
+
+    walker.run(|| {
+        let state = state.clone();
+        let matcher = matcher.clone();
+        let glob_set = glob_set.clone();
+        let file_type = file_type.clone();
+        let mut thread_searcher = searcher_builder.build();
+
+        Box::new(move |result| {
+            let filter = FileFilter {
+                glob_set: glob_set.as_ref().as_ref(),
+                file_type: file_type.as_ref(),
+            };
+            search_directory_entry(
+                result,
+                &state,
+                &matcher,
+                &filter,
+                &mut thread_searcher,
+                output_mode,
+                line_numbers,
+            )
+        })
+    });
+
+    let mut results = SearchResults {
+        matches: state.matches.lock().unwrap().clone(),
+        files_with_matches: state.files_with_matches.lock().unwrap().clone(),
+        file_counts: state.file_counts.lock().unwrap().clone(),
+    };
+
+    results.matches.sort_by(|a, b| a.file.cmp(&b.file));
+    results.files_with_matches.sort();
+    results.file_counts.sort_by(|a, b| a.file.cmp(&b.file));
+
+    if let Some(limit) = args.head_limit {
+        results.matches.truncate(limit);
+        results.files_with_matches.truncate(limit);
+        results.file_counts.truncate(limit);
+    }
+
+    results
+}
+
+/// Filter criteria for file selection during directory walks.
+struct FileFilter<'a> {
+    glob_set: Option<&'a globset::GlobSet>,
+    file_type: Option<&'a String>,
+}
+
+fn search_directory_entry(
+    result: std::result::Result<ignore::DirEntry, ignore::Error>,
+    state: &ParallelGrepState,
+    matcher: &RegexMatcher,
+    filter: &FileFilter<'_>,
+    searcher: &mut Searcher,
+    output_mode: OutputMode,
+    line_numbers: bool,
+) -> WalkState {
+    if state.limit_reached.load(Ordering::Relaxed) {
+        return WalkState::Quit;
+    }
+
+    let Ok(entry) = result else {
+        return WalkState::Continue;
+    };
+
+    if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+        return WalkState::Continue;
+    }
+
+    if !should_include_file(entry.path(), filter.file_type, filter.glob_set) {
+        return WalkState::Continue;
+    }
+
+    match output_mode {
+        OutputMode::Content => {
+            let mut sink = MatchCollectorSink::with_max_results(entry.path(), line_numbers, None);
+            if searcher
+                .search_path(matcher, entry.path(), &mut sink)
+                .is_ok()
+                && !sink.matches.is_empty()
+            {
+                let new_count = state
+                    .total_items
+                    .fetch_add(sink.matches.len(), Ordering::SeqCst)
+                    + sink.matches.len();
+                if new_count >= state.max_items {
+                    state.limit_reached.store(true, Ordering::Release);
+                }
+                if let Ok(mut matches) = state.matches.lock() {
+                    matches.extend(sink.matches);
                 }
             }
-            OutputMode::Count => {
-                let mut sink = CountSink::new();
-                searcher
-                    .search_path(&matcher, path_obj, &mut sink)
-                    .map_err(|e| GrepError::SearchFailed(e.to_string()))?;
-                if sink.count > 0 {
-                    file_counts.push(GrepFileCount {
-                        file: search_path.to_string(),
+        }
+        OutputMode::FilesWithMatches => {
+            let mut sink = HasMatchSink::new();
+            if searcher
+                .search_path(matcher, entry.path(), &mut sink)
+                .is_ok()
+                && sink.has_match
+            {
+                let new_count = state.total_items.fetch_add(1, Ordering::SeqCst) + 1;
+                if new_count >= state.max_items {
+                    state.limit_reached.store(true, Ordering::Release);
+                }
+                if let Ok(mut files) = state.files_with_matches.lock() {
+                    files.push(entry.path().to_string_lossy().to_string());
+                }
+            }
+        }
+        OutputMode::Count => {
+            let mut sink = CountSink::new();
+            if searcher
+                .search_path(matcher, entry.path(), &mut sink)
+                .is_ok()
+                && sink.count > 0
+            {
+                let new_count = state.total_items.fetch_add(1, Ordering::SeqCst) + 1;
+                if new_count >= state.max_items {
+                    state.limit_reached.store(true, Ordering::Release);
+                }
+                if let Ok(mut counts) = state.file_counts.lock() {
+                    counts.push(GrepFileCount {
+                        file: entry.path().to_string_lossy().to_string(),
                         count: sink.count,
                     });
                 }
             }
         }
-    } else {
-        // Parallel directory search
-        let walker = WalkBuilder::new(search_path)
-            .hidden(false)
-            .git_ignore(true)
-            .build_parallel();
-
-        let max_items = args.head_limit.unwrap_or(usize::MAX);
-        let state = Arc::new(ParallelGrepState::new(max_items));
-        let matcher = Arc::new(matcher);
-        let glob_set = Arc::new(glob_set);
-        let file_type = args.file_type.clone();
-        let line_numbers = args.line_numbers.unwrap_or(true);
-
-        walker.run(|| {
-            let state = state.clone();
-            let matcher = matcher.clone();
-            let glob_set = glob_set.clone();
-            let file_type = file_type.clone();
-            let mut thread_searcher = searcher_builder.build();
-
-            Box::new(move |result| {
-                if state.limit_reached.load(Ordering::Relaxed) {
-                    return WalkState::Quit;
-                }
-
-                let Ok(entry) = result else {
-                    return WalkState::Continue;
-                };
-
-                if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-                    return WalkState::Continue;
-                }
-
-                if !should_include_file(
-                    entry.path(),
-                    file_type.as_ref(),
-                    glob_set.as_ref().as_ref(),
-                ) {
-                    return WalkState::Continue;
-                }
-
-                match output_mode {
-                    OutputMode::Content => {
-                        let mut sink =
-                            MatchCollectorSink::with_max_results(entry.path(), line_numbers, None);
-                        if thread_searcher
-                            .search_path(&*matcher, entry.path(), &mut sink)
-                            .is_ok()
-                            && !sink.matches.is_empty()
-                        {
-                            let new_count = state
-                                .total_items
-                                .fetch_add(sink.matches.len(), Ordering::SeqCst)
-                                + sink.matches.len();
-                            if new_count >= state.max_items {
-                                state.limit_reached.store(true, Ordering::Release);
-                            }
-                            if let Ok(mut matches) = state.matches.lock() {
-                                matches.extend(sink.matches);
-                            }
-                        }
-                    }
-                    OutputMode::FilesWithMatches => {
-                        let mut sink = HasMatchSink::new();
-                        if thread_searcher
-                            .search_path(&*matcher, entry.path(), &mut sink)
-                            .is_ok()
-                            && sink.has_match
-                        {
-                            let new_count = state.total_items.fetch_add(1, Ordering::SeqCst) + 1;
-                            if new_count >= state.max_items {
-                                state.limit_reached.store(true, Ordering::Release);
-                            }
-                            if let Ok(mut files) = state.files_with_matches.lock() {
-                                files.push(entry.path().to_string_lossy().to_string());
-                            }
-                        }
-                    }
-                    OutputMode::Count => {
-                        let mut sink = CountSink::new();
-                        if thread_searcher
-                            .search_path(&*matcher, entry.path(), &mut sink)
-                            .is_ok()
-                            && sink.count > 0
-                        {
-                            let new_count = state.total_items.fetch_add(1, Ordering::SeqCst) + 1;
-                            if new_count >= state.max_items {
-                                state.limit_reached.store(true, Ordering::Release);
-                            }
-                            if let Ok(mut counts) = state.file_counts.lock() {
-                                counts.push(GrepFileCount {
-                                    file: entry.path().to_string_lossy().to_string(),
-                                    count: sink.count,
-                                });
-                            }
-                        }
-                    }
-                }
-
-                WalkState::Continue
-            })
-        });
-
-        all_matches.clone_from(&state.matches.lock().unwrap());
-        files_with_matches.clone_from(&state.files_with_matches.lock().unwrap());
-        file_counts.clone_from(&state.file_counts.lock().unwrap());
-
-        all_matches.sort_by(|a, b| a.file.cmp(&b.file));
-        files_with_matches.sort();
-        file_counts.sort_by(|a, b| a.file.cmp(&b.file));
-
-        if let Some(limit) = args.head_limit {
-            all_matches.truncate(limit);
-            files_with_matches.truncate(limit);
-            file_counts.truncate(limit);
-        }
     }
 
+    WalkState::Continue
+}
+
+fn build_grep_output(
+    results: SearchResults,
+    output_mode: OutputMode,
+    pattern: &str,
+    search_path: &str,
+) -> GrepOutput {
     let match_count = match output_mode {
-        OutputMode::Content => all_matches.len(),
-        OutputMode::FilesWithMatches => files_with_matches.len(),
-        OutputMode::Count => file_counts.iter().map(|fc| fc.count).sum(),
+        OutputMode::Content => results.matches.len(),
+        OutputMode::FilesWithMatches => results.files_with_matches.len(),
+        OutputMode::Count => results.file_counts.iter().map(|fc| fc.count).sum(),
     };
 
     let display_meta =
-        ToolDisplayMeta::grep(args.pattern.clone(), search_path.to_string(), match_count);
+        ToolDisplayMeta::grep(pattern.to_owned(), search_path.to_string(), match_count);
     let meta = display_meta.into_meta();
 
     match output_mode {
-        OutputMode::Content => Ok(GrepOutput::Content(GrepContentOutput {
-            matches: all_matches,
+        OutputMode::Content => GrepOutput::Content(GrepContentOutput {
+            matches: results.matches,
             total_matches: match_count,
             _meta: meta,
-        })),
-        OutputMode::FilesWithMatches => Ok(GrepOutput::Files(GrepFilesOutput {
-            files: files_with_matches,
+        }),
+        OutputMode::FilesWithMatches => GrepOutput::Files(GrepFilesOutput {
+            files: results.files_with_matches,
             count: match_count,
             _meta: meta,
-        })),
-        OutputMode::Count => Ok(GrepOutput::Count(GrepCountOutput {
-            counts: file_counts,
+        }),
+        OutputMode::Count => GrepOutput::Count(GrepCountOutput {
+            counts: results.file_counts,
             total: match_count,
             _meta: meta,
-        })),
+        }),
     }
 }
 

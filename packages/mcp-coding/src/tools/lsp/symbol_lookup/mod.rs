@@ -45,13 +45,12 @@ pub struct LspSymbolInput {
     /// Line number where the symbol appears (1-indexed, as shown by the `read_file` tool)
     pub line: String,
     /// Whether to include the declaration in references results (default: true, only used for references operation)
-    #[serde(default = "default_include_declaration")]
-    pub include_declaration: Option<bool>,
+    #[serde(default = "default_true")]
+    pub include_declaration: bool,
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn default_include_declaration() -> Option<bool> {
-    Some(true)
+fn default_true() -> bool {
+    true
 }
 
 /// Output from the `lsp_symbol` tool
@@ -113,9 +112,13 @@ pub async fn execute_lsp_symbol<T: CodingTools>(
             })
         }
         SymbolLookupOperation::References => {
-            let include_declaration = input.include_declaration.unwrap_or(true);
             let lsp_locations = tools
-                .find_references(&input.file_path, &input.symbol, line, include_declaration)
+                .find_references(
+                    &input.file_path,
+                    &input.symbol,
+                    line,
+                    input.include_declaration,
+                )
                 .await
                 .map_err(|e| e.to_string())?;
             let locations: Vec<LocationResult> = lsp_locations

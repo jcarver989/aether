@@ -26,12 +26,20 @@ enum StreamEvent {
 
 type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
 
-#[allow(clippy::struct_field_names)]
+pub(crate) struct AgentConfig {
+    pub llm: Arc<dyn StreamingModelProvider>,
+    pub context: Context,
+    pub mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
+    pub tool_timeout: Duration,
+    pub compaction_config: Option<CompactionConfig>,
+    pub auto_continue: AutoContinue,
+}
+
 pub struct Agent {
     llm: Arc<dyn StreamingModelProvider>,
     context: Context,
     mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
-    agent_message_tx: mpsc::Sender<AgentMessage>,
+    message_tx: mpsc::Sender<AgentMessage>,
     streams: StreamMap<String, EventStream>,
     tool_timeout: Duration,
     token_tracker: TokenTracker,
@@ -41,16 +49,10 @@ pub struct Agent {
 }
 
 impl Agent {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        llm: Arc<dyn StreamingModelProvider>,
-        context: Context,
-        mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
+        config: AgentConfig,
         user_message_rx: mpsc::Receiver<UserMessage>,
-        agent_message_tx: mpsc::Sender<AgentMessage>,
-        tool_timeout: Duration,
-        compaction_config: Option<CompactionConfig>,
-        auto_continue: AutoContinue,
+        message_tx: mpsc::Sender<AgentMessage>,
     ) -> Self {
         let mut streams: StreamMap<String, EventStream> = StreamMap::new();
         streams.insert(
@@ -59,15 +61,15 @@ impl Agent {
         );
 
         Self {
-            llm,
-            context,
-            mcp_command_tx,
-            agent_message_tx,
+            llm: config.llm,
+            context: config.context,
+            mcp_command_tx: config.mcp_command_tx,
+            message_tx,
             streams,
-            tool_timeout,
+            tool_timeout: config.tool_timeout,
             token_tracker: TokenTracker::new(200_000), // Default to Claude's 200k context limit
-            compaction_config,
-            auto_continue,
+            compaction_config: config.compaction_config,
+            auto_continue: config.auto_continue,
             active_requests: HashMap::new(),
         }
     }
@@ -122,7 +124,7 @@ impl Agent {
                     &state.completed_tool_calls,
                 );
                 let _ = self
-                    .agent_message_tx
+                    .message_tx
                     .send(AgentMessage::Text {
                         message_id: id.clone(),
                         chunk: state.message_content.clone(), // Send full message content
@@ -149,7 +151,7 @@ impl Agent {
                     );
 
                     let _ = self
-                        .agent_message_tx
+                        .message_tx
                         .send(AgentMessage::AutoContinue {
                             attempt: self.auto_continue.count(),
                             max_attempts: self.auto_continue.max(),
@@ -161,7 +163,7 @@ impl Agent {
                 } else {
                     tracing::debug!("LLM completed turn with stop reason: {:?}", stop_reason);
                     self.auto_continue.on_completion();
-                    if let Err(e) = self.agent_message_tx.send(AgentMessage::Done).await {
+                    if let Err(e) = self.message_tx.send(AgentMessage::Done).await {
                         tracing::warn!("Failed to send Done message: {:?}", e);
                     }
                 }
@@ -175,12 +177,12 @@ impl Agent {
         state.cancelled = true;
         self.streams.remove("llm");
         let _ = self
-            .agent_message_tx
+            .message_tx
             .send(AgentMessage::Cancelled {
                 message: "Processing cancelled".to_string(),
             })
             .await;
-        let _ = self.agent_message_tx.send(AgentMessage::Done).await;
+        let _ = self.message_tx.send(AgentMessage::Done).await;
     }
 
     fn on_user_text(&mut self, content: String) {
@@ -197,7 +199,7 @@ impl Agent {
         self.llm = Arc::from(new_provider);
         let new = self.llm.display_name();
         let _ = self
-            .agent_message_tx
+            .message_tx
             .send(AgentMessage::ModelSwitched { previous, new })
             .await;
     }
@@ -253,7 +255,7 @@ impl Agent {
             Ok(response) => response,
             Err(e) => {
                 let _ = self
-                    .agent_message_tx
+                    .message_tx
                     .send(AgentMessage::Error {
                         message: e.to_string(),
                     })
@@ -264,7 +266,7 @@ impl Agent {
 
         match response {
             Start { message_id } => {
-                self.handle_llm_start(message_id, state);
+                handle_llm_start(message_id, state);
             }
 
             Text { chunk } => {
@@ -293,10 +295,7 @@ impl Agent {
             }
 
             Error { message } => {
-                let _ = self
-                    .agent_message_tx
-                    .send(AgentMessage::Error { message })
-                    .await;
+                let _ = self.message_tx.send(AgentMessage::Error { message }).await;
             }
 
             Usage {
@@ -308,20 +307,12 @@ impl Agent {
         }
     }
 
-    #[allow(clippy::unused_self)]
-    fn handle_llm_start(&mut self, message_id: String, state: &mut IterationState) {
-        state.current_message_id = Some(message_id);
-        state.message_content.clear();
-        state.reasoning_content.clear();
-        state.stop_reason = None;
-    }
-
     async fn handle_llm_text(&mut self, chunk: String, state: &mut IterationState) {
         state.message_content.push_str(&chunk);
 
         if let Some(id) = &state.current_message_id {
             let _ = self
-                .agent_message_tx
+                .message_tx
                 .send(AgentMessage::Text {
                     message_id: id.clone(),
                     chunk,
@@ -337,7 +328,7 @@ impl Agent {
 
         if let Some(id) = &state.current_message_id {
             let _ = self
-                .agent_message_tx
+                .message_tx
                 .send(AgentMessage::Thought {
                     message_id: id.clone(),
                     chunk,
@@ -349,7 +340,7 @@ impl Agent {
 
     async fn handle_tool_request_start(&mut self, id: String, name: String) {
         let _ = self
-            .agent_message_tx
+            .message_tx
             .send(AgentMessage::ToolCall {
                 request: ToolCallRequest {
                     id,
@@ -363,7 +354,7 @@ impl Agent {
 
     async fn handle_tool_request_arg(&mut self, id: String, chunk: String) {
         let _ = self
-            .agent_message_tx
+            .message_tx
             .send(AgentMessage::ToolCall {
                 request: ToolCallRequest {
                     id,
@@ -384,7 +375,7 @@ impl Agent {
         self.active_requests
             .insert(tool_call.id.clone(), tool_call.clone());
 
-        let msg_future = self.agent_message_tx.send(AgentMessage::ToolCall {
+        let msg_future = self.message_tx.send(AgentMessage::ToolCall {
             request: tool_call.clone(),
             model_name: self.llm.display_name(),
         });
@@ -418,7 +409,7 @@ impl Agent {
         );
 
         let _ = self
-            .agent_message_tx
+            .message_tx
             .send(AgentMessage::ContextUsageUpdate {
                 usage_ratio: self.token_tracker.usage_ratio(),
                 tokens_used: self.token_tracker.last_input_tokens(),
@@ -446,7 +437,7 @@ impl Agent {
         );
 
         let _ = self
-            .agent_message_tx
+            .message_tx
             .send(AgentMessage::ContextCompactionStarted {
                 message_count: self.context.message_count(),
             })
@@ -465,7 +456,7 @@ impl Agent {
                 self.token_tracker.reset_current_usage();
 
                 let _ = self
-                    .agent_message_tx
+                    .message_tx
                     .send(AgentMessage::ContextCompactionResult {
                         summary: result.summary,
                         messages_removed: result.messages_removed,
@@ -498,7 +489,7 @@ impl Agent {
 
                 if let Some(request) = self.active_requests.get(&tool_id) {
                     let _ = self
-                        .agent_message_tx
+                        .message_tx
                         .send(AgentMessage::ToolProgress {
                             request: request.clone(),
                             progress: progress.progress,
@@ -526,7 +517,7 @@ impl Agent {
                             model_name: self.llm.display_name(),
                         };
 
-                        if let Err(e) = self.agent_message_tx.send(msg).await {
+                        if let Err(e) = self.message_tx.send(msg).await {
                             tracing::warn!("Failed to send ToolCall completion message: {:?}", e);
                         }
                     } else {
@@ -540,7 +531,7 @@ impl Agent {
                         state.completed_tool_calls.push(Err(tool_error.clone()));
 
                         let _ = self
-                            .agent_message_tx
+                            .message_tx
                             .send(AgentMessage::ToolError {
                                 error: tool_error,
                                 model_name: self.llm.display_name(),
@@ -587,6 +578,13 @@ impl Agent {
                 .add_message(ChatMessage::ToolCallResult(result.clone()));
         }
     }
+}
+
+fn handle_llm_start(message_id: String, state: &mut IterationState) {
+    state.current_message_id = Some(message_id);
+    state.message_content.clear();
+    state.reasoning_content.clear();
+    state.stop_reason = None;
 }
 
 pub(crate) struct AutoContinue {

@@ -522,8 +522,7 @@ fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, Cod
                 .is_some_and(|c| c.is_alphanumeric() || c == '_');
 
         if before_ok && after_ok {
-            #[allow(clippy::cast_possible_truncation)]
-            return Ok(abs_pos as u32);
+            return Ok(u32::try_from(abs_pos).unwrap_or(u32::MAX));
         }
         search_start = abs_pos + 1;
     }

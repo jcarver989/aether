@@ -34,78 +34,76 @@ impl FileSystemStore {
     fn results_dir(&self, run_id: Uuid) -> PathBuf {
         self.run_dir(run_id).join("results")
     }
+}
 
-    /// Parse traces from JSONL file
-    #[allow(clippy::unused_self)]
-    fn parse_traces_file(&self, path: &PathBuf) -> Result<Vec<TraceEvent>> {
-        if !path.exists() {
-            return Ok(Vec::new());
-        }
-
-        let file = fs::File::open(path)?;
-        let reader = std::io::BufReader::new(file);
-        let mut events = Vec::new();
-
-        for line in reader.lines() {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            match serde_json::from_str::<TraceEvent>(&line) {
-                Ok(event) => events.push(event),
-                Err(e) => {
-                    tracing::warn!("Failed to parse trace event: {}", e);
-                }
-            }
-        }
-
-        Ok(events)
+/// Parse traces from JSONL file
+fn parse_traces_file(path: &PathBuf) -> Result<Vec<TraceEvent>> {
+    if !path.exists() {
+        return Ok(Vec::new());
     }
 
-    /// Group traces by eval ID using span hierarchy
-    #[allow(clippy::unused_self)]
-    fn group_traces_by_eval(&self, events: Vec<TraceEvent>) -> HashMap<String, Vec<TraceEvent>> {
-        let mut grouped: HashMap<String, Vec<TraceEvent>> = HashMap::new();
+    let file = fs::File::open(path)?;
+    let reader = std::io::BufReader::new(file);
+    let mut events = Vec::new();
 
-        // Group events by eval_id found in current span or parent spans
-        for event in events {
-            // Try to find eval_id from current span first
-            let eval_id = if let Some(span_info) = &event.span {
-                span_info
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        match serde_json::from_str::<TraceEvent>(&line) {
+            Ok(event) => events.push(event),
+            Err(e) => {
+                tracing::warn!("Failed to parse trace event: {}", e);
+            }
+        }
+    }
+
+    Ok(events)
+}
+
+/// Group traces by eval ID using span hierarchy
+fn group_traces_by_eval(events: Vec<TraceEvent>) -> HashMap<String, Vec<TraceEvent>> {
+    let mut grouped: HashMap<String, Vec<TraceEvent>> = HashMap::new();
+
+    // Group events by eval_id found in current span or parent spans
+    for event in events {
+        // Try to find eval_id from current span first
+        let eval_id = if let Some(span_info) = &event.span {
+            span_info
+                .extra
+                .get("eval_id")
+                .and_then(|v| v.as_str())
+                .map(std::string::ToString::to_string)
+        } else {
+            None
+        };
+
+        // If not found in current span, check parent spans
+        let eval_id = eval_id.or_else(|| {
+            event.spans.iter().find_map(|parent_span| {
+                parent_span
                     .extra
                     .get("eval_id")
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string)
-            } else {
-                None
-            };
+            })
+        });
 
-            // If not found in current span, check parent spans
-            let eval_id = eval_id.or_else(|| {
-                event.spans.iter().find_map(|parent_span| {
-                    parent_span
-                        .extra
-                        .get("eval_id")
-                        .and_then(|v| v.as_str())
-                        .map(std::string::ToString::to_string)
-                })
-            });
-
-            if let Some(eval_id) = eval_id {
-                grouped.entry(eval_id).or_default().push(event);
-            } else {
-                // Ungrouped events
-                grouped
-                    .entry("_ungrouped".to_string())
-                    .or_default()
-                    .push(event);
-            }
+        if let Some(eval_id) = eval_id {
+            grouped.entry(eval_id).or_default().push(event);
+        } else {
+            // Ungrouped events
+            grouped
+                .entry("_ungrouped".to_string())
+                .or_default()
+                .push(event);
         }
-
-        tracing::debug!("Grouped into {} groups", grouped.len());
-        grouped
     }
+
+    tracing::debug!("Grouped into {} groups", grouped.len());
+    grouped
 }
 
 impl ResultsStore for FileSystemStore {
@@ -202,10 +200,10 @@ impl ResultsStore for FileSystemStore {
 
     async fn get_eval_traces(&self, run_id: Uuid, eval_id: Uuid) -> Result<Vec<TraceEvent>> {
         let traces_file = self.traces_file(run_id);
-        let all_events = self.parse_traces_file(&traces_file)?;
+        let all_events = parse_traces_file(&traces_file)?;
         tracing::debug!("Parsed {} total trace events", all_events.len());
 
-        let grouped = self.group_traces_by_eval(all_events);
+        let grouped = group_traces_by_eval(all_events);
         tracing::debug!(
             "Grouped into {} groups: {:?}",
             grouped.len(),
@@ -265,17 +263,15 @@ mod tests {
     #[test]
     fn test_parse_traces_file_empty() {
         let temp_dir = TempDir::new().unwrap();
-        let store = FileSystemStore::new(temp_dir.path().to_path_buf()).unwrap();
         let traces_file = temp_dir.path().join("empty.jsonl");
 
-        let result = store.parse_traces_file(&traces_file).unwrap();
+        let result = parse_traces_file(&traces_file).unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_parse_traces_file_valid_events() {
         let temp_dir = TempDir::new().unwrap();
-        let store = FileSystemStore::new(temp_dir.path().to_path_buf()).unwrap();
         let traces_file = temp_dir.path().join("traces.jsonl");
 
         // Write sample trace events
@@ -291,7 +287,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = store.parse_traces_file(&traces_file).unwrap();
+        let result = parse_traces_file(&traces_file).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].level, "INFO");
         assert_eq!(result[1].level, "DEBUG");
@@ -299,8 +295,6 @@ mod tests {
 
     #[test]
     fn test_group_traces_by_eval() {
-        let store = FileSystemStore::new(TempDir::new().unwrap().path().to_path_buf()).unwrap();
-
         let eval_id_1 = "11111111-1111-1111-1111-111111111111";
         let eval_id_2 = "22222222-2222-2222-2222-222222222222";
 
@@ -341,7 +335,7 @@ mod tests {
             },
         ];
 
-        let grouped = store.group_traces_by_eval(events);
+        let grouped = group_traces_by_eval(events);
 
         assert_eq!(grouped.len(), 3);
         assert!(grouped.contains_key(eval_id_1));

@@ -113,14 +113,15 @@ impl CredentialStore for McpCredentialStore {
             .ok_or_else(|| AuthError::InternalError("No token response to save".to_string()))?;
 
         let expires_at = token.expires_in().map(|duration| {
-            #[allow(clippy::cast_possible_truncation)]
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            #[allow(clippy::cast_possible_truncation)]
-            let duration_ms = duration.as_millis() as u64;
-            now_ms + duration_ms
+            let now_ms = u64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis(),
+            )
+            .unwrap_or(u64::MAX);
+            let duration_ms = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX);
+            now_ms.saturating_add(duration_ms)
         });
 
         let credential = McpCredential {
@@ -169,11 +170,13 @@ fn build_token_response(
     }
 
     if let Some(expires_at_millis) = cred.expires_at {
-        #[allow(clippy::cast_possible_truncation)]
-        let now_millis = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        let now_millis = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX);
 
         if expires_at_millis > now_millis {
             response.set_expires_in(Some(&Duration::from_millis(expires_at_millis - now_millis)));

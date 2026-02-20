@@ -265,16 +265,16 @@ impl App {
         }
     }
 
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn on_ext_notification(&mut self, notification: ExtNotification) -> Vec<AppEvent> {
+    pub fn on_ext_notification(&mut self, notification: &ExtNotification) -> Vec<AppEvent> {
         if notification.method.as_ref() == CONTEXT_USAGE_METHOD
             && let Some(ratio) =
                 serde_json::from_str::<serde_json::Value>(notification.params.get())
                     .ok()
                     .and_then(|v| v.get("usage_ratio")?.as_f64())
         {
+            // Safety: clamp guarantees value is in [0.0, 100.0], round() keeps it integral
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let pct_left = ((1.0 - ratio) * 100.0).round() as u8;
+            let pct_left = ((1.0 - ratio) * 100.0).clamp(0.0, 100.0).round() as u8;
             self.context_usage_pct = Some(pct_left);
             return vec![AppEvent::Render];
         }
@@ -297,8 +297,7 @@ impl App {
         vec![AppEvent::Render]
     }
 
-    #[allow(clippy::unused_self)]
-    pub fn on_resize(&mut self, _cols: u16, _rows: u16) -> Vec<AppEvent> {
+    pub fn on_resize(_cols: u16, _rows: u16) -> Vec<AppEvent> {
         vec![AppEvent::Render]
     }
 
@@ -361,13 +360,13 @@ impl App {
         if let Some(ref mut picker) = self.file_picker {
             let outcome = picker.handle_key(key_event, &mut self.input_buffer);
             if outcome.consumed {
-                return Some(self.handle_file_picker_outcome(outcome));
+                return Some(self.handle_file_picker_outcome(&outcome));
             }
         }
 
         if let Some(ref mut picker) = self.command_picker {
             let outcome = picker.handle_key(key_event, &mut self.input_buffer);
-            return Some(self.handle_command_picker_outcome(outcome));
+            return Some(self.handle_command_picker_outcome(&outcome));
         }
 
         if let Some(ref mut picker) = self.config_picker {
@@ -383,10 +382,9 @@ impl App {
         None
     }
 
-    #[allow(clippy::needless_pass_by_value)]
     fn handle_file_picker_outcome(
         &mut self,
-        outcome: InputOutcome<FilePickerAction>,
+        outcome: &InputOutcome<FilePickerAction>,
     ) -> Vec<AppEvent> {
         let mut effects = Vec::new();
         match outcome.action {
@@ -415,7 +413,7 @@ impl App {
 
     fn handle_command_picker_outcome(
         &mut self,
-        outcome: InputOutcome<CommandPickerAction>,
+        outcome: &InputOutcome<CommandPickerAction>,
     ) -> Vec<AppEvent> {
         match outcome.action {
             Some(CommandPickerAction::CloseAndClearInput) => {
@@ -426,7 +424,7 @@ impl App {
                     vec![]
                 }
             }
-            Some(CommandPickerAction::CommandChosen(cmd)) => {
+            Some(CommandPickerAction::CommandChosen(ref cmd)) => {
                 self.command_picker = None;
                 self.apply_command(cmd)
             }
@@ -456,7 +454,7 @@ impl App {
             Some(ConfigPickerAction::ApplySelection(change)) => {
                 self.config_picker = None;
                 if let Some(change) = change {
-                    self.handle_config_change(change)
+                    Self::handle_config_change(change)
                 } else if outcome.needs_render {
                     vec![AppEvent::Render]
                 } else {
@@ -500,8 +498,7 @@ impl App {
         }
     }
 
-    #[allow(clippy::unused_self)]
-    fn handle_config_change(&mut self, change: ConfigChange) -> Vec<AppEvent> {
+    fn handle_config_change(change: ConfigChange) -> Vec<AppEvent> {
         vec![
             AppEvent::SetConfigOption {
                 config_id: change.config_id,
@@ -511,8 +508,7 @@ impl App {
         ]
     }
 
-    #[allow(clippy::needless_pass_by_value)]
-    fn apply_command(&mut self, cmd: CommandEntry) -> Vec<AppEvent> {
+    fn apply_command(&mut self, cmd: &CommandEntry) -> Vec<AppEvent> {
         if cmd.builtin && cmd.name == "config" {
             self.input_buffer.clear();
             self.close_all_pickers();
@@ -677,7 +673,7 @@ impl App {
                 continue;
             }
 
-            match self.try_build_attachment_block(&mention.path, &mention.display_name) {
+            match try_build_attachment_block(&mention.path, &mention.display_name) {
                 Ok((block, maybe_warning)) => {
                     blocks.push(block);
                     if let Some(warning) = maybe_warning {
@@ -690,54 +686,51 @@ impl App {
 
         (blocks, warning_lines)
     }
+}
 
-    #[allow(clippy::unused_self)]
-    fn try_build_attachment_block(
-        &self,
-        path: &Path,
-        display_name: &str,
-    ) -> Result<(acp::ContentBlock, Option<String>), String> {
-        let bytes =
-            std::fs::read(path).map_err(|e| format!("Failed to read {display_name}: {e}"))?;
+fn try_build_attachment_block(
+    path: &Path,
+    display_name: &str,
+) -> Result<(acp::ContentBlock, Option<String>), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read {display_name}: {e}"))?;
 
-        let truncated = bytes.len() > MAX_EMBED_TEXT_BYTES;
-        let text_bytes = if truncated {
-            &bytes[..MAX_EMBED_TEXT_BYTES]
-        } else {
-            &bytes
-        };
+    let truncated = bytes.len() > MAX_EMBED_TEXT_BYTES;
+    let text_bytes = if truncated {
+        &bytes[..MAX_EMBED_TEXT_BYTES]
+    } else {
+        &bytes
+    };
 
-        let text = match std::str::from_utf8(text_bytes) {
-            Ok(text) => text.to_string(),
-            Err(error) if truncated && error.valid_up_to() > 0 => {
-                let valid_bytes = &text_bytes[..error.valid_up_to()];
-                std::str::from_utf8(valid_bytes)
-                    .expect("valid_up_to must point at a utf8 boundary")
-                    .to_string()
-            }
-            Err(_) => return Err(format!("Skipped binary or non-UTF8 file: {display_name}")),
-        };
+    let text = match std::str::from_utf8(text_bytes) {
+        Ok(text) => text.to_string(),
+        Err(error) if truncated && error.valid_up_to() > 0 => {
+            let valid_bytes = &text_bytes[..error.valid_up_to()];
+            std::str::from_utf8(valid_bytes)
+                .expect("valid_up_to must point at a utf8 boundary")
+                .to_string()
+        }
+        Err(_) => return Err(format!("Skipped binary or non-UTF8 file: {display_name}")),
+    };
 
-        let file_uri =
-            Url::from_file_path(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
-                .map_err(|()| format!("Failed to build file URI for {display_name}"))?
-                .to_string();
-
-        let mime_type = mime_guess::from_path(path)
-            .first_or_octet_stream()
+    let file_uri =
+        Url::from_file_path(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
+            .map_err(|()| format!("Failed to build file URI for {display_name}"))?
             .to_string();
 
-        let warning =
-            truncated.then(|| format!("Truncated {display_name} to {MAX_EMBED_TEXT_BYTES} bytes"));
+    let mime_type = mime_guess::from_path(path)
+        .first_or_octet_stream()
+        .to_string();
 
-        let block = acp::ContentBlock::Resource(acp::EmbeddedResource::new(
-            acp::EmbeddedResourceResource::TextResourceContents(
-                acp::TextResourceContents::new(text, file_uri).mime_type(mime_type),
-            ),
-        ));
+    let warning =
+        truncated.then(|| format!("Truncated {display_name} to {MAX_EMBED_TEXT_BYTES} bytes"));
 
-        Ok((block, warning))
-    }
+    let block = acp::ContentBlock::Resource(acp::EmbeddedResource::new(
+        acp::EmbeddedResourceResource::TextResourceContents(
+            acp::TextResourceContents::new(text, file_uri).mime_type(mime_type),
+        ),
+    ));
+
+    Ok((block, warning))
 }
 
 impl CursorComponent for App {
@@ -912,7 +905,7 @@ mod tests {
             )],
         )];
         let mut screen = App::new("test-agent".to_string(), &options);
-        let effects = screen.apply_command(CommandEntry {
+        let effects = screen.apply_command(&CommandEntry {
             name: "config".to_string(),
             description: "Open configuration settings".to_string(),
             has_input: false,
@@ -928,7 +921,7 @@ mod tests {
     #[test]
     fn command_without_input_submits_prompt_immediately() {
         let mut screen = App::new("test-agent".to_string(), &[]);
-        let effects = screen.apply_command(CommandEntry {
+        let effects = screen.apply_command(&CommandEntry {
             name: "status".to_string(),
             description: "status".to_string(),
             has_input: false,
@@ -967,7 +960,7 @@ mod tests {
             ],
         )];
         let mut screen = App::new("test-agent".to_string(), &options);
-        let effects = screen.apply_command(CommandEntry {
+        let effects = screen.apply_command(&CommandEntry {
             name: "config".to_string(),
             description: "Open configuration settings".to_string(),
             has_input: false,

@@ -85,12 +85,12 @@ pub struct Usage {
 }
 
 impl From<ChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {
-    #[allow(deprecated, clippy::cast_possible_truncation)]
+    #[allow(deprecated)]
     fn from(response: ChatCompletionStreamResponse) -> Self {
         CreateChatCompletionStreamResponse {
             id: response.id,
             choices: response.choices.into_iter().map(Into::into).collect(),
-            created: response.created as u32,
+            created: u32::try_from(response.created).unwrap_or(0),
             model: response.model,
             service_tier: None,
             system_fingerprint: response.system_fingerprint,
@@ -113,10 +113,9 @@ impl From<FinishReason> for OpenAiFinishReason {
 }
 
 impl From<ChatCompletionStreamChoice> for ChatChoiceStream {
-    #[allow(clippy::cast_sign_loss)]
     fn from(choice: ChatCompletionStreamChoice) -> Self {
         ChatChoiceStream {
-            index: choice.index as u32,
+            index: u32::try_from(choice.index).unwrap_or(0),
             delta: choice.delta.into(),
             finish_reason: choice.finish_reason.map(std::convert::Into::into),
             logprobs: None,
@@ -140,10 +139,9 @@ impl From<ChatCompletionStreamResponseDelta> for OpenAiDelta {
 }
 
 impl From<ToolCallDelta> for ChatCompletionMessageToolCallChunk {
-    #[allow(clippy::cast_sign_loss)]
     fn from(call: ToolCallDelta) -> Self {
         ChatCompletionMessageToolCallChunk {
-            index: call.index as u32,
+            index: u32::try_from(call.index).unwrap_or(0),
             id: call.id,
             r#type: call
                 .tool_type
@@ -164,12 +162,11 @@ impl From<FunctionCallDelta> for FunctionCallStream {
 }
 
 impl From<Usage> for CompletionUsage {
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn from(u: Usage) -> Self {
         CompletionUsage {
-            prompt_tokens: u.prompt_tokens.max(0) as u32,
-            completion_tokens: u.completion_tokens.max(0) as u32,
-            total_tokens: u.total_tokens.max(0) as u32,
+            prompt_tokens: u32::try_from(u.prompt_tokens.max(0)).unwrap_or(0),
+            completion_tokens: u32::try_from(u.completion_tokens.max(0)).unwrap_or(0),
+            total_tokens: u32::try_from(u.total_tokens.max(0)).unwrap_or(0),
             completion_tokens_details: None,
             prompt_tokens_details: None,
         }

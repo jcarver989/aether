@@ -1,4 +1,3 @@
-#![allow(clippy::cast_possible_truncation)]
 use super::component::RenderContext;
 use super::screen::{Line, Screen};
 use super::soft_wrap::soft_wrap_lines_with_map;
@@ -51,7 +50,7 @@ impl<T: Write> Renderer<T> {
             .copied()
             .unwrap_or_else(|| visual_lines.len().saturating_sub(1));
 
-        let width = self.context.size.0 as usize;
+        let width = usize::from(self.context.size.0);
         let mut cursor_col = output.cursor.col;
         if width > 0 {
             cursor_row += cursor_col / width;
@@ -68,11 +67,14 @@ impl<T: Write> Renderer<T> {
         self.screen
             .render(&visual_lines, self.context.size.0, &mut self.writer)?;
 
-        let rows_up = visual_lines
-            .len()
-            .saturating_sub(1)
-            .saturating_sub(cursor_row) as u16;
-        self.reposition_cursor(rows_up, cursor_col as u16)?;
+        let rows_up = u16::try_from(
+            visual_lines
+                .len()
+                .saturating_sub(1)
+                .saturating_sub(cursor_row),
+        )
+        .unwrap_or(u16::MAX);
+        self.reposition_cursor(rows_up, u16::try_from(cursor_col).unwrap_or(u16::MAX))?;
         Ok(())
     }
 

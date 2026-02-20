@@ -300,8 +300,7 @@ where
         ));
     }
 
-    #[allow(clippy::cast_possible_truncation)]
-    let len = json.len() as u32;
+    let len = u32::try_from(json.len()).unwrap_or(u32::MAX);
     writer.write_all(&len.to_be_bytes()).await?;
     writer.write_all(&json).await?;
     writer.flush().await

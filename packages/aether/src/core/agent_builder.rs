@@ -1,4 +1,4 @@
-use super::agent::AutoContinue;
+use super::agent::{AgentConfig, AutoContinue};
 use crate::context::CompactionConfig;
 use crate::core::{Agent, Prompt, Result};
 use crate::events::{AgentMessage, UserMessage};
@@ -147,21 +147,20 @@ impl AgentBuilder {
         let (user_message_tx, user_message_rx) =
             mpsc::channel::<UserMessage>(self.channel_capacity);
 
-        let (agent_message_tx, agent_message_rx) =
-            mpsc::channel::<AgentMessage>(self.channel_capacity);
+        let (message_tx, agent_message_rx) = mpsc::channel::<AgentMessage>(self.channel_capacity);
 
         let context = Context::new(messages, self.tool_definitions);
 
-        let agent = Agent::new(
-            self.llm,
+        let config = AgentConfig {
+            llm: self.llm,
             context,
-            self.mcp_tx,
-            user_message_rx,
-            agent_message_tx,
-            self.tool_timeout,
-            self.compaction_config,
-            AutoContinue::new(self.max_auto_continues),
-        );
+            mcp_command_tx: self.mcp_tx,
+            tool_timeout: self.tool_timeout,
+            compaction_config: self.compaction_config,
+            auto_continue: AutoContinue::new(self.max_auto_continues),
+        };
+
+        let agent = Agent::new(config, user_message_rx, message_tx);
 
         let agent_handle = tokio::spawn(agent.run());
 

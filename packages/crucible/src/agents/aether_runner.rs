@@ -97,7 +97,6 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
 }
 
 /// Convert `AgentMessages` to `AgentRunnerMessages` in real-time, streaming them as they arrive
-#[allow(clippy::too_many_lines)]
 async fn stream_agent_messages(
     mut rx: Receiver<AgentMessage>,
     tx: Sender<AgentRunnerMessage>,
@@ -109,46 +108,12 @@ async fn stream_agent_messages(
         match &message {
             AgentMessage::Text {
                 chunk, is_complete, ..
-            } => {
-                accumulated_text.push_str(chunk);
-                if *is_complete && !accumulated_text.is_empty() {
-                    // Log each line separately to make grep work better
-                    for line in accumulated_text.lines() {
-                        tracing::debug!("Agent response: {}", line);
-                    }
-                    tx.send(AgentRunnerMessage::AgentText(accumulated_text.clone()))
-                        .await
-                        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
-                    accumulated_text.clear();
-                }
-            }
+            } => handle_text(chunk, *is_complete, &mut accumulated_text, &tx).await?,
+
             AgentMessage::ToolCall { request, .. } => {
-                let entry = accumulated_tool_calls
-                    .entry(request.id.clone())
-                    .or_insert_with(|| ToolCallRequest {
-                        id: request.id.clone(),
-                        name: String::new(),
-                        arguments: String::new(),
-                    });
-
-                // Accumulate tool call data
-                if !request.name.is_empty() {
-                    entry.name.push_str(&request.name);
-                }
-                entry.arguments.push_str(&request.arguments);
-
-                // Check if this is a complete tool call
-                if !entry.name.is_empty() && entry.arguments.ends_with('}') {
-                    tracing::debug!("Tool call: {} with args: {}", entry.name, entry.arguments);
-                    tx.send(AgentRunnerMessage::ToolCall {
-                        name: entry.name.clone(),
-                        arguments: entry.arguments.clone(),
-                    })
-                    .await
-                    .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
-                    accumulated_tool_calls.remove(&request.id);
-                }
+                handle_tool_call(request, &mut accumulated_tool_calls, &tx).await?;
             }
+
             AgentMessage::ToolResult { result, .. } => {
                 tracing::debug!("Tool result for {}: {}", result.name, result.result);
                 tx.send(AgentRunnerMessage::ToolResult {
@@ -158,32 +123,21 @@ async fn stream_agent_messages(
                 .await
                 .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
             }
+
             AgentMessage::ToolError { error, .. } => {
                 tracing::debug!("Tool error: {:?}", error);
                 tx.send(AgentRunnerMessage::ToolError(format!("{error:?}")))
                     .await
                     .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
             }
+
             AgentMessage::ToolProgress {
                 request,
                 progress,
                 total,
                 message,
-            } => {
-                let msg = message
-                    .as_ref()
-                    .map(|m| format!("{m} "))
-                    .unwrap_or_default();
-                let total_str = total.map(|t| format!("/{t}")).unwrap_or_default();
-                tracing::debug!(
-                    "Tool progress for {}: {}{}{}",
-                    request.name,
-                    msg,
-                    progress,
-                    total_str
-                );
-                // Progress events don't need to be captured in eval messages
-            }
+            } => handle_tool_progress(request, *progress, *total, message.as_ref()),
+
             AgentMessage::Error { message: msg } => {
                 tracing::debug!("Agent error: {}", msg);
                 tx.send(AgentRunnerMessage::Error(msg.clone()))
@@ -192,6 +146,7 @@ async fn stream_agent_messages(
                 // Agent errors are terminal - agent won't send Done, so break out
                 break;
             }
+
             AgentMessage::Cancelled { message: msg } => {
                 tracing::debug!("Agent cancelled: {}", msg);
                 tx.send(AgentRunnerMessage::Error(format!("Cancelled: {msg}")))
@@ -200,23 +155,12 @@ async fn stream_agent_messages(
                 // Cancellation is terminal - break out
                 break;
             }
+
             AgentMessage::Done => {
-                // Log any remaining accumulated text before finishing
-                if !accumulated_text.is_empty() {
-                    for line in accumulated_text.lines() {
-                        tracing::debug!("Agent response: {}", line);
-                    }
-                    tx.send(AgentRunnerMessage::AgentText(accumulated_text.clone()))
-                        .await
-                        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
-                    accumulated_text.clear();
-                }
-                tracing::debug!("Agent done");
-                tx.send(AgentRunnerMessage::Done)
-                    .await
-                    .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+                handle_done(&mut accumulated_text, &tx).await?;
                 break;
             }
+
             AgentMessage::ContextCompactionStarted { message_count } => {
                 tracing::debug!("Context compaction started: {} messages", message_count);
             }
@@ -298,4 +242,91 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
 
         stream_agent_messages(agent_rx, tx).await
     }
+}
+
+async fn handle_text(
+    chunk: &str,
+    is_complete: bool,
+    accumulated_text: &mut String,
+    tx: &Sender<AgentRunnerMessage>,
+) -> Result<(), RunError> {
+    accumulated_text.push_str(chunk);
+    if is_complete && !accumulated_text.is_empty() {
+        for line in accumulated_text.lines() {
+            tracing::debug!("Agent response: {}", line);
+        }
+        tx.send(AgentRunnerMessage::AgentText(accumulated_text.clone()))
+            .await
+            .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+        accumulated_text.clear();
+    }
+    Ok(())
+}
+
+async fn handle_tool_call(
+    request: &ToolCallRequest,
+    accumulated_tool_calls: &mut HashMap<String, ToolCallRequest>,
+    tx: &Sender<AgentRunnerMessage>,
+) -> Result<(), RunError> {
+    let entry = accumulated_tool_calls
+        .entry(request.id.clone())
+        .or_insert_with(|| ToolCallRequest {
+            id: request.id.clone(),
+            name: String::new(),
+            arguments: String::new(),
+        });
+
+    if !request.name.is_empty() {
+        entry.name.push_str(&request.name);
+    }
+    entry.arguments.push_str(&request.arguments);
+
+    if !entry.name.is_empty() && entry.arguments.ends_with('}') {
+        tracing::debug!("Tool call: {} with args: {}", entry.name, entry.arguments);
+        tx.send(AgentRunnerMessage::ToolCall {
+            name: entry.name.clone(),
+            arguments: entry.arguments.clone(),
+        })
+        .await
+        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+        accumulated_tool_calls.remove(&request.id);
+    }
+    Ok(())
+}
+
+fn handle_tool_progress(
+    request: &ToolCallRequest,
+    progress: f64,
+    total: Option<f64>,
+    message: Option<&String>,
+) {
+    let msg = message.map(|m| format!("{m} ")).unwrap_or_default();
+    let total_str = total.map(|t| format!("/{t}")).unwrap_or_default();
+    tracing::debug!(
+        "Tool progress for {}: {}{}{}",
+        request.name,
+        msg,
+        progress,
+        total_str
+    );
+}
+
+async fn handle_done(
+    accumulated_text: &mut String,
+    tx: &Sender<AgentRunnerMessage>,
+) -> Result<(), RunError> {
+    if !accumulated_text.is_empty() {
+        for line in accumulated_text.lines() {
+            tracing::debug!("Agent response: {}", line);
+        }
+        tx.send(AgentRunnerMessage::AgentText(accumulated_text.clone()))
+            .await
+            .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+        accumulated_text.clear();
+    }
+    tracing::debug!("Agent done");
+    tx.send(AgentRunnerMessage::Done)
+        .await
+        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+    Ok(())
 }
