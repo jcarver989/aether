@@ -77,7 +77,7 @@ impl Renderer {
 
     fn on_resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
         self.renderer.update_render_context_with((cols, rows));
-        let effects = self.screen.on_resize(cols, rows);
+        let effects = App::on_resize(cols, rows);
         self.apply_effects_no_prompt(effects)
     }
 

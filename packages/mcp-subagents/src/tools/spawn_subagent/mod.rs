@@ -254,7 +254,6 @@ impl AgentExecutor {
 }
 
 /// Execute a single sub-agent and return its result
-#[allow(clippy::similar_names)]
 async fn execute_single_agent(
     task_id: String,
     task: SubAgentTask,
@@ -265,24 +264,24 @@ async fn execute_single_agent(
     let agent_name = task.agent_name.clone();
 
     let result: Result<String, String> = async {
-        let agent_dir = agents_dir.join(&task.agent_name);
-        if !agent_dir.exists() {
+        let spec_dir = agents_dir.join(&task.agent_name);
+        if !spec_dir.exists() {
             return Err(format!("Agent '{}' not found", task.agent_name));
         }
 
-        let agent_file_path = agent_dir.join("AGENTS.md");
-        let agent_file = AgentFile::from_file(&agent_file_path)
+        let spec_path = spec_dir.join("AGENTS.md");
+        let spec = AgentFile::from_file(&spec_path)
             .map_err(|e| format!("Failed to load agent file: {e}"))?;
 
-        let llm = create_llm(&task.agent_name, &agent_file)?;
-        let system_prompt = agent_file.content.clone();
+        let llm = create_llm(&task.agent_name, &spec)?;
+        let system_prompt = spec.content.clone();
         let McpSpawnResult {
             tool_definitions,
             instructions,
             command_tx,
             elicitation_rx: _,
             handle: _,
-        } = spawn_mcps(&agent_dir, roots).await?;
+        } = spawn_mcps(&spec_dir, roots).await?;
         let (user_tx, mut agent_rx, _agent_handle) = spawn_agent(
             llm,
             &system_prompt,

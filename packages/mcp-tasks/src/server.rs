@@ -107,7 +107,7 @@ impl TasksMcp {
         let Parameters(input) = request;
         let mut store = self.task_store.lock().await;
         store.init().map_err(|e| e.to_string())?;
-        execute_task_create(input, &mut store)
+        execute_task_create(&input, &mut store)
             .map(Json)
             .map_err(|e| e.to_string())
     }
@@ -135,7 +135,7 @@ impl TasksMcp {
         let Parameters(input) = request;
         let mut store = self.task_store.lock().await;
         store.init().map_err(|e| e.to_string())?;
-        Ok(Json(execute_task_list(input, &store)))
+        Ok(Json(execute_task_list(&input, &store)))
     }
 
     #[doc = include_str!("./tools/get/description.md")]

@@ -1,4 +1,3 @@
-#![allow(clippy::cast_possible_truncation)]
 use crossterm::{
     QueueableCommand,
     cursor::MoveUp,
@@ -276,7 +275,7 @@ impl Screen {
         if rewrite_from < prev_on_screen {
             let lines_up = prev_on_screen - 1 - rewrite_from;
             if lines_up > 0 {
-                writer.queue(MoveUp(lines_up as u16))?;
+                writer.queue(MoveUp(u16::try_from(lines_up).unwrap_or(u16::MAX)))?;
             }
             write!(writer, "\r")?;
             writer.queue(Clear(ClearType::FromCursorDown))?;
@@ -321,7 +320,9 @@ impl Screen {
 
         // Move cursor to column 0 of the first managed line
         if self.prev_frame.len() > 1 {
-            writer.queue(MoveUp((self.prev_frame.len() - 1) as u16))?;
+            writer.queue(MoveUp(
+                u16::try_from(self.prev_frame.len() - 1).unwrap_or(u16::MAX),
+            ))?;
         }
         write!(writer, "\r")?;
 

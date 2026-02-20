@@ -63,7 +63,6 @@ async fn run_session_relay(
     acp_session_id: SessionId,
 ) {
     let Session {
-        id: _,
         agent_tx,
         mut agent_rx,
         agent_handle: _agent_handle,
@@ -79,18 +78,16 @@ async fn run_session_relay(
                 switch_model,
                 result_tx,
             } => {
-                let result = handle_prompt(
-                    &agent_tx,
-                    &mut agent_rx,
-                    &mcp_tx,
-                    &mut elicitation_rx,
-                    &mut cmd_rx,
-                    &actor_handle,
-                    &acp_session_id,
-                    text,
-                    switch_model,
-                )
-                .await;
+                let mut ctx = PromptContext {
+                    agent_tx: &agent_tx,
+                    agent_rx: &mut agent_rx,
+                    mcp_tx: &mcp_tx,
+                    elicitation_rx: &mut elicitation_rx,
+                    cmd_rx: &mut cmd_rx,
+                    actor_handle: &actor_handle,
+                    acp_session_id: &acp_session_id,
+                };
+                let result = handle_prompt(&mut ctx, text, switch_model).await;
                 let _ = result_tx.send(result);
             }
             SessionCommand::Cancel => {
@@ -101,15 +98,18 @@ async fn run_session_relay(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+struct PromptContext<'a> {
+    agent_tx: &'a mpsc::Sender<UserMessage>,
+    agent_rx: &'a mut mpsc::Receiver<AgentMessage>,
+    mcp_tx: &'a mpsc::Sender<McpCommand>,
+    elicitation_rx: &'a mut mpsc::Receiver<ElicitationRequest>,
+    cmd_rx: &'a mut mpsc::Receiver<SessionCommand>,
+    actor_handle: &'a AcpActorHandle,
+    acp_session_id: &'a SessionId,
+}
+
 async fn handle_prompt(
-    agent_tx: &mpsc::Sender<UserMessage>,
-    agent_rx: &mut mpsc::Receiver<AgentMessage>,
-    mcp_tx: &mpsc::Sender<McpCommand>,
-    elicitation_rx: &mut mpsc::Receiver<ElicitationRequest>,
-    cmd_rx: &mut mpsc::Receiver<SessionCommand>,
-    actor_handle: &AcpActorHandle,
-    acp_session_id: &SessionId,
+    ctx: &mut PromptContext<'_>,
     text: String,
     switch_model: Option<String>,
 ) -> Result<acp::StopReason, RelayError> {
@@ -118,15 +118,15 @@ async fn handle_prompt(
         let (provider, _) = parser
             .parse(&model)
             .map_err(|e| RelayError::SwitchModelFailed(format!("{e}")))?;
-        agent_tx
+        ctx.agent_tx
             .send(UserMessage::SwitchModel(provider))
             .await
             .map_err(|e| RelayError::SwitchModelFailed(format!("{e}")))?;
     }
 
-    let text = expand_slash_command_if_needed(mcp_tx, text).await;
+    let text = expand_slash_command_if_needed(ctx.mcp_tx, text).await;
 
-    agent_tx
+    ctx.agent_tx
         .send(UserMessage::text(&text))
         .await
         .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
@@ -138,9 +138,9 @@ async fn handle_prompt(
 
     loop {
         tokio::select! {
-            msg = agent_rx.recv() => {
+            msg = ctx.agent_rx.recv() => {
                 if let Some(msg) = msg {
-                    forward_notification(actor_handle, acp_session_id, &msg).await;
+                    forward_notification(ctx.actor_handle, ctx.acp_session_id, &msg).await;
 
                     match &msg {
                         AgentMessage::Cancelled { .. } => {
@@ -164,14 +164,14 @@ async fn handle_prompt(
                     return Err(RelayError::ChannelClosed);
                 }
             }
-            Some(elicitation) = elicitation_rx.recv() => {
-                handle_elicitation_request(actor_handle, acp_session_id, elicitation).await;
+            Some(elicitation) = ctx.elicitation_rx.recv() => {
+                handle_elicitation_request(ctx.actor_handle, ctx.acp_session_id, elicitation).await;
             }
-            Some(cmd) = cmd_rx.recv() => {
+            Some(cmd) = ctx.cmd_rx.recv() => {
                 match cmd {
                     SessionCommand::Cancel => {
                         info!("Cancel received during prompt processing");
-                        let _ = agent_tx.send(UserMessage::Cancel).await;
+                        let _ = ctx.agent_tx.send(UserMessage::Cancel).await;
                     }
                     SessionCommand::Prompt { result_tx, .. } => {
                         // Can't process a new prompt while one is in-flight

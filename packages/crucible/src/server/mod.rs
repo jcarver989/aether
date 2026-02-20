@@ -130,7 +130,7 @@ pub fn create_router<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> R
         )
         .route(
             "/api/runs/{run_id}/events",
-            get(|state, path| run_sse_handler::<T>(state, path)),
+            get(async |state, path| run_sse_handler::<T>(state, path)),
         )
         .route(
             "/api/runs/{run_id}/evals/{eval_id}",
@@ -138,7 +138,7 @@ pub fn create_router<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> R
         )
         .route(
             "/api/runs/{run_id}/evals/{eval_id}/events",
-            get(|state, path| eval_sse_handler::<T>(state, path)),
+            get(async |state, path| eval_sse_handler::<T>(state, path)),
         )
         .route(
             "/api/runs/{run_id}/evals/{eval_id}/traces",
@@ -192,8 +192,7 @@ async fn sse_handler<T: ResultsStore>(
 }
 
 /// Run-scoped SSE handler - only sends events for a specific run
-#[allow(clippy::unused_async)]
-async fn run_sse_handler<T: ResultsStore>(
+fn run_sse_handler<T: ResultsStore>(
     State(state): State<AppState<T>>,
     Path(run_id): Path<Uuid>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
@@ -216,8 +215,7 @@ async fn run_sse_handler<T: ResultsStore>(
 }
 
 /// Eval-scoped SSE handler - only sends events for a specific eval within a run
-#[allow(clippy::unused_async)]
-async fn eval_sse_handler<T: ResultsStore>(
+fn eval_sse_handler<T: ResultsStore>(
     State(state): State<AppState<T>>,
     Path((run_id, eval_id)): Path<(Uuid, Uuid)>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {

@@ -5,6 +5,7 @@ use agent_client_protocol::{
     SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
     ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
 };
+use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use mcp_utils::client::McpServerConfig;
 use rmcp::model::Prompt as McpPrompt;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
@@ -107,113 +108,41 @@ fn http_config(url: String, headers: &[HttpHeader]) -> StreamableHttpClientTrans
 }
 
 /// Converts Aether `AgentMessage` to ACP `SessionUpdate`
-#[allow(clippy::too_many_lines)]
 pub fn map_agent_message_to_session_notification(
     session_id: SessionId,
     msg: &AgentMessage,
 ) -> Option<SessionNotification> {
     match msg {
         AgentMessage::Text {
-            message_id: _,
-            chunk,
-            is_complete,
-            model_name: _,
-        } => {
-            // Skip the final completion message to avoid sending duplicate content
-            // The client has already received all the chunks during streaming
-            if *is_complete {
-                return None;
-            }
+            chunk, is_complete, ..
+        } => map_text_to_notification(session_id, chunk, *is_complete),
 
-            Some(acp::SessionNotification::new(
-                session_id,
-                SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
-                    TextContent::new(chunk.clone()),
-                ))),
-            ))
-        }
-
-        AgentMessage::Thought {
-            message_id: _,
-            chunk,
-            model_name: _,
-        } => Some(acp::SessionNotification::new(
-            session_id,
-            SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
-                TextContent::new(chunk.clone()),
-            ))),
-        )),
+        AgentMessage::Thought { chunk, .. } => Some(map_thought_to_notification(session_id, chunk)),
 
         AgentMessage::ToolCall { request, .. } => {
-            let raw_input = serde_json::from_str(&request.arguments).ok();
-            Some(SessionNotification::new(
-                session_id,
-                SessionUpdate::ToolCall(
-                    ToolCall::new(ToolCallId::new(request.id.clone()), request.name.clone())
-                        .status(acp::ToolCallStatus::InProgress)
-                        .raw_input(raw_input),
-                ),
-            ))
+            Some(map_tool_call_to_notification(session_id, request))
         }
 
-        AgentMessage::ToolResult { result, .. } => Some(SessionNotification::new(
-            session_id,
-            SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
-                ToolCallId::new(result.id.clone()),
-                ToolCallUpdateFields::new()
-                    .status(ToolCallStatus::Completed)
-                    .content(vec![ToolCallContent::Content(Content::new(
-                        ContentBlock::Text(TextContent::new(result.result.clone())),
-                    ))]),
-            )),
-        )),
+        AgentMessage::ToolResult { result, .. } => {
+            Some(map_tool_result_to_notification(session_id, result))
+        }
 
-        AgentMessage::ToolError { error, .. } => Some(SessionNotification::new(
-            session_id,
-            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                ToolCallId::new(error.id.clone()),
-                ToolCallUpdateFields::new()
-                    .status(ToolCallStatus::Failed)
-                    .content(vec![ToolCallContent::Content(Content::new(
-                        ContentBlock::Text(TextContent::new(error.error.clone())),
-                    ))]),
-            )),
-        )),
+        AgentMessage::ToolError { error, .. } => {
+            Some(map_tool_error_to_notification(session_id, error))
+        }
 
         AgentMessage::ToolProgress {
             request,
             progress,
             total,
             message,
-        } => {
-            tracing::info!("Tool progress: {message:?}");
-
-            if message
-                .as_ref()
-                .and_then(|msg_str| try_parse_sub_agent_progress(msg_str, request))
-                .is_some()
-            {
-                return None;
-            }
-
-            let total_str = total.map_or_else(|| "?".to_string(), |t| t.to_string());
-            let progress_text = message.as_ref().map_or_else(
-                || format!("Progress: {progress}/{total_str}"),
-                |msg| format!("{msg} ({progress}/{total_str})"),
-            );
-
-            Some(SessionNotification::new(
-                session_id,
-                SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                    ToolCallId::new(request.id.clone()),
-                    ToolCallUpdateFields::new()
-                        .status(ToolCallStatus::InProgress)
-                        .content(vec![ToolCallContent::Content(Content::new(
-                            ContentBlock::Text(TextContent::new(progress_text)),
-                        ))]),
-                )),
-            ))
-        }
+        } => map_tool_progress_to_notification(
+            session_id,
+            request,
+            *progress,
+            *total,
+            message.as_ref(),
+        ),
 
         AgentMessage::ContextUsageUpdate { .. }
         | AgentMessage::Error { .. }
@@ -257,6 +186,118 @@ pub fn map_agent_message_to_stop_reason(msg: &AgentMessage) -> acp::StopReason {
         AgentMessage::Cancelled { .. } => StopReason::Cancelled,
         _ => StopReason::EndTurn,
     }
+}
+
+fn map_text_to_notification(
+    session_id: SessionId,
+    chunk: &str,
+    is_complete: bool,
+) -> Option<SessionNotification> {
+    // Skip the final completion message to avoid sending duplicate content.
+    // The client has already received all the chunks during streaming.
+    if is_complete {
+        return None;
+    }
+
+    Some(acp::SessionNotification::new(
+        session_id,
+        SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
+            chunk.to_owned(),
+        )))),
+    ))
+}
+
+fn map_thought_to_notification(session_id: SessionId, chunk: &str) -> SessionNotification {
+    acp::SessionNotification::new(
+        session_id,
+        SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
+            chunk.to_owned(),
+        )))),
+    )
+}
+
+fn map_tool_call_to_notification(
+    session_id: SessionId,
+    request: &ToolCallRequest,
+) -> SessionNotification {
+    let raw_input = serde_json::from_str(&request.arguments).ok();
+    SessionNotification::new(
+        session_id,
+        SessionUpdate::ToolCall(
+            ToolCall::new(ToolCallId::new(request.id.clone()), request.name.clone())
+                .status(acp::ToolCallStatus::InProgress)
+                .raw_input(raw_input),
+        ),
+    )
+}
+
+fn map_tool_result_to_notification(
+    session_id: SessionId,
+    result: &ToolCallResult,
+) -> SessionNotification {
+    SessionNotification::new(
+        session_id,
+        SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+            ToolCallId::new(result.id.clone()),
+            ToolCallUpdateFields::new()
+                .status(ToolCallStatus::Completed)
+                .content(vec![ToolCallContent::Content(Content::new(
+                    ContentBlock::Text(TextContent::new(result.result.clone())),
+                ))]),
+        )),
+    )
+}
+
+fn map_tool_error_to_notification(
+    session_id: SessionId,
+    error: &ToolCallError,
+) -> SessionNotification {
+    SessionNotification::new(
+        session_id,
+        SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+            ToolCallId::new(error.id.clone()),
+            ToolCallUpdateFields::new()
+                .status(ToolCallStatus::Failed)
+                .content(vec![ToolCallContent::Content(Content::new(
+                    ContentBlock::Text(TextContent::new(error.error.clone())),
+                ))]),
+        )),
+    )
+}
+
+fn map_tool_progress_to_notification(
+    session_id: SessionId,
+    request: &ToolCallRequest,
+    progress: f64,
+    total: Option<f64>,
+    message: Option<&String>,
+) -> Option<SessionNotification> {
+    tracing::info!("Tool progress: {message:?}");
+
+    if message
+        .and_then(|msg_str| try_parse_sub_agent_progress(msg_str, request))
+        .is_some()
+    {
+        return None;
+    }
+
+    let total_str = total.map_or_else(|| "?".to_string(), |t| t.to_string());
+    let progress_text = message.map_or_else(
+        || format!("Progress: {progress}/{total_str}"),
+        |msg| format!("{msg} ({progress}/{total_str})"),
+    );
+
+    Some(SessionNotification::new(
+        session_id,
+        SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+            ToolCallId::new(request.id.clone()),
+            ToolCallUpdateFields::new()
+                .status(ToolCallStatus::InProgress)
+                .content(vec![ToolCallContent::Content(Content::new(
+                    ContentBlock::Text(TextContent::new(progress_text)),
+                ))]),
+        )),
+    ))
 }
 
 /// Attempt to parse a tool progress message as sub-agent progress.

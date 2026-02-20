@@ -72,7 +72,6 @@ pub fn process_anthropic_stream<T: Stream<Item = Result<String>> + Send + Sync +
     }
 }
 
-#[allow(clippy::too_many_lines)]
 fn process_stream_event(
     event: StreamEvent,
     active_tool_calls: &mut HashMap<String, (String, String)>,
@@ -83,115 +82,29 @@ fn process_stream_event(
         MessageStop, Ping,
     };
     match event {
-        MessageStart { data: _start_data } => {
-            debug!("Message started");
-            Ok((None, None))
-        }
-
-        ContentBlockStart { data: start_data } => match start_data.content_block {
-            ContentBlockStartData::Text { .. } => {
-                debug!("Text block started at index {}", start_data.index);
-                Ok((None, None))
-            }
-            ContentBlockStartData::ToolUse { id, name } => {
-                debug!("Tool use started: {} ({})", name, id);
-                index_to_id.insert(start_data.index, id.clone());
-                active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
-                Ok((Some(LlmResponse::ToolRequestStart { id, name }), None))
-            }
-        },
-
-        ContentBlockDelta { data: delta_data } => match delta_data.delta {
-            ContentBlockDeltaData::TextDelta { text } => {
-                if text.is_empty() {
-                    Ok((None, None))
-                } else {
-                    Ok((Some(LlmResponse::Text { chunk: text }), None))
-                }
-            }
-
-            ContentBlockDeltaData::InputJsonDelta { partial_json } => {
-                if let Some(id) = index_to_id.get(&delta_data.index) {
-                    if let Some((_name, arguments)) = active_tool_calls.get_mut(id) {
-                        arguments.push_str(&partial_json);
-                        Ok((
-                            Some(LlmResponse::ToolRequestArg {
-                                id: id.clone(),
-                                chunk: partial_json,
-                            }),
-                            None,
-                        ))
-                    } else {
-                        warn!("Received tool input delta for unknown tool call id: {}", id);
-                        Ok((None, None))
-                    }
-                } else {
-                    warn!(
-                        "Received tool input delta for unknown tool call index: {}",
-                        delta_data.index
-                    );
-                    Ok((None, None))
-                }
-            }
-        },
-        ContentBlockStop { data: stop_data } => {
-            if let Some(id) = index_to_id.remove(&stop_data.index) {
-                if let Some((name, arguments)) = active_tool_calls.remove(&id) {
-                    let tool_call = ToolCallRequest {
-                        id,
-                        name,
-                        arguments,
-                    };
-                    Ok((Some(LlmResponse::ToolRequestComplete { tool_call }), None))
-                } else {
-                    debug!(
-                        "Content block stopped but tool call not found for id: {}",
-                        id
-                    );
-                    Ok((None, None))
-                }
-            } else {
-                debug!("Content block stopped at index {}", stop_data.index);
-                Ok((None, None))
-            }
-        }
-
-        MessageDelta { data: delta_data } => {
-            debug!("Message delta received");
-            let stop_reason = delta_data
-                .delta
-                .stop_reason
-                .as_deref()
-                .map(map_anthropic_stop_reason);
-
-            // Emit complete usage at message completion
-            if let Some(usage) = &delta_data.delta.usage {
-                Ok((
-                    Some(LlmResponse::Usage {
-                        input_tokens: usage.input_tokens,
-                        output_tokens: usage.output_tokens,
-                    }),
-                    stop_reason,
-                ))
-            } else {
-                Ok((None, stop_reason))
-            }
-        }
-
-        MessageStop { data: _stop_data } => {
-            debug!("Message stopped");
-            Ok((None, None))
-        }
-
-        Error { data: error_data } => Err(LlmError::ApiError(format!(
+        MessageStart { .. } => Ok(handle_message_start()),
+        ContentBlockStart { data } => Ok(handle_content_block_start(
+            data,
+            active_tool_calls,
+            index_to_id,
+        )),
+        ContentBlockDelta { data } => Ok(handle_content_block_delta(
+            data,
+            active_tool_calls,
+            index_to_id,
+        )),
+        ContentBlockStop { data } => Ok(handle_content_block_stop(
+            &data,
+            active_tool_calls,
+            index_to_id,
+        )),
+        MessageDelta { data } => Ok(handle_message_delta(&data)),
+        MessageStop { .. } => Ok(handle_message_stop()),
+        Error { data } => Err(LlmError::ApiError(format!(
             "Anthropic API error: {} - {}",
-            error_data.error.error_type, error_data.error.message
+            data.error.error_type, data.error.message
         ))),
-
-        Ping => {
-            debug!("Received ping event");
-            Ok((None, None))
-        }
+        Ping => Ok(handle_ping()),
     }
 }
 
@@ -202,6 +115,128 @@ fn map_anthropic_stop_reason(reason: &str) -> StopReason {
         "max_tokens" => StopReason::Length,
         _ => StopReason::Unknown(reason.to_string()),
     }
+}
+
+type EventResult = (Option<LlmResponse>, Option<StopReason>);
+
+fn handle_message_start() -> EventResult {
+    debug!("Message started");
+    (None, None)
+}
+
+fn handle_content_block_start(
+    start_data: super::types::ContentBlockStart,
+    active_tool_calls: &mut HashMap<String, (String, String)>,
+    index_to_id: &mut HashMap<u32, String>,
+) -> EventResult {
+    match start_data.content_block {
+        ContentBlockStartData::Text { .. } => {
+            debug!("Text block started at index {}", start_data.index);
+            (None, None)
+        }
+        ContentBlockStartData::ToolUse { id, name } => {
+            debug!("Tool use started: {} ({})", name, id);
+            index_to_id.insert(start_data.index, id.clone());
+            active_tool_calls.insert(id.clone(), (name.clone(), String::new()));
+            (Some(LlmResponse::ToolRequestStart { id, name }), None)
+        }
+    }
+}
+
+fn handle_content_block_delta(
+    delta_data: super::types::ContentBlockDelta,
+    active_tool_calls: &mut HashMap<String, (String, String)>,
+    index_to_id: &HashMap<u32, String>,
+) -> EventResult {
+    match delta_data.delta {
+        ContentBlockDeltaData::TextDelta { text } => {
+            if text.is_empty() {
+                (None, None)
+            } else {
+                (Some(LlmResponse::Text { chunk: text }), None)
+            }
+        }
+        ContentBlockDeltaData::InputJsonDelta { partial_json } => {
+            if let Some(id) = index_to_id.get(&delta_data.index) {
+                if let Some((_name, arguments)) = active_tool_calls.get_mut(id) {
+                    arguments.push_str(&partial_json);
+                    (
+                        Some(LlmResponse::ToolRequestArg {
+                            id: id.clone(),
+                            chunk: partial_json,
+                        }),
+                        None,
+                    )
+                } else {
+                    warn!("Received tool input delta for unknown tool call id: {}", id);
+                    (None, None)
+                }
+            } else {
+                warn!(
+                    "Received tool input delta for unknown tool call index: {}",
+                    delta_data.index
+                );
+                (None, None)
+            }
+        }
+    }
+}
+
+fn handle_content_block_stop(
+    stop_data: &super::types::ContentBlockStop,
+    active_tool_calls: &mut HashMap<String, (String, String)>,
+    index_to_id: &mut HashMap<u32, String>,
+) -> EventResult {
+    if let Some(id) = index_to_id.remove(&stop_data.index) {
+        if let Some((name, arguments)) = active_tool_calls.remove(&id) {
+            let tool_call = ToolCallRequest {
+                id,
+                name,
+                arguments,
+            };
+            (Some(LlmResponse::ToolRequestComplete { tool_call }), None)
+        } else {
+            debug!(
+                "Content block stopped but tool call not found for id: {}",
+                id
+            );
+            (None, None)
+        }
+    } else {
+        debug!("Content block stopped at index {}", stop_data.index);
+        (None, None)
+    }
+}
+
+fn handle_message_delta(delta_data: &super::types::MessageDelta) -> EventResult {
+    debug!("Message delta received");
+    let stop_reason = delta_data
+        .delta
+        .stop_reason
+        .as_deref()
+        .map(map_anthropic_stop_reason);
+
+    if let Some(usage) = &delta_data.delta.usage {
+        (
+            Some(LlmResponse::Usage {
+                input_tokens: usage.input_tokens,
+                output_tokens: usage.output_tokens,
+            }),
+            stop_reason,
+        )
+    } else {
+        (None, stop_reason)
+    }
+}
+
+fn handle_message_stop() -> EventResult {
+    debug!("Message stopped");
+    (None, None)
+}
+
+fn handle_ping() -> EventResult {
+    debug!("Received ping event");
+    (None, None)
 }
 
 #[cfg(test)]

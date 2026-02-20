@@ -36,6 +36,16 @@ type ServerHandles = (
     Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
 );
 
+/// Context for spawning a single eval task
+struct EvalTaskContext<R, T, J> {
+    run_id: Uuid,
+    agent_prompt: Option<String>,
+    runner: Arc<R>,
+    judge_llm: Arc<J>,
+    sse_tx: Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
+    results_store: Arc<T>,
+}
+
 /// Configure and run AI agent evaluations
 pub struct EvalRunner<R, T>
 where
@@ -136,10 +146,10 @@ where
             Self::run_eval_batch(
                 batch,
                 run_id,
-                &agent_prompt,
+                agent_prompt.as_deref(),
                 &runner,
                 &judge_llm,
-                &sse_tx,
+                sse_tx.as_ref(),
                 &results_store,
             )
             .await;
@@ -225,20 +235,20 @@ where
     }
 
     /// Spawn a single eval task with tracing instrumentation
-    #[allow(clippy::too_many_arguments)]
     fn spawn_eval_task<J>(
         eval: Eval,
         eval_id: Uuid,
-        run_id: Uuid,
-        agents_prompt: Option<String>,
-        runner: Arc<R>,
-        judge_llm: Arc<J>,
-        sse_tx: Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
-        results_store: Arc<T>,
+        task_ctx: EvalTaskContext<R, T, J>,
     ) -> JoinHandle<EvalTaskOutput>
     where
         J: StreamingModelProvider + 'static,
     {
+        let run_id = task_ctx.run_id;
+        let agents_prompt = task_ctx.agent_prompt;
+        let runner = task_ctx.runner;
+        let judge_llm = task_ctx.judge_llm;
+        let sse_tx = task_ctx.sse_tx;
+        let results_store = task_ctx.results_store;
         let eval_name = eval.name.clone();
         let eval_name_for_span = eval_name.clone();
 
@@ -322,14 +332,13 @@ where
     }
 
     /// Run a single batch of evaluations
-    #[allow(clippy::ref_option)]
     async fn run_eval_batch<J>(
         batch: Vec<Eval>,
         run_id: Uuid,
-        agent_prompt: &Option<String>,
+        agent_prompt: Option<&str>,
         runner: &Arc<R>,
         judge_llm: &Arc<J>,
-        sse_tx: &Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
+        sse_tx: Option<&tokio::sync::broadcast::Sender<server::SseEvent>>,
         results_store: &Arc<T>,
     ) where
         J: StreamingModelProvider + 'static,
@@ -338,16 +347,15 @@ where
             .into_iter()
             .map(|eval| {
                 let eval_id = Uuid::new_v4();
-                Self::spawn_eval_task(
-                    eval,
-                    eval_id,
+                let task_ctx = EvalTaskContext {
                     run_id,
-                    agent_prompt.clone(),
-                    runner.clone(),
-                    judge_llm.clone(),
-                    sse_tx.clone(),
-                    results_store.clone(),
-                )
+                    agent_prompt: agent_prompt.map(String::from),
+                    runner: runner.clone(),
+                    judge_llm: judge_llm.clone(),
+                    sse_tx: sse_tx.cloned(),
+                    results_store: results_store.clone(),
+                };
+                Self::spawn_eval_task(eval, eval_id, task_ctx)
             })
             .collect();
 

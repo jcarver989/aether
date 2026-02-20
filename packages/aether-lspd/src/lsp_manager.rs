@@ -213,7 +213,7 @@ impl LspManager {
             return Ok(Arc::clone(handle));
         }
 
-        let handle = Arc::new(spawn_lsp(&key.workspace_root, command, args).await?);
+        let handle = Arc::new(spawn_lsp(&key.workspace_root, command, args)?);
         lsps.insert(key, handle.clone());
         Ok(handle)
     }
@@ -287,8 +287,7 @@ impl LspHandle {
 }
 
 /// Spawn a new LSP server process
-#[allow(clippy::unused_async)]
-async fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<LspHandle> {
+fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<LspHandle> {
     let args_str: Vec<&str> = args.iter().map(std::string::String::as_str).collect();
 
     let mut process = Command::new(command)
@@ -442,11 +441,11 @@ async fn handle_lsp_message(
     if let Some(id) = msg.get("id").and_then(serde_json::Value::as_i64) {
         if let Some(tx) = pending.remove(&id) {
             let result = if let Some(error) = msg.get("error") {
-                #[allow(clippy::cast_possible_truncation)]
                 let code = error
                     .get("code")
                     .and_then(serde_json::Value::as_i64)
-                    .unwrap_or(-1) as i32;
+                    .and_then(|c| i32::try_from(c).ok())
+                    .unwrap_or(-1);
                 let message = error
                     .get("message")
                     .and_then(|v| v.as_str())

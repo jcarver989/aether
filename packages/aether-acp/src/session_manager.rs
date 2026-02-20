@@ -193,7 +193,6 @@ impl Agent for SessionManager {
         let mcp_config_path = resolve_mcp_config(&args.cwd);
 
         let session = Session::new(
-            session_id.clone(),
             llm,
             self.system_prompt.clone(),
             mcp_config_path.clone(),

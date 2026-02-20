@@ -1,13 +1,13 @@
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 
 use regex::{Captures, Regex};
 
 /// Substitute parameters in a prompt template
 /// Supports named parameters using the format `$parameter_name`
-#[allow(clippy::implicit_hasher)]
-pub fn substitute_parameters(
+pub fn substitute_parameters<S: BuildHasher>(
     template: &str,
-    arguments: &Option<HashMap<String, String>>,
+    arguments: &Option<HashMap<String, String, S>>,
 ) -> String {
     let Ok(regex) = Regex::new(r"\$(\w+)") else {
         return template.to_string();
@@ -46,7 +46,8 @@ mod tests {
     #[test]
     fn test_no_arguments() {
         let template = "Hello $name, welcome to $project. Today is $day";
-        let result = substitute_parameters(template, &None);
+        let none: Option<HashMap<String, String>> = None;
+        let result = substitute_parameters(template, &none);
         assert_eq!(result, "Hello $name, welcome to $project. Today is $day");
     }
 

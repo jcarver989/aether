@@ -83,9 +83,8 @@ impl Sink for MatchCollectorSink {
 
         let match_data = MatchData {
             file: self.file_path.display().to_string(),
-            #[allow(clippy::cast_possible_truncation)]
             line_number: if self.line_numbers {
-                mat.line_number().map(|n| n as usize)
+                mat.line_number().and_then(|n| usize::try_from(n).ok())
             } else {
                 None
             },

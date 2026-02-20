@@ -93,7 +93,7 @@ fn on_acp_event<T: Write>(
             }
         }
         AcpEvent::ExtNotification(notification) => {
-            let effects = screen.on_ext_notification(notification);
+            let effects = screen.on_ext_notification(&notification);
             match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects) {
                 Ok(true) => true,
                 Ok(false) => false,
@@ -164,7 +164,7 @@ fn on_terminal_event<T: Write>(
         }
         Event::Resize(cols, rows) => {
             renderer.update_render_context_with((cols, rows));
-            let effects = screen.on_resize(cols, rows);
+            let effects = App::on_resize(cols, rows);
             match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects) {
                 Ok(true) => true,
                 Ok(false) => false,

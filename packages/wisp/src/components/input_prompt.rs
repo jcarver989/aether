@@ -1,4 +1,3 @@
-#![allow(clippy::cast_possible_truncation)]
 use crate::tui::soft_wrap::{display_width_line, soft_wrap_line};
 use crate::tui::{Component, Line, RenderContext};
 use unicode_width::UnicodeWidthChar;
@@ -18,7 +17,7 @@ pub struct InputPromptLayout {
 
 impl InputPrompt<'_> {
     pub fn layout(&self, context: &RenderContext) -> InputPromptLayout {
-        let width = context.size.0 as usize;
+        let width = usize::from(context.size.0);
         let cursor_index = clamp_to_char_boundary(self.input, self.cursor_index);
         let cursor_display_width = plain_display_width(&self.input[..cursor_index]);
         let styled_input = style_input(self.input, context);
@@ -30,7 +29,10 @@ impl InputPrompt<'_> {
             let (cursor_row, cursor_col) = if width == 0 {
                 (0, 0)
             } else {
-                (total_col / width, (total_col % width) as u16)
+                (
+                    total_col / width,
+                    u16::try_from(total_col % width).unwrap_or(u16::MAX),
+                )
             };
             return InputPromptLayout {
                 lines: vec![line],
@@ -42,7 +44,10 @@ impl InputPrompt<'_> {
         let inner_width = width - 2; // space between │ and │
         // " " + marker area ("> " or "  ")
         let content_width = inner_width.saturating_sub(3).max(1);
-        let wrapped_chunks = soft_wrap_line(&styled_input, content_width as u16);
+        let wrapped_chunks = soft_wrap_line(
+            &styled_input,
+            u16::try_from(content_width).unwrap_or(u16::MAX),
+        );
 
         let cursor_content_row = cursor_display_width / content_width;
         let cursor_content_col = cursor_display_width % content_width;
@@ -82,7 +87,7 @@ impl InputPrompt<'_> {
             lines,
             cursor_row: 1 + cursor_content_row,
             // "│ > " (or "│   ") takes 4 visual columns.
-            cursor_col: (4 + cursor_content_col) as u16,
+            cursor_col: u16::try_from(4 + cursor_content_col).unwrap_or(u16::MAX),
         }
     }
 }

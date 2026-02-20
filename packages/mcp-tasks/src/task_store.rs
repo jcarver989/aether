@@ -97,7 +97,7 @@ impl TaskStore {
         task.description = description.map(String::from);
 
         let file_path = self.active_dir().join(task.id.filename());
-        self.write_task_to_file(&task, &file_path)?;
+        write_task_to_file(&task, &file_path)?;
         self.index.insert(task.clone(), file_path);
 
         Ok(task)
@@ -124,7 +124,7 @@ impl TaskStore {
             }
         })?;
 
-        self.write_task_to_file(&task, &file_path)?;
+        write_task_to_file(&task, &file_path)?;
         self.index.insert(task.clone(), file_path);
 
         Ok(task)
@@ -242,6 +242,7 @@ impl TaskStore {
         let pid = u128::from(std::process::id());
         let count = self.index.len() as u128;
         let mixed = now.wrapping_add(pid << 16).wrapping_add(count);
+        // Intentional truncation: value is masked to 32 bits for ID generation
         #[allow(clippy::cast_possible_truncation)]
         let truncated = mixed as u64;
         format!("{:08x}", truncated & 0xFFFF_FFFF)
@@ -264,22 +265,6 @@ impl TaskStore {
         Ok(())
     }
 
-    #[allow(clippy::unused_self)]
-    fn write_task_to_file(&self, task: &Task, path: &PathBuf) -> Result<(), TaskStoreError> {
-        if let Some(parent) = path.parent()
-            && !parent.exists()
-        {
-            fs::create_dir_all(parent)?;
-        }
-
-        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-
-        let json = serde_json::to_string(task)?;
-        writeln!(file, "{json}")?;
-
-        Ok(())
-    }
-
     fn rewrite_tree_file(&self, root_id: &TaskId) -> Result<(), TaskStoreError> {
         let path = self.index.get_tree_path(root_id).cloned().ok_or_else(|| {
             TaskStoreError::TreeNotFound {
@@ -298,6 +283,21 @@ impl TaskStore {
 
         Ok(())
     }
+}
+
+fn write_task_to_file(task: &Task, path: &PathBuf) -> Result<(), TaskStoreError> {
+    if let Some(parent) = path.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+
+    let json = serde_json::to_string(task)?;
+    writeln!(file, "{json}")?;
+
+    Ok(())
 }
 
 #[cfg(test)]
