@@ -48,8 +48,8 @@ impl TokenTracker {
 
     /// Record usage from an LLM API response
     pub fn record_usage(&mut self, input_tokens: u32, output_tokens: u32) {
-        self.total_input_tokens += input_tokens as u64;
-        self.total_output_tokens += output_tokens as u64;
+        self.total_input_tokens += u64::from(input_tokens);
+        self.total_output_tokens += u64::from(output_tokens);
         self.last_input_tokens = input_tokens;
     }
 
@@ -58,7 +58,7 @@ impl TokenTracker {
         if self.context_limit == 0 {
             return 0.0;
         }
-        self.last_input_tokens as f64 / self.context_limit as f64
+        f64::from(self.last_input_tokens) / f64::from(self.context_limit)
     }
 
     /// Whether current usage exceeds the given threshold
@@ -102,7 +102,7 @@ impl TokenTracker {
 
     /// Reset current usage tracking after context compaction.
     /// Preserves cumulative totals for metrics while clearing the
-    /// last_input_tokens to prevent immediate re-triggering of compaction.
+    /// `last_input_tokens` to prevent immediate re-triggering of compaction.
     pub fn reset_current_usage(&mut self) {
         self.last_input_tokens = 0;
     }

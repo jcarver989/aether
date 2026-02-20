@@ -77,7 +77,7 @@ impl Prompt {
         Self::McpInstructions(instructions)
     }
 
-    /// Resolve this SystemPrompt to a String
+    /// Resolve this `SystemPrompt` to a String
     pub async fn build(&self) -> Result<String> {
         match self {
             Prompt::Text(text) => Ok(text.clone()),
@@ -100,7 +100,7 @@ impl Prompt {
         }
     }
 
-    /// Resolve multiple SystemPrompts and join them with double newlines
+    /// Resolve multiple `SystemPrompts` and join them with double newlines
     pub async fn build_all(prompts: &[Prompt]) -> Result<String> {
         let mut parts = Vec::with_capacity(prompts.len());
         for p in prompts {
@@ -174,10 +174,10 @@ impl Prompt {
             .and_then(|output| String::from_utf8(output.stdout).ok())
             .and_then(|version| {
                 let version = version.trim();
-                if !version.is_empty() {
-                    Some(format!("OS Version: {version}"))
-                } else {
+                if version.is_empty() {
                     None
+                } else {
+                    Some(format!("OS Version: {version}"))
                 }
             });
 

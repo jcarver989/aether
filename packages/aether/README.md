@@ -12,7 +12,7 @@ Aether aims to give you a great developer experience via a simple API that expos
 
 - **Agents**: Aether agents run in dedicated [tokio tasks](https://tokio.rs) and communicate via async message passing (i.e. they're [actors](https://en.wikipedia.org/wiki/Actor_model)). Hardware permitting, you can run hundreds of agents in a single process.
 
-- **LLMs**: Aether supports models from Anthropic, OpenAI, OpenRouter, Llama.cpp and Ollama out of the box. You can implement your own provider via the `StreamableModelProvider` trait and combine multiple models from different providers into an "alloyed" model via `AlloyedModelProvider`.
+- **LLMs**: Aether supports models from Anthropic, `OpenAI`, `OpenRouter`, Llama.cpp and Ollama out of the box. You can implement your own provider via the `StreamableModelProvider` trait and combine multiple models from different providers into an "alloyed" model via `AlloyedModelProvider`.
 
 - **Prompts**: Are just strings. But Aether provides nice helpers to do things like recursively load `AGENTS.md` files into your agent's system prompt and compose prompts from multiple sources.
 
@@ -123,7 +123,7 @@ And create an `AGENTS.md` file with a system prompt:
 You are Mr. BotBot, a kickass coding agent equipped with SOTA filesystem and web browsing tools...
 ```
 
-And bring Mr. BotBot to life!
+And bring Mr. `BotBot` to life!
 
 ```rust,ignore
 use aether::core::{AgentMessage, UserMessage, Prompt, agent};

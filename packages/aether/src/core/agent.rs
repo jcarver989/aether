@@ -84,7 +84,7 @@ impl Agent {
         let mut state = IterationState::new();
 
         while let Some((_, event)) = self.streams.next().await {
-            use UserMessage::*;
+            use UserMessage::{Cancel, Text, SwitchModel};
             match event {
                 StreamEvent::UserMessage(Cancel) => {
                     self.on_user_cancel(&mut state).await;
@@ -227,9 +227,7 @@ impl Agent {
             });
         }
 
-        let reason = stop_reason
-            .map(|reason| format!("{reason:?}"))
-            .unwrap_or_else(|| "Unknown".to_string());
+        let reason = stop_reason.map_or_else(|| "Unknown".to_string(), |reason| format!("{reason:?}"));
 
         self.context.add_message(ChatMessage::User {
             content: format!(
@@ -244,7 +242,7 @@ impl Agent {
         result: Result<LlmResponse, LlmError>,
         state: &mut IterationState,
     ) {
-        use LlmResponse::*;
+        use LlmResponse::{Start, Text, Reasoning, ToolRequestStart, ToolRequestArg, ToolRequestComplete, Done, Error, Usage};
 
         let response = match result {
             Ok(response) => response,
