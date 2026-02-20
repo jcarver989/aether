@@ -1,4 +1,3 @@
-use aether::events::AgentMessage;
 use agent_client_protocol::{
     self as acp, Agent, AgentCapabilities, AuthenticateRequest, AuthenticateResponse,
     AvailableCommandsUpdate, Implementation, InitializeRequest, InitializeResponse,
@@ -15,19 +14,20 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::spawn;
 use tokio::sync::Mutex;
+use tokio::sync::oneshot;
 use tracing::{debug, error, info};
 
-use crate::mappers::{
-    map_acp_mcp_servers, map_agent_message_to_session_notification,
-    map_agent_message_to_stop_reason, try_into_ext_notification,
-};
+use crate::mappers::map_acp_mcp_servers;
+use crate::relay::{SessionCommand, spawn_relay};
 use crate::session::Session;
 use acp_utils::content::map_content_blocks_to_text;
 use acp_utils::server::AcpActorHandle;
 
 /// Per-session state including active and staged model selections.
 struct SessionState {
-    session: Session,
+    relay_tx: tokio::sync::mpsc::Sender<SessionCommand>,
+    #[allow(dead_code)]
+    _relay_handle: tokio::task::JoinHandle<()>,
     active_model: String,
     pending_model: Option<String>,
 }
@@ -56,17 +56,6 @@ impl SessionManager {
         let session_id = format!("session-{}", *id);
         *id += 1;
         session_id
-    }
-
-    async fn send_notification(
-        &self,
-        notification: acp::SessionNotification,
-    ) -> Result<(), acp::Error> {
-        self.actor_handle
-            .send_session_notification(notification)
-            .await
-            .map_err(|_| acp::Error::internal_error())?;
-        Ok(())
     }
 }
 
@@ -294,8 +283,12 @@ impl Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
+        let (relay_tx, relay_handle) =
+            spawn_relay(session, self.actor_handle.clone(), acp_session_id.clone());
+
         let state = SessionState {
-            session,
+            relay_tx,
+            _relay_handle: relay_handle,
             active_model: model_str.clone(),
             pending_model: None,
         };
@@ -349,131 +342,74 @@ impl Agent for SessionManager {
     async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
         info!("Received prompt for session: {:?}", args.session_id);
         let session_id_str = args.session_id.0.to_string();
-        let session_id = args.session_id.clone();
-        let mut sessions = self.sessions.lock().await;
-        let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
-            error!("Session not found: {}", session_id_str);
-            acp::Error::invalid_params()
-        })?;
 
-        let mut prompt_text = map_content_blocks_to_text(args.prompt);
-        debug!("Prompt text: {}", prompt_text);
+        let (relay_tx, prompt_text, switch_model) = {
+            let mut sessions = self.sessions.lock().await;
+            let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
+                error!("Session not found: {}", session_id_str);
+                acp::Error::invalid_params()
+            })?;
 
-        if let Some(pending_model) = state.pending_model.clone() {
-            if pending_model != state.active_model {
-                state
-                    .session
-                    .switch_model(&pending_model)
-                    .await
-                    .map_err(|e| {
-                        error!(
-                            "Failed to switch model for session {}: {}",
-                            session_id_str, e
-                        );
-                        acp::Error::internal_error()
-                    })?;
-                state.active_model = pending_model;
-            }
-            state.pending_model = None;
-        }
+            let prompt_text = map_content_blocks_to_text(args.prompt);
+            debug!("Prompt text: {}", prompt_text);
 
-        if let Some(slash_command_text) = prompt_text.strip_prefix('/') {
-            info!("Detected slash command in prompt");
-
-            let (command_name, args_text) =
-                if let Some(space_idx) = slash_command_text.find(char::is_whitespace) {
-                    let (cmd, args) = slash_command_text.split_at(space_idx);
-                    (cmd, args.trim())
+            let switch_model = state.pending_model.take().and_then(|pending| {
+                if pending != state.active_model {
+                    state.active_model = pending.clone();
+                    Some(pending)
                 } else {
-                    (slash_command_text, "")
-                };
-
-            match state
-                .session
-                .expand_slash_command(command_name, args_text)
-                .await
-            {
-                Ok(expanded_prompt) => {
-                    info!(
-                        "Expanded slash command '{}' -> {} chars",
-                        command_name,
-                        expanded_prompt.len()
-                    );
-                    prompt_text = expanded_prompt;
+                    None
                 }
-                Err(e) => {
-                    error!("Failed to expand slash command '{}': {}", command_name, e);
-                    // Continue with original prompt text rather than failing
-                    // This allows graceful degradation if command expansion fails
-                }
-            }
-        }
+            });
 
-        state.session.send_prompt(prompt_text).await.map_err(|e| {
-            error!("Failed to send prompt: {}", e);
-            acp::Error::internal_error()
-        })?;
+            (state.relay_tx.clone(), prompt_text, switch_model)
+        };
 
-        let final_stop_reason;
-        loop {
-            match state.session.recv().await {
-                Some(msg) => {
-                    info!("Received agent message: {:?}", &msg);
+        let (result_tx, result_rx) = oneshot::channel();
+        relay_tx
+            .send(SessionCommand::Prompt {
+                text: prompt_text,
+                switch_model,
+                result_tx,
+            })
+            .await
+            .map_err(|_| {
+                error!("Relay channel closed for session {}", session_id_str);
+                acp::Error::internal_error()
+            })?;
 
-                    if let Some(notification) =
-                        map_agent_message_to_session_notification(session_id.clone(), &msg)
-                    {
-                        info!("Sending session notification");
-                        self.send_notification(notification).await?;
-                    } else if let Some(ext_notification) = try_into_ext_notification(&msg) {
-                        info!("Sending ext notification: {}", ext_notification.method);
-                        self.actor_handle
-                            .send_ext_notification(ext_notification)
-                            .await
-                            .map_err(|_| acp::Error::internal_error())?;
-                    } else {
-                        info!("No notification generated for this message");
-                    }
+        let stop_reason = result_rx
+            .await
+            .map_err(|_| {
+                error!("Relay dropped result channel for session {}", session_id_str);
+                acp::Error::internal_error()
+            })?
+            .map_err(|e| {
+                error!("Relay error for session {}: {}", session_id_str, e);
+                acp::Error::internal_error()
+            })?;
 
-                    match &msg {
-                        AgentMessage::Done
-                        | AgentMessage::Cancelled { .. }
-                        | AgentMessage::Error { .. } => {
-                            final_stop_reason = map_agent_message_to_stop_reason(&msg);
-                            info!(
-                                "Terminal message received, stop reason: {:?}",
-                                final_stop_reason
-                            );
-                            break;
-                        }
-                        _ => {
-                            // Continue processing messages
-                        }
-                    }
-                }
-                None => {
-                    error!("Agent channel closed unexpectedly");
-                    return Err(acp::Error::internal_error());
-                }
-            }
-        }
-
-        info!("Prompt completed with stop reason: {:?}", final_stop_reason);
-
-        Ok(PromptResponse::new(final_stop_reason))
+        info!("Prompt completed with stop reason: {:?}", stop_reason);
+        Ok(PromptResponse::new(stop_reason))
     }
 
     async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
         info!("Received cancel for session: {:?}", args.session_id);
         let session_id_str = args.session_id.0.to_string();
-        let sessions = self.sessions.lock().await;
-        let state = sessions.get(&session_id_str).ok_or_else(|| {
-            error!("Session not found for cancel: {}", session_id_str);
-            acp::Error::invalid_params()
-        })?;
+        let relay_tx = {
+            let sessions = self.sessions.lock().await;
+            sessions
+                .get(&session_id_str)
+                .ok_or_else(|| {
+                    error!("Session not found for cancel: {}", session_id_str);
+                    acp::Error::invalid_params()
+                })?
+                .relay_tx
+                .clone()
+        };
 
-        state.session.cancel().await.map_err(|e| {
-            error!("Failed to cancel session: {}", e);
+        relay_tx.send(SessionCommand::Cancel).await.map_err(|_| {
+            error!("Relay channel closed for cancel: {}", session_id_str);
             acp::Error::internal_error()
         })?;
 
