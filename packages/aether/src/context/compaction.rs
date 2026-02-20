@@ -32,7 +32,7 @@ impl fmt::Display for CompactionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CompactionError::SummarizationFailed(msg) => {
-                write!(f, "summarization failed: {}", msg)
+                write!(f, "summarization failed: {msg}")
             }
             CompactionError::NothingToCompact => write!(f, "nothing to compact"),
         }
@@ -88,8 +88,7 @@ impl Compactor {
         let mut summary_context = context.clone();
         summary_context.add_message(ChatMessage::User {
             content: format!(
-                "{}\n\nPlease create a structured summary of the conversation above.",
-                SUMMARIZATION_PROMPT
+                "{SUMMARIZATION_PROMPT}\n\nPlease create a structured summary of the conversation above."
             ),
             timestamp: IsoString::now(),
         });
