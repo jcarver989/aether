@@ -140,6 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tool_definitions: tools,
         instructions: _,
         command_tx: mcp_tx,
+        elicitation_rx: _,
         handle: _mcp_handle,
     } = mcp()
         .from_json_file("mcp.json") // <-- Load MCP servers from JSON

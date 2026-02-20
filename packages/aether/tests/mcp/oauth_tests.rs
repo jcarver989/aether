@@ -69,6 +69,7 @@ async fn builder_with_oauth_handler_spawns_successfully() {
     let McpSpawnResult {
         tool_definitions,
         instructions,
+        elicitation_rx: _,
         ..
     } = mcp()
         .with_oauth_handler(handler)

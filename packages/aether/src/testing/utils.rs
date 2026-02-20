@@ -84,6 +84,7 @@ impl TestAgentBuilder {
             tool_definitions,
             instructions: _,
             command_tx: mcp_tx,
+            elicitation_rx: _,
             handle: _mcp_handle,
         } = mcp()
             .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])

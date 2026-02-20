@@ -279,6 +279,7 @@ async fn execute_single_agent(
             tool_definitions,
             instructions,
             command_tx,
+            elicitation_rx: _,
             handle: _,
         } = spawn_mcps(&agent_dir, roots).await?;
         let (user_tx, mut agent_rx, _agent_handle) = spawn_agent(

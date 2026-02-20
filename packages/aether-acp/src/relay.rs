@@ -2,6 +2,8 @@ use aether::events::{AgentMessage, UserMessage};
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol::{self as acp, SessionId};
 use llm::parser::ModelProviderParser;
+use mcp_utils::client::ElicitationRequest;
+use rmcp::model::{CreateElicitationRequestParams, CreateElicitationResult, ElicitationAction};
 use std::fmt;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -67,6 +69,7 @@ async fn run_session_relay(
         agent_handle: _agent_handle,
         _mcp_handle,
         mcp_tx,
+        mut elicitation_rx,
     } = session;
 
     while let Some(cmd) = cmd_rx.recv().await {
@@ -80,6 +83,7 @@ async fn run_session_relay(
                     &agent_tx,
                     &mut agent_rx,
                     &mcp_tx,
+                    &mut elicitation_rx,
                     &mut cmd_rx,
                     &actor_handle,
                     &acp_session_id,
@@ -101,6 +105,7 @@ async fn handle_prompt(
     agent_tx: &mpsc::Sender<UserMessage>,
     agent_rx: &mut mpsc::Receiver<AgentMessage>,
     mcp_tx: &mpsc::Sender<McpCommand>,
+    elicitation_rx: &mut mpsc::Receiver<ElicitationRequest>,
     cmd_rx: &mut mpsc::Receiver<SessionCommand>,
     actor_handle: &AcpActorHandle,
     acp_session_id: &SessionId,
@@ -127,7 +132,7 @@ async fn handle_prompt(
 
     // The agent sends Cancelled then Done on cancel. We capture the stop reason from Cancelled
     // but keep draining until Done to avoid leaving stale messages in the channel.
-    // Error is immediately terminal because middleware blocks send Error without a trailing Done.
+    // Error is terminal for the current prompt turn.
     let mut early_stop_reason: Option<acp::StopReason> = None;
 
     loop {
@@ -161,6 +166,9 @@ async fn handle_prompt(
                     }
                 }
             }
+            Some(elicitation) = elicitation_rx.recv() => {
+                handle_elicitation_request(actor_handle, acp_session_id, elicitation).await;
+            }
             Some(cmd) = cmd_rx.recv() => {
                 match cmd {
                     SessionCommand::Cancel => {
@@ -177,6 +185,107 @@ async fn handle_prompt(
             }
         }
     }
+}
+
+const OPTION_ALLOW_ONCE: &str = "allow-once";
+const OPTION_REJECT_ONCE: &str = "reject-once";
+
+async fn handle_elicitation_request(
+    actor_handle: &AcpActorHandle,
+    acp_session_id: &SessionId,
+    elicitation: ElicitationRequest,
+) {
+    let permission_request = build_permission_request(acp_session_id, &elicitation.request);
+    let result = actor_handle.request_permission(permission_request).await;
+    let action = match result {
+        Ok(response) => map_permission_outcome_to_elicitation_action(&response.outcome),
+        Err(e) => {
+            error!("Failed to request permission for elicitation: {:?}", e);
+            ElicitationAction::Cancel
+        }
+    };
+
+    let response = CreateElicitationResult {
+        action: action.clone(),
+        content: (action == ElicitationAction::Accept).then(|| serde_json::json!({})),
+    };
+
+    if elicitation.response_sender.send(response).is_err() {
+        error!("Failed to send elicitation response: receiver dropped");
+    }
+}
+
+fn build_permission_request(
+    acp_session_id: &SessionId,
+    elicitation: &CreateElicitationRequestParams,
+) -> acp::RequestPermissionRequest {
+    let tool_call_id = elicitation_tool_call_id(elicitation);
+    let title = elicitation_title(elicitation);
+    let raw_input = serde_json::to_value(elicitation).ok();
+    let tool_call = acp::ToolCallUpdate::new(
+        acp::ToolCallId::new(tool_call_id),
+        acp::ToolCallUpdateFields::new()
+            .kind(Some(acp::ToolKind::Execute))
+            .status(Some(acp::ToolCallStatus::Pending))
+            .title(Some(title))
+            .raw_input(raw_input),
+    );
+
+    let options = vec![
+        acp::PermissionOption::new(
+            acp::PermissionOptionId::new(OPTION_ALLOW_ONCE),
+            "Allow once",
+            acp::PermissionOptionKind::AllowOnce,
+        ),
+        acp::PermissionOption::new(
+            acp::PermissionOptionId::new(OPTION_REJECT_ONCE),
+            "Reject once",
+            acp::PermissionOptionKind::RejectOnce,
+        ),
+    ];
+
+    acp::RequestPermissionRequest::new(acp_session_id.clone(), tool_call, options)
+}
+
+fn elicitation_tool_call_id(elicitation: &CreateElicitationRequestParams) -> String {
+    match elicitation {
+        CreateElicitationRequestParams::FormElicitationParams { message, .. } => {
+            format!("elicitation-form-{}", stable_hash(message))
+        }
+        CreateElicitationRequestParams::UrlElicitationParams { elicitation_id, .. } => {
+            format!("elicitation-url-{elicitation_id}")
+        }
+    }
+}
+
+fn elicitation_title(elicitation: &CreateElicitationRequestParams) -> String {
+    match elicitation {
+        CreateElicitationRequestParams::FormElicitationParams { message, .. }
+        | CreateElicitationRequestParams::UrlElicitationParams { message, .. } => message.clone(),
+    }
+}
+
+fn map_permission_outcome_to_elicitation_action(
+    outcome: &acp::RequestPermissionOutcome,
+) -> ElicitationAction {
+    match outcome {
+        acp::RequestPermissionOutcome::Selected(selected) => match selected.option_id.0.as_ref() {
+            OPTION_ALLOW_ONCE => ElicitationAction::Accept,
+            OPTION_REJECT_ONCE => ElicitationAction::Decline,
+            _ => ElicitationAction::Decline,
+        },
+        acp::RequestPermissionOutcome::Cancelled => ElicitationAction::Cancel,
+        _ => ElicitationAction::Decline,
+    }
+}
+
+fn stable_hash(input: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    input.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 async fn expand_slash_command_if_needed(mcp_tx: &mpsc::Sender<McpCommand>, text: String) -> String {
@@ -306,6 +415,7 @@ async fn forward_notification(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmcp::model::ElicitationSchema;
 
     #[test]
     fn test_argument_parsing() {
@@ -341,5 +451,58 @@ mod tests {
     #[test]
     fn test_empty_arguments_returns_none() {
         assert!(parse_slash_command_arguments("").is_none());
+    }
+
+    #[test]
+    fn test_build_permission_request_uses_elicitation_message() {
+        let session_id = acp::SessionId::new("session-1");
+        let elicitation = CreateElicitationRequestParams::FormElicitationParams {
+            meta: None,
+            message: "Allow filesystem write?".to_string(),
+            requested_schema: ElicitationSchema::builder()
+                .required_bool("approved")
+                .build()
+                .unwrap(),
+        };
+
+        let request = build_permission_request(&session_id, &elicitation);
+        assert_eq!(request.session_id, session_id);
+        assert_eq!(request.options.len(), 2);
+        assert_eq!(request.options[0].option_id.0.as_ref(), OPTION_ALLOW_ONCE);
+        assert_eq!(request.options[1].option_id.0.as_ref(), OPTION_REJECT_ONCE);
+        assert_eq!(
+            request.tool_call.fields.title.as_deref(),
+            Some("Allow filesystem write?")
+        );
+        assert_eq!(
+            request.tool_call.fields.status,
+            Some(acp::ToolCallStatus::Pending)
+        );
+        assert_eq!(request.tool_call.fields.kind, Some(acp::ToolKind::Execute));
+        assert!(request.tool_call.fields.raw_input.is_some());
+    }
+
+    #[test]
+    fn test_permission_outcome_mapping() {
+        let allow = acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
+            acp::PermissionOptionId::new(OPTION_ALLOW_ONCE),
+        ));
+        let reject = acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
+            acp::PermissionOptionId::new(OPTION_REJECT_ONCE),
+        ));
+        let cancelled = acp::RequestPermissionOutcome::Cancelled;
+
+        assert_eq!(
+            map_permission_outcome_to_elicitation_action(&allow),
+            ElicitationAction::Accept
+        );
+        assert_eq!(
+            map_permission_outcome_to_elicitation_action(&reject),
+            ElicitationAction::Decline
+        );
+        assert_eq!(
+            map_permission_outcome_to_elicitation_action(&cancelled),
+            ElicitationAction::Cancel
+        );
     }
 }

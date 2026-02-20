@@ -5,7 +5,7 @@ use aether::mcp::McpSpawnResult;
 use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use llm::provider::StreamingModelProvider;
-use mcp_utils::client::McpServerConfig;
+use mcp_utils::client::{ElicitationRequest, McpServerConfig};
 
 use agent_client_protocol as acp;
 use futures::FutureExt;
@@ -28,6 +28,7 @@ pub struct Session {
     pub agent_handle: AgentHandle,
     pub _mcp_handle: JoinHandle<()>,
     pub mcp_tx: mpsc::Sender<McpCommand>,
+    pub elicitation_rx: mpsc::Receiver<ElicitationRequest>,
 }
 
 impl Session {
@@ -113,6 +114,7 @@ impl Session {
             tool_definitions,
             instructions,
             command_tx: mcp_tx,
+            elicitation_rx,
             handle: mcp_handle,
         } = builder.spawn().await?;
 
@@ -147,6 +149,7 @@ impl Session {
             agent_handle,
             _mcp_handle: mcp_handle,
             mcp_tx,
+            elicitation_rx,
         })
     }
 

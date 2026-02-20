@@ -269,6 +269,7 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
             tool_definitions,
             instructions,
             command_tx,
+            elicitation_rx: _,
             handle: _mcp_handle,
         } = mcp_builder
             .spawn()

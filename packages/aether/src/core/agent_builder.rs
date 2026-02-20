@@ -1,12 +1,10 @@
 use super::agent::AutoContinue;
 use crate::context::CompactionConfig;
-use crate::core::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::core::{Agent, Prompt, Result};
 use crate::events::{AgentMessage, UserMessage};
 use crate::mcp::run_mcp_task::McpCommand;
 use llm::types::IsoString;
 use llm::{ChatMessage, Context, StreamingModelProvider, ToolDefinition};
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -37,7 +35,6 @@ impl AgentHandle {
 pub struct AgentBuilder {
     llm: Arc<dyn StreamingModelProvider>,
     prompts: Vec<Prompt>,
-    middleware: Middleware,
     tool_definitions: Vec<ToolDefinition>,
     mcp_tx: Option<Sender<McpCommand>>,
     channel_capacity: usize,
@@ -51,7 +48,6 @@ impl AgentBuilder {
         Self {
             llm,
             prompts: Vec::new(),
-            middleware: Middleware::new(),
             tool_definitions: Vec::new(),
             mcp_tx: None,
             channel_capacity: 1000,
@@ -66,37 +62,6 @@ impl AgentBuilder {
     /// Multiple prompts are concatenated with double newlines.
     pub fn system_prompt(mut self, prompt: Prompt) -> Self {
         self.prompts.push(prompt);
-        self
-    }
-
-    /// Add an event handler for agent events
-    ///
-    /// Handlers receive all agent events and can pattern match to handle specific ones.
-    /// Multiple handlers can be registered and will execute in parallel.
-    /// If any handler returns Block, the action will be blocked.
-    ///
-    /// # Example
-    /// ```ignore
-    /// agent(llm)
-    ///     .on_event(|event| async move {
-    ///         match event {
-    ///             AgentEvent::ToolCall { name, .. } if name == "dangerous_tool" => {
-    ///                 MiddlewareAction::Block
-    ///             }
-    ///             AgentEvent::AgentDone => {
-    ///                 println!("Done!");
-    ///                 MiddlewareAction::Allow
-    ///             }
-    ///             _ => MiddlewareAction::Allow
-    ///         }
-    ///     })
-    /// ```
-    pub fn on_event<U, V>(mut self, handler: U) -> Self
-    where
-        U: Fn(AgentEvent) -> V + Send + Sync + 'static,
-        V: Future<Output = MiddlewareAction> + Send + 'static,
-    {
-        self.middleware.add_handler(handler);
         self
     }
 
@@ -193,7 +158,6 @@ impl AgentBuilder {
             self.mcp_tx,
             user_message_rx,
             agent_message_tx,
-            self.middleware,
             self.tool_timeout,
             self.compaction_config,
             AutoContinue::new(self.max_auto_continues),
