@@ -95,6 +95,7 @@ impl Agent {
                 }
 
                 StreamEvent::UserMessage(Text { content }) => {
+                    state = IterationState::new();
                     self.on_user_text(content).await;
                 }
 
