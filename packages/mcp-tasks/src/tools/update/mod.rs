@@ -6,7 +6,7 @@ use crate::task_store::{TaskStore, TaskStoreError};
 use crate::types::{TaskId, TaskStatus, TaskUpdate};
 use mcp_coding::display_meta::ToolDisplayMeta;
 
-/// Input for the task_update tool
+/// Input for the `task_update` tool
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskUpdateInput {
@@ -19,7 +19,7 @@ pub struct TaskUpdateInput {
     #[serde(default)]
     pub description: Option<String>,
 
-    /// Status: pending, in_progress, completed, or blocked
+    /// Status: pending, `in_progress`, completed, or blocked
     #[serde(default)]
     pub status: Option<TaskStatus>,
 
@@ -51,7 +51,7 @@ pub struct TaskUpdateInput {
     pub resources: Option<Vec<String>>,
 }
 
-/// Output for the task_update tool
+/// Output for the `task_update` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskUpdateOutput {
@@ -139,7 +139,7 @@ pub fn execute_task_update(
     };
 
     let message = if changes.is_empty() {
-        format!("No changes made to task {}", id)
+        format!("No changes made to task {id}")
     } else if task.status == TaskStatus::Completed {
         if newly_ready.is_empty() {
             format!("Completed task '{}'", task.title)

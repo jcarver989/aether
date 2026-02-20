@@ -99,7 +99,7 @@ type PendingResult = Result<LspResponse, String>;
 pub struct LspClient {
     /// Writer half of the socket
     writer: Mutex<WriteHalf<UnixStream>>,
-    /// Pending responses keyed by client_id
+    /// Pending responses keyed by `client_id`
     pending: Arc<Mutex<HashMap<i64, oneshot::Sender<PendingResult>>>>,
     /// Counter for generating request IDs
     next_id: AtomicI64,
@@ -678,8 +678,7 @@ async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
         match child.try_wait() {
             Ok(Some(status)) if !status.success() => {
                 return Err(ClientError::SpawnFailed(std::io::Error::other(format!(
-                    "Daemon exited with status: {}",
-                    status
+                    "Daemon exited with status: {status}"
                 ))));
             }
             Ok(Some(_)) => {

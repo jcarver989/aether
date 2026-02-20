@@ -19,9 +19,9 @@ use super::tools::write_file::{WriteFileArgs, WriteFileResponse};
 
 /// Trait defining the underlying implementation for coding tool operations.
 ///
-/// This trait allows CodingMcp to be used in different contexts:
-/// - DefaultCodingTools: Uses local filesystem (default behavior)
-/// - AcpCodingTools: Delegates to ACP client for editor integration
+/// This trait allows `CodingMcp` to be used in different contexts:
+/// - `DefaultCodingTools`: Uses local filesystem (default behavior)
+/// - `AcpCodingTools`: Delegates to ACP client for editor integration
 pub trait CodingTools: Send + Sync + Debug {
     /// Read a file's contents
     fn read_file(
@@ -95,7 +95,7 @@ pub trait CodingTools: Send + Sync + Debug {
     ///
     /// # Arguments
     /// * `file_path` - The path to the file containing the symbol
-    /// * `symbol` - The symbol name to look up (e.g., "LspClient", "spawn", "HashMap")
+    /// * `symbol` - The symbol name to look up (e.g., "`LspClient`", "spawn", "`HashMap`")
     /// * `line` - Line number where the symbol appears (1-indexed, as shown by Read tool)
     ///
     /// # Returns
@@ -114,7 +114,7 @@ pub trait CodingTools: Send + Sync + Debug {
     ///
     /// # Arguments
     /// * `file_path` - The path to the file containing the symbol
-    /// * `symbol` - The symbol name to look up (e.g., "LspClient", "spawn", "HashMap")
+    /// * `symbol` - The symbol name to look up (e.g., "`LspClient`", "spawn", "`HashMap`")
     /// * `line` - Line number where the symbol appears (1-indexed, as shown by Read tool)
     /// * `include_declaration` - Whether to include the declaration in the results
     ///
@@ -135,7 +135,7 @@ pub trait CodingTools: Send + Sync + Debug {
     ///
     /// # Arguments
     /// * `file_path` - The path to the file containing the symbol
-    /// * `symbol` - The symbol name to look up (e.g., "LspClient", "spawn", "HashMap")
+    /// * `symbol` - The symbol name to look up (e.g., "`LspClient`", "spawn", "`HashMap`")
     /// * `line` - Line number where the symbol appears (1-indexed, as shown by Read tool)
     ///
     /// # Returns

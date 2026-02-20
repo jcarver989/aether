@@ -122,8 +122,8 @@ impl CredentialStore for McpCredentialStore {
 
         let credential = McpCredential {
             client_id: credentials.client_id,
-            access_token: token.access_token().secret().to_string(),
-            refresh_token: token.refresh_token().map(|t| t.secret().to_string()),
+            access_token: token.access_token().secret().clone(),
+            refresh_token: token.refresh_token().map(|t| t.secret().clone()),
             expires_at,
         };
 

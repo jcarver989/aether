@@ -6,7 +6,7 @@ use crate::{LlmResponse, ToolCallRequest};
 /// Collects streaming tool call deltas into complete tool calls.
 ///
 /// Generic over the index type `I` since different providers use
-/// different integer types (e.g. `u32` for OpenAI, `i32` for compatible APIs).
+/// different integer types (e.g. `u32` for `OpenAI`, `i32` for compatible APIs).
 pub(crate) struct ToolCallCollector<T> {
     active_tool_calls: BTreeMap<T, (String, String, String)>,
 }

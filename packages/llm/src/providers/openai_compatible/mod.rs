@@ -1,10 +1,10 @@
 //! Common types and streaming logic for API providers that are
-//! mostly compatible with the OpenAI API but have minor deviations such as:
+//! mostly compatible with the `OpenAI` API but have minor deviations such as:
 //! - Missing or optional fields
 //! - Different field types (e.g., i64 vs u32 for token counts)
 //! - Additional enum variants
 //!
-//! Providers like OpenRouter, Z.ai, and others can use these utilities to avoid code duplication.
+//! Providers like `OpenRouter`, Z.ai, and others can use these utilities to avoid code duplication.
 
 pub mod streaming;
 pub mod types;
@@ -19,7 +19,7 @@ pub use types::ChatCompletionStreamResponse;
 
 /// Build a chat completion request from a context
 ///
-/// This is shared logic for OpenAI-compatible providers like OpenRouter and Z.ai.
+/// This is shared logic for OpenAI-compatible providers like `OpenRouter` and Z.ai.
 pub fn build_chat_request(
     model: &str,
     context: &Context,

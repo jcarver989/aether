@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Credential for an LLM provider (e.g., Anthropic, OpenRouter)
+/// Credential for an LLM provider (e.g., Anthropic, `OpenRouter`)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ProviderCredential {

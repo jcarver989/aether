@@ -88,13 +88,13 @@ impl FormattedDiagnostic {
         let source = self
             .source
             .as_ref()
-            .map(|s| format!("[{}] ", s))
+            .map(|s| format!("[{s}] "))
             .unwrap_or_default();
 
         let code = self
             .code
             .as_ref()
-            .map(|c| format!("[{}] ", c))
+            .map(|c| format!("[{c}] "))
             .unwrap_or_default();
 
         format!(
@@ -104,7 +104,7 @@ impl FormattedDiagnostic {
     }
 }
 
-/// Extract and format all diagnostics from a PublishDiagnosticsParams
+/// Extract and format all diagnostics from a `PublishDiagnosticsParams`
 pub fn format_diagnostics(params: &PublishDiagnosticsParams) -> Vec<FormattedDiagnostic> {
     params
         .diagnostics

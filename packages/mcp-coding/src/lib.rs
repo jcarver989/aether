@@ -61,7 +61,7 @@ impl<T, E: std::fmt::Display> IntoMcpResult<T> for Result<T, E> {
     }
 }
 
-/// CLI arguments for CodingMcp server
+/// CLI arguments for `CodingMcp` server
 #[derive(Debug, Clone, Parser)]
 pub struct CodingMcpArgs {
     /// Root directory for workspace (used for LSP initialization)
@@ -137,7 +137,7 @@ impl<T: CodingTools + 'static> ServerHandler for CodingMcp<T> {
 }
 
 impl CodingMcp<DefaultCodingTools> {
-    /// Create a new CodingMcp with default (local filesystem) tools
+    /// Create a new `CodingMcp` with default (local filesystem) tools
     pub fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
@@ -153,7 +153,7 @@ impl CodingMcp<DefaultCodingTools> {
 
 #[tool_router]
 impl<T: CodingTools + 'static> CodingMcp<T> {
-    /// Create a CodingMcp with custom tool implementation
+    /// Create a `CodingMcp` with custom tool implementation
     pub fn with_tools(tools: T) -> Self {
         Self {
             tool_router: Self::tool_router(),
@@ -180,7 +180,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 
     /// Set the workspace root directory from a single path.
     ///
-    /// Convenience method that wraps the path in a Vec and calls with_roots().
+    /// Convenience method that wraps the path in a Vec and calls `with_roots()`.
     /// Typically used with CLI arguments like --root-dir.
     ///
     /// # Note
@@ -231,10 +231,10 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 
         match self.get_workspace_root() {
             Some(root) => format!(
-                r#"{}
+                r"{}
 
 When using tools that take file paths, always use absolute paths from:
-<workspace-root>{}</workspace-root>"#,
+<workspace-root>{}</workspace-root>",
                 base,
                 root.display()
             ),

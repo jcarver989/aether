@@ -63,7 +63,7 @@ impl ClientHandler for McpClient {
         };
 
         match self.elicitation_sender.send(elicitation_request).await {
-            Ok(_) => match response_rx.await {
+            Ok(()) => match response_rx.await {
                 Ok(result) => Ok(result),
                 Err(_) => Ok(CreateElicitationResult {
                     action: ElicitationAction::Decline,

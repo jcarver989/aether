@@ -34,7 +34,7 @@ fn is_alias(id: &str) -> bool {
     id.ends_with("-latest")
 }
 
-/// Convert a model ID like "claude-sonnet-4-5-20250929" into a PascalCase variant name.
+/// Convert a model ID like "claude-sonnet-4-5-20250929" into a `PascalCase` variant name.
 /// Treats `-`, `.`, `/`, and `:` as word separators.
 fn model_id_to_variant(id: &str) -> String {
     let mut result = String::new();

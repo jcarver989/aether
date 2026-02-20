@@ -27,7 +27,7 @@ pub enum EvalResult {
 }
 
 impl EvalResult {
-    /// Create a new EvalResult in "Started" state
+    /// Create a new `EvalResult` in "Started" state
     pub fn started(eval: &Eval, eval_id: Uuid) -> Self {
         EvalResult::Started {
             id: eval_id,
@@ -35,7 +35,7 @@ impl EvalResult {
         }
     }
 
-    /// Create a completed EvalResult with assertion results
+    /// Create a completed `EvalResult` with assertion results
     pub fn completed(
         eval: &Eval,
         eval_id: Uuid,
@@ -191,7 +191,7 @@ pub struct SpanInfo {
     pub name: String,
     #[serde(default)]
     pub fields: Option<serde_json::Value>,
-    /// Captures all other fields (like eval_name, eval_id, etc.) at the span level
+    /// Captures all other fields (like `eval_name`, `eval_id`, etc.) at the span level
     #[serde(flatten)]
     pub extra: serde_json::Value,
 }

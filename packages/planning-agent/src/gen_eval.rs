@@ -81,43 +81,33 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let (owner, repo, issue_number) = parse_github_url(&cli.issue_url)?;
     println!(
-        "Creating eval from: {}/{} #{}...",
-        owner, repo, issue_number
+        "Creating eval from: {owner}/{repo} #{issue_number}..."
     );
 
     let issue = fetch_issue(&owner, &repo, issue_number)?;
-    let pr_number = match &cli.pr_url {
-        Some(pr_url) => {
-            let (pr_owner, pr_repo, pr_num) = parse_pr_url(pr_url)?;
-            if pr_owner != owner || pr_repo != repo {
-                return Err(anyhow!(
-                    "PR must be from the same repository as the issue. Issue: {}/{}, PR: {}/{}",
-                    owner,
-                    repo,
-                    pr_owner,
-                    pr_repo
-                ));
-            }
-
-            println!("Using manually specified PR #{}...", pr_num);
-            pr_num
+    let pr_number = if let Some(pr_url) = &cli.pr_url {
+        let (pr_owner, pr_repo, pr_num) = parse_pr_url(pr_url)?;
+        if pr_owner != owner || pr_repo != repo {
+            return Err(anyhow!(
+                "PR must be from the same repository as the issue. Issue: {owner}/{repo}, PR: {pr_owner}/{pr_repo}"
+            ));
         }
 
-        None => {
-            let pr_num = issue
-                .closed_by_pull_requests_references
-                .first()
-                .ok_or_else(|| {
-                    anyhow!(
-                        "Issue #{} was not closed by a PR. Please provide a PR URL with --pr",
-                        issue_number
-                    )
-                })?
-                .number;
+        println!("Using manually specified PR #{pr_num}...");
+        pr_num
+    } else {
+        let pr_num = issue
+            .closed_by_pull_requests_references
+            .first()
+            .ok_or_else(|| {
+                anyhow!(
+                    "Issue #{issue_number} was not closed by a PR. Please provide a PR URL with --pr"
+                )
+            })?
+            .number;
 
-            println!("Auto-detected PR #{}...", pr_num);
-            pr_num
-        }
+        println!("Auto-detected PR #{pr_num}...");
+        pr_num
     };
 
     let pr = fetch_pr(&owner, &repo, pr_number)?;
@@ -180,7 +170,7 @@ fn fetch_issue(owner: &str, repo: &str, issue_number: u32) -> Result<IssueData> 
             "view",
             &issue_number.to_string(),
             "--repo",
-            &format!("{}/{}", owner, repo),
+            &format!("{owner}/{repo}"),
             "--json",
             "title,body,closedByPullRequestsReferences",
         ])
@@ -207,7 +197,7 @@ fn fetch_pr(owner: &str, repo: &str, pr_number: u32) -> Result<PrData> {
             "view",
             &pr_number.to_string(),
             "--repo",
-            &format!("{}/{}", owner, repo),
+            &format!("{owner}/{repo}"),
             "--json",
             "number,mergedAt,baseRefName",
         ])
@@ -277,7 +267,7 @@ fn create_eval_directory(
         .join("evals")
         .join(repo)
         .join(difficulty.to_string())
-        .join(format!("issue-{}", issue_number));
+        .join(format!("issue-{issue_number}"));
 
     fs::create_dir_all(&eval_dir).context("Failed to create eval directory")?;
 

@@ -24,12 +24,12 @@ pub struct FakeAgentRunner {
 }
 
 impl FakeAgentRunner {
-    /// Create a new FakeAgentRunner that will return the given messages
+    /// Create a new `FakeAgentRunner` that will return the given messages
     pub fn new(messages: Vec<AgentRunnerMessage>) -> Self {
         Self { messages }
     }
 
-    /// Create a FakeAgentRunner that returns a simple success response
+    /// Create a `FakeAgentRunner` that returns a simple success response
     pub fn success() -> Self {
         Self::new(vec![
             AgentRunnerMessage::AgentText("Task completed successfully".to_string()),
@@ -37,7 +37,7 @@ impl FakeAgentRunner {
         ])
     }
 
-    /// Create a FakeAgentRunner that simulates tool usage
+    /// Create a `FakeAgentRunner` that simulates tool usage
     pub fn with_tool_call(tool_name: impl Into<String>, result: impl Into<String>) -> Self {
         let tool_name = tool_name.into();
         Self::new(vec![

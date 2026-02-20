@@ -30,7 +30,7 @@ async fn main() -> ExitCode {
     };
 
     let result = if cli.prompt.is_empty() {
-        run_terminal_ui(state).await.map(|_| ExitCode::SUCCESS)
+        run_terminal_ui(state).await.map(|()| ExitCode::SUCCESS)
     } else {
         let prompt = cli.prompt.join(" ");
         run_non_interactive(state, &prompt).await

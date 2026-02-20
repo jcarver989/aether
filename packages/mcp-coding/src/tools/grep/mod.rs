@@ -80,7 +80,7 @@ pub struct GrepInput {
     /// File type to search (e.g. "js", "py", "rust")
     #[serde(rename = "type")]
     pub file_type: Option<String>,
-    /// Output mode: "content", "files_with_matches", or "count"
+    /// Output mode: "content", "`files_with_matches`", or "count"
     pub output_mode: Option<OutputMode>,
     /// Case insensitive search
     #[serde(rename = "-i")]

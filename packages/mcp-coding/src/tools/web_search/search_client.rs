@@ -39,9 +39,9 @@ pub struct BraveSearchClient {
 }
 
 impl BraveSearchClient {
-    /// Creates a new BraveSearchClient with given API key
+    /// Creates a new `BraveSearchClient` with given API key
     ///
-    /// The API key is read from BRAVE_SEARCH_API_KEY environment variable
+    /// The API key is read from `BRAVE_SEARCH_API_KEY` environment variable
     pub fn new() -> Result<Self, WebSearchError> {
         let api_key = std::env::var("BRAVE_SEARCH_API_KEY").map_err(|_| {
             WebSearchError::ConfigError(
@@ -61,7 +61,7 @@ impl BraveSearchClient {
         Ok(Self { client, api_key })
     }
 
-    /// Creates a new BraveSearchClient with an explicit API key
+    /// Creates a new `BraveSearchClient` with an explicit API key
     pub fn with_api_key(api_key: String) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(DEFAULT_TIMEOUT_MS))

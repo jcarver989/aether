@@ -161,7 +161,7 @@ pub struct AgentExecutor {
 }
 
 impl AgentExecutor {
-    /// Create a new AgentExecutor with the given agents directory and workspace roots
+    /// Create a new `AgentExecutor` with the given agents directory and workspace roots
     pub fn new(agents_dir: PathBuf, roots: Vec<PathBuf>) -> Self {
         Self {
             agents_dir: Arc::new(agents_dir),
@@ -202,7 +202,7 @@ impl AgentExecutor {
             .into_iter()
             .enumerate()
             .map(|(i, task)| {
-                let task_id = format!("task_{}", i);
+                let task_id = format!("task_{i}");
                 let agents_dir = Arc::clone(&agents_dir);
                 let progress_callback = progress_callback.clone();
                 let roots = roots.clone();
@@ -221,7 +221,7 @@ impl AgentExecutor {
                     agent_name: "unknown".to_string(),
                     status: SubAgentStatus::Error,
                     output: None,
-                    error: Some(format!("Task panicked: {}", e)),
+                    error: Some(format!("Task panicked: {e}")),
                 })
             })
             .collect();
@@ -296,7 +296,7 @@ async fn execute_single_agent(
         user_tx
             .send(UserMessage::text(&prompt_with_instructions))
             .await
-            .map_err(|e| format!("Failed to send message to agent: {}", e))?;
+            .map_err(|e| format!("Failed to send message to agent: {e}"))?;
 
         let mut final_output = String::new();
         let mut was_cancelled = false;
@@ -341,7 +341,7 @@ async fn execute_single_agent(
         }
 
         if let Some(err) = error_message {
-            return Err(format!("Agent error: {}", err));
+            return Err(format!("Agent error: {err}"));
         }
 
         Ok(final_output)
@@ -376,14 +376,13 @@ async fn create_llm(
         .map(|f| f.model.clone())
         .ok_or_else(|| {
             format!(
-                "No model specified. Set 'model' in {}/AGENTS.md frontmatter",
-                agent_name
+                "No model specified. Set 'model' in {agent_name}/AGENTS.md frontmatter"
             )
         })?;
 
     let (llm, _) = ModelProviderParser::default()
         .parse(&model_spec)
-        .map_err(|e| format!("Failed to create provider for '{}': {}", model_spec, e))?;
+        .map_err(|e| format!("Failed to create provider for '{model_spec}': {e}"))?;
     Ok(llm)
 }
 
@@ -431,10 +430,10 @@ async fn spawn_mcps(agent_dir: &Path, roots: Vec<PathBuf>) -> Result<McpSpawnRes
         .with_roots(roots)
         .from_json_file(mcp_json_path.to_str().unwrap_or(""))
         .await
-        .map_err(|e| format!("Failed to load mcp.json: {}", e))?
+        .map_err(|e| format!("Failed to load mcp.json: {e}"))?
         .spawn()
         .await
-        .map_err(|e| format!("Failed to spawn MCP manager: {}", e))
+        .map_err(|e| format!("Failed to spawn MCP manager: {e}"))
 }
 
 async fn spawn_agent(
@@ -457,7 +456,7 @@ async fn spawn_agent(
         .tools(mcp_tx, tools)
         .spawn()
         .await
-        .map_err(|e| format!("Failed to spawn agent: {}", e))?;
+        .map_err(|e| format!("Failed to spawn agent: {e}"))?;
 
     Ok((user_tx, agent_rx, agent_handle))
 }

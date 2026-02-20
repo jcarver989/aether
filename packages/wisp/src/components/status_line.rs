@@ -22,7 +22,7 @@ impl Component for StatusLine<'_> {
             } else {
                 context.theme.muted
             };
-            (format!("{}% context", pct), c)
+            (format!("{pct}% context"), c)
         } else {
             return vec![Line::styled(left, context.theme.muted)];
         };

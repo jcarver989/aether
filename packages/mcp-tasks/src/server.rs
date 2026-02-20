@@ -17,7 +17,7 @@ use crate::{
     execute_task_list, execute_task_update,
 };
 
-/// CLI arguments for TasksMcp server
+/// CLI arguments for `TasksMcp` server
 #[derive(Debug, Clone, Parser)]
 pub struct TasksMcpArgs {
     /// Base directory for task storage (tasks stored in `{dir}/.aether-tasks/`)
@@ -49,7 +49,7 @@ pub struct TasksMcp {
 }
 
 impl TasksMcp {
-    /// Create a new TasksMcp server with task storage in the given directory.
+    /// Create a new `TasksMcp` server with task storage in the given directory.
     ///
     /// Tasks will be stored in `{base_dir}/.aether-tasks/`.
     pub fn new(base_dir: PathBuf) -> Self {
@@ -60,7 +60,7 @@ impl TasksMcp {
         }
     }
 
-    /// Create a new TasksMcp server from parsed CLI arguments.
+    /// Create a new `TasksMcp` server from parsed CLI arguments.
     ///
     /// If no `--dir` argument is provided, uses the current directory.
     pub fn from_args(args: Vec<String>) -> Result<Self, String> {

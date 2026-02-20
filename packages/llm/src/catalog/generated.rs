@@ -1306,8 +1306,8 @@ impl LlmModel {
             LlmModel::ZAi(ZAiModel::Glm47) => Cow::Borrowed("GLM-4.7"),
             LlmModel::ZAi(ZAiModel::Glm47Flash) => Cow::Borrowed("GLM-4.7-Flash"),
             LlmModel::ZAi(ZAiModel::Glm5) => Cow::Borrowed("GLM-5"),
-            LlmModel::Ollama(s) => Cow::Owned(format!("Ollama {}", s)),
-            LlmModel::LlamaCpp(s) => Cow::Owned(format!("LlamaCpp {}", s)),
+            LlmModel::Ollama(s) => Cow::Owned(format!("Ollama {s}")),
+            LlmModel::LlamaCpp(s) => Cow::Owned(format!("LlamaCpp {s}")),
         }
     }
 
@@ -1788,7 +1788,7 @@ impl std::fmt::Display for LlmModel {
 impl std::str::FromStr for LlmModel {
     type Err = String;
 
-    /// Parse a "provider:model" string into an LlmModel
+    /// Parse a "provider:model" string into an `LlmModel`
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (provider_str, model_str) = s.split_once(':').unwrap_or((s, ""));
         match provider_str {
@@ -1839,12 +1839,12 @@ impl std::str::FromStr for LlmModel {
                 "claude-sonnet-4-5-20250929" => {
                     Ok(LlmModel::Anthropic(AnthropicModel::ClaudeSonnet4520250929))
                 }
-                _ => Err(format!("Unknown anthropic model: '{}'", model_str)),
+                _ => Err(format!("Unknown anthropic model: '{model_str}'")),
             },
             "deepseek" => match model_str {
                 "deepseek-chat" => Ok(LlmModel::DeepSeek(DeepSeekModel::DeepseekChat)),
                 "deepseek-reasoner" => Ok(LlmModel::DeepSeek(DeepSeekModel::DeepseekReasoner)),
-                _ => Err(format!("Unknown deepseek model: '{}'", model_str)),
+                _ => Err(format!("Unknown deepseek model: '{model_str}'")),
             },
             "gemini" => match model_str {
                 "gemini-1.5-flash" => Ok(LlmModel::Gemini(GeminiModel::Gemini15Flash)),
@@ -1882,7 +1882,7 @@ impl std::str::FromStr for LlmModel {
                 "gemini-live-2.5-flash-preview-native-audio" => Ok(LlmModel::Gemini(
                     GeminiModel::GeminiLive25FlashPreviewNativeAudio,
                 )),
-                _ => Err(format!("Unknown gemini model: '{}'", model_str)),
+                _ => Err(format!("Unknown gemini model: '{model_str}'")),
             },
             "moonshot" => match model_str {
                 "kimi-k2-0711-preview" => Ok(LlmModel::Moonshot(MoonshotModel::KimiK20711Preview)),
@@ -1895,7 +1895,7 @@ impl std::str::FromStr for LlmModel {
                     Ok(LlmModel::Moonshot(MoonshotModel::KimiK2TurboPreview))
                 }
                 "kimi-k2.5" => Ok(LlmModel::Moonshot(MoonshotModel::KimiK25)),
-                _ => Err(format!("Unknown moonshot model: '{}'", model_str)),
+                _ => Err(format!("Unknown moonshot model: '{model_str}'")),
             },
             "openrouter" => match model_str {
                 "anthropic/claude-3.5-haiku" => Ok(LlmModel::OpenRouter(
@@ -2255,7 +2255,7 @@ impl std::str::FromStr for LlmModel {
                 "z-ai/glm-4.7" => Ok(LlmModel::OpenRouter(OpenRouterModel::ZAiGlm47)),
                 "z-ai/glm-4.7-flash" => Ok(LlmModel::OpenRouter(OpenRouterModel::ZAiGlm47Flash)),
                 "z-ai/glm-5" => Ok(LlmModel::OpenRouter(OpenRouterModel::ZAiGlm5)),
-                _ => Err(format!("Unknown openrouter model: '{}'", model_str)),
+                _ => Err(format!("Unknown openrouter model: '{model_str}'")),
             },
             "zai" => match model_str {
                 "glm-4.5" => Ok(LlmModel::ZAi(ZAiModel::Glm45)),
@@ -2267,11 +2267,11 @@ impl std::str::FromStr for LlmModel {
                 "glm-4.7" => Ok(LlmModel::ZAi(ZAiModel::Glm47)),
                 "glm-4.7-flash" => Ok(LlmModel::ZAi(ZAiModel::Glm47Flash)),
                 "glm-5" => Ok(LlmModel::ZAi(ZAiModel::Glm5)),
-                _ => Err(format!("Unknown zai model: '{}'", model_str)),
+                _ => Err(format!("Unknown zai model: '{model_str}'")),
             },
             "ollama" => Ok(LlmModel::Ollama(model_str.to_string())),
             "llamacpp" => Ok(LlmModel::LlamaCpp(model_str.to_string())),
-            _ => Err(format!("Unknown provider: '{}'", provider_str)),
+            _ => Err(format!("Unknown provider: '{provider_str}'")),
         }
     }
 }

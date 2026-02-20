@@ -4,7 +4,7 @@ use std::{fs, io::BufRead, path::PathBuf};
 use tracing_subscriber::{Layer, Registry, fmt};
 use uuid::Uuid;
 
-/// File system-based implementation of ResultsStore
+/// File system-based implementation of `ResultsStore`
 #[derive(Clone)]
 pub struct FileSystemStore {
     output_dir: PathBuf,
@@ -28,7 +28,7 @@ impl FileSystemStore {
     fn result_file(&self, run_id: Uuid, eval_id: Uuid) -> PathBuf {
         self.run_dir(run_id)
             .join("results")
-            .join(format!("{}.json", eval_id))
+            .join(format!("{eval_id}.json"))
     }
 
     fn results_dir(&self, run_id: Uuid) -> PathBuf {
@@ -77,7 +77,7 @@ impl FileSystemStore {
                     .extra
                     .get("eval_id")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
             } else {
                 None
             };
@@ -89,7 +89,7 @@ impl FileSystemStore {
                         .extra
                         .get("eval_id")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                 })
             });
 

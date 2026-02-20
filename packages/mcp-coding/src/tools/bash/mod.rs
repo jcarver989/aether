@@ -116,7 +116,7 @@ pub async fn read_background_bash(
 
         let display_meta = ToolDisplayMeta::command(
             "<background process>".to_string(),
-            Some(format!("Background process {}", status)),
+            Some(format!("Background process {status}")),
             exit_code,
             Some(killed),
         );
@@ -294,7 +294,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
             }),
             Err(_) => {
                 // Timeout occurred
-                let timeout_ms = timeout.map(|d| d.as_millis()).unwrap_or(120000);
+                let timeout_ms = timeout.map_or(120000, |d| d.as_millis());
 
                 let display_meta = ToolDisplayMeta::command(
                     truncate(&args.command, 80),

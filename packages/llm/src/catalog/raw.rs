@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-/// Top-level: HashMap<provider_id, ProviderData>
+/// Top-level: `HashMap`<`provider_id`, `ProviderData`>
 pub type ModelsDevData = HashMap<String, ProviderData>;
 
 #[derive(Debug, Deserialize)]

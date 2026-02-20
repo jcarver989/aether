@@ -36,14 +36,14 @@ pub fn lockfile_path(socket_path: &Path) -> PathBuf {
 
 /// Get the directory where sockets are stored
 ///
-/// Uses XDG_RUNTIME_DIR if available, otherwise falls back to /tmp/aether-lspd-{uid}
+/// Uses `XDG_RUNTIME_DIR` if available, otherwise falls back to /tmp/aether-lspd-{uid}
 fn get_socket_dir() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         return PathBuf::from(runtime_dir).join("aether-lspd");
     }
 
     let uid = get_uid();
-    PathBuf::from(format!("/tmp/aether-lspd-{}", uid))
+    PathBuf::from(format!("/tmp/aether-lspd-{uid}"))
 }
 
 /// Generate the socket filename from workspace and language

@@ -9,7 +9,7 @@ use tokio_stream::{Stream, StreamExt};
 use tracing::{debug, info, warn};
 
 /// Creates a streaming response for OpenAI-compatible APIs.
-/// This allows providers like OpenRouter and Z.ai to reuse the same streaming logic
+/// This allows providers like `OpenRouter` and Z.ai to reuse the same streaming logic
 /// while handling their API quirks through unified types.
 pub fn create_custom_stream(
     client: &Client<OpenAIConfig>,

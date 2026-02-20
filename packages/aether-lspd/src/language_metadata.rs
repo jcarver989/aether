@@ -12,12 +12,12 @@ use std::path::Path;
 /// Metadata for a supported language
 #[derive(Debug, Clone, Copy)]
 pub struct LanguageMetadata {
-    /// The LanguageId enum variant
+    /// The `LanguageId` enum variant
     pub id: LanguageId,
     /// LSP language identifier string (e.g., "rust", "typescript")
     pub lsp_id: &'static str,
     /// Primary file extension (e.g., "rs" for Rust)
-    /// None for PlainText since it has no specific extension
+    /// None for `PlainText` since it has no specific extension
     pub primary_extension: Option<&'static str>,
     /// All accepted aliases including the primary id (e.g., ["rust", "rs"])
     pub aliases: &'static [&'static str],
@@ -211,12 +211,12 @@ pub static LANGUAGE_METADATA: &[LanguageMetadata] = &[
     },
 ];
 
-/// Get metadata for a specific LanguageId
+/// Get metadata for a specific `LanguageId`
 pub fn metadata_for(id: LanguageId) -> Option<&'static LanguageMetadata> {
     LANGUAGE_METADATA.iter().find(|m| m.id == id)
 }
 
-/// Get LanguageId from a file extension
+/// Get `LanguageId` from a file extension
 pub fn from_extension(ext: &str) -> Option<LanguageId> {
     LANGUAGE_METADATA
         .iter()
@@ -224,7 +224,7 @@ pub fn from_extension(ext: &str) -> Option<LanguageId> {
         .map(|m| m.id)
 }
 
-/// Get LanguageId from an LSP language ID string
+/// Get `LanguageId` from an LSP language ID string
 pub fn from_lsp_id(lsp_id: &str) -> Option<LanguageId> {
     LANGUAGE_METADATA
         .iter()
@@ -250,14 +250,14 @@ pub fn extensions_for_alias(alias: &str) -> Vec<&'static str> {
 impl LanguageId {
     /// Get the primary file extension for this language
     ///
-    /// Returns None for PlainText since it has no specific extension.
+    /// Returns None for `PlainText` since it has no specific extension.
     pub fn extension(&self) -> Option<&'static str> {
         metadata_for(*self).and_then(|m| m.primary_extension)
     }
 
     /// Detect language from file path
     ///
-    /// Returns PlainText for files with no extension or unknown extensions.
+    /// Returns `PlainText` for files with no extension or unknown extensions.
     pub fn from_path(path: &Path) -> Self {
         path.extension()
             .and_then(|e| e.to_str())

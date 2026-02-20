@@ -19,7 +19,7 @@ pub enum DocumentInfoOperation {
     Symbols,
 }
 
-/// Input for the lsp_document tool
+/// Input for the `lsp_document` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct LspDocumentInput {
@@ -49,7 +49,7 @@ pub struct DocumentSymbolResult {
     pub children: Option<Vec<DocumentSymbolResult>>,
 }
 
-/// Output from the lsp_document tool
+/// Output from the `lsp_document` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LspDocumentOutput {
@@ -62,7 +62,7 @@ pub struct LspDocumentOutput {
     pub total_count: usize,
 }
 
-/// Execute the lsp_document operation
+/// Execute the `lsp_document` operation
 pub async fn execute_lsp_document<T: CodingTools>(
     input: LspDocumentInput,
     tools: &T,
@@ -86,7 +86,7 @@ pub async fn execute_lsp_document<T: CodingTools>(
     }
 }
 
-/// Convert DocumentSymbolResponse to our result format
+/// Convert `DocumentSymbolResponse` to our result format
 fn convert_document_symbols(
     file_path: &str,
     response: DocumentSymbolResponse,
@@ -119,7 +119,7 @@ fn convert_document_symbols(
     }
 }
 
-/// Convert a single DocumentSymbol to our result format (recursive for children)
+/// Convert a single `DocumentSymbol` to our result format (recursive for children)
 fn convert_document_symbol(
     file_path: &str,
     sym: lsp_types::DocumentSymbol,

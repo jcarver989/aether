@@ -9,9 +9,9 @@ use mcp_utils::client::McpServerConfig;
 use rmcp::model::Prompt as McpPrompt;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
-/// Converts an MCP Prompt to an ACP AvailableCommand
+/// Converts an MCP Prompt to an ACP `AvailableCommand`
 ///
-/// Strips the MCP namespace from the prompt name (e.g., "coding__web" -> "web")
+/// Strips the MCP namespace from the prompt name (e.g., "`coding__web`" -> "web")
 /// and creates a slash command that clients can invoke.
 pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::AvailableCommand {
     // Extract the base command name by removing the namespace prefix
@@ -25,7 +25,12 @@ pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::Available
     // Determine if the command takes input based on whether it has arguments
     // For slash commands, we always allow input (arguments after the command name)
     let input = if let Some(args) = &prompt.arguments {
-        if !args.is_empty() {
+        if args.is_empty() {
+            // Even if no formal arguments, provide a generic hint
+            Some(acp::AvailableCommandInput::Unstructured(
+                acp::UnstructuredCommandInput::new("optional arguments"),
+            ))
+        } else {
             // Create a hint from the argument names
             let hint = args
                 .iter()
@@ -34,11 +39,6 @@ pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::Available
                 .join(" ");
             Some(acp::AvailableCommandInput::Unstructured(
                 acp::UnstructuredCommandInput::new(hint),
-            ))
-        } else {
-            // Even if no formal arguments, provide a generic hint
-            Some(acp::AvailableCommandInput::Unstructured(
-                acp::UnstructuredCommandInput::new("optional arguments"),
             ))
         }
     } else {
@@ -49,15 +49,13 @@ pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::Available
     };
 
     let description = prompt
-        .description
-        .as_ref()
-        .map(|d| d.to_string())
+        .description.clone()
         .unwrap_or_else(|| "No description available".to_string());
 
     acp::AvailableCommand::new(command_name, description).input(input)
 }
 
-/// Maps ACP MCP server definitions to internal McpServerConfig, skipping unsupported transports.
+/// Maps ACP MCP server definitions to internal `McpServerConfig`, skipping unsupported transports.
 pub fn map_acp_mcp_servers(servers: Vec<McpServer>) -> Vec<McpServerConfig> {
     servers
         .into_iter()
@@ -71,7 +69,7 @@ pub fn map_acp_mcp_servers(servers: Vec<McpServer>) -> Vec<McpServerConfig> {
 }
 
 fn try_map_mcp_server(server: McpServer) -> Option<McpServerConfig> {
-    use McpServer::*;
+    use McpServer::{Stdio, Http, Sse};
     match server {
         Stdio(stdio) => Some(McpServerConfig::Stdio {
             name: stdio.name,
@@ -107,7 +105,7 @@ fn http_config(url: String, headers: &[HttpHeader]) -> StreamableHttpClientTrans
     }
 }
 
-/// Converts Aether AgentMessage to ACP SessionUpdate
+/// Converts Aether `AgentMessage` to ACP `SessionUpdate`
 pub fn map_agent_message_to_session_notification(
     session_id: SessionId,
     msg: &AgentMessage,

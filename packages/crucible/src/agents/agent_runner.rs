@@ -53,9 +53,9 @@ pub enum RunError {
 impl std::fmt::Display for RunError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RunError::ExecutionFailed(msg) => write!(f, "Agent execution failed: {}", msg),
-            RunError::ChannelSendFailed(msg) => write!(f, "Failed to send event: {}", msg),
-            RunError::ConfigurationError(msg) => write!(f, "Agent configuration error: {}", msg),
+            RunError::ExecutionFailed(msg) => write!(f, "Agent execution failed: {msg}"),
+            RunError::ChannelSendFailed(msg) => write!(f, "Failed to send event: {msg}"),
+            RunError::ConfigurationError(msg) => write!(f, "Agent configuration error: {msg}"),
         }
     }
 }

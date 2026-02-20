@@ -142,7 +142,7 @@ impl Component for ConfigPicker {
                 label
             };
 
-            let line_text = format!("{}{}", prefix, label);
+            let line_text = format!("{prefix}{label}");
             let line = if option.is_disabled {
                 Line::styled(line_text, context.theme.muted)
             } else if i == self.combobox.selected_index {

@@ -10,7 +10,7 @@ pub const MAX_TIMEOUT_MS: u64 = 60_000;
 pub const MAX_CONTENT_LENGTH: usize = 50_000;
 const USER_AGENT: &str = "Mozilla/5.0 (compatible; MCP-Lexicon/1.0)";
 
-/// Input parameters for the web_fetch tool
+/// Input parameters for the `web_fetch` tool
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WebFetchInput {
@@ -25,7 +25,7 @@ pub struct WebFetchInput {
     pub timeout: Option<u64>,
 }
 
-/// Output from the web_fetch tool
+/// Output from the `web_fetch` tool
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WebFetchOutput {

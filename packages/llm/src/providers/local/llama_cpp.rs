@@ -41,11 +41,11 @@ impl OpenAiChatProvider for LlamaCppProvider {
         &self.client
     }
 
-    fn model(&self) -> &str {
+    fn model(&self) -> &'static str {
         "" // llama.cpp server serves a single model on boot and does not allow swapping models
     }
 
-    fn provider_name(&self) -> &str {
+    fn provider_name(&self) -> &'static str {
         "LlamaCpp"
     }
 }

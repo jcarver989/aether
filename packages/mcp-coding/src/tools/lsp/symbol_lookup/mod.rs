@@ -5,7 +5,7 @@
 //! - implementation: Go to the implementation of an interface/trait
 //! - references: Find all references to a symbol
 //! - hover: Get type and documentation info for a symbol
-//! - prepare_call_hierarchy: Get call hierarchy items for a symbol
+//! - `prepare_call_hierarchy`: Get call hierarchy items for a symbol
 
 use lsp_types::GotoDefinitionResponse;
 use schemars::JsonSchema;
@@ -28,11 +28,11 @@ pub enum SymbolLookupOperation {
     References,
     /// Get hover information (type, documentation) for the symbol
     Hover,
-    /// Prepare call hierarchy items for the symbol (used with lsp_call_hierarchy)
+    /// Prepare call hierarchy items for the symbol (used with `lsp_call_hierarchy`)
     PrepareCallHierarchy,
 }
 
-/// Input for the lsp_symbol tool
+/// Input for the `lsp_symbol` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct LspSymbolInput {
@@ -40,9 +40,9 @@ pub struct LspSymbolInput {
     pub operation: SymbolLookupOperation,
     /// The file path containing the symbol
     pub file_path: String,
-    /// The symbol name to look up (e.g., "HashMap", "spawn", "LspClient")
+    /// The symbol name to look up (e.g., "`HashMap`", "spawn", "`LspClient`")
     pub symbol: String,
-    /// Line number where the symbol appears (1-indexed, as shown by the read_file tool)
+    /// Line number where the symbol appears (1-indexed, as shown by the `read_file` tool)
     pub line: String,
     /// Whether to include the declaration in references results (default: true, only used for references operation)
     #[serde(default = "default_include_declaration")]
@@ -53,7 +53,7 @@ fn default_include_declaration() -> Option<bool> {
     Some(true)
 }
 
-/// Output from the lsp_symbol tool
+/// Output from the `lsp_symbol` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LspSymbolOutput {
@@ -65,7 +65,7 @@ pub struct LspSymbolOutput {
     /// Hover contents as markdown (for hover operation)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hover_contents: Option<String>,
-    /// Call hierarchy items (for prepare_call_hierarchy operation)
+    /// Call hierarchy items (for `prepare_call_hierarchy` operation)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub call_hierarchy_items: Option<Vec<CallHierarchyItemResult>>,
     /// Total count of results
@@ -73,7 +73,7 @@ pub struct LspSymbolOutput {
     pub total_count: Option<usize>,
 }
 
-/// Execute the lsp_symbol operation
+/// Execute the `lsp_symbol` operation
 pub async fn execute_lsp_symbol<T: CodingTools>(
     input: LspSymbolInput,
     tools: &T,
@@ -165,7 +165,7 @@ pub async fn execute_lsp_symbol<T: CodingTools>(
     }
 }
 
-/// Convert GotoDefinitionResponse to a list of LocationResult
+/// Convert `GotoDefinitionResponse` to a list of `LocationResult`
 fn definition_response_to_locations(response: GotoDefinitionResponse) -> Vec<LocationResult> {
     match response {
         GotoDefinitionResponse::Scalar(loc) => vec![LocationResult::from_location(&loc)],
@@ -203,7 +203,7 @@ fn format_hover_contents(hover: &lsp_types::Hover) -> String {
     }
 }
 
-/// Format a single MarkedString
+/// Format a single `MarkedString`
 fn format_marked_string(marked: &lsp_types::MarkedString) -> String {
     match marked {
         lsp_types::MarkedString::String(s) => s.clone(),

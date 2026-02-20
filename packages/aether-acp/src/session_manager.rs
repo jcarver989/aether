@@ -58,7 +58,7 @@ impl SessionManager {
     }
 }
 
-/// Format provider:model_id string for an LlmModel
+/// Format `provider:model_id` string for an `LlmModel`
 fn provider_model_str(m: &LlmModel) -> String {
     format!("{}:{}", m.provider(), m.model_id())
 }
@@ -80,9 +80,7 @@ fn provider_display_name(provider: &str) -> &str {
 
 fn unavailable_reason(model: &LlmModel) -> String {
     model
-        .required_env_var()
-        .map(|var| format!("Unavailable: set {var}"))
-        .unwrap_or_else(|| "Unavailable: provider is not configured".to_string())
+        .required_env_var().map_or_else(|| "Unavailable: provider is not configured".to_string(), |var| format!("Unavailable: set {var}"))
 }
 
 fn model_exists(available: &[LlmModel], model_str: &str) -> bool {
@@ -94,7 +92,7 @@ fn effective_model<'a>(active_model: &'a str, pending_model: Option<&'a str>) ->
 }
 
 /// Build the "Model" select config option with all models from all providers.
-/// Display names use "Provider / ModelName" format.
+/// Display names use "Provider / `ModelName`" format.
 fn build_model_config_option(available: &[LlmModel], current_model: &str) -> SessionConfigOption {
     let all_models = catalog::LlmModel::all();
     let available_models: HashSet<String> = available.iter().map(provider_model_str).collect();
@@ -282,11 +280,11 @@ impl Agent for SessionManager {
             debug!("Prompt text: {}", prompt_text);
 
             let switch_model = state.pending_model.take().and_then(|pending| {
-                if pending != state.active_model {
+                if pending == state.active_model {
+                    None
+                } else {
                     state.active_model = pending.clone();
                     Some(pending)
-                } else {
-                    None
                 }
             });
 

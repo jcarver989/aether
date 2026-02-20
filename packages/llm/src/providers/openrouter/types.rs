@@ -11,10 +11,10 @@ pub struct OpenRouterUsage {
     pub include: bool,
 }
 
-/// Custom request type for OpenRouter that includes the usage parameter
+/// Custom request type for `OpenRouter` that includes the usage parameter
 ///
-/// OpenRouter requires a specific `usage` parameter in the request body to enable
-/// token usage tracking. See: https://openrouter.ai/docs/use-cases/usage-accounting
+/// `OpenRouter` requires a specific `usage` parameter in the request body to enable
+/// token usage tracking. See: <https://openrouter.ai/docs/use-cases/usage-accounting>
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterChatRequest {
     pub model: String,

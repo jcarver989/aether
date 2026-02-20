@@ -6,7 +6,7 @@ use crate::task_store::{TaskStore, TaskStoreError};
 use crate::types::{TaskId, TaskUpdate};
 use mcp_coding::display_meta::ToolDisplayMeta;
 
-/// Input for the task_create tool
+/// Input for the `task_create` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskCreateInput {
@@ -29,7 +29,7 @@ pub struct TaskCreateInput {
     pub deps: Option<Vec<String>>,
 }
 
-/// Output for the task_create tool
+/// Output for the `task_create` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskCreateOutput {
@@ -90,7 +90,7 @@ pub fn execute_task_create(
     let display_meta = ToolDisplayMeta::todo_single(
         task.title.clone(),
         false,
-        Some(format!("Creating {}", task_type)),
+        Some(format!("Creating {task_type}")),
     );
 
     Ok(TaskCreateOutput {

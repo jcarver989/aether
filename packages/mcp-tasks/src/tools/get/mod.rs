@@ -5,7 +5,7 @@ use crate::task_store::{TaskStore, TaskStoreError};
 use crate::types::{Task, TaskId, TaskStatus};
 use mcp_coding::display_meta::ToolDisplayMeta;
 
-/// Input for the task_get tool
+/// Input for the `task_get` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskGetInput {
@@ -13,7 +13,7 @@ pub struct TaskGetInput {
     pub id: String,
 }
 
-/// Output for the task_get tool
+/// Output for the `task_get` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskGetOutput {

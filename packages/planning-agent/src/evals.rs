@@ -39,14 +39,14 @@ pub fn all_evals() -> Result<Vec<Eval>, Box<dyn std::error::Error>> {
 
                 let eval_path = issue_path
                     .strip_prefix(&evals_dir)
-                    .map_err(|e| format!("Failed to strip prefix: {}", e))?
+                    .map_err(|e| format!("Failed to strip prefix: {e}"))?
                     .to_str()
                     .ok_or("Invalid eval path")?;
 
                 match eval(eval_path, JOIST_ORM_REPO) {
                     Ok(e) => evals.push(e),
                     Err(err) => {
-                        eprintln!("Warning: Failed to load eval '{}': {}", eval_path, err)
+                        eprintln!("Warning: Failed to load eval '{eval_path}': {err}");
                     }
                 }
             }

@@ -27,7 +27,7 @@ impl Default for WebFetcher<ReqwestClient> {
 }
 
 impl WebFetcher<ReqwestClient> {
-    /// Creates a new WebFetcher with a preconfigured reqwest client
+    /// Creates a new `WebFetcher` with a preconfigured reqwest client
     pub fn new() -> Self {
         Self {
             client: ReqwestClient::new(),
@@ -36,7 +36,7 @@ impl WebFetcher<ReqwestClient> {
 }
 
 impl<C: HttpClient> WebFetcher<C> {
-    /// Creates a WebFetcher with a custom HTTP client (useful for testing)
+    /// Creates a `WebFetcher` with a custom HTTP client (useful for testing)
     pub fn with_client(client: C) -> Self {
         Self { client }
     }
@@ -47,8 +47,7 @@ impl<C: HttpClient> WebFetcher<C> {
 
         let timeout_ms = args
             .timeout
-            .map(|t| t.min(MAX_TIMEOUT_MS))
-            .unwrap_or(DEFAULT_TIMEOUT_MS);
+            .map_or(DEFAULT_TIMEOUT_MS, |t| t.min(MAX_TIMEOUT_MS));
 
         let response = self
             .client

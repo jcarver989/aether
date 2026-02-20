@@ -10,7 +10,7 @@
 /// cargo run -p planning-agent -- --model ollama:llama3.3 --batch-size 2
 /// ```
 ///
-/// Then open http://localhost:3000 in your browser to view the interactive report.
+/// Then open <http://localhost:3000> in your browser to view the interactive report.
 /// Press Ctrl+C to stop the server.
 use aether::core::Prompt;
 use clap::Parser;
@@ -93,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let judge_model = cli.judge_model.as_ref().unwrap_or(&cli.model);
     let (judge_llm, _) = parser
         .parse(judge_model)
-        .map_err(|e| format!("Error parsing judge model spec '{}': {}", judge_model, e))?;
+        .map_err(|e| format!("Error parsing judge model spec '{judge_model}': {e}"))?;
 
     // Load evals programmatically
     let evals =
@@ -124,12 +124,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n{}", "=".repeat(50));
     println!("Evaluation Complete");
     println!("{}", "=".repeat(50));
-    println!("Run ID: {}", run_id);
+    println!("Run ID: {run_id}");
 
     if !cli.no_serve {
         println!(
-            "\nView detailed results at http://localhost:3000/api/runs/{}",
-            run_id
+            "\nView detailed results at http://localhost:3000/api/runs/{run_id}"
         );
         println!("Press Ctrl+C to stop the server.");
     }

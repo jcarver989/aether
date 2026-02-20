@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Input for the lsp_diagnostics tool
+/// Input for the `lsp_diagnostics` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct LspDiagnosticsInput {
@@ -18,7 +18,7 @@ pub struct LspDiagnosticsInput {
     pub file_path: Option<String>,
 }
 
-/// Output from the lsp_diagnostics tool
+/// Output from the `lsp_diagnostics` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LspDiagnosticsOutput {
@@ -28,7 +28,7 @@ pub struct LspDiagnosticsOutput {
     pub summary: DiagnosticCounts,
 }
 
-/// Execute the lsp_diagnostics operation
+/// Execute the `lsp_diagnostics` operation
 pub async fn execute_lsp_diagnostics<T: CodingTools>(
     input: LspDiagnosticsInput,
     tools: &T,

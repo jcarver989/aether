@@ -15,7 +15,7 @@ use crate::error::WebSearchError;
 const DEFAULT_COUNT: u32 = 10;
 const MAX_COUNT: u32 = 20;
 
-/// Input parameters for web_search tool
+/// Input parameters for `web_search` tool
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearchInput {
@@ -32,7 +32,7 @@ pub struct WebSearchInput {
     pub blocked_domains: Option<Vec<String>>,
 }
 
-/// Output from web_search tool
+/// Output from `web_search` tool
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearchOutput {
@@ -68,7 +68,7 @@ pub struct WebSearcher<C: SearchClient> {
 }
 
 impl<C: SearchClient> WebSearcher<C> {
-    /// Creates a new WebSearcher with the given client
+    /// Creates a new `WebSearcher` with the given client
     pub fn with_client(client: C) -> Self {
         Self { client }
     }
@@ -127,13 +127,13 @@ impl<C: SearchClient> WebSearcher<C> {
 }
 
 impl WebSearcher<BraveSearchClient> {
-    /// Creates a new WebSearcher with Brave Search API
+    /// Creates a new `WebSearcher` with Brave Search API
     pub fn try_new() -> Result<Self, WebSearchError> {
         let client = BraveSearchClient::new()?;
         Ok(Self::with_client(client))
     }
 
-    /// Creates a new WebSearcher with a custom Brave API key
+    /// Creates a new `WebSearcher` with a custom Brave API key
     pub fn with_api_key(api_key: String) -> Self {
         let client = BraveSearchClient::with_api_key(api_key);
         Self::with_client(client)

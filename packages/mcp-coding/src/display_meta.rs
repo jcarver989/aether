@@ -92,7 +92,7 @@ impl TodoItemMeta {
     }
 }
 
-/// Display metadata for list_files operations.
+/// Display metadata for `list_files` operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ListFilesDisplayMeta {
@@ -126,7 +126,7 @@ pub struct FindDisplayMeta {
     pub count: usize,
 }
 
-/// Display metadata for web_fetch operations.
+/// Display metadata for `web_fetch` operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct WebFetchDisplayMeta {
@@ -140,7 +140,7 @@ pub struct WebFetchDisplayMeta {
     pub size: Option<u64>,
 }
 
-/// Display metadata for web_search operations.
+/// Display metadata for `web_search` operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearchDisplayMeta {
@@ -163,7 +163,7 @@ pub struct LspSymbolDisplayMeta {
     pub result_count: Option<usize>,
 }
 
-/// Display metadata for spawn_subagent operations.
+/// Display metadata for `spawn_subagent` operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnSubAgentDisplayMeta {
@@ -211,7 +211,7 @@ impl ToolDisplayMeta {
         })
     }
 
-    /// Create read_file display metadata.
+    /// Create `read_file` display metadata.
     pub fn read_file(file_path: String, size: Option<usize>, lines: Option<usize>) -> Self {
         ToolDisplayMeta::ReadFile(ReadFileDisplayMeta {
             file_path,
@@ -220,12 +220,12 @@ impl ToolDisplayMeta {
         })
     }
 
-    /// Create write_file display metadata.
+    /// Create `write_file` display metadata.
     pub fn write_file(file_path: String, size: Option<usize>) -> Self {
         ToolDisplayMeta::WriteFile(WriteFileDisplayMeta { file_path, size })
     }
 
-    /// Create edit_file display metadata.
+    /// Create `edit_file` display metadata.
     pub fn edit_file(
         file_path: String,
         old_text: Option<String>,
@@ -252,7 +252,7 @@ impl ToolDisplayMeta {
         ToolDisplayMeta::todo(vec![TodoItemMeta::new(content, completed, active_form)])
     }
 
-    /// Create list_files display metadata.
+    /// Create `list_files` display metadata.
     pub fn list_files(path: String, count: usize) -> Self {
         ToolDisplayMeta::ListFiles(ListFilesDisplayMeta { path, count })
     }
@@ -275,12 +275,12 @@ impl ToolDisplayMeta {
         })
     }
 
-    /// Create web_fetch display metadata.
+    /// Create `web_fetch` display metadata.
     pub fn web_fetch(url: String, title: Option<String>, size: Option<u64>) -> Self {
         ToolDisplayMeta::WebFetch(WebFetchDisplayMeta { url, title, size })
     }
 
-    /// Create web_search display metadata.
+    /// Create `web_search` display metadata.
     pub fn web_search(query: String, result_count: usize) -> Self {
         ToolDisplayMeta::WebSearch(WebSearchDisplayMeta {
             query,
@@ -288,7 +288,7 @@ impl ToolDisplayMeta {
         })
     }
 
-    /// Create lsp_symbol display metadata.
+    /// Create `lsp_symbol` display metadata.
     pub fn lsp_symbol(symbol: String, operation: String, result_count: Option<usize>) -> Self {
         ToolDisplayMeta::LspSymbol(LspSymbolDisplayMeta {
             symbol,
@@ -297,7 +297,7 @@ impl ToolDisplayMeta {
         })
     }
 
-    /// Create spawn_subagent display metadata.
+    /// Create `spawn_subagent` display metadata.
     pub fn spawn_subagent(
         agent_name: String,
         prompt: String,

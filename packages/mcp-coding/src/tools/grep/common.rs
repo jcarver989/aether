@@ -75,10 +75,10 @@ impl Sink for MatchCollectorSink {
 
         let line_str = std::str::from_utf8(mat.bytes()).unwrap_or("<invalid utf8>");
 
-        let before_context = if !self.context_before.is_empty() {
-            Some(self.context_before.clone())
-        } else {
+        let before_context = if self.context_before.is_empty() {
             None
+        } else {
+            Some(self.context_before.clone())
         };
 
         let match_data = MatchData {

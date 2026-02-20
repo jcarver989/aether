@@ -1,4 +1,4 @@
-//! Multi-language LSP support for CodingTools
+//! Multi-language LSP support for `CodingTools`
 //!
 //! This module provides `LspCodingTools`, a wrapper that extends any `CodingTools`
 //! implementation with LSP support. It uses an `LspRegistry` to lazily spawn and manage
@@ -39,7 +39,7 @@ struct DocumentState {
     has_lsp: bool,
 }
 
-/// A CodingTools wrapper that provides multi-language LSP support.
+/// A `CodingTools` wrapper that provides multi-language LSP support.
 ///
 /// This wrapper intercepts file operations and notifies the appropriate language server,
 /// enabling diagnostics (errors, warnings) and code intelligence (goto definition,
@@ -77,7 +77,7 @@ struct DocumentState {
 pub struct LspCodingTools<T: CodingTools> {
     inner: T,
     registry: Arc<LspRegistry>,
-    /// Track open documents with their state (URI -> DocumentState)
+    /// Track open documents with their state (URI -> `DocumentState`)
     open_documents: Mutex<HashMap<Uri, DocumentState>>,
 }
 
@@ -197,7 +197,7 @@ impl<T: CodingTools> LspCodingTools<T> {
         if let Some(client) = self.registry.get_or_spawn(path).await {
             let params = DidSaveTextDocumentParams {
                 text_document: TextDocumentIdentifier { uri },
-                text: content.map(|s| s.to_string()),
+                text: content.map(std::string::ToString::to_string),
             };
             let _ = client.notify_saved(params).await;
         }
@@ -504,7 +504,7 @@ fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, Cod
     let line_content = content
         .lines()
         .nth(line_idx as usize)
-        .ok_or_else(|| CodingError::NotConfigured(format!("Line {} not found in file", line)))?;
+        .ok_or_else(|| CodingError::NotConfigured(format!("Line {line} not found in file")))?;
 
     // Find the symbol on the line - match word boundaries to avoid partial matches
     let mut search_start = 0;
@@ -514,14 +514,12 @@ fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, Cod
             || !line_content[..abs_pos]
                 .chars()
                 .last()
-                .map(|c| c.is_alphanumeric() || c == '_')
-                .unwrap_or(false);
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
         let after_ok = abs_pos + symbol.len() >= line_content.len()
             || !line_content[abs_pos + symbol.len()..]
                 .chars()
                 .next()
-                .map(|c| c.is_alphanumeric() || c == '_')
-                .unwrap_or(false);
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
 
         if before_ok && after_ok {
             return Ok(abs_pos as u32);
@@ -530,8 +528,7 @@ fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, Cod
     }
 
     Err(CodingError::NotConfigured(format!(
-        "Symbol '{}' not found on line {}",
-        symbol, line
+        "Symbol '{symbol}' not found on line {line}"
     )))
 }
 

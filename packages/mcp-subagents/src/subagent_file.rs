@@ -63,7 +63,7 @@ pub fn load_agent_metadata(agents_dir: &Path) -> Vec<SubAgentInfo> {
         .ok()
         .map(|entries| {
             entries
-                .filter_map(|entry| entry.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.path().is_dir())
                 .filter_map(|entry| SubAgentInfo::from_dir(&entry.path()))
                 .collect::<Vec<_>>()

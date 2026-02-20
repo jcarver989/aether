@@ -40,4 +40,4 @@ Searches the web for up-to-date information using the Brave Search API. Returns 
 - Search is performed against a web index, not in real-time
 
 **API Configuration:**
-Requires the `BRAVE_SEARCH_API_KEY` environment variable. Get a free API key from https://api.search.brave.com/app/keys (free tier: 2,000 requests/month).
+Requires the `BRAVE_SEARCH_API_KEY` environment variable. Get a free API key from <https://api.search.brave.com/app/keys> (free tier: 2,000 requests/month).

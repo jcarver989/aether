@@ -45,7 +45,7 @@ impl WorkingDirectory {
         }
     }
 
-    /// Copies files from src_path into a new tmp directory
+    /// Copies files from `src_path` into a new tmp directory
     pub fn local(src_path: impl Into<PathBuf>) -> Result<Self, Box<dyn std::error::Error>> {
         let src_path = src_path.into();
         let tmpdir = tempfile::tempdir()?;
@@ -67,7 +67,7 @@ impl WorkingDirectory {
         Ok(Self::Local { path })
     }
 
-    /// Clone a git repository into a new tmp directory and checkout the start_commit sha
+    /// Clone a git repository into a new tmp directory and checkout the `start_commit` sha
     ///
     /// # Arguments
     /// * `url` - Git repository URL
@@ -166,7 +166,7 @@ impl Eval {
                 messages: Vec::new(),
             })
             .await
-            .map_err(|e| format!("Agent setup hook failed: {}", e))?;
+            .map_err(|e| format!("Agent setup hook failed: {e}"))?;
         }
 
         let messages = {
@@ -212,7 +212,7 @@ impl Eval {
                 messages: messages.clone(),
             })
             .await
-            .map_err(|e| format!("Agent complete hook failed: {}", e))?;
+            .map_err(|e| format!("Agent complete hook failed: {e}"))?;
         }
 
         let mut results = Vec::new();

@@ -19,7 +19,7 @@ struct ProviderConfig {
 
 /// Dynamic provider — model name is user-supplied at runtime, no fixed enum
 struct DynamicProviderConfig {
-    /// Rust variant name in LlmModel (e.g. "Ollama")
+    /// Rust variant name in `LlmModel` (e.g. "Ollama")
     enum_name: &'static str,
     /// Parser name used in "provider:model" strings (e.g. "ollama")
     parser_name: &'static str,

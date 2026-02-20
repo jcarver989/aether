@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 pub struct IsoString(pub String);
 
 impl IsoString {
-    /// Create a new IsoString from the current time
+    /// Create a new `IsoString` from the current time
     pub fn now() -> Self {
         Self(chrono::Utc::now().to_rfc3339())
     }
 
-    /// Create an IsoString from a chrono DateTime
+    /// Create an `IsoString` from a chrono `DateTime`
     pub fn from_datetime<T: TimeZone>(datetime: DateTime<T>) -> Self
     where
         T::Offset: Display,
