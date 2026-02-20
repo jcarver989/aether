@@ -1,5 +1,6 @@
 pub mod combobox;
 pub mod component;
+pub mod markdown;
 pub mod renderer;
 pub mod runtime;
 pub mod screen;

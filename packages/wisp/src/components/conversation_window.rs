@@ -2,7 +2,9 @@ use std::mem::take;
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
+use crate::tui::markdown;
 use crate::tui::spinner::Spinner;
+use crate::tui::theme::Theme;
 use crate::tui::{Component, Line, RenderContext};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +131,7 @@ pub(crate) fn render_stream_segment(
 ) -> Vec<Line> {
     match segment {
         StreamSegment::Thought(text) => ThoughtMessage { text }.render(context),
-        StreamSegment::Text(text) => render_text_segment(text),
+        StreamSegment::Text(text) => render_text_segment(text, &context.theme),
         StreamSegment::ToolCall(id) => tool_call_statuses.render_tool(id, context),
     }
 }
@@ -154,14 +156,12 @@ pub(crate) fn extend_with_vertical_margin(
     *last_segment_kind = Some(kind);
 }
 
-fn render_text_segment(text: &str) -> Vec<Line> {
+fn render_text_segment(text: &str, theme: &Theme) -> Vec<Line> {
     if text.is_empty() {
         return vec![];
     }
 
-    text.lines()
-        .map(|line| Line::new(line.to_string()))
-        .collect()
+    markdown::render_markdown(text, theme)
 }
 
 #[cfg(test)]

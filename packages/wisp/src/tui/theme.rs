@@ -12,6 +12,11 @@ pub struct Theme {
     pub error: Color,
     pub info: Color,
     pub muted: Color,
+    pub heading: Color,
+    pub code_fg: Color,
+    pub code_bg: Color,
+    pub link: Color,
+    pub blockquote: Color,
 }
 
 impl Default for Theme {
@@ -67,6 +72,31 @@ impl Default for Theme {
                 g: 128,
                 b: 128,
             }, // Gray #808080
+            heading: Color::Rgb {
+                r: 0x55,
+                g: 0xc9,
+                b: 0xd3,
+            }, // Same as primary #55c9d3
+            code_fg: Color::Rgb {
+                r: 200,
+                g: 200,
+                b: 200,
+            }, // Light gray #C8C8C8
+            code_bg: Color::Rgb {
+                r: 40,
+                g: 40,
+                b: 40,
+            }, // Dark gray #282828
+            link: Color::Rgb {
+                r: 78,
+                g: 205,
+                b: 196,
+            }, // Same as info #4ECDC4
+            blockquote: Color::Rgb {
+                r: 128,
+                g: 128,
+                b: 128,
+            }, // Same as muted #808080
         }
     }
 }

@@ -22,3 +22,5 @@ mime_guess = "2"
 ignore = { workspace = true }
 url = "2.5"
 unicode-width = "0.2.2"
+pulldown-cmark = { workspace = true }
+syntect = { workspace = true }

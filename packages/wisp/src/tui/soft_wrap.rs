@@ -44,10 +44,7 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
                 current_width = 0;
             }
 
-            match span.style().fg {
-                Some(color) => current.push_styled(ch.to_string(), color),
-                None => current.push_text(ch.to_string()),
-            }
+            current.push_with_style(ch.to_string(), span.style());
             current_width += ch_width;
         }
     }
