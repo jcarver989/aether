@@ -40,12 +40,10 @@ pub enum Severity {
 impl From<Option<DiagnosticSeverity>> for Severity {
     fn from(severity: Option<DiagnosticSeverity>) -> Self {
         match severity {
-            Some(DiagnosticSeverity::ERROR) => Severity::Error,
+            Some(DiagnosticSeverity::ERROR) | None => Severity::Error,
             Some(DiagnosticSeverity::WARNING) => Severity::Warning,
-            Some(DiagnosticSeverity::INFORMATION) => Severity::Info,
             Some(DiagnosticSeverity::HINT) => Severity::Hint,
-            None => Severity::Error, // Default to error if unspecified
-            _ => Severity::Info,     // Handle unknown severity
+            _ => Severity::Info, // INFORMATION or unknown severity
         }
     }
 }

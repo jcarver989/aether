@@ -128,8 +128,8 @@ impl ParallelGrepState {
 
 fn should_include_file(
     path: &Path,
-    file_type: &Option<String>,
-    glob_pattern: &Option<globset::GlobSet>,
+    file_type: Option<&String>,
+    glob_pattern: Option<&globset::GlobSet>,
 ) -> bool {
     // Check glob pattern first (more specific)
     if let Some(glob_set) = glob_pattern {
@@ -148,6 +148,7 @@ fn should_include_file(
     true
 }
 
+#[allow(clippy::too_many_lines)]
 pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
     // Build glob set if glob pattern is provided
     let glob_set = if let Some(glob_pattern) = &args.glob {
@@ -218,7 +219,7 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
 
     if is_single_file {
         // Single file search
-        if !should_include_file(path_obj, &args.file_type, &glob_set) {
+        if !should_include_file(path_obj, args.file_type.as_ref(), glob_set.as_ref()) {
             // Return empty results if file doesn't match filters
             let empty_meta =
                 ToolDisplayMeta::grep(args.pattern.clone(), search_path.to_string(), 0);
@@ -303,16 +304,19 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
                     return WalkState::Quit;
                 }
 
-                let entry = match result {
-                    Ok(entry) => entry,
-                    Err(_) => return WalkState::Continue,
+                let Ok(entry) = result else {
+                    return WalkState::Continue;
                 };
 
                 if !entry.file_type().is_some_and(|ft| ft.is_file()) {
                     return WalkState::Continue;
                 }
 
-                if !should_include_file(entry.path(), &file_type, &glob_set) {
+                if !should_include_file(
+                    entry.path(),
+                    file_type.as_ref(),
+                    glob_set.as_ref().as_ref(),
+                ) {
                     return WalkState::Continue;
                 }
 
@@ -378,9 +382,9 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
             })
         });
 
-        all_matches = state.matches.lock().unwrap().clone();
-        files_with_matches = state.files_with_matches.lock().unwrap().clone();
-        file_counts = state.file_counts.lock().unwrap().clone();
+        all_matches.clone_from(&state.matches.lock().unwrap());
+        files_with_matches.clone_from(&state.files_with_matches.lock().unwrap());
+        file_counts.clone_from(&state.file_counts.lock().unwrap());
 
         all_matches.sort_by(|a, b| a.file.cmp(&b.file));
         files_with_matches.sort();

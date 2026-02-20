@@ -183,7 +183,7 @@ where
 pub async fn assert_tool_call(
     name: &str,
     expected_args: Option<&serde_json::Value>,
-    count: &Option<ToolCallCount>,
+    count: Option<&ToolCallCount>,
     messages: &[AgentRunnerMessage],
 ) -> EvalAssertionResult {
     let matching_calls: Vec<_> = messages
@@ -198,9 +198,8 @@ pub async fn assert_tool_call(
                     return None;
                 }
 
-                let actual_args = match serde_json::from_str::<serde_json::Value>(arguments) {
-                    Ok(args) => args,
-                    Err(_) => return None, // Invalid JSON
+                let Ok(actual_args) = serde_json::from_str::<serde_json::Value>(arguments) else {
+                    return None; // Invalid JSON
                 };
 
                 match expected_args {

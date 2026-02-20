@@ -1,3 +1,4 @@
+#![allow(clippy::cast_possible_truncation)]
 use crate::tui::soft_wrap::{display_width_line, soft_wrap_line};
 use crate::tui::{Component, Line, RenderContext};
 use unicode_width::UnicodeWidthChar;

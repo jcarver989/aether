@@ -108,8 +108,7 @@ where
         let store_layer = results_store.create_tracing_layer(run_id);
         Self::setup_tracing(store_layer)?;
 
-        let (server_handle, sse_tx) =
-            Self::start_axum_server(&results_store, run_id, config.serve)?;
+        let (server_handle, sse_tx) = Self::start_axum_server(&results_store, run_id, config.serve);
 
         let judge_llm = Arc::new(config.judge_llm);
 
@@ -306,11 +305,7 @@ where
     }
 
     /// Start the axum server and return the task handle and SSE transmitter
-    fn start_axum_server(
-        results_store: &Arc<T>,
-        run_id: Uuid,
-        serve: bool,
-    ) -> Result<ServerHandles, Box<dyn std::error::Error>> {
+    fn start_axum_server(results_store: &Arc<T>, run_id: Uuid, serve: bool) -> ServerHandles {
         if serve {
             let state = Arc::new(server::AppState::new(results_store.clone(), run_id));
             let sse_tx = Some(state.sse_tx.clone());
@@ -320,13 +315,14 @@ where
                     tracing::error!("Server error: {}", e);
                 }
             }));
-            Ok((server_handle, sse_tx))
+            (server_handle, sse_tx)
         } else {
-            Ok((None, None))
+            (None, None)
         }
     }
 
     /// Run a single batch of evaluations
+    #[allow(clippy::ref_option)]
     async fn run_eval_batch<J>(
         batch: Vec<Eval>,
         run_id: Uuid,

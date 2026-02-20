@@ -56,11 +56,11 @@ impl ChatMessage {
     /// Returns the timestamp of this message, if it has one
     pub fn timestamp(&self) -> Option<&IsoString> {
         match self {
-            ChatMessage::System { timestamp, .. } => Some(timestamp),
-            ChatMessage::User { timestamp, .. } => Some(timestamp),
-            ChatMessage::Assistant { timestamp, .. } => Some(timestamp),
-            ChatMessage::Error { timestamp, .. } => Some(timestamp),
-            ChatMessage::Summary { timestamp, .. } => Some(timestamp),
+            ChatMessage::System { timestamp, .. }
+            | ChatMessage::User { timestamp, .. }
+            | ChatMessage::Assistant { timestamp, .. }
+            | ChatMessage::Error { timestamp, .. }
+            | ChatMessage::Summary { timestamp, .. } => Some(timestamp),
             ChatMessage::ToolCallResult(_) => None,
         }
     }

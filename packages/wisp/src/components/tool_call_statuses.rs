@@ -125,7 +125,7 @@ impl ToolCallStatuses {
 
         if let Some(existing) = self.tool_calls.get_mut(&id) {
             if !tool_call.title.is_empty() {
-                existing.name = tool_call.title.clone();
+                existing.name.clone_from(&tool_call.title);
             }
             existing.arguments = arguments;
             return;
@@ -148,7 +148,7 @@ impl ToolCallStatuses {
 
         if let Some(tc) = self.tool_calls.get_mut(&id) {
             if let Some(title) = &update.fields.title {
-                tc.name = title.clone();
+                tc.name.clone_from(title);
             }
             if let Some(raw_input) = &update.fields.raw_input {
                 tc.arguments = raw_input.to_string();
@@ -206,7 +206,7 @@ impl ToolCallStatuses {
         for id in &self.tool_order {
             if let Some(tc) = self.tool_calls.get(id) {
                 match &tc.status {
-                    TrackedStatus::Running => continue,
+                    TrackedStatus::Running => {}
                     TrackedStatus::Success => {
                         let view = ToolCallStatusView {
                             name: tc.name.clone(),

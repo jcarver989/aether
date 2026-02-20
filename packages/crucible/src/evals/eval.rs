@@ -40,8 +40,7 @@ pub enum WorkingDirectory {
 impl WorkingDirectory {
     pub fn path(&self) -> &Path {
         match self {
-            WorkingDirectory::Local { path } => path,
-            WorkingDirectory::GitRepo { path, .. } => path,
+            WorkingDirectory::Local { path } | WorkingDirectory::GitRepo { path, .. } => path,
         }
     }
 
@@ -247,7 +246,7 @@ impl Eval {
                     name,
                     arguments,
                     count,
-                } => assert_tool_call(name, arguments.as_ref(), count, &messages).await,
+                } => assert_tool_call(name, arguments.as_ref(), count.as_ref(), &messages).await,
             };
 
             results.push((assertion.clone(), result));
@@ -269,7 +268,9 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
         Ok(())
     } else {
         Err(std::io::Error::other(format!(
-            "Failed to copy directory from {src:?} to {dst:?}"
+            "Failed to copy directory from {} to {}",
+            src.display(),
+            dst.display()
         )))
     }
 }

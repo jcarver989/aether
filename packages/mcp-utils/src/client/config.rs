@@ -74,9 +74,9 @@ pub enum McpServerConfig {
 impl McpServerConfig {
     pub fn name(&self) -> &str {
         match self {
-            McpServerConfig::Http { name, .. } => name,
-            McpServerConfig::Stdio { name, .. } => name,
-            McpServerConfig::InMemory { name, .. } => name,
+            McpServerConfig::Http { name, .. }
+            | McpServerConfig::Stdio { name, .. }
+            | McpServerConfig::InMemory { name, .. } => name,
         }
     }
 }

@@ -20,6 +20,10 @@ members = [
 pedantic = { level = "warn", priority = -1 }
 all = { level = "warn", priority = -1 }
 must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+return_self_not_must_use = "allow"
+pub_underscore_fields = "allow"
 
 [workspace.dependencies]
 # Async runtime

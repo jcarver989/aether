@@ -90,8 +90,7 @@ fn daemonize() -> Result<(), String> {
         Err(e) => return Err(format!("Second fork failed: {e}")),
     }
 
-    let dev_null =
-        File::open("/dev/null").map_err(|e| format!("Failed to open /dev/null: {e}"))?;
+    let dev_null = File::open("/dev/null").map_err(|e| format!("Failed to open /dev/null: {e}"))?;
     let fd = dev_null.as_raw_fd();
 
     unsafe {

@@ -85,7 +85,7 @@ impl<T: CodingTools> Debug for LspCodingTools<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LspCodingTools")
             .field("inner", &self.inner)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -522,6 +522,7 @@ fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, Cod
                 .is_some_and(|c| c.is_alphanumeric() || c == '_');
 
         if before_ok && after_ok {
+            #[allow(clippy::cast_possible_truncation)]
             return Ok(abs_pos as u32);
         }
         search_start = abs_pos + 1;

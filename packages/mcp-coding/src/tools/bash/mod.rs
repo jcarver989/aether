@@ -221,7 +221,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
 
     // Validate timeout is within bounds
     if let Some(timeout_ms) = args.timeout
-        && timeout_ms > 600000
+        && timeout_ms > 600_000
     {
         return Err(BashError::TimeoutTooLarge);
     }
@@ -246,7 +246,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
         }))
     } else {
         // Run synchronously with default timeout of 120000ms (2 minutes)
-        let timeout = timeout_duration.or(Some(Duration::from_millis(120000)));
+        let timeout = timeout_duration.or(Some(Duration::from_millis(120_000)));
         let command = args.command.clone();
 
         // Collect output in-memory for synchronous case
@@ -294,7 +294,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
             }),
             Err(_) => {
                 // Timeout occurred
-                let timeout_ms = timeout.map_or(120000, |d| d.as_millis());
+                let timeout_ms = timeout.map_or(120_000, |d| d.as_millis());
 
                 let display_meta = ToolDisplayMeta::command(
                     truncate(&args.command, 80),

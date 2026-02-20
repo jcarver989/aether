@@ -80,9 +80,7 @@ struct PrData {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let (owner, repo, issue_number) = parse_github_url(&cli.issue_url)?;
-    println!(
-        "Creating eval from: {owner}/{repo} #{issue_number}..."
-    );
+    println!("Creating eval from: {owner}/{repo} #{issue_number}...");
 
     let issue = fetch_issue(&owner, &repo, issue_number)?;
     let pr_number = if let Some(pr_url) = &cli.pr_url {

@@ -36,6 +36,7 @@ impl FileSystemStore {
     }
 
     /// Parse traces from JSONL file
+    #[allow(clippy::unused_self)]
     fn parse_traces_file(&self, path: &PathBuf) -> Result<Vec<TraceEvent>> {
         if !path.exists() {
             return Ok(Vec::new());
@@ -63,10 +64,8 @@ impl FileSystemStore {
     }
 
     /// Group traces by eval ID using span hierarchy
-    fn group_traces_by_eval(
-        &self,
-        events: Vec<TraceEvent>,
-    ) -> Result<HashMap<String, Vec<TraceEvent>>> {
+    #[allow(clippy::unused_self)]
+    fn group_traces_by_eval(&self, events: Vec<TraceEvent>) -> HashMap<String, Vec<TraceEvent>> {
         let mut grouped: HashMap<String, Vec<TraceEvent>> = HashMap::new();
 
         // Group events by eval_id found in current span or parent spans
@@ -105,7 +104,7 @@ impl FileSystemStore {
         }
 
         tracing::debug!("Grouped into {} groups", grouped.len());
-        Ok(grouped)
+        grouped
     }
 }
 
@@ -206,7 +205,7 @@ impl ResultsStore for FileSystemStore {
         let all_events = self.parse_traces_file(&traces_file)?;
         tracing::debug!("Parsed {} total trace events", all_events.len());
 
-        let grouped = self.group_traces_by_eval(all_events)?;
+        let grouped = self.group_traces_by_eval(all_events);
         tracing::debug!(
             "Grouped into {} groups: {:?}",
             grouped.len(),
@@ -342,7 +341,7 @@ mod tests {
             },
         ];
 
-        let grouped = store.group_traces_by_eval(events).unwrap();
+        let grouped = store.group_traces_by_eval(events);
 
         assert_eq!(grouped.len(), 3);
         assert!(grouped.contains_key(eval_id_1));

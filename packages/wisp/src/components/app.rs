@@ -194,7 +194,7 @@ impl App {
             SessionUpdate::ConfigOptionUpdate(update) => {
                 self.conversation.close_thought_block();
                 self.model_display = extract_model_display(&update.config_options);
-                self.config_options = update.config_options.clone();
+                self.config_options.clone_from(&update.config_options);
                 self.update_config_menu(&update.config_options);
                 should_render = true;
             }
@@ -265,6 +265,7 @@ impl App {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     pub fn on_ext_notification(&mut self, notification: ExtNotification) -> Vec<AppEvent> {
         if notification.method.as_ref() == CONTEXT_USAGE_METHOD
             && let Some(ratio) =
@@ -272,6 +273,7 @@ impl App {
                     .ok()
                     .and_then(|v| v.get("usage_ratio")?.as_f64())
         {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let pct_left = ((1.0 - ratio) * 100.0).round() as u8;
             self.context_usage_pct = Some(pct_left);
             return vec![AppEvent::Render];
@@ -295,6 +297,7 @@ impl App {
         vec![AppEvent::Render]
     }
 
+    #[allow(clippy::unused_self)]
     pub fn on_resize(&mut self, _cols: u16, _rows: u16) -> Vec<AppEvent> {
         vec![AppEvent::Render]
     }
@@ -380,6 +383,7 @@ impl App {
         None
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn handle_file_picker_outcome(
         &mut self,
         outcome: InputOutcome<FilePickerAction>,
@@ -496,6 +500,7 @@ impl App {
         }
     }
 
+    #[allow(clippy::unused_self)]
     fn handle_config_change(&mut self, change: ConfigChange) -> Vec<AppEvent> {
         vec![
             AppEvent::SetConfigOption {
@@ -506,6 +511,7 @@ impl App {
         ]
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn apply_command(&mut self, cmd: CommandEntry) -> Vec<AppEvent> {
         if cmd.builtin && cmd.name == "config" {
             self.input_buffer.clear();
@@ -685,6 +691,7 @@ impl App {
         (blocks, warning_lines)
     }
 
+    #[allow(clippy::unused_self)]
     fn try_build_attachment_block(
         &self,
         path: &Path,

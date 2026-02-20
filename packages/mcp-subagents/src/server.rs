@@ -82,7 +82,8 @@ impl SubAgentsMcp {
             instructions.push_str("The following sub-agents are available:\n\n");
 
             for agent in &self.agents_info {
-                instructions.push_str(&format!("- **{}**: {}\n", agent.name, agent.description));
+                use std::fmt::Write as _;
+                let _ = writeln!(instructions, "- **{}**: {}", agent.name, agent.description);
             }
         }
 
@@ -176,6 +177,7 @@ impl SubAgentsMcp {
                             let _ = peer
                                 .notify_progress(ProgressNotificationParam {
                                     progress_token: token,
+                                    #[allow(clippy::cast_precision_loss)]
                                     progress: counter as f64,
                                     total: None,
                                     message: Some(progress_data_str),

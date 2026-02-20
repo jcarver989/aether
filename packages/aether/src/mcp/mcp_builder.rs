@@ -103,7 +103,7 @@ impl McpBuilder {
             let roots = self
                 .roots
                 .into_iter()
-                .map(|path| root_from_path(path, None))
+                .map(|path| root_from_path(&path, None))
                 .collect();
             mcp_manager.set_roots(roots).await?;
         }

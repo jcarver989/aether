@@ -254,6 +254,7 @@ impl AgentExecutor {
 }
 
 /// Execute a single sub-agent and return its result
+#[allow(clippy::similar_names)]
 async fn execute_single_agent(
     task_id: String,
     task: SubAgentTask,
@@ -273,7 +274,7 @@ async fn execute_single_agent(
         let agent_file = AgentFile::from_file(&agent_file_path)
             .map_err(|e| format!("Failed to load agent file: {e}"))?;
 
-        let llm = create_llm(&task.agent_name, &agent_file).await?;
+        let llm = create_llm(&task.agent_name, &agent_file)?;
         let system_prompt = agent_file.content.clone();
         let McpSpawnResult {
             tool_definitions,
@@ -311,7 +312,7 @@ async fn execute_single_agent(
                 AgentMessage::Text {
                     chunk, is_complete, ..
                 } if *is_complete => {
-                    final_output = chunk.clone();
+                    final_output.clone_from(chunk);
                 }
 
                 AgentMessage::Error { message } => {
@@ -366,7 +367,7 @@ async fn execute_single_agent(
     }
 }
 
-async fn create_llm(
+fn create_llm(
     agent_name: &str,
     agent_file: &AgentFile,
 ) -> Result<Box<dyn StreamingModelProvider>, String> {
@@ -375,9 +376,7 @@ async fn create_llm(
         .as_ref()
         .map(|f| f.model.clone())
         .ok_or_else(|| {
-            format!(
-                "No model specified. Set 'model' in {agent_name}/AGENTS.md frontmatter"
-            )
+            format!("No model specified. Set 'model' in {agent_name}/AGENTS.md frontmatter")
         })?;
 
     let (llm, _) = ModelProviderParser::default()

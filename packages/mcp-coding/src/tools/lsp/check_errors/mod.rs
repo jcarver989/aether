@@ -37,13 +37,13 @@ pub async fn execute_lsp_diagnostics<T: CodingTools>(
         .get_lsp_diagnostics()
         .await
         .map_err(|e| e.to_string())?;
-    get_diagnostics(input.file_path, &diagnostics_cache)
+    Ok(get_diagnostics(input.file_path, &diagnostics_cache))
 }
 
 fn get_diagnostics(
     file_path: Option<String>,
     diagnostics_cache: &HashMap<String, Vec<Diagnostic>>,
-) -> Result<LspDiagnosticsOutput, String> {
+) -> LspDiagnosticsOutput {
     let mut all_diagnostics: Vec<FormattedDiagnostic> = Vec::new();
 
     if let Some(path) = file_path {
@@ -81,10 +81,10 @@ fn get_diagnostics(
 
     let summary = count_by_severity(&all_diagnostics);
 
-    Ok(LspDiagnosticsOutput {
+    LspDiagnosticsOutput {
         diagnostics: all_diagnostics,
         summary,
-    })
+    }
 }
 
 #[cfg(test)]

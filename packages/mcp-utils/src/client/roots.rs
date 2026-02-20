@@ -1,5 +1,7 @@
 use rmcp::model::Root;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 
 /// Convert a `PathBuf` to a file:// URI string.
 ///
@@ -29,8 +31,8 @@ pub fn path_to_file_uri(path: &Path) -> String {
 /// Create a Root from a `PathBuf`.
 ///
 /// The path is converted to an absolute file:// URI.
-pub fn root_from_path(path: PathBuf, name: Option<String>) -> Root {
-    let uri = path_to_file_uri(&path);
+pub fn root_from_path(path: &Path, name: Option<String>) -> Root {
+    let uri = path_to_file_uri(path);
     Root { uri, name }
 }
 
@@ -48,7 +50,7 @@ mod tests {
     #[test]
     fn test_root_from_path() {
         let path = PathBuf::from("/home/user/project");
-        let root = root_from_path(path, Some("Test Project".to_string()));
+        let root = root_from_path(&path, Some("Test Project".to_string()));
 
         assert_eq!(root.uri.as_str(), "file:///home/user/project");
         assert_eq!(root.name, Some("Test Project".to_string()));
@@ -57,7 +59,7 @@ mod tests {
     #[test]
     fn test_root_from_path_no_name() {
         let path = PathBuf::from("/tmp/test");
-        let root = root_from_path(path, None);
+        let root = root_from_path(&path, None);
 
         assert_eq!(root.uri.as_str(), "file:///tmp/test");
         assert_eq!(root.name, None);
@@ -66,7 +68,7 @@ mod tests {
     #[test]
     fn test_path_with_spaces() {
         let path = PathBuf::from("/home/user/my project");
-        let root = root_from_path(path, None);
+        let root = root_from_path(&path, None);
 
         // The URI should preserve spaces (not percent-encoded in this simple implementation)
         assert_eq!(root.uri.as_str(), "file:///home/user/my project");

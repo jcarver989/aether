@@ -9,7 +9,7 @@ use rmcp::{
     RoleClient, ServiceExt,
     model::{
         ClientCapabilities, ClientInfo, CreateElicitationRequestParams, CreateElicitationResult,
-        ElicitationAction, Implementation, Root, Tool as RmcpTool,
+        ElicitationAction, Implementation, ProtocolVersion, Root, Tool as RmcpTool,
     },
     serve_client,
     service::RunningService,
@@ -62,7 +62,7 @@ impl McpManager {
             tool_definitions: Vec::new(),
             client_info: ClientInfo {
                 meta: None,
-                protocol_version: Default::default(),
+                protocol_version: ProtocolVersion::default(),
                 capabilities: ClientCapabilities::builder()
                     .enable_elicitation()
                     .enable_roots()
@@ -116,7 +116,7 @@ impl McpManager {
     }
 
     pub async fn add_mcp(&mut self, config: McpServerConfig) -> Result<()> {
-        use McpServerConfig::{Http, Stdio, InMemory};
+        use McpServerConfig::{Http, InMemory, Stdio};
         match config {
             Http { name, config } => self.connect_http_server(name, config).await,
 
@@ -489,9 +489,7 @@ impl McpManager {
             // Try to send notification - servers that don't support roots will ignore it
             if let Err(e) = server_conn.client.notify_roots_list_changed().await {
                 // Only log errors for debugging; it's expected that some servers may not support roots
-                eprintln!(
-                    "Note: server '{server_name}' did not accept roots notification: {e}"
-                );
+                eprintln!("Note: server '{server_name}' did not accept roots notification: {e}");
             }
         }
     }

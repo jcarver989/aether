@@ -49,6 +49,7 @@ pub struct LspSymbolInput {
     pub include_declaration: Option<bool>,
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn default_include_declaration() -> Option<bool> {
     Some(true)
 }

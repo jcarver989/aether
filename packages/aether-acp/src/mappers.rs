@@ -49,7 +49,8 @@ pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::Available
     };
 
     let description = prompt
-        .description.clone()
+        .description
+        .clone()
         .unwrap_or_else(|| "No description available".to_string());
 
     acp::AvailableCommand::new(command_name, description).input(input)
@@ -69,7 +70,7 @@ pub fn map_acp_mcp_servers(servers: Vec<McpServer>) -> Vec<McpServerConfig> {
 }
 
 fn try_map_mcp_server(server: McpServer) -> Option<McpServerConfig> {
-    use McpServer::{Stdio, Http, Sse};
+    use McpServer::{Http, Sse, Stdio};
     match server {
         Stdio(stdio) => Some(McpServerConfig::Stdio {
             name: stdio.name,
@@ -106,6 +107,7 @@ fn http_config(url: String, headers: &[HttpHeader]) -> StreamableHttpClientTrans
 }
 
 /// Converts Aether `AgentMessage` to ACP `SessionUpdate`
+#[allow(clippy::too_many_lines)]
 pub fn map_agent_message_to_session_notification(
     session_id: SessionId,
     msg: &AgentMessage,
@@ -194,27 +196,11 @@ pub fn map_agent_message_to_session_notification(
                 return None;
             }
 
-            let progress_text = message
-                .as_ref()
-                .map(|msg| {
-                    format!(
-                        "{} ({}/{})",
-                        msg,
-                        progress,
-                        total
-                            .map(|t| t.to_string())
-                            .unwrap_or_else(|| "?".to_string())
-                    )
-                })
-                .unwrap_or_else(|| {
-                    format!(
-                        "Progress: {}/{}",
-                        progress,
-                        total
-                            .map(|t| t.to_string())
-                            .unwrap_or_else(|| "?".to_string())
-                    )
-                });
+            let total_str = total.map_or_else(|| "?".to_string(), |t| t.to_string());
+            let progress_text = message.as_ref().map_or_else(
+                || format!("Progress: {progress}/{total_str}"),
+                |msg| format!("{msg} ({progress}/{total_str})"),
+            );
 
             Some(SessionNotification::new(
                 session_id,
@@ -268,9 +254,7 @@ pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotificat
 /// Determines the stop reason from the final agent message
 pub fn map_agent_message_to_stop_reason(msg: &AgentMessage) -> acp::StopReason {
     match msg {
-        AgentMessage::Done => StopReason::EndTurn,
         AgentMessage::Cancelled { .. } => StopReason::Cancelled,
-        AgentMessage::Error { .. } => StopReason::EndTurn, // Map error to EndTurn
         _ => StopReason::EndTurn,
     }
 }

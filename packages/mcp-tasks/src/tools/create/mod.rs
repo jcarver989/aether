@@ -48,6 +48,7 @@ pub struct TaskCreateOutput {
 }
 
 /// Create a new task or subtask
+#[allow(clippy::needless_pass_by_value)]
 pub fn execute_task_create(
     input: TaskCreateInput,
     store: &mut TaskStore,

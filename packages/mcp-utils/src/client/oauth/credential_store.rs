@@ -113,11 +113,14 @@ impl CredentialStore for McpCredentialStore {
             .ok_or_else(|| AuthError::InternalError("No token response to save".to_string()))?;
 
         let expires_at = token.expires_in().map(|duration| {
-            std::time::SystemTime::now()
+            #[allow(clippy::cast_possible_truncation)]
+            let now_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_millis() as u64
-                + duration.as_millis() as u64
+                .as_millis() as u64;
+            #[allow(clippy::cast_possible_truncation)]
+            let duration_ms = duration.as_millis() as u64;
+            now_ms + duration_ms
         });
 
         let credential = McpCredential {
@@ -166,6 +169,7 @@ fn build_token_response(
     }
 
     if let Some(expires_at_millis) = cred.expires_at {
+        #[allow(clippy::cast_possible_truncation)]
         let now_millis = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()

@@ -26,7 +26,11 @@ impl From<&Task> for TaskSummary {
             status: task.status.to_string(),
             parent: task.parent.as_ref().map(std::string::ToString::to_string),
             assignee: task.assignee.clone(),
-            deps: task.deps.iter().map(std::string::ToString::to_string).collect(),
+            deps: task
+                .deps
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
         }
     }
 }

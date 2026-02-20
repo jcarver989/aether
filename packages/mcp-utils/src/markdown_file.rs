@@ -179,9 +179,8 @@ fn split_frontmatter<T: DeserializeOwned>(content: &str) -> (Option<T>, String) 
 
     // Find the end of frontmatter (second ---)
     let rest = &content[3..];
-    let end_pos = match rest.find("\n---") {
-        Some(pos) => pos,
-        None => return (None, content.to_string()),
+    let Some(end_pos) = rest.find("\n---") else {
+        return (None, content.to_string());
     };
 
     let frontmatter_str = &rest[..end_pos];

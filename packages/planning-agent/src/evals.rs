@@ -1,6 +1,6 @@
 use crate::PrInfo;
 use crate::claude_code::ClaudeCode;
-use aether::core::{AgentError, substitute_parameters};
+use aether::core::substitute_parameters;
 use crucible::{Eval, EvalAssertion, EvalMetric, WorkingDirectory};
 use std::collections::HashMap;
 use std::fs;
@@ -76,17 +76,17 @@ fn eval(eval_path: &str, repo_url: &str) -> Result<Eval, Box<dyn std::error::Err
             &pr_info.after_commit,
             None::<&str>,
         )?,
-        vec![code_quality_scorer()?],
+        vec![code_quality_scorer()],
     )
     .before_assertions(ClaudeCode::new("plan.md")))
 }
 
 /// Uses LLM as a judge to score code quality (vs human code) on a 10 point scale
-fn code_quality_scorer() -> Result<EvalAssertion, AgentError> {
-    Ok(EvalAssertion::llm_judge(|ctx| {
+fn code_quality_scorer() -> EvalAssertion {
+    EvalAssertion::llm_judge(|ctx| {
         let gold_commit = match ctx.working_dir {
             WorkingDirectory::GitRepo { gold_commit, .. } => Some(gold_commit.as_str()),
-            _ => None,
+            WorkingDirectory::Local { .. } => None,
         };
 
         let dir = ctx.working_dir.path().display().to_string();
@@ -103,5 +103,5 @@ fn code_quality_scorer() -> Result<EvalAssertion, AgentError> {
             ("json_schema".to_string(), EvalMetric::json_schema()),
         ]));
         substitute_parameters(&template, &args)
-    }))
+    })
 }

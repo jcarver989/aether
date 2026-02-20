@@ -66,7 +66,7 @@ async fn run_reader(
             }
 
             Some(DaemonRequest::Initialize(init)) => {
-                let config = if let Some(c) = get_config_for_language(init.language) { c } else {
+                let Some(config) = get_config_for_language(init.language) else {
                     let _ = response_tx
                         .send(DaemonResponse::Error(ProtocolError::new(format!(
                             "No LSP configured for language: {:?}",

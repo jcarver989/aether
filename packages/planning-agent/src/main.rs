@@ -127,9 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Run ID: {run_id}");
 
     if !cli.no_serve {
-        println!(
-            "\nView detailed results at http://localhost:3000/api/runs/{run_id}"
-        );
+        println!("\nView detailed results at http://localhost:3000/api/runs/{run_id}");
         println!("Press Ctrl+C to stop the server.");
     }
 

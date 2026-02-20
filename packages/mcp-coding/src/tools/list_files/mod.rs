@@ -85,6 +85,7 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
             .ok()
             .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
             .and_then(|duration| {
+                #[allow(clippy::cast_possible_wrap)]
                 let secs = duration.as_secs() as i64;
                 chrono::DateTime::from_timestamp(secs, 0)
                     .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())

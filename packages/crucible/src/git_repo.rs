@@ -98,9 +98,9 @@ impl GitRepo {
             cmd.arg(from_commit);
         }
 
-        let output = cmd.output().map_err(|e| {
-            GitRepoError::CommandFailed(format!("Failed to execute git diff: {e}"))
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| GitRepoError::CommandFailed(format!("Failed to execute git diff: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

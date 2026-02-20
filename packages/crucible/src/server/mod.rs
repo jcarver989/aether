@@ -48,19 +48,19 @@ impl SseEvent {
     /// Get the `run_id` associated with this event
     pub fn run_id(&self) -> Uuid {
         match self {
-            SseEvent::EvalStarted { run_id, .. } => *run_id,
-            SseEvent::EvalCompleted { run_id, .. } => *run_id,
-            SseEvent::TraceEvent { run_id, .. } => *run_id,
-            SseEvent::RunCompleted { run_id } => *run_id,
+            SseEvent::EvalStarted { run_id, .. }
+            | SseEvent::EvalCompleted { run_id, .. }
+            | SseEvent::TraceEvent { run_id, .. }
+            | SseEvent::RunCompleted { run_id } => *run_id,
         }
     }
 
     /// Get the `eval_id` associated with this event, if applicable
     pub fn eval_id(&self) -> Option<Uuid> {
         match self {
-            SseEvent::EvalStarted { eval_id, .. } => Some(*eval_id),
-            SseEvent::EvalCompleted { eval_id, .. } => Some(*eval_id),
-            SseEvent::TraceEvent { eval_id, .. } => Some(*eval_id),
+            SseEvent::EvalStarted { eval_id, .. }
+            | SseEvent::EvalCompleted { eval_id, .. }
+            | SseEvent::TraceEvent { eval_id, .. } => Some(*eval_id),
             SseEvent::RunCompleted { .. } => None,
         }
     }
@@ -192,6 +192,7 @@ async fn sse_handler<T: ResultsStore>(
 }
 
 /// Run-scoped SSE handler - only sends events for a specific run
+#[allow(clippy::unused_async)]
 async fn run_sse_handler<T: ResultsStore>(
     State(state): State<AppState<T>>,
     Path(run_id): Path<Uuid>,
@@ -215,6 +216,7 @@ async fn run_sse_handler<T: ResultsStore>(
 }
 
 /// Eval-scoped SSE handler - only sends events for a specific eval within a run
+#[allow(clippy::unused_async)]
 async fn eval_sse_handler<T: ResultsStore>(
     State(state): State<AppState<T>>,
     Path((run_id, eval_id)): Path<(Uuid, Uuid)>,
