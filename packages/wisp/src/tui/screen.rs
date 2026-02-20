@@ -1,7 +1,7 @@
 use crossterm::{
     QueueableCommand,
     cursor::MoveUp,
-    style::{Attribute, Color, SetAttribute, SetForegroundColor},
+    style::{Attribute, Color, SetAttribute, SetBackgroundColor, SetForegroundColor},
     terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate},
 };
 use std::fmt::Write as _;
@@ -14,10 +14,16 @@ pub struct Line {
     spans: Vec<Span>,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Style {
     pub fg: Option<Color>,
+    pub bg: Option<Color>,
     pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub dim: bool,
+    pub strikethrough: bool,
 }
 
 impl Style {
@@ -30,10 +36,48 @@ impl Style {
         self
     }
 
-    #[allow(dead_code)]
+    pub fn bg_color(mut self, color: Color) -> Self {
+        self.bg = Some(color);
+        self
+    }
+
     pub fn bold(mut self) -> Self {
         self.bold = true;
         self
+    }
+
+    pub fn italic(mut self) -> Self {
+        self.italic = true;
+        self
+    }
+
+    pub fn underline(mut self) -> Self {
+        self.underline = true;
+        self
+    }
+
+    pub fn dim(mut self) -> Self {
+        self.dim = true;
+        self
+    }
+
+    pub fn strikethrough(mut self) -> Self {
+        self.strikethrough = true;
+        self
+    }
+
+    /// Merge `other` on top of `self`. Booleans are OR'd, `Option` fields
+    /// prefer `other` when `Some`.
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            fg: other.fg.or(self.fg),
+            bg: other.bg.or(self.bg),
+            bold: self.bold || other.bold,
+            italic: self.italic || other.italic,
+            underline: self.underline || other.underline,
+            dim: self.dim || other.dim,
+            strikethrough: self.strikethrough || other.strikethrough,
+        }
     }
 }
 
@@ -181,21 +225,67 @@ fn push_fg_sgr(out: &mut String, color: Option<Color>) {
     let _ = write!(out, "{}", SetForegroundColor(fg));
 }
 
+fn push_bg_sgr(out: &mut String, color: Option<Color>) {
+    let bg = color.unwrap_or(Color::Reset);
+    let _ = write!(out, "{}", SetBackgroundColor(bg));
+}
+
 fn push_attr_sgr(out: &mut String, attr: Attribute) {
     let _ = write!(out, "{}", SetAttribute(attr));
 }
 
 fn emit_style_transition(out: &mut String, from: Style, to: Style) {
-    if from.bold != to.bold {
+    // Check if any boolean attribute turned OFF — requires a full reset
+    let needs_reset = (from.bold && !to.bold)
+        || (from.italic && !to.italic)
+        || (from.underline && !to.underline)
+        || (from.dim && !to.dim)
+        || (from.strikethrough && !to.strikethrough);
+
+    if needs_reset {
+        push_attr_sgr(out, Attribute::Reset);
+        // After reset, re-emit all active attributes and colors on `to`
         if to.bold {
             push_attr_sgr(out, Attribute::Bold);
-        } else {
-            push_attr_sgr(out, Attribute::NormalIntensity);
         }
+        if to.italic {
+            push_attr_sgr(out, Attribute::Italic);
+        }
+        if to.underline {
+            push_attr_sgr(out, Attribute::Underlined);
+        }
+        if to.dim {
+            push_attr_sgr(out, Attribute::Dim);
+        }
+        if to.strikethrough {
+            push_attr_sgr(out, Attribute::CrossedOut);
+        }
+        push_fg_sgr(out, to.fg);
+        push_bg_sgr(out, to.bg);
+        return;
     }
 
+    // Only turning attributes ON — emit incrementally
+    if !from.bold && to.bold {
+        push_attr_sgr(out, Attribute::Bold);
+    }
+    if !from.italic && to.italic {
+        push_attr_sgr(out, Attribute::Italic);
+    }
+    if !from.underline && to.underline {
+        push_attr_sgr(out, Attribute::Underlined);
+    }
+    if !from.dim && to.dim {
+        push_attr_sgr(out, Attribute::Dim);
+    }
+    if !from.strikethrough && to.strikethrough {
+        push_attr_sgr(out, Attribute::CrossedOut);
+    }
     if from.fg != to.fg {
         push_fg_sgr(out, to.fg);
+    }
+    if from.bg != to.bg {
+        push_bg_sgr(out, to.bg);
     }
 }
 
@@ -533,18 +623,16 @@ mod tests {
 
         let ansi = line.to_ansi_string();
         let mut bold = String::new();
-        let mut normal = String::new();
         let mut red = String::new();
-        let mut reset = String::new();
+        let mut reset_attr = String::new();
         push_attr_sgr(&mut bold, Attribute::Bold);
-        push_attr_sgr(&mut normal, Attribute::NormalIntensity);
         push_fg_sgr(&mut red, Some(Color::Red));
-        push_fg_sgr(&mut reset, None);
+        push_attr_sgr(&mut reset_attr, Attribute::Reset);
 
         assert!(ansi.contains(&bold));
         assert!(ansi.contains(&red));
         assert!(ansi.contains("hot"));
-        assert!(ansi.contains(&normal));
-        assert!(ansi.contains(&reset));
+        // When bold turns off, a full Reset is emitted
+        assert!(ansi.contains(&reset_attr));
     }
 }
