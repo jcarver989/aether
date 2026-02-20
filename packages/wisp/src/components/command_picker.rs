@@ -57,7 +57,7 @@ impl Component for CommandPicker {
             };
 
             let hint_suffix = match &command.hint {
-                Some(hint) => format!("  [{}]", hint),
+                Some(hint) => format!("  [{hint}]"),
                 None => String::new(),
             };
 

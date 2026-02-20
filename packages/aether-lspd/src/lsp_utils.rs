@@ -2,7 +2,7 @@
 
 use lsp_types::SymbolKind;
 
-/// Convert SymbolKind to a human-readable string
+/// Convert `SymbolKind` to a human-readable string
 pub fn symbol_kind_to_string(kind: SymbolKind) -> &'static str {
     match kind {
         SymbolKind::FILE => "file",

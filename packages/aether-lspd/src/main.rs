@@ -34,7 +34,7 @@ fn main() {
     let args = Args::parse();
 
     if let Err(e) = daemonize() {
-        eprintln!("Failed to daemonize: {}", e);
+        eprintln!("Failed to daemonize: {e}");
         std::process::exit(1);
     }
 
@@ -74,24 +74,24 @@ fn daemonize() -> Result<(), String> {
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => exit(0),
         Ok(ForkResult::Child) => {}
-        Err(e) => return Err(format!("First fork failed: {}", e)),
+        Err(e) => return Err(format!("First fork failed: {e}")),
     }
 
-    setsid().map_err(|e| format!("setsid failed: {}", e))?;
+    setsid().map_err(|e| format!("setsid failed: {e}"))?;
 
     unsafe {
         signal(Signal::SIGHUP, SigHandler::SigIgn)
-            .map_err(|e| format!("Failed to ignore SIGHUP: {}", e))?;
+            .map_err(|e| format!("Failed to ignore SIGHUP: {e}"))?;
     }
 
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => exit(0),
         Ok(ForkResult::Child) => {}
-        Err(e) => return Err(format!("Second fork failed: {}", e)),
+        Err(e) => return Err(format!("Second fork failed: {e}")),
     }
 
     let dev_null =
-        File::open("/dev/null").map_err(|e| format!("Failed to open /dev/null: {}", e))?;
+        File::open("/dev/null").map_err(|e| format!("Failed to open /dev/null: {e}"))?;
     let fd = dev_null.as_raw_fd();
 
     unsafe {

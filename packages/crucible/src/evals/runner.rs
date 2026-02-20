@@ -30,7 +30,7 @@ type EvalTaskOutput = (
     Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
 );
 
-/// Server handles returned from start_axum_server
+/// Server handles returned from `start_axum_server`
 type ServerHandles = (
     Option<JoinHandle<()>>,
     Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
@@ -53,7 +53,7 @@ where
     R: AgentRunner + 'static,
     T: ResultsStore + 'static,
 {
-    /// Create a new EvalRunner with the given agent runner and results store
+    /// Create a new `EvalRunner` with the given agent runner and results store
     pub fn new(runner: R, results_store: T) -> Self {
         Self {
             output_dir: None,
@@ -193,7 +193,7 @@ where
             .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
     }
 
-    /// Capture git diffs (agent and reference) for GitRepo working directories
+    /// Capture git diffs (agent and reference) for `GitRepo` working directories
     fn capture_git_diffs(eval: &Eval, report: &mut EvalResult) {
         if let WorkingDirectory::GitRepo {
             path,

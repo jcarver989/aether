@@ -10,8 +10,8 @@ use super::{
 };
 use crate::{Context, LlmResponseStream, StreamingModelProvider};
 
-/// A Provider that's compatible with OpenAI's chat completion API
-/// Other providers (e.g. Ollama, Llama.cpp etc) that are "OpenAI compatible" should implement this trait
+/// A Provider that's compatible with `OpenAI`'s chat completion API
+/// Other providers (e.g. Ollama, Llama.cpp etc) that are "`OpenAI` compatible" should implement this trait
 pub trait OpenAiChatProvider {
     type Config: Config + Clone + 'static;
 

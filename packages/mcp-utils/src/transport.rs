@@ -22,7 +22,7 @@ impl fmt::Display for InMemoryTransportError {
 
 impl std::error::Error for InMemoryTransportError {}
 
-/// In-memory transport for connecting McpServer and McpClient in tests
+/// In-memory transport for connecting `McpServer` and `McpClient` in tests
 pub struct InMemoryTransport<R: ServiceRole> {
     tx: Arc<Mutex<mpsc::Sender<TxJsonRpcMessage<R>>>>,
     rx: Arc<Mutex<mpsc::Receiver<RxJsonRpcMessage<R>>>>,

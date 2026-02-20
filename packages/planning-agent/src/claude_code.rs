@@ -31,12 +31,12 @@ impl Hook for ClaudeCode {
             .arg("--verbose")
             .arg("--output-format")
             .arg("stream-json")
-            .arg(format!("An engineer has produced this implementation plan: <plan>{}</plan>. Implement the feature per the plan.", plan_contents))
+            .arg(format!("An engineer has produced this implementation plan: <plan>{plan_contents}</plan>. Implement the feature per the plan."))
             .current_dir(&input.working_directory)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("Failed to spawn claude CLI: {}", e))?;
+            .map_err(|e| format!("Failed to spawn claude CLI: {e}"))?;
 
         if let Some(stdout) = child.stdout.take() {
             let reader = BufReader::new(stdout);
@@ -51,10 +51,10 @@ impl Hook for ClaudeCode {
         let status = child
             .wait()
             .await
-            .map_err(|e| format!("Failed to wait for claude CLI: {}", e))?;
+            .map_err(|e| format!("Failed to wait for claude CLI: {e}"))?;
 
         if !status.success() {
-            return Err(format!("Claude CLI failed with status {}", status).into());
+            return Err(format!("Claude CLI failed with status {status}").into());
         }
 
         tracing::info!("Claude Code successfully executed the plan");

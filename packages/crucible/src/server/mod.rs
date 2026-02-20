@@ -45,7 +45,7 @@ pub enum SseEvent {
 }
 
 impl SseEvent {
-    /// Get the run_id associated with this event
+    /// Get the `run_id` associated with this event
     pub fn run_id(&self) -> Uuid {
         match self {
             SseEvent::EvalStarted { run_id, .. } => *run_id,
@@ -55,7 +55,7 @@ impl SseEvent {
         }
     }
 
-    /// Get the eval_id associated with this event, if applicable
+    /// Get the `eval_id` associated with this event, if applicable
     pub fn eval_id(&self) -> Option<Uuid> {
         match self {
             SseEvent::EvalStarted { eval_id, .. } => Some(*eval_id),
@@ -243,7 +243,7 @@ async fn list_runs<T: ResultsStore>(State(state): State<AppState<T>>) -> impl In
         Ok(runs) => axum::Json(runs).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to list runs: {}", e),
+            format!("Failed to list runs: {e}"),
         )
             .into_response(),
     }
@@ -258,7 +258,7 @@ async fn get_run<T: ResultsStore>(
         Ok(results) => axum::Json(results).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read run: {}", e),
+            format!("Failed to read run: {e}"),
         )
             .into_response(),
     }
@@ -273,12 +273,12 @@ async fn get_run_eval<T: ResultsStore>(
         Ok(Some(result)) => axum::Json(result).into_response(),
         Ok(None) => (
             StatusCode::NOT_FOUND,
-            format!("Eval {} not found in run {}", eval_id, run_id),
+            format!("Eval {eval_id} not found in run {run_id}"),
         )
             .into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read eval result: {}", e),
+            format!("Failed to read eval result: {e}"),
         )
             .into_response(),
     }
@@ -293,7 +293,7 @@ async fn get_eval_traces_handler<T: ResultsStore>(
         Ok(traces) => axum::Json(traces).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read traces: {}", e),
+            format!("Failed to read traces: {e}"),
         )
             .into_response(),
     }

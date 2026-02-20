@@ -5,7 +5,7 @@ pub enum McpError {
     /// Tool not found in the registry
     #[error("Tool not found: {0}")]
     ToolNotFound(String),
-    /// Invalid tool name format (should be server__tool)
+    /// Invalid tool name format (should be `server__tool`)
     #[error("Invalid tool name format: {0}")]
     InvalidToolNameFormat(String),
     /// MCP server not found

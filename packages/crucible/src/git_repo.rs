@@ -7,7 +7,7 @@ pub struct GitRepo {
 }
 
 impl GitRepo {
-    /// Create a GitRepo instance from an existing repository path
+    /// Create a `GitRepo` instance from an existing repository path
     pub fn from_path(path: &Path) -> Self {
         GitRepo {
             path: path.to_path_buf(),
@@ -33,7 +33,7 @@ impl GitRepo {
             .arg(dest)
             .output()
             .map_err(|e| {
-                GitRepoError::CommandFailed(format!("Failed to execute git clone: {}", e))
+                GitRepoError::CommandFailed(format!("Failed to execute git clone: {e}"))
             })?;
 
         if !output.status.success() {
@@ -57,7 +57,7 @@ impl GitRepo {
             .arg(reference)
             .output()
             .map_err(|e| {
-                GitRepoError::CommandFailed(format!("Failed to execute git checkout: {}", e))
+                GitRepoError::CommandFailed(format!("Failed to execute git checkout: {e}"))
             })?;
 
         if !output.status.success() {
@@ -90,19 +90,16 @@ impl GitRepo {
         let mut cmd = Command::new("git");
         cmd.arg("-C").arg(&self.path).arg("diff");
 
-        match to_commit {
-            Some(to) => {
-                tracing::debug!("Getting diff from {} to {}", from_commit, to);
-                cmd.arg(format!("{}..{}", from_commit, to));
-            }
-            None => {
-                tracing::debug!("Getting diff from {} to working directory", from_commit);
-                cmd.arg(from_commit);
-            }
+        if let Some(to) = to_commit {
+            tracing::debug!("Getting diff from {} to {}", from_commit, to);
+            cmd.arg(format!("{from_commit}..{to}"));
+        } else {
+            tracing::debug!("Getting diff from {} to working directory", from_commit);
+            cmd.arg(from_commit);
         }
 
         let output = cmd.output().map_err(|e| {
-            GitRepoError::CommandFailed(format!("Failed to execute git diff: {}", e))
+            GitRepoError::CommandFailed(format!("Failed to execute git diff: {e}"))
         })?;
 
         if !output.status.success() {
@@ -156,15 +153,15 @@ pub enum GitRepoError {
 impl std::fmt::Display for GitRepoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GitRepoError::CommandFailed(msg) => write!(f, "Git command failed: {}", msg),
+            GitRepoError::CommandFailed(msg) => write!(f, "Git command failed: {msg}"),
             GitRepoError::CloneFailed(reason) => {
-                write!(f, "Failed to clone repository: {}", reason)
+                write!(f, "Failed to clone repository: {reason}")
             }
             GitRepoError::CheckoutFailed { reference, reason } => {
-                write!(f, "Failed to checkout '{}': {}", reference, reason)
+                write!(f, "Failed to checkout '{reference}': {reason}")
             }
             GitRepoError::DiffFailed { from, to, reason } => {
-                write!(f, "Failed to diff '{}..{}': {}", from, to, reason)
+                write!(f, "Failed to diff '{from}..{to}': {reason}")
             }
         }
     }

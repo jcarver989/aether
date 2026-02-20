@@ -47,8 +47,7 @@ impl Component for ConfigMenu {
                 let current_name = entry
                     .values
                     .get(entry.current_value_index)
-                    .map(|v| v.name.as_str())
-                    .unwrap_or("?");
+                    .map_or("?", |v| v.name.as_str());
                 let current_disabled = entry
                     .values
                     .get(entry.current_value_index)

@@ -21,7 +21,7 @@ pub fn process_anthropic_stream<T: Stream<Item = Result<String>> + Send + Sync +
         while let Some(result) = stream.next().await {
             match result {
                 Ok(line) => {
-                    if line.trim().is_empty() || line.starts_with(":") {
+                    if line.trim().is_empty() || line.starts_with(':') {
                         continue;
                     }
 
@@ -77,7 +77,7 @@ fn process_stream_event(
     active_tool_calls: &mut HashMap<String, (String, String)>,
     index_to_id: &mut HashMap<u32, String>,
 ) -> Result<(Option<LlmResponse>, Option<StopReason>)> {
-    use StreamEvent::*;
+    use StreamEvent::{MessageStart, ContentBlockStart, ContentBlockDelta, ContentBlockStop, MessageDelta, MessageStop, Error, Ping};
     match event {
         MessageStart { data: _start_data } => {
             debug!("Message started");
@@ -99,10 +99,10 @@ fn process_stream_event(
 
         ContentBlockDelta { data: delta_data } => match delta_data.delta {
             ContentBlockDeltaData::TextDelta { text } => {
-                if !text.is_empty() {
-                    Ok((Some(LlmResponse::Text { chunk: text }), None))
-                } else {
+                if text.is_empty() {
                     Ok((None, None))
+                } else {
+                    Ok((Some(LlmResponse::Text { chunk: text }), None))
                 }
             }
 

@@ -50,9 +50,7 @@ impl Client for AutoApproveClient {
                     o.kind,
                     PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways
                 )
-            })
-            .map(|o| o.option_id.clone())
-            .unwrap_or_else(|| args.options[0].option_id.clone());
+            }).map_or_else(|| args.options[0].option_id.clone(), |o| o.option_id.clone());
 
         Ok(RequestPermissionResponse::new(
             RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
@@ -75,7 +73,7 @@ impl Client for AutoApproveClient {
 
 /// Spawn an agent subprocess and establish an ACP session.
 ///
-/// The handshake (initialize + new_session) runs on a dedicated !Send thread.
+/// The handshake (initialize + `new_session`) runs on a dedicated !Send thread.
 /// `client_factory` creates the ACP [`Client`](acp::Client) implementation,
 /// receiving the event sender so it can forward protocol events.
 ///
@@ -205,9 +203,7 @@ where
 
     let agent_name = init_resp
         .agent_info
-        .as_ref()
-        .map(|info| info.title.as_deref().unwrap_or(&info.name).to_string())
-        .unwrap_or_else(|| "agent".to_string());
+        .as_ref().map_or_else(|| "agent".to_string(), |info| info.title.as_deref().unwrap_or(&info.name).to_string());
 
     info!(
         "ACP initialized: protocol={:?}, agent_info={:?}",

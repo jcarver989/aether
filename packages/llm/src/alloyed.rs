@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::Context;
 
-/// A ModelProvider that alternates models on every turn via a round-robin strategy.
+/// A `ModelProvider` that alternates models on every turn via a round-robin strategy.
 /// Alternating between models with different strengths and weaknesses can improve the agent's performance.
 pub struct AlloyedModelProvider {
     providers: Vec<Box<dyn StreamingModelProvider>>,

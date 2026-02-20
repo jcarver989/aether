@@ -21,12 +21,9 @@ pub fn expand_env_vars(template: &str) -> Result<String, VarError> {
     let mut missing_var = None;
     let result = bracketed_re.replace_all(&result, |caps: &regex::Captures| {
         let var_name = &caps[1];
-        match env::var(var_name) {
-            Ok(value) => value,
-            Err(_) => {
-                missing_var = Some(var_name.to_string());
-                caps[0].to_string() // Keep original if not found
-            }
+        if let Ok(value) = env::var(var_name) { value } else {
+            missing_var = Some(var_name.to_string());
+            caps[0].to_string() // Keep original if not found
         }
     });
     if let Some(var) = missing_var {
@@ -36,12 +33,9 @@ pub fn expand_env_vars(template: &str) -> Result<String, VarError> {
     // Replace $VAR with env var
     let result = simple_re.replace_all(&result, |caps: &regex::Captures| {
         let var_name = &caps[1];
-        match env::var(var_name) {
-            Ok(value) => value,
-            Err(_) => {
-                missing_var = Some(var_name.to_string());
-                caps[0].to_string()
-            }
+        if let Ok(value) = env::var(var_name) { value } else {
+            missing_var = Some(var_name.to_string());
+            caps[0].to_string()
         }
     });
     if let Some(var) = missing_var {

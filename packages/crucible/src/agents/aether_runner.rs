@@ -33,7 +33,7 @@ pub struct AetherRunner<T> {
 }
 
 impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
-    /// Create a new AetherRunner with the given LLM provider
+    /// Create a new `AetherRunner` with the given LLM provider
     pub fn new(llm: T) -> Self {
         Self {
             llm,
@@ -88,7 +88,7 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
                 })?)
                 .await
                 .map_err(|e| {
-                    RunError::ConfigurationError(format!("Failed to load mcp.json: {}", e))
+                    RunError::ConfigurationError(format!("Failed to load mcp.json: {e}"))
                 })?;
         }
 
@@ -96,7 +96,7 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
     }
 }
 
-/// Convert AgentMessages to AgentRunnerMessages in real-time, streaming them as they arrive
+/// Convert `AgentMessages` to `AgentRunnerMessages` in real-time, streaming them as they arrive
 async fn stream_agent_messages(
     mut rx: Receiver<AgentMessage>,
     tx: Sender<AgentRunnerMessage>,
@@ -274,7 +274,7 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
         } = mcp_builder
             .spawn()
             .await
-            .map_err(|e| RunError::ExecutionFailed(format!("Failed to spawn MCP: {}", e)))?;
+            .map_err(|e| RunError::ExecutionFailed(format!("Failed to spawn MCP: {e}")))?;
 
         let llm = self.llm.clone();
         let mut agent_builder = agent(llm)
@@ -288,7 +288,7 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
         let (agent_tx, agent_rx, _handle) = agent_builder
             .spawn()
             .await
-            .map_err(|e| RunError::ExecutionFailed(format!("Failed to spawn agent: {}", e)))?;
+            .map_err(|e| RunError::ExecutionFailed(format!("Failed to spawn agent: {e}")))?;
 
         agent_tx
             .send(UserMessage::text(config.task_prompt))

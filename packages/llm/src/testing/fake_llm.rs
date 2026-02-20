@@ -5,7 +5,7 @@ use crate::{Context, LlmResponse, LlmResponseStream, StreamingModelProvider};
 pub struct FakeLlmProvider {
     responses: Vec<Vec<LlmResponse>>,
     call_count: std::sync::atomic::AtomicUsize,
-    /// Captured contexts from each call to stream_response
+    /// Captured contexts from each call to `stream_response`
     captured_contexts: Arc<Mutex<Vec<Context>>>,
 }
 

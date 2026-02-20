@@ -211,7 +211,7 @@ impl Task {
             && self.deps.iter().all(|dep| completed_tasks.contains(&dep))
     }
 
-    /// Update the task's updated_at timestamp
+    /// Update the task's `updated_at` timestamp
     pub fn touch(&mut self) {
         self.updated_at = Utc::now();
     }

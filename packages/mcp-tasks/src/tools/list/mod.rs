@@ -6,7 +6,7 @@ use crate::task_store::TaskStore;
 use crate::types::TaskStatus;
 use mcp_coding::display_meta::{TodoItemMeta, ToolDisplayMeta};
 
-/// Input for the task_list tool
+/// Input for the `task_list` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskListInput {
@@ -14,7 +14,7 @@ pub struct TaskListInput {
     #[serde(default)]
     pub assignee: Option<String>,
 
-    /// Filter by status: pending, in_progress, completed, or blocked
+    /// Filter by status: pending, `in_progress`, completed, or blocked
     #[serde(default)]
     pub status: Option<TaskStatusFilter>,
 
@@ -48,7 +48,7 @@ impl From<TaskStatusFilter> for TaskStatus {
     }
 }
 
-/// Output for the task_list tool
+/// Output for the `task_list` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TaskListOutput {
@@ -112,11 +112,11 @@ pub fn execute_task_list(input: TaskListInput, store: &TaskStore) -> TaskListOut
     let filter_desc = build_filter_description(&input);
 
     let message = if count == 0 {
-        format!("No tasks found{}", filter_desc)
+        format!("No tasks found{filter_desc}")
     } else if count == 1 {
-        format!("Found 1 task{}", filter_desc)
+        format!("Found 1 task{filter_desc}")
     } else {
-        format!("Found {} tasks{}", count, filter_desc)
+        format!("Found {count} tasks{filter_desc}")
     };
 
     let todo_items: Vec<TodoItemMeta> = tasks
@@ -142,10 +142,10 @@ fn build_filter_description(input: &TaskListInput) -> String {
         parts.push("ready to start".to_string());
     }
     if let Some(tree_id) = &input.tree_id {
-        parts.push(format!("in tree {}", tree_id));
+        parts.push(format!("in tree {tree_id}"));
     }
     if let Some(assignee) = &input.assignee {
-        parts.push(format!("assigned to {}", assignee));
+        parts.push(format!("assigned to {assignee}"));
     }
     if let Some(status) = input.status {
         let status_str = match status {
@@ -154,7 +154,7 @@ fn build_filter_description(input: &TaskListInput) -> String {
             TaskStatusFilter::Completed => "completed",
             TaskStatusFilter::Blocked => "blocked",
         };
-        parts.push(format!("with status {}", status_str));
+        parts.push(format!("with status {status_str}"));
     }
 
     if parts.is_empty() {

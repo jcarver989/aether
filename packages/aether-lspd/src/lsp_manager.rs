@@ -37,7 +37,7 @@ pub trait LspOperation: Send + Sync {
     fn default_response() -> Self::Response;
 }
 
-/// Wrapper for GotoImplementation (uses same params as GotoDefinition)
+/// Wrapper for `GotoImplementation` (uses same params as `GotoDefinition`)
 pub struct GotoImplementation(pub GotoDefinitionParams);
 
 impl LspOperation for GotoDefinitionParams {
@@ -260,7 +260,7 @@ impl LspHandle {
             } else {
                 serde_json::from_value(value).map_err(|e| LspErrorInfo {
                     code: -1,
-                    message: format!("Parse error: {}", e),
+                    message: format!("Parse error: {e}"),
                 })
             }
         })
@@ -288,7 +288,7 @@ impl LspHandle {
 
 /// Spawn a new LSP server process
 async fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<LspHandle> {
-    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let args_str: Vec<&str> = args.iter().map(std::string::String::as_str).collect();
 
     let mut process = Command::new(command)
         .args(&args_str)
@@ -296,7 +296,7 @@ async fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonRe
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| DaemonError::LspSpawnFailed(format!("{}: {}", command, e)))?;
+        .map_err(|e| DaemonError::LspSpawnFailed(format!("{command}: {e}")))?;
 
     let stdin = process
         .stdin
@@ -358,7 +358,7 @@ async fn run_lsp_handler(
     loop {
         match read_lsp_message(&mut reader).await {
             Ok(Some(msg)) => {
-                if msg.get("id").and_then(|v| v.as_i64()) == Some(1) {
+                if msg.get("id").and_then(serde_json::Value::as_i64) == Some(1) {
                     tracing::debug!("LSP initialized");
                     break;
                 }
@@ -438,10 +438,10 @@ async fn handle_lsp_message(
     diagnostics_cache: &RwLock<HashMap<Uri, PublishDiagnosticsParams>>,
 ) {
     // Handle response messages
-    if let Some(id) = msg.get("id").and_then(|v| v.as_i64()) {
+    if let Some(id) = msg.get("id").and_then(serde_json::Value::as_i64) {
         if let Some(tx) = pending.remove(&id) {
             let result = if let Some(error) = msg.get("error") {
-                let code = error.get("code").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+                let code = error.get("code").and_then(serde_json::Value::as_i64).unwrap_or(-1) as i32;
                 let message = error
                     .get("message")
                     .and_then(|v| v.as_str())

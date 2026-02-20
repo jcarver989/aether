@@ -49,7 +49,7 @@ impl OpenAiChatProvider for OllamaProvider {
         &self.model
     }
 
-    fn provider_name(&self) -> &str {
+    fn provider_name(&self) -> &'static str {
         "Ollama"
     }
 }

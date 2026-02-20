@@ -79,7 +79,7 @@ pub enum FileError {
     #[error("String replacement failed for file {path}: string '{pattern}' not found")]
     PatternNotFound { path: String, pattern: String },
 
-    /// IO error (wraps std::io::Error)
+    /// IO error (wraps `std::io::Error`)
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }

@@ -63,7 +63,7 @@ pub fn load_skill_metadata(skills_dir: &Path) -> Vec<SkillInfo> {
         .ok()
         .map(|entries| {
             entries
-                .filter_map(|entry| entry.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.path().is_dir())
                 .filter_map(|entry| SkillInfo::from_dir(&entry.path()))
                 .collect::<Vec<_>>()

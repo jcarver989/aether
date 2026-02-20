@@ -4,7 +4,7 @@ Use this to query tasks by various criteria: assignee, status, tree, or readines
 
 Filter options:
 - `assignee`: Filter by agent/worker assigned to tasks
-- `status`: Filter by status (pending, in_progress, completed, blocked)
+- `status`: Filter by status (pending, `in_progress`, completed, blocked)
 - `tree_id`: List all tasks in a specific task tree
 - `ready_only`: Only return tasks ready to start (pending with all deps completed)
 

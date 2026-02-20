@@ -231,7 +231,7 @@ pub struct LspErrorResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolError {
     pub message: String,
-    /// Optional client_id for correlating errors back to LSP requests
+    /// Optional `client_id` for correlating errors back to LSP requests
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<i64>,
 }
@@ -273,7 +273,7 @@ where
     if len > MAX_MESSAGE_SIZE {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Message too large: {} bytes", len),
+            format!("Message too large: {len} bytes"),
         ));
     }
 

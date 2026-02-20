@@ -1,11 +1,11 @@
 use rmcp::model::Root;
 use std::path::{Path, PathBuf};
 
-/// Convert a PathBuf to a file:// URI string.
+/// Convert a `PathBuf` to a file:// URI string.
 ///
 /// This function handles platform-specific path formats:
-/// - Unix: /home/user/project -> file:///home/user/project
-/// - Windows: C:\Users\user\project -> file:///C:/Users/user/project
+/// - Unix: /home/user/project -> <file:///home/user/project>
+/// - Windows: C:\Users\user\project -> <file:///C:/Users/user/project>
 pub fn path_to_file_uri(path: &Path) -> String {
     #[cfg(unix)]
     {
@@ -26,7 +26,7 @@ pub fn path_to_file_uri(path: &Path) -> String {
     }
 }
 
-/// Create a Root from a PathBuf.
+/// Create a Root from a `PathBuf`.
 ///
 /// The path is converted to an absolute file:// URI.
 pub fn root_from_path(path: PathBuf, name: Option<String>) -> Root {

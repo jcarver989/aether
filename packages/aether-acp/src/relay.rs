@@ -138,32 +138,29 @@ async fn handle_prompt(
     loop {
         tokio::select! {
             msg = agent_rx.recv() => {
-                match msg {
-                    Some(msg) => {
-                        forward_notification(actor_handle, acp_session_id, &msg).await;
+                if let Some(msg) = msg {
+                    forward_notification(actor_handle, acp_session_id, &msg).await;
 
-                        match &msg {
-                            AgentMessage::Cancelled { .. } => {
-                                early_stop_reason = Some(map_agent_message_to_stop_reason(&msg));
-                            }
-                            AgentMessage::Done => {
-                                let reason = early_stop_reason
-                                    .unwrap_or_else(|| map_agent_message_to_stop_reason(&msg));
-                                info!("Done received, stop reason: {:?}", reason);
-                                return Ok(reason);
-                            }
-                            AgentMessage::Error { .. } => {
-                                let reason = map_agent_message_to_stop_reason(&msg);
-                                info!("Error received, stop reason: {:?}", reason);
-                                return Ok(reason);
-                            }
-                            _ => {}
+                    match &msg {
+                        AgentMessage::Cancelled { .. } => {
+                            early_stop_reason = Some(map_agent_message_to_stop_reason(&msg));
                         }
+                        AgentMessage::Done => {
+                            let reason = early_stop_reason
+                                .unwrap_or_else(|| map_agent_message_to_stop_reason(&msg));
+                            info!("Done received, stop reason: {:?}", reason);
+                            return Ok(reason);
+                        }
+                        AgentMessage::Error { .. } => {
+                            let reason = map_agent_message_to_stop_reason(&msg);
+                            info!("Error received, stop reason: {:?}", reason);
+                            return Ok(reason);
+                        }
+                        _ => {}
                     }
-                    None => {
-                        error!("Agent channel closed unexpectedly");
-                        return Err(RelayError::ChannelClosed);
-                    }
+                } else {
+                    error!("Agent channel closed unexpectedly");
+                    return Err(RelayError::ChannelClosed);
                 }
             }
             Some(elicitation) = elicitation_rx.recv() => {
@@ -339,7 +336,7 @@ async fn expand_slash_command(
         .find(|p| p.name.split("__").last().unwrap_or("") == command_name)
         .ok_or_else(|| format!("Slash command '{command_name}' not found"))?;
 
-    let namespaced_name = matching_prompt.name.to_string();
+    let namespaced_name = matching_prompt.name.clone();
 
     let (tx_get, rx_get) = oneshot::channel();
     mcp_tx
@@ -357,7 +354,7 @@ async fn expand_slash_command(
 
     if let Some(message) = prompt_result.messages.first() {
         match &message.content {
-            rmcp::model::PromptMessageContent::Text { text } => Ok(text.to_string()),
+            rmcp::model::PromptMessageContent::Text { text } => Ok(text.clone()),
             _ => Err("Prompt message does not contain text content".into()),
         }
     } else {

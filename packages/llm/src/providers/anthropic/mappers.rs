@@ -29,13 +29,13 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
                         cache_control: None,
                     });
                 } else {
-                    let mut blocks = if !content.is_empty() {
+                    let mut blocks = if content.is_empty() {
+                        Vec::new()
+                    } else {
                         vec![ContentBlock::Text {
                             text: content.clone(),
                             cache_control: None,
                         }]
-                    } else {
-                        Vec::new()
                     };
 
                     for tool_call in tool_calls {

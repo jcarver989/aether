@@ -7,13 +7,13 @@ use async_openai::types::chat::{
 use serde::{Deserialize, Serialize};
 
 /// Unified custom types for OpenAI-compatible APIs that deviate slightly from the standard.
-/// This handles quirks from providers like OpenRouter, Z.ai, and potentially others.
+/// This handles quirks from providers like `OpenRouter`, Z.ai, and potentially others.
 ///
 /// Common deviations handled:
 /// - Missing 'object' field (z.ai)
 /// - Negative token counts (openrouter)
 /// - Additional finish reasons like 'error' (openrouter)
-/// - Optional system_fingerprint and usage fields
+/// - Optional `system_fingerprint` and usage fields
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -118,7 +118,7 @@ impl From<ChatCompletionStreamChoice> for ChatChoiceStream {
         ChatChoiceStream {
             index: choice.index as u32,
             delta: choice.delta.into(),
-            finish_reason: choice.finish_reason.map(|r| r.into()),
+            finish_reason: choice.finish_reason.map(std::convert::Into::into),
             logprobs: None,
         }
     }

@@ -12,7 +12,7 @@ use crate::lsp::common::{LocationResult, uri_to_path};
 use crate::tools_trait::CodingTools;
 use aether_lspd::symbol_kind_to_string;
 
-/// A serializable representation of a CallHierarchyItem
+/// A serializable representation of a `CallHierarchyItem`
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CallHierarchyItemResult {
@@ -29,7 +29,7 @@ pub struct CallHierarchyItemResult {
     pub range: LocationResult,
     /// The range of the symbol name
     pub selection_range: LocationResult,
-    /// JSON-serialized CallHierarchyItem for roundtrip (used internally)
+    /// JSON-serialized `CallHierarchyItem` for roundtrip (used internally)
     pub lsp_item: String,
 }
 
@@ -69,7 +69,7 @@ impl TryFrom<CallHierarchyItemResult> for CallHierarchyItem {
 
     fn try_from(result: CallHierarchyItemResult) -> Result<Self, String> {
         serde_json::from_str(&result.lsp_item)
-            .map_err(|e| format!("Failed to deserialize CallHierarchyItem: {}", e))
+            .map_err(|e| format!("Failed to deserialize CallHierarchyItem: {e}"))
     }
 }
 
@@ -83,13 +83,13 @@ pub enum CallHierarchyDirection {
     Outgoing,
 }
 
-/// Input for the lsp_call_hierarchy tool
+/// Input for the `lsp_call_hierarchy` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct LspCallHierarchyInput {
     /// The direction of traversal
     pub direction: CallHierarchyDirection,
-    /// The call hierarchy item to query (from lsp_symbol prepare_call_hierarchy)
+    /// The call hierarchy item to query (from `lsp_symbol` `prepare_call_hierarchy`)
     pub item: CallHierarchyItemResult,
 }
 
@@ -103,7 +103,7 @@ pub struct CallSiteResult {
     pub call_sites: Vec<LocationResult>,
 }
 
-/// Output from the lsp_call_hierarchy tool
+/// Output from the `lsp_call_hierarchy` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LspCallHierarchyOutput {
@@ -115,7 +115,7 @@ pub struct LspCallHierarchyOutput {
     pub total_count: usize,
 }
 
-/// Execute the lsp_call_hierarchy operation
+/// Execute the `lsp_call_hierarchy` operation
 pub async fn execute_lsp_call_hierarchy<T: CodingTools>(
     input: LspCallHierarchyInput,
     tools: &T,

@@ -10,7 +10,7 @@ pub type LlmResponseStream = Pin<Box<dyn Stream<Item = LlmResult<LlmResponse>> +
 
 /// Factory trait for constructing model providers
 ///
-/// This trait is separate from StreamingModelProvider to allow trait objects
+/// This trait is separate from `StreamingModelProvider` to allow trait objects
 /// (Box<dyn StreamingModelProvider>) to work without construction methods.
 pub trait ProviderFactory: Sized {
     /// Create provider from environment variables and default configuration

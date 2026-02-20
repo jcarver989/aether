@@ -13,7 +13,7 @@ use crate::providers::{
 use crate::{LlmError, ProviderFactory, StreamingModelProvider, alloyed::AlloyedModelProvider};
 
 /// Parser that turns a provider:model string (e.g. anthropic:claude-sonnet-4.5) into
-/// a StreamingLlmProvider
+/// a `StreamingLlmProvider`
 ///
 pub struct ModelProviderParser {
     factories: HashMap<String, CreateProviderFn>,
@@ -74,13 +74,13 @@ impl ModelProviderParser {
     /// # Format
     ///
     /// - `"provider:model"` - Single provider (e.g., "anthropic:claude-3.5-sonnet")
-    /// - `"provider1:model1,provider2:model2"` - Multiple providers create an AlloyedModelProvider
+    /// - `"provider1:model1,provider2:model2"` - Multiple providers create an `AlloyedModelProvider`
     ///
     pub fn parse(
         &self,
         models_str: &str,
     ) -> crate::Result<(Box<dyn StreamingModelProvider>, LlmModel)> {
-        let provider_model_pairs: Vec<&str> = models_str.split(',').map(|s| s.trim()).collect();
+        let provider_model_pairs: Vec<&str> = models_str.split(',').map(str::trim).collect();
         if provider_model_pairs.is_empty() {
             return Err(LlmError::Other("No models provided".to_string()));
         }
@@ -117,7 +117,7 @@ impl ModelProviderParser {
 
 /// Factory function type for creating model providers
 ///
-/// Takes a model name and returns a boxed StreamingModelProvider
+/// Takes a model name and returns a boxed `StreamingModelProvider`
 pub type CreateProviderFn =
     Box<dyn Fn(&str) -> crate::Result<Box<dyn StreamingModelProvider>> + Send + Sync>;
 

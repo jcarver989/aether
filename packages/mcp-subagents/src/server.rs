@@ -23,7 +23,7 @@ use crate::subagent_file::{AgentFile, SubAgentInfo, load_agent_metadata};
 /// Callback type for reporting agent progress during subagent execution.
 type ProgressCallback = Box<dyn Fn(&str, &str, &AgentMessage) + Send + Sync>;
 
-/// CLI arguments for SubAgentsMcp server
+/// CLI arguments for `SubAgentsMcp` server
 #[derive(Debug, Clone, Parser)]
 pub struct SubAgentsMcpArgs {
     /// Base directory for sub-agents (contains 'sub-agents' subdirectory)

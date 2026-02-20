@@ -241,7 +241,7 @@ fn should_redact_header(name: &str) -> bool {
 
 fn format_headers(headers: &header::HeaderMap) -> String {
     let mut parts = Vec::new();
-    for (name, value) in headers.iter() {
+    for (name, value) in headers {
         let name_str = name.as_str();
         let value_str = if should_redact_header(name_str) {
             "<redacted>".to_string()

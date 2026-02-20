@@ -13,13 +13,13 @@ use super::{
 
 /// Default implementation that uses local filesystem operations.
 ///
-/// This is the standard behavior for CodingMcp when running outside
+/// This is the standard behavior for `CodingMcp` when running outside
 /// of an ACP context. For LSP integration, wrap this with `LspAwareCodingTools`.
 #[derive(Debug, Default)]
 pub struct DefaultCodingTools;
 
 impl DefaultCodingTools {
-    /// Create a new DefaultCodingTools instance
+    /// Create a new `DefaultCodingTools` instance
     pub fn new() -> Self {
         Self
     }

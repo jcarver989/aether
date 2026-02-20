@@ -114,13 +114,13 @@ impl ToolCallStatuses {
             .any(|tc| matches!(tc.status, TrackedStatus::Running))
     }
 
-    /// Handle a new tool call from ACP SessionUpdate::ToolCall.
+    /// Handle a new tool call from ACP `SessionUpdate::ToolCall`.
     pub fn on_tool_call(&mut self, tool_call: &acp::ToolCall) {
         let id = tool_call.tool_call_id.0.to_string();
         let arguments = tool_call
             .raw_input
             .as_ref()
-            .map(|v| v.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default();
 
         if let Some(existing) = self.tool_calls.get_mut(&id) {
@@ -142,7 +142,7 @@ impl ToolCallStatuses {
         );
     }
 
-    /// Handle a tool call update from ACP SessionUpdate::ToolCallUpdate.
+    /// Handle a tool call update from ACP `SessionUpdate::ToolCallUpdate`.
     pub fn on_tool_call_update(&mut self, update: &acp::ToolCallUpdate) {
         let id = update.tool_call_id.0.to_string();
 
@@ -175,8 +175,7 @@ impl ToolCallStatuses {
     pub fn is_tool_running(&self, id: &str) -> bool {
         self.tool_calls
             .get(id)
-            .map(|tc| matches!(tc.status, TrackedStatus::Running))
-            .unwrap_or(false)
+            .is_some_and(|tc| matches!(tc.status, TrackedStatus::Running))
     }
 
     pub fn remove_tool(&mut self, id: &str) {

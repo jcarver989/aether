@@ -124,11 +124,11 @@ impl App {
                 vec![AppEvent::Render]
             }
             KeyCode::Backspace => {
-                if !self.input_buffer.is_empty() {
+                if self.input_buffer.is_empty() {
+                    vec![]
+                } else {
                     self.input_buffer.pop();
                     vec![AppEvent::Render]
-                } else {
-                    vec![]
                 }
             }
             KeyCode::Enter => self.execute_input(),
@@ -632,7 +632,7 @@ impl App {
     }
 
     fn apply_file_selection(&mut self, path: PathBuf, display_name: String) {
-        let mention = format!("@{}", display_name);
+        let mention = format!("@{display_name}");
         self.selected_mentions.push(SelectedFileMention {
             mention: mention.clone(),
             path,
@@ -713,7 +713,7 @@ impl App {
 
         let file_uri =
             Url::from_file_path(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
-                .map_err(|_| format!("Failed to build file URI for {display_name}"))?
+                .map_err(|()| format!("Failed to build file URI for {display_name}"))?
                 .to_string();
 
         let mime_type = mime_guess::from_path(path)

@@ -112,8 +112,7 @@ fn style_mentions(input: &str, context: &RenderContext) -> Line {
 
         let mention_end = input[at_pos..]
             .find(' ')
-            .map(|i| at_pos + i)
-            .unwrap_or(input.len());
+            .map_or(input.len(), |i| at_pos + i);
         styled.push_styled(&input[at_pos..mention_end], context.theme.info);
         last_pos = mention_end;
     }

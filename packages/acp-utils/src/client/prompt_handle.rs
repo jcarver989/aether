@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 
 use super::error::AcpClientError;
 
-/// Commands sent from the main thread to the ACP LocalSet thread.
+/// Commands sent from the main thread to the ACP `LocalSet` thread.
 pub(crate) enum PromptCommand {
     Prompt {
         session_id: acp::SessionId,

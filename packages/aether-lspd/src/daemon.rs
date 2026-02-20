@@ -84,7 +84,7 @@ async fn run_listener_loop(
                 }
             }
 
-            _ = check_idle_timeout(client_count.clone(), last_activity.clone(), idle_timeout) => {
+            () = check_idle_timeout(client_count.clone(), last_activity.clone(), idle_timeout) => {
                 tracing::info!("Idle timeout reached, shutting down");
                 return Ok(());
             }

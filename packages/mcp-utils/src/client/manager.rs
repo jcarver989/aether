@@ -116,7 +116,7 @@ impl McpManager {
     }
 
     pub async fn add_mcp(&mut self, config: McpServerConfig) -> Result<()> {
-        use McpServerConfig::*;
+        use McpServerConfig::{Http, Stdio, InMemory};
         match config {
             Http { name, config } => self.connect_http_server(name, config).await,
 
@@ -466,7 +466,7 @@ impl McpManager {
     /// Set the roots advertised to MCP servers.
     ///
     /// This updates the roots and sends notifications to all connected servers
-    /// that support the roots/list_changed notification.
+    /// that support the `roots/list_changed` notification.
     pub async fn set_roots(&mut self, new_roots: Vec<Root>) -> Result<()> {
         // Update stored roots
         {
@@ -480,7 +480,7 @@ impl McpManager {
         Ok(())
     }
 
-    /// Send roots/list_changed notification to all connected servers.
+    /// Send `roots/list_changed` notification to all connected servers.
     ///
     /// This prompts servers to re-request the roots via the roots/list endpoint.
     /// Servers that don't support roots will simply ignore the notification.
@@ -490,8 +490,7 @@ impl McpManager {
             if let Err(e) = server_conn.client.notify_roots_list_changed().await {
                 // Only log errors for debugging; it's expected that some servers may not support roots
                 eprintln!(
-                    "Note: server '{}' did not accept roots notification: {}",
-                    server_name, e
+                    "Note: server '{server_name}' did not accept roots notification: {e}"
                 );
             }
         }

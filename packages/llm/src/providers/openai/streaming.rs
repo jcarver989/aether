@@ -9,7 +9,7 @@ use crate::providers::tool_call_collector::ToolCallCollector;
 use crate::{LlmError, LlmResponse, Result, StopReason};
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
-/// Works with standard async_openai CreateChatCompletionStreamResponse types.
+/// Works with standard `async_openai` `CreateChatCompletionStreamResponse` types.
 pub fn process_completion_stream<E: Into<LlmError> + Send>(
     mut stream: impl Stream<Item = std::result::Result<CreateChatCompletionStreamResponse, E>>
     + Send

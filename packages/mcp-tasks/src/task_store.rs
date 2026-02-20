@@ -239,7 +239,7 @@ impl TaskStore {
             .unwrap()
             .as_nanos();
 
-        let pid = std::process::id() as u128;
+        let pid = u128::from(std::process::id());
         let count = self.index.len() as u128;
         let mixed = now.wrapping_add(pid << 16).wrapping_add(count);
         format!("{:08x}", (mixed as u64) & 0xFFFFFFFF)
@@ -272,7 +272,7 @@ impl TaskStore {
         let mut file = OpenOptions::new().create(true).append(true).open(path)?;
 
         let json = serde_json::to_string(task)?;
-        writeln!(file, "{}", json)?;
+        writeln!(file, "{json}")?;
 
         Ok(())
     }
@@ -290,7 +290,7 @@ impl TaskStore {
         let mut file = File::create(&path)?;
         for task in tasks {
             let json = serde_json::to_string(task)?;
-            writeln!(file, "{}", json)?;
+            writeln!(file, "{json}")?;
         }
 
         Ok(())

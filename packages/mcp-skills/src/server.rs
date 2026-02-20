@@ -23,7 +23,7 @@ use super::tools::{ListSkillsOutput, LoadSkillsInput, LoadSkillsOutput, Skill, S
 use crate::prompt_file::{PromptFile, to_prompt};
 use crate::skill_file::{SkillInfo as SkillMetadata, SkillsFile, load_skill_metadata};
 
-/// CLI arguments for SkillsMcp server
+/// CLI arguments for `SkillsMcp` server
 #[derive(Debug, Clone, Parser)]
 pub struct SkillsMcpArgs {
     /// Base directory for skills (contains 'commands' and 'skills' subdirectories)

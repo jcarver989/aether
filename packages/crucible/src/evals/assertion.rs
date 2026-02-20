@@ -11,7 +11,7 @@ pub struct LlmJudgeContext<'a> {
     pub messages: &'a [AgentRunnerMessage],
 }
 
-impl<'a> LlmJudgeContext<'a> {
+impl LlmJudgeContext<'_> {
     /// Get a git diff between the start commit and an optional end commit
     ///
     /// If `to_commit` is None, returns unstaged changes in the working directory.
@@ -80,7 +80,7 @@ impl EvalAssertion {
 
     /// Use an LLM to judge whether the agent succeeded
     ///
-    /// The prompt_builder function receives context about the eval and returns
+    /// The `prompt_builder` function receives context about the eval and returns
     /// a prompt string that will be sent to the judge LLM.
     pub fn llm_judge<F>(prompt_builder: F) -> Self
     where
@@ -235,7 +235,7 @@ impl std::fmt::Display for EvalAssertion {
                 let count_str = if let Some(cnt) = count {
                     format!(" {cnt:?}")
                 } else {
-                    "".to_string()
+                    String::new()
                 };
 
                 write!(f, "ToolCall({name}, args={args_str}{count_str})")

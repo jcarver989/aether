@@ -42,7 +42,7 @@ impl LocationResult {
 pub fn parse_line(s: &str) -> Result<u32, String> {
     s.trim()
         .parse()
-        .map_err(|_| format!("Invalid line number: {}", s))
+        .map_err(|_| format!("Invalid line number: {s}"))
 }
 
 /// Convert an LSP URI to a file path string
