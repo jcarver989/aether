@@ -17,8 +17,9 @@ members = [
 ]
 
 [workspace.lints.clippy]
-pedantic = "warn"
-all = "warn"
+pedantic = { level = "warn", priority = -1 }
+all = { level = "warn", priority = -1 }
+must_use_candidate = "allow"
 
 [workspace.dependencies]
 # Async runtime
