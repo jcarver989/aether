@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "LSP daemon for sharing language servers across multiple agents"
 
+[lints]
+workspace = true
+
 [lib]
 name = "aether_lspd"
 path = "src/lib.rs"

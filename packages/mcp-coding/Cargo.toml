@@ -3,6 +3,9 @@ name = "mcp-coding"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 mcp_utils = { path = "../mcp-utils" }
 aether-lspd = { path = "../aether-lspd" }

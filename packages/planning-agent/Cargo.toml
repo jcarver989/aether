@@ -3,6 +3,9 @@ name = "planning-agent"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 mcp_utils = { path = "../mcp-utils" }
 mcp-coding = { path = "../mcp-coding" }

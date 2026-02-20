@@ -3,6 +3,9 @@ name = "wisp"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 acp_utils = { path = "../acp-utils", features = ["client"] }
 agent-client-protocol = { workspace = true }
