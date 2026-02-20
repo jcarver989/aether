@@ -176,7 +176,6 @@ impl std::fmt::Display for Line {
     }
 }
 
-
 fn push_fg_sgr(out: &mut String, color: Option<Color>) {
     let fg = color.unwrap_or(Color::Reset);
     let _ = write!(out, "{}", SetForegroundColor(fg));

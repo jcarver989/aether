@@ -4,6 +4,7 @@ pub struct StatusLine<'a> {
     pub agent_name: &'a str,
     pub model_display: Option<&'a str>,
     pub context_pct_left: Option<u8>,
+    pub waiting_for_response: bool,
 }
 
 impl Component for StatusLine<'_> {
@@ -13,20 +14,22 @@ impl Component for StatusLine<'_> {
             None => format!("  {}", self.agent_name),
         };
 
-        let Some(pct) = self.context_pct_left else {
+        let (right, color) = if self.waiting_for_response {
+            ("esc to interrupt".to_string(), context.theme.warning)
+        } else if let Some(pct) = self.context_pct_left {
+            let c = if pct <= 15 {
+                context.theme.warning
+            } else {
+                context.theme.muted
+            };
+            (format!("{}% context", pct), c)
+        } else {
             return vec![Line::styled(left, context.theme.muted)];
         };
 
-        let right = format!("{}% context", pct);
         let width = context.size.0 as usize;
         let left_visible_len = left.len();
         let right_visible_len = right.len();
-
-        let color = if pct <= 15 {
-            context.theme.warning
-        } else {
-            context.theme.muted
-        };
 
         let padding = width.saturating_sub(left_visible_len + right_visible_len);
         let mut line = Line::default();
@@ -47,6 +50,7 @@ mod tests {
             agent_name: "claude-code",
             model_display: None,
             context_pct_left: None,
+            waiting_for_response: false,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -60,6 +64,7 @@ mod tests {
             agent_name: "test-agent",
             model_display: None,
             context_pct_left: None,
+            waiting_for_response: false,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -73,6 +78,7 @@ mod tests {
             agent_name: "aether-acp",
             model_display: Some("gpt-4o"),
             context_pct_left: None,
+            waiting_for_response: false,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -92,6 +98,7 @@ mod tests {
             agent_name: "aether-acp",
             model_display: None,
             context_pct_left: None,
+            waiting_for_response: false,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -109,6 +116,7 @@ mod tests {
             agent_name: "aether",
             model_display: Some("gpt-4o"),
             context_pct_left: Some(72),
+            waiting_for_response: false,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -124,10 +132,51 @@ mod tests {
             agent_name: "aether",
             model_display: Some("gpt-4o"),
             context_pct_left: None,
+            waiting_for_response: false,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(!text.contains("context"), "should not contain context info");
+    }
+
+    #[test]
+    fn renders_interrupt_message_when_waiting() {
+        let status = StatusLine {
+            agent_name: "aether",
+            model_display: Some("gpt-4o"),
+            context_pct_left: Some(72),
+            waiting_for_response: true,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        let text = lines[0].plain_text();
+        assert!(text.contains("aether"), "should contain agent name");
+        assert!(
+            text.contains("esc to interrupt"),
+            "should contain interrupt message"
+        );
+        assert!(
+            !text.contains("72% context"),
+            "should not contain context when waiting"
+        );
+    }
+
+    #[test]
+    fn renders_interrupt_message_without_model_when_waiting() {
+        let status = StatusLine {
+            agent_name: "aether",
+            model_display: None,
+            context_pct_left: None,
+            waiting_for_response: true,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        let text = lines[0].plain_text();
+        assert!(text.contains("aether"), "should contain agent name");
+        assert!(
+            text.contains("esc to interrupt"),
+            "should contain interrupt message"
+        );
     }
 }

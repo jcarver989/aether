@@ -40,6 +40,7 @@ pub enum AppEvent {
         config_id: String,
         new_value: String,
     },
+    Cancel,
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +104,10 @@ impl App {
             return effects;
         }
 
+        if key_event.code == KeyCode::Esc && self.waiting_for_response {
+            return vec![AppEvent::Cancel];
+        }
+
         match key_event.code {
             KeyCode::Char('/') if self.input_buffer.is_empty() => {
                 self.input_buffer.push('/');
@@ -136,7 +141,6 @@ impl App {
     pub fn on_session_update(&mut self, update: SessionUpdate) -> Vec<AppEvent> {
         let was_loading = self.grid_loader.visible;
         let mut should_render = was_loading;
-        self.waiting_for_response = false;
         self.grid_loader.visible = false;
 
         match update {
@@ -749,6 +753,7 @@ impl CursorComponent for App {
             agent_name: &self.agent_name,
             model_display: self.model_display.as_deref(),
             context_pct_left: self.context_usage_pct,
+            waiting_for_response: self.waiting_for_response,
         };
 
         let mut container: Container<'_> =
@@ -986,5 +991,45 @@ mod tests {
         let effects = screen.on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
 
         assert!(matches!(effects.as_slice(), [AppEvent::Exit]));
+    }
+
+    #[test]
+    fn escape_while_waiting_emits_cancel() {
+        let mut screen = App::new("test-agent".to_string(), &[]);
+        screen.waiting_for_response = true;
+
+        let effects = screen.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(matches!(effects.as_slice(), [AppEvent::Cancel]));
+    }
+
+    #[test]
+    fn streaming_chunks_keep_waiting_for_response() {
+        let mut screen = App::new("test-agent".to_string(), &[]);
+        screen.waiting_for_response = true;
+
+        // Simulate a streaming text chunk arriving
+        screen.on_session_update(SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
+            acp::ContentBlock::Text(acp::TextContent::new("hello")),
+        )));
+
+        assert!(
+            screen.waiting_for_response,
+            "waiting_for_response should remain true while streaming"
+        );
+
+        // ESC should still emit Cancel
+        let effects = screen.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(matches!(effects.as_slice(), [AppEvent::Cancel]));
+    }
+
+    #[test]
+    fn escape_while_not_waiting_does_nothing() {
+        let mut screen = App::new("test-agent".to_string(), &[]);
+        screen.waiting_for_response = false;
+
+        let effects = screen.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(effects.is_empty());
     }
 }

@@ -126,6 +126,12 @@ impl Renderer {
                     };
                     let _ = prompt_handle.set_config_option(session_id, &config_id, &new_value);
                 }
+                AppEvent::Cancel => {
+                    let Some((prompt_handle, session_id)) = prompt else {
+                        return Err(std::io::Error::other("missing prompt context").into());
+                    };
+                    prompt_handle.cancel(session_id)?;
+                }
             }
         }
 
@@ -146,8 +152,10 @@ impl Renderer {
                 AppEvent::PushScrollback(lines) => {
                     self.renderer.push_to_scrollback(&lines)?;
                 }
-                AppEvent::PromptSubmit { .. } | AppEvent::SetConfigOption { .. } => {
-                    panic!("unexpected prompt/config effect without prompt context");
+                AppEvent::PromptSubmit { .. }
+                | AppEvent::SetConfigOption { .. }
+                | AppEvent::Cancel => {
+                    panic!("unexpected prompt/config/cancel effect without prompt context");
                 }
             }
         }
