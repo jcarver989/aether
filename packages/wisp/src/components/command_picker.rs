@@ -49,8 +49,8 @@ impl Component for CommandPicker {
             return lines;
         }
 
-        for (i, command) in self.combobox.matches.iter().enumerate() {
-            let prefix = if i == self.combobox.selected_index {
+        for (i, command) in self.combobox.visible_matches().iter().enumerate() {
+            let prefix = if Some(i) == self.combobox.visible_selected_index() {
                 "▶ "
             } else {
                 "  "
@@ -65,7 +65,7 @@ impl Component for CommandPicker {
                 "{prefix}/{} - {}{}",
                 command.name, command.description, hint_suffix
             );
-            let line = if i == self.combobox.selected_index {
+            let line = if Some(i) == self.combobox.visible_selected_index() {
                 Line::styled(line_text, context.theme.primary)
             } else {
                 let name_part = format!("{prefix}/{}", command.name);
