@@ -165,6 +165,7 @@ impl ConfigMenu {
         self.options.get(self.selected_index)
     }
 
+    #[allow(dead_code)]
     pub fn entry_by_id(&self, config_id: &str) -> Option<&ConfigMenuEntry> {
         self.options
             .iter()

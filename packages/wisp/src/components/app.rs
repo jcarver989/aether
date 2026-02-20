@@ -61,7 +61,6 @@ pub struct App {
     waiting_for_response: bool,
     animation_tick: u16,
     available_commands: Vec<CommandEntry>,
-    pending_open_model_picker: bool,
     selected_mentions: Vec<SelectedFileMention>,
     context_usage_pct: Option<u8>,
     file_picker: Option<FilePicker>,
@@ -83,7 +82,6 @@ impl App {
             waiting_for_response: false,
             animation_tick: 0,
             available_commands: Vec::new(),
-            pending_open_model_picker: false,
             selected_mentions: Vec::new(),
             context_usage_pct: None,
             file_picker: None,
@@ -198,10 +196,6 @@ impl App {
                 self.model_display = extract_model_display(&update.config_options);
                 self.config_options = update.config_options.clone();
                 self.update_config_menu(&update.config_options);
-                if self.pending_open_model_picker {
-                    self.pending_open_model_picker = false;
-                    self.open_config_picker_for("model");
-                }
                 should_render = true;
             }
             _ => {
@@ -503,10 +497,6 @@ impl App {
     }
 
     fn handle_config_change(&mut self, change: ConfigChange) -> Vec<AppEvent> {
-        if change.config_id == "provider" {
-            self.pending_open_model_picker = true;
-        }
-
         vec![
             AppEvent::SetConfigOption {
                 config_id: change.config_id,
@@ -520,9 +510,14 @@ impl App {
         if cmd.builtin && cmd.name == "config" {
             self.input_buffer.clear();
             self.close_all_pickers();
-            self.pending_open_model_picker = false;
             let options = self.config_options.clone();
             self.open_config_menu(&options);
+            self.config_picker = self
+                .config_menu
+                .as_ref()
+                .filter(|menu| menu.options.len() == 1)
+                .and_then(|menu| menu.options.first())
+                .and_then(ConfigPicker::from_entry);
             vec![AppEvent::Render]
         } else if cmd.has_input {
             self.input_buffer = format!("/{} ", cmd.name);
@@ -582,6 +577,7 @@ impl App {
         self.config_menu = Some(ConfigMenu::from_config_options(options));
     }
 
+    #[allow(dead_code)]
     fn open_config_picker_for(&mut self, config_id: &str) -> bool {
         let Some(menu) = self.config_menu.as_ref() else {
             return false;
@@ -953,19 +949,32 @@ mod tests {
     }
 
     #[test]
-    fn provider_config_change_sets_pending_model_open_and_effects() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
-
-        let effects = screen.handle_config_change(ConfigChange {
-            config_id: "provider".to_string(),
-            new_value: "openrouter".to_string(),
+    fn config_with_single_option_opens_picker_directly() {
+        let options = vec![agent_client_protocol::SessionConfigOption::select(
+            "model",
+            "Model",
+            "m1",
+            vec![
+                agent_client_protocol::SessionConfigSelectOption::new("m1", "M1"),
+                agent_client_protocol::SessionConfigSelectOption::new("m2", "M2"),
+            ],
+        )];
+        let mut screen = App::new("test-agent".to_string(), &options);
+        let effects = screen.apply_command(CommandEntry {
+            name: "config".to_string(),
+            description: "Open configuration settings".to_string(),
+            has_input: false,
+            hint: None,
+            builtin: true,
         });
 
-        assert!(screen.pending_open_model_picker);
-        assert!(matches!(
-            effects.as_slice(),
-            [AppEvent::SetConfigOption { .. }, AppEvent::Render]
-        ));
+        assert!(matches!(effects.as_slice(), [AppEvent::Render]));
+        assert!(screen.config_menu.is_some());
+        assert!(
+            screen.config_picker.is_some(),
+            "Single config option should auto-open picker"
+        );
+        assert_eq!(screen.config_picker_config_id(), Some("model"));
     }
 
     #[test]

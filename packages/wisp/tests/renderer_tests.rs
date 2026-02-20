@@ -1022,7 +1022,7 @@ async fn test_status_line_shows_model_from_config_options() {
             "openrouter:gpt-4o",
             vec![acp::SessionConfigSelectOption::new(
                 "openrouter:gpt-4o",
-                "gpt-4o",
+                "OpenRouter / GPT-4o",
             )],
         )
         .category(acp::SessionConfigOptionCategory::Model),
@@ -1038,7 +1038,7 @@ async fn test_status_line_shows_model_from_config_options() {
     assert!(
         lines
             .iter()
-            .any(|l| l.contains("aether-acp") && l.contains("gpt-4o")),
+            .any(|l| l.contains("aether-acp") && l.contains("OpenRouter / GPT-4o")),
         "Status line should show agent name and model.\nBuffer:\n{}",
         lines.join("\n")
     );
@@ -1053,7 +1053,7 @@ async fn test_status_line_updates_on_config_option_update() {
             "openrouter:gpt-4o",
             vec![acp::SessionConfigSelectOption::new(
                 "openrouter:gpt-4o",
-                "gpt-4o",
+                "OpenRouter / GPT-4o",
             )],
         )
         .category(acp::SessionConfigOptionCategory::Model),
@@ -1072,7 +1072,7 @@ async fn test_status_line_updates_on_config_option_update() {
             "ollama:llama3",
             vec![acp::SessionConfigSelectOption::new(
                 "ollama:llama3",
-                "llama3",
+                "Ollama / llama3",
             )],
         )
         .category(acp::SessionConfigOptionCategory::Model),
@@ -1086,12 +1086,12 @@ async fn test_status_line_updates_on_config_option_update() {
 
     let lines = renderer.writer().get_lines();
     assert!(
-        lines.iter().any(|l| l.contains("llama3")),
+        lines.iter().any(|l| l.contains("Ollama / llama3")),
         "Status line should show updated model.\nBuffer:\n{}",
         lines.join("\n")
     );
     assert!(
-        !lines.iter().any(|l| l.contains("gpt-4o")),
+        !lines.iter().any(|l| l.contains("GPT-4o")),
         "Status line should no longer show old model.\nBuffer:\n{}",
         lines.join("\n")
     );
@@ -1584,41 +1584,26 @@ fn press_backspace(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id
 fn make_config_options() -> Vec<acp::SessionConfigOption> {
     vec![
         acp::SessionConfigOption::select(
-            "provider".to_string(),
-            "Provider".to_string(),
-            "openrouter".to_string(),
-            vec![
-                acp::SessionConfigSelectOption::new(
-                    "openrouter".to_string(),
-                    "OpenRouter".to_string(),
-                ),
-                acp::SessionConfigSelectOption::new(
-                    "anthropic".to_string(),
-                    "Anthropic".to_string(),
-                ),
-            ],
-        )
-        .category(acp::SessionConfigOptionCategory::Model),
-        acp::SessionConfigOption::select(
             "model".to_string(),
             "Model".to_string(),
             "openrouter:openai/gpt-4o".to_string(),
             vec![
                 acp::SessionConfigSelectOption::new(
                     "openrouter:openai/gpt-4o".to_string(),
-                    "GPT-4o".to_string(),
+                    "OpenRouter / GPT-4o".to_string(),
                 ),
                 acp::SessionConfigSelectOption::new(
-                    "openrouter:anthropic/claude-3.5-sonnet".to_string(),
-                    "Claude Sonnet".to_string(),
+                    "anthropic:claude-sonnet-4-5".to_string(),
+                    "Anthropic / Claude Sonnet 4.5".to_string(),
                 ),
             ],
-        ),
+        )
+        .category(acp::SessionConfigOptionCategory::Model),
     ]
 }
 
 #[tokio::test]
-async fn test_config_command_opens_menu() {
+async fn test_config_command_opens_picker_directly_for_single_option() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
@@ -1631,20 +1616,13 @@ async fn test_config_command_opens_menu() {
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
 
+    // Single config option should skip menu and open picker directly
     assert!(renderer.screen().has_config_menu());
+    assert!(renderer.screen().has_config_picker());
     let lines = renderer.writer().get_lines();
     assert!(
-        lines
-            .iter()
-            .any(|l| l.contains("Provider") && l.contains("OpenRouter")),
-        "Config menu should show Provider option.\nBuffer:\n{}",
-        lines.join("\n")
-    );
-    assert!(
-        lines
-            .iter()
-            .any(|l| l.contains("Model") && l.contains("GPT-4o")),
-        "Config menu should show Model option.\nBuffer:\n{}",
+        lines.iter().any(|l| l.contains("Model search")),
+        "Should show model picker directly.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
@@ -1665,7 +1643,19 @@ async fn test_config_menu_esc_closes() {
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
     assert!(renderer.screen().has_config_menu());
+    assert!(renderer.screen().has_config_picker());
 
+    send_key(
+        &mut renderer,
+        KeyCode::Esc,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert!(renderer.screen().has_config_menu());
+    assert!(!renderer.screen().has_config_picker());
+
+    // Second ESC closes the menu
     send_key(
         &mut renderer,
         KeyCode::Esc,
@@ -1677,7 +1667,7 @@ async fn test_config_menu_esc_closes() {
 }
 
 #[tokio::test]
-async fn test_config_menu_arrow_navigation() {
+async fn test_config_menu_arrow_navigation_single_entry() {
     use crossterm::event::{KeyCode, KeyModifiers};
 
     let config_options = make_config_options();
@@ -1692,10 +1682,21 @@ async fn test_config_menu_arrow_navigation() {
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
 
-    // Initially Provider is selected (index 0)
+    // With single config option, menu has 1 entry at index 0
     assert_eq!(renderer.screen().config_menu_selected_index(), Some(0));
 
-    // Down arrow → Model (index 1)
+    // Close picker first (ESC closes picker, not menu, since picker is open)
+    send_key(
+        &mut renderer,
+        KeyCode::Esc,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    );
+    assert!(renderer.screen().has_config_menu());
+    assert!(!renderer.screen().has_config_picker());
+
+    // Down wraps → still index 0 (only 1 entry)
     send_key(
         &mut renderer,
         KeyCode::Down,
@@ -1703,33 +1704,11 @@ async fn test_config_menu_arrow_navigation() {
         &handle,
         &session_id,
     );
-    assert_eq!(renderer.screen().config_menu_selected_index(), Some(1));
-
-    // Down wraps → Provider (index 0)
-    send_key(
-        &mut renderer,
-        KeyCode::Down,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    );
     assert_eq!(renderer.screen().config_menu_selected_index(), Some(0));
-
-    // Up wraps → Model (index 1)
-    send_key(
-        &mut renderer,
-        KeyCode::Up,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    );
-    assert_eq!(renderer.screen().config_menu_selected_index(), Some(1));
 }
 
 #[tokio::test]
-async fn test_config_menu_enter_opens_overlay_picker() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
+async fn test_config_single_option_shows_model_picker() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
@@ -1742,28 +1721,18 @@ async fn test_config_menu_enter_opens_overlay_picker() {
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
 
-    // Enter opens picker for selected row (Provider)
-    send_key(
-        &mut renderer,
-        KeyCode::Enter,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    );
-
+    // Single config option auto-opens model picker
     assert!(renderer.screen().has_config_picker());
     let lines = renderer.writer().get_lines();
     assert!(
-        lines.iter().any(|l| l.contains("Provider search")),
-        "Should show provider overlay after pressing enter.\nBuffer:\n{}",
+        lines.iter().any(|l| l.contains("Model search")),
+        "Should show model overlay directly.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
 
 #[tokio::test]
 async fn test_config_picker_focuses_cursor_on_overlay_query() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
@@ -1775,19 +1744,12 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
 
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
-    send_key(
-        &mut renderer,
-        KeyCode::Enter,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    );
 
     let lines = renderer.writer().get_lines();
     let search_row = lines
         .iter()
-        .position(|l| l.contains("Provider search:"))
-        .expect("provider search header row should be rendered") as u16;
+        .position(|l| l.contains("Model search:"))
+        .expect("model search header row should be rendered") as u16;
     let (cursor_col, cursor_row) = renderer.writer().cursor_position();
 
     assert_eq!(
@@ -1796,13 +1758,11 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
         "Cursor should be on overlay search row.\nBuffer:\n{}",
         lines.join("\n")
     );
-    assert_eq!(cursor_col, "  Provider search: ".len() as u16);
+    assert_eq!(cursor_col, "  Model search: ".len() as u16);
 }
 
 #[tokio::test]
 async fn test_config_picker_filters_model_options() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
@@ -1814,22 +1774,6 @@ async fn test_config_picker_filters_model_options() {
 
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
-
-    // Move to model row, open model picker.
-    send_key(
-        &mut renderer,
-        KeyCode::Down,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    );
-    send_key(
-        &mut renderer,
-        KeyCode::Enter,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    );
 
     type_string(&mut renderer, "claude", &handle, &session_id);
 
@@ -1845,7 +1789,21 @@ async fn test_config_picker_filters_model_options() {
 async fn test_config_menu_swallows_other_keys() {
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    let config_options = make_config_options();
+    let config_options = vec![
+        acp::SessionConfigOption::select(
+            "model",
+            "Model",
+            "m1",
+            vec![acp::SessionConfigSelectOption::new("m1", "M1")],
+        ),
+        acp::SessionConfigOption::select(
+            "theme",
+            "Theme",
+            "dark",
+            vec![acp::SessionConfigSelectOption::new("dark", "Dark")],
+        ),
+    ];
+
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
     renderer.update_render_context_with((80, 24));
@@ -1895,7 +1853,9 @@ async fn test_config_menu_ctrl_c_exits() {
     type_string(&mut renderer, "/config", &handle, &session_id);
     press_enter(&mut renderer, &handle, &session_id);
     assert!(renderer.screen().has_config_menu());
+    assert!(renderer.screen().has_config_picker());
 
+    // Ctrl+C should still exit even with picker open
     let action = renderer
         .on_key_event(
             crossterm::event::KeyEvent {
@@ -1930,33 +1890,17 @@ async fn test_config_menu_updates_on_config_option_event() {
     // Simulate the agent responding with updated config
     let new_config = vec![
         acp::SessionConfigOption::select(
-            "provider".to_string(),
-            "Provider".to_string(),
-            "openrouter".to_string(),
-            vec![
-                acp::SessionConfigSelectOption::new(
-                    "openrouter".to_string(),
-                    "OpenRouter".to_string(),
-                ),
-                acp::SessionConfigSelectOption::new(
-                    "anthropic".to_string(),
-                    "Anthropic".to_string(),
-                ),
-            ],
-        )
-        .category(acp::SessionConfigOptionCategory::Model),
-        acp::SessionConfigOption::select(
             "model".to_string(),
             "Model".to_string(),
-            "openrouter:anthropic/claude-3.5-sonnet".to_string(),
+            "anthropic:claude-sonnet-4-5".to_string(),
             vec![
                 acp::SessionConfigSelectOption::new(
                     "openrouter:openai/gpt-4o".to_string(),
-                    "GPT-4o".to_string(),
+                    "OpenRouter / GPT-4o".to_string(),
                 ),
                 acp::SessionConfigSelectOption::new(
-                    "openrouter:anthropic/claude-3.5-sonnet".to_string(),
-                    "Claude Sonnet".to_string(),
+                    "anthropic:claude-sonnet-4-5".to_string(),
+                    "Anthropic / Claude Sonnet 4.5".to_string(),
                 ),
             ],
         )
@@ -1973,100 +1917,6 @@ async fn test_config_menu_updates_on_config_option_event() {
     assert!(
         lines.iter().any(|l| l.contains("Claude Sonnet")),
         "Menu should reflect updated config.\nBuffer:\n{}",
-        lines.join("\n")
-    );
-}
-
-#[tokio::test]
-async fn test_provider_confirm_auto_opens_model_picker_on_update() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    let config_options = make_config_options();
-    let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
-    renderer.initial_render().unwrap();
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
-
-    // Open provider picker.
-    send_key(
-        &mut renderer,
-        KeyCode::Enter,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    );
-    assert!(renderer.screen().has_config_picker());
-
-    // Select Anthropic provider and confirm.
-    send_key(
-        &mut renderer,
-        KeyCode::Down,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    );
-    send_key(
-        &mut renderer,
-        KeyCode::Enter,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    );
-    assert!(!renderer.screen().has_config_picker());
-
-    // Provider update should auto-open model picker.
-    let updated = vec![
-        acp::SessionConfigOption::select(
-            "provider".to_string(),
-            "Provider".to_string(),
-            "anthropic".to_string(),
-            vec![
-                acp::SessionConfigSelectOption::new(
-                    "openrouter".to_string(),
-                    "OpenRouter".to_string(),
-                ),
-                acp::SessionConfigSelectOption::new(
-                    "anthropic".to_string(),
-                    "Anthropic".to_string(),
-                ),
-            ],
-        )
-        .category(acp::SessionConfigOptionCategory::Model),
-        acp::SessionConfigOption::select(
-            "model".to_string(),
-            "Model".to_string(),
-            "anthropic:claude-sonnet-4-5".to_string(),
-            vec![
-                acp::SessionConfigSelectOption::new(
-                    "anthropic:claude-sonnet-4-5".to_string(),
-                    "Claude Sonnet 4.5".to_string(),
-                ),
-                acp::SessionConfigSelectOption::new(
-                    "anthropic:claude-opus-4-1".to_string(),
-                    "Claude Opus 4.1".to_string(),
-                ),
-            ],
-        )
-        .category(acp::SessionConfigOptionCategory::Model),
-    ];
-
-    renderer
-        .on_session_update(acp::SessionUpdate::ConfigOptionUpdate(
-            acp::ConfigOptionUpdate::new(updated),
-        ))
-        .unwrap();
-
-    assert_eq!(renderer.screen().config_picker_config_id(), Some("model"));
-    let lines = renderer.writer().get_lines();
-    assert!(
-        lines.iter().any(|l| l.contains("Model search")),
-        "Model picker should auto-open after provider update.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
