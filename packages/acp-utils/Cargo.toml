@@ -3,6 +3,9 @@ name = "acp_utils"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [features]
 default = ["client", "server"]
 client = ["dep:thiserror", "dep:tokio-util"]

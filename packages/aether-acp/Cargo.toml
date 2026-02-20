@@ -3,6 +3,9 @@ name = "aether-acp"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [lib]
 name = "aether_acp"
 path = "src/lib.rs"
