@@ -220,6 +220,10 @@ fn apply_screen_effects<T: Write>(
             } => {
                 let _ = prompt_handle.set_config_option(session_id, &config_id, &new_value);
             }
+            AppEvent::Cancel => {
+                prompt_handle.cancel(session_id)?;
+                should_render = true;
+            }
         }
     }
 
