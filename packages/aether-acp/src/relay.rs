@@ -101,6 +101,7 @@ async fn run_session_relay(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_prompt(
     agent_tx: &mpsc::Sender<UserMessage>,
     agent_rx: &mut mpsc::Receiver<AgentMessage>,
@@ -268,7 +269,6 @@ fn map_permission_outcome_to_elicitation_action(
     match outcome {
         acp::RequestPermissionOutcome::Selected(selected) => match selected.option_id.0.as_ref() {
             OPTION_ALLOW_ONCE => ElicitationAction::Accept,
-            OPTION_REJECT_ONCE => ElicitationAction::Decline,
             _ => ElicitationAction::Decline,
         },
         acp::RequestPermissionOutcome::Cancelled => ElicitationAction::Cancel,

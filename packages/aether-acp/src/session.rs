@@ -21,6 +21,7 @@ use tracing::debug;
 
 /// Represents an active Aether agent session
 pub struct Session {
+    #[allow(dead_code)]
     pub id: String,
     pub agent_tx: mpsc::Sender<UserMessage>,
     pub agent_rx: mpsc::Receiver<AgentMessage>,
@@ -33,6 +34,7 @@ pub struct Session {
 
 impl Session {
     /// Creates a new session with the given LLM provider and configuration
+    #[allow(clippy::too_many_lines)]
     pub async fn new(
         id: String,
         llm: impl StreamingModelProvider + 'static,

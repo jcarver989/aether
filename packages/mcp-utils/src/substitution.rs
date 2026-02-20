@@ -4,13 +4,13 @@ use regex::{Captures, Regex};
 
 /// Substitute parameters in a prompt template
 /// Supports named parameters using the format `$parameter_name`
+#[allow(clippy::implicit_hasher)]
 pub fn substitute_parameters(
     template: &str,
     arguments: &Option<HashMap<String, String>>,
 ) -> String {
-    let regex = match Regex::new(r"\$(\w+)") {
-        Ok(r) => r,
-        Err(_) => return template.to_string(),
+    let Ok(regex) = Regex::new(r"\$(\w+)") else {
+        return template.to_string();
     };
 
     arguments

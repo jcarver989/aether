@@ -79,8 +79,10 @@ fn provider_display_name(provider: &str) -> &str {
 }
 
 fn unavailable_reason(model: &LlmModel) -> String {
-    model
-        .required_env_var().map_or_else(|| "Unavailable: provider is not configured".to_string(), |var| format!("Unavailable: set {var}"))
+    model.required_env_var().map_or_else(
+        || "Unavailable: provider is not configured".to_string(),
+        |var| format!("Unavailable: set {var}"),
+    )
 }
 
 fn model_exists(available: &[LlmModel], model_str: &str) -> bool {
@@ -283,7 +285,7 @@ impl Agent for SessionManager {
                 if pending == state.active_model {
                     None
                 } else {
-                    state.active_model = pending.clone();
+                    state.active_model.clone_from(&pending);
                     Some(pending)
                 }
             });

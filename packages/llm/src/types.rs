@@ -14,6 +14,7 @@ impl IsoString {
     }
 
     /// Create an `IsoString` from a chrono `DateTime`
+    #[allow(clippy::needless_pass_by_value)]
     pub fn from_datetime<T: TimeZone>(datetime: DateTime<T>) -> Self
     where
         T::Offset: Display,

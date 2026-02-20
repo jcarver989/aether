@@ -99,6 +99,7 @@ impl HttpClient for ReqwestClient {
             .await
             .map_err(|e| {
                 if e.is_timeout() {
+                    #[allow(clippy::cast_possible_truncation)]
                     WebFetchError::Timeout(timeout.as_millis() as u64)
                 } else {
                     WebFetchError::RequestFailed(e.to_string())

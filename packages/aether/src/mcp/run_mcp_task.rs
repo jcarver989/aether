@@ -210,16 +210,13 @@ async fn try_execute_tool(
         }
     };
 
-    let mcp_result = match server_result {
-        ServerResult::CallToolResult(result) => result,
-        _ => {
-            return Err(ToolCallError {
-                id: request.id.clone(),
-                name: request.name.clone(),
-                arguments: Some(request.arguments.clone()),
-                error: "Unexpected response type from MCP server".to_string(),
-            });
-        }
+    let ServerResult::CallToolResult(mcp_result) = server_result else {
+        return Err(ToolCallError {
+            id: request.id.clone(),
+            name: request.name.clone(),
+            arguments: Some(request.arguments.clone()),
+            error: "Unexpected response type from MCP server".to_string(),
+        });
     };
 
     mcp_result_to_tool_call_result(request, mcp_result)

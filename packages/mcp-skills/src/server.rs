@@ -84,7 +84,8 @@ impl SkillsMcp {
             instructions.push_str("The following skills are available:\n\n");
 
             for skill in &self.skills_info {
-                instructions.push_str(&format!("- **{}**: {}\n", skill.name, skill.description));
+                use std::fmt::Write as _;
+                let _ = writeln!(instructions, "- **{}**: {}", skill.name, skill.description);
             }
         }
 

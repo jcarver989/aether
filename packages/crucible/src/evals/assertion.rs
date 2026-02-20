@@ -257,8 +257,9 @@ impl EvalAssertionResult {
 
     pub fn message(&self) -> &str {
         match self {
-            EvalAssertionResult::Success { message } => message,
-            EvalAssertionResult::Failure { message } => message,
+            EvalAssertionResult::Success { message } | EvalAssertionResult::Failure { message } => {
+                message
+            }
         }
     }
 

@@ -1,6 +1,9 @@
 use regex::Regex;
 use std::env;
 
+/// Placeholder used to escape `$$` sequences during expansion.
+const ESCAPE_PLACEHOLDER: &str = "\x00ESCAPED_DOLLAR\x00";
+
 /// Expands environment variables in a string template.
 ///
 /// Supports two formats:
@@ -12,8 +15,6 @@ pub fn expand_env_vars(template: &str) -> Result<String, VarError> {
     let bracketed_re = Regex::new(r"\$\{([^}]+)\}").unwrap();
     let simple_re = Regex::new(r"\$([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
 
-    const ESCAPE_PLACEHOLDER: &str = "\x00ESCAPED_DOLLAR\x00";
-
     // Replace $$ with placeholder
     let result = escape_re.replace_all(template, ESCAPE_PLACEHOLDER);
 
@@ -21,7 +22,9 @@ pub fn expand_env_vars(template: &str) -> Result<String, VarError> {
     let mut missing_var = None;
     let result = bracketed_re.replace_all(&result, |caps: &regex::Captures| {
         let var_name = &caps[1];
-        if let Ok(value) = env::var(var_name) { value } else {
+        if let Ok(value) = env::var(var_name) {
+            value
+        } else {
             missing_var = Some(var_name.to_string());
             caps[0].to_string() // Keep original if not found
         }
@@ -33,7 +36,9 @@ pub fn expand_env_vars(template: &str) -> Result<String, VarError> {
     // Replace $VAR with env var
     let result = simple_re.replace_all(&result, |caps: &regex::Captures| {
         let var_name = &caps[1];
-        if let Ok(value) = env::var(var_name) { value } else {
+        if let Ok(value) = env::var(var_name) {
+            value
+        } else {
             missing_var = Some(var_name.to_string());
             caps[0].to_string()
         }

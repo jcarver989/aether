@@ -43,7 +43,7 @@ pub enum LanguageId {
 
 impl LanguageId {
     /// Get the LSP language ID string
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             LanguageId::Rust => "rust",
             LanguageId::Python => "python",
@@ -143,16 +143,16 @@ impl LspRequest {
     /// Get the client ID from the request
     pub fn client_id(&self) -> i64 {
         match self {
-            LspRequest::GotoDefinition { client_id, .. } => *client_id,
-            LspRequest::GotoImplementation { client_id, .. } => *client_id,
-            LspRequest::FindReferences { client_id, .. } => *client_id,
-            LspRequest::Hover { client_id, .. } => *client_id,
-            LspRequest::WorkspaceSymbol { client_id, .. } => *client_id,
-            LspRequest::DocumentSymbol { client_id, .. } => *client_id,
-            LspRequest::PrepareCallHierarchy { client_id, .. } => *client_id,
-            LspRequest::IncomingCalls { client_id, .. } => *client_id,
-            LspRequest::OutgoingCalls { client_id, .. } => *client_id,
-            LspRequest::GetDiagnostics { client_id, .. } => *client_id,
+            LspRequest::GotoDefinition { client_id, .. }
+            | LspRequest::GotoImplementation { client_id, .. }
+            | LspRequest::FindReferences { client_id, .. }
+            | LspRequest::Hover { client_id, .. }
+            | LspRequest::WorkspaceSymbol { client_id, .. }
+            | LspRequest::DocumentSymbol { client_id, .. }
+            | LspRequest::PrepareCallHierarchy { client_id, .. }
+            | LspRequest::IncomingCalls { client_id, .. }
+            | LspRequest::OutgoingCalls { client_id, .. }
+            | LspRequest::GetDiagnostics { client_id, .. } => *client_id,
         }
     }
 }
@@ -300,6 +300,7 @@ where
         ));
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     let len = json.len() as u32;
     writer.write_all(&len.to_be_bytes()).await?;
     writer.write_all(&json).await?;

@@ -72,12 +72,16 @@ pub fn process_anthropic_stream<T: Stream<Item = Result<String>> + Send + Sync +
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn process_stream_event(
     event: StreamEvent,
     active_tool_calls: &mut HashMap<String, (String, String)>,
     index_to_id: &mut HashMap<u32, String>,
 ) -> Result<(Option<LlmResponse>, Option<StopReason>)> {
-    use StreamEvent::{MessageStart, ContentBlockStart, ContentBlockDelta, ContentBlockStop, MessageDelta, MessageStop, Error, Ping};
+    use StreamEvent::{
+        ContentBlockDelta, ContentBlockStart, ContentBlockStop, Error, MessageDelta, MessageStart,
+        MessageStop, Ping,
+    };
     match event {
         MessageStart { data: _start_data } => {
             debug!("Message started");
@@ -193,10 +197,9 @@ fn process_stream_event(
 
 fn map_anthropic_stop_reason(reason: &str) -> StopReason {
     match reason {
-        "end_turn" => StopReason::EndTurn,
+        "end_turn" | "stop_sequence" => StopReason::EndTurn,
         "tool_use" => StopReason::ToolCalls,
         "max_tokens" => StopReason::Length,
-        "stop_sequence" => StopReason::EndTurn,
         _ => StopReason::Unknown(reason.to_string()),
     }
 }

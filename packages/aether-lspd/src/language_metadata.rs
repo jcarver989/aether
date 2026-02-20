@@ -19,9 +19,9 @@ pub struct LanguageMetadata {
     /// Primary file extension (e.g., "rs" for Rust)
     /// None for `PlainText` since it has no specific extension
     pub primary_extension: Option<&'static str>,
-    /// All accepted aliases including the primary id (e.g., ["rust", "rs"])
+    /// All accepted aliases including the primary id (e.g., `["rust", "rs"]`)
     pub aliases: &'static [&'static str],
-    /// All file extensions for this type (e.g., ["rs"])
+    /// All file extensions for this type (e.g., `["rs"]`)
     pub extensions: &'static [&'static str],
 }
 

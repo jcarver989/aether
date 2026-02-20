@@ -242,7 +242,9 @@ impl TaskStore {
         let pid = u128::from(std::process::id());
         let count = self.index.len() as u128;
         let mixed = now.wrapping_add(pid << 16).wrapping_add(count);
-        format!("{:08x}", (mixed as u64) & 0xFFFFFFFF)
+        #[allow(clippy::cast_possible_truncation)]
+        let truncated = mixed as u64;
+        format!("{:08x}", truncated & 0xFFFF_FFFF)
     }
 
     fn load_tree_file(&mut self, path: &PathBuf) -> Result<(), TaskStoreError> {
@@ -262,6 +264,7 @@ impl TaskStore {
         Ok(())
     }
 
+    #[allow(clippy::unused_self)]
     fn write_task_to_file(&self, task: &Task, path: &PathBuf) -> Result<(), TaskStoreError> {
         if let Some(parent) = path.parent()
             && !parent.exists()

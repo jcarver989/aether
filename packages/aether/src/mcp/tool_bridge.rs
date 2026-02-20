@@ -9,7 +9,10 @@ pub fn tool_call_request_to_mcp(
     request: &ToolCallRequest,
 ) -> Result<CallToolRequestParams, String> {
     // Parse the tool name to remove namespace prefix if present
-    let tool_name = split_on_server_name(&request.name).map_or_else(|| request.name.clone(), |(_, tool_name)| tool_name.to_string());
+    let tool_name = split_on_server_name(&request.name).map_or_else(
+        || request.name.clone(),
+        |(_, tool_name)| tool_name.to_string(),
+    );
 
     // Parse arguments from JSON string
     let arguments = serde_json::from_str::<serde_json::Value>(&request.arguments)
@@ -31,9 +34,10 @@ pub fn mcp_result_to_tool_call_result(
     mcp_result: rmcp::model::CallToolResult,
 ) -> Result<ToolCallResult, ToolCallError> {
     if mcp_result.is_error.unwrap_or(false) {
-        let error_msg = mcp_result
-            .content
-            .first().map_or_else(|| "Unknown error".to_string(), |content| format!("{content:?}"));
+        let error_msg = mcp_result.content.first().map_or_else(
+            || "Unknown error".to_string(),
+            |content| format!("{content:?}"),
+        );
         Err(ToolCallError {
             id: request.id.clone(),
             name: request.name.clone(),

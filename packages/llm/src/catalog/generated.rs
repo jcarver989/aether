@@ -1,5 +1,8 @@
 // Auto-generated from models.dev — do not edit manually
 // Run `cargo run --bin llm-catalog-codegen` to regenerate
+#![allow(clippy::unreadable_literal)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::too_many_lines)]
 
 use std::borrow::Cow;
 use std::sync::LazyLock;

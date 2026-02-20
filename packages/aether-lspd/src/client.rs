@@ -11,9 +11,9 @@ use lsp_types::{
     CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverParams, Location, Position, ReferenceContext,
-    ReferenceParams, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, Uri,
-    WorkspaceSymbolParams,
+    GotoDefinitionResponse, Hover, HoverParams, Location, PartialResultParams, Position,
+    ReferenceContext, ReferenceParams, SymbolInformation, TextDocumentIdentifier,
+    TextDocumentPositionParams, Uri, WorkDoneProgressParams, WorkspaceSymbolParams,
 };
 use thiserror::Error;
 use tokio::io::{ReadHalf, WriteHalf};
@@ -78,16 +78,16 @@ impl LspResponse {
     /// Get the client ID from the response
     fn client_id(&self) -> i64 {
         match self {
-            LspResponse::GotoDefinition { client_id, .. } => *client_id,
-            LspResponse::GotoImplementation { client_id, .. } => *client_id,
-            LspResponse::FindReferences { client_id, .. } => *client_id,
-            LspResponse::Hover { client_id, .. } => *client_id,
-            LspResponse::WorkspaceSymbol { client_id, .. } => *client_id,
-            LspResponse::DocumentSymbol { client_id, .. } => *client_id,
-            LspResponse::PrepareCallHierarchy { client_id, .. } => *client_id,
-            LspResponse::IncomingCalls { client_id, .. } => *client_id,
-            LspResponse::OutgoingCalls { client_id, .. } => *client_id,
-            LspResponse::GetDiagnostics { client_id, .. } => *client_id,
+            LspResponse::GotoDefinition { client_id, .. }
+            | LspResponse::GotoImplementation { client_id, .. }
+            | LspResponse::FindReferences { client_id, .. }
+            | LspResponse::Hover { client_id, .. }
+            | LspResponse::WorkspaceSymbol { client_id, .. }
+            | LspResponse::DocumentSymbol { client_id, .. }
+            | LspResponse::PrepareCallHierarchy { client_id, .. }
+            | LspResponse::IncomingCalls { client_id, .. }
+            | LspResponse::OutgoingCalls { client_id, .. }
+            | LspResponse::GetDiagnostics { client_id, .. } => *client_id,
         }
     }
 }
@@ -104,7 +104,7 @@ pub struct LspClient {
     /// Counter for generating request IDs
     next_id: AtomicI64,
     /// Background reader task handle
-    _reader_task: tokio::task::JoinHandle<()>,
+    reader_task: tokio::task::JoinHandle<()>,
 }
 
 /// Ensure the daemon is running for the given socket path.
@@ -197,8 +197,8 @@ impl LspClient {
                 text_document: TextDocumentIdentifier { uri },
                 position: Position { line, character },
             },
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
         };
 
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -231,8 +231,8 @@ impl LspClient {
                 text_document: TextDocumentIdentifier { uri },
                 position: Position { line, character },
             },
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
         };
 
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -267,8 +267,8 @@ impl LspClient {
                 text_document: TextDocumentIdentifier { uri },
                 position: Position { line, character },
             },
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
             context: ReferenceContext {
                 include_declaration,
             },
@@ -299,7 +299,7 @@ impl LspClient {
                 text_document: TextDocumentIdentifier { uri },
                 position: Position { line, character },
             },
-            work_done_progress_params: Default::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
         };
 
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -322,8 +322,8 @@ impl LspClient {
     pub async fn workspace_symbol(&self, query: String) -> ClientResult<Vec<SymbolInformation>> {
         let params = WorkspaceSymbolParams {
             query,
-            partial_result_params: Default::default(),
-            work_done_progress_params: Default::default(),
+            partial_result_params: PartialResultParams::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
         };
 
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -348,8 +348,8 @@ impl LspClient {
     pub async fn document_symbol(&self, uri: Uri) -> ClientResult<DocumentSymbolResponse> {
         let params = DocumentSymbolParams {
             text_document: TextDocumentIdentifier { uri },
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
         };
 
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -382,7 +382,7 @@ impl LspClient {
                 text_document: TextDocumentIdentifier { uri },
                 position: Position { line, character },
             },
-            work_done_progress_params: Default::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
         };
 
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -411,8 +411,8 @@ impl LspClient {
     ) -> ClientResult<Vec<CallHierarchyIncomingCall>> {
         let params = CallHierarchyIncomingCallsParams {
             item,
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
         };
 
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -440,8 +440,8 @@ impl LspClient {
     ) -> ClientResult<Vec<CallHierarchyOutgoingCall>> {
         let params = CallHierarchyOutgoingCallsParams {
             item,
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
         };
 
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -584,7 +584,7 @@ impl LspClient {
             writer: Mutex::new(writer),
             pending,
             next_id: AtomicI64::new(1),
-            _reader_task: reader_task,
+            reader_task,
         })
     }
 
@@ -681,11 +681,8 @@ async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
                     "Daemon exited with status: {status}"
                 ))));
             }
-            Ok(Some(_)) => {
-                // Process exited successfully - daemon daemonized, continue waiting for socket
-            }
-            Ok(None) => {
-                // Still running, continue
+            Ok(Some(_) | None) => {
+                // Process exited successfully - daemon daemonized, or still running; continue waiting for socket
             }
             Err(e) => {
                 return Err(ClientError::SpawnFailed(e));
@@ -741,6 +738,6 @@ fn which_aether_lspd() -> Option<PathBuf> {
 
 impl Drop for LspClient {
     fn drop(&mut self) {
-        self._reader_task.abort();
+        self.reader_task.abort();
     }
 }

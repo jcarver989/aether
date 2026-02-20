@@ -50,7 +50,11 @@ impl Client for AutoApproveClient {
                     o.kind,
                     PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways
                 )
-            }).map_or_else(|| args.options[0].option_id.clone(), |o| o.option_id.clone());
+            })
+            .map_or_else(
+                || args.options[0].option_id.clone(),
+                |o| o.option_id.clone(),
+            );
 
         Ok(RequestPermissionResponse::new(
             RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
@@ -201,9 +205,10 @@ where
         }
     };
 
-    let agent_name = init_resp
-        .agent_info
-        .as_ref().map_or_else(|| "agent".to_string(), |info| info.title.as_deref().unwrap_or(&info.name).to_string());
+    let agent_name = init_resp.agent_info.as_ref().map_or_else(
+        || "agent".to_string(),
+        |info| info.title.as_deref().unwrap_or(&info.name).to_string(),
+    );
 
     info!(
         "ACP initialized: protocol={:?}, agent_info={:?}",

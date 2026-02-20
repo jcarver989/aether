@@ -46,6 +46,7 @@ pub fn create_custom_stream_generic<R: Serialize + Send + 'static>(
     })
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn process_compatible_stream<E: Into<LlmError> + Send>(
     mut stream: impl Stream<Item = std::result::Result<ChatCompletionStreamResponse, E>> + Send + Unpin,
 ) -> impl Stream<Item = Result<LlmResponse>> + Send {

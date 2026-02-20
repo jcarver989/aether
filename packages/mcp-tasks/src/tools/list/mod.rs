@@ -69,6 +69,7 @@ pub struct TaskListOutput {
     pub _meta: Option<serde_json::Value>,
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn execute_task_list(input: TaskListInput, store: &TaskStore) -> TaskListOutput {
     let tasks: Vec<TaskSummary> = if input.ready_only.unwrap_or(false) {
         store

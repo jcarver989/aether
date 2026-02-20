@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 /// - Additional finish reasons like 'error' (openrouter)
 /// - Optional `system_fingerprint` and usage fields
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FinishReason {
     Stop,
@@ -85,7 +85,7 @@ pub struct Usage {
 }
 
 impl From<ChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {
-    #[allow(deprecated)]
+    #[allow(deprecated, clippy::cast_possible_truncation)]
     fn from(response: ChatCompletionStreamResponse) -> Self {
         CreateChatCompletionStreamResponse {
             id: response.id,
@@ -103,17 +103,17 @@ impl From<ChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {
 impl From<FinishReason> for OpenAiFinishReason {
     fn from(reason: FinishReason) -> Self {
         match reason {
-            FinishReason::Stop => OpenAiFinishReason::Stop,
+            FinishReason::Stop | FinishReason::Error => OpenAiFinishReason::Stop,
             FinishReason::Length => OpenAiFinishReason::Length,
             FinishReason::ToolCalls => OpenAiFinishReason::ToolCalls,
             FinishReason::ContentFilter => OpenAiFinishReason::ContentFilter,
             FinishReason::FunctionCall => OpenAiFinishReason::FunctionCall,
-            FinishReason::Error => OpenAiFinishReason::Stop,
         }
     }
 }
 
 impl From<ChatCompletionStreamChoice> for ChatChoiceStream {
+    #[allow(clippy::cast_sign_loss)]
     fn from(choice: ChatCompletionStreamChoice) -> Self {
         ChatChoiceStream {
             index: choice.index as u32,
@@ -140,6 +140,7 @@ impl From<ChatCompletionStreamResponseDelta> for OpenAiDelta {
 }
 
 impl From<ToolCallDelta> for ChatCompletionMessageToolCallChunk {
+    #[allow(clippy::cast_sign_loss)]
     fn from(call: ToolCallDelta) -> Self {
         ChatCompletionMessageToolCallChunk {
             index: call.index as u32,
@@ -163,6 +164,7 @@ impl From<FunctionCallDelta> for FunctionCallStream {
 }
 
 impl From<Usage> for CompletionUsage {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn from(u: Usage) -> Self {
         CompletionUsage {
             prompt_tokens: u.prompt_tokens.max(0) as u32,

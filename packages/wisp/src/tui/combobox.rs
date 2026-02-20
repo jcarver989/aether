@@ -40,12 +40,12 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     }
 
     pub fn from_matches(matches: Vec<T>) -> Self {
-        let matcher = Nucleo::new(Config::DEFAULT, Arc::new(|| {}), Some(1), 1);
+        let nucleo = Nucleo::new(Config::DEFAULT, Arc::new(|| {}), Some(1), 1);
         Self {
             query: String::new(),
             matches,
             selected_index: 0,
-            matcher,
+            matcher: nucleo,
         }
     }
 

@@ -71,18 +71,18 @@ impl EvalResult {
     /// Get the eval ID regardless of state
     pub fn id(&self) -> Uuid {
         match self {
-            EvalResult::Started { id, .. } => *id,
-            EvalResult::Running { id, .. } => *id,
-            EvalResult::Completed { id, .. } => *id,
+            EvalResult::Started { id, .. }
+            | EvalResult::Running { id, .. }
+            | EvalResult::Completed { id, .. } => *id,
         }
     }
 
     /// Get the eval name regardless of state
     pub fn eval_name(&self) -> &str {
         match self {
-            EvalResult::Started { eval_name, .. } => eval_name,
-            EvalResult::Running { eval_name, .. } => eval_name,
-            EvalResult::Completed { eval_name, .. } => eval_name,
+            EvalResult::Started { eval_name, .. }
+            | EvalResult::Running { eval_name, .. }
+            | EvalResult::Completed { eval_name, .. } => eval_name,
         }
     }
 

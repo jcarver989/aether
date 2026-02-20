@@ -26,6 +26,7 @@ enum StreamEvent {
 
 type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
 
+#[allow(clippy::struct_field_names)]
 pub struct Agent {
     llm: Arc<dyn StreamingModelProvider>,
     context: Context,
@@ -84,7 +85,7 @@ impl Agent {
         let mut state = IterationState::new();
 
         while let Some((_, event)) = self.streams.next().await {
-            use UserMessage::{Cancel, Text, SwitchModel};
+            use UserMessage::{Cancel, SwitchModel, Text};
             match event {
                 StreamEvent::UserMessage(Cancel) => {
                     self.on_user_cancel(&mut state).await;
@@ -92,7 +93,7 @@ impl Agent {
 
                 StreamEvent::UserMessage(Text { content }) => {
                     state = IterationState::new();
-                    self.on_user_text(content).await;
+                    self.on_user_text(content);
                 }
 
                 StreamEvent::UserMessage(SwitchModel(new_provider)) => {
@@ -182,7 +183,7 @@ impl Agent {
         let _ = self.agent_message_tx.send(AgentMessage::Done).await;
     }
 
-    async fn on_user_text(&mut self, content: String) {
+    fn on_user_text(&mut self, content: String) {
         self.context.add_message(ChatMessage::User {
             content,
             timestamp: IsoString::now(),
@@ -227,7 +228,8 @@ impl Agent {
             });
         }
 
-        let reason = stop_reason.map_or_else(|| "Unknown".to_string(), |reason| format!("{reason:?}"));
+        let reason =
+            stop_reason.map_or_else(|| "Unknown".to_string(), |reason| format!("{reason:?}"));
 
         self.context.add_message(ChatMessage::User {
             content: format!(
@@ -242,7 +244,10 @@ impl Agent {
         result: Result<LlmResponse, LlmError>,
         state: &mut IterationState,
     ) {
-        use LlmResponse::{Start, Text, Reasoning, ToolRequestStart, ToolRequestArg, ToolRequestComplete, Done, Error, Usage};
+        use LlmResponse::{
+            Done, Error, Reasoning, Start, Text, ToolRequestArg, ToolRequestComplete,
+            ToolRequestStart, Usage,
+        };
 
         let response = match result {
             Ok(response) => response,
@@ -303,6 +308,7 @@ impl Agent {
         }
     }
 
+    #[allow(clippy::unused_self)]
     fn handle_llm_start(&mut self, message_id: String, state: &mut IterationState) {
         state.current_message_id = Some(message_id);
         state.message_content.clear();

@@ -1,3 +1,4 @@
+#![allow(clippy::cast_possible_truncation)]
 use super::component::RenderContext;
 use super::screen::{Line, Screen};
 use super::soft_wrap::soft_wrap_lines_with_map;

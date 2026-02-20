@@ -23,6 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .spawn()
         .await?;
+
     let (tx, mut rx, _handle) = agent(llm)
         .system_prompt(Prompt::text(
             "You are a helpful assistant with access to web browsing tools via Playwright.",
