@@ -16,6 +16,10 @@ members = [
     "packages/mcp-subagents"
 ]
 
+[workspace.lints.clippy]
+pedantic = "warn"
+all = "warn"
+
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "^1.49.0", features = ["full"] }
