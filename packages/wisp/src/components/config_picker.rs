@@ -63,6 +63,7 @@ impl ConfigPicker {
             idx = (idx + len - 1) % len;
             if !self.combobox.matches[idx].is_disabled {
                 self.combobox.selected_index = idx;
+                self.combobox.ensure_visible();
                 return;
             }
         }
@@ -75,6 +76,7 @@ impl ConfigPicker {
             idx = (idx + 1) % len;
             if !self.combobox.matches[idx].is_disabled {
                 self.combobox.selected_index = idx;
+                self.combobox.ensure_visible();
                 return;
             }
         }
@@ -106,6 +108,7 @@ impl ConfigPicker {
         {
             self.combobox.selected_index = self.first_enabled_index().unwrap_or(0);
         }
+        self.combobox.ensure_visible();
     }
 }
 
@@ -120,8 +123,8 @@ impl Component for ConfigPicker {
             return lines;
         }
 
-        for (i, option) in self.combobox.matches.iter().enumerate() {
-            let prefix = if i == self.combobox.selected_index {
+        for (i, option) in self.combobox.visible_matches().iter().enumerate() {
+            let prefix = if Some(i) == self.combobox.visible_selected_index() {
                 "▶ "
             } else {
                 "  "
@@ -145,7 +148,7 @@ impl Component for ConfigPicker {
             let line_text = format!("{prefix}{label}");
             let line = if option.is_disabled {
                 Line::styled(line_text, context.theme.muted)
-            } else if i == self.combobox.selected_index {
+            } else if Some(i) == self.combobox.visible_selected_index() {
                 Line::styled(line_text, context.theme.primary)
             } else {
                 Line::new(line_text)

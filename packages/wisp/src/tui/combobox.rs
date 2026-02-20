@@ -2,7 +2,8 @@ use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Nucleo};
 use std::sync::Arc;
 
-const MAX_VISIBLE_MATCHES: u32 = 10;
+const MAX_VISIBLE: usize = 10;
+const MAX_MATCHES: u32 = 200;
 const MATCH_TIMEOUT_MS: u64 = 10;
 const MAX_TICKS_PER_QUERY: usize = 4;
 
@@ -14,6 +15,7 @@ pub struct Combobox<T: Searchable + Send + Sync + 'static> {
     pub query: String,
     pub matches: Vec<T>,
     pub selected_index: usize,
+    scroll_offset: usize,
     matcher: Nucleo<T>,
 }
 
@@ -33,6 +35,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             query: String::new(),
             matches: Vec::new(),
             selected_index: 0,
+            scroll_offset: 0,
             matcher,
         };
         combobox.matches = combobox.search(false);
@@ -45,6 +48,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             query: String::new(),
             matches,
             selected_index: 0,
+            scroll_offset: 0,
             matcher: nucleo,
         }
     }
@@ -73,6 +77,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             0 => self.selected_index = self.matches.len() - 1,
             i => self.selected_index = i - 1,
         }
+        self.ensure_visible();
     }
 
     pub fn move_selection_down(&mut self) {
@@ -80,6 +85,28 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             _ if self.matches.is_empty() => {}
             i if i >= self.matches.len() - 1 => self.selected_index = 0,
             _ => self.selected_index += 1,
+        }
+        self.ensure_visible();
+    }
+
+    pub fn visible_matches(&self) -> &[T] {
+        let end = (self.scroll_offset + MAX_VISIBLE).min(self.matches.len());
+        &self.matches[self.scroll_offset..end]
+    }
+
+    pub fn visible_selected_index(&self) -> Option<usize> {
+        self.selected_index.checked_sub(self.scroll_offset)
+    }
+
+    pub fn ensure_visible(&mut self) {
+        if self.matches.is_empty() {
+            self.scroll_offset = 0;
+            return;
+        }
+        if self.selected_index < self.scroll_offset {
+            self.scroll_offset = self.selected_index;
+        } else if self.selected_index >= self.scroll_offset + MAX_VISIBLE {
+            self.scroll_offset = self.selected_index + 1 - MAX_VISIBLE;
         }
     }
 
@@ -89,6 +116,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
 
     fn refresh_matches(&mut self, append: bool) {
         self.matches = self.search(append);
+        self.scroll_offset = 0;
         if self.selected_index >= self.matches.len() {
             self.selected_index = 0;
         }
@@ -110,7 +138,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
         }
 
         let snapshot = self.matcher.snapshot();
-        let limit = snapshot.matched_item_count().min(MAX_VISIBLE_MATCHES);
+        let limit = snapshot.matched_item_count().min(MAX_MATCHES);
         snapshot
             .matched_items(0..limit)
             .map(|item| item.data.clone())
@@ -235,5 +263,98 @@ mod tests {
         combobox.move_selection_up();
         combobox.move_selection_down();
         assert!(combobox.selected().is_none());
+    }
+
+    fn many_items(n: usize) -> Vec<FakeItem> {
+        (0..n)
+            .map(|i| FakeItem::new(&format!("item-{i}")))
+            .collect()
+    }
+
+    #[test]
+    fn from_matches_stores_more_than_viewport() {
+        let combobox = Combobox::from_matches(many_items(25));
+        assert_eq!(combobox.matches.len(), 25);
+    }
+
+    #[test]
+    fn visible_matches_returns_viewport_window() {
+        let combobox = Combobox::from_matches(many_items(25));
+        assert_eq!(combobox.visible_matches().len(), MAX_VISIBLE);
+        assert_eq!(combobox.visible_matches()[0].text, "item-0");
+        assert_eq!(combobox.visible_matches()[9].text, "item-9");
+    }
+
+    #[test]
+    fn visible_matches_returns_all_when_fewer_than_viewport() {
+        let combobox = Combobox::from_matches(many_items(3));
+        assert_eq!(combobox.visible_matches().len(), 3);
+    }
+
+    #[test]
+    fn scroll_down_past_viewport_adjusts_offset() {
+        let mut combobox = Combobox::from_matches(many_items(25));
+        for _ in 0..12 {
+            combobox.move_selection_down();
+        }
+        assert_eq!(combobox.selected_index, 12);
+        assert_eq!(combobox.scroll_offset, 3);
+        assert_eq!(combobox.visible_matches()[0].text, "item-3");
+        assert_eq!(combobox.visible_selected_index(), Some(9));
+    }
+
+    #[test]
+    fn scroll_up_adjusts_offset() {
+        let mut combobox = Combobox::from_matches(many_items(25));
+        // Scroll down past viewport
+        for _ in 0..15 {
+            combobox.move_selection_down();
+        }
+        assert_eq!(combobox.selected_index, 15);
+        // Now scroll back up
+        for _ in 0..10 {
+            combobox.move_selection_up();
+        }
+        assert_eq!(combobox.selected_index, 5);
+        assert_eq!(combobox.scroll_offset, 5);
+        assert_eq!(combobox.visible_selected_index(), Some(0));
+    }
+
+    #[test]
+    fn wrap_down_resets_scroll_offset() {
+        let mut combobox = Combobox::from_matches(many_items(25));
+        // Move to last item
+        for _ in 0..15 {
+            combobox.move_selection_down();
+        }
+        // Now wrap around from last to first
+        combobox.selected_index = 24;
+        combobox.ensure_visible();
+        combobox.move_selection_down();
+        assert_eq!(combobox.selected_index, 0);
+        assert_eq!(combobox.scroll_offset, 0);
+    }
+
+    #[test]
+    fn wrap_up_scrolls_to_end() {
+        let mut combobox = Combobox::from_matches(many_items(25));
+        combobox.move_selection_up();
+        assert_eq!(combobox.selected_index, 24);
+        assert_eq!(combobox.scroll_offset, 15);
+        assert_eq!(combobox.visible_selected_index(), Some(9));
+    }
+
+    #[test]
+    fn refresh_matches_resets_scroll_offset() {
+        let items = many_items(25);
+        let mut combobox = Combobox::from_matches(items);
+        combobox.scroll_offset = 10;
+        combobox.selected_index = 15;
+        // Simulating what refresh_matches does via update_query
+        combobox.matches = many_items(5);
+        combobox.scroll_offset = 0;
+        combobox.selected_index = 0;
+        assert_eq!(combobox.scroll_offset, 0);
+        assert_eq!(combobox.selected_index, 0);
     }
 }

@@ -113,15 +113,15 @@ impl Component for FilePicker {
             return lines;
         }
 
-        for (i, file) in self.combobox.matches.iter().enumerate() {
-            let prefix = if i == self.combobox.selected_index {
+        for (i, file) in self.combobox.visible_matches().iter().enumerate() {
+            let prefix = if Some(i) == self.combobox.visible_selected_index() {
                 "▶ "
             } else {
                 "  "
             };
 
             let line_text = format!("{}{}", prefix, file.display_name);
-            let line = if i == self.combobox.selected_index {
+            let line = if Some(i) == self.combobox.visible_selected_index() {
                 Line::styled(line_text, context.theme.primary)
             } else {
                 Line::new(line_text)
