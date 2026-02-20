@@ -45,7 +45,12 @@ pub(crate) fn spawn_relay(
     acp_session_id: SessionId,
 ) -> (mpsc::Sender<SessionCommand>, JoinHandle<()>) {
     let (cmd_tx, cmd_rx) = mpsc::channel(8);
-    let handle = tokio::spawn(run_session_relay(session, cmd_rx, actor_handle, acp_session_id));
+    let handle = tokio::spawn(run_session_relay(
+        session,
+        cmd_rx,
+        actor_handle,
+        acp_session_id,
+    ));
     (cmd_tx, handle)
 }
 
@@ -311,14 +316,8 @@ mod tests {
                 "ARGUMENTS".to_string(),
                 serde_json::Value::String("do a thing that has spaces".to_string()),
             ),
-            (
-                "1".to_string(),
-                serde_json::Value::String("do".to_string()),
-            ),
-            (
-                "2".to_string(),
-                serde_json::Value::String("a".to_string()),
-            ),
+            ("1".to_string(), serde_json::Value::String("do".to_string())),
+            ("2".to_string(), serde_json::Value::String("a".to_string())),
             (
                 "3".to_string(),
                 serde_json::Value::String("thing".to_string()),

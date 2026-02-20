@@ -3,9 +3,8 @@ use agent_client_protocol::{
     AvailableCommandsUpdate, Implementation, InitializeRequest, InitializeResponse,
     LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse,
     PromptCapabilities, PromptResponse, ProtocolVersion, SessionConfigOption,
-    SessionConfigOptionCategory, SessionConfigSelectOption, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
-    SetSessionModeResponse,
+    SessionConfigOptionCategory, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
 };
 use llm::catalog::{self, LlmModel};
 use llm::parser::ModelProviderParser;
@@ -79,35 +78,11 @@ fn provider_display_name(provider: &str) -> &str {
     }
 }
 
-/// Extract distinct provider identifiers from available models in stable order
-fn unique_providers(available: &[LlmModel]) -> Vec<&'static str> {
-    let mut seen = Vec::new();
-    for m in available {
-        let p = m.provider();
-        if !seen.contains(&p) {
-            seen.push(p);
-        }
-    }
-    seen
-}
-
-fn provider_required_env_var(models: &[LlmModel], provider: &str) -> Option<&'static str> {
-    models
-        .iter()
-        .find(|m| m.provider() == provider)
-        .and_then(|m| m.required_env_var())
-}
-
 fn unavailable_reason(model: &LlmModel) -> String {
     model
         .required_env_var()
         .map(|var| format!("Unavailable: set {var}"))
         .unwrap_or_else(|| "Unavailable: provider is not configured".to_string())
-}
-
-/// Extract the provider portion from a "provider:model_id" string
-fn provider_from_model_str(model_str: &str) -> &str {
-    model_str.split(':').next().unwrap_or(model_str)
 }
 
 fn model_exists(available: &[LlmModel], model_str: &str) -> bool {
@@ -118,64 +93,21 @@ fn effective_model<'a>(active_model: &'a str, pending_model: Option<&'a str>) ->
     pending_model.unwrap_or(active_model)
 }
 
-/// Build the "Provider" select config option
-fn build_provider_config_option(
-    available: &[LlmModel],
-    current_provider: &str,
-) -> SessionConfigOption {
-    let all_models = catalog::LlmModel::all();
-    let providers = unique_providers(all_models);
-    let available_providers: HashSet<&str> = available.iter().map(|m| m.provider()).collect();
-    let options: Vec<SessionConfigSelectOption> = providers
-        .iter()
-        .map(|p| {
-            let is_available = available_providers.contains(p);
-            let display_name = provider_display_name(p);
-            let name = if is_available {
-                display_name.to_string()
-            } else {
-                format!("{display_name} (unavailable)")
-            };
-
-            let option = SessionConfigSelectOption::new(p.to_string(), name);
-            if is_available {
-                option
-            } else {
-                let description = provider_required_env_var(all_models, p)
-                    .map(|var| format!("Unavailable: set {var}"))
-                    .unwrap_or_else(|| "Unavailable: provider is not configured".to_string());
-                option.description(description)
-            }
-        })
-        .collect();
-
-    SessionConfigOption::select(
-        "provider",
-        "Provider",
-        current_provider.to_string(),
-        options,
-    )
-    .category(SessionConfigOptionCategory::Model)
-}
-
-/// Build the "Model" select config option, filtered to only models from the given provider
-fn build_model_config_option(
-    available: &[LlmModel],
-    current_provider: &str,
-    current_model: &str,
-) -> SessionConfigOption {
+/// Build the "Model" select config option with all models from all providers.
+/// Display names use "Provider / ModelName" format.
+fn build_model_config_option(available: &[LlmModel], current_model: &str) -> SessionConfigOption {
     let all_models = catalog::LlmModel::all();
     let available_models: HashSet<String> = available.iter().map(provider_model_str).collect();
     let options: Vec<acp::SessionConfigSelectOption> = all_models
         .iter()
-        .filter(|m| m.provider() == current_provider)
         .map(|m| {
             let value = provider_model_str(m);
             let is_available = available_models.contains(&value);
+            let provider = provider_display_name(m.provider());
             let name = if is_available {
-                m.display_name().to_string()
+                format!("{} / {}", provider, m.display_name())
             } else {
-                format!("{} (unavailable)", m.display_name())
+                format!("{} / {} (unavailable)", provider, m.display_name())
             };
             let option = acp::SessionConfigSelectOption::new(value, name);
             if is_available {
@@ -190,13 +122,9 @@ fn build_model_config_option(
         .category(SessionConfigOptionCategory::Model)
 }
 
-/// Build both Provider and Model config options for the given state
+/// Build config options for the given state
 fn build_config_options(available: &[LlmModel], current_model: &str) -> Vec<SessionConfigOption> {
-    let current_provider = provider_from_model_str(current_model);
-    vec![
-        build_provider_config_option(available, current_provider),
-        build_model_config_option(available, current_provider, current_model),
-    ]
+    vec![build_model_config_option(available, current_model)]
 }
 
 /// Pick a default model from the available list.
@@ -381,7 +309,10 @@ impl Agent for SessionManager {
         let stop_reason = result_rx
             .await
             .map_err(|_| {
-                error!("Relay dropped result channel for session {}", session_id_str);
+                error!(
+                    "Relay dropped result channel for session {}",
+                    session_id_str
+                );
                 acp::Error::internal_error()
             })?
             .map_err(|e| {
@@ -431,64 +362,29 @@ impl Agent for SessionManager {
 
         let available = catalog::available_models();
 
-        match config_id.as_str() {
-            "provider" => {
-                // Find the first model for the new provider
-                let first_model = available
-                    .iter()
-                    .find(|m| m.provider() == value)
-                    .ok_or_else(|| {
-                        error!("No models found for provider: {}", value);
-                        acp::Error::invalid_params()
-                    })?;
-                let new_model_str = provider_model_str(first_model);
-                let mut sessions = self.sessions.lock().await;
-                let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
-                    error!("Session not found: {}", session_id_str);
-                    acp::Error::invalid_params()
-                })?;
-
-                if state.active_model == new_model_str {
-                    state.pending_model = None;
-                } else {
-                    state.pending_model = Some(new_model_str.clone());
-                }
-
-                let options = build_config_options(
-                    &available,
-                    effective_model(&state.active_model, state.pending_model.as_deref()),
-                );
-                Ok(SetSessionConfigOptionResponse::new(options))
-            }
-            "model" => {
-                if !model_exists(&available, &value) {
-                    error!("Unknown model in set_session_config_option: {}", value);
-                    return Err(acp::Error::invalid_params());
-                }
-
-                let mut sessions = self.sessions.lock().await;
-                let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
-                    error!("Session not found: {}", session_id_str);
-                    acp::Error::invalid_params()
-                })?;
-
-                if state.active_model == value {
-                    state.pending_model = None;
-                } else {
-                    state.pending_model = Some(value);
-                }
-
-                let options = build_config_options(
-                    &available,
-                    effective_model(&state.active_model, state.pending_model.as_deref()),
-                );
-                Ok(SetSessionConfigOptionResponse::new(options))
-            }
-            _ => {
-                error!("Unknown config option: {}", config_id);
-                Err(acp::Error::invalid_params())
-            }
+        if config_id.as_str() != "model" {
+            error!("Unknown config option: {}", config_id);
+            return Err(acp::Error::invalid_params());
         }
+
+        if !model_exists(&available, &value) {
+            error!("Unknown model in set_session_config_option: {}", value);
+            return Err(acp::Error::invalid_params());
+        }
+
+        let mut sessions = self.sessions.lock().await;
+        let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
+            error!("Session not found: {}", session_id_str);
+            acp::Error::invalid_params()
+        })?;
+
+        state.pending_model = (state.active_model != value).then_some(value);
+
+        let options = build_config_options(
+            &available,
+            effective_model(&state.active_model, state.pending_model.as_deref()),
+        );
+        Ok(SetSessionConfigOptionResponse::new(options))
     }
 
     async fn set_session_mode(
@@ -547,98 +443,9 @@ mod tests {
     }
 
     #[test]
-    fn unique_providers_preserves_order() {
+    fn build_model_config_option_includes_all_providers() {
         let models = test_models();
-        let providers = unique_providers(&models);
-        assert_eq!(providers, vec!["anthropic", "deepseek", "gemini"]);
-    }
-
-    #[test]
-    fn unique_providers_deduplicates() {
-        let models = test_models();
-        let providers = unique_providers(&models);
-        assert_eq!(providers.iter().filter(|&&p| p == "anthropic").count(), 1);
-    }
-
-    #[test]
-    fn provider_from_model_str_splits_correctly() {
-        assert_eq!(
-            provider_from_model_str("anthropic:claude-opus-4-6"),
-            "anthropic"
-        );
-        assert_eq!(
-            provider_from_model_str("deepseek:deepseek-chat"),
-            "deepseek"
-        );
-    }
-
-    #[test]
-    fn provider_from_model_str_handles_no_colon() {
-        assert_eq!(provider_from_model_str("justaprovider"), "justaprovider");
-    }
-
-    #[test]
-    fn build_provider_config_option_has_correct_structure() {
-        let models = test_models();
-        let opt = build_provider_config_option(&models, "anthropic");
-
-        assert_eq!(opt.id.0.as_ref(), "provider");
-        assert_eq!(opt.name, "Provider");
-
-        let SessionConfigKind::Select(ref select) = opt.kind else {
-            panic!("Expected Select kind");
-        };
-        assert_eq!(select.current_value.0.as_ref(), "anthropic");
-
-        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
-            panic!("Expected Ungrouped options");
-        };
-        assert!(
-            options
-                .iter()
-                .any(|o| o.value.0.as_ref() == "anthropic" && o.name == "Anthropic")
-        );
-        assert!(
-            options
-                .iter()
-                .any(|o| o.value.0.as_ref() == "deepseek" && o.name == "DeepSeek")
-        );
-        assert!(
-            options
-                .iter()
-                .any(|o| o.value.0.as_ref() == "gemini" && o.name == "Gemini")
-        );
-    }
-
-    #[test]
-    fn build_provider_config_option_marks_unavailable_providers() {
-        let models = test_models();
-        let opt = build_provider_config_option(&models, "anthropic");
-
-        let SessionConfigKind::Select(ref select) = opt.kind else {
-            panic!("Expected Select kind");
-        };
-        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
-            panic!("Expected Ungrouped options");
-        };
-
-        let openrouter = options
-            .iter()
-            .find(|o| o.value.0.as_ref() == "openrouter")
-            .expect("expected openrouter provider option");
-        assert!(openrouter.name.contains("unavailable"));
-        assert!(
-            openrouter
-                .description
-                .as_deref()
-                .is_some_and(|d| d.starts_with("Unavailable:"))
-        );
-    }
-
-    #[test]
-    fn build_model_config_option_filters_by_provider() {
-        let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic", "anthropic:claude-sonnet-4-5");
+        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
 
         assert_eq!(opt.id.0.as_ref(), "model");
 
@@ -650,21 +457,15 @@ mod tests {
             panic!("Expected Ungrouped options");
         };
 
-        // Only anthropic models should be listed
-        assert!(options.len() >= 2);
-        for o in options {
-            assert!(
-                o.value.0.starts_with("anthropic:"),
-                "Expected anthropic model, got: {}",
-                o.value.0
-            );
-        }
+        assert!(options.iter().any(|o| o.value.0.starts_with("anthropic:")));
+        assert!(options.iter().any(|o| o.value.0.starts_with("deepseek:")));
+        assert!(options.iter().any(|o| o.value.0.starts_with("gemini:")));
     }
 
     #[test]
-    fn build_model_config_option_marks_unavailable_models_with_reason() {
+    fn build_model_config_option_uses_provider_slash_model_display_names() {
         let models = test_models();
-        let opt = build_model_config_option(&models, "openrouter", "openrouter:openai/gpt-4o");
+        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
 
         let SessionConfigKind::Select(ref select) = opt.kind else {
             panic!("Expected Select kind");
@@ -672,11 +473,38 @@ mod tests {
         let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
             panic!("Expected Ungrouped options");
         };
-        assert!(!options.is_empty());
-        let first = &options[0];
-        assert!(first.name.contains("unavailable"));
+
+        // Available models should have "Provider / Model" format
+        let sonnet = options
+            .iter()
+            .find(|o| o.value.0.as_ref() == "anthropic:claude-sonnet-4-5")
+            .expect("expected anthropic sonnet option");
         assert!(
-            first
+            sonnet.name.starts_with("Anthropic / "),
+            "Expected 'Anthropic / ...' display name, got: {}",
+            sonnet.name
+        );
+    }
+
+    #[test]
+    fn build_model_config_option_marks_unavailable_models_with_reason() {
+        let models = test_models();
+        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
+
+        let SessionConfigKind::Select(ref select) = opt.kind else {
+            panic!("Expected Select kind");
+        };
+        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
+            panic!("Expected Ungrouped options");
+        };
+
+        let unavailable = options
+            .iter()
+            .find(|o| o.name.contains("unavailable"))
+            .expect("expected at least one unavailable model option");
+        assert!(unavailable.name.contains(" / "));
+        assert!(
+            unavailable
                 .description
                 .as_deref()
                 .is_some_and(|d| d.starts_with("Unavailable:"))
@@ -684,37 +512,34 @@ mod tests {
     }
 
     #[test]
-    fn build_config_options_returns_provider_and_model() {
+    fn build_config_options_returns_single_model_option() {
         let models = test_models();
         let opts = build_config_options(&models, "deepseek:deepseek-chat");
 
-        assert_eq!(opts.len(), 2);
-        assert_eq!(opts[0].id.0.as_ref(), "provider");
-        assert_eq!(opts[1].id.0.as_ref(), "model");
+        assert_eq!(opts.len(), 1);
+        assert_eq!(opts[0].id.0.as_ref(), "model");
 
-        // Provider should be set to deepseek
-        let SessionConfigKind::Select(ref provider_select) = opts[0].kind else {
+        let SessionConfigKind::Select(ref model_select) = opts[0].kind else {
             panic!("Expected Select kind");
         };
-        assert_eq!(provider_select.current_value.0.as_ref(), "deepseek");
+        assert_eq!(
+            model_select.current_value.0.as_ref(),
+            "deepseek:deepseek-chat"
+        );
 
-        // Model list should only contain deepseek models
-        let SessionConfigKind::Select(ref model_select) = opts[1].kind else {
-            panic!("Expected Select kind");
-        };
+        // Should include models from all providers
         let SessionConfigSelectOptions::Ungrouped(ref model_options) = model_select.options else {
             panic!("Expected Ungrouped options");
         };
-        assert!(!model_options.is_empty());
         assert!(
             model_options
                 .iter()
-                .all(|o| o.value.0.starts_with("deepseek:"))
+                .any(|o| o.value.0.starts_with("anthropic:"))
         );
         assert!(
             model_options
                 .iter()
-                .any(|o| o.value.0.as_ref() == "deepseek:deepseek-chat")
+                .any(|o| o.value.0.starts_with("deepseek:"))
         );
     }
 

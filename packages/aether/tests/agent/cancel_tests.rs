@@ -59,7 +59,9 @@ async fn test_prompt_after_cancel_produces_response() {
 
     loop {
         match tokio::time::timeout_at(deadline, rx.recv()).await {
-            Ok(Some(AgentMessage::Text { is_complete: false, .. })) => {
+            Ok(Some(AgentMessage::Text {
+                is_complete: false, ..
+            })) => {
                 got_text = true;
             }
             Ok(Some(AgentMessage::Done)) => {
