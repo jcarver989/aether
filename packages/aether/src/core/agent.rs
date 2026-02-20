@@ -1,5 +1,4 @@
 use crate::context::{CompactionConfig, Compactor, TokenTracker};
-use crate::core::middleware::{AgentEvent, Middleware, MiddlewareAction};
 use crate::events::{AgentMessage, UserMessage};
 use crate::mcp::run_mcp_task::{McpCommand, ToolExecutionEvent};
 use futures::Stream;
@@ -33,7 +32,6 @@ pub struct Agent {
     mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
     agent_message_tx: mpsc::Sender<AgentMessage>,
     streams: StreamMap<String, EventStream>,
-    middleware: Middleware,
     tool_timeout: Duration,
     token_tracker: TokenTracker,
     compaction_config: Option<CompactionConfig>,
@@ -49,7 +47,6 @@ impl Agent {
         mcp_command_tx: Option<mpsc::Sender<McpCommand>>,
         user_message_rx: mpsc::Receiver<UserMessage>,
         agent_message_tx: mpsc::Sender<AgentMessage>,
-        middleware: Middleware,
         tool_timeout: Duration,
         compaction_config: Option<CompactionConfig>,
         auto_continue: AutoContinue,
@@ -66,7 +63,6 @@ impl Agent {
             mcp_command_tx,
             agent_message_tx,
             streams,
-            middleware,
             tool_timeout,
             token_tracker: TokenTracker::new(200_000), // Default to Claude's 200k context limit
             compaction_config,
@@ -187,24 +183,6 @@ impl Agent {
     }
 
     async fn on_user_text(&mut self, content: String) {
-        let action = self
-            .middleware
-            .emit(AgentEvent::UserMessage {
-                content: content.clone(),
-            })
-            .await;
-
-        if action == MiddlewareAction::Block {
-            tracing::debug!("User message blocked by middleware");
-            let _ = self
-                .agent_message_tx
-                .send(AgentMessage::Error {
-                    message: "Message blocked by middleware".to_string(),
-                })
-                .await;
-            return;
-        }
-
         self.context.add_message(ChatMessage::User {
             content,
             timestamp: IsoString::now(),
@@ -398,26 +376,6 @@ impl Agent {
         tool_call: ToolCallRequest,
         state: &mut IterationState,
     ) {
-        let action = self
-            .middleware
-            .emit(AgentEvent::ToolCall {
-                id: tool_call.id.clone(),
-                name: tool_call.name.clone(),
-                arguments: tool_call.arguments.clone(),
-            })
-            .await;
-
-        if action == MiddlewareAction::Block {
-            tracing::debug!("Tool call '{}' blocked by middleware", tool_call.name);
-            let _ = self
-                .agent_message_tx
-                .send(AgentMessage::Error {
-                    message: format!("Tool '{}' blocked by middleware", tool_call.name),
-                })
-                .await;
-            return;
-        }
-
         state.pending_tool_ids.insert(tool_call.id.clone());
         self.active_requests
             .insert(tool_call.id.clone(), tool_call.clone());
@@ -501,14 +459,6 @@ impl Agent {
 
                 self.context = result.context;
                 self.token_tracker.reset_current_usage();
-
-                let _ = self
-                    .middleware
-                    .emit(AgentEvent::ContextCompactionResult {
-                        summary_length: result.summary.len(),
-                        messages_removed: result.messages_removed,
-                    })
-                    .await;
 
                 let _ = self
                     .agent_message_tx

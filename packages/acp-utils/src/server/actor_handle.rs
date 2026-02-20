@@ -45,6 +45,22 @@ impl AcpActorHandle {
             .await
             .map_err(|_| AcpServerError::ActorStopped)?
     }
+
+    pub async fn request_permission(
+        &self,
+        request: acp::RequestPermissionRequest,
+    ) -> Result<acp::RequestPermissionResponse, AcpServerError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.request_tx
+            .send(AcpRequest::RequestPermission {
+                request: Box::new(request),
+                response_tx,
+            })
+            .map_err(|_| AcpServerError::ActorStopped)?;
+        response_rx
+            .await
+            .map_err(|_| AcpServerError::ActorStopped)?
+    }
 }
 
 #[cfg(test)]
@@ -81,6 +97,29 @@ mod tests {
             serde_json::from_str("null").expect("null is valid JSON");
         let notification = acp::ExtNotification::new("test/method", null_value);
         let result = handle.send_ext_notification(notification).await;
+        assert!(matches!(result, Err(AcpServerError::ActorStopped)));
+    }
+
+    #[tokio::test]
+    async fn test_request_permission_returns_error_when_actor_stopped() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let handle = AcpActorHandle::new(tx);
+        drop(rx);
+
+        let request = acp::RequestPermissionRequest::new(
+            acp::SessionId::new("test"),
+            acp::ToolCallUpdate::new(
+                acp::ToolCallId::new("tool_1"),
+                acp::ToolCallUpdateFields::new(),
+            ),
+            vec![acp::PermissionOption::new(
+                acp::PermissionOptionId::new("allow-once"),
+                "Allow once",
+                acp::PermissionOptionKind::AllowOnce,
+            )],
+        );
+
+        let result = handle.request_permission(request).await;
         assert!(matches!(result, Err(AcpServerError::ActorStopped)));
     }
 }

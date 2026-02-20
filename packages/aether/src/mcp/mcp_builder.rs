@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::{
-    sync::mpsc::{self, Sender},
+    sync::mpsc::{self, Receiver, Sender},
     task::JoinHandle,
 };
 
@@ -24,6 +24,7 @@ pub struct McpSpawnResult {
     pub tool_definitions: Vec<ToolDefinition>,
     pub instructions: Vec<ServerInstructions>,
     pub command_tx: Sender<McpCommand>,
+    pub elicitation_rx: Receiver<ElicitationRequest>,
     pub handle: JoinHandle<()>,
 }
 
@@ -91,7 +92,7 @@ impl McpBuilder {
     pub async fn spawn(self) -> Result<McpSpawnResult, McpError> {
         let (mcp_command_tx, mcp_command_rx) =
             mpsc::channel::<McpCommand>(self.mcp_channel_capacity);
-        let (elicitation_tx, _elicitation_rx) =
+        let (elicitation_tx, elicitation_rx) =
             mpsc::channel::<ElicitationRequest>(self.mcp_channel_capacity);
 
         let mut mcp_manager = McpManager::new(elicitation_tx, self.oauth_handler);
@@ -115,6 +116,7 @@ impl McpBuilder {
             tool_definitions,
             instructions,
             command_tx: mcp_command_tx,
+            elicitation_rx,
             handle: mcp_handle,
         })
     }

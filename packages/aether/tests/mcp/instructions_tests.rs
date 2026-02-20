@@ -12,6 +12,7 @@ async fn test_fake_mcp_server_has_instructions() {
         tool_definitions: _,
         instructions,
         command_tx: _,
+        elicitation_rx: _,
         handle: _,
     } = mcp()
         .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
@@ -35,6 +36,7 @@ async fn test_multiple_servers_with_instructions() {
         tool_definitions: _,
         instructions,
         command_tx: _,
+        elicitation_rx: _,
         handle: _,
     } = mcp()
         .with_servers(vec![
@@ -79,6 +81,7 @@ async fn test_server_instructions_skips_empty_instructions() {
         tool_definitions: _,
         instructions,
         command_tx: _,
+        elicitation_rx: _,
         handle: _,
     } = mcp()
         .with_servers(vec![fake_mcp("with-content", FakeMcpServer::new())])
@@ -145,6 +148,7 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
         tool_definitions,
         instructions: _,
         command_tx: mcp_tx,
+        elicitation_rx: _,
         handle: _,
     } = mcp()
         .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
@@ -199,6 +203,7 @@ async fn test_agent_builder_works_without_mcp_instructions() {
         tool_definitions,
         instructions: _,
         command_tx: mcp_tx,
+        elicitation_rx: _,
         handle: _,
     } = mcp()
         .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
@@ -237,6 +242,7 @@ async fn test_mcp_instructions_from_server_are_included() {
         tool_definitions: _,
         instructions,
         command_tx: _,
+        elicitation_rx: _,
         handle: _,
     } = mcp()
         .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
