@@ -27,7 +27,7 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
     renderer.render(&screen)?;
 
     let mut terminal_event_rx = spawn_terminal_event_task();
-    let mut animation_interval = time::interval(Duration::from_millis(16));
+    let mut animation_interval = time::interval(Duration::from_millis(100));
     animation_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
     loop {
