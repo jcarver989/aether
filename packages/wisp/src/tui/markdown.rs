@@ -4,9 +4,7 @@ use std::sync::LazyLock;
 use crossterm::style::Color;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{
-    FontStyle, ScopeSelectors, StyleModifier, ThemeItem, ThemeSettings,
-};
+use syntect::highlighting::{FontStyle, ScopeSelectors, StyleModifier, ThemeItem, ThemeSettings};
 use syntect::parsing::SyntaxSet;
 
 use super::screen::{Line, Span, Style};
@@ -135,8 +133,10 @@ impl<'a> MarkdownRenderer<'a> {
             }
             Event::Rule => {
                 self.finish_current_line();
-                self.lines
-                    .push(Line::with_style("───────────────", Style::fg(self.theme.muted)));
+                self.lines.push(Line::with_style(
+                    "───────────────",
+                    Style::fg(self.theme.muted),
+                ));
                 self.lines.push(Line::default());
             }
             _ => {}
@@ -149,8 +149,7 @@ impl<'a> MarkdownRenderer<'a> {
                 self.finish_current_line();
                 let prefix = "#".repeat(level as usize);
                 self.push_styled_text(&format!("{prefix} "), Style::fg(self.theme.heading).bold());
-                self.style_stack
-                    .push(Style::fg(self.theme.heading).bold());
+                self.style_stack.push(Style::fg(self.theme.heading).bold());
             }
             Tag::Strong => {
                 self.style_stack.push(Style::default().bold());
@@ -164,7 +163,8 @@ impl<'a> MarkdownRenderer<'a> {
             Tag::BlockQuote(_) => {
                 self.finish_current_line();
                 self.blockquote_depth += 1;
-                self.style_stack.push(Style::fg(self.theme.blockquote).dim());
+                self.style_stack
+                    .push(Style::fg(self.theme.blockquote).dim());
             }
             Tag::CodeBlock(kind) => {
                 self.finish_current_line();
@@ -237,8 +237,7 @@ impl<'a> MarkdownRenderer<'a> {
                     self.lines.extend_from_slice(cached);
                 } else {
                     let code_lines = highlight_code(&code, &lang, self.theme);
-                    self.highlight_cache
-                        .insert(lang, code, code_lines.clone());
+                    self.highlight_cache.insert(lang, code, code_lines.clone());
                     self.lines.extend(code_lines);
                 }
                 self.lines.push(Line::default());
@@ -289,8 +288,7 @@ impl<'a> MarkdownRenderer<'a> {
 
     fn push_inline_code(&mut self, code: &str) {
         let style = Style::fg(self.theme.code_fg);
-        self.current_line
-            .push_span(Span::with_style(code, style));
+        self.current_line.push_span(Span::with_style(code, style));
     }
 
     /// Flush the current line only if it has content. Avoids pushing
@@ -338,16 +336,16 @@ fn highlight_code(code: &str, lang: &str, theme: &Theme) -> Vec<Line> {
 
     for source_line in code.lines() {
         let Ok(ranges) = h.highlight_line(source_line, &st.syntax_set) else {
-            lines.push(Line::with_style(
-                source_line,
-                Style::fg(theme.code_fg),
-            ));
+            lines.push(Line::with_style(source_line, Style::fg(theme.code_fg)));
             continue;
         };
 
         let mut line = Line::default();
         for (syntect_style, text) in ranges {
-            line.push_span(Span::with_style(text, syntect_to_wisp_style(syntect_style, theme)));
+            line.push_span(Span::with_style(
+                text,
+                syntect_to_wisp_style(syntect_style, theme),
+            ));
         }
         lines.push(line);
     }
@@ -427,7 +425,10 @@ fn build_ayu_dark_theme() -> syntect::highlighting::Theme {
         scopes: vec![
             rule_italic("comment", 0xACB6BF),
             rule("string, constant.other.symbol, string.quoted", 0xAAD94C),
-            rule("string.regexp, constant.character, constant.other", 0x95E6CB),
+            rule(
+                "string.regexp, constant.character, constant.other",
+                0x95E6CB,
+            ),
             rule("constant.numeric", 0xE6B450),
             rule("constant.language", 0xE6B450),
             rule("meta.constant, entity.name.constant", 0xD2A6FF),
@@ -455,7 +456,10 @@ fn build_ayu_dark_theme() -> syntect::highlighting::Theme {
             rule("entity.other.attribute-name", 0xFFB454),
             rule_italic("support.constant", 0xF29668),
             rule("support.type, support.class", 0x39BAE6),
-            rule("meta.decorator variable.other, meta.decorator punctuation.decorator, storage.type.annotation, variable.annotation, punctuation.definition.annotation", 0xE6B673),
+            rule(
+                "meta.decorator variable.other, meta.decorator punctuation.decorator, storage.type.annotation, variable.annotation, punctuation.definition.annotation",
+                0xE6B673,
+            ),
             rule("invalid", 0xD95757),
         ],
     }
@@ -538,7 +542,11 @@ mod tests {
     fn fenced_code_block_produces_lines() {
         let md = "```rust\nfn main() {}\n```";
         let lines = render(md);
-        let text: String = lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.plain_text())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("fn main()"));
     }
 
@@ -570,7 +578,10 @@ mod tests {
         let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
         assert!(texts.iter().any(|t| t.contains("quoted text")));
         // Should have some indentation from blockquote prefix
-        let quoted_line = lines.iter().find(|l| l.plain_text().contains("quoted")).unwrap();
+        let quoted_line = lines
+            .iter()
+            .find(|l| l.plain_text().contains("quoted"))
+            .unwrap();
         assert!(quoted_line.spans().iter().any(|s| s.style().dim));
     }
 
@@ -628,10 +639,17 @@ mod tests {
         let md = "```nosuchlang\nsome code\n```";
         let theme = test_theme();
         let lines = render_with_theme(md, &theme);
-        let text: String = lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.plain_text())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("some code"));
         // Should have code styling even without highlighting
-        let code_line = lines.iter().find(|l| l.plain_text().contains("some code")).unwrap();
+        let code_line = lines
+            .iter()
+            .find(|l| l.plain_text().contains("some code"))
+            .unwrap();
         assert_eq!(code_line.spans()[0].style().fg, Some(theme.code_fg));
     }
 
