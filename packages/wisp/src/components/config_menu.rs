@@ -33,7 +33,7 @@ pub enum ConfigMenuAction {
 }
 
 impl Component for ConfigMenu {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         if self.options.is_empty() {
             return vec![Line::new("  (no config options)".to_string())];
         }
@@ -308,7 +308,7 @@ mod tests {
                 &[("code", "Code"), ("chat", "Chat")],
             ),
         ];
-        let menu = ConfigMenu::from_config_options(&opts);
+        let mut menu = ConfigMenu::from_config_options(&opts);
 
         let context = RenderContext::new((80, 24));
         let lines = menu.render(&context);
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn empty_options_renders_placeholder() {
-        let menu = ConfigMenu::from_config_options(&[]);
+        let mut menu = ConfigMenu::from_config_options(&[]);
 
         let context = RenderContext::new((80, 24));
         let lines = menu.render(&context);

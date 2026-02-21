@@ -42,7 +42,7 @@ impl Renderer {
     }
 
     fn initial_render(&mut self) -> std::io::Result<()> {
-        self.renderer.render(&self.screen)
+        self.renderer.render(&mut self.screen)
     }
 
     fn on_key_event(
@@ -136,7 +136,7 @@ impl Renderer {
         }
 
         if should_render {
-            self.renderer.render(&self.screen)?;
+            self.renderer.render(&mut self.screen)?;
         }
 
         Ok(action)
@@ -161,7 +161,7 @@ impl Renderer {
         }
 
         if should_render {
-            self.renderer.render(&self.screen)?;
+            self.renderer.render(&mut self.screen)?;
         }
 
         Ok(())

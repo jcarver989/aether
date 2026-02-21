@@ -34,6 +34,8 @@ impl StreamSegment {
 pub(crate) struct ConversationBuffer {
     segments: Vec<StreamSegment>,
     thought_block_open: bool,
+    /// Per-segment rendered-line cache for Text segments. Invalidated on mutation.
+    cache: Vec<Option<Vec<Line>>>,
 }
 
 impl ConversationBuffer {
@@ -41,6 +43,7 @@ impl ConversationBuffer {
         Self {
             segments: Vec::new(),
             thought_block_open: false,
+            cache: Vec::new(),
         }
     }
 
@@ -49,10 +52,12 @@ impl ConversationBuffer {
     }
 
     pub(crate) fn take_segments(&mut self) -> Vec<StreamSegment> {
+        self.cache.clear();
         take(&mut self.segments)
     }
 
     pub(crate) fn set_segments(&mut self, segments: Vec<StreamSegment>) {
+        self.cache = vec![None; segments.len()];
         self.segments = segments;
     }
 
@@ -63,9 +68,14 @@ impl ConversationBuffer {
 
         self.close_thought_block();
 
-        match self.segments.last_mut() {
-            Some(StreamSegment::Text(existing)) => existing.push_str(chunk),
-            _ => self.segments.push(StreamSegment::Text(chunk.to_string())),
+        if let Some(StreamSegment::Text(existing)) = self.segments.last_mut() {
+            existing.push_str(chunk);
+            if let Some(entry) = self.cache.last_mut() {
+                *entry = None;
+            }
+        } else {
+            self.segments.push(StreamSegment::Text(chunk.to_string()));
+            self.cache.push(None);
         }
     }
 
@@ -83,6 +93,7 @@ impl ConversationBuffer {
 
         self.segments
             .push(StreamSegment::Thought(chunk.to_string()));
+        self.cache.push(None);
         self.thought_block_open = true;
     }
 
@@ -99,24 +110,46 @@ impl ConversationBuffer {
         if !has_segment {
             self.segments
                 .push(StreamSegment::ToolCall(tool_id.to_string()));
+            self.cache.push(None);
         }
+    }
+
+    /// Re-render only the dirty text segments, caching the result.
+    pub(crate) fn update_text_cache(&mut self, theme: &Theme) {
+        for (i, segment) in self.segments.iter().enumerate() {
+            if let StreamSegment::Text(text) = segment
+                && self.cache[i].is_none()
+            {
+                self.cache[i] = Some(markdown::render_markdown(text, theme));
+            }
+        }
+    }
+
+    fn cached_lines(&self, index: usize) -> Option<&[Line]> {
+        self.cache.get(index)?.as_deref()
     }
 }
 
 pub(crate) struct ConversationWindow<'a> {
-    pub loader: &'a Spinner,
-    pub segments: &'a [StreamSegment],
+    pub loader: &'a mut Spinner,
+    pub conversation: &'a mut ConversationBuffer,
     pub tool_call_statuses: &'a ToolCallStatuses,
 }
 
 impl Component for ConversationWindow<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+        self.conversation.update_text_cache(&context.theme);
+
         let mut lines = self.loader.render(context);
         let mut last_segment_kind: Option<StreamSegmentKind> = None;
 
-        for segment in self.segments {
+        for (i, segment) in self.conversation.segments().iter().enumerate() {
             let kind = segment.kind();
-            let segment_lines = render_stream_segment(segment, self.tool_call_statuses, context);
+            let segment_lines = if let Some(cached) = self.conversation.cached_lines(i) {
+                cached.to_vec()
+            } else {
+                render_stream_segment(segment, self.tool_call_statuses, context)
+            };
             extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, segment_lines);
         }
 
@@ -171,11 +204,12 @@ mod tests {
 
     #[test]
     fn renders_empty_when_loader_and_segments_are_empty() {
-        let loader = Spinner::default();
+        let mut loader = Spinner::default();
+        let mut conversation = ConversationBuffer::new();
         let statuses = ToolCallStatuses::new();
-        let view = ConversationWindow {
-            loader: &loader,
-            segments: &[],
+        let mut view = ConversationWindow {
+            loader: &mut loader,
+            conversation: &mut conversation,
             tool_call_statuses: &statuses,
         };
         let context = RenderContext::new((80, 24));
@@ -186,16 +220,17 @@ mod tests {
 
     #[test]
     fn inserts_vertical_margin_between_different_segment_kinds() {
-        let loader = Spinner::default();
-        let statuses = ToolCallStatuses::new();
-        let segments = vec![
+        let mut loader = Spinner::default();
+        let mut conversation = ConversationBuffer::new();
+        conversation.set_segments(vec![
             StreamSegment::Text("one".to_string()),
             StreamSegment::Thought("two".to_string()),
             StreamSegment::Text("three".to_string()),
-        ];
-        let view = ConversationWindow {
-            loader: &loader,
-            segments: &segments,
+        ]);
+        let statuses = ToolCallStatuses::new();
+        let mut view = ConversationWindow {
+            loader: &mut loader,
+            conversation: &mut conversation,
             tool_call_statuses: &statuses,
         };
         let context = RenderContext::new((80, 24));
@@ -212,15 +247,16 @@ mod tests {
 
     #[test]
     fn does_not_insert_vertical_margin_for_same_kind_segments() {
-        let loader = Spinner::default();
-        let statuses = ToolCallStatuses::new();
-        let segments = vec![
+        let mut loader = Spinner::default();
+        let mut conversation = ConversationBuffer::new();
+        conversation.set_segments(vec![
             StreamSegment::Text("first".to_string()),
             StreamSegment::Text("second".to_string()),
-        ];
-        let view = ConversationWindow {
-            loader: &loader,
-            segments: &segments,
+        ]);
+        let statuses = ToolCallStatuses::new();
+        let mut view = ConversationWindow {
+            loader: &mut loader,
+            conversation: &mut conversation,
             tool_call_statuses: &statuses,
         };
         let context = RenderContext::new((80, 24));
@@ -235,11 +271,12 @@ mod tests {
     fn renders_loader_before_segments() {
         let mut loader = Spinner::default();
         loader.visible = true;
+        let mut conversation = ConversationBuffer::new();
+        conversation.append_text_chunk("hello");
         let statuses = ToolCallStatuses::new();
-        let segments = vec![StreamSegment::Text("hello".to_string())];
-        let view = ConversationWindow {
-            loader: &loader,
-            segments: &segments,
+        let mut view = ConversationWindow {
+            loader: &mut loader,
+            conversation: &mut conversation,
             tool_call_statuses: &statuses,
         };
         let context = RenderContext::new((80, 24));
@@ -281,5 +318,75 @@ mod tests {
             StreamSegment::Thought(text) => assert_eq!(text, "ab"),
             _ => panic!("expected thought segment"),
         }
+    }
+
+    #[test]
+    fn update_text_cache_populates_cache_for_text_segments() {
+        let mut buffer = ConversationBuffer::new();
+        buffer.append_text_chunk("hello");
+        buffer.append_thought_chunk("thinking");
+        buffer.append_text_chunk("world");
+
+        buffer.update_text_cache(&Theme::default());
+
+        assert!(buffer.cached_lines(0).is_some(), "text segment should be cached");
+        assert!(buffer.cached_lines(1).is_none(), "thought segment should not be cached");
+        assert!(buffer.cached_lines(2).is_some(), "text segment should be cached");
+    }
+
+    #[test]
+    fn append_text_chunk_invalidates_cache() {
+        let mut buffer = ConversationBuffer::new();
+        buffer.append_text_chunk("hello");
+        buffer.update_text_cache(&Theme::default());
+        assert!(buffer.cached_lines(0).is_some());
+
+        // Append more text to the same segment — cache should be cleared.
+        buffer.append_text_chunk(" world");
+        assert!(buffer.cached_lines(0).is_none());
+    }
+
+    #[test]
+    fn take_segments_clears_cache() {
+        let mut buffer = ConversationBuffer::new();
+        buffer.append_text_chunk("hello");
+        buffer.update_text_cache(&Theme::default());
+
+        let _ = buffer.take_segments();
+        assert!(buffer.cached_lines(0).is_none());
+    }
+
+    #[test]
+    fn set_segments_resets_cache() {
+        let mut buffer = ConversationBuffer::new();
+        buffer.append_text_chunk("hello");
+        buffer.update_text_cache(&Theme::default());
+
+        buffer.set_segments(vec![
+            StreamSegment::Text("a".to_string()),
+            StreamSegment::Text("b".to_string()),
+        ]);
+
+        assert!(buffer.cached_lines(0).is_none());
+        assert!(buffer.cached_lines(1).is_none());
+    }
+
+    #[test]
+    fn render_uses_cached_lines() {
+        let mut loader = Spinner::default();
+        let mut buffer = ConversationBuffer::new();
+        buffer.append_text_chunk("cached text");
+        buffer.update_text_cache(&Theme::default());
+        let statuses = ToolCallStatuses::new();
+        let mut view = ConversationWindow {
+            loader: &mut loader,
+            conversation: &mut buffer,
+            tool_call_statuses: &statuses,
+        };
+        let context = RenderContext::new((80, 24));
+
+        let lines = view.render(&context);
+        assert!(!lines.is_empty());
+        assert!(lines[0].plain_text().contains("cached text"));
     }
 }

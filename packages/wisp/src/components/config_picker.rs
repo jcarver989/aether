@@ -113,7 +113,7 @@ impl ConfigPicker {
 }
 
 impl Component for ConfigPicker {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let header = format!("  {} search: {}", self.title, self.combobox.query);
         lines.push(Line::styled(header, context.theme.muted));

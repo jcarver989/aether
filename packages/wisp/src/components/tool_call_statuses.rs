@@ -21,7 +21,7 @@ pub enum ToolCallStatus {
 }
 
 impl Component for ToolCallStatusView {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         // Only color the indicator/spinner, not the tool name
         let (indicator, indicator_color, suffix, suffix_color) = match &self.status {
             ToolCallStatus::Running => {
@@ -185,7 +185,7 @@ impl ToolCallStatuses {
 
     pub fn render_tool(&self, id: &str, context: &RenderContext) -> Vec<Line> {
         self.view_for(id, self.tick)
-            .map(|view| view.render(context))
+            .map(|mut view| view.render(context))
             .unwrap_or_default()
     }
 
@@ -208,7 +208,7 @@ impl ToolCallStatuses {
                 match &tc.status {
                     TrackedStatus::Running => {}
                     TrackedStatus::Success => {
-                        let view = ToolCallStatusView {
+                        let mut view = ToolCallStatusView {
                             name: tc.name.clone(),
                             arguments: tc.arguments.clone(),
                             status: ToolCallStatus::Success,
@@ -218,7 +218,7 @@ impl ToolCallStatuses {
                         completed_ids.push(id.clone());
                     }
                     TrackedStatus::Error(msg) => {
-                        let view = ToolCallStatusView {
+                        let mut view = ToolCallStatusView {
                             name: tc.name.clone(),
                             arguments: tc.arguments.clone(),
                             status: ToolCallStatus::Error(msg.clone()),
@@ -268,10 +268,10 @@ impl Default for ToolCallStatuses {
 }
 
 impl Component for ToolCallStatuses {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         for id in &self.tool_order {
-            if let Some(view) = self.view_for(id, self.tick) {
+            if let Some(mut view) = self.view_for(id, self.tick) {
                 lines.extend(view.render(context));
             }
         }
@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn view_renders_running_with_spinner() {
-        let view = ToolCallStatusView {
+        let mut view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             status: ToolCallStatus::Running,
@@ -470,13 +470,13 @@ mod tests {
 
     #[test]
     fn view_running_spinner_changes_with_tick() {
-        let view_a = ToolCallStatusView {
+        let mut view_a = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "".to_string(),
             status: ToolCallStatus::Running,
             tick: 0,
         };
-        let view_b = ToolCallStatusView {
+        let mut view_b = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "".to_string(),
             status: ToolCallStatus::Running,
@@ -489,7 +489,7 @@ mod tests {
 
     #[test]
     fn view_renders_success() {
-        let view = ToolCallStatusView {
+        let mut view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             status: ToolCallStatus::Success,
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn view_renders_error() {
-        let view = ToolCallStatusView {
+        let mut view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             status: ToolCallStatus::Error("boom".to_string()),

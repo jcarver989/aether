@@ -17,7 +17,7 @@ impl RenderContext {
 }
 
 pub trait Component {
-    fn render(&self, context: &RenderContext) -> Vec<Line>;
+    fn render(&mut self, context: &RenderContext) -> Vec<Line>;
 }
 
 pub struct InputOutcome<A> {
