@@ -1,84 +1,11 @@
+use acp_utils::notifications::{SubAgentEvent, SubAgentProgressParams};
 use agent_client_protocol as acp;
-use serde::Deserialize;
 
 use crate::tui::spinner::BRAILLE_FRAMES as FRAMES;
 use crate::tui::{Component, Line, RenderContext};
 use std::collections::HashMap;
 
 const MAX_TOOL_ARG_LENGTH: usize = 200;
-
-// ---------------------------------------------------------------------------
-// Lightweight deserialization types for `_aether/sub_agent_progress` notifications.
-// Wisp cannot import from the `aether` crate, so we mirror the minimal subset
-// of the wire format needed to drive the TUI.
-// ---------------------------------------------------------------------------
-
-/// Top-level notification params for `_aether/sub_agent_progress`.
-#[derive(Debug, Deserialize)]
-pub struct SubAgentNotification {
-    pub parent_tool_id: String,
-    pub task_id: String,
-    pub agent_name: String,
-    pub(crate) event: SubAgentEvent,
-}
-
-/// Subset of `AgentMessage` variants relevant for status display.
-/// Uses serde's default externally-tagged representation to match `AgentMessage`.
-/// Implements custom deserialization so unknown variants (Text, Thought, etc.)
-/// gracefully fall back to `Other` instead of failing.
-#[derive(Debug)]
-pub(crate) enum SubAgentEvent {
-    ToolCall { request: SubAgentToolRequest },
-    ToolResult { result: SubAgentToolResult },
-    ToolError { error: SubAgentToolError },
-    Done,
-    Other,
-}
-
-/// Helper enum for known externally-tagged variants (used during deserialization).
-#[derive(Deserialize)]
-enum KnownSubAgentEvent {
-    ToolCall { request: SubAgentToolRequest },
-    ToolResult { result: SubAgentToolResult },
-    ToolError { error: SubAgentToolError },
-    Done,
-}
-
-impl<'de> serde::Deserialize<'de> for SubAgentEvent {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        match serde_json::from_value::<KnownSubAgentEvent>(value) {
-            Ok(KnownSubAgentEvent::ToolCall { request }) => Ok(SubAgentEvent::ToolCall { request }),
-            Ok(KnownSubAgentEvent::ToolResult { result }) => {
-                Ok(SubAgentEvent::ToolResult { result })
-            }
-            Ok(KnownSubAgentEvent::ToolError { error }) => Ok(SubAgentEvent::ToolError { error }),
-            Ok(KnownSubAgentEvent::Done) => Ok(SubAgentEvent::Done),
-            Err(_) => Ok(SubAgentEvent::Other),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SubAgentToolRequest {
-    pub id: String,
-    pub name: String,
-    pub arguments: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SubAgentToolResult {
-    pub id: String,
-    #[allow(dead_code)]
-    pub name: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SubAgentToolError {
-    pub id: String,
-    #[allow(dead_code)]
-    pub name: String,
-}
 
 /// Renders a single tool call status line.
 pub struct ToolCallStatusView {
@@ -88,6 +15,7 @@ pub struct ToolCallStatusView {
     pub tick: u16,
 }
 
+#[derive(Clone)]
 pub enum ToolCallStatus {
     Running,
     Success,
@@ -170,14 +98,7 @@ pub struct ToolCallStatuses {
 struct TrackedToolCall {
     name: String,
     arguments: String,
-    status: TrackedStatus,
-}
-
-#[derive(Clone)]
-enum TrackedStatus {
-    Running,
-    Success,
-    Error(String),
+    status: ToolCallStatus,
 }
 
 impl ToolCallStatuses {
@@ -199,12 +120,12 @@ impl ToolCallStatuses {
     pub fn has_running(&self) -> bool {
         self.tool_calls
             .values()
-            .any(|tc| matches!(tc.status, TrackedStatus::Running))
+            .any(|tc| matches!(tc.status, ToolCallStatus::Running))
             || self.sub_agents.values().any(|agents| {
                 agents.iter().any(|a| {
                     a.tool_calls
                         .values()
-                        .any(|tc| matches!(tc.status, TrackedStatus::Running))
+                        .any(|tc| matches!(tc.status, ToolCallStatus::Running))
                 })
             })
     }
@@ -232,7 +153,7 @@ impl ToolCallStatuses {
             TrackedToolCall {
                 name: tool_call.title.clone(),
                 arguments,
-                status: TrackedStatus::Running,
+                status: ToolCallStatus::Running,
             },
         );
     }
@@ -250,12 +171,12 @@ impl ToolCallStatuses {
             }
             if let Some(status) = &update.fields.status {
                 match status {
-                    acp::ToolCallStatus::Completed => tc.status = TrackedStatus::Success,
+                    acp::ToolCallStatus::Completed => tc.status = ToolCallStatus::Success,
                     acp::ToolCallStatus::Failed => {
-                        tc.status = TrackedStatus::Error("failed".to_string());
+                        tc.status = ToolCallStatus::Error("failed".to_string());
                     }
                     acp::ToolCallStatus::InProgress | acp::ToolCallStatus::Pending => {
-                        tc.status = TrackedStatus::Running;
+                        tc.status = ToolCallStatus::Running;
                     }
                     _ => {}
                 }
@@ -270,11 +191,11 @@ impl ToolCallStatuses {
     pub fn is_tool_running(&self, id: &str) -> bool {
         self.tool_calls
             .get(id)
-            .is_some_and(|tc| matches!(tc.status, TrackedStatus::Running))
+            .is_some_and(|tc| matches!(tc.status, ToolCallStatus::Running))
     }
 
     /// Handle a sub-agent progress notification.
-    pub fn on_sub_agent_progress(&mut self, notification: &SubAgentNotification) {
+    pub fn on_sub_agent_progress(&mut self, notification: &SubAgentProgressParams) {
         let agents = self
             .sub_agents
             .entry(notification.parent_tool_id.clone())
@@ -306,18 +227,18 @@ impl ToolCallStatuses {
                     TrackedToolCall {
                         name: request.name.clone(),
                         arguments: request.arguments.clone(),
-                        status: TrackedStatus::Running,
+                        status: ToolCallStatus::Running,
                     },
                 );
             }
             SubAgentEvent::ToolResult { result } => {
                 if let Some(tc) = agent.tool_calls.get_mut(&result.id) {
-                    tc.status = TrackedStatus::Success;
+                    tc.status = ToolCallStatus::Success;
                 }
             }
             SubAgentEvent::ToolError { error } => {
                 if let Some(tc) = agent.tool_calls.get_mut(&error.id) {
-                    tc.status = TrackedStatus::Error("failed".to_string());
+                    tc.status = ToolCallStatus::Error("failed".to_string());
                 }
             }
             SubAgentEvent::Done => {
@@ -380,30 +301,12 @@ impl ToolCallStatuses {
         let mut completed_ids = Vec::new();
 
         for id in &self.tool_order {
-            if let Some(tc) = self.tool_calls.get(id) {
-                match &tc.status {
-                    TrackedStatus::Running => {}
-                    TrackedStatus::Success => {
-                        let mut view = ToolCallStatusView {
-                            name: tc.name.clone(),
-                            arguments: tc.arguments.clone(),
-                            status: ToolCallStatus::Success,
-                            tick: 0,
-                        };
-                        lines.extend(view.render(context));
-                        completed_ids.push(id.clone());
-                    }
-                    TrackedStatus::Error(msg) => {
-                        let mut view = ToolCallStatusView {
-                            name: tc.name.clone(),
-                            arguments: tc.arguments.clone(),
-                            status: ToolCallStatus::Error(msg.clone()),
-                            tick: 0,
-                        };
-                        lines.extend(view.render(context));
-                        completed_ids.push(id.clone());
-                    }
-                }
+            if let Some(tc) = self.tool_calls.get(id)
+                && !matches!(tc.status, ToolCallStatus::Running)
+            {
+                let mut view = Self::tool_call_view(tc, 0);
+                lines.extend(view.render(context));
+                completed_ids.push(id.clone());
             }
         }
 
@@ -435,33 +338,18 @@ impl ToolCallStatuses {
     }
 
     fn tool_call_view(tc: &TrackedToolCall, tick: u16) -> ToolCallStatusView {
-        let status = match &tc.status {
-            TrackedStatus::Running => ToolCallStatus::Running,
-            TrackedStatus::Success => ToolCallStatus::Success,
-            TrackedStatus::Error(msg) => ToolCallStatus::Error(msg.clone()),
-        };
         ToolCallStatusView {
             name: tc.name.clone(),
             arguments: tc.arguments.clone(),
-            status,
+            status: tc.status.clone(),
             tick,
         }
     }
 
     fn view_for(&self, id: &str, tick: u16) -> Option<ToolCallStatusView> {
-        let tc = self.tool_calls.get(id)?;
-        let status = match &tc.status {
-            TrackedStatus::Running => ToolCallStatus::Running,
-            TrackedStatus::Success => ToolCallStatus::Success,
-            TrackedStatus::Error(msg) => ToolCallStatus::Error(msg.clone()),
-        };
-
-        Some(ToolCallStatusView {
-            name: tc.name.clone(),
-            arguments: tc.arguments.clone(),
-            status,
-            tick,
-        })
+        self.tool_calls
+            .get(id)
+            .map(|tc| Self::tool_call_view(tc, tick))
     }
 }
 
@@ -724,7 +612,7 @@ mod tests {
         parent_tool_id: &str,
         agent_name: &str,
         event_json: &str,
-    ) -> SubAgentNotification {
+    ) -> SubAgentProgressParams {
         // Use agent_name as task_id for convenience; override with
         // make_sub_agent_notification_with_task_id when testing multiple
         // agents with the same name.
@@ -736,7 +624,7 @@ mod tests {
         task_id: &str,
         agent_name: &str,
         event_json: &str,
-    ) -> SubAgentNotification {
+    ) -> SubAgentProgressParams {
         let json = format!(
             r#"{{"parent_tool_id":"{parent_tool_id}","task_id":"{task_id}","agent_name":"{agent_name}","event":{event_json}}}"#,
         );
@@ -770,12 +658,8 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_unknown_event_as_other() {
-        let n = make_sub_agent_notification(
-            "p1",
-            "explorer",
-            r#"{"Text":{"message_id":"m1","chunk":"hi","is_complete":false,"model_name":"m"}}"#,
-        );
+    fn deserialize_other_variant() {
+        let n = make_sub_agent_notification("p1", "explorer", r#""Other""#);
         assert!(matches!(n.event, SubAgentEvent::Other));
     }
 
@@ -998,7 +882,10 @@ mod tests {
         let lines = statuses.render_tool("parent-1", &ctx());
         let header = lines[1].plain_text();
         // Agent is still running (no Done event), so header should show spinner
-        assert!(!header.contains('●'), "Expected spinner, not ● in header: {header}");
+        assert!(
+            !header.contains('●'),
+            "Expected spinner, not ● in header: {header}"
+        );
     }
 
     #[test]

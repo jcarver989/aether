@@ -1,5 +1,5 @@
-use aether::events::AgentMessage;
-use aether::events::{ContextUsageParams, SubAgentProgressParams, SubAgentProgressPayload};
+use acp_utils::notifications::{ContextUsageParams, SubAgentProgressParams};
+use aether::events::{AgentMessage, SubAgentProgressPayload};
 use agent_client_protocol::{
     self as acp, Content, ContentBlock, ContentChunk, HttpHeader, McpServer, SessionId,
     SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
@@ -311,7 +311,7 @@ fn try_parse_sub_agent_progress(
         parent_tool_id: request.id.clone(),
         task_id: payload.task_id,
         agent_name: payload.agent_name,
-        event: payload.event,
+        event: (&payload.event).into(),
     })
 }
 
@@ -361,7 +361,10 @@ mod tests {
         assert_eq!(parsed.parent_tool_id, "call_123");
         assert_eq!(parsed.task_id, "task_1");
         assert_eq!(parsed.agent_name, "sub-agent");
-        assert!(matches!(parsed.event, AgentMessage::Text { .. }));
+        assert!(matches!(
+            parsed.event,
+            acp_utils::notifications::SubAgentEvent::Other
+        ));
     }
 
     #[test]
