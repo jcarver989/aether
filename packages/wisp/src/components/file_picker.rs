@@ -105,7 +105,7 @@ fn should_exclude_path(path: &Path) -> bool {
 }
 
 impl Component for FilePicker {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
 
         if self.combobox.matches.is_empty() {

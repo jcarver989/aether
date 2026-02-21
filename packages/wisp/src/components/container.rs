@@ -1,15 +1,15 @@
 use crate::tui::{Component, Line, RenderContext};
 
 pub struct Container<'a> {
-    children: Vec<&'a dyn Component>,
+    children: Vec<&'a mut dyn Component>,
 }
 
 impl<'a> Container<'a> {
-    pub fn new(children: Vec<&'a dyn Component>) -> Self {
+    pub fn new(children: Vec<&'a mut dyn Component>) -> Self {
         Self { children }
     }
 
-    pub fn push(&mut self, child: &'a dyn Component) {
+    pub fn push(&mut self, child: &'a mut dyn Component) {
         self.children.push(child);
     }
 
@@ -22,11 +22,11 @@ impl<'a> Container<'a> {
         self.children.is_empty()
     }
 
-    pub fn render_with_offsets(&self, context: &RenderContext) -> (Vec<Line>, Vec<usize>) {
+    pub fn render_with_offsets(&mut self, context: &RenderContext) -> (Vec<Line>, Vec<usize>) {
         let mut lines = Vec::new();
         let mut offsets = Vec::with_capacity(self.children.len());
 
-        for child in &self.children {
+        for child in &mut self.children {
             offsets.push(lines.len());
             lines.extend(child.render(context));
         }
@@ -36,7 +36,7 @@ impl<'a> Container<'a> {
 }
 
 impl Component for Container<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         self.render_with_offsets(context).0
     }
 }
@@ -50,14 +50,14 @@ mod tests {
     }
 
     impl Component for StubComponent {
-        fn render(&self, _context: &RenderContext) -> Vec<Line> {
+        fn render(&mut self, _context: &RenderContext) -> Vec<Line> {
             self.lines.clone()
         }
     }
 
     #[test]
     fn renders_empty_container() {
-        let container = Container::new(Vec::new());
+        let mut container = Container::new(Vec::new());
         let context = RenderContext::new((80, 24));
         let lines = container.render(&context);
         assert!(lines.is_empty());
@@ -65,13 +65,13 @@ mod tests {
 
     #[test]
     fn preserves_child_order() {
-        let a = StubComponent {
+        let mut a = StubComponent {
             lines: vec![Line::new("a")],
         };
-        let b = StubComponent {
+        let mut b = StubComponent {
             lines: vec![Line::new("b")],
         };
-        let container = Container::new(vec![&a, &b]);
+        let mut container = Container::new(vec![&mut a, &mut b]);
         let context = RenderContext::new((80, 24));
         let lines = container.render(&context);
         assert_eq!(lines, vec![Line::new("a"), Line::new("b")]);
@@ -79,13 +79,13 @@ mod tests {
 
     #[test]
     fn computes_offsets_per_child() {
-        let a = StubComponent {
+        let mut a = StubComponent {
             lines: vec![Line::new("a1"), Line::new("a2")],
         };
-        let b = StubComponent {
+        let mut b = StubComponent {
             lines: vec![Line::new("b1")],
         };
-        let container = Container::new(vec![&a, &b]);
+        let mut container = Container::new(vec![&mut a, &mut b]);
         let context = RenderContext::new((80, 24));
         let (_lines, offsets) = container.render_with_offsets(&context);
         assert_eq!(offsets, vec![0, 2]);

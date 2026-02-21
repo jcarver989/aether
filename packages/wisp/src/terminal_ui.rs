@@ -24,7 +24,7 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
     let mut screen = App::new(agent_name, &config_options);
     let mut renderer = Renderer::new(io::stdout());
     renderer.update_render_context();
-    renderer.render(&screen)?;
+    renderer.render(&mut screen)?;
 
     let mut terminal_event_rx = spawn_terminal_event_task();
     let mut animation_interval = time::interval(Duration::from_millis(100));
@@ -196,7 +196,7 @@ fn should_handle_key_event(kind: KeyEventKind) -> bool {
 
 fn apply_screen_effects<T: Write>(
     renderer: &mut Renderer<T>,
-    screen: &App,
+    screen: &mut App,
     prompt_handle: &acp_utils::client::AcpPromptHandle,
     session_id: &acp::SessionId,
     effects: Vec<AppEvent>,

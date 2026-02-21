@@ -734,18 +734,29 @@ fn try_build_attachment_block(
 }
 
 impl CursorComponent for App {
-    fn render_with_cursor(&self, context: &RenderContext) -> RenderOutput {
-        let conversation_window = ConversationWindow {
-            loader: &self.grid_loader,
-            segments: self.conversation.segments(),
+    fn render_with_cursor(&mut self, context: &RenderContext) -> RenderOutput {
+        // Compute values before borrowing fields mutably into the container.
+        let command_picker_col = self
+            .command_picker
+            .as_ref()
+            .map(Self::command_picker_cursor_col);
+        let config_picker_col = self
+            .config_picker
+            .as_ref()
+            .map(Self::config_picker_cursor_col);
+        let cursor_index = self.input_cursor_index();
+
+        let mut conversation_window = ConversationWindow {
+            loader: &mut self.grid_loader,
+            conversation: &mut self.conversation,
             tool_call_statuses: &self.tool_call_statuses,
         };
-        let input_prompt = InputPrompt {
+        let mut input_prompt = InputPrompt {
             input: &self.input_buffer,
-            cursor_index: self.input_cursor_index(),
+            cursor_index,
         };
         let input_layout = input_prompt.layout(context);
-        let status_line = StatusLine {
+        let mut status_line = StatusLine {
             agent_name: &self.agent_name,
             model_display: self.model_display.as_deref(),
             context_pct_left: self.context_usage_pct,
@@ -753,41 +764,33 @@ impl CursorComponent for App {
         };
 
         let mut container: Container<'_> =
-            Container::new(vec![&conversation_window, &input_prompt]);
+            Container::new(vec![&mut conversation_window, &mut input_prompt]);
         let input_component_index = 1;
 
-        if let Some(ref picker) = self.file_picker {
+        if let Some(ref mut picker) = self.file_picker {
             container.push(picker);
         }
 
-        let command_picker_index = if let Some(ref picker) = self.command_picker {
+        let command_picker_index = if let Some(ref mut picker) = self.command_picker {
             let idx = container.len();
             container.push(picker);
             Some(idx)
         } else {
             None
         };
-        let command_picker_col = self
-            .command_picker
-            .as_ref()
-            .map(Self::command_picker_cursor_col);
 
-        let config_picker_index = if let Some(ref picker) = self.config_picker {
+        let config_picker_index = if let Some(ref mut picker) = self.config_picker {
             let idx = container.len();
             container.push(picker);
             Some(idx)
         } else {
-            if let Some(ref menu) = self.config_menu {
+            if let Some(ref mut menu) = self.config_menu {
                 container.push(menu);
             }
             None
         };
-        let config_picker_col = self
-            .config_picker
-            .as_ref()
-            .map(Self::config_picker_cursor_col);
 
-        container.push(&status_line);
+        container.push(&mut status_line);
         let (lines, offsets) = container.render_with_offsets(context);
 
         let mut cursor = Cursor {

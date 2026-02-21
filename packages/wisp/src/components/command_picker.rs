@@ -39,7 +39,7 @@ impl CommandPicker {
 }
 
 impl Component for CommandPicker {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let header = format!("  / search: {}", self.combobox.query);
         lines.push(Line::styled(header, context.theme.muted));
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn render_includes_hint_for_commands_with_hint() {
-        let picker = CommandPicker::new(sample_commands());
+        let mut picker = CommandPicker::new(sample_commands());
         let context = RenderContext::new((120, 40));
         let lines = picker.render(&context);
         let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();

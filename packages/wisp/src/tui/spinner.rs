@@ -35,7 +35,7 @@ impl Default for Spinner {
 }
 
 impl Component for Spinner {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         if !self.visible {
             return vec![];
         }
@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn invisible_renders_empty() {
-        let spinner = Spinner {
+        let mut spinner = Spinner {
             tick: 0,
             visible: false,
             ..Spinner::default()
@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn visible_renders_one_line() {
-        let spinner = Spinner {
+        let mut spinner = Spinner {
             tick: 0,
             visible: true,
             ..Spinner::default()
@@ -79,12 +79,12 @@ mod tests {
     fn different_ticks_produce_different_output() {
         let ctx = RenderContext::new((80, 24));
 
-        let spinner_a = Spinner {
+        let mut spinner_a = Spinner {
             tick: 0,
             visible: true,
             ..Spinner::default()
         };
-        let spinner_b = Spinner {
+        let mut spinner_b = Spinner {
             tick: 1,
             visible: true,
             ..Spinner::default()
@@ -100,12 +100,12 @@ mod tests {
     fn cycles_after_full_rotation() {
         let ctx = RenderContext::new((80, 24));
 
-        let spinner_a = Spinner {
+        let mut spinner_a = Spinner {
             tick: 0,
             visible: true,
             ..Spinner::default()
         };
-        let spinner_b = Spinner {
+        let mut spinner_b = Spinner {
             tick: BRAILLE_FRAMES.len() as u16,
             visible: true,
             ..Spinner::default()

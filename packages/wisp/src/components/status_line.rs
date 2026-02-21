@@ -8,7 +8,7 @@ pub struct StatusLine<'a> {
 }
 
 impl Component for StatusLine<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let left = match self.model_display {
             Some(model) => format!("  {} · {}", self.agent_name, model),
             None => format!("  {}", self.agent_name),
@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn renders_agent_name() {
-        let status = StatusLine {
+        let mut status = StatusLine {
             agent_name: "claude-code",
             model_display: None,
             context_pct_left: None,
@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn renders_with_indentation() {
-        let status = StatusLine {
+        let mut status = StatusLine {
             agent_name: "test-agent",
             model_display: None,
             context_pct_left: None,
@@ -74,7 +74,7 @@ mod tests {
 
     #[test]
     fn renders_model_display() {
-        let status = StatusLine {
+        let mut status = StatusLine {
             agent_name: "aether-acp",
             model_display: Some("gpt-4o"),
             context_pct_left: None,
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn renders_without_model_when_none() {
-        let status = StatusLine {
+        let mut status = StatusLine {
             agent_name: "aether-acp",
             model_display: None,
             context_pct_left: None,
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn renders_context_usage_right_aligned() {
-        let status = StatusLine {
+        let mut status = StatusLine {
             agent_name: "aether",
             model_display: Some("gpt-4o"),
             context_pct_left: Some(72),
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn does_not_render_context_when_none() {
-        let status = StatusLine {
+        let mut status = StatusLine {
             agent_name: "aether",
             model_display: Some("gpt-4o"),
             context_pct_left: None,
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn renders_interrupt_message_when_waiting() {
-        let status = StatusLine {
+        let mut status = StatusLine {
             agent_name: "aether",
             model_display: Some("gpt-4o"),
             context_pct_left: Some(72),
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn renders_interrupt_message_without_model_when_waiting() {
-        let status = StatusLine {
+        let mut status = StatusLine {
             agent_name: "aether",
             model_display: None,
             context_pct_left: None,

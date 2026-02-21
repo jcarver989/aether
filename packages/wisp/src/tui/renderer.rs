@@ -17,7 +17,7 @@ pub struct RenderOutput {
 }
 
 pub trait CursorComponent {
-    fn render_with_cursor(&self, context: &RenderContext) -> RenderOutput;
+    fn render_with_cursor(&mut self, context: &RenderContext) -> RenderOutput;
 }
 
 /// Pure TUI renderer that owns terminal output, frame diffing, and cursor state.
@@ -40,7 +40,7 @@ impl<T: Write> Renderer<T> {
         }
     }
 
-    pub fn render<C: CursorComponent + ?Sized>(&mut self, root: &C) -> io::Result<()> {
+    pub fn render<C: CursorComponent + ?Sized>(&mut self, root: &mut C) -> io::Result<()> {
         let output = root.render_with_cursor(&self.context);
         let (visual_lines, logical_to_visual) =
             soft_wrap_lines_with_map(&output.lines, self.context.size.0);
@@ -178,7 +178,7 @@ mod tests {
     }
 
     impl CursorComponent for StubRoot {
-        fn render_with_cursor(&self, _context: &RenderContext) -> RenderOutput {
+        fn render_with_cursor(&mut self, _context: &RenderContext) -> RenderOutput {
             RenderOutput {
                 lines: self.lines.clone(),
                 cursor: self.cursor,
@@ -191,7 +191,7 @@ mod tests {
         let mut renderer = Renderer::new(FakeWriter::new());
         renderer.update_render_context_with((3, 20));
 
-        let root = StubRoot {
+        let mut root = StubRoot {
             lines: vec![Line::new("abcdef")],
             cursor: Cursor {
                 logical_row: 0,
@@ -199,7 +199,7 @@ mod tests {
             },
         };
 
-        renderer.render(&root).unwrap();
+        renderer.render(&mut root).unwrap();
 
         assert_eq!(
             renderer.screen().prev_frame(),
@@ -212,7 +212,7 @@ mod tests {
         let mut renderer = Renderer::new(FakeWriter::new());
         renderer.update_render_context_with((4, 20));
 
-        let root = StubRoot {
+        let mut root = StubRoot {
             lines: vec![Line::new("a")],
             cursor: Cursor {
                 logical_row: 10,
@@ -220,7 +220,7 @@ mod tests {
             },
         };
 
-        renderer.render(&root).unwrap();
+        renderer.render(&mut root).unwrap();
         assert_eq!(renderer.screen().prev_frame(), &[Line::new("a")]);
     }
 }

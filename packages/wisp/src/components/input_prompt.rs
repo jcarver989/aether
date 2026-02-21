@@ -93,7 +93,7 @@ impl InputPrompt<'_> {
 }
 
 impl Component for InputPrompt<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         self.layout(context).lines
     }
 }
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn renders_three_lines() {
-        let prompt = InputPrompt {
+        let mut prompt = InputPrompt {
             input: "",
             cursor_index: 0,
         };
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn top_border_contains_box_chars() {
-        let prompt = InputPrompt {
+        let mut prompt = InputPrompt {
             input: "",
             cursor_index: 0,
         };
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn bottom_border_contains_box_chars() {
-        let prompt = InputPrompt {
+        let mut prompt = InputPrompt {
             input: "",
             cursor_index: 0,
         };
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn middle_line_contains_prompt() {
-        let prompt = InputPrompt {
+        let mut prompt = InputPrompt {
             input: "",
             cursor_index: 0,
         };
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn renders_input_text() {
-        let prompt = InputPrompt {
+        let mut prompt = InputPrompt {
             input: "hello",
             cursor_index: 5,
         };
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn renders_consistently() {
-        let prompt = InputPrompt {
+        let mut prompt = InputPrompt {
             input: "test",
             cursor_index: 4,
         };
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn adapts_to_terminal_width() {
-        let prompt = InputPrompt {
+        let mut prompt = InputPrompt {
             input: "",
             cursor_index: 0,
         };
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn wraps_long_input_inside_box() {
-        let prompt = InputPrompt {
+        let mut prompt = InputPrompt {
             input: "this is a very long input that should wrap",
             cursor_index: 41,
         };
@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn mention_and_plain_text_both_render() {
-        let prompt = InputPrompt {
+        let mut prompt = InputPrompt {
             input: "@main.rs explain this",
             cursor_index: 20,
         };
