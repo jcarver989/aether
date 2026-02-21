@@ -236,7 +236,7 @@ impl App {
                 &mut scrollback_lines,
                 &mut last_segment_kind,
                 kind,
-                segment_lines,
+                &segment_lines,
             );
 
             if let StreamSegment::ToolCall(id) = segment {

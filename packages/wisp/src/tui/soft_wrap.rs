@@ -29,23 +29,37 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
     let mut current_width = 0usize;
 
     for span in line.spans() {
-        for ch in span.text().chars() {
+        let text = span.text();
+        let style = span.style();
+        let mut start = 0;
+
+        for (i, ch) in text.char_indices() {
             if ch == '\n' {
+                if start < i {
+                    current.push_with_style(&text[start..i], style);
+                }
                 rows.push(current);
                 current = Line::default();
                 current_width = 0;
+                start = i + ch.len_utf8();
                 continue;
             }
 
             let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-            if ch_width > 0 && current_width + ch_width > max_width && !current.is_empty() {
+            if ch_width > 0 && current_width + ch_width > max_width && current_width > 0 {
+                if start < i {
+                    current.push_with_style(&text[start..i], style);
+                }
                 rows.push(current);
                 current = Line::default();
                 current_width = 0;
+                start = i;
             }
-
-            current.push_with_style(ch.to_string(), span.style());
             current_width += ch_width;
+        }
+
+        if start < text.len() {
+            current.push_with_style(&text[start..], style);
         }
     }
 
@@ -105,5 +119,34 @@ mod tests {
         assert_eq!(display_width_text("中a"), 3);
         let rows = soft_wrap_line(&Line::new("中ab"), 3);
         assert_eq!(rows, vec![Line::new("中a"), Line::new("b")]);
+    }
+
+    #[test]
+    fn wraps_multi_span_line_mid_span() {
+        let mut line = Line::default();
+        line.push_styled("ab", Color::Red);
+        line.push_styled("cd", Color::Blue);
+        line.push_styled("ef", Color::Green);
+        let rows = soft_wrap_line(&line, 3);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].plain_text(), "abc");
+        assert_eq!(rows[1].plain_text(), "def");
+        // First row: "ab" (Red) + "c" (Blue)
+        assert_eq!(rows[0].spans().len(), 2);
+        assert_eq!(rows[0].spans()[0].style().fg, Some(Color::Red));
+        assert_eq!(rows[0].spans()[1].style().fg, Some(Color::Blue));
+        // Second row: "d" (Blue) + "ef" (Green)
+        assert_eq!(rows[1].spans().len(), 2);
+        assert_eq!(rows[1].spans()[0].style().fg, Some(Color::Blue));
+        assert_eq!(rows[1].spans()[1].style().fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn wraps_line_with_embedded_newlines() {
+        let line = Line::new("abc\ndef");
+        let rows = soft_wrap_line(&line, 80);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].plain_text(), "abc");
+        assert_eq!(rows[1].plain_text(), "def");
     }
 }

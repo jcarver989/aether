@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use crossterm::style::Color;
@@ -11,8 +12,33 @@ use syntect::parsing::SyntaxSet;
 use super::screen::{Line, Span, Style};
 use super::theme::Theme;
 
-pub fn render_markdown(text: &str, theme: &Theme) -> Vec<Line> {
-    let renderer = MarkdownRenderer::new(theme);
+/// Caches syntax-highlighted output for code blocks by (lang, content).
+///
+/// Survives across re-renders so completed code blocks aren't re-highlighted
+/// on every streaming token.
+#[derive(Default)]
+pub struct HighlightCache {
+    entries: HashMap<(String, String), Vec<Line>>,
+}
+
+impl HighlightCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get(&self, lang: &str, code: &str) -> Option<&[Line]> {
+        self.entries
+            .get(&(lang.to_string(), code.to_string()))
+            .map(Vec::as_slice)
+    }
+
+    fn insert(&mut self, lang: String, code: String, lines: Vec<Line>) {
+        self.entries.insert((lang, code), lines);
+    }
+}
+
+pub fn render_markdown(text: &str, theme: &Theme, cache: &mut HighlightCache) -> Vec<Line> {
+    let renderer = MarkdownRenderer::new(theme, cache);
     renderer.render(text)
 }
 
@@ -28,6 +54,7 @@ static SYNTECT: LazyLock<SyntectState> = LazyLock::new(|| SyntectState {
 
 struct MarkdownRenderer<'a> {
     theme: &'a Theme,
+    highlight_cache: &'a mut HighlightCache,
     lines: Vec<Line>,
     current_line: Line,
     style_stack: Vec<Style>,
@@ -46,9 +73,10 @@ struct MarkdownRenderer<'a> {
 }
 
 impl<'a> MarkdownRenderer<'a> {
-    fn new(theme: &'a Theme) -> Self {
+    fn new(theme: &'a Theme, highlight_cache: &'a mut HighlightCache) -> Self {
         Self {
             theme,
+            highlight_cache,
             lines: Vec::new(),
             current_line: Line::default(),
             style_stack: Vec::new(),
@@ -205,8 +233,14 @@ impl<'a> MarkdownRenderer<'a> {
                 self.in_code_block = false;
                 let code = std::mem::take(&mut self.code_buffer);
                 let lang = std::mem::take(&mut self.code_lang);
-                let code_lines = highlight_code(&code, &lang, self.theme);
-                self.lines.extend(code_lines);
+                if let Some(cached) = self.highlight_cache.get(&lang, &code) {
+                    self.lines.extend_from_slice(cached);
+                } else {
+                    let code_lines = highlight_code(&code, &lang, self.theme);
+                    self.highlight_cache
+                        .insert(lang, code, code_lines.clone());
+                    self.lines.extend(code_lines);
+                }
                 self.lines.push(Line::default());
             }
             TagEnd::List(_) => {
@@ -435,16 +469,26 @@ mod tests {
         Theme::default()
     }
 
+    fn render(md: &str) -> Vec<Line> {
+        let mut cache = HighlightCache::new();
+        render_markdown(md, &test_theme(), &mut cache)
+    }
+
+    fn render_with_theme(md: &str, theme: &Theme) -> Vec<Line> {
+        let mut cache = HighlightCache::new();
+        render_markdown(md, theme, &mut cache)
+    }
+
     #[test]
     fn plain_text_passes_through() {
-        let lines = render_markdown("hello world", &test_theme());
+        let lines = render("hello world");
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].plain_text(), "hello world");
     }
 
     #[test]
     fn heading_renders_with_prefix_and_style() {
-        let lines = render_markdown("# Title", &test_theme());
+        let lines = render("# Title");
         assert!(!lines.is_empty());
         let text = lines[0].plain_text();
         assert!(text.contains("# Title"));
@@ -454,7 +498,7 @@ mod tests {
 
     #[test]
     fn bold_text_is_bold() {
-        let lines = render_markdown("some **bold** text", &test_theme());
+        let lines = render("some **bold** text");
         assert_eq!(lines.len(), 1);
         let spans = lines[0].spans();
         let bold_span = spans.iter().find(|s| s.text().contains("bold")).unwrap();
@@ -463,7 +507,7 @@ mod tests {
 
     #[test]
     fn italic_text_is_italic() {
-        let lines = render_markdown("some *italic* text", &test_theme());
+        let lines = render("some *italic* text");
         assert_eq!(lines.len(), 1);
         let spans = lines[0].spans();
         let italic_span = spans.iter().find(|s| s.text().contains("italic")).unwrap();
@@ -472,7 +516,7 @@ mod tests {
 
     #[test]
     fn strikethrough_text() {
-        let lines = render_markdown("some ~~struck~~ text", &test_theme());
+        let lines = render("some ~~struck~~ text");
         assert_eq!(lines.len(), 1);
         let spans = lines[0].spans();
         let struck_span = spans.iter().find(|s| s.text().contains("struck")).unwrap();
@@ -482,7 +526,7 @@ mod tests {
     #[test]
     fn inline_code_has_code_style() {
         let theme = test_theme();
-        let lines = render_markdown("use `foo()` here", &theme);
+        let lines = render_with_theme("use `foo()` here", &theme);
         assert_eq!(lines.len(), 1);
         let spans = lines[0].spans();
         let code_span = spans.iter().find(|s| s.text().contains("foo()")).unwrap();
@@ -493,7 +537,7 @@ mod tests {
     #[test]
     fn fenced_code_block_produces_lines() {
         let md = "```rust\nfn main() {}\n```";
-        let lines = render_markdown(md, &test_theme());
+        let lines = render(md);
         let text: String = lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
         assert!(text.contains("fn main()"));
     }
@@ -501,7 +545,7 @@ mod tests {
     #[test]
     fn unordered_list() {
         let md = "- alpha\n- beta\n- gamma";
-        let lines = render_markdown(md, &test_theme());
+        let lines = render(md);
         let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
         assert!(texts.iter().any(|t| t.contains("- alpha")));
         assert!(texts.iter().any(|t| t.contains("- beta")));
@@ -511,7 +555,7 @@ mod tests {
     #[test]
     fn ordered_list() {
         let md = "1. first\n2. second\n3. third";
-        let lines = render_markdown(md, &test_theme());
+        let lines = render(md);
         let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
         assert!(texts.iter().any(|t| t.contains("1. first")));
         assert!(texts.iter().any(|t| t.contains("2. second")));
@@ -522,7 +566,7 @@ mod tests {
     fn blockquote_is_indented() {
         let md = "> quoted text";
         let theme = test_theme();
-        let lines = render_markdown(md, &theme);
+        let lines = render_with_theme(md, &theme);
         let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
         assert!(texts.iter().any(|t| t.contains("quoted text")));
         // Should have some indentation from blockquote prefix
@@ -533,7 +577,7 @@ mod tests {
     #[test]
     fn horizontal_rule() {
         let md = "above\n\n---\n\nbelow";
-        let lines = render_markdown(md, &test_theme());
+        let lines = render(md);
         let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
         assert!(texts.iter().any(|t| t.contains("───")));
     }
@@ -542,7 +586,7 @@ mod tests {
     fn link_is_underlined() {
         let md = "click [here](https://example.com)";
         let theme = test_theme();
-        let lines = render_markdown(md, &theme);
+        let lines = render_with_theme(md, &theme);
         assert_eq!(lines.len(), 1);
         let spans = lines[0].spans();
         let link_span = spans.iter().find(|s| s.text().contains("here")).unwrap();
@@ -552,14 +596,14 @@ mod tests {
 
     #[test]
     fn empty_input_returns_empty() {
-        let lines = render_markdown("", &test_theme());
+        let lines = render("");
         assert!(lines.is_empty());
     }
 
     #[test]
     fn multiple_paragraphs_have_spacing() {
         let md = "para one\n\npara two";
-        let lines = render_markdown(md, &test_theme());
+        let lines = render(md);
         // Should be: "para one", empty, "para two" (trailing empty stripped)
         assert!(lines.len() >= 3);
         assert!(lines.iter().any(|l| l.is_empty()));
@@ -568,7 +612,7 @@ mod tests {
     #[test]
     fn nested_bold_italic() {
         let md = "***bold and italic***";
-        let lines = render_markdown(md, &test_theme());
+        let lines = render(md);
         assert_eq!(lines.len(), 1);
         let spans = lines[0].spans();
         let span = spans
@@ -583,7 +627,7 @@ mod tests {
     fn unknown_language_falls_back_to_plain() {
         let md = "```nosuchlang\nsome code\n```";
         let theme = test_theme();
-        let lines = render_markdown(md, &theme);
+        let lines = render_with_theme(md, &theme);
         let text: String = lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
         assert!(text.contains("some code"));
         // Should have code styling even without highlighting
@@ -594,7 +638,7 @@ mod tests {
     #[test]
     fn nested_list_indents() {
         let md = "- outer\n  - inner";
-        let lines = render_markdown(md, &test_theme());
+        let lines = render(md);
         let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
         assert!(texts.iter().any(|t| t.contains("outer")));
         assert!(texts.iter().any(|t| t.contains("inner")));
@@ -604,5 +648,33 @@ mod tests {
         let inner_indent = inner.len() - inner.trim_start().len();
         let outer_indent = outer.len() - outer.trim_start().len();
         assert!(inner_indent > outer_indent);
+    }
+
+    #[test]
+    fn highlight_cache_returns_cached_code_block() {
+        let mut cache = HighlightCache::new();
+        let md = "```rust\nfn main() {}\n```";
+        let first = render_markdown(md, &test_theme(), &mut cache);
+        let second = render_markdown(md, &test_theme(), &mut cache);
+        assert_eq!(first, second);
+        // Cache should have an entry now
+        assert!(cache.get("rust", "fn main() {}\n").is_some());
+    }
+
+    #[test]
+    fn highlight_cache_not_affected_by_different_code_block() {
+        let mut cache = HighlightCache::new();
+        let md1 = "```rust\nfn a() {}\n```";
+        let md2 = "```rust\nfn b() {}\n```";
+        let lines1 = render_markdown(md1, &test_theme(), &mut cache);
+        let lines2 = render_markdown(md2, &test_theme(), &mut cache);
+        // Both should be cached independently
+        assert!(cache.get("rust", "fn a() {}\n").is_some());
+        assert!(cache.get("rust", "fn b() {}\n").is_some());
+        // And produce different output
+        assert_ne!(
+            lines1.iter().map(|l| l.plain_text()).collect::<String>(),
+            lines2.iter().map(|l| l.plain_text()).collect::<String>(),
+        );
     }
 }

@@ -2,7 +2,7 @@ use std::mem::take;
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::tui::markdown;
+use crate::tui::markdown::{self, HighlightCache, render_markdown};
 use crate::tui::spinner::Spinner;
 use crate::tui::theme::Theme;
 use crate::tui::{Component, Line, RenderContext};
@@ -36,6 +36,9 @@ pub(crate) struct ConversationBuffer {
     thought_block_open: bool,
     /// Per-segment rendered-line cache for Text segments. Invalidated on mutation.
     cache: Vec<Option<Vec<Line>>>,
+    /// Cached syntax-highlighted code blocks. Survives segment cache invalidation
+    /// so completed code blocks aren't re-highlighted on every streaming token.
+    highlight_cache: HighlightCache,
 }
 
 impl ConversationBuffer {
@@ -44,6 +47,7 @@ impl ConversationBuffer {
             segments: Vec::new(),
             thought_block_open: false,
             cache: Vec::new(),
+            highlight_cache: HighlightCache::new(),
         }
     }
 
@@ -53,11 +57,13 @@ impl ConversationBuffer {
 
     pub(crate) fn take_segments(&mut self) -> Vec<StreamSegment> {
         self.cache.clear();
+        self.highlight_cache = HighlightCache::new();
         take(&mut self.segments)
     }
 
     pub(crate) fn set_segments(&mut self, segments: Vec<StreamSegment>) {
         self.cache = vec![None; segments.len()];
+        self.highlight_cache = HighlightCache::new();
         self.segments = segments;
     }
 
@@ -114,17 +120,29 @@ impl ConversationBuffer {
         }
     }
 
-    /// Re-render only the dirty text segments, caching the result.
-    pub(crate) fn update_text_cache(&mut self, theme: &Theme) {
-        for (i, segment) in self.segments.iter().enumerate() {
-            if let StreamSegment::Text(text) = segment
-                && self.cache[i].is_none()
-            {
-                self.cache[i] = Some(markdown::render_markdown(text, theme));
+    fn segments_len(&self) -> usize {
+        self.segments.len()
+    }
+
+    fn segment_kind(&self, i: usize) -> StreamSegmentKind {
+        self.segments[i].kind()
+    }
+
+    /// For text segments: populates cache if needed and returns the cached lines.
+    /// For non-text segments: returns None (caller renders them).
+    fn get_or_render_text(&mut self, i: usize, theme: &Theme) -> Option<&[Line]> {
+        if let StreamSegment::Text(ref text) = self.segments[i] {
+            if self.cache[i].is_none() {
+                let rendered = render_markdown(text, theme, &mut self.highlight_cache);
+                self.cache[i] = Some(rendered);
             }
+            self.cache[i].as_deref()
+        } else {
+            None
         }
     }
 
+    #[cfg(test)]
     fn cached_lines(&self, index: usize) -> Option<&[Line]> {
         self.cache.get(index)?.as_deref()
     }
@@ -138,19 +156,24 @@ pub(crate) struct ConversationWindow<'a> {
 
 impl Component for ConversationWindow<'_> {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
-        self.conversation.update_text_cache(&context.theme);
-
         let mut lines = self.loader.render(context);
         let mut last_segment_kind: Option<StreamSegmentKind> = None;
 
-        for (i, segment) in self.conversation.segments().iter().enumerate() {
-            let kind = segment.kind();
-            let segment_lines = if let Some(cached) = self.conversation.cached_lines(i) {
-                cached.to_vec()
+        for i in 0..self.conversation.segments_len() {
+            let kind = self.conversation.segment_kind(i);
+            if let Some(cached) = self.conversation.get_or_render_text(i, &context.theme) {
+                extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, cached);
             } else {
-                render_stream_segment(segment, self.tool_call_statuses, context)
-            };
-            extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, segment_lines);
+                let segment = &self.conversation.segments()[i];
+                let segment_lines =
+                    render_stream_segment(segment, self.tool_call_statuses, context);
+                extend_with_vertical_margin(
+                    &mut lines,
+                    &mut last_segment_kind,
+                    kind,
+                    &segment_lines,
+                );
+            }
         }
 
         lines
@@ -173,7 +196,7 @@ pub(crate) fn extend_with_vertical_margin(
     target: &mut Vec<Line>,
     last_segment_kind: &mut Option<StreamSegmentKind>,
     kind: StreamSegmentKind,
-    lines: Vec<Line>,
+    lines: &[Line],
 ) {
     if lines.is_empty() {
         return;
@@ -185,7 +208,7 @@ pub(crate) fn extend_with_vertical_margin(
         target.push(Line::new(String::new()));
     }
 
-    target.extend(lines);
+    target.extend_from_slice(lines);
     *last_segment_kind = Some(kind);
 }
 
@@ -194,7 +217,8 @@ fn render_text_segment(text: &str, theme: &Theme) -> Vec<Line> {
         return vec![];
     }
 
-    markdown::render_markdown(text, theme)
+    let mut cache = HighlightCache::new();
+    markdown::render_markdown(text, theme, &mut cache)
 }
 
 #[cfg(test)]
@@ -321,24 +345,37 @@ mod tests {
     }
 
     #[test]
-    fn update_text_cache_populates_cache_for_text_segments() {
+    fn get_or_render_text_populates_cache_for_text_segments() {
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("hello");
         buffer.append_thought_chunk("thinking");
         buffer.append_text_chunk("world");
 
-        buffer.update_text_cache(&Theme::default());
+        let theme = Theme::default();
+        assert!(
+            buffer.get_or_render_text(0, &theme).is_some(),
+            "text segment should return cached lines"
+        );
+        assert!(
+            buffer.get_or_render_text(1, &theme).is_none(),
+            "thought segment should return None"
+        );
+        assert!(
+            buffer.get_or_render_text(2, &theme).is_some(),
+            "text segment should return cached lines"
+        );
 
-        assert!(buffer.cached_lines(0).is_some(), "text segment should be cached");
-        assert!(buffer.cached_lines(1).is_none(), "thought segment should not be cached");
-        assert!(buffer.cached_lines(2).is_some(), "text segment should be cached");
+        // Verify lines are cached for subsequent reads.
+        assert!(buffer.cached_lines(0).is_some());
+        assert!(buffer.cached_lines(1).is_none());
+        assert!(buffer.cached_lines(2).is_some());
     }
 
     #[test]
     fn append_text_chunk_invalidates_cache() {
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("hello");
-        buffer.update_text_cache(&Theme::default());
+        buffer.get_or_render_text(0, &Theme::default());
         assert!(buffer.cached_lines(0).is_some());
 
         // Append more text to the same segment — cache should be cleared.
@@ -350,7 +387,7 @@ mod tests {
     fn take_segments_clears_cache() {
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("hello");
-        buffer.update_text_cache(&Theme::default());
+        buffer.get_or_render_text(0, &Theme::default());
 
         let _ = buffer.take_segments();
         assert!(buffer.cached_lines(0).is_none());
@@ -360,7 +397,7 @@ mod tests {
     fn set_segments_resets_cache() {
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("hello");
-        buffer.update_text_cache(&Theme::default());
+        buffer.get_or_render_text(0, &Theme::default());
 
         buffer.set_segments(vec![
             StreamSegment::Text("a".to_string()),
@@ -376,7 +413,7 @@ mod tests {
         let mut loader = Spinner::default();
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("cached text");
-        buffer.update_text_cache(&Theme::default());
+        buffer.get_or_render_text(0, &Theme::default());
         let statuses = ToolCallStatuses::new();
         let mut view = ConversationWindow {
             loader: &mut loader,

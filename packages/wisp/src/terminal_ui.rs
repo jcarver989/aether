@@ -33,14 +33,16 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
     loop {
         select! {
             Some(event) = event_rx.recv() => {
-                if on_acp_event(
-                    &mut renderer,
-                    &mut screen,
-                    &prompt_handle,
-                    &session_id,
-                    event,
-                ) {
-                    break;
+                // Combine additional ready ACP events into single render pass.
+                let mut events = collect_acp_events(&mut screen, &renderer, event);
+                while let Ok(event) = event_rx.try_recv() {
+                    events.extend(collect_acp_events(&mut screen, &renderer, event));
+                }
+
+                match apply_screen_effects(&mut renderer, &mut screen, &prompt_handle, &session_id, events) {
+                    Ok(true) => break,
+                    Err(e) => eprintln!("Error handling ACP event: {e}"),
+                    _ => {}
                 }
             }
 
@@ -73,58 +75,22 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-fn on_acp_event<T: Write>(
-    renderer: &mut Renderer<T>,
+/// Extract effects from an ACP event without rendering. Multiple events can be
+/// batched and their effects applied together in a single render pass.
+fn collect_acp_events<T: Write>(
     screen: &mut App,
-    prompt_handle: &acp_utils::client::AcpPromptHandle,
-    session_id: &acp::SessionId,
+    renderer: &Renderer<T>,
     event: AcpEvent,
-) -> bool {
+) -> Vec<AppEvent> {
     match event {
-        AcpEvent::SessionUpdate(update) => {
-            let effects = screen.on_session_update(*update);
-            match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects) {
-                Ok(true) => true,
-                Ok(false) => false,
-                Err(e) => {
-                    eprintln!("Error handling session update: {e}");
-                    false
-                }
-            }
-        }
-        AcpEvent::ExtNotification(notification) => {
-            let effects = screen.on_ext_notification(&notification);
-            match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects) {
-                Ok(true) => true,
-                Ok(false) => false,
-                Err(e) => {
-                    eprintln!("Error handling ext notification: {e}");
-                    false
-                }
-            }
-        }
-        AcpEvent::PromptDone(_) => {
-            let effects = screen.on_prompt_done(renderer.context().size);
-            match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects) {
-                Ok(true) => true,
-                Ok(false) => false,
-                Err(e) => {
-                    eprintln!("Error handling prompt done: {e}");
-                    false
-                }
-            }
-        }
+        AcpEvent::SessionUpdate(update) => screen.on_session_update(*update),
+        AcpEvent::ExtNotification(notification) => screen.on_ext_notification(&notification),
+        AcpEvent::PromptDone(_) => screen.on_prompt_done(renderer.context().size),
         AcpEvent::PromptError(e) => {
-            let effects = screen.on_prompt_error();
-            if let Err(render_err) =
-                apply_screen_effects(renderer, screen, prompt_handle, session_id, effects)
-            {
-                eprintln!("Error handling prompt error render: {render_err}");
-            }
             eprintln!("Prompt error: {e}");
-            false
+            screen.on_prompt_error()
         }
-        AcpEvent::ConnectionClosed => true,
+        AcpEvent::ConnectionClosed => vec![AppEvent::Exit],
     }
 }
 
