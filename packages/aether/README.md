@@ -1,8 +1,13 @@
 # Aether
 
-Aether is a lightweight, "batteries-included" Rust library for building AI agents (LLMs + prompts + tools, running in a loop). It ships with support for multiple LLM providers, MCP servers, recursive loading of `AGENTS.md` files and more.
+Aether is a Rust library for building AI agents (LLM + prompt + tools, running in a loop). 
 
-You can use Aether to build autonomous agents (ala Devin), or connect an agent to a UI to create something like Claude Code.
+## What makes Aether unique?
+
+Aether has the following design principles:
+
+- **A truly minimal harness**: By default, Aether agents have _no_ system prompt and _no_ tools. Thus every token in the context window is yours to control.
+- **Tools from MCP**: Aether takes the stance that "MCP is all you need". Agents get tools _exclusively_ from MCP servers. This makes it easy to extend agents using _any_ language. And if you're using Rust, this library provides a `in-memory` transport. 
 
 ## Why Aether?
 
@@ -16,7 +21,7 @@ Aether aims to give you a great developer experience via a simple API that expos
 
 - **Prompts**: Are just strings. But Aether provides nice helpers to do things like recursively load `AGENTS.md` files into your agent's system prompt and compose prompts from multiple sources.
 
-- **Tools**: "MCP is all you need". Agents get tools _exclusively_  via MCP servers. You can easily configure your agent's MCP servers with a `mcp.json` file and run custom "in-memory" (Rust) MCP servers in dedicated tokio tasks.
+- **Tools**: "MCP is all you need". Agents get tools _exclusively_ via MCP servers. You can easily configure your agent's MCP servers with a `mcp.json` file and run custom "in-memory" (Rust) MCP servers in dedicated tokio tasks.
 
 - **Tests**: Aether provides a built-in set of test helpers that make it trivial to write robust unit and integration tests for your agents.
 
