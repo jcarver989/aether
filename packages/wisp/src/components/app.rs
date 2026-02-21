@@ -2,10 +2,9 @@ use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPick
 use crate::components::config_menu::{ConfigChange, ConfigMenu, ConfigMenuAction};
 use crate::components::config_picker::{ConfigPicker, ConfigPickerAction};
 use crate::components::container::Container;
-use crate::components::conversation_window::{
-    ConversationBuffer, ConversationWindow, StreamSegment, StreamSegmentKind,
-    extend_with_vertical_margin, render_stream_segment,
-};
+#[cfg(test)]
+use crate::components::conversation_window::SegmentContent;
+use crate::components::conversation_window::{ConversationBuffer, ConversationWindow};
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
@@ -215,36 +214,14 @@ impl App {
         self.grid_loader.visible = false;
         self.conversation.close_thought_block();
 
-        let stream_segments = self.conversation.take_segments();
-        let mut remaining_segments = Vec::new();
         let context = RenderContext::new(render_size);
+        let (scrollback_lines, completed_tool_ids) = self
+            .conversation
+            .flush_completed(&self.tool_call_statuses, &context);
 
-        let mut scrollback_lines: Vec<Line> = Vec::new();
-        let mut last_segment_kind: Option<StreamSegmentKind> = None;
-
-        for segment in stream_segments {
-            if let StreamSegment::ToolCall(id) = &segment
-                && self.tool_call_statuses.is_tool_running(id)
-            {
-                remaining_segments.push(segment);
-                continue;
-            }
-
-            let kind = segment.kind();
-            let segment_lines = render_stream_segment(&segment, &self.tool_call_statuses, &context);
-            extend_with_vertical_margin(
-                &mut scrollback_lines,
-                &mut last_segment_kind,
-                kind,
-                &segment_lines,
-            );
-
-            if let StreamSegment::ToolCall(id) = segment {
-                self.tool_call_statuses.remove_tool(&id);
-            }
+        for id in completed_tool_ids {
+            self.tool_call_statuses.remove_tool(&id);
         }
-
-        self.conversation.set_segments(remaining_segments);
 
         let mut effects = Vec::new();
         if !scrollback_lines.is_empty() {
@@ -991,9 +968,8 @@ mod tests {
         let effects = screen.on_prompt_done((120, 40));
 
         assert!(matches!(effects.as_slice(), [AppEvent::Render]));
-        assert!(
-            matches!(screen.conversation.segments(), [StreamSegment::ToolCall(id)] if id == "tool-1")
-        );
+        let segments: Vec<_> = screen.conversation.segments().collect();
+        assert!(matches!(segments[..], [SegmentContent::ToolCall(id)] if id == "tool-1"));
     }
 
     #[test]
