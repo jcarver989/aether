@@ -17,7 +17,7 @@ use clap::Parser;
 use crucible::{AetherRunner, EvalRunner, EvalsConfig, FileSystemStore};
 use futures::FutureExt;
 use llm::parser::ModelProviderParser;
-use mcp_coding::CodingMcp;
+use mcp_servers::CodingMcp;
 use rmcp::ServiceExt;
 use std::{sync::Arc, time::Duration};
 

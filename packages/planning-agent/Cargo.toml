@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 mcp_utils = { path = "../mcp-utils" }
-mcp-coding = { path = "../mcp-coding" }
+mcp-servers = { path = "../mcp-servers", features = ["coding"] }
 crucible = { path = "../crucible" }
 aether = { path = "../aether" }
 llm = { path = "../llm" }

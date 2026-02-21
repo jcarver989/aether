@@ -18,10 +18,7 @@ path = "src/main.rs"
 aether = { path = "../aether" }
 llm = { path = "../llm" }
 mcp_utils = { path = "../mcp-utils" }
-mcp-coding = { path = "../mcp-coding" }
-mcp-skills = { path = "../mcp-skills" }
-mcp-subagents = { path = "../mcp-subagents" }
-mcp-tasks = { path = "../mcp-tasks" }
+mcp-servers = { path = "../mcp-servers", features = ["all"] }
 acp_utils = { path = "../acp-utils", features = ["server"] }
 agent-client-protocol = { workspace = true }
 rmcp = { workspace = true }
