@@ -10,10 +10,7 @@ members = [
     "packages/aether-lspd",
     "packages/llm",
     "packages/mcp-utils",
-    "packages/mcp-coding",
-    "packages/mcp-skills",
-    "packages/mcp-tasks",
-    "packages/mcp-subagents"
+    "packages/mcp-servers",
 ]
 
 [workspace.lints.clippy]

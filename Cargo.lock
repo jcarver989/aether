@@ -69,10 +69,7 @@ dependencies = [
  "dirs",
  "futures",
  "llm",
- "mcp-coding",
- "mcp-skills",
- "mcp-subagents",
- "mcp-tasks",
+ "mcp-servers",
  "mcp_utils",
  "rmcp",
  "serde",
@@ -2018,9 +2015,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
-name = "mcp-coding"
+name = "mcp-servers"
 version = "0.1.0"
 dependencies = [
+ "aether",
  "aether-lspd",
  "chrono",
  "clap",
@@ -2030,7 +2028,7 @@ dependencies = [
  "grep",
  "htmd",
  "ignore",
- "libc",
+ "llm",
  "lsp-types",
  "mcp_utils",
  "regex",
@@ -2039,66 +2037,13 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
  "url",
  "uuid",
-]
-
-[[package]]
-name = "mcp-skills"
-version = "0.1.0"
-dependencies = [
- "clap",
- "mcp_utils",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "mcp-subagents"
-version = "0.1.0"
-dependencies = [
- "aether",
- "clap",
- "futures",
- "llm",
- "mcp-coding",
- "mcp-skills",
- "mcp-tasks",
- "mcp_utils",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "mcp-tasks"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "mcp-coding",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]
@@ -2518,7 +2463,7 @@ dependencies = [
  "crucible",
  "futures",
  "llm",
- "mcp-coding",
+ "mcp-servers",
  "mcp_utils",
  "regex",
  "reqwest 0.13.2",
