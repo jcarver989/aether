@@ -54,6 +54,7 @@ pub struct App {
     grid_loader: Spinner,
     conversation: ConversationBuffer,
     input_buffer: String,
+    cursor_pos: usize,
     agent_name: String,
     model_display: Option<String>,
     config_options: Vec<SessionConfigOption>,
@@ -75,6 +76,7 @@ impl App {
             grid_loader: Spinner::default(),
             conversation: ConversationBuffer::new(),
             input_buffer: String::new(),
+            cursor_pos: 0,
             agent_name,
             model_display: extract_model_display(config_options),
             config_options: config_options.to_vec(),
@@ -106,28 +108,50 @@ impl App {
         }
 
         match key_event.code {
+            // File picker doesn't consume horizontal arrows — swallow them here
+            // to prevent cursor movement behind the picker overlay.
+            KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
+                if self.file_picker.is_some() =>
+            {
+                vec![]
+            }
+            KeyCode::Left => {
+                self.move_cursor_left();
+                vec![AppEvent::Render]
+            }
+            KeyCode::Right => {
+                self.move_cursor_right();
+                vec![AppEvent::Render]
+            }
+            KeyCode::Home => {
+                self.move_cursor_home();
+                vec![AppEvent::Render]
+            }
+            KeyCode::End => {
+                self.move_cursor_end();
+                vec![AppEvent::Render]
+            }
             KeyCode::Char('/') if self.input_buffer.is_empty() => {
-                self.input_buffer.push('/');
+                self.insert_char_at_cursor('/');
                 let mut commands = builtin_commands();
                 commands.extend(self.available_commands.clone());
                 self.open_command_picker(commands);
                 vec![AppEvent::Render]
             }
             KeyCode::Char('@') => {
-                self.input_buffer.push('@');
+                self.insert_char_at_cursor('@');
                 self.open_file_picker();
                 vec![AppEvent::Render]
             }
             KeyCode::Char(c) => {
-                self.input_buffer.push(c);
+                self.insert_char_at_cursor(c);
                 vec![AppEvent::Render]
             }
             KeyCode::Backspace => {
-                if self.input_buffer.is_empty() {
-                    vec![]
-                } else {
-                    self.input_buffer.pop();
+                if self.delete_char_before_cursor() {
                     vec![AppEvent::Render]
+                } else {
+                    vec![]
                 }
             }
             KeyCode::Enter => self.execute_input(),
@@ -268,7 +292,7 @@ impl App {
         self.close_all_pickers();
         for c in text.chars() {
             if !c.is_control() {
-                self.input_buffer.push(c);
+                self.insert_char_at_cursor(c);
             }
         }
         vec![AppEvent::Render]
@@ -487,7 +511,7 @@ impl App {
 
     fn apply_command(&mut self, cmd: &CommandEntry) -> Vec<AppEvent> {
         if cmd.builtin && cmd.name == "config" {
-            self.input_buffer.clear();
+            self.clear_input();
             self.close_all_pickers();
             let options = self.config_options.clone();
             self.open_config_menu(&options);
@@ -499,10 +523,10 @@ impl App {
                 .and_then(ConfigPicker::from_entry);
             vec![AppEvent::Render]
         } else if cmd.has_input {
-            self.input_buffer = format!("/{} ", cmd.name);
+            self.set_input(format!("/{} ", cmd.name));
             vec![AppEvent::Render]
         } else {
-            self.input_buffer = format!("/{}", cmd.name);
+            self.set_input(format!("/{}", cmd.name));
             self.execute_input()
         }
     }
@@ -513,7 +537,7 @@ impl App {
         }
 
         let user_input = self.input_buffer.trim().to_string();
-        self.input_buffer.clear();
+        self.clear_input();
         self.close_input_pickers();
 
         let mut effects = vec![
@@ -595,7 +619,7 @@ impl App {
                 .unwrap_or(self.input_buffer.len());
             at_pos + 1 + picker.combobox.query.len()
         } else {
-            self.input_buffer.len()
+            self.cursor_pos
         }
     }
 
@@ -619,9 +643,10 @@ impl App {
         });
 
         if let Some(at_pos) = self.active_mention_start() {
-            self.input_buffer.truncate(at_pos);
-            self.input_buffer.push_str(&mention);
-            self.input_buffer.push(' ');
+            let mut s = self.input_buffer[..at_pos].to_string();
+            s.push_str(&mention);
+            s.push(' ');
+            self.set_input(s);
         }
     }
 
@@ -662,6 +687,54 @@ impl App {
         }
 
         (blocks, warning_lines)
+    }
+
+    fn move_cursor_left(&mut self) {
+        self.cursor_pos = self.input_buffer[..self.cursor_pos]
+            .char_indices()
+            .next_back()
+            .map_or(0, |(i, _)| i);
+    }
+
+    fn move_cursor_right(&mut self) {
+        if let Some(c) = self.input_buffer[self.cursor_pos..].chars().next() {
+            self.cursor_pos += c.len_utf8();
+        }
+    }
+
+    fn move_cursor_home(&mut self) {
+        self.cursor_pos = 0;
+    }
+
+    fn move_cursor_end(&mut self) {
+        self.cursor_pos = self.input_buffer.len();
+    }
+
+    fn insert_char_at_cursor(&mut self, c: char) {
+        self.input_buffer.insert(self.cursor_pos, c);
+        self.cursor_pos += c.len_utf8();
+    }
+
+    fn delete_char_before_cursor(&mut self) -> bool {
+        let Some((prev, _)) = self.input_buffer[..self.cursor_pos]
+            .char_indices()
+            .next_back()
+        else {
+            return false;
+        };
+        self.input_buffer.drain(prev..self.cursor_pos);
+        self.cursor_pos = prev;
+        true
+    }
+
+    fn set_input(&mut self, s: String) {
+        self.cursor_pos = s.len();
+        self.input_buffer = s;
+    }
+
+    fn clear_input(&mut self) {
+        self.input_buffer.clear();
+        self.cursor_pos = 0;
     }
 }
 
@@ -1020,4 +1093,155 @@ mod tests {
 
         assert!(effects.is_empty());
     }
+
+    #[test]
+    fn left_arrow_moves_cursor_back_one_char() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hello".to_string();
+        app.cursor_pos = 5;
+
+        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+
+        assert_eq!(app.cursor_pos, 4);
+    }
+
+    #[test]
+    fn right_arrow_moves_cursor_forward_one_char() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hello".to_string();
+        app.cursor_pos = 2;
+
+        app.on_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+
+        assert_eq!(app.cursor_pos, 3);
+    }
+
+    #[test]
+    fn left_at_start_stays_at_zero() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hello".to_string();
+        app.cursor_pos = 0;
+
+        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+
+        assert_eq!(app.cursor_pos, 0);
+    }
+
+    #[test]
+    fn right_at_end_stays_at_end() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hello".to_string();
+        app.cursor_pos = 5;
+
+        app.on_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+
+        assert_eq!(app.cursor_pos, 5);
+    }
+
+    #[test]
+    fn home_moves_to_start() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hello".to_string();
+        app.cursor_pos = 3;
+
+        app.on_key_event(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
+
+        assert_eq!(app.cursor_pos, 0);
+    }
+
+    #[test]
+    fn end_moves_to_end() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hello".to_string();
+        app.cursor_pos = 1;
+
+        app.on_key_event(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
+
+        assert_eq!(app.cursor_pos, 5);
+    }
+
+    #[test]
+    fn typing_inserts_at_cursor_position() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hllo".to_string();
+        app.cursor_pos = 1;
+
+        app.on_key_event(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+
+        assert_eq!(app.input_buffer, "hello");
+        assert_eq!(app.cursor_pos, 2);
+    }
+
+    #[test]
+    fn backspace_at_cursor_middle_deletes_correct_char() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hello".to_string();
+        app.cursor_pos = 3;
+
+        app.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert_eq!(app.input_buffer, "helo");
+        assert_eq!(app.cursor_pos, 2);
+    }
+
+    #[test]
+    fn backspace_at_start_does_nothing() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hello".to_string();
+        app.cursor_pos = 0;
+
+        let effects = app.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert!(effects.is_empty());
+        assert_eq!(app.input_buffer, "hello");
+        assert_eq!(app.cursor_pos, 0);
+    }
+
+    #[test]
+    fn multibyte_utf8_cursor_navigation() {
+        let mut app = App::new("test".to_string(), &[]);
+        // "a中b" — 'a' is 1 byte, '中' is 3 bytes, 'b' is 1 byte = 5 bytes total
+        app.input_buffer = "a中b".to_string();
+        app.cursor_pos = 5; // end
+
+        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(app.cursor_pos, 4); // before 'b'
+
+        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(app.cursor_pos, 1); // before '中'
+
+        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(app.cursor_pos, 0); // before 'a'
+
+        app.on_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.cursor_pos, 1); // after 'a'
+
+        app.on_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.cursor_pos, 4); // after '中'
+    }
+
+    #[test]
+    fn paste_inserts_at_cursor_position() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hd".to_string();
+        app.cursor_pos = 1;
+
+        app.on_paste("ello worl");
+
+        assert_eq!(app.input_buffer, "hello world");
+        assert_eq!(app.cursor_pos, 10);
+    }
+
+    #[test]
+    fn execute_resets_cursor_pos() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.input_buffer = "hello".to_string();
+        app.cursor_pos = 3;
+
+        app.execute_input();
+
+        assert_eq!(app.cursor_pos, 0);
+        assert!(app.input_buffer.is_empty());
+    }
+
 }
