@@ -1,10 +1,84 @@
 use agent_client_protocol as acp;
+use serde::Deserialize;
 
 use crate::tui::spinner::BRAILLE_FRAMES as FRAMES;
 use crate::tui::{Component, Line, RenderContext};
 use std::collections::HashMap;
 
 const MAX_TOOL_ARG_LENGTH: usize = 200;
+
+// ---------------------------------------------------------------------------
+// Lightweight deserialization types for `_aether/sub_agent_progress` notifications.
+// Wisp cannot import from the `aether` crate, so we mirror the minimal subset
+// of the wire format needed to drive the TUI.
+// ---------------------------------------------------------------------------
+
+/// Top-level notification params for `_aether/sub_agent_progress`.
+#[derive(Debug, Deserialize)]
+pub struct SubAgentNotification {
+    pub parent_tool_id: String,
+    pub task_id: String,
+    pub agent_name: String,
+    pub(crate) event: SubAgentEvent,
+}
+
+/// Subset of `AgentMessage` variants relevant for status display.
+/// Uses serde's default externally-tagged representation to match `AgentMessage`.
+/// Implements custom deserialization so unknown variants (Text, Thought, etc.)
+/// gracefully fall back to `Other` instead of failing.
+#[derive(Debug)]
+pub(crate) enum SubAgentEvent {
+    ToolCall { request: SubAgentToolRequest },
+    ToolResult { result: SubAgentToolResult },
+    ToolError { error: SubAgentToolError },
+    Done,
+    Other,
+}
+
+/// Helper enum for known externally-tagged variants (used during deserialization).
+#[derive(Deserialize)]
+enum KnownSubAgentEvent {
+    ToolCall { request: SubAgentToolRequest },
+    ToolResult { result: SubAgentToolResult },
+    ToolError { error: SubAgentToolError },
+    Done,
+}
+
+impl<'de> serde::Deserialize<'de> for SubAgentEvent {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match serde_json::from_value::<KnownSubAgentEvent>(value) {
+            Ok(KnownSubAgentEvent::ToolCall { request }) => Ok(SubAgentEvent::ToolCall { request }),
+            Ok(KnownSubAgentEvent::ToolResult { result }) => {
+                Ok(SubAgentEvent::ToolResult { result })
+            }
+            Ok(KnownSubAgentEvent::ToolError { error }) => Ok(SubAgentEvent::ToolError { error }),
+            Ok(KnownSubAgentEvent::Done) => Ok(SubAgentEvent::Done),
+            Err(_) => Ok(SubAgentEvent::Other),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SubAgentToolRequest {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SubAgentToolResult {
+    pub id: String,
+    #[allow(dead_code)]
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SubAgentToolError {
+    pub id: String,
+    #[allow(dead_code)]
+    pub name: String,
+}
 
 /// Renders a single tool call status line.
 pub struct ToolCallStatusView {
@@ -68,6 +142,16 @@ impl ToolCallStatusView {
     }
 }
 
+/// Per-sub-agent state: tracks its tool calls in order.
+#[derive(Clone)]
+struct SubAgentState {
+    task_id: String,
+    agent_name: String,
+    done: bool,
+    tool_order: Vec<String>,
+    tool_calls: HashMap<String, TrackedToolCall>,
+}
+
 /// Tracks active tool calls and produces status lines for the frame.
 #[derive(Clone)]
 pub struct ToolCallStatuses {
@@ -75,6 +159,9 @@ pub struct ToolCallStatuses {
     tool_order: Vec<String>,
     /// Tool call info by ID
     tool_calls: HashMap<String, TrackedToolCall>,
+    /// Sub-agent tool states keyed by parent tool call ID.
+    /// Each parent can have multiple sub-agents (tracked in insertion order).
+    sub_agents: HashMap<String, Vec<SubAgentState>>,
     /// Animation tick for the spinner on running tool calls
     tick: u16,
 }
@@ -98,6 +185,7 @@ impl ToolCallStatuses {
         Self {
             tool_order: Vec::new(),
             tool_calls: HashMap::new(),
+            sub_agents: HashMap::new(),
             tick: 0,
         }
     }
@@ -107,11 +195,18 @@ impl ToolCallStatuses {
         self.tick = tick;
     }
 
-    /// Returns true if any tool calls are still running.
+    /// Returns true if any tool calls (including sub-agent tools) are still running.
     pub fn has_running(&self) -> bool {
         self.tool_calls
             .values()
             .any(|tc| matches!(tc.status, TrackedStatus::Running))
+            || self.sub_agents.values().any(|agents| {
+                agents.iter().any(|a| {
+                    a.tool_calls
+                        .values()
+                        .any(|tc| matches!(tc.status, TrackedStatus::Running))
+                })
+            })
     }
 
     /// Handle a new tool call from ACP `SessionUpdate::ToolCall`.
@@ -178,15 +273,95 @@ impl ToolCallStatuses {
             .is_some_and(|tc| matches!(tc.status, TrackedStatus::Running))
     }
 
+    /// Handle a sub-agent progress notification.
+    pub fn on_sub_agent_progress(&mut self, notification: &SubAgentNotification) {
+        let agents = self
+            .sub_agents
+            .entry(notification.parent_tool_id.clone())
+            .or_default();
+
+        let agent = if let Some(a) = agents
+            .iter_mut()
+            .find(|a| a.task_id == notification.task_id)
+        {
+            a
+        } else {
+            agents.push(SubAgentState {
+                task_id: notification.task_id.clone(),
+                agent_name: notification.agent_name.clone(),
+                done: false,
+                tool_order: Vec::new(),
+                tool_calls: HashMap::new(),
+            });
+            agents.last_mut().unwrap()
+        };
+
+        match &notification.event {
+            SubAgentEvent::ToolCall { request } => {
+                if !agent.tool_calls.contains_key(&request.id) {
+                    agent.tool_order.push(request.id.clone());
+                }
+                agent.tool_calls.insert(
+                    request.id.clone(),
+                    TrackedToolCall {
+                        name: request.name.clone(),
+                        arguments: request.arguments.clone(),
+                        status: TrackedStatus::Running,
+                    },
+                );
+            }
+            SubAgentEvent::ToolResult { result } => {
+                if let Some(tc) = agent.tool_calls.get_mut(&result.id) {
+                    tc.status = TrackedStatus::Success;
+                }
+            }
+            SubAgentEvent::ToolError { error } => {
+                if let Some(tc) = agent.tool_calls.get_mut(&error.id) {
+                    tc.status = TrackedStatus::Error("failed".to_string());
+                }
+            }
+            SubAgentEvent::Done => {
+                agent.done = true;
+            }
+            SubAgentEvent::Other => {}
+        }
+    }
+
     pub fn remove_tool(&mut self, id: &str) {
         self.tool_calls.remove(id);
         self.tool_order.retain(|tool_id| tool_id != id);
+        self.sub_agents.remove(id);
     }
 
     pub fn render_tool(&self, id: &str, context: &RenderContext) -> Vec<Line> {
-        self.view_for(id, self.tick)
+        let mut lines = self
+            .view_for(id, self.tick)
             .map(|mut view| view.render(context))
-            .unwrap_or_default()
+            .unwrap_or_default();
+
+        if let Some(agents) = self.sub_agents.get(id) {
+            for agent in agents {
+                lines.push(self.render_agent_header(agent, context));
+                // Only show the most recent tool call to keep line count stable.
+                if let Some(tc) = agent
+                    .tool_order
+                    .last()
+                    .and_then(|tool_id| agent.tool_calls.get(tool_id))
+                {
+                    let mut view = Self::tool_call_view(tc, self.tick);
+                    for tool_line in view.render(context) {
+                        let mut indented = Line::default();
+                        indented.push_text("    ");
+                        for span in tool_line.spans() {
+                            indented.push_with_style(span.text(), span.style());
+                        }
+                        lines.push(indented);
+                    }
+                }
+            }
+        }
+
+        lines
     }
 
     /// Clear all tracked tool calls (e.g., after pushing to scrollback).
@@ -194,6 +369,7 @@ impl ToolCallStatuses {
     pub fn clear(&mut self) {
         self.tool_order.clear();
         self.tool_calls.clear();
+        self.sub_agents.clear();
     }
 
     /// Render and remove only completed (Success/Error) tool calls,
@@ -242,6 +418,34 @@ impl ToolCallStatuses {
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.tool_calls.is_empty()
+    }
+
+    fn render_agent_header(&self, agent: &SubAgentState, context: &RenderContext) -> Line {
+        let mut line = Line::default();
+        line.push_text("  ");
+        if agent.done {
+            line.push_styled('●'.to_string(), context.theme.success);
+        } else {
+            let frame = FRAMES[self.tick as usize % FRAMES.len()];
+            line.push_styled(frame.to_string(), context.theme.info);
+        }
+        line.push_text(" ");
+        line.push_text(&agent.agent_name);
+        line
+    }
+
+    fn tool_call_view(tc: &TrackedToolCall, tick: u16) -> ToolCallStatusView {
+        let status = match &tc.status {
+            TrackedStatus::Running => ToolCallStatus::Running,
+            TrackedStatus::Success => ToolCallStatus::Success,
+            TrackedStatus::Error(msg) => ToolCallStatus::Error(msg.clone()),
+        };
+        ToolCallStatusView {
+            name: tc.name.clone(),
+            arguments: tc.arguments.clone(),
+            status,
+            tick,
+        }
     }
 
     fn view_for(&self, id: &str, tick: u16) -> Option<ToolCallStatusView> {
@@ -512,5 +716,309 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().contains("X"));
         assert!(lines[0].plain_text().contains("boom"));
+    }
+
+    // -- Sub-agent deserialization tests --
+
+    fn make_sub_agent_notification(
+        parent_tool_id: &str,
+        agent_name: &str,
+        event_json: &str,
+    ) -> SubAgentNotification {
+        // Use agent_name as task_id for convenience; override with
+        // make_sub_agent_notification_with_task_id when testing multiple
+        // agents with the same name.
+        make_sub_agent_notification_with_task_id(parent_tool_id, agent_name, agent_name, event_json)
+    }
+
+    fn make_sub_agent_notification_with_task_id(
+        parent_tool_id: &str,
+        task_id: &str,
+        agent_name: &str,
+        event_json: &str,
+    ) -> SubAgentNotification {
+        let json = format!(
+            r#"{{"parent_tool_id":"{parent_tool_id}","task_id":"{task_id}","agent_name":"{agent_name}","event":{event_json}}}"#,
+        );
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[test]
+    fn deserialize_tool_call_event() {
+        let n = make_sub_agent_notification(
+            "p1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{\"pattern\":\"test\"}"},"model_name":"m"}}"#,
+        );
+        assert!(matches!(n.event, SubAgentEvent::ToolCall { .. }));
+    }
+
+    #[test]
+    fn deserialize_tool_result_event() {
+        let n = make_sub_agent_notification(
+            "p1",
+            "explorer",
+            r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
+        );
+        assert!(matches!(n.event, SubAgentEvent::ToolResult { .. }));
+    }
+
+    #[test]
+    fn deserialize_done_event() {
+        let n = make_sub_agent_notification("p1", "explorer", r#""Done""#);
+        assert!(matches!(n.event, SubAgentEvent::Done));
+    }
+
+    #[test]
+    fn deserialize_unknown_event_as_other() {
+        let n = make_sub_agent_notification(
+            "p1",
+            "explorer",
+            r#"{"Text":{"message_id":"m1","chunk":"hi","is_complete":false,"model_name":"m"}}"#,
+        );
+        assert!(matches!(n.event, SubAgentEvent::Other));
+    }
+
+    // -- Sub-agent tracking tests --
+
+    #[test]
+    fn sub_agent_tool_call_renders_nested() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{\"pattern\":\"test\"}"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        // Line 0: parent tool, Line 1: agent header, Line 2: sub-tool
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].plain_text().contains("spawn_subagent"));
+        assert!(lines[1].plain_text().contains("explorer"));
+        assert!(lines[1].plain_text().starts_with("  ")); // 2-space indent
+        assert!(lines[2].plain_text().starts_with("    ")); // 4-space indent
+        assert!(lines[2].plain_text().contains("grep"));
+    }
+
+    #[test]
+    fn sub_agent_tool_result_shows_checkmark() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"read_file","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolResult":{"result":{"id":"c1","name":"read_file","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        // parent + agent header + last tool (completed)
+        assert_eq!(lines.len(), 3);
+        assert!(lines[2].plain_text().contains("✓"));
+    }
+
+    #[test]
+    fn sub_agent_tool_error_shows_x() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"read_file","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolError":{"error":{"id":"c1","name":"read_file","arguments":"{}","error":"not found"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        // parent + agent header + last tool (errored)
+        assert_eq!(lines.len(), 3);
+        assert!(lines[2].plain_text().contains("X"));
+    }
+
+    #[test]
+    fn multiple_sub_agents_render_separate_headers() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "writer",
+            r#"{"ToolCall":{"request":{"id":"c2","name":"write_file","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        // parent + explorer header + explorer tool + writer header + writer tool
+        assert_eq!(lines.len(), 5);
+        assert!(lines[1].plain_text().contains("explorer"));
+        assert!(lines[3].plain_text().contains("writer"));
+    }
+
+    #[test]
+    fn same_name_agents_with_different_task_ids_render_separately() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification_with_task_id(
+            "parent-1",
+            "task-1",
+            "codebase-explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification_with_task_id(
+            "parent-1",
+            "task-2",
+            "codebase-explorer",
+            r#"{"ToolCall":{"request":{"id":"c2","name":"read_file","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification_with_task_id(
+            "parent-1",
+            "task-3",
+            "codebase-explorer",
+            r#"{"ToolCall":{"request":{"id":"c3","name":"list_files","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        // parent + 3 * (agent header + tool) = 7 lines
+        assert_eq!(lines.len(), 7);
+        assert!(lines[2].plain_text().contains("grep"));
+        assert!(lines[4].plain_text().contains("read_file"));
+        assert!(lines[6].plain_text().contains("list_files"));
+    }
+
+    #[test]
+    fn sub_agent_renders_only_latest_tool() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        // First tool call completes
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
+        ));
+        // Second tool call starts
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c2","name":"read_file","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        // parent + agent header + only the latest tool (read_file), not grep
+        assert_eq!(lines.len(), 3);
+        assert!(lines[2].plain_text().contains("read_file"));
+        assert!(!lines[2].plain_text().contains("grep"));
+    }
+
+    #[test]
+    fn has_running_detects_sub_agent_running_tools() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "parent-1",
+            acp::ToolCallStatus::Completed,
+        ));
+        // Parent is done, but sub-agent tool is still running
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        assert!(statuses.has_running());
+    }
+
+    #[test]
+    fn remove_tool_cleans_up_sub_agent_state() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        statuses.remove_tool("parent-1");
+        assert!(!statuses.has_running());
+        assert!(statuses.render_tool("parent-1", &ctx()).is_empty());
+    }
+
+    #[test]
+    fn clear_removes_sub_agent_state() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        statuses.clear();
+        assert!(!statuses.has_running());
+    }
+
+    #[test]
+    fn agent_header_shows_spinner_while_running() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        // Tool completed but agent hasn't sent Done yet
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        let header = lines[1].plain_text();
+        // Agent is still running (no Done event), so header should show spinner
+        assert!(!header.contains('●'), "Expected spinner, not ● in header: {header}");
+    }
+
+    #[test]
+    fn agent_header_shows_done_after_done_event() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#""Done""#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        let header = lines[1].plain_text();
+        assert!(header.contains('●'), "Expected ● in header: {header}");
     }
 }

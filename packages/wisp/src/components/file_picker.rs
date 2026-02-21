@@ -83,7 +83,6 @@ impl FilePicker {
             combobox: Combobox::new(entries),
         }
     }
-
 }
 
 impl Default for FilePicker {
@@ -231,7 +230,10 @@ mod tests {
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
-        assert!(matches!(outcome.action, Some(FilePickerAction::CharTyped('r'))));
+        assert!(matches!(
+            outcome.action,
+            Some(FilePickerAction::CharTyped('r'))
+        ));
         assert_eq!(picker.combobox.query, "r");
     }
 

@@ -9,7 +9,7 @@ use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
 use crate::components::text_input::{TextInput, TextInputAction};
-use crate::components::tool_call_statuses::ToolCallStatuses;
+use crate::components::tool_call_statuses::{SubAgentNotification, ToolCallStatuses};
 use crate::tui::spinner::Spinner;
 use crate::tui::{
     Cursor, CursorComponent, HandlesInput, InputOutcome, Line, RenderContext, RenderOutput,
@@ -26,6 +26,7 @@ use url::Url;
 
 const MAX_EMBED_TEXT_BYTES: usize = 1024 * 1024;
 const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
+const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
 
 #[derive(Debug)]
 pub enum AppEvent {
@@ -219,17 +220,29 @@ impl App {
     }
 
     pub fn on_ext_notification(&mut self, notification: &ExtNotification) -> Vec<AppEvent> {
-        if notification.method.as_ref() == CONTEXT_USAGE_METHOD
-            && let Some(ratio) =
-                serde_json::from_str::<serde_json::Value>(notification.params.get())
-                    .ok()
-                    .and_then(|v| v.get("usage_ratio")?.as_f64())
-        {
-            // Safety: clamp guarantees value is in [0.0, 100.0], round() keeps it integral
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let pct_left = ((1.0 - ratio) * 100.0).clamp(0.0, 100.0).round() as u8;
-            self.context_usage_pct = Some(pct_left);
-            return vec![AppEvent::Render];
+        match notification.method.as_ref() {
+            CONTEXT_USAGE_METHOD => {
+                if let Some(ratio) =
+                    serde_json::from_str::<serde_json::Value>(notification.params.get())
+                        .ok()
+                        .and_then(|v| v.get("usage_ratio")?.as_f64())
+                {
+                    // Safety: clamp guarantees value is in [0.0, 100.0], round() keeps it integral
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let pct_left = ((1.0 - ratio) * 100.0).clamp(0.0, 100.0).round() as u8;
+                    self.context_usage_pct = Some(pct_left);
+                    return vec![AppEvent::Render];
+                }
+            }
+            SUB_AGENT_PROGRESS_METHOD => {
+                if let Ok(progress) =
+                    serde_json::from_str::<SubAgentNotification>(notification.params.get())
+                {
+                    self.tool_call_statuses.on_sub_agent_progress(&progress);
+                    return vec![AppEvent::Render];
+                }
+            }
+            _ => {}
         }
         vec![]
     }
@@ -688,10 +701,7 @@ impl CursorComponent for App {
             .config_picker
             .as_ref()
             .map(Self::config_picker_cursor_col);
-        let picker_query_len = self
-            .file_picker
-            .as_ref()
-            .map(|p| p.combobox.query.len());
+        let picker_query_len = self.file_picker.as_ref().map(|p| p.combobox.query.len());
         let cursor_index = self.text_input.cursor_index(picker_query_len);
 
         let mut conversation_window = ConversationWindow {
@@ -990,6 +1000,32 @@ mod tests {
 
         let effects = screen.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn sub_agent_progress_notification_triggers_render() {
+        let mut app = App::new("test-agent".to_string(), &[]);
+        let json = r#"{"parent_tool_id":"p1","task_id":"t1","agent_name":"explorer","event":{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}}"#;
+        let raw = serde_json::value::to_raw_value(
+            &serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        )
+        .unwrap();
+        let notification =
+            acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
+
+        let effects = app.on_ext_notification(&notification);
+        assert!(matches!(effects.as_slice(), [AppEvent::Render]));
+    }
+
+    #[test]
+    fn invalid_sub_agent_progress_json_silently_ignored() {
+        let mut app = App::new("test-agent".to_string(), &[]);
+        let raw = serde_json::value::to_raw_value(&serde_json::json!({"bad": "data"})).unwrap();
+        let notification =
+            acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
+
+        let effects = app.on_ext_notification(&notification);
         assert!(effects.is_empty());
     }
 
