@@ -298,6 +298,16 @@ async fn execute_single_agent(
             .await
             .map_err(|e| format!("Failed to send message to agent: {e}"))?;
 
+        // Notify that this agent has started so the UI can show it immediately,
+        // before any tool calls arrive.
+        if let Some(ref callback) = progress_callback {
+            callback(
+                &task_id,
+                &agent_name,
+                &AgentMessage::text("", "", false, ""),
+            );
+        }
+
         let mut final_output = String::new();
         let mut was_cancelled = false;
         let mut error_message: Option<String> = None;

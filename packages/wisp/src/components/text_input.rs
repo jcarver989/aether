@@ -78,10 +78,7 @@ impl TextInput {
     }
 
     pub fn delete_char_before_cursor(&mut self) -> bool {
-        let Some((prev, _)) = self.buffer[..self.cursor_pos]
-            .char_indices()
-            .next_back()
-        else {
+        let Some((prev, _)) = self.buffer[..self.cursor_pos].char_indices().next_back() else {
             return false;
         };
         self.buffer.drain(prev..self.cursor_pos);

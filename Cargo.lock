@@ -4631,6 +4631,7 @@ dependencies = [
  "mime_guess",
  "nucleo",
  "pulldown-cmark",
+ "serde",
  "serde_json",
  "syntect",
  "tokio",
