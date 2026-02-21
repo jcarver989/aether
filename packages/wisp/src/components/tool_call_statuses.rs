@@ -262,6 +262,7 @@ impl ToolCallStatuses {
 
         if let Some(agents) = self.sub_agents.get(id) {
             for agent in agents {
+                lines.push(Line::default());
                 lines.push(self.render_agent_header(agent, context));
                 // Only show the most recent tool call to keep line count stable.
                 if let Some(tc) = agent
@@ -677,13 +678,13 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // Line 0: parent tool, Line 1: agent header, Line 2: sub-tool
-        assert_eq!(lines.len(), 3);
+        // Line 0: parent tool, Line 1: blank, Line 2: agent header, Line 3: sub-tool
+        assert_eq!(lines.len(), 4);
         assert!(lines[0].plain_text().contains("spawn_subagent"));
-        assert!(lines[1].plain_text().contains("explorer"));
-        assert!(lines[1].plain_text().starts_with("  ")); // 2-space indent
-        assert!(lines[2].plain_text().starts_with("    ")); // 4-space indent
-        assert!(lines[2].plain_text().contains("grep"));
+        assert!(lines[2].plain_text().contains("explorer"));
+        assert!(lines[2].plain_text().starts_with("  ")); // 2-space indent
+        assert!(lines[3].plain_text().starts_with("    ")); // 4-space indent
+        assert!(lines[3].plain_text().contains("grep"));
     }
 
     #[test]
@@ -703,9 +704,9 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + agent header + last tool (completed)
-        assert_eq!(lines.len(), 3);
-        assert!(lines[2].plain_text().contains("✓"));
+        // parent + blank + agent header + last tool (completed)
+        assert_eq!(lines.len(), 4);
+        assert!(lines[3].plain_text().contains("✓"));
     }
 
     #[test]
@@ -725,9 +726,9 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + agent header + last tool (errored)
-        assert_eq!(lines.len(), 3);
-        assert!(lines[2].plain_text().contains("X"));
+        // parent + blank + agent header + last tool (errored)
+        assert_eq!(lines.len(), 4);
+        assert!(lines[3].plain_text().contains("X"));
     }
 
     #[test]
@@ -747,10 +748,10 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + explorer header + explorer tool + writer header + writer tool
-        assert_eq!(lines.len(), 5);
-        assert!(lines[1].plain_text().contains("explorer"));
-        assert!(lines[3].plain_text().contains("writer"));
+        // parent + blank + explorer header + explorer tool + blank + writer header + writer tool
+        assert_eq!(lines.len(), 7);
+        assert!(lines[2].plain_text().contains("explorer"));
+        assert!(lines[5].plain_text().contains("writer"));
     }
 
     #[test]
@@ -778,11 +779,11 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + 3 * (agent header + tool) = 7 lines
-        assert_eq!(lines.len(), 7);
-        assert!(lines[2].plain_text().contains("grep"));
-        assert!(lines[4].plain_text().contains("read_file"));
-        assert!(lines[6].plain_text().contains("list_files"));
+        // parent + 3 * (blank + agent header + tool) = 10 lines
+        assert_eq!(lines.len(), 10);
+        assert!(lines[3].plain_text().contains("grep"));
+        assert!(lines[6].plain_text().contains("read_file"));
+        assert!(lines[9].plain_text().contains("list_files"));
     }
 
     #[test]
@@ -809,10 +810,10 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + agent header + only the latest tool (read_file), not grep
-        assert_eq!(lines.len(), 3);
-        assert!(lines[2].plain_text().contains("read_file"));
-        assert!(!lines[2].plain_text().contains("grep"));
+        // parent + blank + agent header + only the latest tool (read_file), not grep
+        assert_eq!(lines.len(), 4);
+        assert!(lines[3].plain_text().contains("read_file"));
+        assert!(!lines[3].plain_text().contains("grep"));
     }
 
     #[test]
@@ -880,7 +881,7 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        let header = lines[1].plain_text();
+        let header = lines[2].plain_text();
         // Agent is still running (no Done event), so header should show spinner
         assert!(
             !header.contains('●'),
@@ -905,7 +906,7 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        let header = lines[1].plain_text();
+        let header = lines[2].plain_text();
         assert!(header.contains('●'), "Expected ● in header: {header}");
     }
 }
