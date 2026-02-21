@@ -10,10 +10,9 @@ use mcp_utils::client::{ElicitationRequest, McpServerConfig, ServerInstructions}
 
 use agent_client_protocol as acp;
 use futures::FutureExt;
-use mcp_coding::{CodingMcp, DefaultCodingTools, LspCodingTools};
-use mcp_skills::SkillsMcp;
-use mcp_subagents::SubAgentsMcp;
-use mcp_tasks::TasksMcp;
+use mcp_servers::{
+    CodingMcp, DefaultCodingTools, LspCodingTools, SkillsMcp, SubAgentsMcp, TasksMcp,
+};
 use mcp_utils::ServiceExt;
 use std::path::{Path, PathBuf};
 use tokio::sync::{mpsc, oneshot};
