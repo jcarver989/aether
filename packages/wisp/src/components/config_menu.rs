@@ -68,11 +68,7 @@ impl Component for ConfigMenu {
 impl HandlesInput for ConfigMenu {
     type Action = ConfigMenuAction;
 
-    fn handle_key(
-        &mut self,
-        key_event: KeyEvent,
-        _input: &mut String,
-    ) -> InputOutcome<Self::Action> {
+    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Esc => InputOutcome::action_and_render(ConfigMenuAction::CloseAll),
             KeyCode::Up => {
@@ -360,12 +356,8 @@ mod tests {
     fn handle_key_enter_requests_open_picker() {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
-        let mut input = String::new();
 
-        let outcome = menu.handle_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut input,
-        );
+        let outcome = menu.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -379,9 +371,8 @@ mod tests {
     fn handle_key_escape_requests_close() {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
-        let mut input = String::new();
 
-        let outcome = menu.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut input);
+        let outcome = menu.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);

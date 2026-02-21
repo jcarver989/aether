@@ -13,7 +13,11 @@ pub struct FilePicker {
 
 pub enum FilePickerAction {
     Close,
+    CloseAndPopChar,
+    CloseWithChar(char),
     ConfirmSelection,
+    CharTyped(char),
+    PopChar,
 }
 
 #[derive(Debug, Clone)]
@@ -80,15 +84,6 @@ impl FilePicker {
         }
     }
 
-    fn mention_start(input: &str) -> Option<usize> {
-        let at_pos = input.rfind('@')?;
-        let prefix = &input[..at_pos];
-        if prefix.is_empty() || prefix.chars().last().is_some_and(char::is_whitespace) {
-            Some(at_pos)
-        } else {
-            None
-        }
-    }
 }
 
 impl Default for FilePicker {
@@ -136,11 +131,7 @@ impl Component for FilePicker {
 impl HandlesInput for FilePicker {
     type Action = FilePickerAction;
 
-    fn handle_key(
-        &mut self,
-        key_event: KeyEvent,
-        input: &mut String,
-    ) -> InputOutcome<Self::Action> {
+    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Esc => InputOutcome::action_and_render(FilePickerAction::Close),
             KeyCode::Up => {
@@ -162,35 +153,17 @@ impl HandlesInput for FilePicker {
             KeyCode::Enter => InputOutcome::action_and_render(FilePickerAction::ConfirmSelection),
             KeyCode::Char(c) => {
                 if c.is_whitespace() {
-                    input.push(c);
-                    return InputOutcome::action_and_render(FilePickerAction::Close);
+                    return InputOutcome::action_and_render(FilePickerAction::CloseWithChar(c));
                 }
-
-                input.push(c);
-                let query = if let Some(at_pos) = Self::mention_start(input) {
-                    input[at_pos + 1..].to_string()
-                } else {
-                    String::new()
-                };
-                self.combobox.update_query(query);
-                InputOutcome::consumed_and_render()
+                self.combobox.push_query_char(c);
+                InputOutcome::action_and_render(FilePickerAction::CharTyped(c))
             }
             KeyCode::Backspace => {
-                if input.is_empty() {
-                    return InputOutcome::consumed();
-                }
-
-                let last = input.pop();
-                if last == Some('@') {
-                    return InputOutcome::action_and_render(FilePickerAction::Close);
-                }
-
-                if let Some(at_pos) = Self::mention_start(input) {
-                    let query = input[at_pos + 1..].to_string();
-                    self.combobox.update_query(query);
-                    InputOutcome::consumed_and_render()
+                if self.combobox.query.is_empty() {
+                    InputOutcome::action_and_render(FilePickerAction::CloseAndPopChar)
                 } else {
-                    InputOutcome::action_and_render(FilePickerAction::Close)
+                    self.combobox.pop_query_char();
+                    InputOutcome::action_and_render(FilePickerAction::PopChar)
                 }
             }
             _ => InputOutcome::ignored(),
@@ -251,47 +224,36 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_char_updates_input_and_query() {
+    fn handle_key_char_updates_query_and_returns_char_typed() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/renderer.rs")]);
-        let mut input = "@".to_string();
 
-        let outcome = picker.handle_key(
-            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
-            &mut input,
-        );
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
-        assert!(outcome.action.is_none());
-        assert_eq!(input, "@r");
+        assert!(matches!(outcome.action, Some(FilePickerAction::CharTyped('r'))));
         assert_eq!(picker.combobox.query, "r");
     }
 
     #[test]
     fn handle_key_whitespace_closes_picker() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
-        let mut input = "@main".to_string();
 
-        let outcome = picker.handle_key(
-            KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
-            &mut input,
-        );
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
-        assert!(matches!(outcome.action, Some(FilePickerAction::Close)));
-        assert_eq!(input, "@main ");
+        assert!(matches!(
+            outcome.action,
+            Some(FilePickerAction::CloseWithChar(' '))
+        ));
     }
 
     #[test]
     fn handle_key_enter_requests_confirmation() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
-        let mut input = "@main".to_string();
 
-        let outcome = picker.handle_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut input,
-        );
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -299,5 +261,33 @@ mod tests {
             outcome.action,
             Some(FilePickerAction::ConfirmSelection)
         ));
+    }
+
+    #[test]
+    fn backspace_with_empty_query_closes_and_pops() {
+        let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
+
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(
+            outcome.action,
+            Some(FilePickerAction::CloseAndPopChar)
+        ));
+    }
+
+    #[test]
+    fn backspace_with_query_pops_char() {
+        let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
+        picker.combobox.push_query_char('m');
+        picker.combobox.push_query_char('a');
+
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(outcome.action, Some(FilePickerAction::PopChar)));
+        assert_eq!(picker.combobox.query, "m");
     }
 }

@@ -71,6 +71,5 @@ impl<A> InputOutcome<A> {
 pub trait HandlesInput {
     type Action;
 
-    fn handle_key(&mut self, key_event: KeyEvent, input: &mut String)
-    -> InputOutcome<Self::Action>;
+    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action>;
 }
