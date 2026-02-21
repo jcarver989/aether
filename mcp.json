@@ -9,6 +9,10 @@
     },
     "tasks": {
       "type": "in-memory"
+    },
+    "subagents": {
+      "type": "in-memory",
+      "args": ["--dir", "$HOME/.aether"]
     }
   }
 }

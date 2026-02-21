@@ -86,14 +86,9 @@ impl Component for CommandPicker {
 impl HandlesInput for CommandPicker {
     type Action = CommandPickerAction;
 
-    fn handle_key(
-        &mut self,
-        key_event: KeyEvent,
-        input: &mut String,
-    ) -> InputOutcome<Self::Action> {
+    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Esc => {
-                input.clear();
                 InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
             }
             KeyCode::Up => {
@@ -116,7 +111,6 @@ impl HandlesInput for CommandPicker {
                 if let Some(command) = self.selected_command().cloned() {
                     InputOutcome::action(CommandPickerAction::CommandChosen(command))
                 } else {
-                    input.clear();
                     InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
                 }
             }
@@ -129,7 +123,6 @@ impl HandlesInput for CommandPicker {
             }
             KeyCode::Backspace => {
                 if self.combobox.query.is_empty() {
-                    input.clear();
                     InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
                 } else {
                     self.combobox.pop_query_char();
@@ -273,12 +266,8 @@ mod tests {
     #[test]
     fn handle_key_enter_returns_selected_command() {
         let mut picker = CommandPicker::new(sample_commands());
-        let mut input = "/".to_string();
 
-        let outcome = picker.handle_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut input,
-        );
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(matches!(
@@ -290,13 +279,9 @@ mod tests {
     #[test]
     fn handle_key_backspace_on_empty_query_requests_close() {
         let mut picker = CommandPicker::new(sample_commands());
-        let mut input = "/".to_string();
         picker.combobox.query.clear();
 
-        let outcome = picker.handle_key(
-            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
-            &mut input,
-        );
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -304,6 +289,5 @@ mod tests {
             outcome.action,
             Some(CommandPickerAction::CloseAndClearInput)
         ));
-        assert_eq!(input, "");
     }
 }

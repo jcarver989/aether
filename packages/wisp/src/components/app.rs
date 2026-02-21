@@ -8,6 +8,7 @@ use crate::components::conversation_window::{ConversationBuffer, ConversationWin
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
+use crate::components::text_input::{TextInput, TextInputAction};
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::tui::spinner::Spinner;
 use crate::tui::{
@@ -19,7 +20,7 @@ use agent_client_protocol::{
 };
 use crossterm::event::{self, KeyCode, KeyEvent};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 use url::Url;
 
@@ -42,26 +43,17 @@ pub enum AppEvent {
     Cancel,
 }
 
-#[derive(Debug, Clone)]
-struct SelectedFileMention {
-    mention: String,
-    path: PathBuf,
-    display_name: String,
-}
-
 pub struct App {
     tool_call_statuses: ToolCallStatuses,
     grid_loader: Spinner,
     conversation: ConversationBuffer,
-    input_buffer: String,
-    cursor_pos: usize,
+    pub(crate) text_input: TextInput,
     agent_name: String,
     model_display: Option<String>,
     config_options: Vec<SessionConfigOption>,
     waiting_for_response: bool,
     animation_tick: u16,
     available_commands: Vec<CommandEntry>,
-    selected_mentions: Vec<SelectedFileMention>,
     context_usage_pct: Option<u8>,
     file_picker: Option<FilePicker>,
     command_picker: Option<CommandPicker>,
@@ -75,15 +67,13 @@ impl App {
             tool_call_statuses: ToolCallStatuses::new(),
             grid_loader: Spinner::default(),
             conversation: ConversationBuffer::new(),
-            input_buffer: String::new(),
-            cursor_pos: 0,
+            text_input: TextInput::new(),
             agent_name,
             model_display: extract_model_display(config_options),
             config_options: config_options.to_vec(),
             waiting_for_response: false,
             animation_tick: 0,
             available_commands: Vec::new(),
-            selected_mentions: Vec::new(),
             context_usage_pct: None,
             file_picker: None,
             command_picker: None,
@@ -107,56 +97,18 @@ impl App {
             return vec![AppEvent::Cancel];
         }
 
-        match key_event.code {
-            // File picker doesn't consume horizontal arrows — swallow them here
-            // to prevent cursor movement behind the picker overlay.
-            KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
-                if self.file_picker.is_some() =>
-            {
-                vec![]
-            }
-            KeyCode::Left => {
-                self.move_cursor_left();
-                vec![AppEvent::Render]
-            }
-            KeyCode::Right => {
-                self.move_cursor_right();
-                vec![AppEvent::Render]
-            }
-            KeyCode::Home => {
-                self.move_cursor_home();
-                vec![AppEvent::Render]
-            }
-            KeyCode::End => {
-                self.move_cursor_end();
-                vec![AppEvent::Render]
-            }
-            KeyCode::Char('/') if self.input_buffer.is_empty() => {
-                self.insert_char_at_cursor('/');
-                let mut commands = builtin_commands();
-                commands.extend(self.available_commands.clone());
-                self.open_command_picker(commands);
-                vec![AppEvent::Render]
-            }
-            KeyCode::Char('@') => {
-                self.insert_char_at_cursor('@');
-                self.open_file_picker();
-                vec![AppEvent::Render]
-            }
-            KeyCode::Char(c) => {
-                self.insert_char_at_cursor(c);
-                vec![AppEvent::Render]
-            }
-            KeyCode::Backspace => {
-                if self.delete_char_before_cursor() {
-                    vec![AppEvent::Render]
-                } else {
-                    vec![]
-                }
-            }
-            KeyCode::Enter => self.execute_input(),
-            _ => vec![],
+        // Swallow cursor keys when file picker overlay is open.
+        if self.file_picker.is_some()
+            && matches!(
+                key_event.code,
+                KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
+            )
+        {
+            return vec![];
         }
+
+        let outcome = self.text_input.handle_key(key_event);
+        self.handle_text_input_outcome(&outcome)
     }
 
     pub fn on_session_update(&mut self, update: SessionUpdate) -> Vec<AppEvent> {
@@ -290,11 +242,7 @@ impl App {
 
     pub fn on_paste(&mut self, text: &str) -> Vec<AppEvent> {
         self.close_all_pickers();
-        for c in text.chars() {
-            if !c.is_control() {
-                self.insert_char_at_cursor(c);
-            }
-        }
+        self.text_input.insert_paste(text);
         vec![AppEvent::Render]
     }
 
@@ -359,24 +307,24 @@ impl App {
 
     fn handle_picker_key(&mut self, key_event: KeyEvent) -> Option<Vec<AppEvent>> {
         if let Some(ref mut picker) = self.file_picker {
-            let outcome = picker.handle_key(key_event, &mut self.input_buffer);
+            let outcome = picker.handle_key(key_event);
             if outcome.consumed {
                 return Some(self.handle_file_picker_outcome(&outcome));
             }
         }
 
         if let Some(ref mut picker) = self.command_picker {
-            let outcome = picker.handle_key(key_event, &mut self.input_buffer);
+            let outcome = picker.handle_key(key_event);
             return Some(self.handle_command_picker_outcome(&outcome));
         }
 
         if let Some(ref mut picker) = self.config_picker {
-            let outcome = picker.handle_key(key_event, &mut self.input_buffer);
+            let outcome = picker.handle_key(key_event);
             return Some(self.handle_config_picker_outcome(outcome));
         }
 
         if let Some(ref mut menu) = self.config_menu {
-            let outcome = menu.handle_key(key_event, &mut self.input_buffer);
+            let outcome = menu.handle_key(key_event);
             return Some(self.handle_config_menu_outcome(outcome));
         }
 
@@ -387,9 +335,16 @@ impl App {
         &mut self,
         outcome: &InputOutcome<FilePickerAction>,
     ) -> Vec<AppEvent> {
-        let mut effects = Vec::new();
         match outcome.action {
             Some(FilePickerAction::Close) => {
+                self.file_picker = None;
+            }
+            Some(FilePickerAction::CloseAndPopChar) => {
+                self.text_input.delete_char_before_cursor();
+                self.file_picker = None;
+            }
+            Some(FilePickerAction::CloseWithChar(c)) => {
+                self.text_input.insert_char_at_cursor(c);
                 self.file_picker = None;
             }
             Some(FilePickerAction::ConfirmSelection) => {
@@ -398,18 +353,24 @@ impl App {
                     .take()
                     .and_then(|p| p.combobox.selected().cloned());
                 if let Some(selected) = selected {
-                    self.apply_file_selection(selected.path, selected.display_name);
-                    effects.push(AppEvent::Render);
+                    self.text_input
+                        .apply_file_selection(selected.path, selected.display_name);
                 }
+            }
+            Some(FilePickerAction::CharTyped(c)) => {
+                self.text_input.insert_char_at_cursor(c);
+            }
+            Some(FilePickerAction::PopChar) => {
+                self.text_input.delete_char_before_cursor();
             }
             None => {}
         }
 
-        if outcome.needs_render && effects.is_empty() {
-            effects.push(AppEvent::Render);
+        if outcome.needs_render {
+            vec![AppEvent::Render]
+        } else {
+            vec![]
         }
-
-        effects
     }
 
     fn handle_command_picker_outcome(
@@ -419,6 +380,7 @@ impl App {
         match outcome.action {
             Some(CommandPickerAction::CloseAndClearInput) => {
                 self.command_picker = None;
+                self.text_input.clear();
                 if outcome.needs_render {
                     vec![AppEvent::Render]
                 } else {
@@ -511,7 +473,7 @@ impl App {
 
     fn apply_command(&mut self, cmd: &CommandEntry) -> Vec<AppEvent> {
         if cmd.builtin && cmd.name == "config" {
-            self.clear_input();
+            self.text_input.clear();
             self.close_all_pickers();
             let options = self.config_options.clone();
             self.open_config_menu(&options);
@@ -523,21 +485,21 @@ impl App {
                 .and_then(ConfigPicker::from_entry);
             vec![AppEvent::Render]
         } else if cmd.has_input {
-            self.set_input(format!("/{} ", cmd.name));
+            self.text_input.set_input(format!("/{} ", cmd.name));
             vec![AppEvent::Render]
         } else {
-            self.set_input(format!("/{}", cmd.name));
+            self.text_input.set_input(format!("/{}", cmd.name));
             self.execute_input()
         }
     }
 
     fn execute_input(&mut self) -> Vec<AppEvent> {
-        if self.input_buffer.trim().is_empty() {
+        if self.text_input.buffer().trim().is_empty() {
             return vec![AppEvent::Render];
         }
 
-        let user_input = self.input_buffer.trim().to_string();
-        self.clear_input();
+        let user_input = self.text_input.buffer().trim().to_string();
+        self.text_input.clear();
         self.close_input_pickers();
 
         let mut effects = vec![
@@ -568,6 +530,27 @@ impl App {
         effects
     }
 
+    fn handle_text_input_outcome(
+        &mut self,
+        outcome: &InputOutcome<TextInputAction>,
+    ) -> Vec<AppEvent> {
+        match outcome.action {
+            Some(TextInputAction::Submit) => self.execute_input(),
+            Some(TextInputAction::OpenCommandPicker) => {
+                let mut commands = builtin_commands();
+                commands.extend(self.available_commands.clone());
+                self.open_command_picker(commands);
+                vec![AppEvent::Render]
+            }
+            Some(TextInputAction::OpenFilePicker) => {
+                self.open_file_picker();
+                vec![AppEvent::Render]
+            }
+            None if outcome.needs_render => vec![AppEvent::Render],
+            _ => vec![],
+        }
+    }
+
     fn open_file_picker(&mut self) {
         self.file_picker = Some(FilePicker::new());
     }
@@ -580,7 +563,7 @@ impl App {
         self.config_menu = Some(ConfigMenu::from_config_options(options));
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn open_config_picker_for(&mut self, config_id: &str) -> bool {
         let Some(menu) = self.config_menu.as_ref() else {
             return false;
@@ -612,17 +595,6 @@ impl App {
         }
     }
 
-    fn input_cursor_index(&self) -> usize {
-        if let Some(ref picker) = self.file_picker {
-            let at_pos = self
-                .active_mention_start()
-                .unwrap_or(self.input_buffer.len());
-            at_pos + 1 + picker.combobox.query.len()
-        } else {
-            self.cursor_pos
-        }
-    }
-
     fn config_picker_cursor_col(picker: &ConfigPicker) -> usize {
         let prefix = format!("  {} search: ", picker.title);
         UnicodeWidthStr::width(prefix.as_str())
@@ -634,39 +606,9 @@ impl App {
         UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(picker.combobox.query.as_str())
     }
 
-    fn apply_file_selection(&mut self, path: PathBuf, display_name: String) {
-        let mention = format!("@{display_name}");
-        self.selected_mentions.push(SelectedFileMention {
-            mention: mention.clone(),
-            path,
-            display_name,
-        });
-
-        if let Some(at_pos) = self.active_mention_start() {
-            let mut s = self.input_buffer[..at_pos].to_string();
-            s.push_str(&mention);
-            s.push(' ');
-            self.set_input(s);
-        }
-    }
-
-    fn active_mention_start(&self) -> Option<usize> {
-        Self::mention_start(&self.input_buffer)
-    }
-
-    fn mention_start(input: &str) -> Option<usize> {
-        let at_pos = input.rfind('@')?;
-        let prefix = &input[..at_pos];
-        if prefix.is_empty() || prefix.chars().last().is_some_and(char::is_whitespace) {
-            Some(at_pos)
-        } else {
-            None
-        }
-    }
-
     fn build_attachment_blocks(&mut self, user_input: &str) -> (Vec<acp::ContentBlock>, Vec<Line>) {
         let mentions: HashSet<&str> = user_input.split_whitespace().collect();
-        let selected = std::mem::take(&mut self.selected_mentions);
+        let selected = self.text_input.take_mentions();
         let mut warning_lines = Vec::new();
         let mut blocks = Vec::new();
 
@@ -687,54 +629,6 @@ impl App {
         }
 
         (blocks, warning_lines)
-    }
-
-    fn move_cursor_left(&mut self) {
-        self.cursor_pos = self.input_buffer[..self.cursor_pos]
-            .char_indices()
-            .next_back()
-            .map_or(0, |(i, _)| i);
-    }
-
-    fn move_cursor_right(&mut self) {
-        if let Some(c) = self.input_buffer[self.cursor_pos..].chars().next() {
-            self.cursor_pos += c.len_utf8();
-        }
-    }
-
-    fn move_cursor_home(&mut self) {
-        self.cursor_pos = 0;
-    }
-
-    fn move_cursor_end(&mut self) {
-        self.cursor_pos = self.input_buffer.len();
-    }
-
-    fn insert_char_at_cursor(&mut self, c: char) {
-        self.input_buffer.insert(self.cursor_pos, c);
-        self.cursor_pos += c.len_utf8();
-    }
-
-    fn delete_char_before_cursor(&mut self) -> bool {
-        let Some((prev, _)) = self.input_buffer[..self.cursor_pos]
-            .char_indices()
-            .next_back()
-        else {
-            return false;
-        };
-        self.input_buffer.drain(prev..self.cursor_pos);
-        self.cursor_pos = prev;
-        true
-    }
-
-    fn set_input(&mut self, s: String) {
-        self.cursor_pos = s.len();
-        self.input_buffer = s;
-    }
-
-    fn clear_input(&mut self) {
-        self.input_buffer.clear();
-        self.cursor_pos = 0;
     }
 }
 
@@ -794,7 +688,11 @@ impl CursorComponent for App {
             .config_picker
             .as_ref()
             .map(Self::config_picker_cursor_col);
-        let cursor_index = self.input_cursor_index();
+        let picker_query_len = self
+            .file_picker
+            .as_ref()
+            .map(|p| p.combobox.query.len());
+        let cursor_index = self.text_input.cursor_index(picker_query_len);
 
         let mut conversation_window = ConversationWindow {
             loader: &mut self.grid_loader,
@@ -802,7 +700,7 @@ impl CursorComponent for App {
             tool_call_statuses: &self.tool_call_statuses,
         };
         let mut input_prompt = InputPrompt {
-            input: &self.input_buffer,
+            input: self.text_input.buffer(),
             cursor_index,
         };
         let input_layout = input_prompt.layout(context);
@@ -897,6 +795,7 @@ fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<Strin
 mod tests {
     use super::*;
     use crossterm::event::KeyModifiers;
+    use std::path::PathBuf;
 
     #[test]
     fn command_picker_cursor_targets_picker_header() {
@@ -968,7 +867,7 @@ mod tests {
 
         assert!(matches!(effects.as_slice(), [AppEvent::Render]));
         assert!(screen.config_menu.is_some());
-        assert_eq!(screen.input_buffer, "");
+        assert_eq!(screen.text_input.buffer(), "");
     }
 
     #[test]
@@ -992,13 +891,13 @@ mod tests {
     #[test]
     fn file_selection_updates_mentions_and_input() {
         let mut screen = App::new("test-agent".to_string(), &[]);
-        screen.input_buffer = "@fo".to_string();
+        screen.text_input.set_input("@fo".to_string());
 
-        screen.apply_file_selection(PathBuf::from("foo.rs"), "foo.rs".to_string());
+        screen
+            .text_input
+            .apply_file_selection(PathBuf::from("foo.rs"), "foo.rs".to_string());
 
-        assert_eq!(screen.input_buffer, "@foo.rs ");
-        assert_eq!(screen.selected_mentions.len(), 1);
-        assert_eq!(screen.selected_mentions[0].mention, "@foo.rs");
+        assert_eq!(screen.text_input.buffer(), "@foo.rs ");
     }
 
     #[test]
@@ -1095,153 +994,27 @@ mod tests {
     }
 
     #[test]
-    fn left_arrow_moves_cursor_back_one_char() {
-        let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hello".to_string();
-        app.cursor_pos = 5;
-
-        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
-
-        assert_eq!(app.cursor_pos, 4);
-    }
-
-    #[test]
-    fn right_arrow_moves_cursor_forward_one_char() {
-        let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hello".to_string();
-        app.cursor_pos = 2;
-
-        app.on_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
-
-        assert_eq!(app.cursor_pos, 3);
-    }
-
-    #[test]
-    fn left_at_start_stays_at_zero() {
-        let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hello".to_string();
-        app.cursor_pos = 0;
-
-        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
-
-        assert_eq!(app.cursor_pos, 0);
-    }
-
-    #[test]
-    fn right_at_end_stays_at_end() {
-        let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hello".to_string();
-        app.cursor_pos = 5;
-
-        app.on_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
-
-        assert_eq!(app.cursor_pos, 5);
-    }
-
-    #[test]
-    fn home_moves_to_start() {
-        let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hello".to_string();
-        app.cursor_pos = 3;
-
-        app.on_key_event(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
-
-        assert_eq!(app.cursor_pos, 0);
-    }
-
-    #[test]
-    fn end_moves_to_end() {
-        let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hello".to_string();
-        app.cursor_pos = 1;
-
-        app.on_key_event(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
-
-        assert_eq!(app.cursor_pos, 5);
-    }
-
-    #[test]
-    fn typing_inserts_at_cursor_position() {
-        let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hllo".to_string();
-        app.cursor_pos = 1;
-
-        app.on_key_event(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
-
-        assert_eq!(app.input_buffer, "hello");
-        assert_eq!(app.cursor_pos, 2);
-    }
-
-    #[test]
-    fn backspace_at_cursor_middle_deletes_correct_char() {
-        let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hello".to_string();
-        app.cursor_pos = 3;
-
-        app.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
-
-        assert_eq!(app.input_buffer, "helo");
-        assert_eq!(app.cursor_pos, 2);
-    }
-
-    #[test]
-    fn backspace_at_start_does_nothing() {
-        let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hello".to_string();
-        app.cursor_pos = 0;
-
-        let effects = app.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
-
-        assert!(effects.is_empty());
-        assert_eq!(app.input_buffer, "hello");
-        assert_eq!(app.cursor_pos, 0);
-    }
-
-    #[test]
-    fn multibyte_utf8_cursor_navigation() {
-        let mut app = App::new("test".to_string(), &[]);
-        // "a中b" — 'a' is 1 byte, '中' is 3 bytes, 'b' is 1 byte = 5 bytes total
-        app.input_buffer = "a中b".to_string();
-        app.cursor_pos = 5; // end
-
-        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
-        assert_eq!(app.cursor_pos, 4); // before 'b'
-
-        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
-        assert_eq!(app.cursor_pos, 1); // before '中'
-
-        app.on_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
-        assert_eq!(app.cursor_pos, 0); // before 'a'
-
-        app.on_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
-        assert_eq!(app.cursor_pos, 1); // after 'a'
-
-        app.on_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
-        assert_eq!(app.cursor_pos, 4); // after '中'
-    }
-
-    #[test]
     fn paste_inserts_at_cursor_position() {
         let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hd".to_string();
-        app.cursor_pos = 1;
+        app.text_input.set_input("hd".to_string());
+        // Move cursor to position 1
+        app.on_key_event(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
+        app.on_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
 
         app.on_paste("ello worl");
 
-        assert_eq!(app.input_buffer, "hello world");
-        assert_eq!(app.cursor_pos, 10);
+        assert_eq!(app.text_input.buffer(), "hello world");
+        assert_eq!(app.text_input.cursor_index(None), 10);
     }
 
     #[test]
     fn execute_resets_cursor_pos() {
         let mut app = App::new("test".to_string(), &[]);
-        app.input_buffer = "hello".to_string();
-        app.cursor_pos = 3;
+        app.text_input.set_input("hello".to_string());
 
         app.execute_input();
 
-        assert_eq!(app.cursor_pos, 0);
-        assert!(app.input_buffer.is_empty());
+        assert_eq!(app.text_input.cursor_index(None), 0);
+        assert!(app.text_input.buffer().is_empty());
     }
-
 }

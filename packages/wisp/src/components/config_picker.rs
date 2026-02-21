@@ -163,11 +163,7 @@ impl Component for ConfigPicker {
 impl HandlesInput for ConfigPicker {
     type Action = ConfigPickerAction;
 
-    fn handle_key(
-        &mut self,
-        key_event: KeyEvent,
-        _input: &mut String,
-    ) -> InputOutcome<Self::Action> {
+    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Esc => InputOutcome::action_and_render(ConfigPickerAction::Close),
             KeyCode::Up => {
@@ -299,12 +295,8 @@ mod tests {
     fn handle_key_enter_returns_apply_selection_action() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
         picker.move_selection_down();
-        let mut input = String::new();
 
-        let outcome = picker.handle_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut input,
-        );
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -319,10 +311,8 @@ mod tests {
     #[test]
     fn handle_key_escape_returns_close_action() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        let mut input = String::new();
 
-        let outcome =
-            picker.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut input);
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
