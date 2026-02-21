@@ -9,10 +9,13 @@ use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
 use crate::components::text_input::{TextInput, TextInputAction};
-use crate::components::tool_call_statuses::{SubAgentNotification, ToolCallStatuses};
+use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::tui::spinner::Spinner;
 use crate::tui::{
     Cursor, CursorComponent, HandlesInput, InputOutcome, Line, RenderContext, RenderOutput,
+};
+use acp_utils::notifications::{
+    CONTEXT_USAGE_METHOD, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
 };
 use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
@@ -25,8 +28,6 @@ use unicode_width::UnicodeWidthStr;
 use url::Url;
 
 const MAX_EMBED_TEXT_BYTES: usize = 1024 * 1024;
-const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
-const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
 
 #[derive(Debug)]
 pub enum AppEvent {
@@ -236,7 +237,7 @@ impl App {
             }
             SUB_AGENT_PROGRESS_METHOD => {
                 if let Ok(progress) =
-                    serde_json::from_str::<SubAgentNotification>(notification.params.get())
+                    serde_json::from_str::<SubAgentProgressParams>(notification.params.get())
                 {
                     self.tool_call_statuses.on_sub_agent_progress(&progress);
                     return vec![AppEvent::Render];

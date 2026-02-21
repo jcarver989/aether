@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
  "async-trait",
+ "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
@@ -34,6 +35,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "aether"
 version = "0.1.0"
 dependencies = [
+ "acp_utils",
  "aether",
  "agent-client-protocol",
  "async-openai",
@@ -4631,7 +4633,6 @@ dependencies = [
  "mime_guess",
  "nucleo",
  "pulldown-cmark",
- "serde",
  "serde_json",
  "syntect",
  "tokio",

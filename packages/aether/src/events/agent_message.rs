@@ -1,3 +1,6 @@
+use acp_utils::notifications::{
+    SubAgentEvent, SubAgentToolError, SubAgentToolRequest, SubAgentToolResult,
+};
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use serde::{Deserialize, Serialize};
 
@@ -83,6 +86,34 @@ pub enum AgentMessage {
     },
 
     Done,
+}
+
+impl From<&AgentMessage> for SubAgentEvent {
+    fn from(msg: &AgentMessage) -> Self {
+        match msg {
+            AgentMessage::ToolCall { request, .. } => SubAgentEvent::ToolCall {
+                request: SubAgentToolRequest {
+                    id: request.id.clone(),
+                    name: request.name.clone(),
+                    arguments: request.arguments.clone(),
+                },
+            },
+            AgentMessage::ToolResult { result, .. } => SubAgentEvent::ToolResult {
+                result: SubAgentToolResult {
+                    id: result.id.clone(),
+                    name: result.name.clone(),
+                },
+            },
+            AgentMessage::ToolError { error, .. } => SubAgentEvent::ToolError {
+                error: SubAgentToolError {
+                    id: error.id.clone(),
+                    name: error.name.clone(),
+                },
+            },
+            AgentMessage::Done => SubAgentEvent::Done,
+            _ => SubAgentEvent::Other,
+        }
+    }
 }
 
 impl AgentMessage {

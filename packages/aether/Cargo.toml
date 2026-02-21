@@ -21,6 +21,7 @@ tracing-subscriber = { workspace = true }
 clap = { workspace = true }
 thiserror = { workspace = true }
 agent-client-protocol = { workspace = true }
+acp_utils = { path = "../acp-utils", default-features = false }
 mcp_utils = { path = "../mcp-utils"}
 llm = { path = "../llm" }
 

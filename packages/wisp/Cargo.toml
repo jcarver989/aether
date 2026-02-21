@@ -11,7 +11,6 @@ acp_utils = { path = "../acp-utils", features = ["client"] }
 agent-client-protocol = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
