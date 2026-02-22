@@ -5,7 +5,7 @@ use crate::components::container::Container;
 #[cfg(test)]
 use crate::components::conversation_window::SegmentContent;
 use crate::components::conversation_window::{ConversationBuffer, ConversationWindow};
-use crate::components::elicitation_form::{ElicitationForm, ElicitationFormAction};
+use crate::components::elicitation_form::ElicitationForm;
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
@@ -13,7 +13,8 @@ use crate::components::text_input::{TextInput, TextInputAction};
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::tui::spinner::Spinner;
 use crate::tui::{
-    Cursor, CursorComponent, HandlesInput, InputOutcome, Line, RenderContext, RenderOutput,
+    Cursor, CursorComponent, FormAction, HandlesInput, InputOutcome, Line, RenderContext,
+    RenderOutput,
 };
 use acp_utils::notifications::{
     CONTEXT_USAGE_METHOD, ElicitationParams, ElicitationResponse, SUB_AGENT_PROGRESS_METHOD,
@@ -338,19 +339,19 @@ impl App {
     }
 
     fn handle_elicitation_key(&mut self, key_event: KeyEvent) -> Option<Vec<AppEvent>> {
-        let form = self.elicitation_form.as_mut()?;
-        let outcome = form.handle_key(key_event);
+        let ef = self.elicitation_form.as_mut()?;
+        let outcome = ef.form.handle_key(key_event);
 
         match outcome.action {
-            Some(ElicitationFormAction::Close) => {
-                if let Some(form) = self.elicitation_form.take() {
-                    let _ = form.response_tx.send(ElicitationForm::decline());
+            Some(FormAction::Close) => {
+                if let Some(ef) = self.elicitation_form.take() {
+                    let _ = ef.response_tx.send(ElicitationForm::decline());
                 }
             }
-            Some(ElicitationFormAction::Submit) => {
-                if let Some(form) = self.elicitation_form.take() {
-                    let response = form.confirm();
-                    let _ = form.response_tx.send(response);
+            Some(FormAction::Submit) => {
+                if let Some(ef) = self.elicitation_form.take() {
+                    let response = ef.confirm();
+                    let _ = ef.response_tx.send(response);
                 }
             }
             None => {}
@@ -793,8 +794,8 @@ impl CursorComponent for App {
             None
         };
 
-        if let Some(ref mut form) = self.elicitation_form {
-            container.push(form);
+        if let Some(ref mut ef) = self.elicitation_form {
+            container.push(&mut ef.form);
         }
 
         container.push(&mut status_line);
