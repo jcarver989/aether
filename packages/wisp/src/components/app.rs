@@ -5,6 +5,7 @@ use crate::components::container::Container;
 #[cfg(test)]
 use crate::components::conversation_window::SegmentContent;
 use crate::components::conversation_window::{ConversationBuffer, ConversationWindow};
+use crate::components::elicitation_form::{ElicitationForm, ElicitationFormAction};
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::status_line::StatusLine;
@@ -15,7 +16,8 @@ use crate::tui::{
     Cursor, CursorComponent, HandlesInput, InputOutcome, Line, RenderContext, RenderOutput,
 };
 use acp_utils::notifications::{
-    CONTEXT_USAGE_METHOD, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
+    CONTEXT_USAGE_METHOD, ElicitationParams, ElicitationResponse, SUB_AGENT_PROGRESS_METHOD,
+    SubAgentProgressParams,
 };
 use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
@@ -24,6 +26,7 @@ use agent_client_protocol::{
 use crossterm::event::{self, KeyCode, KeyEvent};
 use std::collections::HashSet;
 use std::path::Path;
+use tokio::sync::oneshot;
 use unicode_width::UnicodeWidthStr;
 use url::Url;
 
@@ -61,6 +64,7 @@ pub struct App {
     command_picker: Option<CommandPicker>,
     config_menu: Option<ConfigMenu>,
     config_picker: Option<ConfigPicker>,
+    elicitation_form: Option<ElicitationForm>,
 }
 
 impl App {
@@ -81,6 +85,7 @@ impl App {
             command_picker: None,
             config_menu: None,
             config_picker: None,
+            elicitation_form: None,
         }
     }
 
@@ -89,6 +94,10 @@ impl App {
             && key_event.modifiers.contains(event::KeyModifiers::CONTROL)
         {
             return vec![AppEvent::Exit];
+        }
+
+        if let Some(effects) = self.handle_elicitation_key(key_event) {
+            return effects;
         }
 
         if let Some(effects) = self.handle_picker_key(key_event) {
@@ -220,6 +229,15 @@ impl App {
         }
     }
 
+    pub fn on_elicitation_request(
+        &mut self,
+        params: ElicitationParams,
+        response_tx: oneshot::Sender<ElicitationResponse>,
+    ) -> Vec<AppEvent> {
+        self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
+        vec![AppEvent::Render]
+    }
+
     pub fn on_ext_notification(&mut self, notification: &ExtNotification) -> Vec<AppEvent> {
         match notification.method.as_ref() {
             CONTEXT_USAGE_METHOD => {
@@ -317,6 +335,32 @@ impl App {
     #[allow(dead_code)]
     pub fn available_commands(&self) -> &[CommandEntry] {
         &self.available_commands
+    }
+
+    fn handle_elicitation_key(&mut self, key_event: KeyEvent) -> Option<Vec<AppEvent>> {
+        let form = self.elicitation_form.as_mut()?;
+        let outcome = form.handle_key(key_event);
+
+        match outcome.action {
+            Some(ElicitationFormAction::Close) => {
+                if let Some(form) = self.elicitation_form.take() {
+                    let _ = form.response_tx.send(ElicitationForm::decline());
+                }
+            }
+            Some(ElicitationFormAction::Submit) => {
+                if let Some(form) = self.elicitation_form.take() {
+                    let response = form.confirm();
+                    let _ = form.response_tx.send(response);
+                }
+            }
+            None => {}
+        }
+
+        if outcome.needs_render {
+            Some(vec![AppEvent::Render])
+        } else {
+            Some(vec![])
+        }
     }
 
     fn handle_picker_key(&mut self, key_event: KeyEvent) -> Option<Vec<AppEvent>> {
@@ -748,6 +792,10 @@ impl CursorComponent for App {
             }
             None
         };
+
+        if let Some(ref mut form) = self.elicitation_form {
+            container.push(form);
+        }
 
         container.push(&mut status_line);
         let (lines, offsets) = container.render_with_offsets(context);

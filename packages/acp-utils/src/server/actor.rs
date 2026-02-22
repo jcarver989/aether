@@ -19,6 +19,10 @@ pub enum AcpRequest {
         request: Box<acp::RequestPermissionRequest>,
         response_tx: oneshot::Sender<Result<acp::RequestPermissionResponse, AcpServerError>>,
     },
+    ExtMethod {
+        request: acp::ExtRequest,
+        response_tx: oneshot::Sender<Result<acp::ExtResponse, AcpServerError>>,
+    },
 }
 
 /// Actor that owns the !Send ACP `AgentSideConnection` and processes requests
@@ -85,6 +89,19 @@ impl AcpActor {
                     .request_permission(*request)
                     .await
                     .map_err(|e| AcpServerError::Protocol(format!("request_permission: {e}")));
+                let _ = response_tx.send(result);
+            }
+
+            AcpRequest::ExtMethod {
+                request,
+                response_tx,
+            } => {
+                debug!("ACP actor: ext_method {}", request.method);
+                let result = self
+                    .conn
+                    .ext_method(request)
+                    .await
+                    .map_err(|e| AcpServerError::Protocol(format!("ext_method: {e}")));
                 let _ = response_tx.send(result);
             }
         }

@@ -108,6 +108,13 @@ pub(crate) async fn run_non_interactive(
                 }
             },
             AcpEvent::ExtNotification(_) => {}
+            AcpEvent::ElicitationRequest { response_tx, .. } => {
+                // Non-interactive mode: auto-decline elicitations
+                let _ = response_tx.send(acp_utils::notifications::ElicitationResponse {
+                    action: acp_utils::notifications::ElicitationAction::Decline,
+                    content: None,
+                });
+            }
             AcpEvent::PromptDone(_) => {
                 if let Some(output) = thought_state.on_non_thought_update() {
                     print!("{output}");

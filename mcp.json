@@ -13,6 +13,9 @@
     "subagents": {
       "type": "in-memory",
       "args": ["--dir", "$HOME/.aether"]
+    },
+    "survey": {
+      "type": "in-memory"
     }
   }
 }

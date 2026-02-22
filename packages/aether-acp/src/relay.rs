@@ -1,10 +1,13 @@
+use acp_utils::notifications::{ELICITATION_METHOD, ElicitationParams, ElicitationResponse};
 use aether::events::{AgentMessage, UserMessage};
 use aether::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol::{self as acp, SessionId};
 use llm::parser::ModelProviderParser;
 use mcp_utils::client::ElicitationRequest;
-use rmcp::model::{CreateElicitationRequestParams, CreateElicitationResult, ElicitationAction};
+use rmcp::model::{CreateElicitationRequestParams, CreateElicitationResult, ElicitationSchema};
+use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -165,7 +168,7 @@ async fn handle_prompt(
                 }
             }
             Some(elicitation) = ctx.elicitation_rx.recv() => {
-                handle_elicitation_request(ctx.actor_handle, ctx.acp_session_id, elicitation).await;
+                handle_elicitation_request(ctx.actor_handle, elicitation).await;
             }
             Some(cmd) = ctx.cmd_rx.recv() => {
                 match cmd {
@@ -185,104 +188,68 @@ async fn handle_prompt(
     }
 }
 
-const OPTION_ALLOW_ONCE: &str = "allow-once";
-const OPTION_REJECT_ONCE: &str = "reject-once";
-
 async fn handle_elicitation_request(
     actor_handle: &AcpActorHandle,
-    acp_session_id: &SessionId,
     elicitation: ElicitationRequest,
 ) {
-    let permission_request = build_permission_request(acp_session_id, &elicitation.request);
-    let result = actor_handle.request_permission(permission_request).await;
-    let action = match result {
-        Ok(response) => map_permission_outcome_to_elicitation_action(&response.outcome),
+    let ext_params = build_elicitation_params(&elicitation.request);
+    let ext_request = build_ext_request(&ext_params);
+
+    let result = actor_handle.ext_method(ext_request).await;
+    let mcp_result = match result {
+        Ok(ref response) => parse_elicitation_response(response),
         Err(e) => {
-            error!("Failed to request permission for elicitation: {:?}", e);
-            ElicitationAction::Cancel
+            error!("Failed to send elicitation ext_method: {:?}", e);
+            CreateElicitationResult {
+                action: rmcp::model::ElicitationAction::Cancel,
+                content: None,
+            }
         }
     };
 
-    let response = CreateElicitationResult {
-        action: action.clone(),
-        content: (action == ElicitationAction::Accept).then(|| serde_json::json!({})),
-    };
-
-    if elicitation.response_sender.send(response).is_err() {
+    if elicitation.response_sender.send(mcp_result).is_err() {
         error!("Failed to send elicitation response: receiver dropped");
     }
 }
 
-fn build_permission_request(
-    acp_session_id: &SessionId,
-    elicitation: &CreateElicitationRequestParams,
-) -> acp::RequestPermissionRequest {
-    let tool_call_id = elicitation_tool_call_id(elicitation);
-    let title = elicitation_title(elicitation);
-    let raw_input = serde_json::to_value(elicitation).ok();
-    let tool_call = acp::ToolCallUpdate::new(
-        acp::ToolCallId::new(tool_call_id),
-        acp::ToolCallUpdateFields::new()
-            .kind(Some(acp::ToolKind::Execute))
-            .status(Some(acp::ToolCallStatus::Pending))
-            .title(Some(title))
-            .raw_input(raw_input),
-    );
-
-    let options = vec![
-        acp::PermissionOption::new(
-            acp::PermissionOptionId::new(OPTION_ALLOW_ONCE),
-            "Allow once",
-            acp::PermissionOptionKind::AllowOnce,
-        ),
-        acp::PermissionOption::new(
-            acp::PermissionOptionId::new(OPTION_REJECT_ONCE),
-            "Reject once",
-            acp::PermissionOptionKind::RejectOnce,
-        ),
-    ];
-
-    acp::RequestPermissionRequest::new(acp_session_id.clone(), tool_call, options)
-}
-
-fn elicitation_tool_call_id(elicitation: &CreateElicitationRequestParams) -> String {
-    match elicitation {
-        CreateElicitationRequestParams::FormElicitationParams { message, .. } => {
-            format!("elicitation-form-{}", stable_hash(message))
-        }
-        CreateElicitationRequestParams::UrlElicitationParams { elicitation_id, .. } => {
-            format!("elicitation-url-{elicitation_id}")
-        }
-    }
-}
-
-fn elicitation_title(elicitation: &CreateElicitationRequestParams) -> String {
-    match elicitation {
-        CreateElicitationRequestParams::FormElicitationParams { message, .. }
-        | CreateElicitationRequestParams::UrlElicitationParams { message, .. } => message.clone(),
-    }
-}
-
-fn map_permission_outcome_to_elicitation_action(
-    outcome: &acp::RequestPermissionOutcome,
-) -> ElicitationAction {
-    match outcome {
-        acp::RequestPermissionOutcome::Selected(selected) => match selected.option_id.0.as_ref() {
-            OPTION_ALLOW_ONCE => ElicitationAction::Accept,
-            _ => ElicitationAction::Decline,
+fn build_elicitation_params(request: &CreateElicitationRequestParams) -> ElicitationParams {
+    match request {
+        CreateElicitationRequestParams::FormElicitationParams {
+            message,
+            requested_schema,
+            ..
+        } => ElicitationParams {
+            message: message.clone(),
+            schema: requested_schema.clone(),
         },
-        acp::RequestPermissionOutcome::Cancelled => ElicitationAction::Cancel,
-        _ => ElicitationAction::Decline,
+        CreateElicitationRequestParams::UrlElicitationParams { message, .. } => ElicitationParams {
+            message: message.clone(),
+            schema: ElicitationSchema::new(BTreeMap::new()),
+        },
     }
 }
 
-fn stable_hash(input: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+fn build_ext_request(params: &ElicitationParams) -> acp::ExtRequest {
+    let raw = serde_json::value::to_raw_value(params).expect("ElicitationParams is serializable");
+    acp::ExtRequest::new(ELICITATION_METHOD, Arc::from(raw))
+}
 
-    let mut hasher = DefaultHasher::new();
-    input.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+fn parse_elicitation_response(response: &acp::ExtResponse) -> CreateElicitationResult {
+    let parsed: Result<ElicitationResponse, _> = serde_json::from_str(response.0.get());
+
+    match parsed {
+        Ok(r) => CreateElicitationResult {
+            action: r.action,
+            content: r.content,
+        },
+        Err(e) => {
+            error!("Failed to parse elicitation response: {:?}", e);
+            CreateElicitationResult {
+                action: rmcp::model::ElicitationAction::Cancel,
+                content: None,
+            }
+        }
+    }
 }
 
 async fn expand_slash_command_if_needed(mcp_tx: &mpsc::Sender<McpCommand>, text: String) -> String {
@@ -412,8 +379,6 @@ async fn forward_notification(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::ElicitationSchema;
-
     #[test]
     fn test_argument_parsing() {
         let arg_map =
@@ -451,55 +416,58 @@ mod tests {
     }
 
     #[test]
-    fn test_build_permission_request_uses_elicitation_message() {
-        let session_id = acp::SessionId::new("session-1");
+    fn test_build_elicitation_params_from_form() {
         let elicitation = CreateElicitationRequestParams::FormElicitationParams {
             meta: None,
-            message: "Allow filesystem write?".to_string(),
+            message: "Pick a color".to_string(),
             requested_schema: ElicitationSchema::builder()
                 .required_bool("approved")
                 .build()
                 .unwrap(),
         };
 
-        let request = build_permission_request(&session_id, &elicitation);
-        assert_eq!(request.session_id, session_id);
-        assert_eq!(request.options.len(), 2);
-        assert_eq!(request.options[0].option_id.0.as_ref(), OPTION_ALLOW_ONCE);
-        assert_eq!(request.options[1].option_id.0.as_ref(), OPTION_REJECT_ONCE);
-        assert_eq!(
-            request.tool_call.fields.title.as_deref(),
-            Some("Allow filesystem write?")
-        );
-        assert_eq!(
-            request.tool_call.fields.status,
-            Some(acp::ToolCallStatus::Pending)
-        );
-        assert_eq!(request.tool_call.fields.kind, Some(acp::ToolKind::Execute));
-        assert!(request.tool_call.fields.raw_input.is_some());
+        let params = build_elicitation_params(&elicitation);
+        assert_eq!(params.message, "Pick a color");
+        assert_eq!(params.schema.properties.len(), 1);
+        assert!(params.schema.properties.contains_key("approved"));
     }
 
     #[test]
-    fn test_permission_outcome_mapping() {
-        let allow = acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
-            acp::PermissionOptionId::new(OPTION_ALLOW_ONCE),
-        ));
-        let reject = acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
-            acp::PermissionOptionId::new(OPTION_REJECT_ONCE),
-        ));
-        let cancelled = acp::RequestPermissionOutcome::Cancelled;
+    fn test_parse_elicitation_response_accept() {
+        let response_json = serde_json::json!({
+            "action": "accept",
+            "content": { "color": "red" }
+        });
+        let raw = serde_json::value::to_raw_value(&response_json).unwrap();
+        let ext_response = acp::ExtResponse::new(Arc::from(raw));
 
-        assert_eq!(
-            map_permission_outcome_to_elicitation_action(&allow),
-            ElicitationAction::Accept
-        );
-        assert_eq!(
-            map_permission_outcome_to_elicitation_action(&reject),
-            ElicitationAction::Decline
-        );
-        assert_eq!(
-            map_permission_outcome_to_elicitation_action(&cancelled),
-            ElicitationAction::Cancel
-        );
+        let result = parse_elicitation_response(&ext_response);
+        assert_eq!(result.action, rmcp::model::ElicitationAction::Accept);
+        assert_eq!(result.content, Some(serde_json::json!({ "color": "red" })));
+    }
+
+    #[test]
+    fn test_parse_elicitation_response_decline() {
+        let response_json = serde_json::json!({
+            "action": "decline",
+            "content": null
+        });
+        let raw = serde_json::value::to_raw_value(&response_json).unwrap();
+        let ext_response = acp::ExtResponse::new(Arc::from(raw));
+
+        let result = parse_elicitation_response(&ext_response);
+        assert_eq!(result.action, rmcp::model::ElicitationAction::Decline);
+        assert!(result.content.is_none());
+    }
+
+    #[test]
+    fn test_parse_elicitation_response_invalid_json() {
+        let raw: Arc<serde_json::value::RawValue> =
+            serde_json::from_str("\"not_an_object\"").unwrap();
+        let ext_response = acp::ExtResponse::new(raw);
+
+        let result = parse_elicitation_response(&ext_response);
+        assert_eq!(result.action, rmcp::model::ElicitationAction::Cancel);
+        assert!(result.content.is_none());
     }
 }
