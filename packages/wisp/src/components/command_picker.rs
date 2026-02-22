@@ -1,6 +1,8 @@
-use crate::tui::{Combobox, Searchable};
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::tui::{
+    Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
+    classify_key,
+};
+use crossterm::event::KeyEvent;
 
 #[derive(Debug, Clone)]
 pub struct CommandEntry {
@@ -18,7 +20,7 @@ impl Searchable for CommandEntry {
 }
 
 pub struct CommandPicker {
-    pub combobox: Combobox<CommandEntry>,
+    combobox: Combobox<CommandEntry>,
 }
 
 pub enum CommandPickerAction {
@@ -33,51 +35,53 @@ impl CommandPicker {
         }
     }
 
-    pub fn selected_command(&self) -> Option<&CommandEntry> {
-        self.combobox.selected()
+    pub fn query(&self) -> &str {
+        self.combobox.query()
+    }
+
+    pub fn matches(&self) -> &[CommandEntry] {
+        self.combobox.matches()
     }
 }
 
 impl Component for CommandPicker {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
-        let header = format!("  / search: {}", self.combobox.query);
+        let header = format!("  / search: {}", self.combobox.query());
         lines.push(Line::styled(header, context.theme.muted));
 
-        if self.combobox.matches.is_empty() {
+        if self.combobox.is_empty() {
             lines.push(Line::new("  (no matching commands)".to_string()));
             return lines;
         }
 
-        for (i, command) in self.combobox.visible_matches().iter().enumerate() {
-            let prefix = if Some(i) == self.combobox.visible_selected_index() {
-                "▶ "
-            } else {
-                "  "
-            };
+        let item_lines = self
+            .combobox
+            .render_items(context, |command, is_selected, ctx| {
+                let prefix = if is_selected { "▶ " } else { "  " };
 
-            let hint_suffix = match &command.hint {
-                Some(hint) => format!("  [{hint}]"),
-                None => String::new(),
-            };
+                let hint_suffix = match &command.hint {
+                    Some(hint) => format!("  [{hint}]"),
+                    None => String::new(),
+                };
 
-            let line_text = format!(
-                "{prefix}/{} - {}{}",
-                command.name, command.description, hint_suffix
-            );
-            let line = if Some(i) == self.combobox.visible_selected_index() {
-                Line::styled(line_text, context.theme.primary)
-            } else {
-                let name_part = format!("{prefix}/{}", command.name);
-                let desc_part = format!(" - {}", command.description);
-                let hint_part = hint_suffix;
-                let mut line = Line::new(name_part);
-                line.push_styled(desc_part, context.theme.muted);
-                line.push_styled(hint_part, context.theme.muted);
-                line
-            };
-            lines.push(line);
-        }
+                let line_text = format!(
+                    "{prefix}/{} - {}{}",
+                    command.name, command.description, hint_suffix
+                );
+                if is_selected {
+                    Line::styled(line_text, ctx.theme.primary)
+                } else {
+                    let name_part = format!("{prefix}/{}", command.name);
+                    let desc_part = format!(" - {}", command.description);
+                    let hint_part = hint_suffix;
+                    let mut line = Line::new(name_part);
+                    line.push_styled(desc_part, ctx.theme.muted);
+                    line.push_styled(hint_part, ctx.theme.muted);
+                    line
+                }
+            });
+        lines.extend(item_lines);
 
         lines
     }
@@ -87,49 +91,34 @@ impl HandlesInput for CommandPicker {
     type Action = CommandPickerAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
-        match key_event.code {
-            KeyCode::Esc => {
+        match classify_key(key_event, self.combobox.query().is_empty()) {
+            PickerKey::Escape | PickerKey::BackspaceOnEmpty => {
                 InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
             }
-            KeyCode::Up => {
-                self.combobox.move_selection_up();
+            PickerKey::MoveUp => {
+                self.combobox.move_up();
                 InputOutcome::consumed_and_render()
             }
-            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.combobox.move_selection_up();
+            PickerKey::MoveDown => {
+                self.combobox.move_down();
                 InputOutcome::consumed_and_render()
             }
-            KeyCode::Down => {
-                self.combobox.move_selection_down();
-                InputOutcome::consumed_and_render()
-            }
-            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.combobox.move_selection_down();
-                InputOutcome::consumed_and_render()
-            }
-            KeyCode::Enter => {
-                if let Some(command) = self.selected_command().cloned() {
+            PickerKey::Confirm => {
+                if let Some(command) = self.combobox.selected().cloned() {
                     InputOutcome::action(CommandPickerAction::CommandChosen(command))
                 } else {
                     InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
                 }
             }
-            KeyCode::Char(c) => {
-                if c.is_control() {
-                    return InputOutcome::consumed();
-                }
+            PickerKey::Char(c) => {
                 self.combobox.push_query_char(c);
                 InputOutcome::consumed_and_render()
             }
-            KeyCode::Backspace => {
-                if self.combobox.query.is_empty() {
-                    InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
-                } else {
-                    self.combobox.pop_query_char();
-                    InputOutcome::consumed_and_render()
-                }
+            PickerKey::Backspace => {
+                self.combobox.pop_query_char();
+                InputOutcome::consumed_and_render()
             }
-            _ => InputOutcome::consumed(),
+            PickerKey::ControlChar | PickerKey::Other => InputOutcome::consumed(),
         }
     }
 }
@@ -137,6 +126,7 @@ impl HandlesInput for CommandPicker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::test_picker::{rendered_lines, selected_text, type_query};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn sample_commands() -> Vec<CommandEntry> {
@@ -167,99 +157,100 @@ mod tests {
 
     #[test]
     fn init_shows_all_commands() {
-        let picker = CommandPicker::new(sample_commands());
-        assert_eq!(picker.combobox.matches.len(), 3);
+        let mut picker = CommandPicker::new(sample_commands());
+        let lines = rendered_lines(&mut picker);
+        // header + 3 command lines
+        assert_eq!(lines.len(), 4);
+        assert!(lines.iter().any(|l| l.contains("/config")));
+        assert!(lines.iter().any(|l| l.contains("/search")));
+        assert!(lines.iter().any(|l| l.contains("/web")));
     }
 
     #[test]
     fn query_filters_by_name() {
         let mut picker = CommandPicker::new(sample_commands());
-        picker.combobox.update_query("conf".to_string());
-        assert_eq!(picker.combobox.matches.len(), 1);
-        assert_eq!(picker.combobox.matches[0].name, "config");
+        type_query(&mut picker, "conf");
+        let lines = rendered_lines(&mut picker);
+        // header + 1 match
+        assert_eq!(lines.len(), 2);
+        assert!(lines[1].contains("/config"));
     }
 
     #[test]
     fn query_filters_by_description() {
         let mut picker = CommandPicker::new(sample_commands());
-        picker.combobox.update_query("browse".to_string());
-        assert_eq!(picker.combobox.matches.len(), 1);
-        assert_eq!(picker.combobox.matches[0].name, "web");
+        type_query(&mut picker, "browse");
+        let lines = rendered_lines(&mut picker);
+        assert_eq!(lines.len(), 2);
+        assert!(lines[1].contains("/web"));
     }
 
     #[test]
     fn selection_wraps() {
         let mut picker = CommandPicker::new(sample_commands());
+        let first = selected_text(&mut picker).unwrap();
 
-        picker.combobox.move_selection_up();
-        assert_eq!(picker.combobox.selected_index, 2);
+        picker.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        let last = selected_text(&mut picker).unwrap();
+        assert_ne!(first, last);
 
-        picker.combobox.move_selection_down();
-        assert_eq!(picker.combobox.selected_index, 0);
+        picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        let back_to_first = selected_text(&mut picker).unwrap();
+        assert_eq!(first, back_to_first);
     }
 
     #[test]
-    fn selected_command_returns_correct_entry() {
+    fn selected_command_changes_on_move() {
         let mut picker = CommandPicker::new(sample_commands());
-        let first = picker.selected_command().unwrap().name.clone();
-        picker.combobox.move_selection_down();
-        let second = picker.selected_command().unwrap().name.clone();
+        let first = selected_text(&mut picker).unwrap();
+        picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        let second = selected_text(&mut picker).unwrap();
         assert_ne!(first, second);
     }
 
     #[test]
-    fn push_and_pop_query_char() {
+    fn type_and_delete_updates_query() {
         let mut picker = CommandPicker::new(sample_commands());
-        picker.combobox.push_query_char('c');
-        picker.combobox.push_query_char('o');
-        assert_eq!(picker.combobox.query, "co");
+        type_query(&mut picker, "co");
+        assert_eq!(picker.query(), "co");
 
-        picker.combobox.pop_query_char();
-        assert_eq!(picker.combobox.query, "c");
+        picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(picker.query(), "c");
 
-        picker.combobox.pop_query_char();
-        assert_eq!(picker.combobox.query, "");
-
-        // pop on empty is a no-op
-        picker.combobox.pop_query_char();
-        assert_eq!(picker.combobox.query, "");
+        picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(picker.query(), "");
     }
 
     #[test]
     fn render_includes_hint_for_commands_with_hint() {
         let mut picker = CommandPicker::new(sample_commands());
-        let context = RenderContext::new((120, 40));
-        let lines = picker.render(&context);
-        let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let lines = rendered_lines(&mut picker);
 
         assert!(
-            text.iter().any(|l| l.contains("[query pattern]")),
+            lines.iter().any(|l| l.contains("[query pattern]")),
             "Should render hint for search command. Got: {:?}",
-            text
+            lines
         );
         assert!(
-            text.iter().any(|l| l.contains("[url]")),
+            lines.iter().any(|l| l.contains("[url]")),
             "Should render hint for web command. Got: {:?}",
-            text
+            lines
         );
     }
 
     #[test]
     fn render_omits_hint_brackets_for_commands_without_hint() {
         let mut picker = CommandPicker::new(sample_commands());
-        // Move selection away from config so it renders without ANSI highlight
-        picker.combobox.selected_index = 1;
-        let context = RenderContext::new((120, 40));
-        let lines = picker.render(&context);
+        let lines = rendered_lines(&mut picker);
 
         let config_line = lines
             .iter()
-            .find(|l| l.plain_text().contains("/config"))
+            .find(|l| l.contains("/config"))
             .expect("config command should be rendered");
         assert!(
-            !config_line.plain_text().contains("  ["),
+            !config_line.contains("  ["),
             "Config command should not have hint brackets. Got: {}",
-            config_line.plain_text()
+            config_line
         );
     }
 
@@ -279,7 +270,6 @@ mod tests {
     #[test]
     fn handle_key_backspace_on_empty_query_requests_close() {
         let mut picker = CommandPicker::new(sample_commands());
-        picker.combobox.query.clear();
 
         let outcome = picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 

@@ -1,3 +1,6 @@
+#[cfg(test)]
+pub mod test_picker;
+
 pub mod checkbox;
 pub mod combobox;
 pub mod component;
@@ -16,7 +19,7 @@ pub mod text_field;
 pub mod theme;
 
 pub use checkbox::Checkbox;
-pub use combobox::{Combobox, Searchable};
+pub use combobox::{Combobox, PickerKey, Searchable, classify_key};
 pub use component::{Component, HandlesInput, InputOutcome, RenderContext};
 pub use form::{Form, FormAction, FormField, FormFieldKind};
 pub use multi_select::MultiSelect;

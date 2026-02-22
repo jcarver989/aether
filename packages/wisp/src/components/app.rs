@@ -317,14 +317,14 @@ impl App {
     pub fn file_picker_selected_display_name(&self) -> Option<String> {
         self.file_picker
             .as_ref()
-            .and_then(|p| p.combobox.selected().map(|f| f.display_name.clone()))
+            .and_then(|p| p.selected().map(|f| f.display_name.clone()))
     }
 
     #[allow(dead_code)]
     pub fn command_picker_match_names(&self) -> Vec<&str> {
         self.command_picker
             .as_ref()
-            .map(|p| p.combobox.matches.iter().map(|m| m.name.as_str()).collect())
+            .map(|p| p.matches().iter().map(|m| m.name.as_str()).collect())
             .unwrap_or_default()
     }
 
@@ -407,10 +407,7 @@ impl App {
                 self.file_picker = None;
             }
             Some(FilePickerAction::ConfirmSelection) => {
-                let selected = self
-                    .file_picker
-                    .take()
-                    .and_then(|p| p.combobox.selected().cloned());
+                let selected = self.file_picker.take().and_then(|p| p.selected().cloned());
                 if let Some(selected) = selected {
                     self.text_input
                         .apply_file_selection(selected.path, selected.display_name);
@@ -656,13 +653,12 @@ impl App {
 
     fn config_picker_cursor_col(picker: &ConfigPicker) -> usize {
         let prefix = format!("  {} search: ", picker.title);
-        UnicodeWidthStr::width(prefix.as_str())
-            + UnicodeWidthStr::width(picker.combobox.query.as_str())
+        UnicodeWidthStr::width(prefix.as_str()) + UnicodeWidthStr::width(picker.query())
     }
 
     fn command_picker_cursor_col(picker: &CommandPicker) -> usize {
         let prefix = "  / search: ";
-        UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(picker.combobox.query.as_str())
+        UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(picker.query())
     }
 
     fn build_attachment_blocks(&mut self, user_input: &str) -> (Vec<acp::ContentBlock>, Vec<Line>) {
@@ -747,7 +743,7 @@ impl CursorComponent for App {
             .config_picker
             .as_ref()
             .map(Self::config_picker_cursor_col);
-        let picker_query_len = self.file_picker.as_ref().map(|p| p.combobox.query.len());
+        let picker_query_len = self.file_picker.as_ref().map(|p| p.query().len());
         let cursor_index = self.text_input.cursor_index(picker_query_len);
 
         let mut conversation_window = ConversationWindow {
