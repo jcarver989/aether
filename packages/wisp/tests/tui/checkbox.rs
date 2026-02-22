@@ -1,5 +1,5 @@
 use super::*;
-use wisp::tui::Checkbox;
+use wisp::tui::{Checkbox, Component};
 
 #[test]
 fn unchecked_renders_bracket_space() {
@@ -38,4 +38,13 @@ fn non_space_key_does_not_change_render() {
     cb.handle_key(key(KeyCode::Enter));
     let term = render_component(&mut cb, 80, 24);
     assert_buffer_eq(&term, &["[ ]"]);
+}
+
+#[test]
+fn unfocused_renders_without_highlight() {
+    let mut cb = Checkbox::new(true);
+    let ctx = RenderContext::new((80, 24)).with_focused(false);
+    let lines = cb.render(&ctx);
+    let term = render_lines(&lines, 80, 24);
+    assert_buffer_eq(&term, &["[x]"]);
 }

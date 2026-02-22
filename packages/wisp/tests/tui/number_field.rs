@@ -1,5 +1,5 @@
 use super::*;
-use wisp::tui::NumberField;
+use wisp::tui::{Component, NumberField};
 
 #[test]
 fn empty_renders_cursor() {
@@ -69,4 +69,13 @@ fn backspace_renders() {
     nf.handle_key(key(KeyCode::Backspace));
     let term = render_component(&mut nf, 80, 24);
     assert_buffer_eq(&term, &["9▏"]);
+}
+
+#[test]
+fn unfocused_renders_without_cursor() {
+    let mut nf = NumberField::new("42".to_string(), true);
+    let ctx = RenderContext::new((80, 24)).with_focused(false);
+    let lines = nf.render(&ctx);
+    let term = render_lines(&lines, 80, 24);
+    assert_buffer_eq(&term, &["42"]);
 }

@@ -1,6 +1,6 @@
 use super::*;
-use wisp::tui::TextField;
 use wisp::tui::screen::Screen;
+use wisp::tui::{Component, TextField};
 
 #[test]
 fn empty_renders_cursor() {
@@ -56,4 +56,22 @@ fn screen_diff_after_mutation() {
     tf.handle_key(key(KeyCode::Char('c')));
     render_component_with_screen(&mut tf, &mut screen, &mut terminal, 80, 24);
     assert_buffer_eq(&terminal, &["abc▏"]);
+}
+
+#[test]
+fn unfocused_renders_without_cursor() {
+    let mut tf = TextField::new("hello".to_string());
+    let ctx = RenderContext::new((80, 24)).with_focused(false);
+    let lines = tf.render(&ctx);
+    let term = render_lines(&lines, 80, 24);
+    assert_buffer_eq(&term, &["hello"]);
+}
+
+#[test]
+fn unfocused_empty_renders_empty() {
+    let mut tf = TextField::new(String::new());
+    let ctx = RenderContext::new((80, 24)).with_focused(false);
+    let lines = tf.render(&ctx);
+    let term = render_lines(&lines, 80, 24);
+    assert_buffer_eq(&term, &[""]);
 }

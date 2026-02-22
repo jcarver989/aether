@@ -22,9 +22,20 @@ impl RadioSelect {
                 serde_json::Value::String(o.value.clone())
             })
     }
+}
 
-    /// Render the inline summary (selected option title).
-    pub fn render_inline(&self, context: &RenderContext) -> Line {
+impl Component for RadioSelect {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+        if context.focused {
+            self.render_options(context)
+        } else {
+            vec![self.render_inline(context)]
+        }
+    }
+}
+
+impl RadioSelect {
+    fn render_inline(&self, context: &RenderContext) -> Line {
         if let Some(opt) = self.options.get(self.selected) {
             Line::styled(&opt.title, context.theme.info)
         } else {
@@ -32,8 +43,7 @@ impl RadioSelect {
         }
     }
 
-    /// Render the expanded option list (for when the field is focused).
-    pub fn render_options(&self, context: &RenderContext) -> Vec<Line> {
+    fn render_options(&self, context: &RenderContext) -> Vec<Line> {
         self.options
             .iter()
             .enumerate()
@@ -47,12 +57,6 @@ impl RadioSelect {
                 Line::with_style(format!("{marker}{}", opt.title), style)
             })
             .collect()
-    }
-}
-
-impl Component for RadioSelect {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
-        self.render_options(context)
     }
 }
 

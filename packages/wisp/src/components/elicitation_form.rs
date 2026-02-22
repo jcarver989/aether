@@ -50,41 +50,13 @@ impl FormFieldKind {
         }
     }
 
-    fn render_inline(&self, context: &RenderContext, is_selected: bool) -> Line {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         match self {
-            FormFieldKind::Text(w) => {
-                let mut line = Line::new(&w.value);
-                if is_selected {
-                    line.push_styled("▏", context.theme.primary);
-                }
-                line
-            }
-            FormFieldKind::Number(w) => {
-                let mut line = Line::new(&w.value);
-                if is_selected {
-                    line.push_styled("▏", context.theme.primary);
-                }
-                line
-            }
-            FormFieldKind::Boolean(w) => {
-                let display = if w.checked { "[x]" } else { "[ ]" };
-                let style = if is_selected {
-                    Style::fg(context.theme.primary)
-                } else {
-                    Style::default()
-                };
-                Line::with_style(display, style)
-            }
-            FormFieldKind::SingleSelect(w) => w.render_inline(context),
-            FormFieldKind::MultiSelect(w) => w.render_inline(context),
-        }
-    }
-
-    fn render_expanded(&self, context: &RenderContext) -> Vec<Line> {
-        match self {
-            FormFieldKind::SingleSelect(w) => w.render_options(context),
-            FormFieldKind::MultiSelect(w) => w.render_options(context),
-            _ => vec![],
+            FormFieldKind::Text(w) => w.render(context),
+            FormFieldKind::Number(w) => w.render(context),
+            FormFieldKind::Boolean(w) => w.render(context),
+            FormFieldKind::SingleSelect(w) => w.render(context),
+            FormFieldKind::MultiSelect(w) => w.render(context),
         }
     }
 
@@ -144,7 +116,7 @@ impl Component for ElicitationForm {
             context.theme.primary,
         ));
 
-        for (i, field) in self.fields.iter().enumerate() {
+        for (i, field) in self.fields.iter_mut().enumerate() {
             let is_selected = i == self.selected_field;
             let prefix = if is_selected { "▶ " } else { "  " };
             let required_marker = if field.required { "*" } else { "" };
@@ -159,19 +131,24 @@ impl Component for ElicitationForm {
                 label_style,
             );
 
-            label_line.append_line(&field.kind.render_inline(context, is_selected));
-            lines.push(label_line);
+            let field_lines = field.kind.render(&context.with_focused(is_selected));
+            if let Some((first, rest)) = field_lines.split_first() {
+                label_line.append_line(first);
+                lines.push(label_line);
 
-            if is_selected {
-                if let Some(desc) = &field.description {
-                    lines.push(Line::styled(format!("│     {desc}"), context.theme.muted));
-                }
+                if is_selected {
+                    if let Some(desc) = &field.description {
+                        lines.push(Line::styled(format!("│     {desc}"), context.theme.muted));
+                    }
 
-                for option_line in field.kind.render_expanded(context) {
-                    let mut prefixed = Line::with_style("│       ", Style::default());
-                    prefixed.append_line(&option_line);
-                    lines.push(prefixed);
+                    for extra_line in rest {
+                        let mut prefixed = Line::with_style("│       ", Style::default());
+                        prefixed.append_line(extra_line);
+                        lines.push(prefixed);
+                    }
                 }
+            } else {
+                lines.push(label_line);
             }
         }
 
@@ -560,6 +537,7 @@ mod tests {
         let context = RenderContext {
             size: (10, 10), // Very narrow terminal
             theme: Theme::default(),
+            focused: true,
         };
 
         // Should not panic with "attempt to subtract with overflow"
