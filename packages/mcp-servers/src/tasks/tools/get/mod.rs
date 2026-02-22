@@ -1,9 +1,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
-use crate::tasks::types::{Task, TaskId, TaskStatus};
+use crate::tasks::types::{Task, TaskId};
 
 /// Input for the `task_get` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -20,8 +20,9 @@ pub struct TaskGetOutput {
     pub status: String,
     pub task: Task,
     pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 /// Get a task by ID
@@ -35,24 +36,20 @@ pub fn execute_task_get(
         .get(&task_id)
         .ok_or(TaskStoreError::NotFound { id: input.id })?;
 
-    let display_meta = ToolDisplayMeta::todo_single(
-        task.title.clone(),
-        task.status == TaskStatus::Completed,
-        None,
-    );
+    let display_meta = ToolDisplayMeta::new("Todo", task.title.clone());
 
     Ok(TaskGetOutput {
         status: "success".to_string(),
         message: format!("Retrieved task '{}'", task.title),
         task: task.clone(),
-        _meta: display_meta.into_meta(),
+        _meta: Some(display_meta.into()),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::types::TaskUpdate;
+    use crate::tasks::types::{TaskStatus, TaskUpdate};
     use tempfile::TempDir;
 
     fn setup() -> (TempDir, TaskStore) {

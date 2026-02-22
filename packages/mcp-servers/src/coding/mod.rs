@@ -26,7 +26,7 @@ pub use default_tools::DefaultCodingTools;
 pub use tools::lsp::LspCodingTools;
 pub use tools_trait::CodingTools;
 
-use crate::display_meta::{ToolDisplayMeta, truncate};
+use mcp_utils::display_meta::{ToolDisplayMeta, truncate};
 use tools::bash::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,
     ReadBackgroundBashOutput, execute_command, read_background_bash,
@@ -344,7 +344,6 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn bash(&self, request: Parameters<BashInput>) -> Result<Json<BashOutput>, String> {
         let Parameters(args) = request;
         let command = args.command.clone();
-        let description = args.description.clone();
         let result = self.tools.bash(args).await.map_err(|e| e.to_string())?;
 
         match result {
@@ -358,11 +357,9 @@ When using tools that take file paths, always use absolute paths from:
                     .await
                     .insert(shell_id.clone(), handle);
 
-                let display_meta = ToolDisplayMeta::command(
-                    truncate(&command, 80),
-                    description.or(Some("Running in background".to_string())),
-                    0,
-                    None,
+                let display_meta = ToolDisplayMeta::new(
+                    "Run command",
+                    format!("{} (background)", truncate(&command, 40)),
                 );
 
                 // Return immediate response with shell_id
@@ -371,7 +368,7 @@ When using tools that take file paths, always use absolute paths from:
                     exit_code: 0,
                     killed: None,
                     shell_id: Some(shell_id),
-                    _meta: display_meta.into_meta(),
+                    _meta: Some(display_meta.into()),
                 }))
             }
         }

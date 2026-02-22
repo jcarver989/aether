@@ -1,7 +1,7 @@
 pub mod common;
 
 use crate::coding::error::GrepError;
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
 use aether_lspd::extensions_for_alias as extensions_for_type;
 use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 use globset::{Glob, GlobSetBuilder};
@@ -24,8 +24,9 @@ pub struct GrepContentOutput {
     /// Total number of matches
     pub total_matches: usize,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -36,8 +37,9 @@ pub struct GrepFilesOutput {
     /// Number of files with matches
     pub count: usize,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -55,8 +57,9 @@ pub struct GrepCountOutput {
     /// Total matches across all files
     pub total: usize,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -495,9 +498,16 @@ fn build_grep_output(
         OutputMode::Count => results.file_counts.iter().map(|fc| fc.count).sum(),
     };
 
-    let display_meta =
-        ToolDisplayMeta::grep(pattern.to_owned(), search_path.to_string(), match_count);
-    let meta = display_meta.into_meta();
+    let display_meta = ToolDisplayMeta::new(
+        "Grep",
+        format!(
+            "'{}' in {} ({} matches)",
+            pattern,
+            basename(search_path),
+            match_count
+        ),
+    );
+    let meta = Some(display_meta.into());
 
     match output_mode {
         OutputMode::Content => GrepOutput::Content(GrepContentOutput {

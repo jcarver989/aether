@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use crate::coding::error::WebSearchError;
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 
 const DEFAULT_COUNT: u32 = 10;
 const MAX_COUNT: u32 = 20;
@@ -43,8 +43,9 @@ pub struct WebSearchOutput {
     pub query: String,
 
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 /// Individual search result
@@ -116,12 +117,15 @@ impl<C: SearchClient> WebSearcher<C> {
             })
             .collect();
 
-        let display_meta = ToolDisplayMeta::web_search(query.to_string(), results.len());
+        let display_meta = ToolDisplayMeta::new(
+            "Web search",
+            format!("'{}' ({} results)", query, results.len()),
+        );
 
         Ok(WebSearchOutput {
             results,
             query: query.to_string(),
-            _meta: display_meta.into_meta(),
+            _meta: Some(display_meta.into()),
         })
     }
 }

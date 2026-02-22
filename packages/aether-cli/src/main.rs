@@ -398,6 +398,7 @@ mod tests {
                 arguments: "{}".to_string(),
                 result: "ok".to_string(),
             },
+            display_meta: None,
             model_name: "test".to_string(),
         };
         let output = with_test_subscriber(|| {
@@ -501,6 +502,7 @@ mod tests {
                 arguments: "{}".to_string(),
                 result: "output".to_string(),
             },
+            display_meta: None,
             model_name: "test".to_string(),
         };
         assert_eq!(

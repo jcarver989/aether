@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use crate::coding::error::BashError;
-use crate::display_meta::{ToolDisplayMeta, truncate};
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, truncate};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -35,8 +35,9 @@ pub struct BashOutput {
     /// Shell ID for background processes
     pub shell_id: Option<String>,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 #[derive(Debug)]
@@ -71,8 +72,9 @@ pub struct ReadBackgroundBashOutput {
     /// Exit code (when completed)
     pub exit_code: Option<i32>,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 pub async fn read_background_bash(
@@ -114,36 +116,27 @@ pub async fn read_background_bash(
             "completed".to_string()
         };
 
-        let display_meta = ToolDisplayMeta::command(
-            "<background process>".to_string(),
-            Some(format!("Background process {status}")),
-            exit_code,
-            Some(killed),
-        );
+        let display_meta =
+            ToolDisplayMeta::new("Run command", format!("<background> (exit {exit_code})"));
 
         Ok((
             ReadBackgroundBashOutput {
                 output,
                 status,
                 exit_code: Some(exit_code),
-                _meta: display_meta.into_meta(),
+                _meta: Some(display_meta.into()),
             },
             None,
         ))
     } else {
-        let display_meta = ToolDisplayMeta::command(
-            "<background process>".to_string(),
-            Some("Running in background".to_string()),
-            0,
-            Some(false),
-        );
+        let display_meta = ToolDisplayMeta::new("Run command", "<background> (running)");
 
         Ok((
             ReadBackgroundBashOutput {
                 output,
                 status: "running".to_string(),
                 exit_code: None,
-                _meta: display_meta.into_meta(),
+                _meta: Some(display_meta.into()),
             },
             Some(BackgroundProcessHandle {
                 shell_id,
@@ -273,11 +266,9 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
                     format!("{stdout}{stderr}")
                 };
 
-                let display_meta = ToolDisplayMeta::command(
-                    truncate(&args.command, 80),
-                    args.description,
-                    exit_code,
-                    Some(false),
+                let display_meta = ToolDisplayMeta::new(
+                    "Run command",
+                    format!("{} (exit {exit_code})", truncate(&args.command, 40)),
                 );
 
                 Ok(BashResult::Completed(BashOutput {
@@ -285,7 +276,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
                     exit_code,
                     killed: Some(false),
                     shell_id: None,
-                    _meta: display_meta.into_meta(),
+                    _meta: Some(display_meta.into()),
                 }))
             }
             Ok(Err(e)) => Err(BashError::SpawnFailed {
@@ -296,13 +287,9 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
                 // Timeout occurred
                 let timeout_ms = timeout.map_or(120_000, |d| d.as_millis());
 
-                let display_meta = ToolDisplayMeta::command(
-                    truncate(&args.command, 80),
-                    args.description
-                        .clone()
-                        .or(Some(format!("Command timed out after {timeout_ms}ms"))),
-                    -1,
-                    Some(true),
+                let display_meta = ToolDisplayMeta::new(
+                    "Run command",
+                    format!("{} (exit -1, timed out)", truncate(&args.command, 40)),
                 );
 
                 Ok(BashResult::Completed(BashOutput {
@@ -310,7 +297,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
                     exit_code: -1,
                     killed: Some(true),
                     shell_id: None,
-                    _meta: display_meta.into_meta(),
+                    _meta: Some(display_meta.into()),
                 }))
             }
         }

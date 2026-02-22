@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
 use crate::coding::error::ListFilesError;
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -40,8 +40,9 @@ pub struct ListFilesResult {
     pub files: Vec<FileInfo>,
     pub total_count: usize,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFilesError> {
@@ -105,13 +106,16 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
 
     let total_count = files.len();
 
-    let display_meta = ToolDisplayMeta::list_files(target_path.to_string(), total_count);
+    let display_meta = ToolDisplayMeta::new(
+        "List files",
+        format!("{} ({total_count} items)", basename(target_path)),
+    );
 
     Ok(ListFilesResult {
         status: "success".to_string(),
         directory: target_path.to_string(),
         files,
         total_count,
-        _meta: display_meta.into_meta(),
+        _meta: Some(display_meta.into()),
     })
 }

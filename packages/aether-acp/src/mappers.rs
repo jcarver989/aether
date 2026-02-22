@@ -7,6 +7,7 @@ use agent_client_protocol::{
 };
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use mcp_utils::client::McpServerConfig;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 use rmcp::model::Prompt as McpPrompt;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
@@ -127,9 +128,15 @@ pub fn map_agent_message_to_session_notification(
             Some(map_tool_call_to_notification(session_id, request))
         }
 
-        AgentMessage::ToolResult { result, .. } => {
-            Some(map_tool_result_to_notification(session_id, result))
-        }
+        AgentMessage::ToolResult {
+            result,
+            display_meta,
+            ..
+        } => Some(map_tool_result_to_notification(
+            session_id,
+            result,
+            display_meta.as_ref(),
+        )),
 
         AgentMessage::ToolError { error, .. } => {
             Some(map_tool_error_to_notification(session_id, error))
@@ -231,28 +238,45 @@ fn map_tool_call_to_notification(
     SessionNotification::new(
         session_id,
         SessionUpdate::ToolCall(
-            ToolCall::new(ToolCallId::new(request.id.clone()), request.name.clone())
-                .status(acp::ToolCallStatus::InProgress)
-                .raw_input(raw_input),
+            ToolCall::new(
+                ToolCallId::new(request.id.clone()),
+                humanize_tool_name(&request.name),
+            )
+            .status(acp::ToolCallStatus::InProgress)
+            .raw_input(raw_input),
         ),
     )
+}
+
+/// Produces the initial human-readable title for a tool call (e.g., "Read file").
+/// This is sent when the tool call starts.
+fn humanize_tool_name(name: &str) -> String {
+    let base = name.split("__").last().unwrap_or(name);
+    let mut result = base.replace('_', " ");
+    if let Some(first) = result.get_mut(0..1) {
+        first.make_ascii_uppercase();
+    }
+    result
 }
 
 fn map_tool_result_to_notification(
     session_id: SessionId,
     result: &ToolCallResult,
+    display_meta: Option<&ToolDisplayMeta>,
 ) -> SessionNotification {
-    SessionNotification::new(
-        session_id,
-        SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
-            ToolCallId::new(result.id.clone()),
-            ToolCallUpdateFields::new()
-                .status(ToolCallStatus::Completed)
-                .content(vec![ToolCallContent::Content(Content::new(
-                    ContentBlock::Text(TextContent::new(result.result.clone())),
-                ))]),
-        )),
-    )
+    let fields = ToolCallUpdateFields::new()
+        .status(ToolCallStatus::Completed)
+        .content(vec![ToolCallContent::Content(Content::new(
+            ContentBlock::Text(TextContent::new(result.result.clone())),
+        ))]);
+
+    let mut update = ToolCallUpdate::new(ToolCallId::new(result.id.clone()), fields);
+
+    if let Some(dm) = display_meta {
+        update = update.meta(ToolResultMeta::from(dm.clone()).into_map());
+    }
+
+    SessionNotification::new(session_id, SessionUpdate::ToolCallUpdate(update))
 }
 
 fn map_tool_error_to_notification(
@@ -499,6 +523,74 @@ mod tests {
                 assert_eq!(config.auth_header, None);
             }
             other => panic!("Expected Http, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_humanize_tool_name_strips_namespace() {
+        assert_eq!(humanize_tool_name("coding__read_file"), "Read file");
+    }
+
+    #[test]
+    fn test_humanize_tool_name_no_namespace() {
+        assert_eq!(humanize_tool_name("read_file"), "Read file");
+    }
+
+    #[test]
+    fn test_humanize_tool_name_single_word() {
+        assert_eq!(humanize_tool_name("bash"), "Bash");
+    }
+
+    #[test]
+    fn test_humanize_tool_name_deeply_nested() {
+        assert_eq!(
+            humanize_tool_name("plugins__coding__read_file"),
+            "Read file"
+        );
+    }
+
+    #[test]
+    fn test_result_with_display_meta_sets_meta() {
+        let session_id = acp::SessionId::new("test-session");
+        let result = ToolCallResult {
+            id: "call_1".to_string(),
+            name: "coding__read_file".to_string(),
+            arguments: "{}".to_string(),
+            result: "file contents".to_string(),
+        };
+        let dm = ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines");
+
+        let notification = map_tool_result_to_notification(session_id, &result, Some(&dm));
+        match notification.update {
+            acp::SessionUpdate::ToolCallUpdate(update) => {
+                assert!(update.fields.title.is_none());
+                let meta = update.meta.expect("meta should be present");
+                let tc_meta = mcp_utils::display_meta::ToolResultMeta::from_map(&meta)
+                    .expect("should deserialize to ToolResultMeta");
+                assert_eq!(tc_meta.display.title, "Read file");
+                assert_eq!(tc_meta.display.value, "Cargo.toml, 156 lines");
+            }
+            other => panic!("Expected ToolCallUpdate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_result_without_display_meta() {
+        let session_id = acp::SessionId::new("test-session");
+        let result = ToolCallResult {
+            id: "call_1".to_string(),
+            name: "external__some_tool".to_string(),
+            arguments: "{}".to_string(),
+            result: "ok".to_string(),
+        };
+
+        let notification = map_tool_result_to_notification(session_id, &result, None);
+        match notification.update {
+            acp::SessionUpdate::ToolCallUpdate(update) => {
+                assert!(update.fields.title.is_none());
+                assert!(update.meta.is_none());
+            }
+            other => panic!("Expected ToolCallUpdate, got {other:?}"),
         }
     }
 }

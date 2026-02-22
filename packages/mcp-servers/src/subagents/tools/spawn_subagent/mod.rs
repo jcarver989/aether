@@ -1,5 +1,5 @@
 use crate::coding::CodingMcp;
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 use crate::skills::SkillsMcp;
 use crate::subagents::subagent_file::AgentFile;
 use crate::tasks::TasksMcp;
@@ -125,8 +125,9 @@ pub struct SpawnSubAgentsOutput {
     /// Number of failures
     pub error_count: usize,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 /// Prompt instructions appended to sub-agent prompts to ensure structured output
@@ -193,7 +194,6 @@ impl AgentExecutor {
         // Clone the first task for display metadata (we need to keep the original for execution)
         let first_task = tasks.first().unwrap();
         let first_agent_name = first_task.agent_name.clone();
-        let first_prompt = first_task.prompt.clone();
 
         let agents_dir = Arc::clone(&self.agents_dir);
         let progress_callback = self.progress_callback.clone();
@@ -237,18 +237,16 @@ impl AgentExecutor {
             .count();
 
         // Create display metadata using the first task
-        let display_meta = ToolDisplayMeta::spawn_subagent(
-            first_agent_name,
-            first_prompt,
-            task_count,
-            1, // For batch operations, we show the first task's context
+        let display_meta = ToolDisplayMeta::new(
+            "Spawn agent",
+            format!("{first_agent_name} (1/{task_count})"),
         );
 
         SpawnSubAgentsOutput {
             results,
             success_count,
             error_count,
-            _meta: display_meta.into_meta(),
+            _meta: Some(display_meta.into()),
         }
     }
 }

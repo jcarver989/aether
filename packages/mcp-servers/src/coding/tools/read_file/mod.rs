@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::coding::error::FileError;
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
 
 const MAX_LINE_LENGTH: usize = 2000;
 const DEFAULT_LINE_LIMIT: usize = 2000;
@@ -35,8 +35,9 @@ pub struct ReadFileResult {
     #[serde(skip_serializing)]
     pub raw_content: String,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, FileError> {
@@ -91,10 +92,9 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, Fi
 
             let formatted_content = lines_with_numbers.join("\n");
 
-            let display_meta = ToolDisplayMeta::read_file(
-                args.file_path.clone(),
-                Some(content.len()),
-                Some(total_lines),
+            let display_meta = ToolDisplayMeta::new(
+                "Read file",
+                format!("{}, {total_lines} lines", basename(&args.file_path)),
             );
 
             Ok(ReadFileResult {
@@ -107,7 +107,7 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, Fi
                 limit: Some(limit),
                 size: content.len(),
                 raw_content: content,
-                _meta: display_meta.into_meta(),
+                _meta: Some(display_meta.into()),
             })
         }
         Err(e) => Err(FileError::ReadFailed {

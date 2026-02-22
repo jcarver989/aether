@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::coding::error::FileError;
-use crate::display_meta::{ToolDisplayMeta, truncate};
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -33,8 +33,9 @@ pub struct EditFileResponse {
     #[serde(skip_serializing)]
     pub content: String,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, FileError> {
@@ -91,11 +92,7 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     // Count lines for response
     let total_lines = updated_content.lines().count();
 
-    let display_meta = ToolDisplayMeta::edit_file(
-        args.file_path.clone(),
-        Some(truncate(&args.old_string, 100)),
-        Some(truncate(&args.new_string, 100)),
-    );
+    let display_meta = ToolDisplayMeta::new("Edit file", basename(&args.file_path));
 
     Ok(EditFileResponse {
         status: "success".to_string(),
@@ -103,6 +100,6 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
         total_lines,
         replacements_made,
         content: updated_content,
-        _meta: display_meta.into_meta(),
+        _meta: Some(display_meta.into()),
     })
 }
