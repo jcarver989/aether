@@ -90,6 +90,10 @@ fn collect_acp_events<T: Write>(
             eprintln!("Prompt error: {e}");
             screen.on_prompt_error()
         }
+        AcpEvent::ElicitationRequest {
+            params,
+            response_tx,
+        } => screen.on_elicitation_request(params, response_tx),
         AcpEvent::ConnectionClosed => vec![AppEvent::Exit],
     }
 }

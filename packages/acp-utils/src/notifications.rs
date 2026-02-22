@@ -4,6 +4,7 @@
 //! ACP connection.
 
 use agent_client_protocol::ExtNotification;
+use rmcp::model::ElicitationSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -12,12 +13,34 @@ use std::sync::Arc;
 pub const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
 pub const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
 
+/// Custom ext_method for tunneling MCP elicitation through ACP.
+/// Note: ACP auto-prefixes ext_method names with `_`, so the wire method
+/// becomes `_aether/elicitation`.
+pub const ELICITATION_METHOD: &str = "aether/elicitation";
+
 /// Parameters for `_aether/context_usage` notifications.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContextUsageParams {
     pub usage_ratio: f64,
     pub tokens_used: u32,
     pub context_limit: u32,
+}
+
+/// Parameters sent via ext_method for `aether/elicitation`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ElicitationParams {
+    pub message: String,
+    pub schema: ElicitationSchema,
+}
+
+pub use rmcp::model::ElicitationAction;
+
+/// Response returned from the client for an elicitation request.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ElicitationResponse {
+    pub action: ElicitationAction,
+    /// Structured form data when action is "accept".
+    pub content: Option<serde_json::Value>,
 }
 
 impl From<ContextUsageParams> for ExtNotification {
@@ -87,6 +110,28 @@ mod tests {
     fn method_constants_have_underscore_prefix() {
         assert!(SUB_AGENT_PROGRESS_METHOD.starts_with('_'));
         assert!(CONTEXT_USAGE_METHOD.starts_with('_'));
+    }
+
+    #[test]
+    fn elicitation_params_roundtrip() {
+        use rmcp::model::EnumSchema;
+
+        let params = ElicitationParams {
+            message: "Pick a color".to_string(),
+            schema: ElicitationSchema::builder()
+                .required_enum_schema(
+                    "color",
+                    EnumSchema::builder(vec!["red".into(), "green".into(), "blue".into()])
+                        .untitled()
+                        .build(),
+                )
+                .build()
+                .unwrap(),
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        let parsed: ElicitationParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, params);
     }
 
     #[test]

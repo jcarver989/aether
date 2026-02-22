@@ -18,48 +18,55 @@ impl AcpActorHandle {
         &self,
         notification: acp::SessionNotification,
     ) -> Result<(), AcpServerError> {
-        let (response_tx, response_rx) = oneshot::channel();
-        self.request_tx
-            .send(AcpRequest::SessionNotification {
-                notification: Box::new(notification),
-                response_tx,
-            })
-            .map_err(|_| AcpServerError::ActorStopped)?;
-        response_rx
-            .await
-            .map_err(|_| AcpServerError::ActorStopped)?
+        self.send_request(|tx| AcpRequest::SessionNotification {
+            notification: Box::new(notification),
+            response_tx: tx,
+        })
+        .await
     }
 
     pub async fn send_ext_notification(
         &self,
         notification: acp::ExtNotification,
     ) -> Result<(), AcpServerError> {
-        let (response_tx, response_rx) = oneshot::channel();
-        self.request_tx
-            .send(AcpRequest::ExtNotification {
-                notification,
-                response_tx,
-            })
-            .map_err(|_| AcpServerError::ActorStopped)?;
-        response_rx
-            .await
-            .map_err(|_| AcpServerError::ActorStopped)?
+        self.send_request(|tx| AcpRequest::ExtNotification {
+            notification,
+            response_tx: tx,
+        })
+        .await
     }
 
     pub async fn request_permission(
         &self,
         request: acp::RequestPermissionRequest,
     ) -> Result<acp::RequestPermissionResponse, AcpServerError> {
-        let (response_tx, response_rx) = oneshot::channel();
+        self.send_request(|tx| AcpRequest::RequestPermission {
+            request: Box::new(request),
+            response_tx: tx,
+        })
+        .await
+    }
+
+    pub async fn ext_method(
+        &self,
+        request: acp::ExtRequest,
+    ) -> Result<acp::ExtResponse, AcpServerError> {
+        self.send_request(|tx| AcpRequest::ExtMethod {
+            request,
+            response_tx: tx,
+        })
+        .await
+    }
+
+    async fn send_request<R>(
+        &self,
+        make_request: impl FnOnce(oneshot::Sender<Result<R, AcpServerError>>) -> AcpRequest,
+    ) -> Result<R, AcpServerError> {
+        let (tx, rx) = oneshot::channel();
         self.request_tx
-            .send(AcpRequest::RequestPermission {
-                request: Box::new(request),
-                response_tx,
-            })
+            .send(make_request(tx))
             .map_err(|_| AcpServerError::ActorStopped)?;
-        response_rx
-            .await
-            .map_err(|_| AcpServerError::ActorStopped)?
+        rx.await.map_err(|_| AcpServerError::ActorStopped)?
     }
 }
 
@@ -97,6 +104,19 @@ mod tests {
             serde_json::from_str("null").expect("null is valid JSON");
         let notification = acp::ExtNotification::new("test/method", null_value);
         let result = handle.send_ext_notification(notification).await;
+        assert!(matches!(result, Err(AcpServerError::ActorStopped)));
+    }
+
+    #[tokio::test]
+    async fn test_ext_method_returns_error_when_actor_stopped() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let handle = AcpActorHandle::new(tx);
+        drop(rx);
+
+        let null_value: std::sync::Arc<serde_json::value::RawValue> =
+            serde_json::from_str("null").expect("null is valid JSON");
+        let request = acp::ExtRequest::new("test/method", null_value);
+        let result = handle.ext_method(request).await;
         assert!(matches!(result, Err(AcpServerError::ActorStopped)));
     }
 

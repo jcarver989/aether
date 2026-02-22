@@ -1,13 +1,16 @@
 use super::error::AcpClientError;
 use super::event::AcpEvent;
 use super::prompt_handle::{AcpPromptHandle, PromptCommand};
+use crate::notifications::{ELICITATION_METHOD, ElicitationParams};
 use agent_client_protocol::{
-    self as acp, Agent, Client, ConfigOptionUpdate, ExtNotification, InitializeRequest,
-    PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest,
+    self as acp, Agent, Client, ConfigOptionUpdate, ExtNotification, ExtRequest, ExtResponse,
+    InitializeRequest, PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigOption, SessionId,
     SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
 };
+use serde_json::value::RawValue;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::thread::spawn;
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
@@ -73,6 +76,41 @@ impl Client for AutoApproveClient {
         let _ = self.event_tx.send(AcpEvent::ExtNotification(args));
         Ok(())
     }
+
+    async fn ext_method(&self, args: ExtRequest) -> acp::Result<ExtResponse> {
+        if args.method.as_ref() == ELICITATION_METHOD {
+            return handle_elicitation_ext_method(&self.event_tx, args).await;
+        }
+
+        // Unknown ext_method — return null (default behavior)
+        let null_raw: Arc<RawValue> = serde_json::from_str("null").expect("null is valid JSON");
+        Ok(ExtResponse::new(null_raw))
+    }
+}
+
+async fn handle_elicitation_ext_method(
+    event_tx: &mpsc::UnboundedSender<AcpEvent>,
+    args: ExtRequest,
+) -> acp::Result<ExtResponse> {
+    let params: ElicitationParams =
+        serde_json::from_str(args.params.get()).map_err(|_| acp::Error::invalid_params())?;
+
+    let (response_tx, response_rx) = oneshot::channel();
+    event_tx
+        .send(AcpEvent::ElicitationRequest {
+            params,
+            response_tx,
+        })
+        .map_err(|_| acp::Error::internal_error())?;
+
+    let response = response_rx
+        .await
+        .map_err(|_| acp::Error::internal_error())?;
+
+    let raw =
+        serde_json::value::to_raw_value(&response).map_err(|_| acp::Error::internal_error())?;
+
+    Ok(ExtResponse::new(Arc::from(raw)))
 }
 
 /// Spawn an agent subprocess and establish an ACP session.

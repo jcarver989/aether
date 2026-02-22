@@ -11,7 +11,7 @@ use mcp_utils::client::{ElicitationRequest, McpServerConfig, ServerInstructions}
 use agent_client_protocol as acp;
 use futures::FutureExt;
 use mcp_servers::{
-    CodingMcp, DefaultCodingTools, LspCodingTools, SkillsMcp, SubAgentsMcp, TasksMcp,
+    CodingMcp, DefaultCodingTools, LspCodingTools, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp,
 };
 use mcp_utils::ServiceExt;
 use std::path::{Path, PathBuf};
@@ -143,6 +143,10 @@ fn build_mcp_servers(
                 }
                 .boxed()
             }),
+        )
+        .register_in_memory_server(
+            "survey",
+            Box::new(|_args| async move { SurveyMcp::new().into_dyn() }.boxed()),
         )
         .register_in_memory_server(
             "tasks",

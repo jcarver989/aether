@@ -4,6 +4,7 @@ pub mod config_menu;
 pub mod config_picker;
 pub mod container;
 pub mod conversation_window;
+pub mod elicitation_form;
 pub mod file_picker;
 pub mod input_prompt;
 pub mod status_line;
