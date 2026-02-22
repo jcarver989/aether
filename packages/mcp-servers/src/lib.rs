@@ -1,5 +1,3 @@
-pub mod display_meta;
-
 #[cfg(feature = "all")]
 pub mod setup;
 #[cfg(feature = "all")]

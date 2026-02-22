@@ -1,3 +1,4 @@
+use crate::tui::screen::Style;
 use crate::tui::theme::Theme;
 use crate::tui::{Component, Line, RenderContext};
 
@@ -6,28 +7,17 @@ pub struct ThoughtMessage<'a> {
 }
 
 impl ThoughtMessage<'_> {
-    fn format_with_theme(text: &str, prefix: bool, theme: &Theme) -> Line {
+    fn format_line(text: &str, theme: &Theme) -> Line {
         let mut line = Line::default();
-        if !prefix {
-            line.push_styled(text, theme.muted);
-            return line;
-        }
-
-        line.push_styled("Thought:", theme.info);
-        line.push_text(" ");
-        line.push_styled(text, theme.muted);
+        line.push_styled("│ ", theme.muted);
+        line.push_with_style(text, Style::fg(theme.muted).dim());
         line
     }
 
     fn format_lines(text: &str, theme: &Theme) -> Vec<Line> {
-        let mut lines = text.lines();
-        let Some(first) = lines.next() else {
-            return vec![];
-        };
-
-        let mut formatted = vec![Self::format_with_theme(first, true, theme)];
-        formatted.extend(lines.map(|line| Self::format_with_theme(line, false, theme)));
-        formatted
+        text.lines()
+            .map(|line| Self::format_line(line, theme))
+            .collect()
     }
 }
 
@@ -47,26 +37,26 @@ mod tests {
     use crate::tui::soft_wrap::soft_wrap_line;
 
     #[test]
-    fn renders_prefixed_thought_line() {
+    fn renders_border_prefixed_thought_line() {
         let mut component = ThoughtMessage { text: "check plan" };
         let context = RenderContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].plain_text().contains("Thought:"));
+        assert!(lines[0].plain_text().starts_with("│ "));
         assert!(lines[0].plain_text().contains("check plan"));
     }
 
     #[test]
-    fn prefixes_only_first_line_for_multiline_thought() {
+    fn prefixes_all_lines_with_border() {
         let mut component = ThoughtMessage {
             text: "line one\nline two",
         };
         let context = RenderContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].plain_text().contains("Thought:"));
+        assert!(lines[0].plain_text().starts_with("│ "));
         assert!(lines[0].plain_text().contains("line one"));
-        assert!(!lines[1].plain_text().contains("Thought:"));
+        assert!(lines[1].plain_text().starts_with("│ "));
         assert!(lines[1].plain_text().contains("line two"));
     }
 

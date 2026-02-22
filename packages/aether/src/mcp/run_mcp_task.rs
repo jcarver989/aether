@@ -1,5 +1,6 @@
 use mcp_utils::client::McpManager;
 use mcp_utils::client::mcp_client::McpClient;
+use mcp_utils::display_meta::ToolDisplayMeta;
 
 use futures::future::Either;
 use futures::stream::{self, StreamExt};
@@ -26,6 +27,7 @@ pub enum ToolExecutionEvent {
     Complete {
         tool_id: String,
         result: Result<ToolCallResult, ToolCallError>,
+        display_meta: Option<ToolDisplayMeta>,
     },
 }
 
@@ -82,16 +84,24 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
             match mcp.get_client_for_tool(&request.name) {
                 Ok(client) => {
                     tokio::spawn(async move {
-                        let result = try_execute_tool(
+                        let (result, display_meta) = match try_execute_tool(
                             client,
                             &request,
                             timeout,
                             tool_id.clone(),
                             tx.clone(),
                         )
-                        .await;
+                        .await
+                        {
+                            Ok((tool_result, meta)) => (Ok(tool_result), meta),
+                            Err(e) => (Err(e), None),
+                        };
                         let _ = tx
-                            .send(ToolExecutionEvent::Complete { tool_id, result })
+                            .send(ToolExecutionEvent::Complete {
+                                tool_id,
+                                result,
+                                display_meta,
+                            })
                             .await;
                     });
                 }
@@ -107,6 +117,7 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
                         .send(ToolExecutionEvent::Complete {
                             tool_id,
                             result: Err(error),
+                            display_meta: None,
                         })
                         .await;
                 }
@@ -141,7 +152,7 @@ async fn try_execute_tool(
     timeout: Duration,
     tool_call_id: String,
     event_tx: mpsc::Sender<ToolExecutionEvent>,
-) -> Result<ToolCallResult, ToolCallError> {
+) -> Result<(ToolCallResult, Option<ToolDisplayMeta>), ToolCallError> {
     use super::tool_bridge::{mcp_result_to_tool_call_result, tool_call_request_to_mcp};
     use rmcp::model::{ClientRequest::CallToolRequest, Request, ServerResult};
     use rmcp::service::PeerRequestOptions;

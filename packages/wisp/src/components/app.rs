@@ -8,6 +8,7 @@ use crate::components::conversation_window::{ConversationBuffer, ConversationWin
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
+use crate::components::progress_indicator::ProgressIndicator;
 use crate::components::status_line::StatusLine;
 use crate::components::text_input::{TextInput, TextInputAction};
 use crate::components::tool_call_statuses::ToolCallStatuses;
@@ -220,7 +221,7 @@ impl App {
     }
 
     pub fn on_tick(&mut self) -> Vec<AppEvent> {
-        if self.waiting_for_response || self.tool_call_statuses.has_running() {
+        if self.waiting_for_response || self.tool_call_statuses.progress().running_any {
             self.animation_tick = self.animation_tick.wrapping_add(1);
             self.grid_loader.tick = self.animation_tick;
             self.tool_call_statuses.set_tick(self.animation_tick);
@@ -763,9 +764,19 @@ impl CursorComponent for App {
             waiting_for_response: self.waiting_for_response,
         };
 
-        let mut container: Container<'_> =
-            Container::new(vec![&mut conversation_window, &mut input_prompt]);
-        let input_component_index = 1;
+        let progress = self.tool_call_statuses.progress();
+        let mut progress_indicator = ProgressIndicator {
+            completed: progress.completed_top_level,
+            total: progress.total_top_level,
+            tick: self.animation_tick,
+        };
+
+        let mut container: Container<'_> = Container::new(vec![
+            &mut conversation_window,
+            &mut progress_indicator,
+            &mut input_prompt,
+        ]);
+        let input_component_index = 2;
 
         if let Some(ref mut picker) = self.file_picker {
             container.push(picker);

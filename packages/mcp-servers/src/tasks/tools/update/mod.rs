@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::common::TaskSummary;
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
 use crate::tasks::types::{TaskId, TaskStatus, TaskUpdate};
 
@@ -72,8 +72,9 @@ pub struct TaskUpdateOutput {
     pub newly_ready: Vec<TaskSummary>,
 
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 /// Update an existing task's fields
@@ -159,17 +160,7 @@ pub fn execute_task_update(
         format!("Updated {} on task {}", changes.join(", "), id)
     };
 
-    let status_label = match task.status {
-        TaskStatus::Completed => "Completing task",
-        TaskStatus::InProgress => "Working on task",
-        _ => "Updating task",
-    };
-
-    let display_meta = ToolDisplayMeta::todo_single(
-        task.title.clone(),
-        task.status == TaskStatus::Completed,
-        Some(status_label.to_string()),
-    );
+    let display_meta = ToolDisplayMeta::new("Todo", task.title.clone());
 
     Ok(TaskUpdateOutput {
         status: "success".to_string(),
@@ -177,7 +168,7 @@ pub fn execute_task_update(
         message,
         changes,
         newly_ready,
-        _meta: display_meta.into_meta(),
+        _meta: Some(display_meta.into()),
     })
 }
 

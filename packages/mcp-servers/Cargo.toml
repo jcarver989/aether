@@ -9,7 +9,6 @@ workspace = true
 [features]
 default = ["coding", "skills", "tasks", "subagents"]
 coding = [
-    "dep:mcp_utils",
     "dep:aether-lspd",
     "dep:futures",
     "dep:glob",
@@ -27,7 +26,6 @@ coding = [
     "dep:url",
 ]
 skills = [
-    "dep:mcp_utils",
     "dep:serde_yaml",
     "dep:tracing",
 ]
@@ -41,7 +39,6 @@ subagents = [
     "tasks",
     "dep:aether",
     "dep:llm",
-    "dep:mcp_utils",
     "dep:futures",
     "dep:tracing",
     "dep:serde_yaml",
@@ -57,9 +54,7 @@ tokio = { workspace = true }
 rmcp = { workspace = true }
 schemars = { workspace = true }
 clap = { workspace = true, features = ["env"] }
-
-# coding feature
-mcp_utils = { path = "../mcp-utils", optional = true }
+mcp_utils = { path = "../mcp-utils" }
 aether-lspd = { path = "../aether-lspd", optional = true }
 futures = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }

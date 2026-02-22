@@ -7,6 +7,7 @@ pub mod conversation_window;
 pub mod elicitation_form;
 pub mod file_picker;
 pub mod input_prompt;
+pub mod progress_indicator;
 pub mod status_line;
 pub mod text_input;
 pub mod thought_message;

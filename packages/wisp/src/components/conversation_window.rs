@@ -301,7 +301,7 @@ mod tests {
         assert_eq!(lines.len(), 5);
         assert!(lines[0].plain_text().contains("one"));
         assert_eq!(lines[1].plain_text(), "");
-        assert!(lines[2].plain_text().contains("Thought:"));
+        assert!(lines[2].plain_text().starts_with("│ "));
         assert!(lines[2].plain_text().contains("two"));
         assert_eq!(lines[3].plain_text(), "");
         assert!(lines[4].plain_text().contains("three"));

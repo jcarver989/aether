@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::coding::error::FindError;
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FindInput {
@@ -25,8 +25,9 @@ pub struct FindOutput {
     /// Search directory used
     pub search_path: String,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError> {
@@ -103,13 +104,14 @@ pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError
 
     let count = matches.len();
 
-    let display_meta = ToolDisplayMeta::find(args.pattern.clone(), search_path.to_string(), count);
+    let display_meta =
+        ToolDisplayMeta::new("Find files", format!("'{}' ({count} files)", args.pattern));
 
     Ok(FindOutput {
         matches,
         count,
         search_path: search_path.to_string(),
-        _meta: display_meta.into_meta(),
+        _meta: Some(display_meta.into()),
     })
 }
 

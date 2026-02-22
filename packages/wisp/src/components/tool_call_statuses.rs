@@ -1,4 +1,6 @@
-use acp_utils::notifications::{SubAgentEvent, SubAgentProgressParams};
+use acp_utils::notifications::{
+    SubAgentEvent, SubAgentProgressParams, ToolDisplayMeta, ToolResultMeta,
+};
 use agent_client_protocol as acp;
 
 use crate::tui::spinner::BRAILLE_FRAMES as FRAMES;
@@ -6,11 +8,13 @@ use crate::tui::{Component, Line, RenderContext};
 use std::collections::HashMap;
 
 const MAX_TOOL_ARG_LENGTH: usize = 200;
+const SUB_AGENT_VISIBLE_TOOL_LIMIT: usize = 3;
 
 /// Renders a single tool call status line.
 pub struct ToolCallStatusView {
     pub name: String,
     pub arguments: String,
+    pub display_value: Option<String>,
     pub status: ToolCallStatus,
     pub tick: u16,
 }
@@ -24,34 +28,27 @@ pub enum ToolCallStatus {
 
 impl Component for ToolCallStatusView {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
-        // Only color the indicator/spinner, not the tool name
-        let (indicator, indicator_color, suffix, suffix_color) = match &self.status {
+        let (indicator, indicator_color) = match &self.status {
             ToolCallStatus::Running => {
                 let frame = FRAMES[self.tick as usize % FRAMES.len()];
-                (frame.to_string(), context.theme.info, String::new(), None)
+                (frame.to_string(), context.theme.info)
             }
-            ToolCallStatus::Success => (
-                '●'.to_string(),
-                context.theme.success,
-                " ✓".to_string(),
-                Some(context.theme.success),
-            ),
-            ToolCallStatus::Error(_) => (
-                '●'.to_string(),
-                context.theme.error,
-                " X".to_string(),
-                Some(context.theme.error),
-            ),
+            ToolCallStatus::Success => ("✓".to_string(), context.theme.success),
+            ToolCallStatus::Error(_) => ("✗".to_string(), context.theme.error),
         };
 
         let mut line = Line::default();
         line.push_styled(indicator, indicator_color);
         line.push_text(" ");
         line.push_text(&self.name);
-        if let Some(color) = suffix_color {
-            line.push_styled(suffix, color);
-        }
-        line.push_styled(Self::format_arguments(&self.arguments), context.theme.muted);
+
+        let display_text = self
+            .display_value
+            .as_ref()
+            .filter(|v| !v.is_empty() && !matches!(self.status, ToolCallStatus::Running))
+            .map(|v| format!(" ({v})"))
+            .unwrap_or_else(|| Self::format_arguments(&self.arguments));
+        line.push_styled(display_text, context.theme.muted);
 
         if let ToolCallStatus::Error(msg) = &self.status {
             line.push_text(" ");
@@ -94,10 +91,17 @@ pub struct ToolCallStatuses {
     tick: u16,
 }
 
+pub struct ToolProgress {
+    pub running_any: bool,
+    pub completed_top_level: usize,
+    pub total_top_level: usize,
+}
+
 #[derive(Clone)]
 struct TrackedToolCall {
     name: String,
     arguments: String,
+    display_meta: Option<ToolDisplayMeta>,
     status: ToolCallStatus,
 }
 
@@ -116,8 +120,27 @@ impl ToolCallStatuses {
         self.tick = tick;
     }
 
-    /// Returns true if any tool calls (including sub-agent tools) are still running.
-    pub fn has_running(&self) -> bool {
+    pub fn progress(&self) -> ToolProgress {
+        let running_any = self.any_running_including_subagents();
+        let (completed_top_level, total_top_level) = self.top_level_counts();
+        ToolProgress {
+            running_any,
+            completed_top_level,
+            total_top_level,
+        }
+    }
+
+    fn top_level_counts(&self) -> (usize, usize) {
+        let total = self.tool_order.len();
+        let completed = self
+            .tool_calls
+            .values()
+            .filter(|tc| !matches!(tc.status, ToolCallStatus::Running))
+            .count();
+        (completed, total)
+    }
+
+    fn any_running_including_subagents(&self) -> bool {
         self.tool_calls
             .values()
             .any(|tc| matches!(tc.status, ToolCallStatus::Running))
@@ -153,6 +176,7 @@ impl ToolCallStatuses {
             TrackedToolCall {
                 name: tool_call.title.clone(),
                 arguments,
+                display_meta: None,
                 status: ToolCallStatus::Running,
             },
         );
@@ -168,6 +192,12 @@ impl ToolCallStatuses {
             }
             if let Some(raw_input) = &update.fields.raw_input {
                 tc.arguments = raw_input.to_string();
+            }
+            if let Some(meta) = &update.meta {
+                if let Some(tc_meta) = ToolResultMeta::from_map(meta) {
+                    tc.name = tc_meta.display.title.clone();
+                    tc.display_meta = Some(tc_meta.display);
+                }
             }
             if let Some(status) = &update.fields.status {
                 match status {
@@ -227,6 +257,7 @@ impl ToolCallStatuses {
                     TrackedToolCall {
                         name: request.name.clone(),
                         arguments: request.arguments.clone(),
+                        display_meta: None,
                         status: ToolCallStatus::Running,
                     },
                 );
@@ -234,6 +265,10 @@ impl ToolCallStatuses {
             SubAgentEvent::ToolResult { result } => {
                 if let Some(tc) = agent.tool_calls.get_mut(&result.id) {
                     tc.status = ToolCallStatus::Success;
+                    if let Some(display_meta) = &result.display_meta {
+                        tc.name = display_meta.title.clone();
+                        tc.display_meta = Some(display_meta.clone());
+                    }
                 }
             }
             SubAgentEvent::ToolError { error } => {
@@ -264,16 +299,39 @@ impl ToolCallStatuses {
             for agent in agents {
                 lines.push(Line::default());
                 lines.push(self.render_agent_header(agent, context));
-                // Only show the most recent tool call to keep line count stable.
-                if let Some(tc) = agent
+
+                let hidden_count = agent
                     .tool_order
-                    .last()
-                    .and_then(|tool_id| agent.tool_calls.get(tool_id))
-                {
+                    .len()
+                    .saturating_sub(SUB_AGENT_VISIBLE_TOOL_LIMIT);
+
+                if hidden_count > 0 {
+                    let mut summary = Line::default();
+                    summary.push_styled(
+                        format!("  … {hidden_count} earlier tool calls"),
+                        context.theme.muted,
+                    );
+                    lines.push(summary);
+                }
+
+                let mut visible = agent
+                    .tool_order
+                    .iter()
+                    .skip(hidden_count)
+                    .filter_map(|tool_id| agent.tool_calls.get(tool_id))
+                    .peekable();
+
+                while let Some(tc) = visible.next() {
+                    let connector = if visible.peek().is_some() {
+                        "  ├─ "
+                    } else {
+                        "  └─ "
+                    };
+
                     let mut view = Self::tool_call_view(tc, self.tick);
                     for tool_line in view.render(context) {
                         let mut indented = Line::default();
-                        indented.push_text("    ");
+                        indented.push_styled(connector, context.theme.muted);
                         for span in tool_line.spans() {
                             indented.push_with_style(span.text(), span.style());
                         }
@@ -328,7 +386,7 @@ impl ToolCallStatuses {
         let mut line = Line::default();
         line.push_text("  ");
         if agent.done {
-            line.push_styled('●'.to_string(), context.theme.success);
+            line.push_styled("✓".to_string(), context.theme.success);
         } else {
             let frame = FRAMES[self.tick as usize % FRAMES.len()];
             line.push_styled(frame.to_string(), context.theme.info);
@@ -342,6 +400,7 @@ impl ToolCallStatuses {
         ToolCallStatusView {
             name: tc.name.clone(),
             arguments: tc.arguments.clone(),
+            display_value: tc.display_meta.as_ref().map(|dm| dm.value.clone()),
             status: tc.status.clone(),
             tick,
         }
@@ -442,7 +501,7 @@ mod tests {
         ));
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].plain_text().contains("X"));
+        assert!(lines[0].plain_text().contains("✗"));
     }
 
     #[test]
@@ -501,7 +560,7 @@ mod tests {
         assert!(drained[0].plain_text().contains("Write"));
         assert!(drained[0].plain_text().contains("✓"));
         assert!(drained[1].plain_text().contains("Grep"));
-        assert!(drained[1].plain_text().contains("X"));
+        assert!(drained[1].plain_text().contains("✗"));
 
         let remaining = statuses.render(&ctx());
         assert_eq!(remaining.len(), 1);
@@ -550,6 +609,7 @@ mod tests {
         let mut view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
+            display_value: None,
             status: ToolCallStatus::Running,
             tick: 0,
         };
@@ -566,12 +626,14 @@ mod tests {
         let mut view_a = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "".to_string(),
+            display_value: None,
             status: ToolCallStatus::Running,
             tick: 0,
         };
         let mut view_b = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "".to_string(),
+            display_value: None,
             status: ToolCallStatus::Running,
             tick: 1,
         };
@@ -585,6 +647,7 @@ mod tests {
         let mut view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
+            display_value: None,
             status: ToolCallStatus::Success,
             tick: 0,
         };
@@ -598,12 +661,13 @@ mod tests {
         let mut view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
+            display_value: None,
             status: ToolCallStatus::Error("boom".to_string()),
             tick: 0,
         };
         let lines = view.render(&ctx());
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].plain_text().contains("X"));
+        assert!(lines[0].plain_text().contains("✗"));
         assert!(lines[0].plain_text().contains("boom"));
     }
 
@@ -683,7 +747,7 @@ mod tests {
         assert!(lines[0].plain_text().contains("spawn_subagent"));
         assert!(lines[2].plain_text().contains("explorer"));
         assert!(lines[2].plain_text().starts_with("  ")); // 2-space indent
-        assert!(lines[3].plain_text().starts_with("    ")); // 4-space indent
+        assert!(lines[3].plain_text().starts_with("  └─ ")); // tree connector
         assert!(lines[3].plain_text().contains("grep"));
     }
 
@@ -710,6 +774,31 @@ mod tests {
     }
 
     #[test]
+    fn sub_agent_tool_result_uses_display_meta() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"coding__read_file","arguments":"{\"filePath\":\"Cargo.toml\"}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolResult":{"result":{"id":"c1","name":"coding__read_file","display_meta":{"title":"Read file","value":"Cargo.toml, 156 lines"}},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        assert_eq!(lines.len(), 4);
+        let tool_line = lines[3].plain_text();
+        assert!(tool_line.contains("✓"));
+        assert!(tool_line.contains("Read file"));
+        assert!(tool_line.contains("(Cargo.toml, 156 lines)"));
+        assert!(!tool_line.contains("filePath"));
+    }
+
+    #[test]
     fn sub_agent_tool_error_shows_x() {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
@@ -728,7 +817,7 @@ mod tests {
         let lines = statuses.render_tool("parent-1", &ctx());
         // parent + blank + agent header + last tool (errored)
         assert_eq!(lines.len(), 4);
-        assert!(lines[3].plain_text().contains("X"));
+        assert!(lines[3].plain_text().contains("✗"));
     }
 
     #[test]
@@ -787,11 +876,11 @@ mod tests {
     }
 
     #[test]
-    fn sub_agent_renders_only_latest_tool() {
+    fn sub_agent_renders_latest_three_tools_with_overflow() {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
 
-        // First tool call completes
+        // Tool 1
         statuses.on_sub_agent_progress(&make_sub_agent_notification(
             "parent-1",
             "explorer",
@@ -802,22 +891,39 @@ mod tests {
             "explorer",
             r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
         ));
-        // Second tool call starts
+        // Tool 2
         statuses.on_sub_agent_progress(&make_sub_agent_notification(
             "parent-1",
             "explorer",
             r#"{"ToolCall":{"request":{"id":"c2","name":"read_file","arguments":"{}"},"model_name":"m"}}"#,
         ));
+        // Tool 3
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c3","name":"list_files","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        // Tool 4
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c4","name":"write_file","arguments":"{}"},"model_name":"m"}}"#,
+        ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + blank + agent header + only the latest tool (read_file), not grep
-        assert_eq!(lines.len(), 4);
-        assert!(lines[3].plain_text().contains("read_file"));
-        assert!(!lines[3].plain_text().contains("grep"));
+        // parent + blank + agent header + overflow summary + latest 3 tools
+        assert_eq!(lines.len(), 7);
+        assert!(lines[3].plain_text().contains("1 earlier tool calls"));
+        assert!(lines[4].plain_text().contains("read_file"));
+        assert!(lines[4].plain_text().contains("├─"));
+        assert!(lines[5].plain_text().contains("list_files"));
+        assert!(lines[5].plain_text().contains("├─"));
+        assert!(lines[6].plain_text().contains("write_file"));
+        assert!(lines[6].plain_text().contains("└─"));
     }
 
     #[test]
-    fn has_running_detects_sub_agent_running_tools() {
+    fn progress_reports_sub_agent_running_tools() {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
         statuses.on_tool_call_update(&make_tool_call_update(
@@ -831,7 +937,7 @@ mod tests {
             r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
         ));
 
-        assert!(statuses.has_running());
+        assert!(statuses.progress().running_any);
     }
 
     #[test]
@@ -845,7 +951,7 @@ mod tests {
         ));
 
         statuses.remove_tool("parent-1");
-        assert!(!statuses.has_running());
+        assert!(!statuses.progress().running_any);
         assert!(statuses.render_tool("parent-1", &ctx()).is_empty());
     }
 
@@ -860,7 +966,7 @@ mod tests {
         ));
 
         statuses.clear();
-        assert!(!statuses.has_running());
+        assert!(!statuses.progress().running_any);
     }
 
     #[test]
@@ -884,8 +990,8 @@ mod tests {
         let header = lines[2].plain_text();
         // Agent is still running (no Done event), so header should show spinner
         assert!(
-            !header.contains('●'),
-            "Expected spinner, not ● in header: {header}"
+            !header.contains('✓'),
+            "Expected spinner, not ✓ in header: {header}"
         );
     }
 
@@ -907,6 +1013,180 @@ mod tests {
 
         let lines = statuses.render_tool("parent-1", &ctx());
         let header = lines[2].plain_text();
-        assert!(header.contains('●'), "Expected ● in header: {header}");
+        assert!(header.contains('✓'), "Expected ✓ in header: {header}");
+    }
+
+    #[test]
+    fn test_display_value_shown_on_completion() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("tool-1", "coding__read_file", None));
+
+        // Complete with display title/value in meta
+        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"))
+            .into_map();
+        let update = acp::ToolCallUpdate::new(
+            "tool-1".to_string(),
+            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
+        )
+        .meta(meta);
+        statuses.on_tool_call_update(&update);
+
+        let lines = statuses.render(&ctx());
+        assert_eq!(lines.len(), 1);
+        let text = lines[0].plain_text();
+        assert!(
+            text.contains("Read file"),
+            "Expected display title in output: {text}"
+        );
+        assert!(
+            text.contains("(Cargo.toml, 156 lines)"),
+            "Expected display value in output: {text}"
+        );
+    }
+
+    #[test]
+    fn test_display_value_not_shown_while_running() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call(
+            "tool-1",
+            "Read file",
+            Some(r#"{"filePath":"Cargo.toml"}"#),
+        ));
+
+        // Send an update with display_value but keep running
+        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"))
+            .into_map();
+        let update = acp::ToolCallUpdate::new(
+            "tool-1".to_string(),
+            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::InProgress),
+        )
+        .meta(meta);
+        statuses.on_tool_call_update(&update);
+
+        let lines = statuses.render(&ctx());
+        assert_eq!(lines.len(), 1);
+        let text = lines[0].plain_text();
+        // While running, should show raw args, not display_value
+        assert!(
+            !text.contains("(Cargo.toml, 156 lines)"),
+            "display_value should not appear while running: {text}"
+        );
+    }
+
+    #[test]
+    fn test_title_update_used_without_display_meta() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call(
+            "tool-1",
+            "coding__read_file",
+            Some(r#"{"filePath":"Cargo.toml"}"#),
+        ));
+        let update = acp::ToolCallUpdate::new(
+            "tool-1".to_string(),
+            acp::ToolCallUpdateFields::new()
+                .title("Read file")
+                .status(acp::ToolCallStatus::InProgress),
+        );
+        statuses.on_tool_call_update(&update);
+
+        let lines = statuses.render(&ctx());
+        assert_eq!(lines.len(), 1);
+        let text = lines[0].plain_text();
+        assert!(text.contains("Read file"), "Expected updated title: {text}");
+    }
+
+    #[test]
+    fn test_display_meta_title_overrides_update_title() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call(
+            "tool-1",
+            "coding__read_file",
+            Some(r#"{"filePath":"Cargo.toml"}"#),
+        ));
+
+        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"))
+            .into_map();
+        let update = acp::ToolCallUpdate::new(
+            "tool-1".to_string(),
+            acp::ToolCallUpdateFields::new()
+                .title("Fallback title")
+                .status(acp::ToolCallStatus::Completed),
+        )
+        .meta(meta);
+        statuses.on_tool_call_update(&update);
+
+        let lines = statuses.render(&ctx());
+        assert_eq!(lines.len(), 1);
+        let text = lines[0].plain_text();
+        assert!(
+            text.contains("Read file"),
+            "Expected display_meta title: {text}"
+        );
+        assert!(
+            !text.contains("Fallback title"),
+            "Meta should win over title: {text}"
+        );
+    }
+
+    #[test]
+    fn test_no_display_value_falls_back_to_args() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call(
+            "tool-1",
+            "external_tool",
+            Some(r#"{"key":"value"}"#),
+        ));
+
+        // Complete without display_value
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-1",
+            acp::ToolCallStatus::Completed,
+        ));
+
+        let lines = statuses.render(&ctx());
+        assert_eq!(lines.len(), 1);
+        let text = lines[0].plain_text();
+        // Should show raw args since no display_value
+        assert!(text.contains("key"), "Expected raw args in output: {text}");
+    }
+
+    #[test]
+    fn progress_empty() {
+        let statuses = ToolCallStatuses::new();
+        let progress = statuses.progress();
+        assert_eq!(progress.completed_top_level, 0);
+        assert_eq!(progress.total_top_level, 0);
+        assert!(!progress.running_any);
+    }
+
+    #[test]
+    fn progress_with_running_tools() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+        statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
+        let progress = statuses.progress();
+        assert_eq!(progress.completed_top_level, 0);
+        assert_eq!(progress.total_top_level, 2);
+        assert!(progress.running_any);
+    }
+
+    #[test]
+    fn progress_with_mixed_status() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+        statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
+        statuses.on_tool_call(&make_tool_call("tool-3", "Grep", None));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-1",
+            acp::ToolCallStatus::Completed,
+        ));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-3",
+            acp::ToolCallStatus::Failed,
+        ));
+        let progress = statuses.progress();
+        assert_eq!(progress.completed_top_level, 2);
+        assert_eq!(progress.total_top_level, 3);
+        assert!(progress.running_any);
     }
 }

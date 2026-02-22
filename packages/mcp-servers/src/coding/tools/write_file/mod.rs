@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::coding::error::FileError;
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -24,8 +24,9 @@ pub struct WriteFileResponse {
     /// File path that was written
     pub file_path: String,
     /// Display metadata for human-friendly rendering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<serde_json::Value>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileResponse, FileError> {
@@ -52,7 +53,7 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
     // Count bytes for response
     let bytes_written = args.content.len();
 
-    let display_meta = ToolDisplayMeta::write_file(args.file_path.clone(), Some(bytes_written));
+    let display_meta = ToolDisplayMeta::new("Write file", basename(&args.file_path));
 
     Ok(WriteFileResponse {
         message: format!(
@@ -61,6 +62,6 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
         ),
         bytes_written,
         file_path: args.file_path,
-        _meta: display_meta.into_meta(),
+        _meta: Some(display_meta.into()),
     })
 }

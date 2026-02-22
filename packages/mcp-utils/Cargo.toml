@@ -14,7 +14,6 @@ client = [
     "dep:reqwest",
     "dep:async-trait",
     "dep:thiserror",
-    "dep:serde_json",
     "rmcp/transport-streamable-http-client-reqwest",
     "rmcp/transport-child-process",
 ]
@@ -30,7 +29,7 @@ serde_yaml = "0.9"
 
 # client-only deps
 llm = { path = "../llm", optional = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true }
 oauth2 = { version = "5.0", optional = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }

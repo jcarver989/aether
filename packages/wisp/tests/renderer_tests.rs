@@ -223,7 +223,7 @@ async fn test_agent_thought_chunks() {
     ])
     .await;
 
-    let expected = expected_with_prompt(&["Thought: Plan this"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&["│ Plan this"], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -267,12 +267,7 @@ async fn test_thought_and_text_chunks_stream_before_prompt_done() {
         ))
         .unwrap();
 
-    let expected = expected_with_prompt(
-        &["Thought: Thinking", "", "Done"],
-        TEST_WIDTH,
-        "",
-        TEST_AGENT,
-    );
+    let expected = expected_with_prompt(&["│ Thinking", "", "Done"], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -299,12 +294,7 @@ async fn test_text_and_thought_chunks_stream_in_arrival_order() {
         ))
         .unwrap();
 
-    let expected = expected_with_prompt(
-        &["A", "", "Thought: B", "", "C"],
-        TEST_WIDTH,
-        "",
-        TEST_AGENT,
-    );
+    let expected = expected_with_prompt(&["A", "", "│ B", "", "C"], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -319,7 +309,7 @@ async fn test_thought_prefix_resets_after_non_thought_boundary() {
     .await;
 
     let expected = expected_with_prompt(
-        &["Thought: Plan", "", "Answer", "", "Thought: Refine"],
+        &["│ Plan", "", "Answer", "", "│ Refine"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -331,12 +321,7 @@ async fn test_thought_prefix_resets_after_non_thought_boundary() {
 async fn test_multiline_thought_prefixes_only_first_line() {
     let renderer = render(vec![thought_chunk("line one\nline two"), prompt_done()]).await;
 
-    let expected = expected_with_prompt(
-        &["Thought: line one", "line two"],
-        TEST_WIDTH,
-        "",
-        TEST_AGENT,
-    );
+    let expected = expected_with_prompt(&["│ line one", "│ line two"], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -351,11 +336,12 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
 
     let expected = expected_with_prompt(
         &[
-            "Thought: Thinking",
+            "│ Thinking",
             "",
             r#"⠋ search {"q":"rust"}"#,
             "",
             "Done",
+            "⠋ Working... (0/1 tools complete)",
         ],
         TEST_WIDTH,
         "",
@@ -369,7 +355,10 @@ async fn test_agent_message_tool_call() {
     let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]).await;
 
     let expected = expected_with_prompt(
-        &[r#"⠋ test_tool {"arg1":"value1"}"#],
+        &[
+            r#"⠋ test_tool {"arg1":"value1"}"#,
+            "⠋ Working... (0/1 tools complete)",
+        ],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -387,7 +376,7 @@ async fn test_agent_message_tool_result() {
     .await;
 
     let expected = expected_with_prompt(
-        &[r#"● test_tool ✓ {"arg1":"value1"}"#],
+        &[r#"✓ test_tool {"arg1":"value1"}"#],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -411,7 +400,7 @@ async fn test_multiple_messages_sequence() {
     let expected = expected_with_prompt(
         &[
             "Processing your request",
-            r#"● search ✓ {"query":"test"}"#,
+            r#"✓ search {"query":"test"}"#,
             "",
             "Found results",
         ],
@@ -432,7 +421,7 @@ async fn test_streaming_tool_call_arguments() {
     .await;
 
     let expected = expected_with_prompt(
-        &[r#"● Read ✓ {"file":"test.rs"}"#],
+        &[r#"✓ Read {"file":"test.rs"}"#],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -449,7 +438,10 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
     .await;
 
     let expected = expected_with_prompt(
-        &[r#"⠋ Read {"file":"test.rs"}"#],
+        &[
+            r#"⠋ Read {"file":"test.rs"}"#,
+            "⠋ Working... (0/1 tools complete)",
+        ],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -467,7 +459,10 @@ async fn test_tool_progress_renders_running_tool() {
     .await;
 
     let expected = expected_with_prompt(
-        &[r#"⠋ Read {"file":"test.rs"}"#],
+        &[
+            r#"⠋ Read {"file":"test.rs"}"#,
+            "⠋ Working... (0/1 tools complete)",
+        ],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -493,9 +488,9 @@ async fn test_multiple_parallel_tool_calls() {
 
     let expected = expected_with_prompt(
         &[
-            r#"● Read ✓ {"file":"test.rs"}"#,
-            r#"● Grep ✓ {"pattern":"foo"}"#,
-            r#"● Glob ✓ {"path":"src/"}"#,
+            r#"✓ Read {"file":"test.rs"}"#,
+            r#"✓ Grep {"pattern":"foo"}"#,
+            r#"✓ Glob {"path":"src/"}"#,
         ],
         TEST_WIDTH,
         "",
@@ -517,10 +512,11 @@ async fn test_text_complete_preserves_running_tool_calls() {
 
     let expected = expected_with_prompt(
         &[
-            r#"● Read ✓ {"file":"a.rs"}"#,
+            r#"✓ Read {"file":"a.rs"}"#,
             "",
             "Done reading",
             r#"⠋ Write {"file":"b.rs"}"#,
+            "⠋ Working... (0/1 tools complete)",
         ],
         TEST_WIDTH,
         "",
@@ -543,10 +539,10 @@ async fn test_late_result_after_prompt_done() {
 
     let expected = expected_with_prompt(
         &[
-            r#"● Read ✓ {"file":"a.rs"}"#,
+            r#"✓ Read {"file":"a.rs"}"#,
             "",
             "Done reading",
-            r#"● Write ✓ {"file":"b.rs"}"#,
+            r#"✓ Write {"file":"b.rs"}"#,
         ],
         TEST_WIDTH,
         "",
@@ -640,6 +636,21 @@ fn tool_complete(id: &str) -> TestEvent {
     ))
 }
 
+fn tool_complete_with_display_meta(id: &str, display_meta: serde_json::Value) -> TestEvent {
+    let meta_map =
+        serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(serde_json::json!({
+            "display": display_meta
+        }))
+        .unwrap();
+    TestEvent::Update(acp::SessionUpdate::ToolCallUpdate(
+        acp::ToolCallUpdate::new(
+            id.to_string(),
+            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
+        )
+        .meta(meta_map),
+    ))
+}
+
 fn tool_update_with_args(id: &str, args: &str) -> TestEvent {
     let value: serde_json::Value = serde_json::from_str(args).unwrap();
     TestEvent::Update(acp::SessionUpdate::ToolCallUpdate(
@@ -703,7 +714,10 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
         .unwrap();
 
     let expected = expected_with_prompt(
-        &[r#"⠋ Read {"file":"test.rs"}"#],
+        &[
+            r#"⠋ Read {"file":"test.rs"}"#,
+            "⠋ Working... (0/1 tools complete)",
+        ],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -728,7 +742,15 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
     // Terminal resize triggers full re-render at new width
     renderer.on_resize(100, 30).unwrap();
 
-    let expected = expected_with_prompt(&[r#"⠋ Read {"file":"test.rs"}"#], 100, "", TEST_AGENT);
+    let expected = expected_with_prompt(
+        &[
+            r#"⠋ Read {"file":"test.rs"}"#,
+            "⠋ Working... (0/1 tools complete)",
+        ],
+        100,
+        "",
+        TEST_AGENT,
+    );
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -2222,4 +2244,149 @@ async fn test_command_picker_ctrl_c_exits() {
         .unwrap();
 
     assert!(matches!(action, LoopAction::Exit));
+}
+
+// ── Display meta tests ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_tool_complete_with_display_meta_shows_display_value() {
+    let renderer = render(vec![
+        tool_call_with_id(
+            "read_file",
+            "call_1",
+            r#"{"filePath":"/Users/josh/code/aether/Cargo.toml"}"#,
+        ),
+        tool_complete_with_display_meta(
+            "call_1",
+            serde_json::json!({
+                "title": "Read file",
+                "value": "Cargo.toml, 156 lines"
+            }),
+        ),
+    ])
+    .await;
+
+    let expected = expected_with_prompt(
+        &["✓ Read file (Cargo.toml, 156 lines)"],
+        TEST_WIDTH,
+        "",
+        TEST_AGENT,
+    );
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_tool_complete_without_display_meta_shows_raw_args() {
+    let args = r#"{"filePath":"/Users/josh/code/aether/Cargo.toml"}"#;
+    let renderer = render(vec![
+        tool_call_with_id("read_file", "call_1", args),
+        tool_complete("call_1"),
+    ])
+    .await;
+
+    let expected = expected_with_prompt(
+        &[r#"✓ read_file {"filePath":"/Users/josh/code/aether/Cargo.toml"}"#],
+        TEST_WIDTH,
+        "",
+        TEST_AGENT,
+    );
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_running_tool_shows_raw_args_not_display_value() {
+    let renderer = render(vec![tool_call_with_id(
+        "read_file",
+        "call_1",
+        r#"{"filePath":"Cargo.toml"}"#,
+    )])
+    .await;
+
+    let lines = renderer.writer().get_lines();
+    let tool_line = lines.iter().find(|l| l.contains("read_file")).unwrap();
+    assert!(
+        !tool_line.contains('('),
+        "Running tool should show raw args, not display value in parens: {tool_line}"
+    );
+    assert!(
+        tool_line.contains("filePath"),
+        "Running tool should show raw args: {tool_line}"
+    );
+}
+
+#[tokio::test]
+async fn test_display_meta_title_overrides_tool_name() {
+    let renderer = render(vec![
+        tool_call_with_id("coding__read_file", "call_1", r#"{"filePath":"main.rs"}"#),
+        tool_complete_with_display_meta(
+            "call_1",
+            serde_json::json!({
+                "title": "Read file",
+                "value": "main.rs, 42 lines"
+            }),
+        ),
+    ])
+    .await;
+
+    let lines = renderer.writer().get_lines();
+    let tool_line = lines.iter().find(|l| l.contains("✓")).unwrap();
+    assert!(
+        tool_line.contains("Read file"),
+        "Display title should override raw tool name: {tool_line}"
+    );
+    assert!(
+        tool_line.contains("(main.rs, 42 lines)"),
+        "Display value should appear in parens: {tool_line}"
+    );
+}
+
+#[tokio::test]
+async fn test_multiple_tools_with_mixed_display_meta() {
+    let renderer = render(vec![
+        tool_call_with_id("read_file", "call_1", r#"{"filePath":"Cargo.toml"}"#),
+        tool_call_with_id("external_tool", "call_2", r#"{"key":"value"}"#),
+        tool_complete_with_display_meta(
+            "call_1",
+            serde_json::json!({
+                "title": "Read file",
+                "value": "Cargo.toml, 156 lines"
+            }),
+        ),
+        tool_complete("call_2"),
+    ])
+    .await;
+
+    let expected = expected_with_prompt(
+        &[
+            "✓ Read file (Cargo.toml, 156 lines)",
+            r#"✓ external_tool {"key":"value"}"#,
+        ],
+        TEST_WIDTH,
+        "",
+        TEST_AGENT,
+    );
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+#[tokio::test]
+async fn test_command_display_meta_shows_exit_code() {
+    let renderer = render(vec![
+        tool_call_with_id("bash", "call_1", r#"{"command":"cargo test"}"#),
+        tool_complete_with_display_meta(
+            "call_1",
+            serde_json::json!({
+                "title": "Run command",
+                "value": "cargo test (exit 0)"
+            }),
+        ),
+    ])
+    .await;
+
+    let expected = expected_with_prompt(
+        &["✓ Run command (cargo test (exit 0))"],
+        TEST_WIDTH,
+        "",
+        TEST_AGENT,
+    );
+    assert_buffer_eq(renderer.writer(), &expected);
 }

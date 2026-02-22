@@ -12,7 +12,7 @@ use reqwest::Url;
 use std::time::Duration;
 
 use crate::coding::error::WebFetchError;
-use crate::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::{ToolDisplayMeta, truncate};
 
 /// HTTP client for fetching web content and converting to markdown.
 #[derive(Debug, Clone)]
@@ -61,8 +61,10 @@ impl<C: HttpClient> WebFetcher<C> {
             (markdown, false)
         };
 
-        let display_meta =
-            ToolDisplayMeta::web_fetch(url.clone(), title.clone(), Some(content.len() as u64));
+        let display_meta = ToolDisplayMeta::new(
+            "Fetch URL",
+            title.clone().unwrap_or_else(|| truncate(&url, 60)),
+        );
 
         Ok(WebFetchOutput {
             content,
@@ -70,7 +72,7 @@ impl<C: HttpClient> WebFetcher<C> {
             status_code: response.status_code,
             truncated,
             title,
-            _meta: display_meta.into_meta(),
+            _meta: Some(display_meta.into()),
         })
     }
 }
