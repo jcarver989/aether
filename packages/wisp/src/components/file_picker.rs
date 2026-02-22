@@ -1,6 +1,8 @@
-use crate::tui::{Combobox, Searchable};
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::tui::{
+    Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
+    classify_key,
+};
+use crossterm::event::KeyEvent;
 use ignore::WalkBuilder;
 use std::env::current_dir;
 use std::path::{Path, PathBuf};
@@ -8,7 +10,7 @@ use std::path::{Path, PathBuf};
 const MAX_INDEXED_FILES: usize = 50_000;
 
 pub struct FilePicker {
-    pub combobox: Combobox<FileMatch>,
+    combobox: Combobox<FileMatch>,
 }
 
 pub enum FilePickerAction {
@@ -77,6 +79,14 @@ impl FilePicker {
         }
     }
 
+    pub fn query(&self) -> &str {
+        self.combobox.query()
+    }
+
+    pub fn selected(&self) -> Option<&FileMatch> {
+        self.combobox.selected()
+    }
+
     #[cfg(test)]
     fn new_with_entries(entries: Vec<FileMatch>) -> Self {
         Self {
@@ -102,26 +112,23 @@ impl Component for FilePicker {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
 
-        if self.combobox.matches.is_empty() {
+        if self.combobox.is_empty() {
             lines.push(Line::new("  (no matches found)".to_string()));
             return lines;
         }
 
-        for (i, file) in self.combobox.visible_matches().iter().enumerate() {
-            let prefix = if Some(i) == self.combobox.visible_selected_index() {
-                "▶ "
-            } else {
-                "  "
-            };
-
-            let line_text = format!("{}{}", prefix, file.display_name);
-            let line = if Some(i) == self.combobox.visible_selected_index() {
-                Line::styled(line_text, context.theme.primary)
-            } else {
-                Line::new(line_text)
-            };
-            lines.push(line);
-        }
+        let item_lines = self
+            .combobox
+            .render_items(context, |file, is_selected, ctx| {
+                let prefix = if is_selected { "▶ " } else { "  " };
+                let line_text = format!("{}{}", prefix, file.display_name);
+                if is_selected {
+                    Line::styled(line_text, ctx.theme.primary)
+                } else {
+                    Line::new(line_text)
+                }
+            });
+        lines.extend(item_lines);
 
         lines
     }
@@ -131,41 +138,34 @@ impl HandlesInput for FilePicker {
     type Action = FilePickerAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
-        match key_event.code {
-            KeyCode::Esc => InputOutcome::action_and_render(FilePickerAction::Close),
-            KeyCode::Up => {
-                self.combobox.move_selection_up();
+        match classify_key(key_event, self.combobox.query().is_empty()) {
+            PickerKey::Escape => InputOutcome::action_and_render(FilePickerAction::Close),
+            PickerKey::MoveUp => {
+                self.combobox.move_up();
                 InputOutcome::consumed_and_render()
             }
-            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.combobox.move_selection_up();
+            PickerKey::MoveDown => {
+                self.combobox.move_down();
                 InputOutcome::consumed_and_render()
             }
-            KeyCode::Down => {
-                self.combobox.move_selection_down();
-                InputOutcome::consumed_and_render()
+            PickerKey::Confirm => {
+                InputOutcome::action_and_render(FilePickerAction::ConfirmSelection)
             }
-            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.combobox.move_selection_down();
-                InputOutcome::consumed_and_render()
-            }
-            KeyCode::Enter => InputOutcome::action_and_render(FilePickerAction::ConfirmSelection),
-            KeyCode::Char(c) => {
+            PickerKey::Char(c) => {
                 if c.is_whitespace() {
                     return InputOutcome::action_and_render(FilePickerAction::CloseWithChar(c));
                 }
                 self.combobox.push_query_char(c);
                 InputOutcome::action_and_render(FilePickerAction::CharTyped(c))
             }
-            KeyCode::Backspace => {
-                if self.combobox.query.is_empty() {
-                    InputOutcome::action_and_render(FilePickerAction::CloseAndPopChar)
-                } else {
-                    self.combobox.pop_query_char();
-                    InputOutcome::action_and_render(FilePickerAction::PopChar)
-                }
+            PickerKey::Backspace => {
+                self.combobox.pop_query_char();
+                InputOutcome::action_and_render(FilePickerAction::PopChar)
             }
-            _ => InputOutcome::ignored(),
+            PickerKey::BackspaceOnEmpty => {
+                InputOutcome::action_and_render(FilePickerAction::CloseAndPopChar)
+            }
+            PickerKey::ControlChar | PickerKey::Other => InputOutcome::ignored(),
         }
     }
 }
@@ -173,6 +173,7 @@ impl HandlesInput for FilePicker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::test_picker::{rendered_lines, selected_text, type_query};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn file_match(path: &str) -> FileMatch {
@@ -201,10 +202,11 @@ mod tests {
             file_match("README.md"),
         ]);
 
-        picker.combobox.update_query("rend".to_string());
+        type_query(&mut picker, "rend");
 
-        assert_eq!(picker.combobox.matches.len(), 1);
-        assert_eq!(picker.combobox.matches[0].display_name, "src/renderer.rs");
+        let lines = rendered_lines(&mut picker);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("src/renderer.rs"));
     }
 
     #[test]
@@ -215,11 +217,15 @@ mod tests {
             file_match("c.rs"),
         ]);
 
-        picker.combobox.move_selection_up();
-        assert_eq!(picker.combobox.selected_index, 2);
+        let first = selected_text(&mut picker).unwrap();
 
-        picker.combobox.move_selection_down();
-        assert_eq!(picker.combobox.selected_index, 0);
+        picker.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        let last = selected_text(&mut picker).unwrap();
+        assert_ne!(first, last);
+
+        picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        let back_to_first = selected_text(&mut picker).unwrap();
+        assert_eq!(first, back_to_first);
     }
 
     #[test]
@@ -234,7 +240,7 @@ mod tests {
             outcome.action,
             Some(FilePickerAction::CharTyped('r'))
         ));
-        assert_eq!(picker.combobox.query, "r");
+        assert_eq!(picker.query(), "r");
     }
 
     #[test]
@@ -282,14 +288,13 @@ mod tests {
     #[test]
     fn backspace_with_query_pops_char() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
-        picker.combobox.push_query_char('m');
-        picker.combobox.push_query_char('a');
+        type_query(&mut picker, "ma");
 
         let outcome = picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
         assert!(matches!(outcome.action, Some(FilePickerAction::PopChar)));
-        assert_eq!(picker.combobox.query, "m");
+        assert_eq!(picker.query(), "m");
     }
 }

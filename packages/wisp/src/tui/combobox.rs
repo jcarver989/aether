@@ -1,3 +1,6 @@
+use super::component::RenderContext;
+use super::screen::Line;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Nucleo};
 use std::sync::Arc;
@@ -7,14 +10,26 @@ const MAX_MATCHES: u32 = 200;
 const MATCH_TIMEOUT_MS: u64 = 10;
 const MAX_TICKS_PER_QUERY: usize = 4;
 
+pub enum PickerKey {
+    Escape,
+    MoveUp,
+    MoveDown,
+    Confirm,
+    Char(char),
+    Backspace,
+    BackspaceOnEmpty,
+    ControlChar,
+    Other,
+}
+
 pub trait Searchable: Clone {
     fn search_text(&self) -> String;
 }
 
 pub struct Combobox<T: Searchable + Send + Sync + 'static> {
-    pub query: String,
-    pub matches: Vec<T>,
-    pub selected_index: usize,
+    query: String,
+    matches: Vec<T>,
+    selected_index: usize,
     scroll_offset: usize,
     matcher: Nucleo<T>,
 }
@@ -53,10 +68,24 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
         }
     }
 
-    pub fn update_query(&mut self, query: String) {
-        let append = query.starts_with(&self.query);
-        self.query = query;
-        self.refresh_matches(append);
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    pub fn matches(&self) -> &[T] {
+        &self.matches
+    }
+
+    pub fn selected_index(&self) -> usize {
+        self.selected_index
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.matches.is_empty()
+    }
+
+    pub fn selected(&self) -> Option<&T> {
+        self.matches.get(self.selected_index)
     }
 
     pub fn push_query_char(&mut self, c: char) {
@@ -71,34 +100,85 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
         self.refresh_matches(false);
     }
 
-    pub fn move_selection_up(&mut self) {
-        match self.selected_index {
-            _ if self.matches.is_empty() => {}
-            0 => self.selected_index = self.matches.len() - 1,
-            i => self.selected_index = i - 1,
+    pub fn set_selected_index(&mut self, index: usize) {
+        let len = self.matches.len();
+        if len == 0 {
+            return;
         }
+        self.selected_index = index.min(len - 1);
         self.ensure_visible();
     }
 
-    pub fn move_selection_down(&mut self) {
-        match self.selected_index {
-            _ if self.matches.is_empty() => {}
-            i if i >= self.matches.len() - 1 => self.selected_index = 0,
-            _ => self.selected_index += 1,
-        }
-        self.ensure_visible();
+    pub fn move_up(&mut self) {
+        self.move_up_where(|_| true);
     }
 
-    pub fn visible_matches(&self) -> &[T] {
+    pub fn move_down(&mut self) {
+        self.move_down_where(|_| true);
+    }
+
+    pub fn move_up_where(&mut self, predicate: impl Fn(&T) -> bool) {
+        let len = self.matches.len();
+        if len == 0 {
+            return;
+        }
+        let mut idx = self.selected_index;
+        for _ in 0..len {
+            idx = if idx == 0 { len - 1 } else { idx - 1 };
+            if predicate(&self.matches[idx]) {
+                self.selected_index = idx;
+                self.ensure_visible();
+                return;
+            }
+        }
+    }
+
+    pub fn move_down_where(&mut self, predicate: impl Fn(&T) -> bool) {
+        let len = self.matches.len();
+        if len == 0 {
+            return;
+        }
+        let mut idx = self.selected_index;
+        for _ in 0..len {
+            idx = (idx + 1) % len;
+            if predicate(&self.matches[idx]) {
+                self.selected_index = idx;
+                self.ensure_visible();
+                return;
+            }
+        }
+    }
+
+    pub fn select_first_where(&mut self, predicate: impl Fn(&T) -> bool) {
+        if let Some(idx) = self.matches.iter().position(&predicate) {
+            self.selected_index = idx;
+            self.ensure_visible();
+        }
+    }
+
+    pub fn render_items(
+        &self,
+        context: &RenderContext,
+        render_item: impl Fn(&T, bool, &RenderContext) -> Line,
+    ) -> Vec<Line> {
+        let mut lines = Vec::new();
+        for (i, item) in self.visible_matches().iter().enumerate() {
+            let is_selected = Some(i) == self.visible_selected_index();
+            lines.push(render_item(item, is_selected, context));
+        }
+        lines
+    }
+
+    fn visible_matches(&self) -> &[T] {
         let end = (self.scroll_offset + MAX_VISIBLE).min(self.matches.len());
         &self.matches[self.scroll_offset..end]
     }
 
-    pub fn visible_selected_index(&self) -> Option<usize> {
+    fn visible_selected_index(&self) -> Option<usize> {
         self.selected_index.checked_sub(self.scroll_offset)
     }
 
-    pub fn ensure_visible(&mut self) {
+    fn ensure_visible(&mut self) {
         if self.matches.is_empty() {
             self.scroll_offset = 0;
             return;
@@ -108,10 +188,6 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
         } else if self.selected_index >= self.scroll_offset + MAX_VISIBLE {
             self.scroll_offset = self.selected_index + 1 - MAX_VISIBLE;
         }
-    }
-
-    pub fn selected(&self) -> Option<&T> {
-        self.matches.get(self.selected_index)
     }
 
     fn refresh_matches(&mut self, append: bool) {
@@ -146,6 +222,22 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     }
 }
 
+pub fn classify_key(key: KeyEvent, query_is_empty: bool) -> PickerKey {
+    match key.code {
+        KeyCode::Esc => PickerKey::Escape,
+        KeyCode::Up => PickerKey::MoveUp,
+        KeyCode::Down => PickerKey::MoveDown,
+        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => PickerKey::MoveUp,
+        KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => PickerKey::MoveDown,
+        KeyCode::Enter => PickerKey::Confirm,
+        KeyCode::Char(c) if c.is_control() => PickerKey::ControlChar,
+        KeyCode::Char(c) => PickerKey::Char(c),
+        KeyCode::Backspace if query_is_empty => PickerKey::BackspaceOnEmpty,
+        KeyCode::Backspace => PickerKey::Backspace,
+        _ => PickerKey::Other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,12 +245,21 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     struct FakeItem {
         text: String,
+        disabled: bool,
     }
 
     impl FakeItem {
         fn new(text: &str) -> Self {
             Self {
                 text: text.to_string(),
+                disabled: false,
+            }
+        }
+
+        fn disabled(text: &str) -> Self {
+            Self {
+                text: text.to_string(),
+                disabled: true,
             }
         }
     }
@@ -183,24 +284,26 @@ mod tests {
     }
 
     #[test]
-    fn update_query_filters_matches() {
+    fn push_query_char_filters_matches() {
         let items = vec![
             FakeItem::new("apple"),
             FakeItem::new("banana"),
             FakeItem::new("avocado"),
         ];
         let mut combobox = Combobox::new(items);
-        combobox.update_query("ban".to_string());
+        for c in "ban".chars() {
+            combobox.push_query_char(c);
+        }
         assert_eq!(combobox.matches.len(), 1);
         assert_eq!(combobox.matches[0].text, "banana");
     }
 
     #[test]
-    fn update_query_clamps_selected_index() {
+    fn push_query_char_clamps_selected_index() {
         let items = vec![FakeItem::new("a"), FakeItem::new("b"), FakeItem::new("c")];
         let mut combobox = Combobox::new(items);
         combobox.selected_index = 2;
-        combobox.update_query("a".to_string());
+        combobox.push_query_char('a');
         assert_eq!(combobox.selected_index, 0);
     }
 
@@ -232,10 +335,10 @@ mod tests {
         let items = vec![FakeItem::new("a"), FakeItem::new("b"), FakeItem::new("c")];
         let mut combobox = Combobox::new(items);
 
-        combobox.move_selection_up();
+        combobox.move_up();
         assert_eq!(combobox.selected_index, 2);
 
-        combobox.move_selection_down();
+        combobox.move_down();
         assert_eq!(combobox.selected_index, 0);
     }
 
@@ -245,7 +348,7 @@ mod tests {
         let mut combobox = Combobox::new(items);
         assert_eq!(combobox.selected().unwrap().text, "x");
 
-        combobox.move_selection_down();
+        combobox.move_down();
         assert_eq!(combobox.selected().unwrap().text, "y");
     }
 
@@ -260,8 +363,8 @@ mod tests {
     #[test]
     fn empty_matches_selection_is_noop() {
         let mut combobox: Combobox<FakeItem> = Combobox::from_matches(vec![]);
-        combobox.move_selection_up();
-        combobox.move_selection_down();
+        combobox.move_up();
+        combobox.move_down();
         assert!(combobox.selected().is_none());
     }
 
@@ -295,7 +398,7 @@ mod tests {
     fn scroll_down_past_viewport_adjusts_offset() {
         let mut combobox = Combobox::from_matches(many_items(25));
         for _ in 0..12 {
-            combobox.move_selection_down();
+            combobox.move_down();
         }
         assert_eq!(combobox.selected_index, 12);
         assert_eq!(combobox.scroll_offset, 3);
@@ -308,12 +411,12 @@ mod tests {
         let mut combobox = Combobox::from_matches(many_items(25));
         // Scroll down past viewport
         for _ in 0..15 {
-            combobox.move_selection_down();
+            combobox.move_down();
         }
         assert_eq!(combobox.selected_index, 15);
         // Now scroll back up
         for _ in 0..10 {
-            combobox.move_selection_up();
+            combobox.move_up();
         }
         assert_eq!(combobox.selected_index, 5);
         assert_eq!(combobox.scroll_offset, 5);
@@ -325,12 +428,12 @@ mod tests {
         let mut combobox = Combobox::from_matches(many_items(25));
         // Move to last item
         for _ in 0..15 {
-            combobox.move_selection_down();
+            combobox.move_down();
         }
         // Now wrap around from last to first
         combobox.selected_index = 24;
         combobox.ensure_visible();
-        combobox.move_selection_down();
+        combobox.move_down();
         assert_eq!(combobox.selected_index, 0);
         assert_eq!(combobox.scroll_offset, 0);
     }
@@ -338,7 +441,7 @@ mod tests {
     #[test]
     fn wrap_up_scrolls_to_end() {
         let mut combobox = Combobox::from_matches(many_items(25));
-        combobox.move_selection_up();
+        combobox.move_up();
         assert_eq!(combobox.selected_index, 24);
         assert_eq!(combobox.scroll_offset, 15);
         assert_eq!(combobox.visible_selected_index(), Some(9));
@@ -355,6 +458,171 @@ mod tests {
         combobox.scroll_offset = 0;
         combobox.selected_index = 0;
         assert_eq!(combobox.scroll_offset, 0);
+        assert_eq!(combobox.selected_index, 0);
+    }
+
+    #[test]
+    fn set_selected_index_clamps_and_ensures_visible() {
+        let mut combobox = Combobox::from_matches(many_items(25));
+        combobox.set_selected_index(100);
+        assert_eq!(combobox.selected_index(), 24);
+
+        combobox.set_selected_index(0);
+        assert_eq!(combobox.selected_index(), 0);
+    }
+
+    #[test]
+    fn set_selected_index_noop_on_empty() {
+        let mut combobox: Combobox<FakeItem> = Combobox::from_matches(vec![]);
+        combobox.set_selected_index(5);
+        assert_eq!(combobox.selected_index(), 0);
+    }
+
+    #[test]
+    fn classify_key_escape() {
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), true),
+            PickerKey::Escape
+        ));
+    }
+
+    #[test]
+    fn classify_key_arrows_and_ctrl() {
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), true),
+            PickerKey::MoveUp
+        ));
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), true),
+            PickerKey::MoveDown
+        ));
+        assert!(matches!(
+            classify_key(
+                KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+                true
+            ),
+            PickerKey::MoveUp
+        ));
+        assert!(matches!(
+            classify_key(
+                KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+                true
+            ),
+            PickerKey::MoveDown
+        ));
+    }
+
+    #[test]
+    fn classify_key_enter() {
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), true),
+            PickerKey::Confirm
+        ));
+    }
+
+    #[test]
+    fn classify_key_char() {
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE), true),
+            PickerKey::Char('a')
+        ));
+    }
+
+    #[test]
+    fn classify_key_backspace_empty_vs_nonempty() {
+        // Empty query -> BackspaceOnEmpty
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE), true),
+            PickerKey::BackspaceOnEmpty
+        ));
+
+        // Non-empty query -> Backspace
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE), false),
+            PickerKey::Backspace
+        ));
+    }
+
+    #[test]
+    fn classify_key_other() {
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), true),
+            PickerKey::Other
+        ));
+    }
+
+    #[test]
+    fn render_items_empty_returns_empty() {
+        let combobox: Combobox<FakeItem> = Combobox::from_matches(vec![]);
+        let context = RenderContext::new((120, 40));
+        let lines = combobox.render_items(&context, |_, _, _| Line::new("x".to_string()));
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn render_items_calls_closure_for_each_visible() {
+        let combobox = Combobox::from_matches(vec![
+            FakeItem::new("a"),
+            FakeItem::new("b"),
+            FakeItem::new("c"),
+        ]);
+        let context = RenderContext::new((120, 40));
+        let lines = combobox.render_items(&context, |item, selected, _ctx| {
+            let prefix = if selected { "> " } else { "  " };
+            Line::new(format!("{prefix}{}", item.text))
+        });
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].plain_text(), "> a");
+        assert_eq!(lines[1].plain_text(), "  b");
+        assert_eq!(lines[2].plain_text(), "  c");
+    }
+
+    #[test]
+    fn move_down_where_skips_disabled() {
+        let items = vec![
+            FakeItem::new("a"),
+            FakeItem::disabled("b"),
+            FakeItem::new("c"),
+        ];
+        let mut combobox = Combobox::from_matches(items);
+        combobox.move_down_where(|item| !item.disabled);
+        assert_eq!(combobox.selected_index, 2);
+    }
+
+    #[test]
+    fn move_up_where_skips_disabled() {
+        let items = vec![
+            FakeItem::new("a"),
+            FakeItem::disabled("b"),
+            FakeItem::new("c"),
+        ];
+        let mut combobox = Combobox::from_matches(items);
+        combobox.selected_index = 2;
+        combobox.move_up_where(|item| !item.disabled);
+        assert_eq!(combobox.selected_index, 0);
+    }
+
+    #[test]
+    fn select_first_where_finds_first_enabled() {
+        let items = vec![
+            FakeItem::disabled("a"),
+            FakeItem::disabled("b"),
+            FakeItem::new("c"),
+        ];
+        let mut combobox = Combobox::from_matches(items);
+        combobox.select_first_where(|item| !item.disabled);
+        assert_eq!(combobox.selected_index, 2);
+    }
+
+    #[test]
+    fn move_down_where_noop_when_all_filtered() {
+        let items = vec![
+            FakeItem::disabled("a"),
+            FakeItem::disabled("b"),
+            FakeItem::disabled("c"),
+        ];
+        let mut combobox = Combobox::from_matches(items);
+        combobox.move_down_where(|item| !item.disabled);
         assert_eq!(combobox.selected_index, 0);
     }
 }

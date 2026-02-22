@@ -1,7 +1,9 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
-use crate::tui::{Combobox, Searchable};
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::tui::{
+    Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
+    classify_key,
+};
+use crossterm::event::KeyEvent;
 
 impl Searchable for ConfigMenuValue {
     fn search_text(&self) -> String {
@@ -12,7 +14,7 @@ impl Searchable for ConfigMenuValue {
 pub struct ConfigPicker {
     pub config_id: String,
     pub title: String,
-    pub combobox: Combobox<ConfigMenuValue>,
+    combobox: Combobox<ConfigMenuValue>,
     current_value: String,
 }
 
@@ -30,56 +32,19 @@ impl ConfigPicker {
             current_value,
             combobox: Combobox::new(entry.values.clone()),
         };
-        picker.combobox.selected_index = picker
+        let initial_index = picker
             .combobox
-            .matches
+            .matches()
             .iter()
             .position(|m| m.value == picker.current_value)
             .unwrap_or(0);
+        picker.combobox.set_selected_index(initial_index);
         picker.ensure_selectable();
         Some(picker)
     }
 
-    #[allow(dead_code)]
-    pub fn update_query(&mut self, query: String) {
-        self.combobox.update_query(query);
-        self.ensure_selectable();
-    }
-
-    pub fn push_query_char(&mut self, c: char) {
-        self.combobox.push_query_char(c);
-        self.ensure_selectable();
-    }
-
-    pub fn pop_query_char(&mut self) {
-        self.combobox.pop_query_char();
-        self.ensure_selectable();
-    }
-
-    pub fn move_selection_up(&mut self) {
-        let len = self.combobox.matches.len();
-        let mut idx = self.combobox.selected_index;
-        for _ in 0..len {
-            idx = (idx + len - 1) % len;
-            if !self.combobox.matches[idx].is_disabled {
-                self.combobox.selected_index = idx;
-                self.combobox.ensure_visible();
-                return;
-            }
-        }
-    }
-
-    pub fn move_selection_down(&mut self) {
-        let len = self.combobox.matches.len();
-        let mut idx = self.combobox.selected_index;
-        for _ in 0..len {
-            idx = (idx + 1) % len;
-            if !self.combobox.matches[idx].is_disabled {
-                self.combobox.selected_index = idx;
-                self.combobox.ensure_visible();
-                return;
-            }
-        }
+    pub fn query(&self) -> &str {
+        self.combobox.query()
     }
 
     pub fn confirm_selection(&self) -> Option<ConfigChange> {
@@ -94,67 +59,76 @@ impl ConfigPicker {
         })
     }
 
-    fn first_enabled_index(&self) -> Option<usize> {
-        self.combobox.matches.iter().position(|m| !m.is_disabled)
+    fn move_selection_up(&mut self) {
+        self.combobox.move_up_where(|m| !m.is_disabled);
+    }
+
+    fn move_selection_down(&mut self) {
+        self.combobox.move_down_where(|m| !m.is_disabled);
+    }
+
+    fn push_query_char(&mut self, c: char) {
+        self.combobox.push_query_char(c);
+        self.ensure_selectable();
+    }
+
+    fn pop_query_char(&mut self) {
+        self.combobox.pop_query_char();
+        self.ensure_selectable();
     }
 
     fn ensure_selectable(&mut self) {
-        if self.combobox.matches.is_empty() {
-            self.combobox.selected_index = 0;
+        if self.combobox.is_empty() {
             return;
         }
-        if self.combobox.selected_index >= self.combobox.matches.len()
-            || self.combobox.matches[self.combobox.selected_index].is_disabled
-        {
-            self.combobox.selected_index = self.first_enabled_index().unwrap_or(0);
+        let idx = self.combobox.selected_index();
+        if idx >= self.combobox.matches().len() || self.combobox.matches()[idx].is_disabled {
+            self.combobox.select_first_where(|m| !m.is_disabled);
         }
-        self.combobox.ensure_visible();
     }
 }
 
 impl Component for ConfigPicker {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
-        let header = format!("  {} search: {}", self.title, self.combobox.query);
+        let header = format!("  {} search: {}", self.title, self.combobox.query());
         lines.push(Line::styled(header, context.theme.muted));
 
-        if self.combobox.matches.is_empty() {
+        if self.combobox.is_empty() {
             lines.push(Line::new("  (no matches found)".to_string()));
             return lines;
         }
 
-        for (i, option) in self.combobox.visible_matches().iter().enumerate() {
-            let prefix = if Some(i) == self.combobox.visible_selected_index() {
-                "▶ "
-            } else {
-                "  "
-            };
-            let label = if option.name == option.value {
-                option.name.clone()
-            } else {
-                format!("{} ({})", option.name, option.value)
-            };
+        let item_lines = self
+            .combobox
+            .render_items(context, |option, is_selected, ctx| {
+                let prefix = if is_selected { "▶ " } else { "  " };
+                let label = if option.name == option.value {
+                    option.name.clone()
+                } else {
+                    format!("{} ({})", option.name, option.value)
+                };
 
-            let label = if option.is_disabled {
-                if let Some(reason) = option.description.as_deref() {
-                    format!("{label} - {reason}")
+                let label = if option.is_disabled {
+                    if let Some(reason) = option.description.as_deref() {
+                        format!("{label} - {reason}")
+                    } else {
+                        label
+                    }
                 } else {
                     label
-                }
-            } else {
-                label
-            };
+                };
 
-            let line_text = format!("{prefix}{label}");
-            let line = if option.is_disabled {
-                Line::styled(line_text, context.theme.muted)
-            } else if Some(i) == self.combobox.visible_selected_index() {
-                Line::styled(line_text, context.theme.primary)
-            } else {
-                Line::new(line_text)
-            };
-            lines.push(line);
-        }
+                let line_text = format!("{prefix}{label}");
+                if option.is_disabled {
+                    Line::styled(line_text, ctx.theme.muted)
+                } else if is_selected {
+                    Line::styled(line_text, ctx.theme.primary)
+                } else {
+                    Line::new(line_text)
+                }
+            });
+        lines.extend(item_lines);
 
         lines
     }
@@ -164,44 +138,31 @@ impl HandlesInput for ConfigPicker {
     type Action = ConfigPickerAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
-        match key_event.code {
-            KeyCode::Esc => InputOutcome::action_and_render(ConfigPickerAction::Close),
-            KeyCode::Up => {
+        match classify_key(key_event, self.combobox.query().is_empty()) {
+            PickerKey::Escape => InputOutcome::action_and_render(ConfigPickerAction::Close),
+            PickerKey::MoveUp => {
                 self.move_selection_up();
                 InputOutcome::consumed_and_render()
             }
-            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.move_selection_up();
-                InputOutcome::consumed_and_render()
-            }
-            KeyCode::Down => {
+            PickerKey::MoveDown => {
                 self.move_selection_down();
                 InputOutcome::consumed_and_render()
             }
-            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.move_selection_down();
-                InputOutcome::consumed_and_render()
-            }
-            KeyCode::Enter => {
+            PickerKey::Confirm => {
                 let change = self.confirm_selection();
                 InputOutcome::action_and_render(ConfigPickerAction::ApplySelection(change))
             }
-            KeyCode::Char(c) => {
-                if c.is_control() {
-                    return InputOutcome::consumed();
-                }
+            PickerKey::Char(c) => {
                 self.push_query_char(c);
                 InputOutcome::consumed_and_render()
             }
-            KeyCode::Backspace => {
-                if self.combobox.query.is_empty() {
-                    InputOutcome::consumed()
-                } else {
-                    self.pop_query_char();
-                    InputOutcome::consumed_and_render()
-                }
+            PickerKey::Backspace => {
+                self.pop_query_char();
+                InputOutcome::consumed_and_render()
             }
-            _ => InputOutcome::consumed(),
+            PickerKey::BackspaceOnEmpty | PickerKey::ControlChar | PickerKey::Other => {
+                InputOutcome::consumed()
+            }
         }
     }
 }
@@ -209,6 +170,7 @@ impl HandlesInput for ConfigPicker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::test_picker::{rendered_lines, selected_text, type_query};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn entry() -> ConfigMenuEntry {
@@ -241,24 +203,29 @@ mod tests {
 
     #[test]
     fn initializes_with_current_value_selected() {
-        let picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        assert_eq!(picker.combobox.selected_index, 0);
-        assert_eq!(
-            picker.combobox.matches[picker.combobox.selected_index].name,
-            "GPT-4o"
-        );
+        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let selected = selected_text(&mut picker).unwrap();
+        assert!(selected.contains("GPT-4o"));
     }
 
     #[test]
-    fn query_filters_by_name_or_value() {
+    fn query_filters_by_name() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.update_query("gemini".to_string());
-        assert_eq!(picker.combobox.matches.len(), 1);
-        assert_eq!(picker.combobox.matches[0].name, "Gemini 2.5 Pro");
+        type_query(&mut picker, "gemini");
+        let lines = rendered_lines(&mut picker);
+        // header + 1 match
+        assert_eq!(lines.len(), 2);
+        assert!(lines[1].contains("Gemini 2.5 Pro"));
+    }
 
-        picker.update_query("anthropic/claude".to_string());
-        assert_eq!(picker.combobox.matches.len(), 1);
-        assert_eq!(picker.combobox.matches[0].name, "Claude Sonnet");
+    #[test]
+    fn query_filters_by_value() {
+        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        type_query(&mut picker, "anthropic/claude");
+        let lines = rendered_lines(&mut picker);
+        // header + 1 match
+        assert_eq!(lines.len(), 2);
+        assert!(lines[1].contains("Claude Sonnet"));
     }
 
     #[test]
@@ -270,7 +237,7 @@ mod tests {
     #[test]
     fn confirm_selection_returns_change_for_new_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.move_selection_down();
+        picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         let change = picker.confirm_selection().expect("config change");
         assert_eq!(change.config_id, "model");
         assert_eq!(
@@ -287,14 +254,14 @@ mod tests {
         entry.values[1].name = "Disabled Claude".to_string();
 
         let mut picker = ConfigPicker::from_entry(&entry).expect("picker");
-        picker.update_query("disabled".to_string());
+        type_query(&mut picker, "disabled");
         assert!(picker.confirm_selection().is_none());
     }
 
     #[test]
     fn handle_key_enter_returns_apply_selection_action() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.move_selection_down();
+        picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
 
         let outcome = picker.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
