@@ -40,15 +40,20 @@ fn right_from_last_wraps_to_first() {
 }
 
 #[test]
-fn render_inline_shows_selected_title() {
-    let rs = RadioSelect::new(sample_options(), 1);
-    let ctx = RenderContext::new((80, 24));
-    let line = rs.render_inline(&ctx);
-    let term = render_lines(&[line], 80, 24);
-    let lines = term.get_lines();
+fn unfocused_renders_selected_title_inline() {
+    let mut rs = RadioSelect::new(sample_options(), 1);
+    let ctx = RenderContext::new((80, 24)).with_focused(false);
+    let lines = rs.render(&ctx);
+    assert_eq!(
+        lines.len(),
+        1,
+        "Unfocused should render a single inline line"
+    );
+    let term = render_lines(&lines, 80, 24);
+    let output = term.get_lines();
     assert!(
-        lines[0].contains("Beta"),
-        "Expected 'Beta' in inline render, got: '{}'",
-        lines[0]
+        output[0].contains("Beta"),
+        "Expected 'Beta' in unfocused render, got: '{}'",
+        output[0]
     );
 }

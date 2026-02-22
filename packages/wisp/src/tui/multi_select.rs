@@ -30,9 +30,20 @@ impl MultiSelect {
             .collect();
         serde_json::Value::Array(values)
     }
+}
 
-    /// Render an inline summary (comma-separated selected titles).
-    pub fn render_inline(&self, context: &RenderContext) -> Line {
+impl Component for MultiSelect {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+        if context.focused {
+            self.render_options(context)
+        } else {
+            vec![self.render_inline(context)]
+        }
+    }
+}
+
+impl MultiSelect {
+    fn render_inline(&self, context: &RenderContext) -> Line {
         let chosen: Vec<&str> = self
             .options
             .iter()
@@ -48,8 +59,7 @@ impl MultiSelect {
         }
     }
 
-    /// Render the expanded option list with checkboxes.
-    pub fn render_options(&self, context: &RenderContext) -> Vec<Line> {
+    fn render_options(&self, context: &RenderContext) -> Vec<Line> {
         self.options
             .iter()
             .enumerate()
@@ -66,12 +76,6 @@ impl MultiSelect {
                 Line::with_style(format!("{marker}{}", opt.title), style)
             })
             .collect()
-    }
-}
-
-impl Component for MultiSelect {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
-        self.render_options(context)
     }
 }
 

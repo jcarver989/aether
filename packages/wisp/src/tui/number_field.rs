@@ -35,7 +35,9 @@ impl NumberField {
 impl Component for NumberField {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut line = Line::new(&self.value);
-        line.push_styled("▏", context.theme.primary);
+        if context.focused {
+            line.push_styled("▏", context.theme.primary);
+        }
         vec![line]
     }
 }

@@ -5,6 +5,7 @@ use crossterm::event::KeyEvent;
 pub struct RenderContext {
     pub size: (u16, u16),
     pub theme: Theme,
+    pub focused: bool,
 }
 
 impl RenderContext {
@@ -12,6 +13,15 @@ impl RenderContext {
         Self {
             size,
             theme: Theme::default(),
+            focused: true,
+        }
+    }
+
+    pub fn with_focused(&self, focused: bool) -> Self {
+        Self {
+            size: self.size,
+            theme: self.theme,
+            focused,
         }
     }
 }

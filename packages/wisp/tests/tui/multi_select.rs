@@ -50,29 +50,39 @@ fn cursor_wraps_up_from_first() {
 }
 
 #[test]
-fn render_inline_none_selected() {
-    let ms = MultiSelect::new(sample_options(), vec![false, false, false]);
-    let ctx = RenderContext::new((80, 24));
-    let line = ms.render_inline(&ctx);
-    let term = render_lines(&[line], 80, 24);
+fn unfocused_none_selected_shows_none() {
+    let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
+    let ctx = RenderContext::new((80, 24)).with_focused(false);
+    let rendered = ms.render(&ctx);
+    assert_eq!(
+        rendered.len(),
+        1,
+        "Unfocused should render a single inline line"
+    );
+    let term = render_lines(&rendered, 80, 24);
     let lines = term.get_lines();
     assert!(
         lines[0].contains("(none)"),
-        "Expected '(none)' in inline render, got: '{}'",
+        "Expected '(none)' in unfocused render, got: '{}'",
         lines[0]
     );
 }
 
 #[test]
-fn render_inline_with_selections() {
-    let ms = MultiSelect::new(sample_options(), vec![true, false, true]);
-    let ctx = RenderContext::new((80, 24));
-    let line = ms.render_inline(&ctx);
-    let term = render_lines(&[line], 80, 24);
+fn unfocused_with_selections_shows_summary() {
+    let mut ms = MultiSelect::new(sample_options(), vec![true, false, true]);
+    let ctx = RenderContext::new((80, 24)).with_focused(false);
+    let rendered = ms.render(&ctx);
+    assert_eq!(
+        rendered.len(),
+        1,
+        "Unfocused should render a single inline line"
+    );
+    let term = render_lines(&rendered, 80, 24);
     let lines = term.get_lines();
     assert!(
         lines[0].contains("Alpha, Gamma"),
-        "Expected 'Alpha, Gamma' in inline render, got: '{}'",
+        "Expected 'Alpha, Gamma' in unfocused render, got: '{}'",
         lines[0]
     );
 }
