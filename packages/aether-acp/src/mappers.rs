@@ -117,7 +117,11 @@ pub fn map_agent_message_to_session_notification(
             chunk, is_complete, ..
         } => map_text_to_notification(session_id, chunk, *is_complete),
 
-        AgentMessage::Thought { chunk, .. } => Some(map_thought_to_notification(session_id, chunk)),
+        AgentMessage::Thought {
+            chunk,
+            is_complete: false,
+            ..
+        } => Some(map_thought_to_notification(session_id, chunk)),
 
         AgentMessage::ToolCall { request, .. } => {
             Some(map_tool_call_to_notification(session_id, request))
@@ -144,7 +148,10 @@ pub fn map_agent_message_to_session_notification(
             message.as_ref(),
         ),
 
-        AgentMessage::ContextUsageUpdate { .. }
+        AgentMessage::Thought {
+            is_complete: true, ..
+        }
+        | AgentMessage::ContextUsageUpdate { .. }
         | AgentMessage::Error { .. }
         | AgentMessage::Cancelled { .. }
         | AgentMessage::Done
@@ -373,6 +380,7 @@ mod tests {
         let thought = AgentMessage::Thought {
             message_id: "msg_1".to_string(),
             chunk: "thinking...".to_string(),
+            is_complete: false,
             model_name: "TestModel".to_string(),
         };
 

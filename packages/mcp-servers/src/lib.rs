@@ -1,5 +1,10 @@
 pub mod display_meta;
 
+#[cfg(feature = "all")]
+pub mod setup;
+#[cfg(feature = "all")]
+pub use setup::McpBuilderExt;
+
 #[cfg(feature = "coding")]
 pub mod coding;
 

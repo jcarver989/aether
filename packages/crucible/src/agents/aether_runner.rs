@@ -194,9 +194,16 @@ async fn stream_agent_messages(
             AgentMessage::ModelSwitched { previous, new } => {
                 tracing::debug!("Model switched: {} -> {}", previous, new);
             }
-            AgentMessage::Thought { chunk, .. } => {
+            AgentMessage::Thought {
+                chunk,
+                is_complete: false,
+                ..
+            } => {
                 tracing::debug!("Agent thought: {}", chunk);
             }
+            AgentMessage::Thought {
+                is_complete: true, ..
+            } => {}
         }
     }
 
