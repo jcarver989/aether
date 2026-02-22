@@ -5,11 +5,6 @@ use clap::Parser;
 #[command(about = "A TUI for AI coding agents via the Agent Client Protocol")]
 pub struct Cli {
     #[arg(
-        help = "The prompt to send to the AI agent (optional - if not provided, starts interactive mode)"
-    )]
-    pub prompt: Vec<String>,
-
-    #[arg(
         short = 'a',
         long = "agent",
         help = "Agent subprocess command to spawn (speaks ACP over stdin/stdout)",

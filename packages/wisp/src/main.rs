@@ -2,13 +2,11 @@ mod app_state;
 mod cli;
 mod components;
 mod error;
-mod non_interactive;
 mod terminal_ui;
 mod tui;
 
 use crate::app_state::AppState;
 use crate::cli::Cli;
-use crate::non_interactive::run_non_interactive;
 use crate::terminal_ui::run_terminal_ui;
 use clap::Parser;
 use std::fs::create_dir_all;
@@ -29,15 +27,8 @@ async fn main() -> ExitCode {
         }
     };
 
-    let result = if cli.prompt.is_empty() {
-        run_terminal_ui(state).await.map(|()| ExitCode::SUCCESS)
-    } else {
-        let prompt = cli.prompt.join(" ");
-        run_non_interactive(state, &prompt).await
-    };
-
-    match result {
-        Ok(code) => code,
+    match run_terminal_ui(state).await {
+        Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("Fatal error: {e}");
             ExitCode::FAILURE

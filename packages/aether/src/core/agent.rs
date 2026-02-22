@@ -133,6 +133,18 @@ impl Agent {
                     })
                     .await;
 
+                if !state.reasoning_content.is_empty() {
+                    let _ = self
+                        .message_tx
+                        .send(AgentMessage::Thought {
+                            message_id: id.clone(),
+                            chunk: state.reasoning_content.clone(),
+                            is_complete: true,
+                            model_name: self.llm.display_name(),
+                        })
+                        .await;
+                }
+
                 let has_tool_calls = state.has_tool_calls();
                 let message_content = state.message_content.clone();
                 let stop_reason = state.stop_reason.clone();
@@ -332,6 +344,7 @@ impl Agent {
                 .send(AgentMessage::Thought {
                     message_id: id.clone(),
                     chunk,
+                    is_complete: false,
                     model_name: self.llm.display_name(),
                 })
                 .await;

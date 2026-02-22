@@ -17,6 +17,7 @@ pub enum AgentMessage {
     Thought {
         message_id: String,
         chunk: String,
+        is_complete: bool,
         model_name: String,
     },
 
@@ -126,10 +127,11 @@ impl AgentMessage {
         }
     }
 
-    pub fn thought(message_id: &str, chunk: &str, model_name: &str) -> Self {
+    pub fn thought(message_id: &str, chunk: &str, is_complete: bool, model_name: &str) -> Self {
         AgentMessage::Thought {
             message_id: message_id.to_string(),
             chunk: chunk.to_string(),
+            is_complete,
             model_name: model_name.to_string(),
         }
     }
@@ -155,6 +157,20 @@ mod tests {
         let msg = AgentMessage::Thought {
             message_id: "msg_1".to_string(),
             chunk: "thinking".to_string(),
+            is_complete: false,
+            model_name: "test-model".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn test_thought_complete_serde_roundtrip() {
+        let msg = AgentMessage::Thought {
+            message_id: "msg_1".to_string(),
+            chunk: "full reasoning".to_string(),
+            is_complete: true,
             model_name: "test-model".to_string(),
         };
         let json = serde_json::to_string(&msg).unwrap();
