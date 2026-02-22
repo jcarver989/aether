@@ -1,6 +1,7 @@
 pub mod checkbox;
 pub mod combobox;
 pub mod component;
+pub mod form;
 pub mod markdown;
 pub mod multi_select;
 pub mod number_field;
@@ -17,6 +18,7 @@ pub mod theme;
 pub use checkbox::Checkbox;
 pub use combobox::{Combobox, Searchable};
 pub use component::{Component, HandlesInput, InputOutcome, RenderContext};
+pub use form::{Form, FormAction, FormField, FormFieldKind};
 pub use multi_select::MultiSelect;
 pub use number_field::NumberField;
 pub use radio_select::RadioSelect;
