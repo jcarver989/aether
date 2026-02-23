@@ -7,7 +7,7 @@ use agent_client_protocol::{
 };
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use mcp_utils::client::McpServerConfig;
-use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
+use mcp_utils::display_meta::ToolResultMeta;
 use rmcp::model::Prompt as McpPrompt;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
@@ -130,12 +130,12 @@ pub fn map_agent_message_to_session_notification(
 
         AgentMessage::ToolResult {
             result,
-            display_meta,
+            result_meta,
             ..
         } => Some(map_tool_result_to_notification(
             session_id,
             result,
-            display_meta.as_ref(),
+            result_meta.as_ref(),
         )),
 
         AgentMessage::ToolError { error, .. } => {
@@ -262,7 +262,7 @@ fn humanize_tool_name(name: &str) -> String {
 fn map_tool_result_to_notification(
     session_id: SessionId,
     result: &ToolCallResult,
-    display_meta: Option<&ToolDisplayMeta>,
+    result_meta: Option<&ToolResultMeta>,
 ) -> SessionNotification {
     let fields = ToolCallUpdateFields::new()
         .status(ToolCallStatus::Completed)
@@ -272,8 +272,8 @@ fn map_tool_result_to_notification(
 
     let mut update = ToolCallUpdate::new(ToolCallId::new(result.id.clone()), fields);
 
-    if let Some(dm) = display_meta {
-        update = update.meta(ToolResultMeta::from(dm.clone()).into_map());
+    if let Some(rm) = result_meta {
+        update = update.meta(rm.clone().into_map());
     }
 
     SessionNotification::new(session_id, SessionUpdate::ToolCallUpdate(update))
@@ -550,7 +550,9 @@ mod tests {
     }
 
     #[test]
-    fn test_result_with_display_meta_sets_meta() {
+    fn test_result_with_result_meta_sets_meta() {
+        use mcp_utils::display_meta::ToolDisplayMeta;
+
         let session_id = acp::SessionId::new("test-session");
         let result = ToolCallResult {
             id: "call_1".to_string(),
@@ -558,14 +560,15 @@ mod tests {
             arguments: "{}".to_string(),
             result: "file contents".to_string(),
         };
-        let dm = ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines");
+        let rm: ToolResultMeta =
+            ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
 
-        let notification = map_tool_result_to_notification(session_id, &result, Some(&dm));
+        let notification = map_tool_result_to_notification(session_id, &result, Some(&rm));
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 assert!(update.fields.title.is_none());
                 let meta = update.meta.expect("meta should be present");
-                let tc_meta = mcp_utils::display_meta::ToolResultMeta::from_map(&meta)
+                let tc_meta = ToolResultMeta::from_map(&meta)
                     .expect("should deserialize to ToolResultMeta");
                 assert_eq!(tc_meta.display.title, "Read file");
                 assert_eq!(tc_meta.display.value, "Cargo.toml, 156 lines");
@@ -575,7 +578,7 @@ mod tests {
     }
 
     #[test]
-    fn test_result_without_display_meta() {
+    fn test_result_without_result_meta() {
         let session_id = acp::SessionId::new("test-session");
         let result = ToolCallResult {
             id: "call_1".to_string(),

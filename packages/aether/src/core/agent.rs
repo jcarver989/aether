@@ -516,7 +516,7 @@ impl Agent {
             ToolExecutionEvent::Complete {
                 tool_id: _,
                 result,
-                display_meta,
+                result_meta,
             } => match result {
                 Ok(tool_result) => {
                     tracing::debug!(
@@ -531,7 +531,7 @@ impl Agent {
 
                         let msg = AgentMessage::ToolResult {
                             result: tool_result,
-                            display_meta,
+                            result_meta,
                             model_name: self.llm.display_name(),
                         };
 

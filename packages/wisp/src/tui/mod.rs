@@ -4,6 +4,7 @@ pub mod test_picker;
 pub mod checkbox;
 pub mod combobox;
 pub mod component;
+pub mod diff;
 pub mod form;
 pub mod markdown;
 pub mod multi_select;
@@ -15,6 +16,7 @@ pub mod screen;
 pub mod select_option;
 pub mod soft_wrap;
 pub mod spinner;
+mod syntax;
 pub mod text_field;
 pub mod theme;
 

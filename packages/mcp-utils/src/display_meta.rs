@@ -3,6 +3,8 @@
 //! This module provides types for generating human-readable display metadata
 //! that can be sent alongside tool results via the MCP `_meta` field.
 
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 
 /// Human-readable display metadata for a tool operation.
@@ -24,6 +26,14 @@ impl ToolDisplayMeta {
     }
 }
 
+/// A preview of removed/added lines for an edit operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiffPreview {
+    pub removed: Vec<String>,
+    pub added: Vec<String>,
+    pub lang_hint: String,
+}
+
 /// Typed wrapper for the MCP `_meta` field on tool results.
 ///
 /// Wraps a [`ToolDisplayMeta`] so that tool output structs can use
@@ -31,12 +41,26 @@ impl ToolDisplayMeta {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolResultMeta {
     pub display: ToolDisplayMeta,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_preview: Option<DiffPreview>,
 }
 
 impl From<ToolDisplayMeta> for ToolResultMeta {
     fn from(display: ToolDisplayMeta) -> Self {
-        Self { display }
+        Self {
+            display,
+            diff_preview: None,
+        }
     }
+}
+
+/// Extract a lowercased file extension from a path, for use as a syntax hint.
+pub fn extension_hint(path: &str) -> String {
+    Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_lowercase()
 }
 
 impl ToolResultMeta {
@@ -113,9 +137,8 @@ mod tests {
 
     #[test]
     fn test_tool_result_meta_roundtrip() {
-        let meta = ToolResultMeta {
-            display: ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"),
-        };
+        let meta: ToolResultMeta =
+            ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
         let json = serde_json::to_string(&meta).unwrap();
         let parsed: ToolResultMeta = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, meta);
@@ -123,9 +146,8 @@ mod tests {
 
     #[test]
     fn test_tool_result_meta_map_roundtrip() {
-        let meta = ToolResultMeta {
-            display: ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"),
-        };
+        let meta: ToolResultMeta =
+            ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
         let map = meta.clone().into_map();
         let parsed = ToolResultMeta::from_map(&map).expect("should deserialize ToolResultMeta");
         assert_eq!(parsed, meta);
@@ -144,7 +166,68 @@ mod tests {
     fn test_into_result_meta() {
         let display = ToolDisplayMeta::new("Write file", "main.rs");
         let meta: ToolResultMeta = display.clone().into();
-        assert_eq!(meta, ToolResultMeta { display });
+        assert_eq!(
+            meta,
+            ToolResultMeta {
+                display,
+                diff_preview: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_diff_preview_serde_roundtrip() {
+        let preview = DiffPreview {
+            removed: vec!["old line".to_string()],
+            added: vec!["new line".to_string()],
+            lang_hint: "rs".to_string(),
+        };
+        let json = serde_json::to_string(&preview).unwrap();
+        let parsed: DiffPreview = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, preview);
+    }
+
+    #[test]
+    fn test_tool_result_meta_with_diff_preview() {
+        let meta = ToolResultMeta {
+            display: ToolDisplayMeta::new("Edit file", "main.rs"),
+            diff_preview: Some(DiffPreview {
+                removed: vec!["old".to_string()],
+                added: vec!["new".to_string()],
+                lang_hint: "rs".to_string(),
+            }),
+        };
+        let map = meta.clone().into_map();
+        let parsed = ToolResultMeta::from_map(&map).expect("should deserialize");
+        assert_eq!(parsed, meta);
+    }
+
+    #[test]
+    fn test_tool_result_meta_without_diff_preview_backward_compat() {
+        // Simulate JSON from before diff_preview existed
+        let json = r#"{"display":{"title":"Read file","value":"Cargo.toml"}}"#;
+        let parsed: ToolResultMeta = serde_json::from_str(json).unwrap();
+        assert!(parsed.diff_preview.is_none());
+    }
+
+    #[test]
+    fn test_extension_hint_rs() {
+        assert_eq!(extension_hint("/path/to/main.rs"), "rs");
+    }
+
+    #[test]
+    fn test_extension_hint_uppercase() {
+        assert_eq!(extension_hint("README.MD"), "md");
+    }
+
+    #[test]
+    fn test_extension_hint_no_extension() {
+        assert_eq!(extension_hint("Makefile"), "");
+    }
+
+    #[test]
+    fn test_extension_hint_nested_path() {
+        assert_eq!(extension_hint("/foo/bar/baz.tsx"), "tsx");
     }
 
     #[test]

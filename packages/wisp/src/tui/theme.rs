@@ -1,6 +1,14 @@
 use crossterm::style::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiffTheme {
+    pub added_bg: Color,
+    pub removed_bg: Color,
+    pub added_fg: Color,
+    pub removed_fg: Color,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
     pub primary: Color,
     pub secondary: Color,
@@ -15,6 +23,7 @@ pub struct Theme {
     pub heading: Color,
     pub code_fg: Color,
     pub code_bg: Color,
+    pub diff: DiffTheme,
     pub link: Color,
     pub blockquote: Color,
 }
@@ -87,6 +96,20 @@ impl Default for Theme {
                 g: 40,
                 b: 40,
             }, // Dark gray #282828
+            diff: DiffTheme {
+                added_bg: Color::Rgb {
+                    r: 20,
+                    g: 50,
+                    b: 20,
+                },
+                removed_bg: Color::Rgb {
+                    r: 60,
+                    g: 20,
+                    b: 20,
+                },
+                added_fg: Color::Green,
+                removed_fg: Color::Red,
+            },
             link: Color::Rgb {
                 r: 78,
                 g: 205,
