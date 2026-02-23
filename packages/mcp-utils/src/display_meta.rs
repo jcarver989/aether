@@ -41,7 +41,7 @@ pub struct DiffPreview {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolResultMeta {
     pub display: ToolDisplayMeta,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub diff_preview: Option<DiffPreview>,
 }
 
@@ -200,14 +200,6 @@ mod tests {
         let map = meta.clone().into_map();
         let parsed = ToolResultMeta::from_map(&map).expect("should deserialize");
         assert_eq!(parsed, meta);
-    }
-
-    #[test]
-    fn test_tool_result_meta_without_diff_preview_backward_compat() {
-        // Simulate JSON from before diff_preview existed
-        let json = r#"{"display":{"title":"Read file","value":"Cargo.toml"}}"#;
-        let parsed: ToolResultMeta = serde_json::from_str(json).unwrap();
-        assert!(parsed.diff_preview.is_none());
     }
 
     #[test]

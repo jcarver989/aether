@@ -8,7 +8,7 @@ use agent_client_protocol::{
 };
 use llm::catalog::{self, LlmModel};
 use llm::parser::ModelProviderParser;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::spawn;
@@ -95,28 +95,66 @@ fn effective_model<'a>(active_model: &'a str, pending_model: Option<&'a str>) ->
 
 /// Build the "Model" select config option with all models from all providers.
 /// Display names use "Provider / `ModelName`" format.
+/// Fully-unavailable providers are collapsed into a single summary line.
 fn build_model_config_option(available: &[LlmModel], current_model: &str) -> SessionConfigOption {
     let all_models = catalog::LlmModel::all();
     let available_models: HashSet<String> = available.iter().map(provider_model_str).collect();
-    let options: Vec<acp::SessionConfigSelectOption> = all_models
-        .iter()
-        .map(|m| {
-            let value = provider_model_str(m);
-            let is_available = available_models.contains(&value);
-            let provider = provider_display_name(m.provider());
-            let name = if is_available {
-                format!("{} / {}", provider, m.display_name())
-            } else {
-                format!("{} / {} (unavailable)", provider, m.display_name())
-            };
-            let option = acp::SessionConfigSelectOption::new(value, name);
-            if is_available {
-                option
-            } else {
-                option.description(unavailable_reason(m))
+
+    // Phase 1: Group models by provider, counting available models per provider
+    struct ProviderGroup<'a> {
+        models: Vec<&'a LlmModel>,
+        available_count: usize,
+    }
+
+    let mut groups: BTreeMap<&str, ProviderGroup<'_>> = BTreeMap::new();
+    for m in all_models {
+        let value = provider_model_str(m);
+        let is_available = available_models.contains(&value);
+        let group = groups.entry(m.provider()).or_insert_with(|| ProviderGroup {
+            models: Vec::new(),
+            available_count: 0,
+        });
+        group.models.push(m);
+        if is_available {
+            group.available_count += 1;
+        }
+    }
+
+    // Phase 2: Emit options per group
+    let mut options: Vec<acp::SessionConfigSelectOption> = Vec::new();
+    for (provider_key, group) in &groups {
+        if group.available_count == 0 {
+            // Fully unavailable — emit one collapsed entry
+            let display = provider_display_name(provider_key);
+            let count = group.models.len();
+            let noun = if count == 1 { "model" } else { "models" };
+            let name = format!("{display} ({count} {noun})");
+            let value = format!("__unavailable:{provider_key}");
+            let reason = group.models[0].required_env_var().map_or_else(
+                || "Unavailable: provider is not configured".to_string(),
+                |var| format!("Unavailable: set {var}"),
+            );
+            options.push(acp::SessionConfigSelectOption::new(value, name).description(reason));
+        } else {
+            // Mixed or fully available — list each model individually
+            for m in &group.models {
+                let value = provider_model_str(m);
+                let is_available = available_models.contains(&value);
+                let display = provider_display_name(provider_key);
+                let name = if is_available {
+                    format!("{display} / {}", m.display_name())
+                } else {
+                    format!("{display} / {} (unavailable)", m.display_name())
+                };
+                let option = acp::SessionConfigSelectOption::new(value, name);
+                if is_available {
+                    options.push(option);
+                } else {
+                    options.push(option.description(unavailable_reason(m)));
+                }
             }
-        })
-        .collect();
+        }
+    }
 
     SessionConfigOption::select("model", "Model", current_model.to_string(), options)
         .category(SessionConfigOptionCategory::Model)
@@ -456,9 +494,21 @@ mod tests {
             panic!("Expected Ungrouped options");
         };
 
+        // Available providers list models individually
         assert!(options.iter().any(|o| o.value.0.starts_with("anthropic:")));
         assert!(options.iter().any(|o| o.value.0.starts_with("deepseek:")));
         assert!(options.iter().any(|o| o.value.0.starts_with("gemini:")));
+
+        // Fully-unavailable providers are collapsed into sentinel entries
+        assert!(options
+            .iter()
+            .any(|o| o.value.0.as_ref() == "__unavailable:moonshot"));
+        assert!(options
+            .iter()
+            .any(|o| o.value.0.as_ref() == "__unavailable:openrouter"));
+        assert!(options
+            .iter()
+            .any(|o| o.value.0.as_ref() == "__unavailable:zai"));
     }
 
     #[test]
@@ -573,5 +623,68 @@ mod tests {
             effective_model("anthropic:claude-sonnet-4-5", None),
             "anthropic:claude-sonnet-4-5"
         );
+    }
+
+    #[test]
+    fn collapsed_entry_for_fully_unavailable_provider() {
+        // test_models() has no Moonshot models available
+        let models = test_models();
+        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
+
+        let SessionConfigKind::Select(ref select) = opt.kind else {
+            panic!("Expected Select kind");
+        };
+        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
+            panic!("Expected Ungrouped options");
+        };
+
+        let moonshot = options
+            .iter()
+            .find(|o| o.value.0.as_ref() == "__unavailable:moonshot")
+            .expect("expected collapsed moonshot entry");
+
+        // Name should be "Moonshot (N models)"
+        assert!(
+            moonshot.name.starts_with("Moonshot ("),
+            "Expected 'Moonshot (N models)', got: {}",
+            moonshot.name
+        );
+        assert!(moonshot.name.ends_with("models)"));
+
+        // Description triggers is_disabled in TUI
+        assert!(moonshot
+            .description
+            .as_deref()
+            .is_some_and(|d| d.starts_with("Unavailable:")));
+    }
+
+    #[test]
+    fn mixed_provider_lists_models_individually() {
+        // test_models() has Gemini25Pro available, so Gemini is "mixed"
+        let models = test_models();
+        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
+
+        let SessionConfigKind::Select(ref select) = opt.kind else {
+            panic!("Expected Select kind");
+        };
+        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
+            panic!("Expected Ungrouped options");
+        };
+
+        // Should NOT have a collapsed entry for gemini
+        assert!(
+            !options
+                .iter()
+                .any(|o| o.value.0.as_ref() == "__unavailable:gemini"),
+            "Gemini should not be collapsed when it has available models"
+        );
+
+        // Individual gemini models should still be listed
+        assert!(options
+            .iter()
+            .any(|o| o.value.0.starts_with("gemini:") && !o.name.contains("unavailable")));
+        assert!(options
+            .iter()
+            .any(|o| o.value.0.starts_with("gemini:") && o.name.contains("unavailable")));
     }
 }

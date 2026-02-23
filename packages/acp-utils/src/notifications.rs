@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn deserialize_tool_result_event() {
-        let json = r#"{"ToolResult":{"result":{"id":"c1","name":"grep","result_meta":{"display":{"title":"Grep","value":"'test' in src (3 matches)"}}},"model_name":"m"}}"#;
+        let json = r#"{"ToolResult":{"result":{"id":"c1","name":"grep","result_meta":{"display":{"title":"Grep","value":"'test' in src (3 matches)"}}}}}"#;
         let event: SubAgentEvent = serde_json::from_str(json).unwrap();
         match event {
             SubAgentEvent::ToolResult { result } => {
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn deserialize_tool_error_event() {
-        let json = r#"{"ToolError":{"error":{"id":"c1","name":"grep","arguments":"{}","error":"not found"},"model_name":"m"}}"#;
+        let json = r#"{"ToolError":{"error":{"id":"c1","name":"grep"}}}"#;
         let event: SubAgentEvent = serde_json::from_str(json).unwrap();
         assert!(matches!(event, SubAgentEvent::ToolError { .. }));
     }
