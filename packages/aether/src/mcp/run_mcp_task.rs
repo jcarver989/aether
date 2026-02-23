@@ -107,12 +107,8 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
                 }
                 Err(e) => {
                     tracing::error!("Failed to get client for tool {}: {e}", request.name);
-                    let error = ToolCallError {
-                        id: request.id.clone(),
-                        name: request.name.clone(),
-                        arguments: Some(request.arguments.clone()),
-                        error: format!("Failed to get client: {e}"),
-                    };
+                    let error =
+                        ToolCallError::from_request(&request, format!("Failed to get client: {e}"));
                     let _ = tx
                         .send(ToolExecutionEvent::Complete {
                             tool_id,
@@ -157,12 +153,8 @@ async fn try_execute_tool(
     use rmcp::model::{ClientRequest::CallToolRequest, Request, ServerResult};
     use rmcp::service::PeerRequestOptions;
 
-    let tool_request_param = tool_call_request_to_mcp(request).map_err(|e| ToolCallError {
-        id: request.id.clone(),
-        name: request.name.clone(),
-        arguments: Some(request.arguments.clone()),
-        error: e,
-    })?;
+    let tool_request_param =
+        tool_call_request_to_mcp(request).map_err(|e| ToolCallError::from_request(request, e))?;
 
     let handle = client
         .send_cancellable_request(
@@ -173,11 +165,8 @@ async fn try_execute_tool(
             },
         )
         .await
-        .map_err(|e| ToolCallError {
-            id: request.id.clone(),
-            name: request.name.clone(),
-            arguments: Some(request.arguments.clone()),
-            error: format!("Failed to send tool request: {e}"),
+        .map_err(|e| {
+            ToolCallError::from_request(request, format!("Failed to send tool request: {e}"))
         })?;
 
     let progress_subscriber = client
@@ -203,31 +192,24 @@ async fn try_execute_tool(
                 let _ = event_tx.send(progress_event).await;
             }
             Some(Either::Right(result)) => {
-                break result.map_err(|e| ToolCallError {
-                    id: request.id.clone(),
-                    name: request.name.clone(),
-                    arguments: Some(request.arguments.clone()),
-                    error: format!("Tool execution failed: {e}"),
+                break result.map_err(|e| {
+                    ToolCallError::from_request(request, format!("Tool execution failed: {e}"))
                 })?;
             }
             None => {
-                return Err(ToolCallError {
-                    id: request.id.clone(),
-                    name: request.name.clone(),
-                    arguments: Some(request.arguments.clone()),
-                    error: "Stream ended without result".to_string(),
-                });
+                return Err(ToolCallError::from_request(
+                    request,
+                    "Stream ended without result",
+                ));
             }
         }
     };
 
     let ServerResult::CallToolResult(mcp_result) = server_result else {
-        return Err(ToolCallError {
-            id: request.id.clone(),
-            name: request.name.clone(),
-            arguments: Some(request.arguments.clone()),
-            error: "Unexpected response type from MCP server".to_string(),
-        });
+        return Err(ToolCallError::from_request(
+            request,
+            "Unexpected response type from MCP server",
+        ));
     };
 
     mcp_result_to_tool_call_result(request, mcp_result)

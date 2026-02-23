@@ -111,6 +111,12 @@ struct PromptContext<'a> {
     acp_session_id: &'a SessionId,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CancelPolicy {
+    ForwardToAgent,
+    Ignore,
+}
+
 async fn handle_prompt(
     ctx: &mut PromptContext<'_>,
     text: String,
@@ -138,58 +144,28 @@ async fn handle_prompt(
         .await
         .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
 
-    // The agent sends Cancelled then Done on cancel. We capture the stop reason from Cancelled
+    // The agent sends Cancelled then Done on cancel. Capture stop reason from Cancelled
     // but keep draining until Done to avoid leaving stale messages in the channel.
-    // Error is terminal for the current prompt turn.
     let mut early_stop_reason: Option<acp::StopReason> = None;
-
-    loop {
-        tokio::select! {
-            msg = ctx.agent_rx.recv() => {
-                if let Some(msg) = msg {
-                    forward_notification(ctx.actor_handle, ctx.acp_session_id, &msg).await;
-
-                    match &msg {
-                        AgentMessage::Cancelled { .. } => {
-                            early_stop_reason = Some(map_agent_message_to_stop_reason(&msg));
-                        }
-                        AgentMessage::Done => {
-                            let reason = early_stop_reason
-                                .unwrap_or_else(|| map_agent_message_to_stop_reason(&msg));
-                            info!("Done received, stop reason: {:?}", reason);
-                            return Ok(reason);
-                        }
-                        AgentMessage::Error { .. } => {
-                            let reason = map_agent_message_to_stop_reason(&msg);
-                            info!("Error received, stop reason: {:?}", reason);
-                            return Ok(reason);
-                        }
-                        _ => {}
-                    }
-                } else {
-                    error!("Agent channel closed unexpectedly");
-                    return Err(RelayError::ChannelClosed);
-                }
+    run_turn_loop(
+        ctx,
+        CancelPolicy::ForwardToAgent,
+        "Agent channel closed unexpectedly",
+        |msg| match msg {
+            AgentMessage::Cancelled { .. } => {
+                early_stop_reason = Some(map_agent_message_to_stop_reason(msg));
+                None
             }
-            Some(elicitation) = ctx.elicitation_rx.recv() => {
-                handle_elicitation_request(ctx.actor_handle, elicitation).await;
-            }
-            Some(cmd) = ctx.cmd_rx.recv() => {
-                match cmd {
-                    SessionCommand::Cancel => {
-                        info!("Cancel received during prompt processing");
-                        let _ = ctx.agent_tx.send(UserMessage::Cancel).await;
-                    }
-                    SessionCommand::Prompt { result_tx, .. } => {
-                        // Can't process a new prompt while one is in-flight
-                        let _ = result_tx.send(Err(RelayError::SendPromptFailed(
-                            "prompt already in progress".to_string(),
-                        )));
-                    }
-                }
-            }
-        }
-    }
+            AgentMessage::Done => Some(
+                early_stop_reason
+                    .take()
+                    .unwrap_or_else(|| map_agent_message_to_stop_reason(msg)),
+            ),
+            AgentMessage::Error { .. } => Some(map_agent_message_to_stop_reason(msg)),
+            _ => None,
+        },
+    )
+    .await
 }
 
 async fn handle_clear_context(ctx: &mut PromptContext<'_>) -> Result<acp::StopReason, RelayError> {
@@ -198,23 +174,35 @@ async fn handle_clear_context(ctx: &mut PromptContext<'_>) -> Result<acp::StopRe
         .await
         .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
 
+    run_turn_loop(
+        ctx,
+        CancelPolicy::Ignore,
+        "Agent channel closed unexpectedly while clearing context",
+        handle_clear_context_message,
+    )
+    .await
+}
+
+async fn run_turn_loop<F>(
+    ctx: &mut PromptContext<'_>,
+    cancel_policy: CancelPolicy,
+    channel_closed_log: &'static str,
+    mut on_agent_message: F,
+) -> Result<acp::StopReason, RelayError>
+where
+    F: FnMut(&AgentMessage) -> Option<acp::StopReason>,
+{
     loop {
         tokio::select! {
             msg = ctx.agent_rx.recv() => {
                 if let Some(msg) = msg {
                     forward_notification(ctx.actor_handle, ctx.acp_session_id, &msg).await;
-
-                    match &msg {
-                        AgentMessage::ContextCleared => {
-                            return Ok(acp::StopReason::EndTurn);
-                        }
-                        AgentMessage::Error { .. } | AgentMessage::Done => {
-                            return Ok(map_agent_message_to_stop_reason(&msg));
-                        }
-                        _ => {}
+                    if let Some(reason) = on_agent_message(&msg) {
+                        info!("Turn completed, stop reason: {:?}", reason);
+                        return Ok(reason);
                     }
                 } else {
-                    error!("Agent channel closed unexpectedly while clearing context");
+                    error!("{channel_closed_log}");
                     return Err(RelayError::ChannelClosed);
                 }
             }
@@ -222,17 +210,42 @@ async fn handle_clear_context(ctx: &mut PromptContext<'_>) -> Result<acp::StopRe
                 handle_elicitation_request(ctx.actor_handle, elicitation).await;
             }
             Some(cmd) = ctx.cmd_rx.recv() => {
-                match cmd {
-                    SessionCommand::Cancel => {
-                        info!("Cancel received while context clear is in progress");
-                    }
-                    SessionCommand::Prompt { result_tx, .. } => {
-                        let _ = result_tx.send(Err(RelayError::SendPromptFailed(
-                            "prompt already in progress".to_string(),
-                        )));
-                    }
-                }
+                handle_in_flight_command(ctx.agent_tx, cmd, cancel_policy).await;
             }
+        }
+    }
+}
+
+fn handle_clear_context_message(msg: &AgentMessage) -> Option<acp::StopReason> {
+    match msg {
+        AgentMessage::ContextCleared => Some(acp::StopReason::EndTurn),
+        AgentMessage::Error { .. } | AgentMessage::Done => {
+            Some(map_agent_message_to_stop_reason(msg))
+        }
+        _ => None,
+    }
+}
+
+async fn handle_in_flight_command(
+    agent_tx: &mpsc::Sender<UserMessage>,
+    cmd: SessionCommand,
+    cancel_policy: CancelPolicy,
+) {
+    match cmd {
+        SessionCommand::Cancel => match cancel_policy {
+            CancelPolicy::ForwardToAgent => {
+                info!("Cancel received during prompt processing");
+                let _ = agent_tx.send(UserMessage::Cancel).await;
+            }
+            CancelPolicy::Ignore => {
+                info!("Cancel received while context clear is in progress");
+            }
+        },
+        SessionCommand::Prompt { result_tx, .. } => {
+            // Can't process a new prompt while one is in-flight
+            let _ = result_tx.send(Err(RelayError::SendPromptFailed(
+                "prompt already in progress".to_string(),
+            )));
         }
     }
 }
@@ -480,6 +493,68 @@ mod tests {
         assert!(!is_clear_command("/clear now"));
         assert!(!is_clear_command("/clear/now"));
         assert!(!is_clear_command("/clear-now"));
+    }
+
+    #[test]
+    fn clear_context_message_completes_turn() {
+        let reason = handle_clear_context_message(&AgentMessage::ContextCleared);
+        assert_eq!(reason, Some(acp::StopReason::EndTurn));
+    }
+
+    #[tokio::test]
+    async fn in_flight_cancel_is_forwarded_for_prompt_turns() {
+        let (agent_tx, mut agent_rx) = mpsc::channel(1);
+        handle_in_flight_command(
+            &agent_tx,
+            SessionCommand::Cancel,
+            CancelPolicy::ForwardToAgent,
+        )
+        .await;
+
+        let msg = tokio::time::timeout(std::time::Duration::from_millis(200), agent_rx.recv())
+            .await
+            .expect("cancel should be forwarded")
+            .expect("agent channel should stay open");
+        assert!(matches!(msg, UserMessage::Cancel));
+    }
+
+    #[tokio::test]
+    async fn in_flight_cancel_is_ignored_for_clear_turns() {
+        let (agent_tx, mut agent_rx) = mpsc::channel(1);
+        handle_in_flight_command(&agent_tx, SessionCommand::Cancel, CancelPolicy::Ignore).await;
+
+        assert!(matches!(
+            agent_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn in_flight_prompt_is_rejected_while_turn_in_progress() {
+        let (agent_tx, _agent_rx) = mpsc::channel(1);
+        let (result_tx, result_rx) = oneshot::channel();
+
+        handle_in_flight_command(
+            &agent_tx,
+            SessionCommand::Prompt {
+                text: "second prompt".to_string(),
+                switch_model: None,
+                result_tx,
+            },
+            CancelPolicy::Ignore,
+        )
+        .await;
+
+        match result_rx
+            .await
+            .expect("result channel should receive response")
+        {
+            Ok(reason) => panic!("expected rejection, got stop reason: {reason:?}"),
+            Err(RelayError::SendPromptFailed(message)) => {
+                assert_eq!(message, "prompt already in progress");
+            }
+            Err(other) => panic!("expected SendPromptFailed, got {other}"),
+        }
     }
 
     #[test]
