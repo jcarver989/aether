@@ -9,7 +9,6 @@ workspace = true
 [dependencies]
 acp_utils = { path = "../acp-utils", features = ["client"] }
 agent-client-protocol = { workspace = true }
-futures = { workspace = true }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 rmcp = { workspace = true }
@@ -25,3 +24,6 @@ url = { workspace = true }
 unicode-width = { workspace = true }
 pulldown-cmark = { workspace = true }
 syntect = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
