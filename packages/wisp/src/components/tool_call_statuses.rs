@@ -1,8 +1,9 @@
 use acp_utils::notifications::{
-    SubAgentEvent, SubAgentProgressParams, ToolDisplayMeta, ToolResultMeta,
+    DiffPreview, SubAgentEvent, SubAgentProgressParams, ToolResultMeta,
 };
 use agent_client_protocol as acp;
 
+use crate::tui::diff::highlight_diff;
 use crate::tui::spinner::BRAILLE_FRAMES as FRAMES;
 use crate::tui::{Component, Line, RenderContext};
 use std::collections::HashMap;
@@ -15,6 +16,7 @@ pub struct ToolCallStatusView {
     pub name: String,
     pub arguments: String,
     pub display_value: Option<String>,
+    pub diff_preview: Option<DiffPreview>,
     pub status: ToolCallStatus,
     pub tick: u16,
 }
@@ -55,7 +57,15 @@ impl Component for ToolCallStatusView {
             line.push_styled(msg, context.theme.error);
         }
 
-        vec![line]
+        let mut lines = vec![line];
+
+        if matches!(self.status, ToolCallStatus::Success)
+            && let Some(ref preview) = self.diff_preview
+        {
+            lines.extend(highlight_diff(preview, &context.theme));
+        }
+
+        lines
     }
 }
 
@@ -101,7 +111,7 @@ pub struct ToolProgress {
 struct TrackedToolCall {
     name: String,
     arguments: String,
-    display_meta: Option<ToolDisplayMeta>,
+    result_meta: Option<ToolResultMeta>,
     status: ToolCallStatus,
 }
 
@@ -176,7 +186,7 @@ impl ToolCallStatuses {
             TrackedToolCall {
                 name: tool_call.title.clone(),
                 arguments,
-                display_meta: None,
+                result_meta: None,
                 status: ToolCallStatus::Running,
             },
         );
@@ -193,11 +203,11 @@ impl ToolCallStatuses {
             if let Some(raw_input) = &update.fields.raw_input {
                 tc.arguments = raw_input.to_string();
             }
-            if let Some(meta) = &update.meta {
-                if let Some(tc_meta) = ToolResultMeta::from_map(meta) {
-                    tc.name = tc_meta.display.title.clone();
-                    tc.display_meta = Some(tc_meta.display);
-                }
+            if let Some(meta) = &update.meta
+                && let Some(tc_meta) = ToolResultMeta::from_map(meta)
+            {
+                tc.name.clone_from(&tc_meta.display.title);
+                tc.result_meta = Some(tc_meta);
             }
             if let Some(status) = &update.fields.status {
                 match status {
@@ -257,7 +267,7 @@ impl ToolCallStatuses {
                     TrackedToolCall {
                         name: request.name.clone(),
                         arguments: request.arguments.clone(),
-                        display_meta: None,
+                        result_meta: None,
                         status: ToolCallStatus::Running,
                     },
                 );
@@ -265,9 +275,9 @@ impl ToolCallStatuses {
             SubAgentEvent::ToolResult { result } => {
                 if let Some(tc) = agent.tool_calls.get_mut(&result.id) {
                     tc.status = ToolCallStatus::Success;
-                    if let Some(display_meta) = &result.display_meta {
-                        tc.name = display_meta.title.clone();
-                        tc.display_meta = Some(display_meta.clone());
+                    if let Some(result_meta) = &result.result_meta {
+                        tc.name.clone_from(&result_meta.display.title);
+                        tc.result_meta = Some(result_meta.clone());
                     }
                 }
             }
@@ -400,7 +410,11 @@ impl ToolCallStatuses {
         ToolCallStatusView {
             name: tc.name.clone(),
             arguments: tc.arguments.clone(),
-            display_value: tc.display_meta.as_ref().map(|dm| dm.value.clone()),
+            display_value: tc.result_meta.as_ref().map(|rm| rm.display.value.clone()),
+            diff_preview: tc
+                .result_meta
+                .as_ref()
+                .and_then(|rm| rm.diff_preview.clone()),
             status: tc.status.clone(),
             tick,
         }
@@ -434,6 +448,7 @@ impl Component for ToolCallStatuses {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acp_utils::notifications::ToolDisplayMeta;
 
     fn ctx() -> RenderContext {
         RenderContext::new((80, 24))
@@ -610,6 +625,7 @@ mod tests {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             display_value: None,
+            diff_preview: None,
             status: ToolCallStatus::Running,
             tick: 0,
         };
@@ -627,6 +643,7 @@ mod tests {
             name: "TestTool".to_string(),
             arguments: "".to_string(),
             display_value: None,
+            diff_preview: None,
             status: ToolCallStatus::Running,
             tick: 0,
         };
@@ -634,6 +651,7 @@ mod tests {
             name: "TestTool".to_string(),
             arguments: "".to_string(),
             display_value: None,
+            diff_preview: None,
             status: ToolCallStatus::Running,
             tick: 1,
         };
@@ -648,6 +666,7 @@ mod tests {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             display_value: None,
+            diff_preview: None,
             status: ToolCallStatus::Success,
             tick: 0,
         };
@@ -662,6 +681,7 @@ mod tests {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             display_value: None,
+            diff_preview: None,
             status: ToolCallStatus::Error("boom".to_string()),
             tick: 0,
         };
@@ -774,7 +794,7 @@ mod tests {
     }
 
     #[test]
-    fn sub_agent_tool_result_uses_display_meta() {
+    fn sub_agent_tool_result_uses_result_meta() {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
 
@@ -786,7 +806,7 @@ mod tests {
         statuses.on_sub_agent_progress(&make_sub_agent_notification(
             "parent-1",
             "explorer",
-            r#"{"ToolResult":{"result":{"id":"c1","name":"coding__read_file","display_meta":{"title":"Read file","value":"Cargo.toml, 156 lines"}},"model_name":"m"}}"#,
+            r#"{"ToolResult":{"result":{"id":"c1","name":"coding__read_file","result_meta":{"display":{"title":"Read file","value":"Cargo.toml, 156 lines"}}},"model_name":"m"}}"#,
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
@@ -1148,6 +1168,75 @@ mod tests {
         let text = lines[0].plain_text();
         // Should show raw args since no display_value
         assert!(text.contains("key"), "Expected raw args in output: {text}");
+    }
+
+    #[test]
+    fn view_renders_diff_preview_on_success() {
+        let mut view = ToolCallStatusView {
+            name: "Edit file".to_string(),
+            arguments: "{}".to_string(),
+            display_value: Some("main.rs".to_string()),
+            diff_preview: Some(DiffPreview {
+                removed: vec!["old line".to_string()],
+                added: vec!["new line".to_string()],
+                lang_hint: String::new(),
+            }),
+            status: ToolCallStatus::Success,
+            tick: 0,
+        };
+        let lines = view.render(&ctx());
+        // 1 status line + 2 diff lines (1 removed + 1 added)
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].plain_text().contains("✓"));
+        assert!(lines[1].plain_text().contains("- old line"));
+        assert!(lines[2].plain_text().contains("+ new line"));
+    }
+
+    #[test]
+    fn view_hides_diff_preview_while_running() {
+        let mut view = ToolCallStatusView {
+            name: "Edit file".to_string(),
+            arguments: "{}".to_string(),
+            display_value: Some("main.rs".to_string()),
+            diff_preview: Some(DiffPreview {
+                removed: vec!["old".to_string()],
+                added: vec!["new".to_string()],
+                lang_hint: String::new(),
+            }),
+            status: ToolCallStatus::Running,
+            tick: 0,
+        };
+        let lines = view.render(&ctx());
+        assert_eq!(lines.len(), 1, "Diff should not render while running");
+    }
+
+    #[test]
+    fn diff_preview_rendered_in_render_tool() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("tool-1", "coding__edit_file", None));
+
+        // Complete with diff_preview in meta
+        let rm = ToolResultMeta {
+            display: ToolDisplayMeta::new("Edit file", "main.rs"),
+            diff_preview: Some(DiffPreview {
+                removed: vec!["old".to_string()],
+                added: vec!["new".to_string()],
+                lang_hint: String::new(),
+            }),
+        };
+        let update = acp::ToolCallUpdate::new(
+            "tool-1".to_string(),
+            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
+        )
+        .meta(rm.into_map());
+        statuses.on_tool_call_update(&update);
+
+        let lines = statuses.render_tool("tool-1", &ctx());
+        // 1 status line + 2 diff lines
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].plain_text().contains("Edit file"));
+        assert!(lines[1].plain_text().contains("- old"));
+        assert!(lines[2].plain_text().contains("+ new"));
     }
 
     #[test]

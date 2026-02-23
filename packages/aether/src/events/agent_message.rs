@@ -2,7 +2,7 @@ use acp_utils::notifications::{
     SubAgentEvent, SubAgentToolError, SubAgentToolRequest, SubAgentToolResult,
 };
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
-use mcp_utils::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::ToolResultMeta;
 use serde::{Deserialize, Serialize};
 
 /// Message from the agent to the user.
@@ -36,8 +36,7 @@ pub enum AgentMessage {
 
     ToolResult {
         result: ToolCallResult,
-        /// Human-friendly display metadata for tool rendering.
-        display_meta: Option<ToolDisplayMeta>,
+        result_meta: Option<ToolResultMeta>,
         model_name: String,
     },
 
@@ -104,13 +103,13 @@ impl From<&AgentMessage> for SubAgentEvent {
             },
             AgentMessage::ToolResult {
                 result,
-                display_meta,
+                result_meta,
                 ..
             } => SubAgentEvent::ToolResult {
                 result: SubAgentToolResult {
                     id: result.id.clone(),
                     name: result.name.clone(),
-                    display_meta: display_meta.clone(),
+                    result_meta: result_meta.clone(),
                 },
             },
             AgentMessage::ToolError { error, .. } => SubAgentEvent::ToolError {
@@ -190,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_result_serializes_display_meta() {
+    fn test_tool_result_serializes_result_meta() {
         let msg = AgentMessage::ToolResult {
             result: ToolCallResult {
                 id: "call_1".to_string(),
@@ -198,15 +197,15 @@ mod tests {
                 arguments: r#"{"filePath":"Cargo.toml"}"#.to_string(),
                 result: "ok".to_string(),
             },
-            display_meta: Some(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines")),
+            result_meta: Some(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into()),
             model_name: "test-model".to_string(),
         };
 
         let json = serde_json::to_value(&msg).unwrap();
         let tool_result = &json["ToolResult"];
-        assert_eq!(tool_result["display_meta"]["title"], "Read file");
+        assert_eq!(tool_result["result_meta"]["display"]["title"], "Read file");
         assert_eq!(
-            tool_result["display_meta"]["value"],
+            tool_result["result_meta"]["display"]["value"],
             "Cargo.toml, 156 lines"
         );
 
@@ -223,7 +222,7 @@ mod tests {
                 arguments: r#"{"filePath":"Cargo.toml"}"#.to_string(),
                 result: "ok".to_string(),
             },
-            display_meta: Some(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines")),
+            result_meta: Some(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into()),
             model_name: "test-model".to_string(),
         };
 
@@ -232,9 +231,9 @@ mod tests {
             SubAgentEvent::ToolResult { result } => {
                 assert_eq!(result.id, "call_1");
                 assert_eq!(result.name, "coding__read_file");
-                let display_meta = result.display_meta.expect("display_meta should be present");
-                assert_eq!(display_meta.title, "Read file");
-                assert_eq!(display_meta.value, "Cargo.toml, 156 lines");
+                let result_meta = result.result_meta.expect("result_meta should be present");
+                assert_eq!(result_meta.display.title, "Read file");
+                assert_eq!(result_meta.display.value, "Cargo.toml, 156 lines");
             }
             other => panic!("Expected ToolResult, got {other:?}"),
         }

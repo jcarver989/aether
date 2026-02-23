@@ -84,7 +84,7 @@ impl AgentMessageBuilder {
                 arguments: request_json,
                 result: result_json,
             },
-            display_meta: None,
+            result_meta: None,
             model_name: self.model_name.clone(),
         });
 

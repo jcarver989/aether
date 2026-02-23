@@ -1,6 +1,6 @@
 use mcp_utils::client::McpManager;
 use mcp_utils::client::mcp_client::McpClient;
-use mcp_utils::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::ToolResultMeta;
 
 use futures::future::Either;
 use futures::stream::{self, StreamExt};
@@ -27,7 +27,7 @@ pub enum ToolExecutionEvent {
     Complete {
         tool_id: String,
         result: Result<ToolCallResult, ToolCallError>,
-        display_meta: Option<ToolDisplayMeta>,
+        result_meta: Option<ToolResultMeta>,
     },
 }
 
@@ -84,7 +84,7 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
             match mcp.get_client_for_tool(&request.name) {
                 Ok(client) => {
                     tokio::spawn(async move {
-                        let (result, display_meta) = match try_execute_tool(
+                        let (result, result_meta) = match try_execute_tool(
                             client,
                             &request,
                             timeout,
@@ -100,7 +100,7 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
                             .send(ToolExecutionEvent::Complete {
                                 tool_id,
                                 result,
-                                display_meta,
+                                result_meta,
                             })
                             .await;
                     });
@@ -117,7 +117,7 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
                         .send(ToolExecutionEvent::Complete {
                             tool_id,
                             result: Err(error),
-                            display_meta: None,
+                            result_meta: None,
                         })
                         .await;
                 }
@@ -152,7 +152,7 @@ async fn try_execute_tool(
     timeout: Duration,
     tool_call_id: String,
     event_tx: mpsc::Sender<ToolExecutionEvent>,
-) -> Result<(ToolCallResult, Option<ToolDisplayMeta>), ToolCallError> {
+) -> Result<(ToolCallResult, Option<ToolResultMeta>), ToolCallError> {
     use super::tool_bridge::{mcp_result_to_tool_call_result, tool_call_request_to_mcp};
     use rmcp::model::{ClientRequest::CallToolRequest, Request, ServerResult};
     use rmcp::service::PeerRequestOptions;

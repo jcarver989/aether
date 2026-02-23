@@ -1,5 +1,5 @@
 use mcp_utils::client::manager::split_on_server_name;
-use mcp_utils::display_meta::ToolDisplayMeta;
+use mcp_utils::display_meta::ToolResultMeta;
 use rmcp::model::CallToolRequestParams;
 use serde_json;
 
@@ -30,11 +30,11 @@ pub fn tool_call_request_to_mcp(
 }
 
 /// Convert an rmcp `CallToolResult` and request to `ToolCallResult` or `ToolCallError`,
-/// extracting any `_meta.display` metadata from structured content.
+/// extracting any `_meta` metadata from structured content.
 pub fn mcp_result_to_tool_call_result(
     request: &ToolCallRequest,
     mcp_result: rmcp::model::CallToolResult,
-) -> Result<(ToolCallResult, Option<ToolDisplayMeta>), ToolCallError> {
+) -> Result<(ToolCallResult, Option<ToolResultMeta>), ToolCallError> {
     if mcp_result.is_error.unwrap_or(false) {
         let error_msg = mcp_result.content.first().map_or_else(
             || "Unknown error".to_string(),
@@ -47,8 +47,8 @@ pub fn mcp_result_to_tool_call_result(
             error: format!("Tool execution error: {error_msg}"),
         })
     } else {
-        let (result_value, display_meta) =
-            extract_result_and_display_meta(mcp_result.structured_content, &mcp_result.content);
+        let (result_value, result_meta) =
+            extract_result_and_meta(mcp_result.structured_content, &mcp_result.content);
         Ok((
             ToolCallResult {
                 id: request.id.clone(),
@@ -56,19 +56,19 @@ pub fn mcp_result_to_tool_call_result(
                 arguments: request.arguments.clone(),
                 result: result_value.to_string(),
             },
-            display_meta,
+            result_meta,
         ))
     }
 }
 
-fn extract_result_and_display_meta(
+fn extract_result_and_meta(
     structured_content: Option<serde_json::Value>,
     content: &[rmcp::model::Content],
-) -> (serde_json::Value, Option<ToolDisplayMeta>) {
+) -> (serde_json::Value, Option<ToolResultMeta>) {
     match structured_content {
         Some(mut val) => {
-            let display_meta = extract_display_meta(&mut val);
-            (val, display_meta)
+            let result_meta = extract_result_meta(&mut val);
+            (val, result_meta)
         }
         None => {
             let fallback = content.first().map_or_else(
@@ -83,19 +83,21 @@ fn extract_result_and_display_meta(
     }
 }
 
-fn extract_display_meta(value: &mut serde_json::Value) -> Option<ToolDisplayMeta> {
-    let display = value
-        .as_object()?
-        .get("_meta")?
-        .as_object()?
-        .get("display")?
-        .clone();
-    let parsed = serde_json::from_value(display).ok()?;
-
+fn extract_result_meta(value: &mut serde_json::Value) -> Option<ToolResultMeta> {
     let obj = value.as_object_mut()?;
-    let meta_obj = obj.get_mut("_meta")?.as_object_mut()?;
-    meta_obj.remove("display");
-    if meta_obj.is_empty() {
+    let parsed: ToolResultMeta = {
+        let meta = obj.get("_meta")?.as_object()?;
+        serde_json::from_value(serde_json::Value::Object(meta.clone())).ok()?
+    };
+
+    let meta_empty = {
+        let meta = obj.get_mut("_meta")?.as_object_mut()?;
+        meta.remove("display");
+        meta.remove("diff_preview");
+        meta.is_empty()
+    };
+
+    if meta_empty {
         obj.remove("_meta");
     }
 
@@ -118,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extracts_and_strips_display_meta() {
+    fn test_extracts_and_strips_meta() {
         let request = make_request();
 
         let structured = json!({
@@ -139,28 +141,71 @@ mod tests {
             meta: None,
         };
 
-        let (result, display_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
 
         // _meta should be stripped from the result
         assert!(!result.result.contains("_meta"));
         assert!(result.result.contains("success"));
 
-        // display_meta should be extracted
-        let dm = display_meta.expect("display_meta should be present");
-        assert_eq!(dm.title, "Read file");
-        assert_eq!(dm.value, "file.rs, 50 lines");
+        // result_meta should be extracted
+        let rm = result_meta.expect("result_meta should be present");
+        assert_eq!(rm.display.title, "Read file");
+        assert_eq!(rm.display.value, "file.rs, 50 lines");
+        assert!(rm.diff_preview.is_none());
     }
 
     #[test]
-    fn test_preserves_non_display_meta_keys() {
+    fn test_extracts_meta_with_diff_preview() {
         let request = make_request();
 
         let structured = json!({
             "status": "success",
             "_meta": {
                 "display": {
-                    "title": "Read file",
-                    "value": "file.rs, 50 lines"
+                    "title": "Edit file",
+                    "value": "main.rs"
+                },
+                "diff_preview": {
+                    "removed": ["old line"],
+                    "added": ["new line"],
+                    "lang_hint": "rs"
+                }
+            }
+        });
+
+        let mcp_result = McpCallToolResult {
+            content: vec![],
+            structured_content: Some(structured),
+            is_error: Some(false),
+            meta: None,
+        };
+
+        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        assert!(!result.result.contains("_meta"));
+
+        let rm = result_meta.expect("result_meta should be present");
+        assert_eq!(rm.display.title, "Edit file");
+        let dp = rm.diff_preview.expect("diff_preview should be present");
+        assert_eq!(dp.removed, vec!["old line"]);
+        assert_eq!(dp.added, vec!["new line"]);
+        assert_eq!(dp.lang_hint, "rs");
+    }
+
+    #[test]
+    fn test_extracts_known_meta_and_preserves_unknown_meta_keys() {
+        let request = make_request();
+
+        let structured = json!({
+            "status": "success",
+            "_meta": {
+                "display": {
+                    "title": "Edit file",
+                    "value": "main.rs"
+                },
+                "diff_preview": {
+                    "removed": ["old line"],
+                    "added": ["new line"],
+                    "lang_hint": "rs"
                 },
                 "trace_id": "trace-123",
                 "duration_ms": 18
@@ -174,19 +219,18 @@ mod tests {
             meta: None,
         };
 
-        let (result, display_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
-
-        assert!(
-            display_meta.is_some(),
-            "display metadata should be extracted"
-        );
+        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        let rm = result_meta.expect("result_meta should be present");
+        assert_eq!(rm.display.title, "Edit file");
+        assert!(rm.diff_preview.is_some());
+        assert!(!result.result.contains("\"display\""));
+        assert!(!result.result.contains("\"diff_preview\""));
         assert!(result.result.contains("\"trace_id\":\"trace-123\""));
         assert!(result.result.contains("\"duration_ms\":18"));
-        assert!(!result.result.contains("\"display\""));
     }
 
     #[test]
-    fn test_malformed_display_meta_returns_none() {
+    fn test_malformed_meta_returns_none() {
         let request = make_request();
 
         let structured = json!({
@@ -203,13 +247,12 @@ mod tests {
             meta: None,
         };
 
-        let (result, display_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
-        assert!(display_meta.is_none());
+        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        assert!(result_meta.is_none());
         assert!(
             result
                 .result
-                .contains("\"display\":\"not a valid ToolDisplayMeta\""),
-            "malformed display metadata should remain in the result payload"
+                .contains("\"display\":\"not a valid ToolDisplayMeta\"")
         );
     }
 
@@ -229,10 +272,10 @@ mod tests {
             meta: None,
         };
 
-        let (result, display_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         assert!(result.result.contains("success"));
         assert!(result.result.contains("hello"));
-        assert!(display_meta.is_none());
+        assert!(result_meta.is_none());
     }
 
     #[test]
@@ -246,14 +289,14 @@ mod tests {
             meta: None,
         };
 
-        let (result, display_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         assert!(result.result.contains("plain text result"));
-        assert!(display_meta.is_none());
+        assert!(result_meta.is_none());
     }
 
     /// Regression test: verifies that a struct with `#[serde(rename_all = "camelCase")]`
     /// correctly serializes `_meta` as `"_meta"` (not `"Meta"`) when `#[serde(rename = "_meta")]`
-    /// is present, so `extract_result_and_display_meta` can find it.
+    /// is present, so `extract_result_meta` can find it.
     #[test]
     fn test_meta_survives_serde_round_trip_with_camel_case_rename() {
         #[derive(Serialize)]
@@ -284,11 +327,11 @@ mod tests {
             "expected `_meta` key in serialized JSON, got: {serialized}"
         );
 
-        // Verify extract_result_and_display_meta can find it
-        let (stripped, display_meta) = extract_result_and_display_meta(Some(serialized), &[]);
-        let dm = display_meta.expect("display_meta should be extracted from serialized struct");
-        assert_eq!(dm.title, "Read file");
-        assert_eq!(dm.value, "file.rs, 50 lines");
+        // Verify extract_result_and_meta can find it
+        let (stripped, result_meta) = extract_result_and_meta(Some(serialized), &[]);
+        let rm = result_meta.expect("result_meta should be extracted from serialized struct");
+        assert_eq!(rm.display.title, "Read file");
+        assert_eq!(rm.display.value, "file.rs, 50 lines");
 
         // _meta should be stripped from the result
         assert!(stripped.get("_meta").is_none());
@@ -327,9 +370,9 @@ mod tests {
         assert!(serialized.get("meta").is_some());
 
         // Extraction fails — this is the bug we fixed
-        let (_, display_meta) = extract_result_and_display_meta(Some(serialized), &[]);
+        let (_, result_meta) = extract_result_and_meta(Some(serialized), &[]);
         assert!(
-            display_meta.is_none(),
+            result_meta.is_none(),
             "extraction should fail when _meta is mangled to Meta"
         );
     }

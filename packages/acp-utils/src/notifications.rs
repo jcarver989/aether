@@ -4,7 +4,7 @@
 //! ACP connection.
 
 use agent_client_protocol::ExtNotification;
-pub use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
+pub use mcp_utils::display_meta::{DiffPreview, ToolDisplayMeta, ToolResultMeta};
 use rmcp::model::ElicitationSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -95,7 +95,7 @@ pub struct SubAgentToolRequest {
 pub struct SubAgentToolResult {
     pub id: String,
     pub name: String,
-    pub display_meta: Option<ToolDisplayMeta>,
+    pub result_meta: Option<ToolResultMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,12 +179,12 @@ mod tests {
 
     #[test]
     fn deserialize_tool_result_event() {
-        let json = r#"{"ToolResult":{"result":{"id":"c1","name":"grep","display_meta":{"title":"Grep","value":"'test' in src (3 matches)"}},"model_name":"m"}}"#;
+        let json = r#"{"ToolResult":{"result":{"id":"c1","name":"grep","result_meta":{"display":{"title":"Grep","value":"'test' in src (3 matches)"}}},"model_name":"m"}}"#;
         let event: SubAgentEvent = serde_json::from_str(json).unwrap();
         match event {
             SubAgentEvent::ToolResult { result } => {
-                let display_meta = result.display_meta.expect("expected display_meta");
-                assert_eq!(display_meta.title, "Grep");
+                let result_meta = result.result_meta.expect("expected result_meta");
+                assert_eq!(result_meta.display.title, "Grep");
             }
             other => panic!("Expected ToolResult, got {other:?}"),
         }
@@ -211,9 +211,8 @@ mod tests {
 
     #[test]
     fn tool_result_meta_map_roundtrip() {
-        let meta = ToolResultMeta {
-            display: ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"),
-        };
+        let meta: ToolResultMeta =
+            ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
         let map = meta.clone().into_map();
         let parsed = ToolResultMeta::from_map(&map).expect("should deserialize ToolResultMeta");
         assert_eq!(parsed, meta);
