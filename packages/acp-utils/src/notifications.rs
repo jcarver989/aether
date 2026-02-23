@@ -50,18 +50,20 @@ pub struct ElicitationResponse {
     pub content: Option<serde_json::Value>,
 }
 
+fn ext_notification<T: Serialize>(method: &str, params: &T) -> ExtNotification {
+    let raw_value = to_raw_value(params).expect("notification params are serializable");
+    ExtNotification::new(method, Arc::from(raw_value))
+}
+
 impl From<ContextUsageParams> for ExtNotification {
     fn from(params: ContextUsageParams) -> Self {
-        let raw_value =
-            serde_json::value::to_raw_value(&params).expect("ContextUsageParams is serializable");
-        ExtNotification::new(CONTEXT_USAGE_METHOD, Arc::from(raw_value))
+        ext_notification(CONTEXT_USAGE_METHOD, &params)
     }
 }
 
 impl From<ContextClearedParams> for ExtNotification {
     fn from(params: ContextClearedParams) -> Self {
-        let raw_value = to_raw_value(&params).expect("ContextClearedParams is serializable");
-        ExtNotification::new(CONTEXT_CLEARED_METHOD, Arc::from(raw_value))
+        ext_notification(CONTEXT_CLEARED_METHOD, &params)
     }
 }
 
@@ -78,9 +80,7 @@ pub struct SubAgentProgressParams {
 
 impl From<SubAgentProgressParams> for ExtNotification {
     fn from(params: SubAgentProgressParams) -> Self {
-        let raw_value = serde_json::value::to_raw_value(&params)
-            .expect("SubAgentProgressParams is serializable");
-        ExtNotification::new(SUB_AGENT_PROGRESS_METHOD, Arc::from(raw_value))
+        ext_notification(SUB_AGENT_PROGRESS_METHOD, &params)
     }
 }
 

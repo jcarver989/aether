@@ -119,40 +119,46 @@ impl Agent {
                 }
             }
 
-            if state.is_complete()
-                && let Some(ref id) = state.current_message_id
-            {
+            if state.is_complete() {
+                let Some(id) = state.current_message_id.take() else {
+                    continue;
+                };
+                let IterationState {
+                    message_content,
+                    reasoning_content,
+                    completed_tool_calls,
+                    stop_reason,
+                    ..
+                } = std::mem::replace(&mut state, IterationState::new());
+                let has_tool_calls = !completed_tool_calls.is_empty();
+
                 self.update_context(
-                    &state.message_content,
-                    &state.reasoning_content,
-                    &state.completed_tool_calls,
+                    &message_content,
+                    &reasoning_content,
+                    completed_tool_calls,
                 );
+
                 let _ = self
                     .message_tx
                     .send(AgentMessage::Text {
                         message_id: id.clone(),
-                        chunk: state.message_content.clone(), // Send full message content
+                        chunk: message_content.clone(),
                         is_complete: true,
                         model_name: self.llm.display_name(),
                     })
                     .await;
 
-                if !state.reasoning_content.is_empty() {
+                if !reasoning_content.is_empty() {
                     let _ = self
                         .message_tx
                         .send(AgentMessage::Thought {
                             message_id: id.clone(),
-                            chunk: state.reasoning_content.clone(),
+                            chunk: reasoning_content,
                             is_complete: true,
                             model_name: self.llm.display_name(),
                         })
                         .await;
                 }
-
-                let has_tool_calls = state.has_tool_calls();
-                let message_content = state.message_content.clone();
-                let stop_reason = state.stop_reason.clone();
-                state = IterationState::new();
 
                 if has_tool_calls {
                     self.auto_continue.on_tool_calls();
@@ -174,10 +180,16 @@ impl Agent {
                         })
                         .await;
 
-                    self.inject_continuation_prompt(&message_content, stop_reason.as_ref());
+                    self.inject_continuation_prompt(
+                        &message_content,
+                        stop_reason.as_ref(),
+                    );
                     self.start_llm_stream();
                 } else {
-                    tracing::debug!("LLM completed turn with stop reason: {:?}", stop_reason);
+                    tracing::debug!(
+                        "LLM completed turn with stop reason: {:?}",
+                        stop_reason
+                    );
                     self.auto_continue.on_completion();
                     if let Err(e) = self.message_tx.send(AgentMessage::Done).await {
                         tracing::warn!("Failed to send Done message: {:?}", e);
@@ -600,7 +612,7 @@ impl Agent {
         &mut self,
         message_content: &str,
         reasoning_content: &str,
-        completed_tools: &[Result<ToolCallResult, ToolCallError>],
+        completed_tools: Vec<Result<ToolCallResult, ToolCallError>>,
     ) {
         let tool_requests: Vec<_> = completed_tools
             .iter()
@@ -628,7 +640,7 @@ impl Agent {
 
         for result in completed_tools {
             self.context
-                .add_message(ChatMessage::ToolCallResult(result.clone()));
+                .add_message(ChatMessage::ToolCallResult(result));
         }
     }
 }
@@ -705,7 +717,4 @@ impl IterationState {
         self.llm_done && self.pending_tool_ids.is_empty()
     }
 
-    fn has_tool_calls(&self) -> bool {
-        !self.completed_tool_calls.is_empty()
-    }
 }

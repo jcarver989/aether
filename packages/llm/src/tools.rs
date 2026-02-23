@@ -34,3 +34,14 @@ pub struct ToolCallError {
     pub arguments: Option<String>,
     pub error: String,
 }
+
+impl ToolCallError {
+    pub fn from_request(request: &ToolCallRequest, error: impl Into<String>) -> Self {
+        Self {
+            id: request.id.clone(),
+            name: request.name.clone(),
+            arguments: Some(request.arguments.clone()),
+            error: error.into(),
+        }
+    }
+}

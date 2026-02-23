@@ -18,8 +18,8 @@ use crate::tui::{
     RenderOutput,
 };
 use acp_utils::notifications::{
-    CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ElicitationParams, ElicitationResponse,
-    SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
+    CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
+    ElicitationResponse, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
 };
 use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
@@ -247,14 +247,14 @@ impl App {
                 return vec![AppEvent::Render];
             }
             CONTEXT_USAGE_METHOD => {
-                if let Some(ratio) =
-                    serde_json::from_str::<serde_json::Value>(notification.params.get())
-                        .ok()
-                        .and_then(|v| v.get("usage_ratio")?.as_f64())
+                if let Ok(params) =
+                    serde_json::from_str::<ContextUsageParams>(notification.params.get())
                 {
                     // Safety: clamp guarantees value is in [0.0, 100.0], round() keeps it integral
                     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    let pct_left = ((1.0 - ratio) * 100.0).clamp(0.0, 100.0).round() as u8;
+                    let pct_left = ((1.0 - params.usage_ratio) * 100.0)
+                        .clamp(0.0, 100.0)
+                        .round() as u8;
                     self.context_usage_pct = Some(pct_left);
                     return vec![AppEvent::Render];
                 }
@@ -544,8 +544,7 @@ impl App {
         if cmd.builtin && cmd.name == "config" {
             self.text_input.clear();
             self.close_all_pickers();
-            let options = self.config_options.clone();
-            self.open_config_menu(&options);
+            self.open_config_menu();
             self.config_picker = self
                 .config_menu
                 .as_ref()
@@ -628,8 +627,8 @@ impl App {
         self.command_picker = Some(CommandPicker::new(commands));
     }
 
-    fn open_config_menu(&mut self, options: &[SessionConfigOption]) {
-        self.config_menu = Some(ConfigMenu::from_config_options(options));
+    fn open_config_menu(&mut self) {
+        self.config_menu = Some(ConfigMenu::from_config_options(&self.config_options));
     }
 
     #[cfg(test)]
@@ -900,7 +899,6 @@ mod tests {
 
     #[test]
     fn config_picker_takes_precedence_over_config_menu() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
         let opts = vec![agent_client_protocol::SessionConfigOption::select(
             "model",
             "Model",
@@ -909,7 +907,8 @@ mod tests {
                 "m1", "M1",
             )],
         )];
-        screen.open_config_menu(&opts);
+        let mut screen = App::new("test-agent".to_string(), &opts);
+        screen.open_config_menu();
         screen.open_config_picker_for("model");
 
         let context = RenderContext::new((120, 40));
@@ -1096,6 +1095,24 @@ mod tests {
 
         let effects = app.on_ext_notification(&notification);
         assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn context_usage_notification_updates_percent_left() {
+        let mut app = App::new("test-agent".to_string(), &[]);
+        let raw = serde_json::value::to_raw_value(&serde_json::json!({
+            "usage_ratio": 0.75,
+            "tokens_used": 150_000,
+            "context_limit": 200_000
+        }))
+        .unwrap();
+        let notification =
+            acp::ExtNotification::new(CONTEXT_USAGE_METHOD, std::sync::Arc::from(raw));
+
+        let effects = app.on_ext_notification(&notification);
+
+        assert!(matches!(effects.as_slice(), [AppEvent::Render]));
+        assert_eq!(app.context_usage_pct, Some(25));
     }
 
     #[test]
