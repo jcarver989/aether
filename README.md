@@ -1,8 +1,135 @@
 # Aether
 
-A modular Rust toolkit for building AI agents (LLM + prompt + tools + loop). 
+A Rust toolkit for building custom AI agents. Agents start without a system prompt or tools, so you control _every_ token in the context window. 
 
-This repository contains several crates that can be used indivdually or combined to form a coding agent that supports local and remote LLMs, LSP server integration, sub-agents, skills, slash commands, editor/IDE integration via ACP and an interactive TUI.
+## Quick Start
+Get up and running ~10 minutes.
+
+### 1. Run a custom agent
+
+1. **Pick a model** — Anthropic, OpenAI, OpenRouter, Google, DeepSeek, Moonshot, Zai, Llama.cpp, and Ollama are supported out of the box. Set the relevant API key:
+
+   ```bash
+   export ANTHROPIC_API_KEY=sk-ant-...
+   # or OPENROUTER_API_KEY, OPENAI_API_KEY, etc. — or use Ollama for fully local
+   ```
+
+2. **Add a system prompt** — create an `AGENTS.md` file in your project root. Aether loads it automatically.
+
+3. **Add tools** — agents get tools exclusively via [MCP](https://modelcontextprotocol.io/) servers. Create an `mcp.json` in your project root. These built-in servers are available:
+
+   - **Coding** — file ops, bash, grep, LSP, web fetch/search
+   - **Skills** — load reusable skill files from `skills/`
+   - **Tasks** — structured task management for multi-step work
+   - **Sub-agents** — spawn child agents from `sub-agents/`
+   - **Survey** — human-in-the-loop elicitation (ask the user questions)
+
+   ```json
+   {
+     "servers": {
+       "coding": { "type": "in-memory" },
+       "skills": { "type": "in-memory" },
+       "tasks": { "type": "in-memory" },
+       "subagents": { "type": "in-memory" },
+       "survey": { "type": "in-memory" }
+     }
+   }
+   ```
+
+   You can add external MCP servers alongside the built-ins:
+
+   ```json
+   {
+     "servers": {
+       "coding": { "type": "in-memory" },
+       "skills": { "type": "in-memory" },
+       "tasks": { "type": "in-memory" },
+       "subagents": { "type": "in-memory" },
+       "survey": { "type": "in-memory" },
+       "playwright": {
+         "type": "stdio",
+         "command": "npx",
+         "args": ["@playwright/mcp@latest"]
+       }
+     }
+   }
+   ```
+
+4. **Run it**
+
+   - **TUI** — interactive terminal UI (model selected inside the TUI):
+
+     ```bash
+     cargo run -p wisp
+     ```
+
+   - **Headless CLI** — single prompt in, text out:
+
+     ```bash
+     cargo run -p aether-cli -- -m anthropic:claude-sonnet-4-20250514 "Refactor auth module"
+     ```
+
+   - **ACP server** — for editor/IDE integration via [ACP](https://agentclientprotocol.com/get-started/introduction):
+
+     ```bash
+     cargo run -p aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
+     ```
+
+### 2. Build a custom agent as a Rust library
+
+Use `aether` as a Rust library to build your own agent in ~25 lines. Bring your own model via the `StreamableModelProvider` trait, or alloy models together to round-robin across providers per turn.
+
+1. **Add dependencies**
+
+   ```bash
+   cargo add aether llm tokio
+   ```
+
+2. **Write your agent**
+
+   ```rust
+   use aether::{
+       core::{Prompt, agent},
+       events::{AgentMessage, UserMessage},
+       mcp::{McpSpawnResult, mcp},
+   };
+   use llm::providers::anthropic::AnthropicProvider;
+   use std::io::{self, Write};
+
+   #[tokio::main]
+   async fn main() -> Result<(), Box<dyn std::error::Error>> {
+       // 1. Create a provider (reads ANTHROPIC_API_KEY from env)
+       let llm = AnthropicProvider::new(None)?;
+
+       // 2. Spawn MCP tool servers from an mcp.json file
+       let McpSpawnResult { tool_definitions: tools, command_tx: mcp_tx, .. } =
+           mcp().from_json_file("mcp.json").await?.spawn().await?;
+
+       // 3. Build and spawn the agent
+       let (tx, mut rx, _handle) = agent(llm)
+           .system_prompt(Prompt::agents_md())  // loads AGENTS.md from cwd
+           .tools(mcp_tx, tools)
+           .spawn()
+           .await?;
+
+       // 4. Send a message and stream the response
+       tx.send(UserMessage::text("Hello!")).await?;
+
+       loop {
+           match rx.recv().await {
+               Some(AgentMessage::Text { chunk, is_complete, .. }) => {
+                   if !is_complete { print!("{chunk}"); io::stdout().flush()?; }
+               }
+               Some(AgentMessage::Done) => break,
+               Some(AgentMessage::Error { message }) => { eprintln!("Error: {message}"); break; }
+               _ => {}
+           }
+       }
+       Ok(())
+   }
+   ```
+
+See [`examples/`](packages/aether/examples) for more complete examples.
 
 ## Use Cases
 
@@ -31,21 +158,6 @@ Agents get their tools from [MCP](https://modelcontextprotocol.io/) servers — 
 Combine all the above for a "batteries-included" AI coding agent: [`wisp`](packages/wisp) (TUI) + [`aether-acp`](packages/aether-acp) (ACP server) + the pre-built [MCP tool servers](packages/mcp-servers).
 
 See each package's README for detailed usage: [`aether`](packages/aether), [`llm`](packages/llm), [`wisp`](packages/wisp), [`aether-acp`](packages/aether-acp).
-
-## Quick Start
-
-Run the full coding agent (Voltron mode):
-
-```bash
-# Interactive TUI
-cargo run -p wisp
-
-# One-shot prompt
-cargo run -p wisp -- "Explain this codebase"
-
-# Headless ACP server (for editor integration)
-cargo run -p aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
-```
 
 ## Development
 

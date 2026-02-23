@@ -88,6 +88,9 @@ pub enum AgentMessage {
         new: String,
     },
 
+    /// The agent context was cleared and reset to its blank state.
+    ContextCleared,
+
     Done,
 }
 

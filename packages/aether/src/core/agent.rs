@@ -87,10 +87,14 @@ impl Agent {
         let mut state = IterationState::new();
 
         while let Some((_, event)) = self.streams.next().await {
-            use UserMessage::{Cancel, SwitchModel, Text};
+            use UserMessage::{Cancel, ClearContext, SwitchModel, Text};
             match event {
                 StreamEvent::UserMessage(Cancel) => {
                     self.on_user_cancel(&mut state).await;
+                }
+
+                StreamEvent::UserMessage(ClearContext) => {
+                    self.on_user_clear_context(&mut state).await;
                 }
 
                 StreamEvent::UserMessage(Text { content }) => {
@@ -197,6 +201,17 @@ impl Agent {
         let _ = self.message_tx.send(AgentMessage::Done).await;
     }
 
+    async fn on_user_clear_context(&mut self, state: &mut IterationState) {
+        self.clear_active_streams();
+        self.active_requests.clear();
+        self.reset_context_preserving_system_messages();
+        self.token_tracker.reset_current_usage();
+        self.auto_continue.on_completion();
+        *state = IterationState::new();
+
+        let _ = self.message_tx.send(AgentMessage::ContextCleared).await;
+    }
+
     fn on_user_text(&mut self, content: String) {
         self.context.add_message(ChatMessage::User {
             content,
@@ -225,6 +240,26 @@ impl Agent {
             .map(StreamEvent::Llm);
 
         self.streams.insert("llm".to_string(), Box::pin(llm_stream));
+    }
+
+    fn clear_active_streams(&mut self) {
+        self.streams.remove("llm");
+        let tool_stream_keys: Vec<String> = self.active_requests.keys().cloned().collect();
+        for stream_key in tool_stream_keys {
+            self.streams.remove(&stream_key);
+        }
+    }
+
+    fn reset_context_preserving_system_messages(&mut self) {
+        let system_messages = self
+            .context
+            .messages()
+            .iter()
+            .filter(|msg| msg.is_system())
+            .cloned()
+            .collect();
+
+        self.context = Context::new(system_messages, self.context.tools().clone());
     }
 
     /// Inject a continuation prompt when the LLM stops due to a resumable reason.

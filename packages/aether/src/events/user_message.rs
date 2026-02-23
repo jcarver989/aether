@@ -4,6 +4,7 @@ use llm::StreamingModelProvider;
 pub enum UserMessage {
     Text { content: String },
     Cancel,
+    ClearContext,
     SwitchModel(Box<dyn StreamingModelProvider>),
 }
 
@@ -14,6 +15,7 @@ impl std::fmt::Debug for UserMessage {
                 f.debug_struct("Text").field("content", content).finish()
             }
             UserMessage::Cancel => write!(f, "Cancel"),
+            UserMessage::ClearContext => write!(f, "ClearContext"),
             UserMessage::SwitchModel(provider) => f
                 .debug_tuple("SwitchModel")
                 .field(&provider.display_name())

@@ -1,7 +1,6 @@
 pub mod common;
 
 use crate::coding::error::GrepError;
-use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
 use aether_lspd::extensions_for_alias as extensions_for_type;
 use common::{CountSink, HasMatchSink, MatchCollectorSink, MatchData, OutputMode};
 use globset::{Glob, GlobSetBuilder};
@@ -10,6 +9,7 @@ use grep::{
     searcher::{BinaryDetection, Searcher, SearcherBuilder},
 };
 use ignore::{WalkBuilder, WalkState};
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;

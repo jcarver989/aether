@@ -2,9 +2,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::common::TaskSummary;
-use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 use crate::tasks::task_store::TaskStore;
 use crate::tasks::types::TaskStatus;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 
 /// Input for the `task_list` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

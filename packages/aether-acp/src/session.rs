@@ -9,6 +9,7 @@ use mcp_servers::McpBuilderExt;
 use mcp_utils::client::{ElicitationRequest, McpServerConfig, ServerInstructions};
 
 use agent_client_protocol as acp;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -88,13 +89,33 @@ impl Session {
             .await
             .map_err(|e| format!("Failed to receive prompts: {e}"))??;
 
-        let commands = prompts
+        let prompt_commands: Vec<_> = prompts
             .iter()
             .map(map_mcp_prompt_to_available_command)
             .collect();
 
-        Ok(commands)
+        Ok(merge_builtin_commands(prompt_commands))
     }
+}
+
+fn merge_builtin_commands(commands: Vec<acp::AvailableCommand>) -> Vec<acp::AvailableCommand> {
+    let mut merged = builtin_commands();
+    let mut seen_names: HashSet<String> = merged.iter().map(|c| c.name.clone()).collect();
+
+    for command in commands {
+        if seen_names.insert(command.name.clone()) {
+            merged.push(command);
+        }
+    }
+
+    merged
+}
+
+fn builtin_commands() -> Vec<acp::AvailableCommand> {
+    vec![acp::AvailableCommand::new(
+        "clear",
+        "Clear agent context and reset to a blank slate",
+    )]
 }
 
 async fn build_system_prompt(
@@ -115,4 +136,27 @@ async fn build_system_prompt(
     Prompt::build_all(&parts)
         .await
         .map_err(|e| format!("Failed to build system prompt: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_builtin_commands_includes_clear() {
+        let commands = merge_builtin_commands(vec![]);
+        assert!(commands.iter().any(|c| c.name == "clear"));
+    }
+
+    #[test]
+    fn merge_builtin_commands_deduplicates_by_name() {
+        let merged = merge_builtin_commands(vec![
+            acp::AvailableCommand::new("clear", "MCP clear command"),
+            acp::AvailableCommand::new("search", "Search"),
+        ]);
+
+        let clear_count = merged.iter().filter(|c| c.name == "clear").count();
+        assert_eq!(clear_count, 1);
+        assert!(merged.iter().any(|c| c.name == "search"));
+    }
 }

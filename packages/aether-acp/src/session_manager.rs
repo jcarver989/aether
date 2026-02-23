@@ -500,15 +500,21 @@ mod tests {
         assert!(options.iter().any(|o| o.value.0.starts_with("gemini:")));
 
         // Fully-unavailable providers are collapsed into sentinel entries
-        assert!(options
-            .iter()
-            .any(|o| o.value.0.as_ref() == "__unavailable:moonshot"));
-        assert!(options
-            .iter()
-            .any(|o| o.value.0.as_ref() == "__unavailable:openrouter"));
-        assert!(options
-            .iter()
-            .any(|o| o.value.0.as_ref() == "__unavailable:zai"));
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.as_ref() == "__unavailable:moonshot")
+        );
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.as_ref() == "__unavailable:openrouter")
+        );
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.as_ref() == "__unavailable:zai")
+        );
     }
 
     #[test]
@@ -652,10 +658,12 @@ mod tests {
         assert!(moonshot.name.ends_with("models)"));
 
         // Description triggers is_disabled in TUI
-        assert!(moonshot
-            .description
-            .as_deref()
-            .is_some_and(|d| d.starts_with("Unavailable:")));
+        assert!(
+            moonshot
+                .description
+                .as_deref()
+                .is_some_and(|d| d.starts_with("Unavailable:"))
+        );
     }
 
     #[test]
@@ -680,11 +688,15 @@ mod tests {
         );
 
         // Individual gemini models should still be listed
-        assert!(options
-            .iter()
-            .any(|o| o.value.0.starts_with("gemini:") && !o.name.contains("unavailable")));
-        assert!(options
-            .iter()
-            .any(|o| o.value.0.starts_with("gemini:") && o.name.contains("unavailable")));
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.starts_with("gemini:") && !o.name.contains("unavailable"))
+        );
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.starts_with("gemini:") && o.name.contains("unavailable"))
+        );
     }
 }
