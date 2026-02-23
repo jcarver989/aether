@@ -2246,6 +2246,7 @@ async fn test_command_picker_shows_mcp_commands() {
                 "Search code",
             )]),
         ))
+        .await
         .unwrap();
 
     // Open picker
@@ -2255,7 +2256,8 @@ async fn test_command_picker_shows_mcp_commands() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
 
     let names = renderer.screen().command_picker_match_names();
     assert!(
@@ -2288,7 +2290,8 @@ async fn test_command_picker_ctrl_c_exits() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert!(renderer.screen().has_command_picker());
 
     let action = renderer
@@ -2302,6 +2305,7 @@ async fn test_command_picker_ctrl_c_exits() {
             &handle,
             &session_id,
         )
+        .await
         .unwrap();
 
     assert!(matches!(action, LoopAction::Exit));
