@@ -1,8 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 use crate::coding::error::FileError;
+use crate::coding::tools::file_io::read_text_file;
 use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
 
 const MAX_LINE_LENGTH: usize = 2000;
@@ -41,80 +41,62 @@ pub struct ReadFileResult {
 }
 
 pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, FileError> {
-    // Check if file exists
-    if !Path::new(&args.file_path).exists() {
-        return Err(FileError::NotFound {
+    let content = read_text_file(&args.file_path).await?;
+
+    let all_lines: Vec<&str> = content.lines().collect();
+    let total_lines = all_lines.len();
+
+    // Default offset to 1 if not provided
+    let offset = args.offset.unwrap_or(1);
+
+    // Validate offset is 1-indexed
+    if offset == 0 {
+        return Err(FileError::InvalidOffset {
             path: args.file_path,
         });
     }
 
-    // Read file contents
-    match std::fs::read_to_string(&args.file_path) {
-        Ok(content) => {
-            let all_lines: Vec<&str> = content.lines().collect();
-            let total_lines = all_lines.len();
-
-            // Default offset to 1 if not provided
-            let offset = args.offset.unwrap_or(1);
-
-            // Validate offset is 1-indexed
-            if offset == 0 {
-                return Err(FileError::InvalidOffset {
-                    path: args.file_path,
-                });
+    let start_idx = (offset - 1).min(total_lines);
+    let limit = args.limit.unwrap_or(DEFAULT_LINE_LIMIT);
+    let end_idx = (start_idx + limit).min(total_lines);
+    let selected_lines: Vec<&str> = all_lines[start_idx..end_idx].to_vec();
+    let lines_with_numbers: Vec<String> = selected_lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let line_num = offset + i;
+            if line.len() > MAX_LINE_LENGTH {
+                format!(
+                    "{:5}\t{}... [truncated, {} chars total]",
+                    line_num,
+                    &line[..MAX_LINE_LENGTH],
+                    line.len()
+                )
+            } else {
+                format!("{line_num:5}\t{line}")
             }
+        })
+        .collect();
 
-            let start_idx = (offset - 1).min(total_lines);
+    let formatted_content = lines_with_numbers.join("\n");
 
-            // Apply limit with default of DEFAULT_LINE_LIMIT
-            let limit = args.limit.unwrap_or(DEFAULT_LINE_LIMIT);
-            let end_idx = (start_idx + limit).min(total_lines);
-            let selected_lines: Vec<&str> = all_lines[start_idx..end_idx].to_vec();
+    let display_meta = ToolDisplayMeta::new(
+        "Read file",
+        format!("{}, {total_lines} lines", basename(&args.file_path)),
+    );
 
-            // Format lines with numbers and truncate long lines
-            let lines_with_numbers: Vec<String> = selected_lines
-                .iter()
-                .enumerate()
-                .map(|(i, line)| {
-                    let line_num = offset + i;
-                    if line.len() > MAX_LINE_LENGTH {
-                        format!(
-                            "{:5}\t{}... [truncated, {} chars total]",
-                            line_num,
-                            &line[..MAX_LINE_LENGTH],
-                            line.len()
-                        )
-                    } else {
-                        format!("{line_num:5}\t{line}")
-                    }
-                })
-                .collect();
-
-            let formatted_content = lines_with_numbers.join("\n");
-
-            let display_meta = ToolDisplayMeta::new(
-                "Read file",
-                format!("{}, {total_lines} lines", basename(&args.file_path)),
-            );
-
-            Ok(ReadFileResult {
-                status: "success".to_string(),
-                file_path: args.file_path,
-                content: formatted_content,
-                total_lines,
-                lines_shown: selected_lines.len(),
-                offset,
-                limit: Some(limit),
-                size: content.len(),
-                raw_content: content,
-                _meta: Some(display_meta.into()),
-            })
-        }
-        Err(e) => Err(FileError::ReadFailed {
-            path: args.file_path,
-            reason: e.to_string(),
-        }),
-    }
+    Ok(ReadFileResult {
+        status: "success".to_string(),
+        file_path: args.file_path,
+        content: formatted_content,
+        total_lines,
+        lines_shown: selected_lines.len(),
+        offset,
+        limit: Some(limit),
+        size: content.len(),
+        raw_content: content,
+        _meta: Some(display_meta.into()),
+    })
 }
 
 #[cfg(test)]

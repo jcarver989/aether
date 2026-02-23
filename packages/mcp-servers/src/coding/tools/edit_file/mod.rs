@@ -1,8 +1,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use tokio::fs::write;
 
 use crate::coding::error::FileError;
+use crate::coding::tools::file_io::read_text_file;
 use mcp_utils::display_meta::{
     DiffPreview, ToolDisplayMeta, ToolResultMeta, basename, extension_hint,
 };
@@ -41,23 +42,8 @@ pub struct EditFileResponse {
 }
 
 pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, FileError> {
-    // File must exist for editing
-    if !Path::new(&args.file_path).exists() {
-        return Err(FileError::NotFound {
-            path: args.file_path,
-        });
-    }
-
     // Read current file content
-    let current_content = match std::fs::read_to_string(&args.file_path) {
-        Ok(content) => content,
-        Err(e) => {
-            return Err(FileError::ReadFailed {
-                path: args.file_path,
-                reason: e.to_string(),
-            });
-        }
-    };
+    let current_content = read_text_file(&args.file_path).await?;
 
     // Perform string replacement
     let (updated_content, replacements_made) = if args.replace_all {
@@ -84,7 +70,7 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     }
 
     // Write back to file
-    if let Err(e) = std::fs::write(&args.file_path, &updated_content) {
+    if let Err(e) = write(&args.file_path, &updated_content).await {
         return Err(FileError::WriteFailed {
             path: args.file_path,
             reason: e.to_string(),
@@ -112,4 +98,44 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
             diff_preview: Some(diff_preview),
         }),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn edit_file_nonexistent_returns_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("missing.txt");
+
+        let result = edit_file_contents(EditFileArgs {
+            file_path: file_path.to_string_lossy().to_string(),
+            old_string: "before".to_string(),
+            new_string: "after".to_string(),
+            replace_all: false,
+        })
+        .await;
+
+        assert!(matches!(result, Err(FileError::NotFound { .. })));
+    }
+
+    #[tokio::test]
+    async fn edit_file_existing_file_without_match_returns_pattern_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("sample.txt");
+        fs::write(&file_path, "hello world").unwrap();
+
+        let result = edit_file_contents(EditFileArgs {
+            file_path: file_path.to_string_lossy().to_string(),
+            old_string: "missing".to_string(),
+            new_string: "replacement".to_string(),
+            replace_all: false,
+        })
+        .await;
+
+        assert!(matches!(result, Err(FileError::PatternNotFound { .. })));
+    }
 }

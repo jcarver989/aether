@@ -1,6 +1,6 @@
 use crate::app_state::AppState;
-use crate::components::app::{App, AppEvent};
-use crate::tui::{Renderer, spawn_terminal_event_task};
+use crate::components::app::{App, AppEvent, build_attachment_blocks};
+use crate::tui::{Line, Renderer, spawn_terminal_event_task};
 use acp_utils::client::AcpEvent;
 use agent_client_protocol as acp;
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind};
@@ -39,7 +39,7 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
                     events.extend(collect_acp_events(&mut screen, &renderer, event));
                 }
 
-                match apply_screen_effects(&mut renderer, &mut screen, &prompt_handle, &session_id, events) {
+                match apply_screen_effects(&mut renderer, &mut screen, &prompt_handle, &session_id, events).await {
                     Ok(true) => break,
                     Err(e) => eprintln!("Error handling ACP event: {e}"),
                     _ => {}
@@ -53,7 +53,9 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
                     &prompt_handle,
                     &session_id,
                     terminal_event,
-                ) {
+                )
+                .await
+                {
                     break;
                 }
             }
@@ -64,7 +66,8 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
                     &mut screen,
                     &prompt_handle,
                     &session_id,
-                );
+                )
+                .await;
             }
         }
     }
@@ -98,7 +101,7 @@ fn collect_acp_events<T: Write>(
     }
 }
 
-fn on_terminal_event<T: Write>(
+async fn on_terminal_event<T: Write>(
     renderer: &mut Renderer<T>,
     screen: &mut App,
     prompt_handle: &acp_utils::client::AcpPromptHandle,
@@ -109,7 +112,9 @@ fn on_terminal_event<T: Write>(
         Event::Key(key_event) => {
             if should_handle_key_event(key_event.kind) {
                 let effects = screen.on_key_event(key_event);
-                match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects) {
+                match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects)
+                    .await
+                {
                     Ok(true) => true,
                     Ok(false) => false,
                     Err(err) => {
@@ -123,7 +128,7 @@ fn on_terminal_event<T: Write>(
         }
         Event::Paste(text) => {
             let effects = screen.on_paste(&text);
-            match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects) {
+            match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects).await {
                 Ok(true) => true,
                 Ok(false) => false,
                 Err(e) => {
@@ -135,7 +140,7 @@ fn on_terminal_event<T: Write>(
         Event::Resize(cols, rows) => {
             renderer.update_render_context_with((cols, rows));
             let effects = App::on_resize(cols, rows);
-            match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects) {
+            match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects).await {
                 Ok(true) => true,
                 Ok(false) => false,
                 Err(e) => {
@@ -148,14 +153,15 @@ fn on_terminal_event<T: Write>(
     }
 }
 
-fn on_tick<T: Write>(
+async fn on_tick<T: Write>(
     renderer: &mut Renderer<T>,
     screen: &mut App,
     prompt_handle: &acp_utils::client::AcpPromptHandle,
     session_id: &acp::SessionId,
 ) {
     let effects = screen.on_tick();
-    if let Err(e) = apply_screen_effects(renderer, screen, prompt_handle, session_id, effects) {
+    if let Err(e) = apply_screen_effects(renderer, screen, prompt_handle, session_id, effects).await
+    {
         eprintln!("Error on tick: {e}");
     }
 }
@@ -164,7 +170,7 @@ fn should_handle_key_event(kind: KeyEventKind) -> bool {
     matches!(kind, KeyEventKind::Press | KeyEventKind::Repeat)
 }
 
-fn apply_screen_effects<T: Write>(
+async fn apply_screen_effects<T: Write>(
     renderer: &mut Renderer<T>,
     screen: &mut App,
     prompt_handle: &acp_utils::client::AcpPromptHandle,
@@ -180,9 +186,18 @@ fn apply_screen_effects<T: Write>(
             AppEvent::PushScrollback(lines) => renderer.push_to_scrollback(&lines)?,
             AppEvent::PromptSubmit {
                 user_input,
-                content_blocks,
+                attachments,
             } => {
-                prompt_handle.prompt(session_id, &user_input, content_blocks)?;
+                submit_prompt_with_attachments(
+                    renderer,
+                    screen,
+                    prompt_handle,
+                    session_id,
+                    &user_input,
+                    attachments,
+                    &mut should_render,
+                )
+                .await?;
             }
             AppEvent::SetConfigOption {
                 config_id,
@@ -202,6 +217,44 @@ fn apply_screen_effects<T: Write>(
     }
 
     Ok(false)
+}
+
+async fn submit_prompt_with_attachments<T: Write>(
+    renderer: &mut Renderer<T>,
+    screen: &mut App,
+    prompt_handle: &acp_utils::client::AcpPromptHandle,
+    session_id: &acp::SessionId,
+    user_input: &str,
+    attachments: Vec<crate::components::app::PromptAttachment>,
+    should_render: &mut bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if *should_render {
+        renderer.render(screen)?;
+        *should_render = false;
+    }
+
+    let outcome = build_attachment_blocks(&attachments).await;
+    if !outcome.warnings.is_empty() {
+        let warning_lines: Vec<Line> = outcome
+            .warnings
+            .into_iter()
+            .map(|warning| Line::new(format!("[wisp] {warning}")))
+            .collect();
+        renderer.push_to_scrollback(&warning_lines)?;
+        *should_render = true;
+    }
+
+    prompt_handle.prompt(
+        session_id,
+        user_input,
+        if outcome.blocks.is_empty() {
+            None
+        } else {
+            Some(outcome.blocks)
+        },
+    )?;
+
+    Ok(())
 }
 
 #[cfg(test)]

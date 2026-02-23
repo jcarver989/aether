@@ -1,6 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use tokio::fs::{create_dir_all, write};
 
 use crate::coding::error::FileError;
 use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
@@ -34,7 +35,7 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
+        && let Err(e) = create_dir_all(parent).await
     {
         return Err(FileError::CreateDirFailed {
             path: args.file_path,
@@ -43,7 +44,7 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
     }
 
     // Write content to file
-    if let Err(e) = std::fs::write(&args.file_path, &args.content) {
+    if let Err(e) = write(&args.file_path, &args.content).await {
         return Err(FileError::WriteFailed {
             path: args.file_path,
             reason: e.to_string(),

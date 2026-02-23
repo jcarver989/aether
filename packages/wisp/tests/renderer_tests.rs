@@ -3,9 +3,9 @@ mod test_terminal;
 use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol as acp;
 use test_terminal::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::{App, AppEvent};
+use wisp::components::app::{App, AppEvent, build_attachment_blocks};
 use wisp::components::command_picker::CommandEntry;
-use wisp::tui::Renderer as FrameRenderer;
+use wisp::tui::{Line, Renderer as FrameRenderer};
 
 const TEST_AGENT: &str = "test-agent";
 const TEST_WIDTH: u16 = 200;
@@ -45,7 +45,7 @@ impl Renderer {
         self.renderer.render(&mut self.screen)
     }
 
-    fn on_key_event(
+    async fn on_key_event(
         &mut self,
         key_event: crossterm::event::KeyEvent,
         prompt_handle: &AcpPromptHandle,
@@ -53,32 +53,33 @@ impl Renderer {
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let effects = self.screen.on_key_event(key_event);
         self.apply_effects(effects, Some((prompt_handle, session_id)))
+            .await
     }
 
-    fn on_session_update(&mut self, update: acp::SessionUpdate) -> std::io::Result<()> {
+    async fn on_session_update(&mut self, update: acp::SessionUpdate) -> std::io::Result<()> {
         let effects = self.screen.on_session_update(update);
-        self.apply_effects_no_prompt(effects)
+        self.apply_effects_no_prompt(effects).await
     }
 
-    fn on_prompt_done(&mut self) -> std::io::Result<()> {
+    async fn on_prompt_done(&mut self) -> std::io::Result<()> {
         let effects = self.screen.on_prompt_done(self.renderer.context().size);
-        self.apply_effects_no_prompt(effects)
+        self.apply_effects_no_prompt(effects).await
     }
 
-    fn on_tick(&mut self) -> std::io::Result<()> {
+    async fn on_tick(&mut self) -> std::io::Result<()> {
         let effects = self.screen.on_tick();
-        self.apply_effects_no_prompt(effects)
+        self.apply_effects_no_prompt(effects).await
     }
 
-    fn on_paste(&mut self, text: &str) -> std::io::Result<()> {
+    async fn on_paste(&mut self, text: &str) -> std::io::Result<()> {
         let effects = self.screen.on_paste(text);
-        self.apply_effects_no_prompt(effects)
+        self.apply_effects_no_prompt(effects).await
     }
 
-    fn on_resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
+    async fn on_resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
         self.renderer.update_render_context_with((cols, rows));
         let effects = App::on_resize(cols, rows);
-        self.apply_effects_no_prompt(effects)
+        self.apply_effects_no_prompt(effects).await
     }
 
     fn screen(&self) -> &App {
@@ -93,7 +94,7 @@ impl Renderer {
         self.screen.available_commands()
     }
 
-    fn apply_effects(
+    async fn apply_effects(
         &mut self,
         effects: Vec<AppEvent>,
         prompt: Option<(&AcpPromptHandle, &acp::SessionId)>,
@@ -110,12 +111,29 @@ impl Renderer {
                 }
                 AppEvent::PromptSubmit {
                     user_input,
-                    content_blocks,
+                    attachments,
                 } => {
                     let Some((prompt_handle, session_id)) = prompt else {
                         return Err(std::io::Error::other("missing prompt context").into());
                     };
-                    prompt_handle.prompt(session_id, &user_input, content_blocks)?;
+                    let outcome = build_attachment_blocks(&attachments).await;
+                    if !outcome.warnings.is_empty() {
+                        let warning_lines: Vec<Line> = outcome
+                            .warnings
+                            .into_iter()
+                            .map(|warning| Line::new(format!("[wisp] {warning}")))
+                            .collect();
+                        self.renderer.push_to_scrollback(&warning_lines)?;
+                    }
+                    prompt_handle.prompt(
+                        session_id,
+                        &user_input,
+                        if outcome.blocks.is_empty() {
+                            None
+                        } else {
+                            Some(outcome.blocks)
+                        },
+                    )?;
                 }
                 AppEvent::SetConfigOption {
                     config_id,
@@ -142,7 +160,7 @@ impl Renderer {
         Ok(action)
     }
 
-    fn apply_effects_no_prompt(&mut self, effects: Vec<AppEvent>) -> std::io::Result<()> {
+    async fn apply_effects_no_prompt(&mut self, effects: Vec<AppEvent>) -> std::io::Result<()> {
         let mut should_render = false;
 
         for effect in effects {
@@ -238,11 +256,13 @@ async fn test_agent_message_chunks_stream_before_prompt_done() {
         .on_session_update(acp::SessionUpdate::AgentMessageChunk(
             acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Hello"))),
         ))
+        .await
         .unwrap();
     renderer
         .on_session_update(acp::SessionUpdate::AgentMessageChunk(
             acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(" World"))),
         ))
+        .await
         .unwrap();
 
     let expected = expected_with_prompt(&["Hello World"], TEST_WIDTH, "", TEST_AGENT);
@@ -260,11 +280,13 @@ async fn test_thought_and_text_chunks_stream_before_prompt_done() {
         .on_session_update(acp::SessionUpdate::AgentThoughtChunk(
             acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Thinking"))),
         ))
+        .await
         .unwrap();
     renderer
         .on_session_update(acp::SessionUpdate::AgentMessageChunk(
             acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Done"))),
         ))
+        .await
         .unwrap();
 
     let expected = expected_with_prompt(&["│ Thinking", "", "Done"], TEST_WIDTH, "", TEST_AGENT);
@@ -282,16 +304,19 @@ async fn test_text_and_thought_chunks_stream_in_arrival_order() {
         .on_session_update(acp::SessionUpdate::AgentMessageChunk(
             acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("A"))),
         ))
+        .await
         .unwrap();
     renderer
         .on_session_update(acp::SessionUpdate::AgentThoughtChunk(
             acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("B"))),
         ))
+        .await
         .unwrap();
     renderer
         .on_session_update(acp::SessionUpdate::AgentMessageChunk(
             acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("C"))),
         ))
+        .await
         .unwrap();
 
     let expected = expected_with_prompt(&["A", "", "│ B", "", "C"], TEST_WIDTH, "", TEST_AGENT);
@@ -551,15 +576,15 @@ async fn test_late_result_after_prompt_done() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-fn render_sync(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer {
+async fn render_with_size(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer {
     let terminal = TestTerminal::new(size.0, size.1);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with(size);
 
     for event in events {
         match event {
-            TestEvent::Update(update) => renderer.on_session_update(update).unwrap(),
-            TestEvent::PromptDone => renderer.on_prompt_done().unwrap(),
+            TestEvent::Update(update) => renderer.on_session_update(update).await.unwrap(),
+            TestEvent::PromptDone => renderer.on_prompt_done().await.unwrap(),
         }
     }
 
@@ -567,11 +592,7 @@ fn render_sync(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer {
 }
 
 async fn render(events: Vec<TestEvent>) -> Renderer {
-    render_sync(events, (TEST_WIDTH, 40))
-}
-
-async fn render_with_size(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer {
-    render_sync(events, size)
+    render_with_size(events, (TEST_WIDTH, 40)).await
 }
 
 #[tokio::test]
@@ -585,11 +606,11 @@ async fn test_user_message_submission() {
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello world", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "Hello world", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     // Simulate the agent finishing so the grid loader clears
-    renderer.on_prompt_done().unwrap();
+    renderer.on_prompt_done().await.unwrap();
 
     let expected = expected_with_prompt(&["", "Hello world"], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
@@ -661,7 +682,7 @@ fn tool_update_with_args(id: &str, args: &str) -> TestEvent {
     ))
 }
 
-fn type_string(
+async fn type_string(
     renderer: &mut Renderer,
     text: &str,
     handle: &AcpPromptHandle,
@@ -678,11 +699,12 @@ fn type_string(
         };
         renderer
             .on_key_event(key_event, handle, session_id)
+            .await
             .unwrap();
     }
 }
 
-fn press_enter(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id: &acp::SessionId) {
+async fn press_enter(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id: &acp::SessionId) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let enter_event = KeyEvent {
@@ -693,6 +715,7 @@ fn press_enter(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id: &a
     };
     renderer
         .on_key_event(enter_event, handle, session_id)
+        .await
         .unwrap();
 }
 
@@ -711,6 +734,7 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
             acp::ToolCall::new("call_1".to_string(), "Read")
                 .raw_input(serde_json::json!({"file": "test.rs"})),
         ))
+        .await
         .unwrap();
 
     let expected = expected_with_prompt(
@@ -737,10 +761,11 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
             acp::ToolCall::new("call_1".to_string(), "Read")
                 .raw_input(serde_json::json!({"file": "test.rs"})),
         ))
+        .await
         .unwrap();
 
     // Terminal resize triggers full re-render at new width
-    renderer.on_resize(100, 30).unwrap();
+    renderer.on_resize(100, 30).await.unwrap();
 
     let expected = expected_with_prompt(
         &[
@@ -868,7 +893,7 @@ async fn test_typing_renders_within_bordered_input() {
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "hello", &handle, &session_id);
+    type_string(&mut renderer, "hello", &handle, &session_id).await;
 
     let expected = expected_prompt(80, "hello", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
@@ -889,9 +914,10 @@ async fn test_wrapped_input_prompt_rerender_has_single_box() {
         "this input prompt is long enough to wrap across multiple rows",
         &handle,
         &session_id,
-    );
-    press_backspace(&mut renderer, &handle, &session_id);
-    press_backspace(&mut renderer, &handle, &session_id);
+    )
+    .await;
+    press_backspace(&mut renderer, &handle, &session_id).await;
+    press_backspace(&mut renderer, &handle, &session_id).await;
 
     let lines = renderer.writer().get_lines();
     let top_count = lines.iter().filter(|l| l.contains('╭')).count();
@@ -928,8 +954,8 @@ async fn test_backspace_updates_within_border() {
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "hello", &handle, &session_id);
-    press_backspace(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "hello", &handle, &session_id).await;
+    press_backspace(&mut renderer, &handle, &session_id).await;
 
     let expected = expected_prompt(80, "hell", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
@@ -958,6 +984,7 @@ async fn test_ctrl_c_exits_while_file_picker_is_open() {
             &handle,
             &session_id,
         )
+        .await
         .unwrap();
     assert!(renderer.screen().has_file_picker());
 
@@ -972,6 +999,7 @@ async fn test_ctrl_c_exits_while_file_picker_is_open() {
             &handle,
             &session_id,
         )
+        .await
         .unwrap();
 
     assert!(matches!(action, LoopAction::Exit));
@@ -1000,6 +1028,7 @@ async fn test_space_closes_file_picker_without_selection() {
             &handle,
             &session_id,
         )
+        .await
         .unwrap();
     assert!(renderer.screen().has_file_picker());
 
@@ -1014,6 +1043,7 @@ async fn test_space_closes_file_picker_without_selection() {
             &handle,
             &session_id,
         )
+        .await
         .unwrap();
 
     assert!(!renderer.screen().has_file_picker());
@@ -1104,6 +1134,7 @@ async fn test_status_line_updates_on_config_option_update() {
         .on_session_update(acp::SessionUpdate::ConfigOptionUpdate(
             acp::ConfigOptionUpdate::new(new_config_options),
         ))
+        .await
         .unwrap();
 
     let lines = renderer.writer().get_lines();
@@ -1144,8 +1175,8 @@ async fn test_grid_loader_visible_after_prompt_submit() {
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "Hello", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     let lines = renderer.writer().get_lines();
     let has_spinner = lines.iter().any(|l| l.contains('⠋'));
@@ -1167,14 +1198,15 @@ async fn test_grid_loader_disappears_on_session_update() {
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "Hello", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     // First session update should hide the loader
     renderer
         .on_session_update(acp::SessionUpdate::AgentMessageChunk(
             acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Hi"))),
         ))
+        .await
         .unwrap();
 
     let lines = renderer.writer().get_lines();
@@ -1199,10 +1231,10 @@ async fn test_grid_loader_disappears_on_prompt_done() {
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "Hello", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
-    renderer.on_prompt_done().unwrap();
+    renderer.on_prompt_done().await.unwrap();
 
     let lines = renderer.writer().get_lines();
     let has_braille = lines
@@ -1238,12 +1270,12 @@ async fn test_on_tick_advances_animation() {
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "Hello", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     let lines_before: Vec<String> = renderer.writer().get_lines();
 
-    renderer.on_tick().unwrap();
+    renderer.on_tick().await.unwrap();
 
     let lines_after: Vec<String> = renderer.writer().get_lines();
 
@@ -1264,7 +1296,7 @@ async fn test_on_tick_noop_when_not_waiting() {
 
     let lines_before: Vec<String> = renderer.writer().get_lines();
 
-    renderer.on_tick().unwrap();
+    renderer.on_tick().await.unwrap();
 
     let lines_after: Vec<String> = renderer.writer().get_lines();
 
@@ -1281,7 +1313,7 @@ async fn test_paste_inserts_all_text_at_once() {
     renderer.update_render_context_with((80, 24));
     renderer.initial_render().unwrap();
 
-    renderer.on_paste("hello world").unwrap();
+    renderer.on_paste("hello world").await.unwrap();
 
     let expected = expected_prompt(80, "hello world", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
@@ -1294,7 +1326,7 @@ async fn test_paste_strips_control_characters() {
     renderer.update_render_context_with((80, 24));
     renderer.initial_render().unwrap();
 
-    renderer.on_paste("line1\nline2\ttab").unwrap();
+    renderer.on_paste("line1\nline2\ttab").await.unwrap();
 
     let expected = expected_prompt(80, "line1line2tab", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
@@ -1324,18 +1356,19 @@ async fn test_paste_closes_file_picker() {
             &handle,
             &session_id,
         )
+        .await
         .unwrap();
     assert!(renderer.screen().has_file_picker());
 
     // Paste should close the picker and append text
-    renderer.on_paste("pasted text").unwrap();
+    renderer.on_paste("pasted text").await.unwrap();
 
     assert!(!renderer.screen().has_file_picker());
     let expected = expected_prompt(80, "@pasted text", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-fn send_key(
+async fn send_key(
     renderer: &mut Renderer,
     code: crossterm::event::KeyCode,
     modifiers: crossterm::event::KeyModifiers,
@@ -1353,10 +1386,11 @@ fn send_key(
             handle,
             session_id,
         )
+        .await
         .unwrap();
 }
 
-fn open_picker_with_files(
+async fn open_picker_with_files(
     renderer: &mut Renderer,
     files: Vec<&str>,
     handle: &AcpPromptHandle,
@@ -1371,7 +1405,8 @@ fn open_picker_with_files(
         crossterm::event::KeyModifiers::empty(),
         handle,
         session_id,
-    );
+    )
+    .await;
 
     // Replace the picker with known entries
     let matches: Vec<FileMatch> = files
@@ -1384,7 +1419,7 @@ fn open_picker_with_files(
     renderer.screen_mut().open_file_picker_with_matches(matches);
 
     // Trigger re-render with the injected picker
-    renderer.on_resize(80, 24).unwrap();
+    renderer.on_resize(80, 24).await.unwrap();
 }
 
 fn picker_selected_display_name(renderer: &Renderer) -> Option<String> {
@@ -1419,7 +1454,8 @@ async fn test_file_picker_down_arrow_moves_selection() {
         vec!["alpha.rs", "beta.rs", "gamma.rs"],
         &handle,
         &session_id,
-    );
+    )
+    .await;
 
     // Initially selected_index=0
     assert_eq!(
@@ -1435,7 +1471,8 @@ async fn test_file_picker_down_arrow_moves_selection() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert_eq!(
         picker_selected_display_name(&renderer).as_deref(),
         Some("beta.rs")
@@ -1449,7 +1486,8 @@ async fn test_file_picker_down_arrow_moves_selection() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert_eq!(
         picker_selected_display_name(&renderer).as_deref(),
         Some("gamma.rs")
@@ -1463,7 +1501,8 @@ async fn test_file_picker_down_arrow_moves_selection() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert_eq!(
         picker_selected_display_name(&renderer).as_deref(),
         Some("alpha.rs")
@@ -1488,7 +1527,8 @@ async fn test_file_picker_up_arrow_moves_selection() {
         vec!["alpha.rs", "beta.rs", "gamma.rs"],
         &handle,
         &session_id,
-    );
+    )
+    .await;
 
     // Up from index 0 wraps → gamma.rs
     send_key(
@@ -1497,7 +1537,8 @@ async fn test_file_picker_up_arrow_moves_selection() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert_eq!(
         picker_selected_display_name(&renderer).as_deref(),
         Some("gamma.rs")
@@ -1511,7 +1552,8 @@ async fn test_file_picker_up_arrow_moves_selection() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert_eq!(
         picker_selected_display_name(&renderer).as_deref(),
         Some("beta.rs")
@@ -1536,7 +1578,8 @@ async fn test_file_picker_ctrl_n_moves_down() {
         vec!["alpha.rs", "beta.rs"],
         &handle,
         &session_id,
-    );
+    )
+    .await;
 
     // Ctrl+N → beta.rs
     send_key(
@@ -1545,7 +1588,8 @@ async fn test_file_picker_ctrl_n_moves_down() {
         KeyModifiers::CONTROL,
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert_eq!(
         picker_selected_display_name(&renderer).as_deref(),
         Some("beta.rs")
@@ -1570,7 +1614,8 @@ async fn test_file_picker_ctrl_p_moves_up() {
         vec!["alpha.rs", "beta.rs"],
         &handle,
         &session_id,
-    );
+    )
+    .await;
 
     // Ctrl+P from index 0 wraps → beta.rs
     send_key(
@@ -1579,7 +1624,8 @@ async fn test_file_picker_ctrl_p_moves_up() {
         KeyModifiers::CONTROL,
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert_eq!(
         picker_selected_display_name(&renderer).as_deref(),
         Some("beta.rs")
@@ -1587,7 +1633,7 @@ async fn test_file_picker_ctrl_p_moves_up() {
     assert_picker_renders_selected(renderer.writer(), "beta.rs");
 }
 
-fn press_backspace(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id: &acp::SessionId) {
+async fn press_backspace(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id: &acp::SessionId) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let backspace_event = KeyEvent {
@@ -1598,6 +1644,7 @@ fn press_backspace(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id
     };
     renderer
         .on_key_event(backspace_event, handle, session_id)
+        .await
         .unwrap();
 }
 
@@ -1635,8 +1682,8 @@ async fn test_config_command_opens_picker_directly_for_single_option() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     // Single config option should skip menu and open picker directly
     assert!(renderer.screen().has_config_menu());
@@ -1662,8 +1709,8 @@ async fn test_config_menu_esc_closes() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
     assert!(renderer.screen().has_config_menu());
     assert!(renderer.screen().has_config_picker());
 
@@ -1673,7 +1720,8 @@ async fn test_config_menu_esc_closes() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert!(renderer.screen().has_config_menu());
     assert!(!renderer.screen().has_config_picker());
 
@@ -1684,7 +1732,8 @@ async fn test_config_menu_esc_closes() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert!(!renderer.screen().has_config_menu());
 }
 
@@ -1701,8 +1750,8 @@ async fn test_config_menu_arrow_navigation_single_entry() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     // With single config option, menu has 1 entry at index 0
     assert_eq!(renderer.screen().config_menu_selected_index(), Some(0));
@@ -1714,7 +1763,8 @@ async fn test_config_menu_arrow_navigation_single_entry() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert!(renderer.screen().has_config_menu());
     assert!(!renderer.screen().has_config_picker());
 
@@ -1725,7 +1775,8 @@ async fn test_config_menu_arrow_navigation_single_entry() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert_eq!(renderer.screen().config_menu_selected_index(), Some(0));
 }
 
@@ -1740,8 +1791,8 @@ async fn test_config_single_option_shows_model_picker() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     // Single config option auto-opens model picker
     assert!(renderer.screen().has_config_picker());
@@ -1764,8 +1815,8 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     let lines = renderer.writer().get_lines();
     let search_row = lines
@@ -1794,10 +1845,10 @@ async fn test_config_picker_filters_model_options() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
-    type_string(&mut renderer, "claude", &handle, &session_id);
+    type_string(&mut renderer, "claude", &handle, &session_id).await;
 
     let lines = renderer.writer().get_lines();
     assert!(
@@ -1834,8 +1885,8 @@ async fn test_config_menu_swallows_other_keys() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
     assert!(renderer.screen().has_config_menu());
 
     // Typing a character should not modify input buffer
@@ -1845,7 +1896,8 @@ async fn test_config_menu_swallows_other_keys() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
 
     // Menu should still be open
     assert!(renderer.screen().has_config_menu());
@@ -1872,8 +1924,8 @@ async fn test_config_menu_ctrl_c_exits() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
     assert!(renderer.screen().has_config_menu());
     assert!(renderer.screen().has_config_picker());
 
@@ -1889,6 +1941,7 @@ async fn test_config_menu_ctrl_c_exits() {
             &handle,
             &session_id,
         )
+        .await
         .unwrap();
 
     assert!(matches!(action, LoopAction::Exit));
@@ -1905,8 +1958,8 @@ async fn test_config_menu_updates_on_config_option_event() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
     assert!(renderer.screen().has_config_menu());
 
     // Simulate the agent responding with updated config
@@ -1933,6 +1986,7 @@ async fn test_config_menu_updates_on_config_option_event() {
         .on_session_update(acp::SessionUpdate::ConfigOptionUpdate(
             acp::ConfigOptionUpdate::new(new_config),
         ))
+        .await
         .unwrap();
 
     let lines = renderer.writer().get_lines();
@@ -1954,8 +2008,8 @@ async fn test_config_clears_input_buffer() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     // Input buffer should be cleared
     let lines = renderer.writer().get_lines();
@@ -1977,8 +2031,8 @@ async fn test_config_with_no_options_shows_placeholder() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id);
-    press_enter(&mut renderer, &handle, &session_id);
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
 
     assert!(renderer.screen().has_config_menu());
     let lines = renderer.writer().get_lines();
@@ -2009,7 +2063,8 @@ async fn test_slash_opens_command_picker() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
 
     assert!(
         renderer.screen().has_command_picker(),
@@ -2027,7 +2082,7 @@ async fn test_slash_mid_input_no_picker() {
     let handle = AcpPromptHandle::noop();
     let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "hello/", &handle, &session_id);
+    type_string(&mut renderer, "hello/", &handle, &session_id).await;
 
     assert!(
         !renderer.screen().has_command_picker(),
@@ -2053,7 +2108,8 @@ async fn test_command_picker_esc_clears() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert!(renderer.screen().has_command_picker());
 
     send_key(
@@ -2062,7 +2118,8 @@ async fn test_command_picker_esc_clears() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
 
     assert!(
         !renderer.screen().has_command_picker(),
@@ -2094,7 +2151,8 @@ async fn test_command_picker_backspace_empty_closes() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
     assert!(renderer.screen().has_command_picker());
 
     send_key(
@@ -2103,7 +2161,8 @@ async fn test_command_picker_backspace_empty_closes() {
         KeyModifiers::empty(),
         &handle,
         &session_id,
-    );
+    )
+    .await;
 
     assert!(
         !renderer.screen().has_command_picker(),
@@ -2125,6 +2184,7 @@ async fn test_available_commands_update_stored() {
                 acp::AvailableCommand::new("web", "Browse the web"),
             ]),
         ))
+        .await
         .unwrap();
 
     assert_eq!(renderer.available_commands().len(), 2);
@@ -2150,6 +2210,7 @@ async fn test_available_commands_update_extracts_hint() {
                 acp::AvailableCommand::new("config", "Open settings"),
             ]),
         ))
+        .await
         .unwrap();
 
     assert_eq!(renderer.available_commands().len(), 2);
