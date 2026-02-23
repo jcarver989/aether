@@ -194,6 +194,9 @@ async fn stream_agent_messages(
             AgentMessage::ModelSwitched { previous, new } => {
                 tracing::debug!("Model switched: {} -> {}", previous, new);
             }
+            AgentMessage::ContextCleared => {
+                tracing::debug!("Agent context cleared");
+            }
             AgentMessage::Thought {
                 chunk,
                 is_complete: false,

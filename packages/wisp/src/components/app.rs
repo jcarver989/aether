@@ -18,8 +18,8 @@ use crate::tui::{
     RenderOutput,
 };
 use acp_utils::notifications::{
-    CONTEXT_USAGE_METHOD, ElicitationParams, ElicitationResponse, SUB_AGENT_PROGRESS_METHOD,
-    SubAgentProgressParams,
+    CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ElicitationParams, ElicitationResponse,
+    SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
 };
 use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
@@ -242,6 +242,10 @@ impl App {
 
     pub fn on_ext_notification(&mut self, notification: &ExtNotification) -> Vec<AppEvent> {
         match notification.method.as_ref() {
+            CONTEXT_CLEARED_METHOD => {
+                self.reset_after_context_cleared();
+                return vec![AppEvent::Render];
+            }
             CONTEXT_USAGE_METHOD => {
                 if let Some(ratio) =
                     serde_json::from_str::<serde_json::Value>(notification.params.get())
@@ -266,6 +270,14 @@ impl App {
             _ => {}
         }
         vec![]
+    }
+
+    fn reset_after_context_cleared(&mut self) {
+        self.conversation.clear();
+        self.tool_call_statuses.clear();
+        self.waiting_for_response = false;
+        self.grid_loader.visible = false;
+        self.animation_tick = 0;
     }
 
     pub fn on_prompt_error(&mut self) -> Vec<AppEvent> {
@@ -1084,6 +1096,29 @@ mod tests {
 
         let effects = app.on_ext_notification(&notification);
         assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn context_cleared_notification_resets_conversation_and_tool_state() {
+        let mut app = App::new("test-agent".to_string(), &[]);
+        app.waiting_for_response = true;
+        app.grid_loader.visible = true;
+        app.conversation
+            .set_segments(vec![SegmentContent::Text("hello".to_string())]);
+        app.tool_call_statuses
+            .on_tool_call(&acp::ToolCall::new("tool-1", "Read file"));
+
+        let raw = serde_json::value::to_raw_value(&serde_json::json!({})).unwrap();
+        let notification =
+            acp::ExtNotification::new(CONTEXT_CLEARED_METHOD, std::sync::Arc::from(raw));
+
+        let effects = app.on_ext_notification(&notification);
+
+        assert!(matches!(effects.as_slice(), [AppEvent::Render]));
+        assert!(!app.waiting_for_response);
+        assert!(!app.grid_loader.visible);
+        assert_eq!(app.conversation.segments().len(), 0);
+        assert_eq!(app.tool_call_statuses.progress().total_top_level, 0);
     }
 
     #[test]

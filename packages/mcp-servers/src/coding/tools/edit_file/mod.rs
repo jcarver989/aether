@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::coding::error::FileError;
-use mcp_utils::display_meta::{DiffPreview, ToolDisplayMeta, ToolResultMeta, basename, extension_hint};
+use mcp_utils::display_meta::{
+    DiffPreview, ToolDisplayMeta, ToolResultMeta, basename, extension_hint,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

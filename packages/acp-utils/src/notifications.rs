@@ -7,12 +7,14 @@ use agent_client_protocol::ExtNotification;
 pub use mcp_utils::display_meta::{DiffPreview, ToolDisplayMeta, ToolResultMeta};
 use rmcp::model::ElicitationSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::value::to_raw_value;
 use std::sync::Arc;
 
 /// Custom notification methods for sub-agent progress updates.
 /// Per ACP extensibility spec, custom notifications must start with underscore.
 pub const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
 pub const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
+pub const CONTEXT_CLEARED_METHOD: &str = "_aether/context_cleared";
 
 /// Custom ext_method for tunneling MCP elicitation through ACP.
 /// Note: ACP auto-prefixes ext_method names with `_`, so the wire method
@@ -26,6 +28,10 @@ pub struct ContextUsageParams {
     pub tokens_used: u32,
     pub context_limit: u32,
 }
+
+/// Parameters for `_aether/context_cleared` notifications.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ContextClearedParams {}
 
 /// Parameters sent via ext_method for `aether/elicitation`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -49,6 +55,13 @@ impl From<ContextUsageParams> for ExtNotification {
         let raw_value =
             serde_json::value::to_raw_value(&params).expect("ContextUsageParams is serializable");
         ExtNotification::new(CONTEXT_USAGE_METHOD, Arc::from(raw_value))
+    }
+}
+
+impl From<ContextClearedParams> for ExtNotification {
+    fn from(params: ContextClearedParams) -> Self {
+        let raw_value = to_raw_value(&params).expect("ContextClearedParams is serializable");
+        ExtNotification::new(CONTEXT_CLEARED_METHOD, Arc::from(raw_value))
     }
 }
 
@@ -112,6 +125,7 @@ mod tests {
     fn method_constants_have_underscore_prefix() {
         assert!(SUB_AGENT_PROGRESS_METHOD.starts_with('_'));
         assert!(CONTEXT_USAGE_METHOD.starts_with('_'));
+        assert!(CONTEXT_CLEARED_METHOD.starts_with('_'));
     }
 
     #[test]
@@ -148,6 +162,18 @@ mod tests {
         assert_eq!(notification.method.as_ref(), CONTEXT_USAGE_METHOD);
 
         let parsed: ContextUsageParams =
+            serde_json::from_str(notification.params.get()).expect("valid JSON");
+        assert_eq!(parsed, params);
+    }
+
+    #[test]
+    fn context_cleared_params_roundtrip() {
+        let params = ContextClearedParams::default();
+
+        let notification: ExtNotification = params.clone().into();
+        assert_eq!(notification.method.as_ref(), CONTEXT_CLEARED_METHOD);
+
+        let parsed: ContextClearedParams =
             serde_json::from_str(notification.params.get()).expect("valid JSON");
         assert_eq!(parsed, params);
     }

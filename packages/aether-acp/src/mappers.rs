@@ -1,4 +1,4 @@
-use acp_utils::notifications::{ContextUsageParams, SubAgentProgressParams};
+use acp_utils::notifications::{ContextClearedParams, ContextUsageParams, SubAgentProgressParams};
 use aether::events::{AgentMessage, SubAgentProgressPayload};
 use agent_client_protocol::{
     self as acp, Content, ContentBlock, ContentChunk, HttpHeader, McpServer, SessionId,
@@ -159,6 +159,7 @@ pub fn map_agent_message_to_session_notification(
             is_complete: true, ..
         }
         | AgentMessage::ContextUsageUpdate { .. }
+        | AgentMessage::ContextCleared
         | AgentMessage::Error { .. }
         | AgentMessage::Cancelled { .. }
         | AgentMessage::Done
@@ -190,6 +191,7 @@ pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotificat
             let params = try_parse_sub_agent_progress(msg_str, request)?;
             Some(params.into())
         }
+        AgentMessage::ContextCleared => Some(ContextClearedParams::default().into()),
         _ => None,
     }
 }
@@ -421,6 +423,23 @@ mod tests {
     }
 
     #[test]
+    fn test_context_cleared_maps_to_ext_notification() {
+        let ext = try_into_ext_notification(&AgentMessage::ContextCleared)
+            .expect("context cleared should emit ext notification");
+        assert_eq!(
+            ext.method.as_ref(),
+            acp_utils::notifications::CONTEXT_CLEARED_METHOD
+        );
+
+        let parsed: acp_utils::notifications::ContextClearedParams =
+            serde_json::from_str(ext.params.get()).expect("valid JSON");
+        assert_eq!(
+            parsed,
+            acp_utils::notifications::ContextClearedParams::default()
+        );
+    }
+
+    #[test]
     fn test_tool_progress_with_invalid_json_falls_back_to_simple_message() {
         let session_id = acp::SessionId::new("test-session");
 
@@ -560,16 +579,15 @@ mod tests {
             arguments: "{}".to_string(),
             result: "file contents".to_string(),
         };
-        let rm: ToolResultMeta =
-            ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
+        let rm: ToolResultMeta = ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
 
         let notification = map_tool_result_to_notification(session_id, &result, Some(&rm));
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 assert!(update.fields.title.is_none());
                 let meta = update.meta.expect("meta should be present");
-                let tc_meta = ToolResultMeta::from_map(&meta)
-                    .expect("should deserialize to ToolResultMeta");
+                let tc_meta =
+                    ToolResultMeta::from_map(&meta).expect("should deserialize to ToolResultMeta");
                 assert_eq!(tc_meta.display.title, "Read file");
                 assert_eq!(tc_meta.display.value, "Cargo.toml, 156 lines");
             }

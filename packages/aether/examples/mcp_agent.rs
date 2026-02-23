@@ -119,6 +119,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(ModelSwitched { previous, new }) => {
                 println!("Model switched: {} -> {}", previous, new);
             }
+            Some(ContextCleared) => {
+                println!("Context cleared");
+            }
             Some(Thought { chunk, .. }) => {
                 print!("{chunk}");
                 io::stdout().flush().unwrap();

@@ -98,6 +98,12 @@ impl ConversationBuffer {
         self.thought_block_open = false;
     }
 
+    pub(crate) fn clear(&mut self) {
+        self.segments.clear();
+        self.thought_block_open = false;
+        self.highlight_cache = HighlightCache::new();
+    }
+
     pub(crate) fn ensure_tool_segment(&mut self, tool_id: &str) {
         let has_segment = self
             .segments
@@ -520,6 +526,20 @@ mod tests {
             buffer.cached_lines(0).is_none(),
             "cache should be cleared on append"
         );
+    }
+
+    #[test]
+    fn clear_removes_segments_and_resets_state() {
+        let mut buffer = ConversationBuffer::new();
+        buffer.append_thought_chunk("thinking");
+        buffer.append_text_chunk("answer");
+        assert_eq!(buffer.segments().len(), 2);
+
+        buffer.clear();
+
+        assert_eq!(buffer.segments().len(), 0);
+        buffer.append_thought_chunk("new");
+        assert_eq!(buffer.segments().len(), 1);
     }
 
     #[test]

@@ -127,6 +127,10 @@ async fn handle_prompt(
             .map_err(|e| RelayError::SwitchModelFailed(format!("{e}")))?;
     }
 
+    if is_clear_command(&text) {
+        return handle_clear_context(ctx).await;
+    }
+
     let text = expand_slash_command_if_needed(ctx.mcp_tx, text).await;
 
     ctx.agent_tx
@@ -186,6 +190,55 @@ async fn handle_prompt(
             }
         }
     }
+}
+
+async fn handle_clear_context(ctx: &mut PromptContext<'_>) -> Result<acp::StopReason, RelayError> {
+    ctx.agent_tx
+        .send(UserMessage::ClearContext)
+        .await
+        .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
+
+    loop {
+        tokio::select! {
+            msg = ctx.agent_rx.recv() => {
+                if let Some(msg) = msg {
+                    forward_notification(ctx.actor_handle, ctx.acp_session_id, &msg).await;
+
+                    match &msg {
+                        AgentMessage::ContextCleared => {
+                            return Ok(acp::StopReason::EndTurn);
+                        }
+                        AgentMessage::Error { .. } | AgentMessage::Done => {
+                            return Ok(map_agent_message_to_stop_reason(&msg));
+                        }
+                        _ => {}
+                    }
+                } else {
+                    error!("Agent channel closed unexpectedly while clearing context");
+                    return Err(RelayError::ChannelClosed);
+                }
+            }
+            Some(elicitation) = ctx.elicitation_rx.recv() => {
+                handle_elicitation_request(ctx.actor_handle, elicitation).await;
+            }
+            Some(cmd) = ctx.cmd_rx.recv() => {
+                match cmd {
+                    SessionCommand::Cancel => {
+                        info!("Cancel received while context clear is in progress");
+                    }
+                    SessionCommand::Prompt { result_tx, .. } => {
+                        let _ = result_tx.send(Err(RelayError::SendPromptFailed(
+                            "prompt already in progress".to_string(),
+                        )));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn is_clear_command(text: &str) -> bool {
+    text.trim() == "/clear"
 }
 
 async fn handle_elicitation_request(
@@ -413,6 +466,20 @@ mod tests {
     #[test]
     fn test_empty_arguments_returns_none() {
         assert!(parse_slash_command_arguments("").is_none());
+    }
+
+    #[test]
+    fn clear_command_matches_exactly() {
+        assert!(is_clear_command("/clear"));
+        assert!(is_clear_command("  /clear  "));
+        assert!(is_clear_command("\n/clear\t"));
+    }
+
+    #[test]
+    fn clear_command_rejects_extra_tokens() {
+        assert!(!is_clear_command("/clear now"));
+        assert!(!is_clear_command("/clear/now"));
+        assert!(!is_clear_command("/clear-now"));
     }
 
     #[test]

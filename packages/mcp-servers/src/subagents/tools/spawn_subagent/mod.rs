@@ -1,5 +1,4 @@
 use crate::coding::CodingMcp;
-use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 use crate::skills::SkillsMcp;
 use crate::subagents::subagent_file::AgentFile;
 use crate::tasks::TasksMcp;
@@ -11,6 +10,7 @@ use aether::{
 use futures::FutureExt;
 use llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser};
 use mcp_utils::client::ServerInstructions;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 use rmcp::ServiceExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
