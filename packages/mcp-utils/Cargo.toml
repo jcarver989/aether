@@ -25,12 +25,12 @@ serde = { workspace = true }
 tokio = { workspace = true }
 rmcp = { workspace = true }
 tracing = { workspace = true }
-serde_yaml = "0.9"
+serde_yaml = { workspace = true }
 
 # client-only deps
 llm = { path = "../llm", optional = true }
 serde_json = { workspace = true }
-oauth2 = { version = "5.0", optional = true }
+oauth2 = { workspace = true, optional = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }

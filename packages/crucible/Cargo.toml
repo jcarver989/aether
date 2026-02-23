@@ -37,9 +37,9 @@ chrono = { workspace = true, features = ["serde"] }
 tempfile = { workspace = true }
 
 # HTTP server
-axum = "0.8.8"
-tower = "0.5.3"
-tower-http = { version = "0.6.8", features = ["fs", "cors"] }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["fs", "cors"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 
 # Internal dependencies

@@ -68,11 +68,11 @@ lsp-types = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
-htmd = { version = "0.5", optional = true }
-url = { version = "2.5", optional = true }
+htmd = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
 
 # skills feature
-serde_yaml = { version = "0.9", optional = true }
+serde_yaml = { workspace = true, optional = true }
 
 # subagents feature
 aether = { path = "../aether", optional = true }
