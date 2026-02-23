@@ -10,7 +10,7 @@ use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::progress_indicator::ProgressIndicator;
 use crate::components::status_line::StatusLine;
-use crate::components::text_input::{TextInput, TextInputAction};
+use crate::components::text_input::{SelectedFileMention, TextInput, TextInputAction};
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::tui::spinner::Spinner;
 use crate::tui::{
@@ -27,7 +27,8 @@ use agent_client_protocol::{
 };
 use crossterm::event::{self, KeyCode, KeyEvent};
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
 use unicode_width::UnicodeWidthStr;
 use url::Url;
@@ -41,13 +42,25 @@ pub enum AppEvent {
     PushScrollback(Vec<Line>),
     PromptSubmit {
         user_input: String,
-        content_blocks: Option<Vec<acp::ContentBlock>>,
+        attachments: Vec<PromptAttachment>,
     },
     SetConfigOption {
         config_id: String,
         new_value: String,
     },
     Cancel,
+}
+
+#[derive(Debug, Clone)]
+pub struct PromptAttachment {
+    pub path: PathBuf,
+    pub display_name: String,
+}
+
+#[derive(Debug, Default)]
+pub struct AttachmentBuildOutcome {
+    pub blocks: Vec<acp::ContentBlock>,
+    pub warnings: Vec<String>,
 }
 
 pub struct App {
@@ -567,6 +580,8 @@ impl App {
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
+        let attachments =
+            collect_submit_attachments(&user_input, self.text_input.take_mentions());
         self.text_input.clear();
         self.close_input_pickers();
 
@@ -575,26 +590,16 @@ impl App {
             AppEvent::PushScrollback(vec![Line::new(user_input.clone())]),
         ];
 
-        let (content_blocks, warning_lines) = self.build_attachment_blocks(&user_input);
-        if !warning_lines.is_empty() {
-            effects.push(AppEvent::PushScrollback(warning_lines));
-        }
-
-        effects.push(AppEvent::PromptSubmit {
-            user_input,
-            content_blocks: if content_blocks.is_empty() {
-                None
-            } else {
-                Some(content_blocks)
-            },
-        });
-
         self.waiting_for_response = true;
         self.animation_tick = 0;
         self.grid_loader.visible = true;
         self.grid_loader.tick = 0;
 
         effects.push(AppEvent::Render);
+        effects.push(AppEvent::PromptSubmit {
+            user_input,
+            attachments,
+        });
         effects
     }
 
@@ -672,45 +677,60 @@ impl App {
         let prefix = "  / search: ";
         UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(picker.query())
     }
-
-    fn build_attachment_blocks(&mut self, user_input: &str) -> (Vec<acp::ContentBlock>, Vec<Line>) {
-        let mentions: HashSet<&str> = user_input.split_whitespace().collect();
-        let selected = self.text_input.take_mentions();
-        let mut warning_lines = Vec::new();
-        let mut blocks = Vec::new();
-
-        for mention in selected {
-            if !mentions.contains(mention.mention.as_str()) {
-                continue;
-            }
-
-            match try_build_attachment_block(&mention.path, &mention.display_name) {
-                Ok((block, maybe_warning)) => {
-                    blocks.push(block);
-                    if let Some(warning) = maybe_warning {
-                        warning_lines.push(Line::new(format!("[wisp] {warning}")));
-                    }
-                }
-                Err(warning) => warning_lines.push(Line::new(format!("[wisp] {warning}"))),
-            }
-        }
-
-        (blocks, warning_lines)
-    }
 }
 
-fn try_build_attachment_block(
+fn collect_submit_attachments(
+    user_input: &str,
+    selected_mentions: Vec<SelectedFileMention>,
+) -> Vec<PromptAttachment> {
+    let mentions: HashSet<&str> = user_input.split_whitespace().collect();
+    selected_mentions
+        .into_iter()
+        .filter(|mention| mentions.contains(mention.mention.as_str()))
+        .map(|mention| PromptAttachment {
+            path: mention.path,
+            display_name: mention.display_name,
+        })
+        .collect()
+}
+
+pub async fn build_attachment_blocks(attachments: &[PromptAttachment]) -> AttachmentBuildOutcome {
+    let mut outcome = AttachmentBuildOutcome::default();
+
+    for attachment in attachments {
+        match try_build_attachment_block(&attachment.path, &attachment.display_name).await {
+            Ok((block, maybe_warning)) => {
+                outcome.blocks.push(block);
+                if let Some(warning) = maybe_warning {
+                    outcome.warnings.push(warning);
+                }
+            }
+            Err(warning) => outcome.warnings.push(warning),
+        }
+    }
+
+    outcome
+}
+
+async fn try_build_attachment_block(
     path: &Path,
     display_name: &str,
 ) -> Result<(acp::ContentBlock, Option<String>), String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read {display_name}: {e}"))?;
+    let file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| format!("Failed to read {display_name}: {e}"))?;
+
+    let mut bytes = Vec::new();
+    file.take((MAX_EMBED_TEXT_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|e| format!("Failed to read {display_name}: {e}"))?;
 
     let truncated = bytes.len() > MAX_EMBED_TEXT_BYTES;
-    let text_bytes = if truncated {
-        &bytes[..MAX_EMBED_TEXT_BYTES]
-    } else {
-        &bytes
-    };
+    if truncated {
+        bytes.truncate(MAX_EMBED_TEXT_BYTES);
+    }
+    let text_bytes = bytes.as_slice();
 
     let text = match std::str::from_utf8(text_bytes) {
         Ok(text) => text.to_string(),
@@ -723,10 +743,7 @@ fn try_build_attachment_block(
         Err(_) => return Err(format!("Skipped binary or non-UTF8 file: {display_name}")),
     };
 
-    let file_uri =
-        Url::from_file_path(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
-            .map_err(|()| format!("Failed to build file URI for {display_name}"))?
-            .to_string();
+    let file_uri = build_attachment_file_uri(path, display_name).await?;
 
     let mime_type = mime_guess::from_path(path)
         .first_or_octet_stream()
@@ -742,6 +759,15 @@ fn try_build_attachment_block(
     ));
 
     Ok((block, warning))
+}
+
+async fn build_attachment_file_uri(path: &Path, display_name: &str) -> Result<String, String> {
+    let canonical_path = tokio::fs::canonicalize(path).await.ok();
+    let uri_path = canonical_path.as_deref().unwrap_or(path);
+    let file_uri = Url::from_file_path(uri_path)
+        .map_err(|()| format!("Failed to build file URI for {display_name}"))?
+        .to_string();
+    Ok(file_uri)
 }
 
 impl CursorComponent for App {
@@ -874,6 +900,7 @@ mod tests {
     use super::*;
     use crossterm::event::KeyModifiers;
     use std::path::PathBuf;
+    use tempfile::TempDir;
 
     #[test]
     fn command_picker_cursor_targets_picker_header() {
@@ -1161,5 +1188,99 @@ mod tests {
 
         assert_eq!(app.text_input.cursor_index(None), 0);
         assert!(app.text_input.buffer().is_empty());
+    }
+
+    #[test]
+    fn execute_input_emits_render_before_prompt_submit() {
+        let mut app = App::new("test".to_string(), &[]);
+        app.text_input.set_input("hello".to_string());
+
+        let effects = app.execute_input();
+        let render_pos = effects
+            .iter()
+            .position(|effect| matches!(effect, AppEvent::Render))
+            .expect("render effect should be present");
+        let submit_pos = effects
+            .iter()
+            .position(|effect| matches!(effect, AppEvent::PromptSubmit { .. }))
+            .expect("prompt submit effect should be present");
+
+        assert!(render_pos < submit_pos);
+    }
+
+    #[test]
+    fn collect_submit_attachments_filters_unmentioned_files() {
+        let selected = vec![
+            SelectedFileMention {
+                mention: "@keep.rs".to_string(),
+                path: PathBuf::from("/tmp/keep.rs"),
+                display_name: "keep.rs".to_string(),
+            },
+            SelectedFileMention {
+                mention: "@skip.rs".to_string(),
+                path: PathBuf::from("/tmp/skip.rs"),
+                display_name: "skip.rs".to_string(),
+            },
+        ];
+
+        let attachments = collect_submit_attachments("inspect @keep.rs now", selected);
+
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].display_name, "keep.rs");
+        assert_eq!(attachments[0].path, PathBuf::from("/tmp/keep.rs"));
+    }
+
+    #[tokio::test]
+    async fn build_attachment_blocks_truncates_large_file_with_warning() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("large.txt");
+        let display_name = "large.txt".to_string();
+        std::fs::write(&path, "x".repeat(MAX_EMBED_TEXT_BYTES + 64)).unwrap();
+
+        let attachments = vec![PromptAttachment {
+            path,
+            display_name: display_name.clone(),
+        }];
+        let blocks = build_attachment_blocks(&attachments).await;
+
+        assert_eq!(blocks.blocks.len(), 1);
+        assert_eq!(blocks.warnings.len(), 1);
+        assert!(blocks.warnings[0].contains(&format!(
+            "Truncated {display_name} to {MAX_EMBED_TEXT_BYTES} bytes"
+        )));
+    }
+
+    #[tokio::test]
+    async fn build_attachment_blocks_skips_non_utf8_files() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("binary.bin");
+        let display_name = "binary.bin".to_string();
+        std::fs::write(&path, [0xff, 0xfe, 0xfd]).unwrap();
+
+        let attachments = vec![PromptAttachment {
+            path,
+            display_name: display_name.clone(),
+        }];
+        let blocks = build_attachment_blocks(&attachments).await;
+
+        assert!(blocks.blocks.is_empty());
+        assert_eq!(blocks.warnings.len(), 1);
+        assert!(
+            blocks.warnings[0]
+                .contains(&format!("Skipped binary or non-UTF8 file: {display_name}"))
+        );
+    }
+
+    #[tokio::test]
+    async fn build_attachment_file_uri_falls_back_when_canonicalize_fails() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("missing.txt");
+        let expected = Url::from_file_path(&path).unwrap().to_string();
+
+        let uri = build_attachment_file_uri(&path, "missing.txt")
+            .await
+            .expect("URI should be built from original absolute path");
+
+        assert_eq!(uri, expected);
     }
 }

@@ -54,14 +54,23 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
     let mut files = Vec::new();
 
     // Read directory entries
-    let entries =
-        std::fs::read_dir(target_path).map_err(|e| ListFilesError::ReadDirFailed(e.to_string()))?;
+    let mut entries = tokio::fs::read_dir(target_path)
+        .await
+        .map_err(|e| ListFilesError::ReadDirFailed(e.to_string()))?;
 
-    for entry in entries {
-        let entry = entry.map_err(|e| ListFilesError::ReadEntryFailed(e.to_string()))?;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| ListFilesError::ReadEntryFailed(e.to_string()))?
+    {
         let path = entry.path();
+        let entry_file_type = entry
+            .file_type()
+            .await
+            .map_err(|e| ListFilesError::MetadataFailed(e.to_string()))?;
         let metadata = entry
             .metadata()
+            .await
             .map_err(|e| ListFilesError::MetadataFailed(e.to_string()))?;
 
         let name = entry.file_name().to_string_lossy().to_string();
@@ -71,10 +80,10 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
             continue;
         }
 
-        let file_type = if metadata.is_dir() {
-            FileType::Directory
-        } else if metadata.is_symlink() {
+        let file_type = if entry_file_type.is_symlink() {
             FileType::Symlink
+        } else if metadata.is_dir() {
+            FileType::Directory
         } else {
             FileType::File
         };
@@ -118,4 +127,58 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
         total_count,
         _meta: Some(display_meta.into()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn list_files_reports_symlink_for_directory_symlink() {
+        let temp_dir = TempDir::new().unwrap();
+        let sub_dir = temp_dir.path().join("real_dir");
+        fs::create_dir(&sub_dir).unwrap();
+        let link_path = temp_dir.path().join("link_dir");
+        symlink(&sub_dir, &link_path).unwrap();
+
+        let result = list_files(ListFilesArgs {
+            path: Some(temp_dir.path().to_string_lossy().to_string()),
+            include_hidden: Some(true),
+        })
+        .await
+        .unwrap();
+
+        let file_info = result
+            .files
+            .iter()
+            .find(|file| file.name == "link_dir")
+            .expect("directory symlink should be returned");
+        assert!(matches!(file_info.file_type, FileType::Symlink));
+    }
+
+    #[tokio::test]
+    async fn list_files_reports_symlink_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let target_path = temp_dir.path().join("target.txt");
+        let link_path = temp_dir.path().join("link.txt");
+        fs::write(&target_path, "hello").unwrap();
+        symlink(&target_path, &link_path).unwrap();
+
+        let result = list_files(ListFilesArgs {
+            path: Some(temp_dir.path().to_string_lossy().to_string()),
+            include_hidden: Some(true),
+        })
+        .await
+        .unwrap();
+
+        let file_info = result
+            .files
+            .iter()
+            .find(|file| file.name == "link.txt")
+            .expect("symlink should be returned");
+        assert!(matches!(file_info.file_type, FileType::Symlink));
+    }
 }

@@ -132,11 +132,7 @@ impl Agent {
                 } = std::mem::replace(&mut state, IterationState::new());
                 let has_tool_calls = !completed_tool_calls.is_empty();
 
-                self.update_context(
-                    &message_content,
-                    &reasoning_content,
-                    completed_tool_calls,
-                );
+                self.update_context(&message_content, &reasoning_content, completed_tool_calls);
 
                 let _ = self
                     .message_tx
@@ -180,16 +176,10 @@ impl Agent {
                         })
                         .await;
 
-                    self.inject_continuation_prompt(
-                        &message_content,
-                        stop_reason.as_ref(),
-                    );
+                    self.inject_continuation_prompt(&message_content, stop_reason.as_ref());
                     self.start_llm_stream();
                 } else {
-                    tracing::debug!(
-                        "LLM completed turn with stop reason: {:?}",
-                        stop_reason
-                    );
+                    tracing::debug!("LLM completed turn with stop reason: {:?}", stop_reason);
                     self.auto_continue.on_completion();
                     if let Err(e) = self.message_tx.send(AgentMessage::Done).await {
                         tracing::warn!("Failed to send Done message: {:?}", e);
@@ -716,5 +706,4 @@ impl IterationState {
     fn is_complete(&self) -> bool {
         self.llm_done && self.pending_tool_ids.is_empty()
     }
-
 }

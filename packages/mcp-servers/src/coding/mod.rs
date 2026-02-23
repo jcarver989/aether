@@ -14,7 +14,10 @@ use std::{
     collections::{HashMap, HashSet},
     path::Path,
 };
-use tokio::sync::{Mutex, RwLock};
+use tokio::{
+    fs::try_exists,
+    sync::{Mutex, RwLock},
+};
 
 pub mod default_tools;
 pub mod error;
@@ -282,7 +285,10 @@ When using tools that take file paths, always use absolute paths from:
         let Parameters(args) = request;
 
         // Safety check: if file exists, ensure it has been read first
-        if Path::new(&args.file_path).exists() {
+        if try_exists(&args.file_path)
+            .await
+            .map_err(|e| format!("Failed to check existence of {}: {e}", args.file_path))?
+        {
             let files_read = self.files_read.read().await;
             if !files_read.contains(&args.file_path) {
                 return Err(format!(
