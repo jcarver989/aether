@@ -38,17 +38,12 @@ use tools::edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
 use tools::find::{FindInput, FindOutput, find_files_by_name};
 use tools::grep::{GrepInput, GrepOutput, perform_grep};
 use tools::list_files::{ListFilesArgs, ListFilesResult, list_files};
-use tools::lsp::call_hierarchy::{
-    LspCallHierarchyInput, LspCallHierarchyOutput, execute_lsp_call_hierarchy,
-};
-use tools::lsp::check_errors::{
-    LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
-};
-use tools::lsp::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
-use tools::lsp::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 use tools::web_fetch::{WebFetchInput, WebFetchOutput, WebFetcher};
 use tools::web_search::search_client::BraveSearchClient;
+use tools::lsp::check_errors::{LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics};
+use tools::lsp::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
+use tools::lsp::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 use tools::web_search::{WebSearchInput, WebSearchOutput, WebSearcher};
 use tools::write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
@@ -202,34 +197,20 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     }
 
     fn build_instructions(&self) -> String {
-        let base = r#"# Coding MCP Server
+        let base = r"# Coding MCP Server
 
-## LSP-First Principle
-
-**For anything about code structure, use LSP tools first.** They're faster and more precise than grep/find.
-
-| Task | Wrong | Right |
-|------|-------|-------|
-| Check for errors | `cargo check`, `npm run build` | `lsp_check_errors` (instant, no build) |
-| Find where X is defined | `grep "fn X"` + read files | `lsp_symbol(operation: "definition")` |
-| Find all usages of X | `grep "X"` (matches comments too) | `lsp_symbol(operation: "references")` |
-| Understand large file | `read_file` (800 lines) | `lsp_document` → `read_file(offset, limit)` |
-| Navigate to dependency | Manual ~/.cargo navigation | `lsp_symbol` on import (cross-crate jump) |
-
-**Symptoms you're using the wrong tool:**
-- Running grep multiple times to find a definition → use `lsp_symbol`
-- Reading entire files to find one function → use `lsp_document` first
-- Manually navigating ~/.cargo or node_modules → use LSP cross-crate navigation
+File I/O, search, shell, and LSP code intelligence tools for coding workflows.
 
 ## Quick Reference
 
+- **Text patterns** (TODOs, logs, strings): `grep`
+- **File names** (find *.test.ts): `find`
+- **Read/write/edit** files: `read_file`, `write_file`, `edit_file`
+- **Shell commands**: `bash`
 - **Errors & warnings** (instant check without build): `lsp_check_errors`
 - **Code symbols** (definitions, usages, types): `lsp_symbol`
 - **File structure** (what's in this file?): `lsp_document`
-- **Call relationships** (who calls X?): `lsp_symbol` → `lsp_call_hierarchy`
-- **Text patterns** (TODOs, logs, strings): `grep`
-- **File names** (find *.test.ts): `find`
-"#;
+";
 
         match self.get_workspace_root() {
             Some(root) => format!(
@@ -412,48 +393,6 @@ When using tools that take file paths, always use absolute paths from:
         Ok(Json(result))
     }
 
-    #[doc = include_str!("tools/lsp/symbol_lookup/description.md")]
-    #[tool]
-    pub async fn lsp_symbol(
-        &self,
-        request: Parameters<LspSymbolInput>,
-    ) -> Result<Json<LspSymbolOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_symbol(input, &self.tools).await.map(Json)
-    }
-
-    #[doc = include_str!("tools/lsp/document_info/description.md")]
-    #[tool]
-    pub async fn lsp_document(
-        &self,
-        request: Parameters<LspDocumentInput>,
-    ) -> Result<Json<LspDocumentOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_document(input, &self.tools).await.map(Json)
-    }
-
-    #[doc = include_str!("tools/lsp/call_hierarchy/description.md")]
-    #[tool]
-    pub async fn lsp_call_hierarchy(
-        &self,
-        request: Parameters<LspCallHierarchyInput>,
-    ) -> Result<Json<LspCallHierarchyOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_call_hierarchy(input, &self.tools)
-            .await
-            .map(Json)
-    }
-
-    #[doc = include_str!("tools/lsp/check_errors/description.md")]
-    #[tool]
-    pub async fn lsp_check_errors(
-        &self,
-        request: Parameters<LspDiagnosticsInput>,
-    ) -> Result<Json<LspDiagnosticsOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_diagnostics(input, &self.tools).await.map(Json)
-    }
-
     #[doc = include_str!("tools/web_fetch/description.md")]
     #[tool]
     pub async fn web_fetch(
@@ -483,6 +422,36 @@ When using tools that take file paths, always use absolute paths from:
             .await
             .map_err(|e| e.to_string())
             .map(Json)
+    }
+
+    #[doc = include_str!("tools/lsp/symbol_lookup/description.md")]
+    #[tool]
+    pub async fn lsp_symbol(
+        &self,
+        request: Parameters<LspSymbolInput>,
+    ) -> Result<Json<LspSymbolOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_symbol(input, &self.tools).await.map(Json)
+    }
+
+    #[doc = include_str!("tools/lsp/document_info/description.md")]
+    #[tool]
+    pub async fn lsp_document(
+        &self,
+        request: Parameters<LspDocumentInput>,
+    ) -> Result<Json<LspDocumentOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_document(input, &self.tools).await.map(Json)
+    }
+
+    #[doc = include_str!("tools/lsp/check_errors/description.md")]
+    #[tool]
+    pub async fn lsp_check_errors(
+        &self,
+        request: Parameters<LspDiagnosticsInput>,
+    ) -> Result<Json<LspDiagnosticsOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_diagnostics(input, &self.tools).await.map(Json)
     }
 }
 

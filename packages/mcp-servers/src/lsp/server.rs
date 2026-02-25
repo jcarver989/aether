@@ -1,0 +1,169 @@
+use clap::Parser;
+use rmcp::{
+    ServerHandler,
+    handler::server::{
+        router::tool::ToolRouter,
+        wrapper::{Json, Parameters},
+    },
+    model::{Implementation, ServerCapabilities, ServerInfo},
+    tool, tool_handler, tool_router,
+};
+use std::path::PathBuf;
+use tokio::sync::RwLock;
+
+use crate::coding::DefaultCodingTools;
+use crate::coding::tools::lsp::LspCodingTools;
+use crate::coding::tools::lsp::check_errors::{
+    LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
+};
+use crate::coding::tools::lsp::document_info::{
+    LspDocumentInput, LspDocumentOutput, execute_lsp_document,
+};
+use crate::coding::tools::lsp::symbol_lookup::{
+    LspSymbolInput, LspSymbolOutput, execute_lsp_symbol,
+};
+
+/// CLI arguments for `LspMcp` server
+#[derive(Debug, Clone, Parser)]
+pub struct LspMcpArgs {
+    /// Root directory for workspace (used for LSP initialization)
+    #[arg(long = "root-dir")]
+    pub root_dir: Option<PathBuf>,
+}
+
+impl LspMcpArgs {
+    pub fn from_args(args: Vec<String>) -> Result<Self, String> {
+        let mut full_args = vec!["lsp-mcp".to_string()];
+        full_args.extend(args);
+
+        Self::try_parse_from(full_args)
+            .map_err(|e| format!("Failed to parse LspMcp arguments: {e}"))
+    }
+}
+
+/// MCP server that exposes LSP-based code intelligence tools.
+///
+/// Provides language-aware symbol lookup, document structure, diagnostics,
+/// and call hierarchy — without bundling file I/O tools.
+#[derive(Debug)]
+pub struct LspMcp {
+    tool_router: ToolRouter<Self>,
+    tools: LspCodingTools<DefaultCodingTools>,
+    roots: RwLock<Vec<PathBuf>>,
+}
+
+impl LspMcp {
+    /// Create a standalone `LspMcp` with its own `LspRegistry`.
+    pub fn new(root_dir: PathBuf) -> Self {
+        let tools = LspCodingTools::new(DefaultCodingTools::new(), root_dir.clone());
+        Self {
+            tool_router: Self::tool_router(),
+            tools,
+            roots: RwLock::new(vec![root_dir]),
+        }
+    }
+
+    /// Create from parsed CLI arguments.
+    pub fn from_args(args: Vec<String>) -> Result<Self, String> {
+        let parsed = LspMcpArgs::from_args(args)?;
+        let root_dir = parsed.root_dir.unwrap_or_else(|| PathBuf::from("."));
+        Ok(Self::new(root_dir))
+    }
+
+    /// Set workspace roots.
+    pub fn with_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.roots = RwLock::new(roots);
+        self
+    }
+
+    /// Set a single workspace root directory.
+    pub fn with_root_dir(self, root_dir: PathBuf) -> Self {
+        self.with_roots(vec![root_dir])
+    }
+
+    fn get_workspace_root(&self) -> Option<PathBuf> {
+        self.roots
+            .try_read()
+            .ok()
+            .and_then(|roots| roots.first().cloned())
+    }
+
+    fn build_instructions(&self) -> String {
+        let base = r"# LSP MCP Server
+
+Code intelligence tools powered by Language Server Protocol.
+
+## Quick Reference
+
+- **Errors & warnings** (instant check without build): `lsp_check_errors`
+- **Code symbols** (definitions, usages, types): `lsp_symbol`
+- **File structure** (what's in this file?): `lsp_document`
+- **Call relationships** (who calls X?): `lsp_symbol` with incoming_calls/outgoing_calls operation
+";
+
+        match self.get_workspace_root() {
+            Some(root) => format!(
+                r"{}
+When using tools that take file paths, always use absolute paths from:
+<workspace-root>{}</workspace-root>",
+                base,
+                root.display()
+            ),
+            None => base.to_string(),
+        }
+    }
+}
+
+#[tool_handler(router = self.tool_router)]
+impl ServerHandler for LspMcp {
+    fn get_info(&self) -> ServerInfo {
+        let instructions = self.build_instructions();
+        ServerInfo {
+            server_info: Implementation {
+                name: "lsp-mcp".to_string(),
+                version: "0.1.0".to_string(),
+                title: None,
+                description: None,
+                icons: None,
+                website_url: None,
+            },
+            instructions: Some(instructions),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            ..Default::default()
+        }
+    }
+}
+
+#[tool_router]
+impl LspMcp {
+    #[doc = include_str!("../coding/tools/lsp/symbol_lookup/description.md")]
+    #[tool]
+    pub async fn lsp_symbol(
+        &self,
+        request: Parameters<LspSymbolInput>,
+    ) -> Result<Json<LspSymbolOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_symbol(input, &self.tools).await.map(Json)
+    }
+
+    #[doc = include_str!("../coding/tools/lsp/document_info/description.md")]
+    #[tool]
+    pub async fn lsp_document(
+        &self,
+        request: Parameters<LspDocumentInput>,
+    ) -> Result<Json<LspDocumentOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_document(input, &self.tools).await.map(Json)
+    }
+
+    #[doc = include_str!("../coding/tools/lsp/check_errors/description.md")]
+    #[tool]
+    pub async fn lsp_check_errors(
+        &self,
+        request: Parameters<LspDiagnosticsInput>,
+    ) -> Result<Json<LspDiagnosticsOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_diagnostics(input, &self.tools).await.map(Json)
+    }
+
+}

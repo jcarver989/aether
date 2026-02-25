@@ -704,7 +704,11 @@ async fn type_string(
     }
 }
 
-async fn press_enter(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id: &acp::SessionId) {
+async fn press_enter(
+    renderer: &mut Renderer,
+    handle: &AcpPromptHandle,
+    session_id: &acp::SessionId,
+) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let enter_event = KeyEvent {
@@ -1633,7 +1637,11 @@ async fn test_file_picker_ctrl_p_moves_up() {
     assert_picker_renders_selected(renderer.writer(), "beta.rs");
 }
 
-async fn press_backspace(renderer: &mut Renderer, handle: &AcpPromptHandle, session_id: &acp::SessionId) {
+async fn press_backspace(
+    renderer: &mut Renderer,
+    handle: &AcpPromptHandle,
+    session_id: &acp::SessionId,
+) {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let backspace_event = KeyEvent {

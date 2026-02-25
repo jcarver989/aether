@@ -1,14 +1,26 @@
 use crate::error::{DaemonError, DaemonResult};
+use crate::file_watcher::FileWatcherHandle;
 use crate::protocol::LspNotification;
+use lsp_types::notification::{
+    DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidOpenTextDocument,
+    DidSaveTextDocument, Initialized, Notification, PublishDiagnostics,
+};
+use lsp_types::request::{
+    CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
+    DocumentSymbolRequest, GotoDefinition, GotoImplementation as GotoImplementationRequest,
+    HoverRequest, Initialize, References, RegisterCapability, Request, UnregisterCapability,
+    WorkDoneProgressCreate, WorkspaceSymbolRequest,
+};
 use lsp_types::{
     CallHierarchyClientCapabilities, CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams,
     CallHierarchyItem, CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams,
-    CallHierarchyPrepareParams, ClientCapabilities, DocumentSymbolClientCapabilities,
-    DocumentSymbolParams, DocumentSymbolResponse, DynamicRegistrationClientCapabilities,
-    GeneralClientCapabilities, GotoCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover,
-    HoverClientCapabilities, HoverParams, InitializeParams, Location, MarkupKind,
-    PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, ReferenceParams,
-    SymbolInformation, TextDocumentClientCapabilities, Uri, WorkspaceSymbolParams,
+    CallHierarchyPrepareParams, ClientCapabilities, DidChangeWatchedFilesClientCapabilities,
+    DidChangeWatchedFilesParams, DocumentSymbolClientCapabilities, DocumentSymbolParams,
+    DocumentSymbolResponse, DynamicRegistrationClientCapabilities, GeneralClientCapabilities,
+    GotoCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverClientCapabilities,
+    HoverParams, InitializeParams, Location, MarkupKind, PublishDiagnosticsClientCapabilities,
+    PublishDiagnosticsParams, ReferenceParams, RegistrationParams, SymbolInformation,
+    TextDocumentClientCapabilities, Uri, WorkspaceClientCapabilities, WorkspaceSymbolParams,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -43,7 +55,7 @@ pub struct GotoImplementation(pub GotoDefinitionParams);
 impl LspOperation for GotoDefinitionParams {
     type Response = GotoDefinitionResponse;
     fn method(&self) -> &'static str {
-        "textDocument/definition"
+        GotoDefinition::METHOD
     }
     fn params(&self) -> Value {
         serde_json::to_value(self).unwrap()
@@ -56,7 +68,7 @@ impl LspOperation for GotoDefinitionParams {
 impl LspOperation for GotoImplementation {
     type Response = GotoDefinitionResponse;
     fn method(&self) -> &'static str {
-        "textDocument/implementation"
+        GotoImplementationRequest::METHOD
     }
     fn params(&self) -> Value {
         serde_json::to_value(&self.0).unwrap()
@@ -69,7 +81,7 @@ impl LspOperation for GotoImplementation {
 impl LspOperation for ReferenceParams {
     type Response = Vec<Location>;
     fn method(&self) -> &'static str {
-        "textDocument/references"
+        References::METHOD
     }
     fn params(&self) -> Value {
         serde_json::to_value(self).unwrap()
@@ -82,7 +94,7 @@ impl LspOperation for ReferenceParams {
 impl LspOperation for HoverParams {
     type Response = Option<Hover>;
     fn method(&self) -> &'static str {
-        "textDocument/hover"
+        HoverRequest::METHOD
     }
     fn params(&self) -> Value {
         serde_json::to_value(self).unwrap()
@@ -95,7 +107,7 @@ impl LspOperation for HoverParams {
 impl LspOperation for WorkspaceSymbolParams {
     type Response = Vec<SymbolInformation>;
     fn method(&self) -> &'static str {
-        "workspace/symbol"
+        WorkspaceSymbolRequest::METHOD
     }
     fn params(&self) -> Value {
         serde_json::to_value(self).unwrap()
@@ -108,7 +120,7 @@ impl LspOperation for WorkspaceSymbolParams {
 impl LspOperation for DocumentSymbolParams {
     type Response = DocumentSymbolResponse;
     fn method(&self) -> &'static str {
-        "textDocument/documentSymbol"
+        DocumentSymbolRequest::METHOD
     }
     fn params(&self) -> Value {
         serde_json::to_value(self).unwrap()
@@ -121,7 +133,7 @@ impl LspOperation for DocumentSymbolParams {
 impl LspOperation for CallHierarchyPrepareParams {
     type Response = Vec<CallHierarchyItem>;
     fn method(&self) -> &'static str {
-        "textDocument/prepareCallHierarchy"
+        CallHierarchyPrepare::METHOD
     }
     fn params(&self) -> Value {
         serde_json::to_value(self).unwrap()
@@ -134,7 +146,7 @@ impl LspOperation for CallHierarchyPrepareParams {
 impl LspOperation for CallHierarchyIncomingCallsParams {
     type Response = Vec<CallHierarchyIncomingCall>;
     fn method(&self) -> &'static str {
-        "callHierarchy/incomingCalls"
+        CallHierarchyIncomingCalls::METHOD
     }
     fn params(&self) -> Value {
         serde_json::to_value(self).unwrap()
@@ -147,7 +159,7 @@ impl LspOperation for CallHierarchyIncomingCallsParams {
 impl LspOperation for CallHierarchyOutgoingCallsParams {
     type Response = Vec<CallHierarchyOutgoingCall>;
     fn method(&self) -> &'static str {
-        "callHierarchy/outgoingCalls"
+        CallHierarchyOutgoingCalls::METHOD
     }
     fn params(&self) -> Value {
         serde_json::to_value(self).unwrap()
@@ -313,20 +325,25 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
     let diagnostics_cache = Arc::new(RwLock::new(HashMap::new()));
 
     let handler_diagnostics_cache = Arc::clone(&diagnostics_cache);
-    let handler_root_path = root_path.to_path_buf();
 
-    let task = tokio::spawn(async move {
-        run_lsp_handler(
-            process,
-            stdin,
-            stdout,
-            request_rx,
-            notification_rx,
-            handler_diagnostics_cache,
-            handler_root_path,
-        )
-        .await;
-    });
+    let (file_watch_tx, file_watch_rx) = mpsc::channel(64);
+    let file_watcher = FileWatcherHandle::spawn(root_path.to_path_buf(), file_watch_tx);
+    let handler = LspHandler {
+        process,
+        stdin,
+        reader: BufReader::new(stdout),
+        requests: request_rx,
+        notifications: notification_rx,
+        file_watch: FileWatchState {
+            handle: file_watcher,
+            rx: file_watch_rx,
+        },
+        diagnostics_cache: handler_diagnostics_cache,
+        root_path: root_path.to_path_buf(),
+        next_id: 1,
+        pending: HashMap::new(),
+    };
+    let task = tokio::spawn(handler.run());
 
     Ok(LspHandle {
         request_tx,
@@ -336,205 +353,395 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
     })
 }
 
-/// Run the LSP handler loop
-async fn run_lsp_handler(
-    mut process: Child,
-    mut stdin: ChildStdin,
-    stdout: ChildStdout,
-    mut request_rx: mpsc::Receiver<LspRequestEnvelope>,
-    mut notification_rx: mpsc::Receiver<LspNotification>,
+/// File watching state passed into the handler loop.
+struct FileWatchState {
+    handle: FileWatcherHandle,
+    rx: mpsc::Receiver<DidChangeWatchedFilesParams>,
+}
+
+/// Owns all LSP handler state and runs the event loop.
+struct LspHandler {
+    process: Child,
+    stdin: ChildStdin,
+    reader: BufReader<ChildStdout>,
+    requests: mpsc::Receiver<LspRequestEnvelope>,
+    notifications: mpsc::Receiver<LspNotification>,
+    file_watch: FileWatchState,
     diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
     root_path: PathBuf,
-) {
-    let mut reader = BufReader::new(stdout);
-    let mut next_id: i64 = 1;
-    let mut pending: HashMap<i64, oneshot::Sender<Result<Value, LspErrorInfo>>> = HashMap::new();
+    next_id: i64,
+    pending: HashMap<i64, oneshot::Sender<Result<Value, LspErrorInfo>>>,
+}
 
-    if let Err(e) = initialize_lsp(&mut stdin, &mut next_id, &root_path).await {
-        tracing::error!("Failed to initialize LSP: {}", e);
-        return;
+impl LspHandler {
+    /// Run the LSP handler: initialize, process messages, clean up.
+    async fn run(mut self) {
+        if let Err(e) = self.initialize().await {
+            tracing::error!("Failed to initialize LSP: {}", e);
+            return;
+        }
+
+        if !self.wait_for_init_response().await {
+            return;
+        }
+
+        let _ =
+            send_notification(&mut self.stdin, Initialized::METHOD, serde_json::json!({})).await;
+
+        self.run_main_loop().await;
+        self.cleanup_pending();
     }
 
-    loop {
-        match read_lsp_message(&mut reader).await {
-            Ok(Some(msg)) => {
-                if msg.get("id").and_then(serde_json::Value::as_i64) == Some(1) {
-                    tracing::debug!("LSP initialized");
+    /// Wait for the initialize response, handling any server messages that arrive first.
+    /// Returns `true` if initialization succeeded, `false` if the connection was lost.
+    async fn wait_for_init_response(&mut self) -> bool {
+        loop {
+            match read_lsp_message(&mut self.reader).await {
+                Ok(Some(msg)) => {
+                    if msg.get("id").and_then(serde_json::Value::as_i64) == Some(1) {
+                        tracing::debug!("LSP initialized");
+                        return true;
+                    }
+                    self.handle_lsp_message(msg).await;
+                }
+                Ok(None) => {
+                    tracing::error!("LSP closed during initialization");
+                    return false;
+                }
+                Err(e) => {
+                    tracing::error!("Error reading LSP message: {}", e);
+                    return false;
+                }
+            }
+        }
+    }
+
+    /// Main event loop: multiplex LSP stdout, outgoing requests, notifications,
+    /// file-watch events, and process exit.
+    async fn run_main_loop(&mut self) {
+        loop {
+            tokio::select! {
+                msg = read_lsp_message(&mut self.reader) => {
+                    match msg {
+                        Ok(Some(msg)) => self.handle_lsp_message(msg).await,
+                        Ok(None) => {
+                            tracing::info!("LSP server closed connection");
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::warn!("Error reading LSP message: {}", e);
+                        }
+                    }
+                }
+
+                Some(envelope) = self.requests.recv() => {
+                    self.handle_outgoing_request(envelope).await;
+                }
+
+                Some(notification) = self.notifications.recv() => {
+                    if let Err(e) = self.send_client_notification(&notification).await {
+                        tracing::warn!("Failed to forward notification: {}", e);
+                    }
+                }
+
+                Some(params) = self.file_watch.rx.recv() => {
+                    if let Ok(value) = serde_json::to_value(&params)
+                        && let Err(e) = send_notification(&mut self.stdin, DidChangeWatchedFiles::METHOD, value).await
+                    {
+                        tracing::warn!("Failed to send didChangeWatchedFiles: {}", e);
+                    }
+                }
+
+                _ = self.process.wait() => {
+                    tracing::info!("LSP process exited");
                     break;
                 }
             }
-            Ok(None) => {
-                tracing::error!("LSP closed during initialization");
-                return;
-            }
-            Err(e) => {
-                tracing::error!("Error reading LSP message: {}", e);
-                return;
+        }
+    }
+
+    /// Send an outgoing request to the LSP server, tracking it in `pending`.
+    async fn handle_outgoing_request(&mut self, envelope: LspRequestEnvelope) {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.pending.insert(id, envelope.response_tx);
+
+        if let Err(e) = self
+            .send_request(id, envelope.method, envelope.params)
+            .await
+        {
+            tracing::error!("Failed to send LSP request: {}", e);
+            if let Some(tx) = self.pending.remove(&id) {
+                let _ = tx.send(Err(LspErrorInfo {
+                    code: -1,
+                    message: e.to_string(),
+                }));
             }
         }
     }
 
-    let _ = send_notification(&mut stdin, "initialized", serde_json::json!({})).await;
+    /// Drain all pending requests with an error on shutdown.
+    fn cleanup_pending(&mut self) {
+        for (_, tx) in self.pending.drain() {
+            let _ = tx.send(Err(LspErrorInfo {
+                code: -1,
+                message: "LSP server closed".into(),
+            }));
+        }
+    }
 
-    loop {
-        tokio::select! {
-            msg = read_lsp_message(&mut reader) => {
-                match msg {
-                    Ok(Some(msg)) => {
-                        handle_lsp_message(msg, &mut pending, &diagnostics_cache).await;
+    /// Handle an incoming LSP message.
+    ///
+    /// Messages from the LSP server fall into three categories:
+    /// - **Server request** (has `id` AND `method`): e.g. `client/registerCapability`
+    /// - **Response** (has `id`, no `method`): reply to a request we sent
+    /// - **Notification** (has `method`, no `id`): e.g. `textDocument/publishDiagnostics`
+    async fn handle_lsp_message(&mut self, msg: Value) {
+        let has_id = msg.get("id").is_some();
+        let method = msg.get("method").and_then(|v| v.as_str());
+
+        match (has_id, method) {
+            // Server-to-client request: has both `id` and `method`
+            (true, Some(method_str)) => {
+                let id = msg.get("id").cloned().unwrap_or(Value::Null);
+                let params = msg.get("params").cloned().unwrap_or(Value::Null);
+                tracing::debug!("Received server request: {method_str}");
+
+                match method_str {
+                    RegisterCapability::METHOD => {
+                        self.handle_register_capability(&id, &params).await;
                     }
-                    Ok(None) => {
-                        tracing::info!("LSP server closed connection");
-                        break;
+                    UnregisterCapability::METHOD => {
+                        self.handle_unregister_capability(&id, &params).await;
                     }
-                    Err(e) => {
-                        tracing::warn!("Error reading LSP message: {}", e);
+                    WorkDoneProgressCreate::METHOD => {
+                        let _ = self.send_ok_response(&id).await;
+                    }
+                    _ => {
+                        tracing::debug!("Unhandled server request: {method_str}");
+                        let response = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": -32601,
+                                "message": format!("Method not found: {method_str}")
+                            }
+                        });
+                        let _ = write_lsp_message(&mut self.stdin, &response).await;
                     }
                 }
             }
 
-            Some(envelope) = request_rx.recv() => {
-                let id = next_id;
-                next_id += 1;
-                pending.insert(id, envelope.response_tx);
+            // Response to our request: has `id`, no `method`
+            (true, None) => {
+                if let Some(id) = msg.get("id").and_then(serde_json::Value::as_i64)
+                    && let Some(tx) = self.pending.remove(&id)
+                {
+                    let result = if let Some(error) = msg.get("error") {
+                        let code = error
+                            .get("code")
+                            .and_then(serde_json::Value::as_i64)
+                            .and_then(|c| i32::try_from(c).ok())
+                            .unwrap_or(-1);
+                        let message = error
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown error")
+                            .to_string();
+                        Err(LspErrorInfo { code, message })
+                    } else {
+                        Ok(msg.get("result").cloned().unwrap_or(Value::Null))
+                    };
+                    let _ = tx.send(result);
+                }
+            }
 
-                if let Err(e) = send_request(&mut stdin, id, envelope.method, envelope.params).await {
-                    tracing::error!("Failed to send LSP request: {}", e);
-                    if let Some(tx) = pending.remove(&id) {
-                        let _ = tx.send(Err(LspErrorInfo {
-                            code: -1,
-                            message: e.to_string(),
-                        }));
+            // Server notification: has `method`, no `id`
+            (false, Some(method_str)) => {
+                if method_str == PublishDiagnostics::METHOD {
+                    let params = msg.get("params").cloned().unwrap_or(Value::Null);
+                    if let Ok(diag_params) =
+                        serde_json::from_value::<PublishDiagnosticsParams>(params)
+                    {
+                        let mut cache = self.diagnostics_cache.write().await;
+                        cache.insert(diag_params.uri.clone(), diag_params);
                     }
                 }
             }
 
-            Some(notification) = notification_rx.recv() => {
-                if let Err(e) = send_client_notification(&mut stdin, &notification).await {
-                    tracing::warn!("Failed to forward notification: {}", e);
+            // Invalid message: no `id` and no `method`
+            (false, None) => {
+                tracing::debug!("Received LSP message with neither id nor method");
+            }
+        }
+    }
+
+    /// Handle `client/registerCapability` — register file watchers for
+    /// `workspace/didChangeWatchedFiles` registrations and respond with success.
+    async fn handle_register_capability(&mut self, id: &Value, params: &Value) {
+        if let Ok(reg_params) = serde_json::from_value::<RegistrationParams>(params.clone()) {
+            for reg in &reg_params.registrations {
+                if reg.method == DidChangeWatchedFiles::METHOD
+                    && let Some(opts) = &reg.register_options
+                    && let Ok(fs_watchers) = parse_file_system_watchers(opts)
+                {
+                    tracing::debug!(
+                        "Registering {} file watchers for {}",
+                        fs_watchers.len(),
+                        reg.id
+                    );
+                    self.file_watch
+                        .handle
+                        .register_watchers(reg.id.clone(), fs_watchers);
                 }
             }
+        }
 
-            _ = process.wait() => {
-                tracing::info!("LSP process exited");
-                break;
+        let _ = self.send_ok_response(id).await;
+    }
+
+    /// Handle `client/unregisterCapability` — unregister file watchers and respond with success.
+    async fn handle_unregister_capability(&mut self, id: &Value, params: &Value) {
+        if let Ok(unreg_params) =
+            serde_json::from_value::<lsp_types::UnregistrationParams>(params.clone())
+        {
+            for unreg in &unreg_params.unregisterations {
+                if unreg.method == DidChangeWatchedFiles::METHOD {
+                    self.file_watch.handle.unregister(unreg.id.clone());
+                }
             }
         }
+
+        let _ = self.send_ok_response(id).await;
     }
 
-    // Clean up pending requests on shutdown
-    for (_, tx) in pending {
-        let _ = tx.send(Err(LspErrorInfo {
-            code: -1,
-            message: "LSP server closed".into(),
-        }));
-    }
-}
+    /// Send the `initialize` request to the LSP server.
+    async fn initialize(&mut self) -> std::io::Result<()> {
+        let root_uri = path_to_uri(&self.root_path);
 
-/// Handle an incoming LSP message
-async fn handle_lsp_message(
-    msg: Value,
-    pending: &mut HashMap<i64, oneshot::Sender<Result<Value, LspErrorInfo>>>,
-    diagnostics_cache: &RwLock<HashMap<Uri, PublishDiagnosticsParams>>,
-) {
-    // Handle response messages
-    if let Some(id) = msg.get("id").and_then(serde_json::Value::as_i64) {
-        if let Some(tx) = pending.remove(&id) {
-            let result = if let Some(error) = msg.get("error") {
-                let code = error
-                    .get("code")
-                    .and_then(serde_json::Value::as_i64)
-                    .and_then(|c| i32::try_from(c).ok())
-                    .unwrap_or(-1);
-                let message = error
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown error")
-                    .to_string();
-                Err(LspErrorInfo { code, message })
-            } else {
-                Ok(msg.get("result").cloned().unwrap_or(Value::Null))
-            };
-            let _ = tx.send(result);
-        }
-        return;
-    }
-
-    // Handle notification messages - cache diagnostics
-    if let Some(method) = msg.get("method").and_then(|v| v.as_str())
-        && method == "textDocument/publishDiagnostics"
-    {
-        let params = msg.get("params").cloned().unwrap_or(Value::Null);
-        if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params) {
-            let mut cache = diagnostics_cache.write().await;
-            cache.insert(diag_params.uri.clone(), diag_params);
-        }
-    }
-}
-
-/// Initialize the LSP server
-async fn initialize_lsp(
-    stdin: &mut ChildStdin,
-    next_id: &mut i64,
-    root_path: &Path,
-) -> std::io::Result<()> {
-    let root_uri = path_to_uri(root_path);
-
-    let capabilities = ClientCapabilities {
-        general: Some(GeneralClientCapabilities::default()),
-        text_document: Some(TextDocumentClientCapabilities {
-            publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
-                related_information: Some(true),
+        let capabilities = ClientCapabilities {
+            general: Some(GeneralClientCapabilities::default()),
+            text_document: Some(TextDocumentClientCapabilities {
+                publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
+                    related_information: Some(true),
+                    ..Default::default()
+                }),
+                definition: Some(GotoCapability {
+                    dynamic_registration: Some(false),
+                    link_support: Some(true),
+                }),
+                implementation: Some(GotoCapability {
+                    dynamic_registration: Some(false),
+                    link_support: Some(true),
+                }),
+                references: Some(DynamicRegistrationClientCapabilities {
+                    dynamic_registration: Some(false),
+                }),
+                hover: Some(HoverClientCapabilities {
+                    dynamic_registration: Some(false),
+                    content_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]),
+                }),
+                document_symbol: Some(DocumentSymbolClientCapabilities {
+                    hierarchical_document_symbol_support: Some(true),
+                    ..Default::default()
+                }),
+                call_hierarchy: Some(CallHierarchyClientCapabilities {
+                    dynamic_registration: Some(false),
+                }),
                 ..Default::default()
             }),
-            definition: Some(GotoCapability {
-                dynamic_registration: Some(false),
-                link_support: Some(true),
-            }),
-            implementation: Some(GotoCapability {
-                dynamic_registration: Some(false),
-                link_support: Some(true),
-            }),
-            references: Some(DynamicRegistrationClientCapabilities {
-                dynamic_registration: Some(false),
-            }),
-            hover: Some(HoverClientCapabilities {
-                dynamic_registration: Some(false),
-                content_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]),
-            }),
-            document_symbol: Some(DocumentSymbolClientCapabilities {
-                hierarchical_document_symbol_support: Some(true),
+            workspace: Some(WorkspaceClientCapabilities {
+                did_change_watched_files: Some(DidChangeWatchedFilesClientCapabilities {
+                    dynamic_registration: Some(true),
+                    relative_pattern_support: Some(false),
+                }),
                 ..Default::default()
-            }),
-            call_hierarchy: Some(CallHierarchyClientCapabilities {
-                dynamic_registration: Some(false),
             }),
             ..Default::default()
-        }),
-        ..Default::default()
-    };
+        };
 
-    let params = InitializeParams {
-        process_id: Some(std::process::id()),
-        #[allow(deprecated)]
-        root_uri: Some(root_uri),
-        capabilities,
-        ..Default::default()
-    };
+        let params = InitializeParams {
+            process_id: Some(std::process::id()),
+            #[allow(deprecated)]
+            root_uri: Some(root_uri),
+            capabilities,
+            ..Default::default()
+        };
 
-    let id = *next_id;
-    *next_id += 1;
-    send_request(
-        stdin,
-        id,
-        "initialize",
-        serde_json::to_value(&params).unwrap(),
-    )
-    .await
+        let id = self.next_id;
+        self.next_id += 1;
+        self.send_request(
+            id,
+            Initialize::METHOD,
+            serde_json::to_value(&params).unwrap(),
+        )
+        .await
+    }
+
+    /// Send a `{ jsonrpc: "2.0", id, result: null }` success response.
+    async fn send_ok_response(&mut self, id: &Value) -> std::io::Result<()> {
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": null
+        });
+        write_lsp_message(&mut self.stdin, &response).await
+    }
+
+    /// Send an LSP request.
+    async fn send_request(&mut self, id: i64, method: &str, params: Value) -> std::io::Result<()> {
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params
+        });
+        write_lsp_message(&mut self.stdin, &msg).await
+    }
+
+    /// Send a client notification to the LSP server.
+    async fn send_client_notification(
+        &mut self,
+        notification: &LspNotification,
+    ) -> std::io::Result<()> {
+        let (method, params) = match notification {
+            LspNotification::Opened(p) => (
+                DidOpenTextDocument::METHOD,
+                serde_json::to_value(p).unwrap(),
+            ),
+            LspNotification::Changed(p) => (
+                DidChangeTextDocument::METHOD,
+                serde_json::to_value(p).unwrap(),
+            ),
+            LspNotification::Saved(p) => (
+                DidSaveTextDocument::METHOD,
+                serde_json::to_value(p).unwrap(),
+            ),
+            LspNotification::Closed(p) => (
+                DidCloseTextDocument::METHOD,
+                serde_json::to_value(p).unwrap(),
+            ),
+        };
+        send_notification(&mut self.stdin, method, params).await
+    }
+}
+
+/// Parse `FileSystemWatcher`s from the `registerOptions` JSON of a
+/// `workspace/didChangeWatchedFiles` registration.
+fn parse_file_system_watchers(
+    opts: &Value,
+) -> Result<Vec<lsp_types::FileSystemWatcher>, serde_json::Error> {
+    #[derive(serde::Deserialize)]
+    struct WatcherOpts {
+        watchers: Vec<lsp_types::FileSystemWatcher>,
+    }
+
+    let parsed: WatcherOpts = serde_json::from_value(opts.clone())?;
+    Ok(parsed.watchers)
 }
 
 /// Convert path to URI
-fn path_to_uri(path: &Path) -> Uri {
+pub(crate) fn path_to_uri(path: &Path) -> Uri {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -555,22 +762,6 @@ fn path_to_uri(path: &Path) -> Uri {
         .unwrap_or_else(|_| "file:///".parse().unwrap())
 }
 
-/// Send an LSP request
-async fn send_request(
-    stdin: &mut ChildStdin,
-    id: i64,
-    method: &str,
-    params: Value,
-) -> std::io::Result<()> {
-    let msg = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "method": method,
-        "params": params
-    });
-    write_lsp_message(stdin, &msg).await
-}
-
 /// Send an LSP notification
 async fn send_notification(
     stdin: &mut ChildStdin,
@@ -583,20 +774,6 @@ async fn send_notification(
         "params": params
     });
     write_lsp_message(stdin, &msg).await
-}
-
-/// Send a client notification to the LSP server
-async fn send_client_notification(
-    stdin: &mut ChildStdin,
-    notification: &LspNotification,
-) -> std::io::Result<()> {
-    let (method, params) = match notification {
-        LspNotification::Opened(p) => ("textDocument/didOpen", serde_json::to_value(p).unwrap()),
-        LspNotification::Changed(p) => ("textDocument/didChange", serde_json::to_value(p).unwrap()),
-        LspNotification::Saved(p) => ("textDocument/didSave", serde_json::to_value(p).unwrap()),
-        LspNotification::Closed(p) => ("textDocument/didClose", serde_json::to_value(p).unwrap()),
-    };
-    send_notification(stdin, method, params).await
 }
 
 /// Read an LSP message from stdout
