@@ -6,25 +6,16 @@
 use lsp_types::DocumentSymbolResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
-use crate::coding::lsp::common::LocationResult;
-use crate::coding::tools_trait::CodingTools;
+use crate::lsp::common::{LocationResult, path_to_uri};
+use crate::lsp::registry::LspRegistry;
 use aether_lspd::symbol_kind_to_string;
-
-/// The operation to perform on a document
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DocumentInfoOperation {
-    /// Get all symbols in the document
-    Symbols,
-}
 
 /// Input for the `lsp_document` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct LspDocumentInput {
-    /// The operation to perform
-    pub operation: DocumentInfoOperation,
     /// The file path to analyze
     pub file_path: String,
 }
@@ -53,9 +44,7 @@ pub struct DocumentSymbolResult {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LspDocumentOutput {
-    /// The operation that was performed
-    pub operation: String,
-    /// The symbols in the document (for symbols operation)
+    /// The symbols in the document
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbols: Option<Vec<DocumentSymbolResult>>,
     /// Total count of top-level symbols
@@ -63,27 +52,28 @@ pub struct LspDocumentOutput {
 }
 
 /// Execute the `lsp_document` operation
-pub async fn execute_lsp_document<T: CodingTools>(
+pub async fn execute_lsp_document(
     input: LspDocumentInput,
-    tools: &T,
+    registry: &LspRegistry,
 ) -> Result<LspDocumentOutput, String> {
-    match input.operation {
-        DocumentInfoOperation::Symbols => {
-            let response = tools
-                .document_symbol(&input.file_path)
-                .await
-                .map_err(|e| e.to_string())?;
+    let uri = path_to_uri(Path::new(&input.file_path))
+        .map_err(|e| e.to_string())?;
+    let client = registry
+        .require_client(&input.file_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .document_symbol(uri)
+        .await
+        .map_err(|e| e.to_string())?;
 
-            let symbols = convert_document_symbols(&input.file_path, response);
-            let total_count = symbols.len();
+    let symbols = convert_document_symbols(&input.file_path, response);
+    let total_count = symbols.len();
 
-            Ok(LspDocumentOutput {
-                operation: "symbols".to_string(),
-                symbols: Some(symbols),
-                total_count,
-            })
-        }
-    }
+    Ok(LspDocumentOutput {
+        symbols: Some(symbols),
+        total_count,
+    })
 }
 
 /// Convert `DocumentSymbolResponse` to our result format

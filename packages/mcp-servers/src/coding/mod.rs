@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
+    sync::Arc,
 };
 use tokio::{
     fs::try_exists,
@@ -21,13 +22,16 @@ use tokio::{
 
 pub mod default_tools;
 pub mod error;
-pub mod lsp;
 pub mod tools;
 pub mod tools_trait;
 
 pub use default_tools::DefaultCodingTools;
-pub use tools::lsp::LspCodingTools;
 pub use tools_trait::CodingTools;
+
+use crate::lsp::registry::LspRegistry;
+use crate::lsp::tools::check_errors::{LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics};
+use crate::lsp::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
+use crate::lsp::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 
 use mcp_utils::display_meta::{ToolDisplayMeta, truncate};
 use tools::bash::{
@@ -41,9 +45,6 @@ use tools::list_files::{ListFilesArgs, ListFilesResult, list_files};
 use tools::read_file::{ReadFileArgs, ReadFileResult, read_file_contents};
 use tools::web_fetch::{WebFetchInput, WebFetchOutput, WebFetcher};
 use tools::web_search::search_client::BraveSearchClient;
-use tools::lsp::check_errors::{LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics};
-use tools::lsp::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
-use tools::lsp::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 use tools::web_search::{WebSearchInput, WebSearchOutput, WebSearcher};
 use tools::write_file::{WriteFileArgs, WriteFileResponse, write_file_contents};
 
@@ -107,6 +108,8 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     /// Track files that have been read to enforce read-before-edit safety
     files_read: RwLock<HashSet<String>>,
     tools: T,
+    /// Optional LSP operations (enabled with `.with_lsp()`)
+    lsp: Option<Arc<LspRegistry>>,
     web_fetcher: WebFetcher,
     web_searcher: Option<WebSearcher<BraveSearchClient>>,
     /// Workspace roots (from MCP protocol or CLI args)
@@ -141,6 +144,7 @@ impl CodingMcp<DefaultCodingTools> {
             background_processes: Mutex::new(HashMap::new()),
             files_read: RwLock::new(HashSet::new()),
             tools: DefaultCodingTools::new(),
+            lsp: None,
             web_fetcher: WebFetcher::new(),
             web_searcher: WebSearcher::try_new().ok(),
             roots: RwLock::new(Vec::new()),
@@ -157,38 +161,34 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             background_processes: Mutex::new(HashMap::new()),
             files_read: RwLock::new(HashSet::new()),
             tools,
+            lsp: None,
             web_fetcher: WebFetcher::new(),
             web_searcher: WebSearcher::try_new().ok(),
             roots: RwLock::new(Vec::new()),
         }
     }
 
+    /// Enable LSP code intelligence for the given project root.
+    ///
+    /// LSP servers for detected project languages are spawned immediately
+    /// in the background, allowing indexing to start right away.
+    pub fn with_lsp(mut self, root_path: PathBuf) -> Self {
+        self.lsp = Some(LspRegistry::new_and_spawn(root_path));
+        self
+    }
+
     /// Set workspace roots.
-    ///
-    /// Can be used to set roots from MCP protocol or CLI arguments.
-    /// The first root is used as the primary workspace root.
-    ///
-    /// # Note
-    /// This is a builder method - call it before using the server.
     pub fn with_roots(mut self, roots: Vec<PathBuf>) -> Self {
         self.roots = RwLock::new(roots);
         self
     }
 
     /// Set the workspace root directory from a single path.
-    ///
-    /// Convenience method that wraps the path in a Vec and calls `with_roots()`.
-    /// Typically used with CLI arguments like --root-dir.
-    ///
-    /// # Note
-    /// This is a builder method - call it before using the server.
     pub fn with_root_dir(self, root_dir: PathBuf) -> Self {
         self.with_roots(vec![root_dir])
     }
 
     /// Get the current workspace root.
-    ///
-    /// Returns the first root if multiple are provided.
     fn get_workspace_root(&self) -> Option<PathBuf> {
         self.roots
             .try_read()
@@ -424,34 +424,37 @@ When using tools that take file paths, always use absolute paths from:
             .map(Json)
     }
 
-    #[doc = include_str!("tools/lsp/symbol_lookup/description.md")]
+    #[doc = include_str!("../lsp/tools/symbol_lookup/description.md")]
     #[tool]
     pub async fn lsp_symbol(
         &self,
         request: Parameters<LspSymbolInput>,
     ) -> Result<Json<LspSymbolOutput>, String> {
         let Parameters(input) = request;
-        execute_lsp_symbol(input, &self.tools).await.map(Json)
+        let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
+        execute_lsp_symbol(input, lsp.as_ref()).await.map(Json)
     }
 
-    #[doc = include_str!("tools/lsp/document_info/description.md")]
+    #[doc = include_str!("../lsp/tools/document_info/description.md")]
     #[tool]
     pub async fn lsp_document(
         &self,
         request: Parameters<LspDocumentInput>,
     ) -> Result<Json<LspDocumentOutput>, String> {
         let Parameters(input) = request;
-        execute_lsp_document(input, &self.tools).await.map(Json)
+        let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
+        execute_lsp_document(input, lsp.as_ref()).await.map(Json)
     }
 
-    #[doc = include_str!("tools/lsp/check_errors/description.md")]
+    #[doc = include_str!("../lsp/tools/check_errors/description.md")]
     #[tool]
     pub async fn lsp_check_errors(
         &self,
         request: Parameters<LspDiagnosticsInput>,
     ) -> Result<Json<LspDiagnosticsOutput>, String> {
         let Parameters(input) = request;
-        execute_lsp_diagnostics(input, &self.tools).await.map(Json)
+        let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
+        execute_lsp_diagnostics(input, lsp.as_ref()).await.map(Json)
     }
 }
 
@@ -466,14 +469,10 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_lsp_tool_without_wrapper_returns_error() {
+    async fn test_lsp_tool_without_lsp_returns_error() {
         let mcp = CodingMcp::new();
-        let result = mcp.tools.get_lsp_diagnostics().await;
-
+        let input = LspDiagnosticsInput { file_path: None };
+        let result = mcp.lsp_check_errors(Parameters(input)).await;
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            error::CodingError::NotConfigured(_)
-        ));
     }
 }

@@ -10,18 +10,46 @@
 //! concurrently.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use aether_lspd::{LanguageId, LspClient, get_config_for_language};
 use futures::future::join_all;
+use lsp_types::Uri;
+use tokio::sync::RwLock;
+
+/// A resolved symbol location with its LSP client, ready for protocol calls.
+pub struct ResolvedSymbol {
+    /// The file URI
+    pub uri: Uri,
+    /// 0-indexed line number (ready for LSP protocol)
+    pub line: u32,
+    /// 0-indexed column number
+    pub column: u32,
+    /// The LSP client for this file's language
+    pub client: Arc<LspClient>,
+}
+
+use lsp_types::Diagnostic;
+
+use super::common::{find_symbol_column, path_to_uri, uri_to_path};
+use super::error::LspError;
 
 /// Registry that manages LSP daemon clients, connecting lazily on demand
 pub struct LspRegistry {
     /// Active daemon clients keyed by language
-    clients: tokio::sync::RwLock<HashMap<LanguageId, Arc<LspClient>>>,
+    clients: RwLock<HashMap<LanguageId, Arc<LspClient>>>,
     /// The project root directory
     root_path: PathBuf,
+}
+
+impl Debug for LspRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LspRegistry")
+            .field("root_path", &self.root_path)
+            .finish_non_exhaustive()
+    }
 }
 
 impl LspRegistry {
@@ -30,9 +58,20 @@ impl LspRegistry {
     /// LSP server configurations are managed by the daemon.
     pub fn new(root_path: PathBuf) -> Self {
         Self {
-            clients: tokio::sync::RwLock::new(HashMap::new()),
+            clients: RwLock::new(HashMap::new()),
             root_path,
         }
+    }
+
+    /// Create a new registry and spawn LSP servers for detected project languages.
+    ///
+    /// This is a convenience constructor that wraps the registry in an `Arc`
+    /// and kicks off background LSP spawning immediately.
+    pub fn new_and_spawn(root_path: PathBuf) -> Arc<Self> {
+        let registry = Arc::new(Self::new(root_path));
+        let clone = Arc::clone(&registry);
+        tokio::spawn(async move { clone.spawn_project_lsps().await });
+        registry
     }
 
     /// Get the project root path
@@ -158,6 +197,53 @@ impl LspRegistry {
             .filter(|(_, files)| files.iter().any(|f| self.root_path.join(f).exists()))
             .map(|(lang, _)| *lang)
             .collect()
+    }
+
+    /// Resolve a symbol's position, convert path to URI, and get the LSP client.
+    ///
+    /// Accepts a 1-indexed `line` (as provided by the user / document symbols) and
+    /// returns a [`ResolvedSymbol`] with 0-indexed `line` and `column`, ready for
+    /// LSP protocol calls.
+    pub async fn resolve_symbol(
+        &self,
+        file_path: &str,
+        symbol: &str,
+        line: u32,
+    ) -> Result<ResolvedSymbol, LspError> {
+        let content = tokio::fs::read_to_string(file_path).await?;
+        let column = find_symbol_column(&content, symbol, line)?;
+        let uri = path_to_uri(Path::new(file_path))?;
+        let client = self.require_client(file_path).await?;
+        Ok(ResolvedSymbol {
+            uri,
+            line: line - 1,
+            column,
+            client,
+        })
+    }
+
+    /// Collect diagnostics from all active LSP clients.
+    ///
+    /// Iterates every connected client, fetches its diagnostics, and returns them
+    /// grouped by file path.
+    pub async fn collect_diagnostics(&self) -> HashMap<String, Vec<Diagnostic>> {
+        let mut result: HashMap<String, Vec<Diagnostic>> = HashMap::new();
+        for client in self.active_clients().await {
+            if let Ok(params_list) = client.get_diagnostics(None).await {
+                for params in params_list {
+                    let file_path = uri_to_path(&params.uri);
+                    result.entry(file_path).or_default().extend(params.diagnostics);
+                }
+            }
+        }
+        result
+    }
+
+    /// Get the LSP client for a file, returning an error if none is configured.
+    pub async fn require_client(&self, file_path: &str) -> Result<Arc<LspClient>, LspError> {
+        self.get_or_spawn(Path::new(file_path))
+            .await
+            .ok_or_else(|| LspError::Transport("No LSP configured for this file type".to_string()))
     }
 }
 

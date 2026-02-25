@@ -1,6 +1,6 @@
 use crate::error::{DaemonError, DaemonResult};
 use crate::file_watcher::FileWatcherHandle;
-use crate::protocol::LspNotification;
+use crate::protocol::{LanguageId, LspNotification};
 use lsp_types::notification::{
     DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidOpenTextDocument,
     DidSaveTextDocument, Initialized, Notification, PublishDiagnostics,
@@ -24,10 +24,11 @@ use lsp_types::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use tokio::fs::read_to_string;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{RwLock, mpsc, oneshot};
@@ -183,6 +184,8 @@ pub struct LspHandle {
     notification_tx: mpsc::Sender<LspNotification>,
     /// Cached diagnostics keyed by file URI
     diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
+    /// Documents that have been opened with didOpen
+    open_documents: Arc<RwLock<HashSet<Uri>>>,
     /// Background task handle
     _task: JoinHandle<()>,
 }
@@ -296,6 +299,45 @@ impl LspHandle {
             tracing::warn!("Failed to send notification: {}", e);
         }
     }
+
+    /// Ensure a document is open before sending an LSP request that targets it.
+    ///
+    /// If the document hasn't been opened yet, reads it from disk and sends
+    /// a `didOpen` notification. This allows agents to skip explicit didOpen
+    /// management — the daemon handles it transparently.
+    pub async fn ensure_document_open(&self, uri: &Uri) {
+        if self.open_documents.read().await.contains(uri) {
+            return;
+        }
+
+        let file_path = uri.as_str().strip_prefix("file://").unwrap_or(uri.as_str());
+        let content = match read_to_string(file_path).await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::debug!("Could not read file for auto-open {}: {}", file_path, e);
+                return;
+            }
+        };
+
+        let mut open_docs = self.open_documents.write().await;
+        if open_docs.contains(uri) {
+            return;
+        }
+
+        let language_id = LanguageId::from_path(Path::new(file_path));
+        let params = lsp_types::DidOpenTextDocumentParams {
+            text_document: lsp_types::TextDocumentItem {
+                uri: uri.clone(),
+                language_id: language_id.as_str().to_string(),
+                version: 1,
+                text: content,
+            },
+        };
+
+        self.send_notification(LspNotification::Opened(params))
+            .await;
+        open_docs.insert(uri.clone());
+    }
 }
 
 /// Spawn a new LSP server process
@@ -323,6 +365,7 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
     let (request_tx, request_rx) = mpsc::channel(100);
     let (notification_tx, notification_rx) = mpsc::channel(100);
     let diagnostics_cache = Arc::new(RwLock::new(HashMap::new()));
+    let open_documents = Arc::new(RwLock::new(HashSet::new()));
 
     let handler_diagnostics_cache = Arc::clone(&diagnostics_cache);
 
@@ -349,6 +392,7 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
         request_tx,
         notification_tx,
         diagnostics_cache,
+        open_documents,
         _task: task,
     })
 }

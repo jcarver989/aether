@@ -26,10 +26,7 @@ pub mod survey;
 pub use coding::{CodingMcp, CodingMcpArgs, CodingTools, DefaultCodingTools};
 
 #[cfg(feature = "coding")]
-pub use coding::tools::lsp::LspCodingTools;
-
-#[cfg(feature = "coding")]
-pub use lsp::{LspMcp, LspMcpArgs};
+pub use lsp::{LspMcp, LspMcpArgs, LspRegistry};
 
 #[cfg(feature = "skills")]
 pub use skills::{SkillsMcp, SkillsMcpArgs};

@@ -109,6 +109,10 @@ async fn run_reader(
                     continue;
                 };
 
+                if let Some(uri) = request.document_uri() {
+                    handle.ensure_document_open(uri).await;
+                }
+
                 let response = handle_lsp_request(handle, request).await;
                 let _ = response_tx.send(response).await;
             }

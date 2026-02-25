@@ -1,12 +1,14 @@
-//! Example: Get diagnostics using LspCodingTools
+//! Example: Get diagnostics using LspRegistry
 //!
 //! This example demonstrates how to:
-//! 1. Wrap DefaultCodingTools with LspCodingTools for multi-language LSP integration
-//! 2. Read/write files (which automatically spawns the appropriate LSP and notifies it)
-//! 3. Query diagnostics through the tools abstraction
+//! 1. Create an LspRegistry for multi-language LSP integration
+//! 2. Query diagnostics through the LspRegistry
+//!
+//! The LSP daemon (`aether-lspd`) automatically handles `didOpen` when it
+//! receives a request for a file that hasn't been opened yet.
 //!
 //! Usage:
-//!   cargo run -p mcp-coding --example lsp_diagnostics -- /path/to/rust/project
+//!   cargo run -p mcp-servers --example lsp_diagnostics -- /path/to/rust/project
 //!
 //! Requirements:
 //! - rust-analyzer must be installed and in PATH (for Rust projects)
@@ -16,11 +18,8 @@ use std::env;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use lsp_types::{Diagnostic, Uri};
-use mcp_servers::coding::lsp::{FormattedDiagnostic, count_by_severity, path_to_uri};
-use mcp_servers::coding::tools::read_file::ReadFileArgs;
-use mcp_servers::coding::tools::write_file::WriteFileArgs;
-use mcp_servers::coding::{CodingTools, DefaultCodingTools, LspCodingTools};
+use mcp_servers::lsp::diagnostics::{FormattedDiagnostic, count_by_severity};
+use mcp_servers::lsp::registry::LspRegistry;
 use tokio::time::sleep;
 
 #[tokio::main]
@@ -38,115 +37,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
 
-    println!("Creating LspCodingTools for: {}", project_path.display());
+    println!("Creating LspRegistry for: {}", project_path.display());
 
-    // LspCodingTools automatically detects and spawns the appropriate LSP
-    // based on file extension (e.g., rust-analyzer for .rs files)
-    let tools = LspCodingTools::new(DefaultCodingTools::new(), project_path.clone());
+    let registry = LspRegistry::new(project_path.clone());
+    registry.spawn_project_lsps().await;
 
-    println!("LspCodingTools created (LSP will be spawned lazily on first file access).");
+    println!("LspRegistry created; LSP servers spawning for detected languages.");
 
-    // Find target file
-    let lib_rs = project_path.join("src/lib.rs");
-    let main_rs = project_path.join("src/main.rs");
+    println!("\nWaiting for LSP to index the project...");
+    sleep(Duration::from_secs(5)).await;
 
-    let target_file = if lib_rs.exists() {
-        lib_rs
-    } else if main_rs.exists() {
-        main_rs
+    println!("Fetching diagnostics...");
+    let diagnostics_by_file = registry.collect_diagnostics().await;
+
+    if diagnostics_by_file.values().all(|d| d.is_empty()) {
+        println!("No diagnostics reported (project is clean!)");
     } else {
-        eprintln!("No src/lib.rs or src/main.rs found in the project");
-        std::process::exit(1);
-    };
+        for (file_path, diagnostics) in &diagnostics_by_file {
+            if diagnostics.is_empty() {
+                continue;
+            }
+            let uri: lsp_types::Uri = format!("file://{file_path}").parse().unwrap();
+            let formatted: Vec<FormattedDiagnostic> = diagnostics
+                .iter()
+                .map(|d| FormattedDiagnostic::from_diagnostic(&uri, d))
+                .collect();
 
-    let target_file_str = target_file.to_string_lossy().to_string();
-    let file_uri = path_to_uri(&target_file)?;
+            let counts = count_by_severity(&formatted);
+            println!("\n{}: {}", file_path, counts);
 
-    println!("Opening file: {}", target_file.display());
-
-    // Read the file - this automatically spawns rust-analyzer and notifies it
-    let read_result = tools
-        .read_file(ReadFileArgs {
-            file_path: target_file_str.clone(),
-            offset: None,
-            limit: None,
-        })
-        .await?;
-
-    let original_content = read_result.raw_content.clone();
-    println!("Read {} bytes from file", original_content.len());
-
-    // Wait for initial diagnostics
-    println!("\nWaiting for initial diagnostics...");
-    let initial_diagnostics = wait_for_diagnostics(&tools, &file_uri).await;
-    print_diagnostics_summary(&initial_diagnostics, &file_uri);
-
-    // Introduce a syntax error by appending garbage
-    println!("\n--- Introducing a syntax error ---");
-    let broken_content = format!("{}\n\nthis_is_not_valid_rust_code!!!", original_content);
-
-    // Write the broken content - this automatically notifies the LSP of the change
-    tools
-        .write_file(WriteFileArgs {
-            file_path: target_file_str.clone(),
-            content: broken_content,
-        })
-        .await?;
-
-    // Wait for error diagnostics
-    println!("Waiting for error diagnostics...");
-    let error_diagnostics = wait_for_diagnostics(&tools, &file_uri).await;
-    print_diagnostics_summary(&error_diagnostics, &file_uri);
-
-    // Fix the file by restoring original content
-    println!("\n--- Restoring original content ---");
-    tools
-        .write_file(WriteFileArgs {
-            file_path: target_file_str,
-            content: original_content,
-        })
-        .await?;
-
-    // Wait for diagnostics to clear
-    println!("Waiting for diagnostics after fix...");
-    let fixed_diagnostics = wait_for_diagnostics(&tools, &file_uri).await;
-    print_diagnostics_summary(&fixed_diagnostics, &file_uri);
+            for diag in &formatted {
+                println!("  {}", diag.format());
+            }
+        }
+    }
 
     println!("\nDone!");
 
     Ok(())
-}
-
-/// Wait for diagnostics by polling until the cache has an entry for our file
-async fn wait_for_diagnostics<T: CodingTools>(tools: &T, target_uri: &Uri) -> Vec<Diagnostic> {
-    let target_uri_str = target_uri.to_string();
-    loop {
-        sleep(Duration::from_millis(500)).await;
-
-        if let Ok(cache) = tools.get_lsp_diagnostics().await {
-            if let Some(diagnostics) = cache.get(&target_uri_str) {
-                return diagnostics.clone();
-            }
-        }
-    }
-}
-
-/// Print a summary of diagnostics
-fn print_diagnostics_summary(diagnostics: &[Diagnostic], uri: &Uri) {
-    let formatted: Vec<FormattedDiagnostic> = diagnostics
-        .iter()
-        .map(|d| FormattedDiagnostic::from_diagnostic(uri, d))
-        .collect();
-
-    let counts = count_by_severity(&formatted);
-
-    println!("\nDiagnostics summary: {}", counts);
-
-    if formatted.is_empty() {
-        println!("  (no diagnostics)");
-    } else {
-        for diag in &formatted {
-            println!("  {}", diag.format());
-        }
-    }
 }

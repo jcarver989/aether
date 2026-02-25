@@ -16,7 +16,7 @@
 ```text
 # Don't read 800 lines of model.rs blindly
 # Instead:
-lsp_document(file_path: "model.rs", operation: "symbols")
+lsp_document(file_path: "model.rs")
 # → Shows all types, line numbers, kinds
 
 # Then read only what you need:
@@ -26,7 +26,6 @@ read_file(offset: 1530, limit: 50, file_path: "model.rs")
 **Usage:**
 ```json
 {
-  "operation": "symbols",
   "file_path": "/path/to/file.rs"
 }
 ```

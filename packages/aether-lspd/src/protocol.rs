@@ -155,6 +155,30 @@ impl LspRequest {
             | LspRequest::GetDiagnostics { client_id, .. } => *client_id,
         }
     }
+
+    /// Get the document URI this request targets, if any.
+    pub fn document_uri(&self) -> Option<&Uri> {
+        match self {
+            LspRequest::GotoDefinition { params, .. }
+            | LspRequest::GotoImplementation { params, .. } => {
+                Some(&params.text_document_position_params.text_document.uri)
+            }
+            LspRequest::Hover { params, .. } => {
+                Some(&params.text_document_position_params.text_document.uri)
+            }
+            LspRequest::PrepareCallHierarchy { params, .. } => {
+                Some(&params.text_document_position_params.text_document.uri)
+            }
+            LspRequest::FindReferences { params, .. } => {
+                Some(&params.text_document_position.text_document.uri)
+            }
+            LspRequest::DocumentSymbol { params, .. } => Some(&params.text_document.uri),
+            LspRequest::WorkspaceSymbol { .. }
+            | LspRequest::IncomingCalls { .. }
+            | LspRequest::OutgoingCalls { .. }
+            | LspRequest::GetDiagnostics { .. } => None,
+        }
+    }
 }
 
 /// LSP notification from client to server

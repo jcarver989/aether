@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-
-use lsp_types::Diagnostic;
-
 use super::error::CodingError;
 use super::{
     BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, FindInput,
@@ -14,7 +10,7 @@ use super::{
 /// Default implementation that uses local filesystem operations.
 ///
 /// This is the standard behavior for `CodingMcp` when running outside
-/// of an ACP context. For LSP integration, wrap this with `LspAwareCodingTools`.
+/// of an ACP context.
 #[derive(Debug, Default)]
 pub struct DefaultCodingTools;
 
@@ -62,11 +58,5 @@ impl CodingTools for DefaultCodingTools {
 
     async fn find(&self, args: FindInput) -> Result<FindOutput, CodingError> {
         find_files_by_name(args).await.map_err(CodingError::from)
-    }
-
-    async fn get_lsp_diagnostics(&self) -> Result<HashMap<String, Vec<Diagnostic>>, CodingError> {
-        // DefaultCodingTools without wrapper has no LSP
-        // Wrap with LspAwareCodingTools to enable LSP
-        Err(CodingError::NotConfigured("LSP not configured. Wrap DefaultCodingTools with LspAwareCodingTools to enable LSP integration.".to_string()))
     }
 }
