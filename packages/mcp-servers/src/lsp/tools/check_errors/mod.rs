@@ -1,9 +1,7 @@
 //! LSP diagnostics tool for querying compiler errors and warnings
 
-use crate::coding::lsp::diagnostics::{
-    DiagnosticCounts, FormattedDiagnostic, count_by_severity, format_diagnostics,
-};
-use crate::coding::tools_trait::CodingTools;
+use crate::lsp::diagnostics::{DiagnosticCounts, FormattedDiagnostic, count_by_severity};
+use crate::lsp::registry::LspRegistry;
 use lsp_types::Diagnostic;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,48 +27,33 @@ pub struct LspDiagnosticsOutput {
 }
 
 /// Execute the `lsp_diagnostics` operation
-pub async fn execute_lsp_diagnostics<T: CodingTools>(
+pub async fn execute_lsp_diagnostics(
     input: LspDiagnosticsInput,
-    tools: &T,
+    registry: &LspRegistry,
 ) -> Result<LspDiagnosticsOutput, String> {
-    let diagnostics_cache = tools
-        .get_lsp_diagnostics()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(get_diagnostics(input.file_path, &diagnostics_cache))
+    let diagnostics_cache = registry.collect_diagnostics().await;
+    Ok(get_diagnostics(input.file_path.as_deref(), &diagnostics_cache))
 }
 
 fn get_diagnostics(
-    file_path: Option<String>,
+    file_path: Option<&str>,
     diagnostics_cache: &HashMap<String, Vec<Diagnostic>>,
 ) -> LspDiagnosticsOutput {
-    let mut all_diagnostics: Vec<FormattedDiagnostic> = Vec::new();
-
-    if let Some(path) = file_path {
-        for (uri_str, diagnostics) in diagnostics_cache {
-            if (uri_str.ends_with(&path) || uri_str.contains(&path))
-                && let Ok(uri) = uri_str.parse()
-            {
-                let params = lsp_types::PublishDiagnosticsParams {
-                    uri,
-                    diagnostics: diagnostics.clone(),
-                    version: None,
-                };
-                all_diagnostics.extend(format_diagnostics(&params));
-            }
-        }
-    } else {
-        for (uri_str, diagnostics) in diagnostics_cache {
-            if let Ok(uri) = uri_str.parse() {
-                let params = lsp_types::PublishDiagnosticsParams {
-                    uri,
-                    diagnostics: diagnostics.clone(),
-                    version: None,
-                };
-                all_diagnostics.extend(format_diagnostics(&params));
-            }
-        }
-    }
+    let mut all_diagnostics: Vec<FormattedDiagnostic> = diagnostics_cache
+        .iter()
+        .filter(|(uri_str, _)| {
+            file_path.is_none_or(|path| uri_str.ends_with(path) || uri_str.contains(path))
+        })
+        .filter_map(|(uri_str, diagnostics)| {
+            let uri = uri_str.parse().ok()?;
+            Some(
+                diagnostics
+                    .iter()
+                    .map(move |d| FormattedDiagnostic::from_diagnostic(&uri, d)),
+            )
+        })
+        .flatten()
+        .collect();
 
     all_diagnostics.sort_by(|a, b| {
         a.file
@@ -167,7 +150,7 @@ mod tests {
             )],
         );
 
-        let result = get_diagnostics(Some("main.rs".to_string()), &cache);
+        let result = get_diagnostics(Some("main.rs"), &cache);
 
         assert_eq!(result.diagnostics.len(), 1);
         assert!(result.diagnostics[0].file.contains("main.rs"));

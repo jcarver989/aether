@@ -58,7 +58,7 @@ async fn main() -> Result<(), StdioError> {
                 mcp_servers::CodingMcpArgs::from_args(cli.args).map_err(StdioError::ServerArgs)?;
             let server = mcp_servers::CodingMcp::new();
             let server = if let Some(root_dir) = parsed.root_dir {
-                server.with_root_dir(root_dir)
+                server.with_lsp(root_dir.clone()).with_root_dir(root_dir)
             } else {
                 server
             };

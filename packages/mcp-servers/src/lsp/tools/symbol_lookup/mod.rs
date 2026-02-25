@@ -11,11 +11,11 @@ use lsp_types::GotoDefinitionResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::coding::lsp::common::{LocationResult, uri_to_path};
-use crate::coding::tools_trait::CodingTools;
+use crate::lsp::common::{LocationResult, uri_to_path};
+use crate::lsp::registry::LspRegistry;
 
 use super::call_hierarchy::CallSiteResult;
-use super::coding_tools::resolve_symbol_position;
+use super::resolve_symbol_position;
 
 /// Direction for one-step call hierarchy lookups.
 enum CallDirection {
@@ -107,11 +107,11 @@ impl LspSymbolOutput {
 
 /// Resolve the line number for a symbol, using the explicit `line` if provided
 /// or falling back to automatic document symbol resolution.
-async fn resolve_line<T: CodingTools>(
+async fn resolve_line(
     file_path: &str,
     symbol: &str,
     explicit_line: Option<u32>,
-    tools: &T,
+    tools: &LspRegistry,
 ) -> Result<u32, String> {
     match explicit_line {
         Some(line) => Ok(line),
@@ -122,37 +122,47 @@ async fn resolve_line<T: CodingTools>(
 }
 
 /// Execute the `lsp_symbol` operation
-pub async fn execute_lsp_symbol<T: CodingTools>(
+pub async fn execute_lsp_symbol(
     input: LspSymbolInput,
-    tools: &T,
+    registry: &LspRegistry,
 ) -> Result<LspSymbolOutput, String> {
-    let line = resolve_line(&input.file_path, &input.symbol, input.line, tools).await?;
+    let line = resolve_line(&input.file_path, &input.symbol, input.line, registry).await?;
 
     match input.operation {
         SymbolLookupOperation::Definition => {
-            let response = tools
-                .goto_definition(&input.file_path, &input.symbol, line)
+            let resolved = registry
+                .resolve_symbol(&input.file_path, &input.symbol, line)
+                .await
+                .map_err(|e| e.to_string())?;
+            let response = resolved
+                .client
+                .goto_definition(resolved.uri, resolved.line, resolved.column)
                 .await
                 .map_err(|e| e.to_string())?;
             let locations = definition_response_to_locations(response);
             Ok(LspSymbolOutput::with_locations("definition", locations))
         }
         SymbolLookupOperation::Implementation => {
-            let response = tools
-                .goto_implementation(&input.file_path, &input.symbol, line)
+            let resolved = registry
+                .resolve_symbol(&input.file_path, &input.symbol, line)
+                .await
+                .map_err(|e| e.to_string())?;
+            let response = resolved
+                .client
+                .goto_implementation(resolved.uri, resolved.line, resolved.column)
                 .await
                 .map_err(|e| e.to_string())?;
             let locations = definition_response_to_locations(response);
             Ok(LspSymbolOutput::with_locations("implementation", locations))
         }
         SymbolLookupOperation::References => {
-            let lsp_locations = tools
-                .find_references(
-                    &input.file_path,
-                    &input.symbol,
-                    line,
-                    input.include_declaration,
-                )
+            let resolved = registry
+                .resolve_symbol(&input.file_path, &input.symbol, line)
+                .await
+                .map_err(|e| e.to_string())?;
+            let lsp_locations = resolved
+                .client
+                .find_references(resolved.uri, resolved.line, resolved.column, input.include_declaration)
                 .await
                 .map_err(|e| e.to_string())?;
             let locations: Vec<LocationResult> = lsp_locations
@@ -162,8 +172,13 @@ pub async fn execute_lsp_symbol<T: CodingTools>(
             Ok(LspSymbolOutput::with_locations("references", locations))
         }
         SymbolLookupOperation::Hover => {
-            let hover = tools
-                .hover(&input.file_path, &input.symbol, line)
+            let resolved = registry
+                .resolve_symbol(&input.file_path, &input.symbol, line)
+                .await
+                .map_err(|e| e.to_string())?;
+            let hover = resolved
+                .client
+                .hover(resolved.uri, resolved.line, resolved.column)
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(LspSymbolOutput {
@@ -173,26 +188,32 @@ pub async fn execute_lsp_symbol<T: CodingTools>(
             })
         }
         SymbolLookupOperation::IncomingCalls => {
-            execute_one_step_call_hierarchy(tools, &input.file_path, &input.symbol, line, CallDirection::Incoming)
+            execute_one_step_call_hierarchy(registry, &input.file_path, &input.symbol, line, CallDirection::Incoming)
                 .await
         }
         SymbolLookupOperation::OutgoingCalls => {
-            execute_one_step_call_hierarchy(tools, &input.file_path, &input.symbol, line, CallDirection::Outgoing)
+            execute_one_step_call_hierarchy(registry, &input.file_path, &input.symbol, line, CallDirection::Outgoing)
                 .await
         }
     }
 }
 
 /// Perform a one-step call hierarchy: prepare + query in a single operation.
-async fn execute_one_step_call_hierarchy<T: CodingTools>(
-    tools: &T,
+async fn execute_one_step_call_hierarchy(
+    registry: &LspRegistry,
     file_path: &str,
     symbol: &str,
     line: u32,
     direction: CallDirection,
 ) -> Result<LspSymbolOutput, String> {
-    let items = tools
-        .prepare_call_hierarchy(file_path, symbol, line)
+    let resolved = registry
+        .resolve_symbol(file_path, symbol, line)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let items = resolved
+        .client
+        .prepare_call_hierarchy(resolved.uri, resolved.line, resolved.column)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -205,16 +226,24 @@ async fn execute_one_step_call_hierarchy<T: CodingTools>(
         });
     };
 
+    // For incoming/outgoing calls, we need a client for the item's file.
+    // The item may be in a different file than the original request.
+    let item_file_path = uri_to_path(&item.uri);
+    let item_client = registry
+        .require_client(&item_file_path)
+        .await
+        .map_err(|e| e.to_string())?;
+
     let calls = match direction {
         CallDirection::Incoming => {
-            let incoming = tools
+            let incoming = item_client
                 .incoming_calls(item)
                 .await
                 .map_err(|e| e.to_string())?;
             super::call_hierarchy::convert_incoming_calls(incoming)
         }
         CallDirection::Outgoing => {
-            let outgoing = tools
+            let outgoing = item_client
                 .outgoing_calls(item)
                 .await
                 .map_err(|e| e.to_string())?;

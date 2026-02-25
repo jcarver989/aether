@@ -8,20 +8,16 @@ use rmcp::{
     model::{Implementation, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router,
 };
-use std::path::PathBuf;
+use std::sync::Arc;
+use std::{fmt::Debug, path::PathBuf};
 use tokio::sync::RwLock;
 
-use crate::coding::DefaultCodingTools;
-use crate::coding::tools::lsp::LspCodingTools;
-use crate::coding::tools::lsp::check_errors::{
+use super::registry::LspRegistry;
+use super::tools::check_errors::{
     LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
 };
-use crate::coding::tools::lsp::document_info::{
-    LspDocumentInput, LspDocumentOutput, execute_lsp_document,
-};
-use crate::coding::tools::lsp::symbol_lookup::{
-    LspSymbolInput, LspSymbolOutput, execute_lsp_symbol,
-};
+use super::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
+use super::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 
 /// CLI arguments for `LspMcp` server
 #[derive(Debug, Clone, Parser)]
@@ -45,20 +41,25 @@ impl LspMcpArgs {
 ///
 /// Provides language-aware symbol lookup, document structure, diagnostics,
 /// and call hierarchy — without bundling file I/O tools.
-#[derive(Debug)]
 pub struct LspMcp {
     tool_router: ToolRouter<Self>,
-    tools: LspCodingTools<DefaultCodingTools>,
+    lsp: Arc<LspRegistry>,
     roots: RwLock<Vec<PathBuf>>,
+}
+
+impl Debug for LspMcp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LspMcp").finish_non_exhaustive()
+    }
 }
 
 impl LspMcp {
     /// Create a standalone `LspMcp` with its own `LspRegistry`.
     pub fn new(root_dir: PathBuf) -> Self {
-        let tools = LspCodingTools::new(DefaultCodingTools::new(), root_dir.clone());
+        let registry = LspRegistry::new_and_spawn(root_dir.clone());
         Self {
             tool_router: Self::tool_router(),
-            tools,
+            lsp: registry,
             roots: RwLock::new(vec![root_dir]),
         }
     }
@@ -136,34 +137,37 @@ impl ServerHandler for LspMcp {
 
 #[tool_router]
 impl LspMcp {
-    #[doc = include_str!("../coding/tools/lsp/symbol_lookup/description.md")]
+    #[doc = include_str!("tools/symbol_lookup/description.md")]
     #[tool]
     pub async fn lsp_symbol(
         &self,
         request: Parameters<LspSymbolInput>,
     ) -> Result<Json<LspSymbolOutput>, String> {
         let Parameters(input) = request;
-        execute_lsp_symbol(input, &self.tools).await.map(Json)
+        execute_lsp_symbol(input, self.lsp.as_ref()).await.map(Json)
     }
 
-    #[doc = include_str!("../coding/tools/lsp/document_info/description.md")]
+    #[doc = include_str!("tools/document_info/description.md")]
     #[tool]
     pub async fn lsp_document(
         &self,
         request: Parameters<LspDocumentInput>,
     ) -> Result<Json<LspDocumentOutput>, String> {
         let Parameters(input) = request;
-        execute_lsp_document(input, &self.tools).await.map(Json)
+        execute_lsp_document(input, self.lsp.as_ref())
+            .await
+            .map(Json)
     }
 
-    #[doc = include_str!("../coding/tools/lsp/check_errors/description.md")]
+    #[doc = include_str!("tools/check_errors/description.md")]
     #[tool]
     pub async fn lsp_check_errors(
         &self,
         request: Parameters<LspDiagnosticsInput>,
     ) -> Result<Json<LspDiagnosticsOutput>, String> {
         let Parameters(input) = request;
-        execute_lsp_diagnostics(input, &self.tools).await.map(Json)
+        execute_lsp_diagnostics(input, self.lsp.as_ref())
+            .await
+            .map(Json)
     }
-
 }

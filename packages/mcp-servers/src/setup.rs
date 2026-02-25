@@ -1,5 +1,5 @@
 use crate::{
-    CodingMcp, DefaultCodingTools, LspCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp,
+    CodingMcp, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp,
     TasksMcp,
 };
 use aether::mcp::McpBuilder;
@@ -27,10 +27,9 @@ impl McpBuilderExt for McpBuilder {
             Box::new(move |_args| {
                 let project_path = cwd.clone();
                 async move {
-                    let lsp_tools =
-                        LspCodingTools::new(DefaultCodingTools::new(), project_path.clone());
-                    debug!("LspCodingTools created for coding server");
-                    CodingMcp::with_tools(lsp_tools)
+                    debug!("CodingMcp created with LSP for coding server");
+                    CodingMcp::with_tools(DefaultCodingTools::new())
+                        .with_lsp(project_path.clone())
                         .with_root_dir(project_path)
                         .into_dyn()
                 }

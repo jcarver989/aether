@@ -8,7 +8,7 @@ use lsp_types::CallHierarchyItem;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::coding::lsp::common::{LocationResult, uri_to_path};
+use crate::lsp::common::{LocationResult, uri_to_path};
 use aether_lspd::symbol_kind_to_string;
 
 /// A serializable representation of a `CallHierarchyItem`
