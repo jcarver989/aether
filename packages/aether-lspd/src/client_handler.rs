@@ -1,8 +1,7 @@
 use crate::lsp_config::get_config_for_language;
-use crate::lsp_manager::{GotoImplementation, LspErrorInfo, LspHandle, LspKey, LspManager};
+use crate::lsp_manager::{LspHandle, LspKey, LspManager};
 use crate::protocol::{
-    DaemonRequest, DaemonResponse, LspErrorResponse, LspRequest, LspResponse, ProtocolError,
-    read_frame, write_frame,
+    DaemonRequest, DaemonResponse, ProtocolError, extract_document_uri, read_frame, write_frame,
 };
 use std::sync::Arc;
 use tokio::io::{ReadHalf, WriteHalf, split};
@@ -66,55 +65,51 @@ async fn run_reader(
             }
 
             Some(DaemonRequest::Initialize(init)) => {
-                let Some(config) = get_config_for_language(init.language) else {
-                    let _ = response_tx
-                        .send(DaemonResponse::Error(ProtocolError::new(format!(
-                            "No LSP configured for language: {:?}",
-                            init.language
-                        ))))
-                        .await;
-                    continue;
-                };
-
-                let key = LspKey {
-                    workspace_root: init.workspace_root.clone(),
-                    language: init.language.as_str().to_string(),
-                };
-
-                match lsp_manager
-                    .get_or_spawn(key, &config.command, &config.args)
-                    .await
-                {
+                match try_initialize(&lsp_manager, init).await {
                     Ok(handle) => {
                         lsp_handle = Some(handle);
                         let _ = response_tx.send(DaemonResponse::Initialized).await;
                     }
                     Err(e) => {
-                        let _ = response_tx
-                            .send(DaemonResponse::Error(ProtocolError::new(e.to_string())))
-                            .await;
+                        let _ = response_tx.send(DaemonResponse::Error(e)).await;
                     }
                 }
             }
 
-            Some(DaemonRequest::LspRequest(request)) => {
-                let client_id = request.client_id();
+            Some(DaemonRequest::LspCall {
+                client_id,
+                method,
+                params,
+            }) => {
                 let Some(ref handle) = lsp_handle else {
-                    let _ = response_tx
-                        .send(DaemonResponse::Error(ProtocolError::with_client_id(
-                            "Not initialized",
-                            client_id,
-                        )))
-                        .await;
+                    let _ = send_not_initialized(client_id, &response_tx).await;
                     continue;
                 };
 
-                if let Some(uri) = request.document_uri() {
-                    handle.ensure_document_open(uri).await;
+                if let Some(uri) = extract_document_uri(&method, &params) {
+                    handle.ensure_document_open(&uri).await;
                 }
 
-                let response = handle_lsp_request(handle, request).await;
-                let _ = response_tx.send(response).await;
+                let result = handle.request_raw(&method, params).await;
+                let _ = response_tx
+                    .send(DaemonResponse::LspResult { client_id, result })
+                    .await;
+            }
+
+            Some(DaemonRequest::GetDiagnostics { client_id, uri }) => {
+                let Some(ref handle) = lsp_handle else {
+                    let _ = send_not_initialized(client_id, &response_tx).await;
+                    continue;
+                };
+
+                let diagnostics = handle.get_diagnostics(uri.as_ref()).await;
+                let value = serde_json::to_value(&diagnostics).unwrap_or_default();
+                let _ = response_tx
+                    .send(DaemonResponse::LspResult {
+                        client_id,
+                        result: Ok(value),
+                    })
+                    .await;
             }
 
             Some(DaemonRequest::LspNotification(notif)) => {
@@ -128,64 +123,33 @@ async fn run_reader(
     }
 }
 
-/// Handle an LSP request
-async fn handle_lsp_request(handle: &LspHandle, request: LspRequest) -> DaemonResponse {
-    let client_id = request.client_id();
-
-    let response = match request {
-        LspRequest::GotoDefinition { params, .. } => LspResponse::GotoDefinition {
-            client_id,
-            result: handle.request(params).await.map_err(Into::into),
-        },
-        LspRequest::GotoImplementation { params, .. } => LspResponse::GotoImplementation {
-            client_id,
-            result: handle
-                .request(GotoImplementation(params))
-                .await
-                .map_err(Into::into),
-        },
-        LspRequest::FindReferences { params, .. } => LspResponse::FindReferences {
-            client_id,
-            result: handle.request(params).await.map_err(Into::into),
-        },
-        LspRequest::Hover { params, .. } => LspResponse::Hover {
-            client_id,
-            result: handle.request(params).await.map_err(Into::into),
-        },
-        LspRequest::WorkspaceSymbol { params, .. } => LspResponse::WorkspaceSymbol {
-            client_id,
-            result: handle.request(params).await.map_err(Into::into),
-        },
-        LspRequest::DocumentSymbol { params, .. } => LspResponse::DocumentSymbol {
-            client_id,
-            result: handle.request(params).await.map_err(Into::into),
-        },
-        LspRequest::PrepareCallHierarchy { params, .. } => LspResponse::PrepareCallHierarchy {
-            client_id,
-            result: handle.request(params).await.map_err(Into::into),
-        },
-        LspRequest::IncomingCalls { params, .. } => LspResponse::IncomingCalls {
-            client_id,
-            result: handle.request(params).await.map_err(Into::into),
-        },
-        LspRequest::OutgoingCalls { params, .. } => LspResponse::OutgoingCalls {
-            client_id,
-            result: handle.request(params).await.map_err(Into::into),
-        },
-        LspRequest::GetDiagnostics { uri, .. } => LspResponse::GetDiagnostics {
-            client_id,
-            result: Ok(handle.get_diagnostics(uri.as_ref()).await),
-        },
-    };
-
-    DaemonResponse::LspResponse(response)
+async fn send_not_initialized(
+    client_id: i64,
+    tx: &mpsc::Sender<DaemonResponse>,
+) -> Result<(), mpsc::error::SendError<DaemonResponse>> {
+    tx.send(DaemonResponse::Error(ProtocolError::with_client_id(
+        "Not initialized",
+        client_id,
+    )))
+    .await
 }
 
-impl From<LspErrorInfo> for LspErrorResponse {
-    fn from(e: LspErrorInfo) -> Self {
-        Self {
-            code: e.code,
-            message: e.message,
-        }
-    }
+/// Try to initialize an LSP server for the given request.
+async fn try_initialize(
+    lsp_manager: &LspManager,
+    init: crate::protocol::InitializeRequest,
+) -> Result<Arc<LspHandle>, ProtocolError> {
+    let config = get_config_for_language(init.language).ok_or_else(|| {
+        ProtocolError::new(format!("No LSP configured for language: {:?}", init.language))
+    })?;
+
+    let key = LspKey {
+        workspace_root: init.workspace_root.clone(),
+        language: init.language,
+    };
+
+    lsp_manager
+        .get_or_spawn(key, &config.command, &config.args)
+        .await
+        .map_err(|e| ProtocolError::new(e.to_string()))
 }

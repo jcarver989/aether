@@ -24,7 +24,8 @@ pub async fn resolve_symbol_position(
     symbol: &str,
     registry: &LspRegistry,
 ) -> Result<u32, LspError> {
-    let uri = path_to_uri(Path::new(file_path))?;
+    let uri = path_to_uri(Path::new(file_path))
+        .map_err(LspError::Transport)?;
     let client = registry.require_client(file_path).await?;
     let response = client.document_symbol(uri).await?;
 
@@ -35,9 +36,8 @@ pub async fn resolve_symbol_position(
     // Fallback: scan file text for the first word-boundary match.
     // This handles imported/used symbols that aren't in the document symbol tree.
     let content = tokio::fs::read_to_string(file_path).await?;
-    find_symbol_line(&content, symbol).ok_or_else(|| {
-        LspError::Transport(format!("Symbol '{symbol}' not found in '{file_path}'"))
-    })
+    find_symbol_line(&content, symbol)
+        .ok_or_else(|| LspError::Transport(format!("Symbol '{symbol}' not found in '{file_path}'")))
 }
 
 /// Search a `DocumentSymbolResponse` for a symbol by name. Returns 1-indexed line.
@@ -85,12 +85,24 @@ mod tests {
             tags: None,
             deprecated: None,
             range: lsp_types::Range {
-                start: lsp_types::Position { line: 5, character: 4 },
-                end: lsp_types::Position { line: 10, character: 5 },
+                start: lsp_types::Position {
+                    line: 5,
+                    character: 4,
+                },
+                end: lsp_types::Position {
+                    line: 10,
+                    character: 5,
+                },
             },
             selection_range: lsp_types::Range {
-                start: lsp_types::Position { line: 5, character: 7 },
-                end: lsp_types::Position { line: 5, character: 15 },
+                start: lsp_types::Position {
+                    line: 5,
+                    character: 7,
+                },
+                end: lsp_types::Position {
+                    line: 5,
+                    character: 15,
+                },
             },
             children: None,
         };
@@ -102,21 +114,42 @@ mod tests {
             tags: None,
             deprecated: None,
             range: lsp_types::Range {
-                start: lsp_types::Position { line: 0, character: 0 },
-                end: lsp_types::Position { line: 15, character: 1 },
+                start: lsp_types::Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: lsp_types::Position {
+                    line: 15,
+                    character: 1,
+                },
             },
             selection_range: lsp_types::Range {
-                start: lsp_types::Position { line: 0, character: 4 },
-                end: lsp_types::Position { line: 0, character: 12 },
+                start: lsp_types::Position {
+                    line: 0,
+                    character: 4,
+                },
+                end: lsp_types::Position {
+                    line: 0,
+                    character: 12,
+                },
             },
             children: Some(vec![child]),
         };
 
         let response = DocumentSymbolResponse::Nested(vec![parent]);
 
-        assert_eq!(find_in_document_symbol_response(&response, "MyStruct"), Some(1));
-        assert_eq!(find_in_document_symbol_response(&response, "inner_fn"), Some(6));
-        assert_eq!(find_in_document_symbol_response(&response, "nonexistent"), None);
+        assert_eq!(
+            find_in_document_symbol_response(&response, "MyStruct"),
+            Some(1)
+        );
+        assert_eq!(
+            find_in_document_symbol_response(&response, "inner_fn"),
+            Some(6)
+        );
+        assert_eq!(
+            find_in_document_symbol_response(&response, "nonexistent"),
+            None
+        );
     }
 
     #[test]
@@ -130,8 +163,14 @@ mod tests {
             location: lsp_types::Location {
                 uri: lsp_types::Uri::from_str("file:///test.rs").unwrap(),
                 range: lsp_types::Range {
-                    start: lsp_types::Position { line: 10, character: 0 },
-                    end: lsp_types::Position { line: 20, character: 1 },
+                    start: lsp_types::Position {
+                        line: 10,
+                        character: 0,
+                    },
+                    end: lsp_types::Position {
+                        line: 20,
+                        character: 1,
+                    },
                 },
             },
             container_name: None,
@@ -139,7 +178,10 @@ mod tests {
 
         let response = DocumentSymbolResponse::Flat(vec![sym]);
 
-        assert_eq!(find_in_document_symbol_response(&response, "my_func"), Some(11));
+        assert_eq!(
+            find_in_document_symbol_response(&response, "my_func"),
+            Some(11)
+        );
         assert_eq!(find_in_document_symbol_response(&response, "other"), None);
     }
 }

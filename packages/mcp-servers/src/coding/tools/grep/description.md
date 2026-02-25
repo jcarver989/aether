@@ -13,7 +13,7 @@ Usage:
 ## When NOT to use grep
 
 - "Where is function X defined?" → `lsp_symbol(operation: "definition")`
-- "What calls function X?" → `lsp_symbol` → `lsp_call_hierarchy`
+- "What calls function X?" → `lsp_symbol(operation: "incoming_calls")`
 - "What type is variable X?" → `lsp_symbol(operation: "hover")`
 
 Grep can't distinguish `foo` the function from `foo` in a comment or string. LSP can.

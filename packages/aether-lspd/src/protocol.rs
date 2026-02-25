@@ -1,85 +1,24 @@
-use lsp_types::{
-    CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
-    CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverParams, Location, PublishDiagnosticsParams,
-    ReferenceParams, SymbolInformation, Uri, WorkspaceSymbolParams,
-};
+use crate::language_id::LanguageId;
+use lsp_types::Uri;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::io;
 use std::path::PathBuf;
-
-/// Language identifier for LSP
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum LanguageId {
-    Rust,
-    Python,
-    JavaScript,
-    JavaScriptReact,
-    TypeScript,
-    TypeScriptReact,
-    Go,
-    Java,
-    C,
-    Cpp,
-    CSharp,
-    Ruby,
-    Php,
-    Swift,
-    Kotlin,
-    Scala,
-    Html,
-    Css,
-    Json,
-    Yaml,
-    Toml,
-    Markdown,
-    Xml,
-    Sql,
-    ShellScript,
-    PlainText,
-}
-
-impl LanguageId {
-    /// Get the LSP language ID string
-    pub fn as_str(self) -> &'static str {
-        match self {
-            LanguageId::Rust => "rust",
-            LanguageId::Python => "python",
-            LanguageId::JavaScript => "javascript",
-            LanguageId::JavaScriptReact => "javascriptreact",
-            LanguageId::TypeScript => "typescript",
-            LanguageId::TypeScriptReact => "typescriptreact",
-            LanguageId::Go => "go",
-            LanguageId::Java => "java",
-            LanguageId::C => "c",
-            LanguageId::Cpp => "cpp",
-            LanguageId::CSharp => "csharp",
-            LanguageId::Ruby => "ruby",
-            LanguageId::Php => "php",
-            LanguageId::Swift => "swift",
-            LanguageId::Kotlin => "kotlin",
-            LanguageId::Scala => "scala",
-            LanguageId::Html => "html",
-            LanguageId::Css => "css",
-            LanguageId::Json => "json",
-            LanguageId::Yaml => "yaml",
-            LanguageId::Toml => "toml",
-            LanguageId::Markdown => "markdown",
-            LanguageId::Xml => "xml",
-            LanguageId::Sql => "sql",
-            LanguageId::ShellScript => "shellscript",
-            LanguageId::PlainText => "plaintext",
-        }
-    }
-}
 
 /// Top-level daemon request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DaemonRequest {
     Initialize(InitializeRequest),
-    LspRequest(LspRequest),
+    LspCall {
+        client_id: i64,
+        method: String,
+        params: Value,
+    },
+    GetDiagnostics {
+        client_id: i64,
+        /// If None, return all cached diagnostics for the workspace
+        uri: Option<Uri>,
+    },
     LspNotification(LspNotification),
     Disconnect,
     Ping,
@@ -92,102 +31,11 @@ pub struct InitializeRequest {
     pub language: LanguageId,
 }
 
-/// LSP request with client ID for response correlation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LspRequest {
-    GotoDefinition {
-        client_id: i64,
-        params: GotoDefinitionParams,
-    },
-    GotoImplementation {
-        client_id: i64,
-        params: GotoDefinitionParams,
-    },
-    FindReferences {
-        client_id: i64,
-        params: ReferenceParams,
-    },
-    Hover {
-        client_id: i64,
-        params: HoverParams,
-    },
-    WorkspaceSymbol {
-        client_id: i64,
-        params: WorkspaceSymbolParams,
-    },
-    DocumentSymbol {
-        client_id: i64,
-        params: DocumentSymbolParams,
-    },
-    PrepareCallHierarchy {
-        client_id: i64,
-        params: CallHierarchyPrepareParams,
-    },
-    IncomingCalls {
-        client_id: i64,
-        params: CallHierarchyIncomingCallsParams,
-    },
-    OutgoingCalls {
-        client_id: i64,
-        params: CallHierarchyOutgoingCallsParams,
-    },
-    /// Get cached diagnostics for a file or all files
-    GetDiagnostics {
-        client_id: i64,
-        /// If None, return all cached diagnostics for the workspace
-        uri: Option<Uri>,
-    },
-}
-
-impl LspRequest {
-    /// Get the client ID from the request
-    pub fn client_id(&self) -> i64 {
-        match self {
-            LspRequest::GotoDefinition { client_id, .. }
-            | LspRequest::GotoImplementation { client_id, .. }
-            | LspRequest::FindReferences { client_id, .. }
-            | LspRequest::Hover { client_id, .. }
-            | LspRequest::WorkspaceSymbol { client_id, .. }
-            | LspRequest::DocumentSymbol { client_id, .. }
-            | LspRequest::PrepareCallHierarchy { client_id, .. }
-            | LspRequest::IncomingCalls { client_id, .. }
-            | LspRequest::OutgoingCalls { client_id, .. }
-            | LspRequest::GetDiagnostics { client_id, .. } => *client_id,
-        }
-    }
-
-    /// Get the document URI this request targets, if any.
-    pub fn document_uri(&self) -> Option<&Uri> {
-        match self {
-            LspRequest::GotoDefinition { params, .. }
-            | LspRequest::GotoImplementation { params, .. } => {
-                Some(&params.text_document_position_params.text_document.uri)
-            }
-            LspRequest::Hover { params, .. } => {
-                Some(&params.text_document_position_params.text_document.uri)
-            }
-            LspRequest::PrepareCallHierarchy { params, .. } => {
-                Some(&params.text_document_position_params.text_document.uri)
-            }
-            LspRequest::FindReferences { params, .. } => {
-                Some(&params.text_document_position.text_document.uri)
-            }
-            LspRequest::DocumentSymbol { params, .. } => Some(&params.text_document.uri),
-            LspRequest::WorkspaceSymbol { .. }
-            | LspRequest::IncomingCalls { .. }
-            | LspRequest::OutgoingCalls { .. }
-            | LspRequest::GetDiagnostics { .. } => None,
-        }
-    }
-}
-
 /// LSP notification from client to server
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LspNotification {
-    Opened(DidOpenTextDocumentParams),
-    Changed(DidChangeTextDocumentParams),
-    Saved(DidSaveTextDocumentParams),
-    Closed(DidCloseTextDocumentParams),
+pub struct LspNotification {
+    pub method: String,
+    pub params: Value,
 }
 
 /// Top-level daemon response
@@ -195,53 +43,11 @@ pub enum LspNotification {
 pub enum DaemonResponse {
     Initialized,
     Pong,
-    LspResponse(LspResponse),
+    LspResult {
+        client_id: i64,
+        result: Result<Value, LspErrorResponse>,
+    },
     Error(ProtocolError),
-}
-
-/// LSP response with client ID for correlation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LspResponse {
-    GotoDefinition {
-        client_id: i64,
-        result: Result<GotoDefinitionResponse, LspErrorResponse>,
-    },
-    GotoImplementation {
-        client_id: i64,
-        result: Result<GotoDefinitionResponse, LspErrorResponse>,
-    },
-    FindReferences {
-        client_id: i64,
-        result: Result<Vec<Location>, LspErrorResponse>,
-    },
-    Hover {
-        client_id: i64,
-        result: Result<Option<Hover>, LspErrorResponse>,
-    },
-    WorkspaceSymbol {
-        client_id: i64,
-        result: Result<Vec<SymbolInformation>, LspErrorResponse>,
-    },
-    DocumentSymbol {
-        client_id: i64,
-        result: Result<DocumentSymbolResponse, LspErrorResponse>,
-    },
-    PrepareCallHierarchy {
-        client_id: i64,
-        result: Result<Vec<CallHierarchyItem>, LspErrorResponse>,
-    },
-    IncomingCalls {
-        client_id: i64,
-        result: Result<Vec<CallHierarchyIncomingCall>, LspErrorResponse>,
-    },
-    OutgoingCalls {
-        client_id: i64,
-        result: Result<Vec<CallHierarchyOutgoingCall>, LspErrorResponse>,
-    },
-    GetDiagnostics {
-        client_id: i64,
-        result: Result<Vec<PublishDiagnosticsParams>, LspErrorResponse>,
-    },
 }
 
 /// LSP error response
@@ -276,11 +82,25 @@ impl ProtocolError {
     }
 }
 
+/// Extract the document URI from an LSP request's params by method name.
+///
+/// Used by the daemon for auto-open: if the request targets a specific file,
+/// the daemon ensures the file is opened before forwarding the request.
+pub fn extract_document_uri(method: &str, params: &Value) -> Option<Uri> {
+    if !method.starts_with("textDocument/") {
+        return None;
+    }
+    params
+        .pointer("/textDocument/uri")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok())
+}
+
 /// Maximum message size (16 MB)
 pub const MAX_MESSAGE_SIZE: u32 = 16 * 1024 * 1024;
 
 /// Read a length-prefixed frame from an async reader
-pub async fn read_frame<R, T>(reader: &mut R) -> io::Result<Option<T>>
+pub(crate) async fn read_frame<R, T>(reader: &mut R) -> io::Result<Option<T>>
 where
     R: tokio::io::AsyncReadExt + Unpin,
     T: for<'de> Deserialize<'de>,
@@ -310,7 +130,7 @@ where
 }
 
 /// Write a length-prefixed frame to an async writer
-pub async fn write_frame<W, T>(writer: &mut W, message: &T) -> io::Result<()>
+pub(crate) async fn write_frame<W, T>(writer: &mut W, message: &T) -> io::Result<()>
 where
     W: tokio::io::AsyncWriteExt + Unpin,
     T: Serialize,
@@ -335,35 +155,78 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_language_id_as_str() {
-        assert_eq!(LanguageId::Rust.as_str(), "rust");
-        assert_eq!(LanguageId::TypeScriptReact.as_str(), "typescriptreact");
-    }
-
-    #[test]
     fn test_protocol_error_new() {
         let err = ProtocolError::new("test error");
         assert_eq!(err.message, "test error");
     }
 
     #[test]
-    fn test_lsp_request_client_id() {
-        let req = LspRequest::GotoDefinition {
+    fn test_daemon_request_lsp_call_roundtrip() {
+        let req = DaemonRequest::LspCall {
             client_id: 42,
-            params: GotoDefinitionParams {
-                text_document_position_params: lsp_types::TextDocumentPositionParams {
-                    text_document: lsp_types::TextDocumentIdentifier {
-                        uri: "file:///test.rs".parse().unwrap(),
-                    },
-                    position: lsp_types::Position {
-                        line: 0,
-                        character: 0,
-                    },
-                },
-                work_done_progress_params: Default::default(),
-                partial_result_params: Default::default(),
-            },
+            method: "textDocument/definition".to_string(),
+            params: serde_json::json!({
+                "textDocument": { "uri": "file:///test.rs" },
+                "position": { "line": 0, "character": 0 }
+            }),
         };
-        assert_eq!(req.client_id(), 42);
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: DaemonRequest = serde_json::from_str(&json).unwrap();
+        match decoded {
+            DaemonRequest::LspCall {
+                client_id, method, ..
+            } => {
+                assert_eq!(client_id, 42);
+                assert_eq!(method, "textDocument/definition");
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_extract_document_uri_definition() {
+        let params = serde_json::json!({
+            "textDocument": { "uri": "file:///src/main.rs" },
+            "position": { "line": 10, "character": 5 }
+        });
+        let uri = extract_document_uri("textDocument/definition", &params);
+        assert!(uri.is_some());
+        assert_eq!(uri.unwrap().as_str(), "file:///src/main.rs");
+    }
+
+    #[test]
+    fn test_extract_document_uri_references() {
+        let params = serde_json::json!({
+            "textDocument": { "uri": "file:///src/lib.rs" },
+            "position": { "line": 5, "character": 3 },
+            "context": { "includeDeclaration": true }
+        });
+        let uri = extract_document_uri("textDocument/references", &params);
+        assert!(uri.is_some());
+        assert_eq!(uri.unwrap().as_str(), "file:///src/lib.rs");
+    }
+
+    #[test]
+    fn test_extract_document_uri_document_symbol() {
+        let params = serde_json::json!({
+            "textDocument": { "uri": "file:///src/foo.rs" }
+        });
+        let uri = extract_document_uri("textDocument/documentSymbol", &params);
+        assert!(uri.is_some());
+        assert_eq!(uri.unwrap().as_str(), "file:///src/foo.rs");
+    }
+
+    #[test]
+    fn test_extract_document_uri_workspace_symbol_returns_none() {
+        let params = serde_json::json!({ "query": "Foo" });
+        let uri = extract_document_uri("workspace/symbol", &params);
+        assert!(uri.is_none());
+    }
+
+    #[test]
+    fn test_extract_document_uri_unknown_method_returns_none() {
+        let params = serde_json::json!({});
+        let uri = extract_document_uri("textDocument/unknown", &params);
+        assert!(uri.is_none());
     }
 }

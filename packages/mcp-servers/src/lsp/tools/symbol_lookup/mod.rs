@@ -179,7 +179,8 @@ pub async fn execute_lsp_symbol(
                 .await
                 .map_err(|e| e.to_string())?;
             let locations = definition_response_to_locations(response);
-            let mut output = LspSymbolOutput::with_locations("implementation", locations, input.limit);
+            let mut output =
+                LspSymbolOutput::with_locations("implementation", locations, input.limit);
             enrich_locations_with_context(&mut output, input.context_lines).await;
             Ok(output)
         }
@@ -190,7 +191,12 @@ pub async fn execute_lsp_symbol(
                 .map_err(|e| e.to_string())?;
             let lsp_locations = resolved
                 .client
-                .find_references(resolved.uri, resolved.line, resolved.column, input.include_declaration)
+                .find_references(
+                    resolved.uri,
+                    resolved.line,
+                    resolved.column,
+                    input.include_declaration,
+                )
                 .await
                 .map_err(|e| e.to_string())?;
             let locations: Vec<LocationResult> = lsp_locations
@@ -218,12 +224,26 @@ pub async fn execute_lsp_symbol(
             })
         }
         SymbolLookupOperation::IncomingCalls => {
-            execute_one_step_call_hierarchy(registry, &input.file_path, &input.symbol, line, CallDirection::Incoming, input.limit)
-                .await
+            execute_one_step_call_hierarchy(
+                registry,
+                &input.file_path,
+                &input.symbol,
+                line,
+                CallDirection::Incoming,
+                input.limit,
+            )
+            .await
         }
         SymbolLookupOperation::OutgoingCalls => {
-            execute_one_step_call_hierarchy(registry, &input.file_path, &input.symbol, line, CallDirection::Outgoing, input.limit)
-                .await
+            execute_one_step_call_hierarchy(
+                registry,
+                &input.file_path,
+                &input.symbol,
+                line,
+                CallDirection::Outgoing,
+                input.limit,
+            )
+            .await
         }
     }
 }
@@ -318,15 +338,10 @@ fn definition_response_to_locations(response: GotoDefinitionResponse) -> Vec<Loc
         GotoDefinitionResponse::Link(links) => links
             .iter()
             .map(|link| {
-                let file_path = uri_to_path(&link.target_uri);
-                LocationResult {
-                    file_path,
-                    start_line: link.target_selection_range.start.line + 1,
-                    start_column: link.target_selection_range.start.character + 1,
-                    end_line: link.target_selection_range.end.line + 1,
-                    end_column: link.target_selection_range.end.character + 1,
-                    context: None,
-                }
+                LocationResult::from_range(
+                    uri_to_path(&link.target_uri),
+                    &link.target_selection_range,
+                )
             })
             .collect(),
     }

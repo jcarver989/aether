@@ -1,4 +1,4 @@
-use crate::lsp_manager::path_to_uri;
+use crate::uri::path_to_uri;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use lsp_types::{
     DidChangeWatchedFilesParams, FileChangeType, FileEvent, FileSystemWatcher, Uri, WatchKind,
@@ -166,7 +166,9 @@ impl FileWatcherActor {
                 continue;
             };
 
-            let uri = path_to_uri(path);
+            let Ok(uri) = path_to_uri(path) else {
+                continue;
+            };
             let key = uri.to_string();
             self.pending.insert(key, (uri, change_type));
         }
@@ -411,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_path_to_uri() {
-        let uri = path_to_uri(std::path::Path::new("/home/user/project/src/main.rs"));
+        let uri = path_to_uri(std::path::Path::new("/home/user/project/src/main.rs")).unwrap();
         assert_eq!(uri.to_string(), "file:///home/user/project/src/main.rs");
     }
 

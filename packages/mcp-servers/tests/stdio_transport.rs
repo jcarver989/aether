@@ -38,7 +38,8 @@ async fn connect_and_list_tools(server: &str, extra_args: &[&str]) -> Vec<rmcp::
 async fn tasks_server_lists_tools_over_stdio() {
     let tmp = tempfile::tempdir().expect("create temp dir");
 
-    let tools = connect_and_list_tools("tasks", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
+    let tools =
+        connect_and_list_tools("tasks", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
     let names = tool_names(&tools);
 
     assert!(
@@ -150,7 +151,8 @@ async fn coding_server_lists_tools_over_stdio() {
 async fn lsp_server_lists_tools_over_stdio() {
     let tmp = tempfile::tempdir().expect("create temp dir");
 
-    let tools = connect_and_list_tools("lsp", &["--", "--root-dir", tmp.path().to_str().unwrap()]).await;
+    let tools =
+        connect_and_list_tools("lsp", &["--", "--root-dir", tmp.path().to_str().unwrap()]).await;
     let names = tool_names(&tools);
 
     assert!(
@@ -172,7 +174,8 @@ async fn lsp_server_lists_tools_over_stdio() {
 async fn skills_server_lists_tools_over_stdio() {
     let tmp = tempfile::tempdir().expect("create temp dir");
 
-    let tools = connect_and_list_tools("skills", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
+    let tools =
+        connect_and_list_tools("skills", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
     let names = tool_names(&tools);
 
     assert!(

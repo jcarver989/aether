@@ -1,4 +1,4 @@
-use crate::protocol::LanguageId;
+use crate::language_id::LanguageId;
 use std::path::{Path, PathBuf};
 
 /// Generate a deterministic socket path for a given workspace and language

@@ -1,28 +1,22 @@
 use crate::error::{DaemonError, DaemonResult};
 use crate::file_watcher::FileWatcherHandle;
-use crate::protocol::{LanguageId, LspNotification};
+use crate::language_id::LanguageId;
+use crate::protocol::{LspErrorResponse, LspNotification};
+use crate::uri::{path_to_uri, uri_to_path};
 use lsp_types::notification::{
-    DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidOpenTextDocument,
-    DidSaveTextDocument, Initialized, Notification, PublishDiagnostics,
+    DidChangeWatchedFiles, DidOpenTextDocument, Initialized, Notification, PublishDiagnostics,
 };
 use lsp_types::request::{
-    CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
-    DocumentSymbolRequest, GotoDefinition, GotoImplementation as GotoImplementationRequest,
-    HoverRequest, Initialize, References, RegisterCapability, Request, UnregisterCapability,
-    WorkDoneProgressCreate, WorkspaceSymbolRequest,
+    Initialize, RegisterCapability, Request, UnregisterCapability, WorkDoneProgressCreate,
 };
 use lsp_types::{
-    CallHierarchyClientCapabilities, CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams,
-    CallHierarchyItem, CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams,
-    CallHierarchyPrepareParams, ClientCapabilities, DidChangeWatchedFilesClientCapabilities,
-    DidChangeWatchedFilesParams, DocumentSymbolClientCapabilities, DocumentSymbolParams,
-    DocumentSymbolResponse, DynamicRegistrationClientCapabilities, GeneralClientCapabilities,
-    GotoCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverClientCapabilities,
-    HoverParams, InitializeParams, Location, MarkupKind, PublishDiagnosticsClientCapabilities,
-    PublishDiagnosticsParams, ReferenceParams, RegistrationParams, SymbolInformation,
-    TextDocumentClientCapabilities, Uri, WorkspaceClientCapabilities, WorkspaceSymbolParams,
+    CallHierarchyClientCapabilities, ClientCapabilities, DidChangeWatchedFilesClientCapabilities,
+    DidChangeWatchedFilesParams, DocumentSymbolClientCapabilities,
+    DynamicRegistrationClientCapabilities, GeneralClientCapabilities, GotoCapability,
+    HoverClientCapabilities, InitializeParams, MarkupKind, PublishDiagnosticsClientCapabilities,
+    PublishDiagnosticsParams, RegistrationParams, TextDocumentClientCapabilities, Uri,
+    WorkspaceClientCapabilities,
 };
-use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -38,139 +32,10 @@ use tokio::task::JoinHandle;
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct LspKey {
     pub workspace_root: PathBuf,
-    pub language: String,
+    pub language: LanguageId,
 }
 
-/// Trait for LSP operations - eliminates the need for separate Op/Result/Kind enums
-pub trait LspOperation: Send + Sync {
-    type Response: DeserializeOwned + Send + 'static;
-
-    fn method(&self) -> &'static str;
-    fn params(&self) -> Value;
-    fn default_response() -> Self::Response;
-}
-
-/// Wrapper for `GotoImplementation` (uses same params as `GotoDefinition`)
-pub struct GotoImplementation(pub GotoDefinitionParams);
-
-impl LspOperation for GotoDefinitionParams {
-    type Response = GotoDefinitionResponse;
-    fn method(&self) -> &'static str {
-        GotoDefinition::METHOD
-    }
-    fn params(&self) -> Value {
-        serde_json::to_value(self).unwrap()
-    }
-    fn default_response() -> Self::Response {
-        GotoDefinitionResponse::Array(vec![])
-    }
-}
-
-impl LspOperation for GotoImplementation {
-    type Response = GotoDefinitionResponse;
-    fn method(&self) -> &'static str {
-        GotoImplementationRequest::METHOD
-    }
-    fn params(&self) -> Value {
-        serde_json::to_value(&self.0).unwrap()
-    }
-    fn default_response() -> Self::Response {
-        GotoDefinitionResponse::Array(vec![])
-    }
-}
-
-impl LspOperation for ReferenceParams {
-    type Response = Vec<Location>;
-    fn method(&self) -> &'static str {
-        References::METHOD
-    }
-    fn params(&self) -> Value {
-        serde_json::to_value(self).unwrap()
-    }
-    fn default_response() -> Self::Response {
-        vec![]
-    }
-}
-
-impl LspOperation for HoverParams {
-    type Response = Option<Hover>;
-    fn method(&self) -> &'static str {
-        HoverRequest::METHOD
-    }
-    fn params(&self) -> Value {
-        serde_json::to_value(self).unwrap()
-    }
-    fn default_response() -> Self::Response {
-        None
-    }
-}
-
-impl LspOperation for WorkspaceSymbolParams {
-    type Response = Vec<SymbolInformation>;
-    fn method(&self) -> &'static str {
-        WorkspaceSymbolRequest::METHOD
-    }
-    fn params(&self) -> Value {
-        serde_json::to_value(self).unwrap()
-    }
-    fn default_response() -> Self::Response {
-        vec![]
-    }
-}
-
-impl LspOperation for DocumentSymbolParams {
-    type Response = DocumentSymbolResponse;
-    fn method(&self) -> &'static str {
-        DocumentSymbolRequest::METHOD
-    }
-    fn params(&self) -> Value {
-        serde_json::to_value(self).unwrap()
-    }
-    fn default_response() -> Self::Response {
-        DocumentSymbolResponse::Flat(vec![])
-    }
-}
-
-impl LspOperation for CallHierarchyPrepareParams {
-    type Response = Vec<CallHierarchyItem>;
-    fn method(&self) -> &'static str {
-        CallHierarchyPrepare::METHOD
-    }
-    fn params(&self) -> Value {
-        serde_json::to_value(self).unwrap()
-    }
-    fn default_response() -> Self::Response {
-        vec![]
-    }
-}
-
-impl LspOperation for CallHierarchyIncomingCallsParams {
-    type Response = Vec<CallHierarchyIncomingCall>;
-    fn method(&self) -> &'static str {
-        CallHierarchyIncomingCalls::METHOD
-    }
-    fn params(&self) -> Value {
-        serde_json::to_value(self).unwrap()
-    }
-    fn default_response() -> Self::Response {
-        vec![]
-    }
-}
-
-impl LspOperation for CallHierarchyOutgoingCallsParams {
-    type Response = Vec<CallHierarchyOutgoingCall>;
-    fn method(&self) -> &'static str {
-        CallHierarchyOutgoingCalls::METHOD
-    }
-    fn params(&self) -> Value {
-        serde_json::to_value(self).unwrap()
-    }
-    fn default_response() -> Self::Response {
-        vec![]
-    }
-}
-
-/// Manager for LSP server instances (simplified from actor pattern)
+/// Manager for LSP server instances
 #[derive(Clone)]
 pub struct LspManager {
     lsps: Arc<RwLock<HashMap<LspKey, Arc<LspHandle>>>>,
@@ -190,18 +55,11 @@ pub struct LspHandle {
     _task: JoinHandle<()>,
 }
 
-/// Envelope for an LSP request with response channel (simplified: uses Value)
+/// Envelope for an LSP request with response channel
 struct LspRequestEnvelope {
-    method: &'static str,
+    method: String,
     params: Value,
-    response_tx: oneshot::Sender<Result<Value, LspErrorInfo>>,
-}
-
-/// Error information from LSP
-#[derive(Debug, Clone)]
-pub struct LspErrorInfo {
-    pub code: i32,
-    pub message: String,
+    response_tx: oneshot::Sender<Result<Value, LspErrorResponse>>,
 }
 
 impl LspManager {
@@ -246,39 +104,29 @@ impl Default for LspManager {
 }
 
 impl LspHandle {
-    /// Send a request to the LSP and wait for response
-    pub async fn request<O: LspOperation>(&self, op: O) -> Result<O::Response, LspErrorInfo> {
+    /// Send a raw LSP request and wait for the JSON response.
+    ///
+    /// The daemon is a pure `(method, params) -> Value` passthrough.
+    pub async fn request_raw(&self, method: &str, params: Value) -> Result<Value, LspErrorResponse> {
         let (response_tx, response_rx) = oneshot::channel();
         let envelope = LspRequestEnvelope {
-            method: op.method(),
-            params: op.params(),
+            method: method.to_string(),
+            params,
             response_tx,
         };
 
         self.request_tx
             .send(envelope)
             .await
-            .map_err(|_| LspErrorInfo {
+            .map_err(|_| LspErrorResponse {
                 code: -1,
                 message: "LSP handler closed".into(),
             })?;
 
-        let result = response_rx.await.map_err(|_| LspErrorInfo {
+        response_rx.await.map_err(|_| LspErrorResponse {
             code: -1,
             message: "Response channel closed".into(),
-        })?;
-
-        // Parse the Value response into the expected type
-        result.and_then(|value| {
-            if value.is_null() {
-                Ok(O::default_response())
-            } else {
-                serde_json::from_value(value).map_err(|e| LspErrorInfo {
-                    code: -1,
-                    message: format!("Parse error: {e}"),
-                })
-            }
-        })
+        })?
     }
 
     /// Get cached diagnostics
@@ -310,8 +158,8 @@ impl LspHandle {
             return;
         }
 
-        let file_path = uri.as_str().strip_prefix("file://").unwrap_or(uri.as_str());
-        let content = match read_to_string(file_path).await {
+        let file_path = uri_to_path(uri);
+        let content = match read_to_string(&file_path).await {
             Ok(c) => c,
             Err(e) => {
                 tracing::debug!("Could not read file for auto-open {}: {}", file_path, e);
@@ -324,7 +172,7 @@ impl LspHandle {
             return;
         }
 
-        let language_id = LanguageId::from_path(Path::new(file_path));
+        let language_id = LanguageId::from_path(Path::new(&file_path));
         let params = lsp_types::DidOpenTextDocumentParams {
             text_document: lsp_types::TextDocumentItem {
                 uri: uri.clone(),
@@ -334,8 +182,11 @@ impl LspHandle {
             },
         };
 
-        self.send_notification(LspNotification::Opened(params))
-            .await;
+        let notification = LspNotification {
+            method: DidOpenTextDocument::METHOD.to_string(),
+            params: serde_json::to_value(&params).unwrap(),
+        };
+        self.send_notification(notification).await;
         open_docs.insert(uri.clone());
     }
 }
@@ -377,10 +228,8 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
         reader: BufReader::new(stdout),
         requests: request_rx,
         notifications: notification_rx,
-        file_watch: FileWatchState {
-            handle: file_watcher,
-            rx: file_watch_rx,
-        },
+        file_watcher_handle: file_watcher,
+        file_watcher_rx: file_watch_rx,
         diagnostics_cache: handler_diagnostics_cache,
         root_path: root_path.to_path_buf(),
         next_id: 1,
@@ -397,12 +246,6 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
     })
 }
 
-/// File watching state passed into the handler loop.
-struct FileWatchState {
-    handle: FileWatcherHandle,
-    rx: mpsc::Receiver<DidChangeWatchedFilesParams>,
-}
-
 /// Owns all LSP handler state and runs the event loop.
 struct LspHandler {
     process: Child,
@@ -410,11 +253,12 @@ struct LspHandler {
     reader: BufReader<ChildStdout>,
     requests: mpsc::Receiver<LspRequestEnvelope>,
     notifications: mpsc::Receiver<LspNotification>,
-    file_watch: FileWatchState,
+    file_watcher_handle: FileWatcherHandle,
+    file_watcher_rx: mpsc::Receiver<DidChangeWatchedFilesParams>,
     diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
     root_path: PathBuf,
     next_id: i64,
-    pending: HashMap<i64, oneshot::Sender<Result<Value, LspErrorInfo>>>,
+    pending: HashMap<i64, oneshot::Sender<Result<Value, LspErrorResponse>>>,
 }
 
 impl LspHandler {
@@ -483,12 +327,12 @@ impl LspHandler {
                 }
 
                 Some(notification) = self.notifications.recv() => {
-                    if let Err(e) = self.send_client_notification(&notification).await {
+                    if let Err(e) = self.send_client_notification(notification).await {
                         tracing::warn!("Failed to forward notification: {}", e);
                     }
                 }
 
-                Some(params) = self.file_watch.rx.recv() => {
+                Some(params) = self.file_watcher_rx.recv() => {
                     if let Ok(value) = serde_json::to_value(&params)
                         && let Err(e) = send_notification(&mut self.stdin, DidChangeWatchedFiles::METHOD, value).await
                     {
@@ -511,12 +355,12 @@ impl LspHandler {
         self.pending.insert(id, envelope.response_tx);
 
         if let Err(e) = self
-            .send_request(id, envelope.method, envelope.params)
+            .send_request(id, &envelope.method, envelope.params)
             .await
         {
             tracing::error!("Failed to send LSP request: {}", e);
             if let Some(tx) = self.pending.remove(&id) {
-                let _ = tx.send(Err(LspErrorInfo {
+                let _ = tx.send(Err(LspErrorResponse {
                     code: -1,
                     message: e.to_string(),
                 }));
@@ -527,7 +371,7 @@ impl LspHandler {
     /// Drain all pending requests with an error on shutdown.
     fn cleanup_pending(&mut self) {
         for (_, tx) in self.pending.drain() {
-            let _ = tx.send(Err(LspErrorInfo {
+            let _ = tx.send(Err(LspErrorResponse {
                 code: -1,
                 message: "LSP server closed".into(),
             }));
@@ -592,7 +436,7 @@ impl LspHandler {
                             .and_then(|v| v.as_str())
                             .unwrap_or("Unknown error")
                             .to_string();
-                        Err(LspErrorInfo { code, message })
+                        Err(LspErrorResponse { code, message })
                     } else {
                         Ok(msg.get("result").cloned().unwrap_or(Value::Null))
                     };
@@ -634,8 +478,7 @@ impl LspHandler {
                         fs_watchers.len(),
                         reg.id
                     );
-                    self.file_watch
-                        .handle
+                    self.file_watcher_handle
                         .register_watchers(reg.id.clone(), fs_watchers);
                 }
             }
@@ -651,7 +494,7 @@ impl LspHandler {
         {
             for unreg in &unreg_params.unregisterations {
                 if unreg.method == DidChangeWatchedFiles::METHOD {
-                    self.file_watch.handle.unregister(unreg.id.clone());
+                    self.file_watcher_handle.unregister(unreg.id.clone());
                 }
             }
         }
@@ -661,7 +504,9 @@ impl LspHandler {
 
     /// Send the `initialize` request to the LSP server.
     async fn initialize(&mut self) -> std::io::Result<()> {
-        let root_uri = path_to_uri(&self.root_path);
+        let root_uri = path_to_uri(&self.root_path).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
+        })?;
 
         let capabilities = ClientCapabilities {
             general: Some(GeneralClientCapabilities::default()),
@@ -746,27 +591,9 @@ impl LspHandler {
     /// Send a client notification to the LSP server.
     async fn send_client_notification(
         &mut self,
-        notification: &LspNotification,
+        notification: LspNotification,
     ) -> std::io::Result<()> {
-        let (method, params) = match notification {
-            LspNotification::Opened(p) => (
-                DidOpenTextDocument::METHOD,
-                serde_json::to_value(p).unwrap(),
-            ),
-            LspNotification::Changed(p) => (
-                DidChangeTextDocument::METHOD,
-                serde_json::to_value(p).unwrap(),
-            ),
-            LspNotification::Saved(p) => (
-                DidSaveTextDocument::METHOD,
-                serde_json::to_value(p).unwrap(),
-            ),
-            LspNotification::Closed(p) => (
-                DidCloseTextDocument::METHOD,
-                serde_json::to_value(p).unwrap(),
-            ),
-        };
-        send_notification(&mut self.stdin, method, params).await
+        send_notification(&mut self.stdin, &notification.method, notification.params).await
     }
 }
 
@@ -784,27 +611,6 @@ fn parse_file_system_watchers(
     Ok(parsed.watchers)
 }
 
-/// Convert path to URI
-pub(crate) fn path_to_uri(path: &Path) -> Uri {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir().unwrap_or_default().join(path)
-    };
-
-    #[cfg(windows)]
-    let uri_str = {
-        let path_str = absolute.to_string_lossy().replace('\\', "/");
-        format!("file:///{}", path_str)
-    };
-
-    #[cfg(not(windows))]
-    let uri_str = format!("file://{}", absolute.display());
-
-    uri_str
-        .parse()
-        .unwrap_or_else(|_| "file:///".parse().unwrap())
-}
 
 /// Send an LSP notification
 async fn send_notification(
