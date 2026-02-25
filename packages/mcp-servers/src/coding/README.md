@@ -42,9 +42,8 @@ These tools provide code-aware navigation. They require a running language serve
 
 | Tool | Description |
 |------|-------------|
-| `lsp_symbol` | Go-to-definition, find references, find implementations, hover info, or prepare call hierarchy for a symbol. |
+| `lsp_symbol` | Go-to-definition, find references, find implementations, hover info, or incoming/outgoing call hierarchy for a symbol. |
 | `lsp_document` | Get all symbols in a document (functions, structs, traits, etc.) with nested structure. |
-| `lsp_call_hierarchy` | Trace incoming callers or outgoing callees from a symbol. Use `lsp_symbol` with `PrepareCallHierarchy` first. |
 | `lsp_check_errors` | Get compiler diagnostics (errors, warnings) for a file or the entire workspace. |
 
 ## Read-Before-Edit Safety

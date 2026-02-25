@@ -85,14 +85,8 @@ fn convert_document_symbols(
         DocumentSymbolResponse::Flat(symbols) => symbols
             .into_iter()
             .map(|sym| {
-                let range = LocationResult {
-                    file_path: file_path.to_string(),
-                    start_line: sym.location.range.start.line + 1,
-                    start_column: sym.location.range.start.character + 1,
-                    end_line: sym.location.range.end.line + 1,
-                    end_column: sym.location.range.end.character + 1,
-                    context: None,
-                };
+                let range =
+                    LocationResult::from_range(file_path.to_string(), &sym.location.range);
                 DocumentSymbolResult {
                     name: sym.name,
                     kind: symbol_kind_to_string(sym.kind).to_string(),
@@ -115,22 +109,8 @@ fn convert_document_symbol(
     file_path: &str,
     sym: lsp_types::DocumentSymbol,
 ) -> DocumentSymbolResult {
-    let range = LocationResult {
-        file_path: file_path.to_string(),
-        start_line: sym.range.start.line + 1,
-        start_column: sym.range.start.character + 1,
-        end_line: sym.range.end.line + 1,
-        end_column: sym.range.end.character + 1,
-        context: None,
-    };
-    let selection_range = LocationResult {
-        file_path: file_path.to_string(),
-        start_line: sym.selection_range.start.line + 1,
-        start_column: sym.selection_range.start.character + 1,
-        end_line: sym.selection_range.end.line + 1,
-        end_column: sym.selection_range.end.character + 1,
-        context: None,
-    };
+    let range = LocationResult::from_range(file_path.to_string(), &sym.range);
+    let selection_range = LocationResult::from_range(file_path.to_string(), &sym.selection_range);
 
     let children = sym.children.map(|children| {
         children

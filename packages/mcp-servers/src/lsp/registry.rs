@@ -212,7 +212,8 @@ impl LspRegistry {
     ) -> Result<ResolvedSymbol, LspError> {
         let content = tokio::fs::read_to_string(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
-        let uri = path_to_uri(Path::new(file_path))?;
+        let uri = path_to_uri(Path::new(file_path))
+            .map_err(LspError::Transport)?;
         let client = self.require_client(file_path).await?;
         Ok(ResolvedSymbol {
             uri,
@@ -232,7 +233,10 @@ impl LspRegistry {
             if let Ok(params_list) = client.get_diagnostics(None).await {
                 for params in params_list {
                     let file_path = uri_to_path(&params.uri);
-                    result.entry(file_path).or_default().extend(params.diagnostics);
+                    result
+                        .entry(file_path)
+                        .or_default()
+                        .extend(params.diagnostics);
                 }
             }
         }

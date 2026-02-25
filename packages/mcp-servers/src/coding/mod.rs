@@ -29,7 +29,9 @@ pub use default_tools::DefaultCodingTools;
 pub use tools_trait::CodingTools;
 
 use crate::lsp::registry::LspRegistry;
-use crate::lsp::tools::check_errors::{LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics};
+use crate::lsp::tools::check_errors::{
+    LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
+};
 use crate::lsp::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
 use crate::lsp::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 

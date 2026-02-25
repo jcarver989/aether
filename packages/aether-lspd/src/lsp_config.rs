@@ -1,5 +1,6 @@
-use crate::protocol::LanguageId;
+use crate::language_id::LanguageId;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 /// Configuration for an LSP server
 #[derive(Debug, Clone)]
@@ -35,10 +36,7 @@ impl LspConfig {
     }
 }
 
-/// Get the configuration for a given language
-///
-/// Returns None if no LSP is configured for the language.
-pub fn get_config_for_language(language: LanguageId) -> Option<LspConfig> {
+static CONFIG_MAP: LazyLock<HashMap<LanguageId, LspConfig>> = LazyLock::new(|| {
     let configs = vec![
         LspConfig::new("rust-analyzer").with_languages(vec![LanguageId::Rust]),
         LspConfig::new("typescript-language-server")
@@ -61,7 +59,14 @@ pub fn get_config_for_language(language: LanguageId) -> Option<LspConfig> {
             map.insert(*lang, config.clone());
         }
     }
-    map.get(&language).cloned()
+    map
+});
+
+/// Get the configuration for a given language
+///
+/// Returns None if no LSP is configured for the language.
+pub fn get_config_for_language(language: LanguageId) -> Option<&'static LspConfig> {
+    CONFIG_MAP.get(&language)
 }
 
 #[cfg(test)]

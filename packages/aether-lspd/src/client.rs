@@ -12,18 +12,22 @@ use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
     GotoDefinitionResponse, Hover, HoverParams, Location, PartialResultParams, Position,
-    ReferenceContext, ReferenceParams, SymbolInformation, TextDocumentIdentifier,
-    TextDocumentPositionParams, Uri, WorkDoneProgressParams, WorkspaceSymbolParams,
+    PublishDiagnosticsParams, ReferenceContext, ReferenceParams, SymbolInformation,
+    TextDocumentIdentifier, TextDocumentPositionParams, Uri, WorkDoneProgressParams,
+    WorkspaceSymbolParams,
 };
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
 use thiserror::Error;
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::sync::{Mutex, oneshot};
 
+use crate::language_id::LanguageId;
 use crate::protocol::{
-    DaemonRequest, DaemonResponse, InitializeRequest, LanguageId, LspNotification, LspRequest,
-    LspResponse, read_frame, write_frame,
+    DaemonRequest, DaemonResponse, InitializeRequest, LspNotification, read_frame, write_frame,
 };
 use crate::socket_path::ensure_socket_dir;
 
@@ -74,26 +78,8 @@ pub enum ClientError {
 /// Result type for client operations
 pub type ClientResult<T> = std::result::Result<T, ClientError>;
 
-impl LspResponse {
-    /// Get the client ID from the response
-    fn client_id(&self) -> i64 {
-        match self {
-            LspResponse::GotoDefinition { client_id, .. }
-            | LspResponse::GotoImplementation { client_id, .. }
-            | LspResponse::FindReferences { client_id, .. }
-            | LspResponse::Hover { client_id, .. }
-            | LspResponse::WorkspaceSymbol { client_id, .. }
-            | LspResponse::DocumentSymbol { client_id, .. }
-            | LspResponse::PrepareCallHierarchy { client_id, .. }
-            | LspResponse::IncomingCalls { client_id, .. }
-            | LspResponse::OutgoingCalls { client_id, .. }
-            | LspResponse::GetDiagnostics { client_id, .. } => *client_id,
-        }
-    }
-}
-
-/// Result type for pending LSP responses
-type PendingResult = Result<LspResponse, String>;
+/// Pending result: either a `Value` result or a structured error
+type PendingResult = Result<Value, ClientError>;
 
 /// Client for communicating with the LSP daemon
 pub struct LspClient {
@@ -111,12 +97,6 @@ pub struct LspClient {
 ///
 /// Spawns the daemon if necessary. Does NOT connect - use `LspClient::connect`
 /// after this if you need a connection.
-///
-/// # Arguments
-/// * `socket_path` - Path to the Unix socket
-///
-/// # Returns
-/// Ok(()) if daemon is running or was successfully spawned
 pub async fn ensure_daemon_running(socket_path: &Path) -> ClientResult<()> {
     match UnixStream::connect(socket_path).await {
         Ok(_) => Ok(()),
@@ -132,14 +112,6 @@ pub async fn ensure_daemon_running(socket_path: &Path) -> ClientResult<()> {
 
 impl LspClient {
     /// Connect to an already-running daemon
-    ///
-    /// Use `ensure_daemon_running` first if you want to spawn the daemon if needed,
-    /// or use `connect_or_spawn` for convenience.
-    ///
-    /// # Arguments
-    /// * `socket_path` - Path to the Unix socket
-    /// * `workspace_root` - The workspace root directory
-    /// * `language` - The language for LSP operations
     pub async fn connect(
         socket_path: &Path,
         workspace_root: &Path,
@@ -152,12 +124,6 @@ impl LspClient {
     }
 
     /// Connect to the daemon, spawning it if necessary
-    ///
-    /// This is a convenience method that combines `ensure_daemon_running` and `connect`.
-    ///
-    /// # Arguments
-    /// * `workspace_root` - The workspace root directory
-    /// * `language` - The language for LSP operations
     pub async fn connect_or_spawn(
         workspace_root: &Path,
         language: LanguageId,
@@ -200,23 +166,10 @@ impl LspClient {
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-
-        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request = DaemonRequest::LspRequest(LspRequest::GotoDefinition { client_id, params });
-
-        self.send_lsp_request(request, client_id)
-            .await
-            .and_then(|resp| match resp {
-                LspResponse::GotoDefinition { result, .. } => {
-                    result.map_err(|e| ClientError::LspError {
-                        code: e.code,
-                        message: e.message,
-                    })
-                }
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
+        self.call("textDocument/definition", &params, || {
+            GotoDefinitionResponse::Array(vec![])
+        })
+        .await
     }
 
     /// Go to the implementation of an interface/trait method
@@ -234,24 +187,10 @@ impl LspClient {
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-
-        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request =
-            DaemonRequest::LspRequest(LspRequest::GotoImplementation { client_id, params });
-
-        self.send_lsp_request(request, client_id)
-            .await
-            .and_then(|resp| match resp {
-                LspResponse::GotoImplementation { result, .. } => {
-                    result.map_err(|e| ClientError::LspError {
-                        code: e.code,
-                        message: e.message,
-                    })
-                }
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
+        self.call("textDocument/implementation", &params, || {
+            GotoDefinitionResponse::Array(vec![])
+        })
+        .await
     }
 
     /// Find all references to a symbol at a position
@@ -273,23 +212,8 @@ impl LspClient {
                 include_declaration,
             },
         };
-
-        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request = DaemonRequest::LspRequest(LspRequest::FindReferences { client_id, params });
-
-        self.send_lsp_request(request, client_id)
+        self.call("textDocument/references", &params, Vec::new)
             .await
-            .and_then(|resp| match resp {
-                LspResponse::FindReferences { result, .. } => {
-                    result.map_err(|e| ClientError::LspError {
-                        code: e.code,
-                        message: e.message,
-                    })
-                }
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
     }
 
     /// Get hover information for a symbol at a position
@@ -301,21 +225,7 @@ impl LspClient {
             },
             work_done_progress_params: WorkDoneProgressParams::default(),
         };
-
-        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request = DaemonRequest::LspRequest(LspRequest::Hover { client_id, params });
-
-        self.send_lsp_request(request, client_id)
-            .await
-            .and_then(|resp| match resp {
-                LspResponse::Hover { result, .. } => result.map_err(|e| ClientError::LspError {
-                    code: e.code,
-                    message: e.message,
-                }),
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
+        self.call("textDocument/hover", &params, || None).await
     }
 
     /// Search for symbols across the workspace
@@ -325,23 +235,7 @@ impl LspClient {
             partial_result_params: PartialResultParams::default(),
             work_done_progress_params: WorkDoneProgressParams::default(),
         };
-
-        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request = DaemonRequest::LspRequest(LspRequest::WorkspaceSymbol { client_id, params });
-
-        self.send_lsp_request(request, client_id)
-            .await
-            .and_then(|resp| match resp {
-                LspResponse::WorkspaceSymbol { result, .. } => {
-                    result.map_err(|e| ClientError::LspError {
-                        code: e.code,
-                        message: e.message,
-                    })
-                }
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
+        self.call("workspace/symbol", &params, Vec::new).await
     }
 
     /// Get all symbols in a document
@@ -351,23 +245,10 @@ impl LspClient {
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-
-        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request = DaemonRequest::LspRequest(LspRequest::DocumentSymbol { client_id, params });
-
-        self.send_lsp_request(request, client_id)
-            .await
-            .and_then(|resp| match resp {
-                LspResponse::DocumentSymbol { result, .. } => {
-                    result.map_err(|e| ClientError::LspError {
-                        code: e.code,
-                        message: e.message,
-                    })
-                }
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
+        self.call("textDocument/documentSymbol", &params, || {
+            DocumentSymbolResponse::Flat(vec![])
+        })
+        .await
     }
 
     /// Prepare call hierarchy at a position
@@ -384,24 +265,8 @@ impl LspClient {
             },
             work_done_progress_params: WorkDoneProgressParams::default(),
         };
-
-        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request =
-            DaemonRequest::LspRequest(LspRequest::PrepareCallHierarchy { client_id, params });
-
-        self.send_lsp_request(request, client_id)
+        self.call("textDocument/prepareCallHierarchy", &params, Vec::new)
             .await
-            .and_then(|resp| match resp {
-                LspResponse::PrepareCallHierarchy { result, .. } => {
-                    result.map_err(|e| ClientError::LspError {
-                        code: e.code,
-                        message: e.message,
-                    })
-                }
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
     }
 
     /// Get incoming calls for a call hierarchy item
@@ -414,23 +279,8 @@ impl LspClient {
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-
-        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request = DaemonRequest::LspRequest(LspRequest::IncomingCalls { client_id, params });
-
-        self.send_lsp_request(request, client_id)
+        self.call("callHierarchy/incomingCalls", &params, Vec::new)
             .await
-            .and_then(|resp| match resp {
-                LspResponse::IncomingCalls { result, .. } => {
-                    result.map_err(|e| ClientError::LspError {
-                        code: e.code,
-                        message: e.message,
-                    })
-                }
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
     }
 
     /// Get outgoing calls for a call hierarchy item
@@ -443,23 +293,8 @@ impl LspClient {
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-
-        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request = DaemonRequest::LspRequest(LspRequest::OutgoingCalls { client_id, params });
-
-        self.send_lsp_request(request, client_id)
+        self.call("callHierarchy/outgoingCalls", &params, Vec::new)
             .await
-            .and_then(|resp| match resp {
-                LspResponse::OutgoingCalls { result, .. } => {
-                    result.map_err(|e| ClientError::LspError {
-                        code: e.code,
-                        message: e.message,
-                    })
-                }
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
     }
 
     /// Get cached diagnostics from the daemon
@@ -469,27 +304,26 @@ impl LspClient {
     pub async fn get_diagnostics(
         &self,
         uri: Option<Uri>,
-    ) -> ClientResult<Vec<lsp_types::PublishDiagnosticsParams>> {
+    ) -> ClientResult<Vec<PublishDiagnosticsParams>> {
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request = DaemonRequest::LspRequest(LspRequest::GetDiagnostics { client_id, uri });
+        let request = DaemonRequest::GetDiagnostics { client_id, uri };
 
-        self.send_lsp_request(request, client_id)
-            .await
-            .and_then(|resp| match resp {
-                LspResponse::GetDiagnostics { result, .. } => {
-                    result.map_err(|e| ClientError::LspError {
-                        code: e.code,
-                        message: e.message,
-                    })
-                }
-                _ => Err(ClientError::ProtocolError(
-                    "Unexpected response type".into(),
-                )),
-            })
+        self.send_and_await(request, client_id).await.and_then(|v| {
+            serde_json::from_value(v).map_err(|e| ClientError::ProtocolError(e.to_string()))
+        })
     }
 
     /// Send a notification (fire-and-forget)
-    pub async fn send_notification(&self, notification: LspNotification) -> ClientResult<()> {
+    pub async fn send_notification(
+        &self,
+        method: &str,
+        params: &impl Serialize,
+    ) -> ClientResult<()> {
+        let notification = LspNotification {
+            method: method.to_string(),
+            params: serde_json::to_value(params)
+                .map_err(|e| ClientError::ProtocolError(e.to_string()))?,
+        };
         let request = DaemonRequest::LspNotification(notification);
         let mut writer = self.writer.lock().await;
         write_frame(&mut *writer, &request)
@@ -499,32 +333,29 @@ impl LspClient {
 
     /// Send notification that a document was opened
     pub async fn notify_opened(&self, params: DidOpenTextDocumentParams) -> ClientResult<()> {
-        self.send_notification(LspNotification::Opened(params))
+        self.send_notification("textDocument/didOpen", &params)
             .await
     }
 
     /// Send notification that a document was changed
     pub async fn notify_changed(&self, params: DidChangeTextDocumentParams) -> ClientResult<()> {
-        self.send_notification(LspNotification::Changed(params))
+        self.send_notification("textDocument/didChange", &params)
             .await
     }
 
     /// Send notification that a document was saved
     pub async fn notify_saved(&self, params: DidSaveTextDocumentParams) -> ClientResult<()> {
-        self.send_notification(LspNotification::Saved(params)).await
+        self.send_notification("textDocument/didSave", &params)
+            .await
     }
 
     /// Send notification that a document was closed
     pub async fn notify_closed(&self, params: DidCloseTextDocumentParams) -> ClientResult<()> {
-        self.send_notification(LspNotification::Closed(params))
+        self.send_notification("textDocument/didClose", &params)
             .await
     }
 
     /// Gracefully disconnect from the daemon
-    ///
-    /// This sends a disconnect message to the daemon before closing the connection.
-    /// If you don't call this, the daemon will still handle the disconnection gracefully
-    /// when the connection closes.
     pub async fn disconnect(self) -> ClientResult<()> {
         let request = DaemonRequest::Disconnect;
         let mut writer = self.writer.lock().await;
@@ -588,12 +419,38 @@ impl LspClient {
         })
     }
 
-    /// Internal method to send an LSP request and wait for response
-    async fn send_lsp_request(
+    /// Send an LSP call and deserialize the response.
+    ///
+    /// Serializes `params`, sends `DaemonRequest::LspCall`, awaits the `Value`
+    /// result, and deserializes into `R` (using `default()` for null responses).
+    pub async fn call<P: Serialize, R: DeserializeOwned>(
         &self,
-        request: DaemonRequest,
-        client_id: i64,
-    ) -> ClientResult<LspResponse> {
+        method: &str,
+        params: &P,
+        default: impl FnOnce() -> R,
+    ) -> ClientResult<R> {
+        let params_value =
+            serde_json::to_value(params).map_err(|e| ClientError::ProtocolError(e.to_string()))?;
+
+        let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let request = DaemonRequest::LspCall {
+            client_id,
+            method: method.to_string(),
+            params: params_value,
+        };
+
+        let value = self.send_and_await(request, client_id).await?;
+
+        if value.is_null() {
+            Ok(default())
+        } else {
+            serde_json::from_value(value)
+                .map_err(|e| ClientError::ProtocolError(format!("Parse error: {e}")))
+        }
+    }
+
+    /// Send a request to the daemon and await the `Value` result.
+    async fn send_and_await(&self, request: DaemonRequest, client_id: i64) -> ClientResult<Value> {
         let (response_tx, response_rx) = oneshot::channel();
 
         {
@@ -615,7 +472,6 @@ impl LspClient {
         response_rx
             .await
             .map_err(|_| ClientError::ProtocolError("Response channel closed".into()))?
-            .map_err(ClientError::DaemonError)
     }
 }
 
@@ -638,19 +494,21 @@ async fn run_reader(
         };
 
         match response {
-            Some(DaemonResponse::LspResponse(lsp_resp)) => {
-                let client_id = lsp_resp.client_id();
+            Some(DaemonResponse::LspResult { client_id, result }) => {
                 let mut pending = pending.lock().await;
                 if let Some(tx) = pending.remove(&client_id) {
-                    let _ = tx.send(Ok(lsp_resp));
+                    let value_result = result.map_err(|e| ClientError::LspError {
+                        code: e.code,
+                        message: e.message,
+                    });
+                    let _ = tx.send(value_result);
                 }
             }
             Some(DaemonResponse::Error(err)) => {
-                // If error has client_id, unblock that specific pending request
                 if let Some(client_id) = err.client_id {
                     let mut pending = pending.lock().await;
                     if let Some(tx) = pending.remove(&client_id) {
-                        let _ = tx.send(Err(err.message));
+                        let _ = tx.send(Err(ClientError::DaemonError(err.message)));
                     }
                 }
             }

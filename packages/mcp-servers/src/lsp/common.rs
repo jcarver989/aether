@@ -1,9 +1,8 @@
 //! Common types and utilities shared across LSP tools
 
 use std::collections::HashMap;
-use std::path::Path;
 
-use lsp_types::{Location, Uri};
+use lsp_types::Location;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -29,43 +28,26 @@ pub struct LocationResult {
 }
 
 impl LocationResult {
-    /// Create from an LSP Location
-    pub fn from_location(loc: &Location) -> Self {
-        let file_path = uri_to_path(&loc.uri);
+    /// Create from a file path and an LSP `Range` (0-indexed → 1-indexed).
+    pub fn from_range(file_path: String, range: &lsp_types::Range) -> Self {
         Self {
             file_path,
-            // Convert from 0-indexed to 1-indexed
-            start_line: loc.range.start.line + 1,
-            start_column: loc.range.start.character + 1,
-            end_line: loc.range.end.line + 1,
-            end_column: loc.range.end.character + 1,
+            start_line: range.start.line + 1,
+            start_column: range.start.character + 1,
+            end_line: range.end.line + 1,
+            end_column: range.end.character + 1,
             context: None,
         }
     }
-}
 
-/// Parse a line number string to u32
-pub fn parse_line(s: &str) -> Result<u32, String> {
-    s.trim()
-        .parse()
-        .map_err(|_| format!("Invalid line number: {s}"))
-}
-
-/// Convert an LSP URI to a file path string
-pub fn uri_to_path(uri: &Uri) -> String {
-    let uri_str = uri.as_str();
-    // Strip file:// prefix and decode
-    if let Some(path) = uri_str.strip_prefix("file://") {
-        // Handle Windows paths (file:///C:/...)
-        if path.starts_with('/') && path.len() > 2 && path.chars().nth(2) == Some(':') {
-            path[1..].to_string()
-        } else {
-            path.to_string()
-        }
-    } else {
-        uri_str.to_string()
+    /// Create from an LSP Location
+    pub fn from_location(loc: &Location) -> Self {
+        Self::from_range(uri_to_path(&loc.uri), &loc.range)
     }
 }
+
+/// Re-export from `aether_lspd` for convenience.
+pub use aether_lspd::uri_to_path;
 
 /// Find the first word-boundary match of `symbol` in `line`.
 ///
@@ -117,38 +99,33 @@ pub fn find_symbol_line(content: &str, symbol: &str) -> Option<u32> {
 /// # Returns
 /// The column position (0-indexed) of the first occurrence of the symbol on that line.
 pub fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, LspError> {
-    let line_idx = line.checked_sub(1).ok_or_else(|| {
-        LspError::Transport("Line number must be >= 1".to_string())
-    })?;
+    let line_idx = line
+        .checked_sub(1)
+        .ok_or_else(|| LspError::Transport("Line number must be >= 1".to_string()))?;
 
-    let line_content = content.lines().nth(line_idx as usize).ok_or_else(|| {
-        LspError::Transport(format!("Line {line} not found in file"))
-    })?;
+    let line_content = content
+        .lines()
+        .nth(line_idx as usize)
+        .ok_or_else(|| LspError::Transport(format!("Line {line} not found in file")))?;
 
     find_word_boundary_match(line_content, symbol)
         .map(|col| u32::try_from(col).unwrap_or(u32::MAX))
         .ok_or_else(|| LspError::Transport(format!("Symbol '{symbol}' not found on line {line}")))
 }
 
-/// Convert a file path to an LSP URI
-pub fn path_to_uri(path: &Path) -> Result<Uri, LspError> {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir().unwrap_or_default().join(path)
-    };
-
-    let uri_str = format!("file://{}", absolute.display());
-    uri_str
-        .parse()
-        .map_err(|_| LspError::Transport(format!("Invalid path: {}", path.display())))
-}
+/// Re-export from `aether_lspd` for convenience.
+pub use aether_lspd::path_to_uri;
 
 /// Extract numbered context lines around a location range.
 ///
 /// Returns lines formatted as `"  {line_number}\t{content}"`, matching the
 /// `read_file` tool output convention.
-pub fn extract_context(content: &str, start_line: u32, end_line: u32, context_lines: u32) -> String {
+pub fn extract_context(
+    content: &str,
+    start_line: u32,
+    end_line: u32,
+    context_lines: u32,
+) -> String {
     let lines: Vec<&str> = content.lines().collect();
     #[allow(clippy::cast_possible_truncation)] // line counts won't exceed u32
     let total = lines.len() as u32;
@@ -167,7 +144,13 @@ pub fn extract_context(content: &str, start_line: u32, end_line: u32, context_li
         let idx = (line_num - 1) as usize;
         if let Some(line) = lines.get(idx) {
             use std::fmt::Write;
-            let _ = writeln!(buf, "{:>width$}\t{}", line_num, line, width = width as usize);
+            let _ = writeln!(
+                buf,
+                "{:>width$}\t{}",
+                line_num,
+                line,
+                width = width as usize
+            );
         }
     }
 
@@ -205,7 +188,9 @@ pub async fn enrich_locations(locations: &mut [LocationResult], context_lines: u
 }
 
 fn digit_count(n: u32) -> u32 {
-    if n == 0 { return 1; }
+    if n == 0 {
+        return 1;
+    }
     let mut count = 0;
     let mut val = n;
     while val > 0 {
@@ -321,12 +306,18 @@ mod tests {
 
     #[test]
     fn test_word_boundary_match_basic() {
-        assert_eq!(find_word_boundary_match("use std::HashMap;", "HashMap"), Some(9));
+        assert_eq!(
+            find_word_boundary_match("use std::HashMap;", "HashMap"),
+            Some(9)
+        );
     }
 
     #[test]
     fn test_word_boundary_match_no_partial() {
-        assert_eq!(find_word_boundary_match("let x = HashMapExtra;", "HashMap"), None);
+        assert_eq!(
+            find_word_boundary_match("let x = HashMapExtra;", "HashMap"),
+            None
+        );
     }
 
     // --- find_symbol_line tests ---

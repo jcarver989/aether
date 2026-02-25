@@ -1,7 +1,4 @@
-use crate::{
-    CodingMcp, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp,
-    TasksMcp,
-};
+use crate::{CodingMcp, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp};
 use aether::mcp::McpBuilder;
 use futures::FutureExt;
 use mcp_utils::ServiceExt;

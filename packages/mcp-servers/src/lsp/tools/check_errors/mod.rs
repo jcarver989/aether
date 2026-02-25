@@ -32,7 +32,10 @@ pub async fn execute_lsp_diagnostics(
     registry: &LspRegistry,
 ) -> Result<LspDiagnosticsOutput, String> {
     let diagnostics_cache = registry.collect_diagnostics().await;
-    Ok(get_diagnostics(input.file_path.as_deref(), &diagnostics_cache))
+    Ok(get_diagnostics(
+        input.file_path.as_deref(),
+        &diagnostics_cache,
+    ))
 }
 
 fn get_diagnostics(

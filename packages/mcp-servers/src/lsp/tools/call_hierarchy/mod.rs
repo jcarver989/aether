@@ -6,13 +6,13 @@
 
 use lsp_types::CallHierarchyItem;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::lsp::common::{LocationResult, uri_to_path};
 use aether_lspd::symbol_kind_to_string;
 
 /// A serializable representation of a `CallHierarchyItem`
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CallHierarchyItemResult {
     /// The name of the symbol
@@ -28,33 +28,13 @@ pub struct CallHierarchyItemResult {
     pub range: LocationResult,
     /// The range of the symbol name
     pub selection_range: LocationResult,
-    /// JSON-serialized `CallHierarchyItem` for roundtrip (used internally)
-    #[serde(skip_serializing)]
-    #[schemars(skip)]
-    pub lsp_item: String,
 }
 
 impl From<CallHierarchyItem> for CallHierarchyItemResult {
     fn from(item: CallHierarchyItem) -> Self {
         let file_path = uri_to_path(&item.uri);
-        let range = LocationResult {
-            file_path: file_path.clone(),
-            start_line: item.range.start.line + 1,
-            start_column: item.range.start.character + 1,
-            end_line: item.range.end.line + 1,
-            end_column: item.range.end.character + 1,
-            context: None,
-        };
-        let selection_range = LocationResult {
-            file_path: file_path.clone(),
-            start_line: item.selection_range.start.line + 1,
-            start_column: item.selection_range.start.character + 1,
-            end_line: item.selection_range.end.line + 1,
-            end_column: item.selection_range.end.character + 1,
-            context: None,
-        };
-        let lsp_item = serde_json::to_string(&item).unwrap_or_default();
-
+        let range = LocationResult::from_range(file_path.clone(), &item.range);
+        let selection_range = LocationResult::from_range(file_path.clone(), &item.selection_range);
         Self {
             name: item.name,
             kind: symbol_kind_to_string(item.kind).to_string(),
@@ -62,17 +42,7 @@ impl From<CallHierarchyItem> for CallHierarchyItemResult {
             file_path,
             range,
             selection_range,
-            lsp_item,
         }
-    }
-}
-
-impl TryFrom<CallHierarchyItemResult> for CallHierarchyItem {
-    type Error = String;
-
-    fn try_from(result: CallHierarchyItemResult) -> Result<Self, String> {
-        serde_json::from_str(&result.lsp_item)
-            .map_err(|e| format!("Failed to deserialize CallHierarchyItem: {e}"))
     }
 }
 
@@ -92,27 +62,7 @@ pub fn convert_incoming_calls(
 ) -> Vec<CallSiteResult> {
     incoming
         .into_iter()
-        .map(|call| {
-            let call_sites = call
-                .from_ranges
-                .iter()
-                .map(|range| {
-                    let file_path = uri_to_path(&call.from.uri);
-                    LocationResult {
-                        file_path,
-                        start_line: range.start.line + 1,
-                        start_column: range.start.character + 1,
-                        end_line: range.end.line + 1,
-                        end_column: range.end.character + 1,
-                        context: None,
-                    }
-                })
-                .collect();
-            CallSiteResult {
-                item: CallHierarchyItemResult::from(call.from),
-                call_sites,
-            }
-        })
+        .map(|call| convert_call(call.from, &call.from_ranges))
         .collect()
 }
 
@@ -122,26 +72,24 @@ pub fn convert_outgoing_calls(
 ) -> Vec<CallSiteResult> {
     outgoing
         .into_iter()
-        .map(|call| {
-            let file_path = uri_to_path(&call.to.uri);
-            let call_sites = call
-                .from_ranges
-                .iter()
-                .map(|range| LocationResult {
-                    file_path: file_path.clone(),
-                    start_line: range.start.line + 1,
-                    start_column: range.start.character + 1,
-                    end_line: range.end.line + 1,
-                    end_column: range.end.character + 1,
-                    context: None,
-                })
-                .collect();
-            CallSiteResult {
-                item: CallHierarchyItemResult::from(call.to),
-                call_sites,
-            }
-        })
+        .map(|call| convert_call(call.to, &call.from_ranges))
         .collect()
+}
+
+/// Shared conversion for both incoming and outgoing calls.
+fn convert_call(
+    item: CallHierarchyItem,
+    from_ranges: &[lsp_types::Range],
+) -> CallSiteResult {
+    let file_path = uri_to_path(&item.uri);
+    let call_sites = from_ranges
+        .iter()
+        .map(|range| LocationResult::from_range(file_path.clone(), range))
+        .collect();
+    CallSiteResult {
+        item: CallHierarchyItemResult::from(item),
+        call_sites,
+    }
 }
 
 #[cfg(test)]
@@ -229,15 +177,5 @@ mod tests {
     fn test_convert_outgoing_calls_empty() {
         let result = convert_outgoing_calls(vec![]);
         assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_lsp_item_is_not_serialized() {
-        let item = CallHierarchyItemResult::from(make_item("my_fn", 5));
-        let json = serde_json::to_string(&item).unwrap();
-        assert!(
-            !json.contains("lsp_item"),
-            "lsp_item should be excluded from serialized output, got: {json}"
-        );
     }
 }

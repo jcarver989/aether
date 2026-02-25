@@ -1,5 +1,5 @@
-use std::future::Future;
 use std::fmt::Debug;
+use std::future::Future;
 
 use super::error::CodingError;
 use super::tools::bash::{
