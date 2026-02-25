@@ -4,19 +4,21 @@ pub mod call_hierarchy;
 pub mod check_errors;
 pub mod document_info;
 pub mod symbol_lookup;
+pub mod workspace_search;
 
 use std::path::Path;
 
 use lsp_types::{DocumentSymbol, DocumentSymbolResponse};
 
-use super::common::path_to_uri;
+use super::common::{find_symbol_line, path_to_uri};
 use super::error::LspError;
 use super::registry::LspRegistry;
 
-/// Resolve a symbol's line number using document symbols from the LSP.
+/// Resolve a symbol's line number using document symbols from the LSP,
+/// falling back to a text-based search if the symbol isn't defined in the file
+/// (e.g., it's an import or usage site).
 ///
-/// Fetches the document symbol tree and searches for a symbol by name,
-/// returning its 1-indexed line number.
+/// Returns a 1-indexed line number.
 pub async fn resolve_symbol_position(
     file_path: &str,
     symbol: &str,
@@ -25,10 +27,16 @@ pub async fn resolve_symbol_position(
     let uri = path_to_uri(Path::new(file_path))?;
     let client = registry.require_client(file_path).await?;
     let response = client.document_symbol(uri).await?;
-    find_in_document_symbol_response(&response, symbol).ok_or_else(|| {
-        LspError::Transport(format!(
-            "Symbol '{symbol}' not found in document symbols for '{file_path}'"
-        ))
+
+    if let Some(line) = find_in_document_symbol_response(&response, symbol) {
+        return Ok(line);
+    }
+
+    // Fallback: scan file text for the first word-boundary match.
+    // This handles imported/used symbols that aren't in the document symbol tree.
+    let content = tokio::fs::read_to_string(file_path).await?;
+    find_symbol_line(&content, symbol).ok_or_else(|| {
+        LspError::Transport(format!("Symbol '{symbol}' not found in '{file_path}'"))
     })
 }
 

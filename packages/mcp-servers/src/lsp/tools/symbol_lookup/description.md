@@ -13,7 +13,7 @@ One `lsp_symbol` call replaces: grep → read file → grep again → read anoth
 **Usage:**
 1. Provide `file_path` and `symbol` (exact name as it appears)
 2. Optionally provide `line` (1-indexed) to skip automatic resolution (faster)
-3. If `line` is omitted, it is resolved automatically via document symbols
+3. If `line` is omitted, it is resolved automatically (first via document symbols, then by text search)
 
 ## Cross-Crate Navigation
 
@@ -66,6 +66,49 @@ lsp_symbol(file_path: "/path/to/file.rs", symbol: "process_request", operation: 
 ```
 
 Note: `include_declaration` parameter only applies to `references` (default: true).
+
+## Controlling output size
+
+**`limit`** — cap the number of results returned (locations or call-hierarchy items).
+`total_count` always reflects the full count; `truncated: true` appears when results were capped.
+
+Use `limit: 20` for `incoming_calls`/`outgoing_calls` on large functions to avoid oversized responses:
+```json
+{
+  "operation": "outgoing_calls",
+  "file_path": "/path/to/file.rs",
+  "symbol": "process_request",
+  "limit": 20
+}
+```
+
+**`context_lines`** — include N lines of source code around each location (definition, implementation, references only).
+Eliminates the need to call `read_file` after getting results:
+```json
+{
+  "operation": "references",
+  "file_path": "/path/to/file.rs",
+  "symbol": "process_request",
+  "context_lines": 2,
+  "limit": 10
+}
+```
+
+## Notes on `outgoing_calls`
+
+Results include **all** calls the function makes, including standard library and
+dependency calls (`map_err`, `collect`, `to_string`, `Ok`, etc.). This is normal
+LSP behavior. To manage noise:
+
+- Use `limit` to cap the result count (e.g., `limit: 20`)
+- Filter results by `file_path` — project-local calls are usually what you want
+- Stdlib/dep calls can be useful for understanding data flow, but skip them when
+  looking for architectural relationships
+
+## Finding symbols across the workspace
+
+If you don't know which file a symbol lives in, use `lsp_workspace_search` instead.
+It performs a workspace-wide query without requiring a file path.
 
 ## Anti-patterns (don't do this)
 

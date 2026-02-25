@@ -67,6 +67,17 @@ pub struct LspSymbolInput {
     /// Whether to include the declaration in references results (default: true, only used for references operation)
     #[serde(default = "default_true")]
     pub include_declaration: bool,
+    /// Maximum number of results to return. When set, results are truncated and
+    /// `truncated: true` is included in the response. `total_count` always
+    /// reflects the full count before truncation. Recommended for
+    /// `incoming_calls`/`outgoing_calls` on large functions (e.g., `limit: 20`).
+    #[serde(default)]
+    pub limit: Option<usize>,
+    /// Number of context lines to include around each location (only for
+    /// definition, implementation, references). Each location will include N
+    /// lines before and after the result range, formatted with line numbers.
+    #[serde(default)]
+    pub context_lines: Option<u32>,
 }
 
 fn default_true() -> bool {
@@ -88,18 +99,31 @@ pub struct LspSymbolOutput {
     /// Call site results (for `incoming_calls` / `outgoing_calls` operations)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub call_sites: Option<Vec<CallSiteResult>>,
-    /// Total count of results
+    /// Total count of results (reflects full count before any truncation)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_count: Option<usize>,
+    /// Whether the results were truncated due to `limit`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
 }
 
 impl LspSymbolOutput {
-    fn with_locations(operation: &str, locations: Vec<LocationResult>) -> Self {
+    fn with_locations(
+        operation: &str,
+        locations: Vec<LocationResult>,
+        limit: Option<usize>,
+    ) -> Self {
         let total_count = locations.len();
+        let truncated = limit.is_some_and(|l| total_count > l);
+        let locations = match limit {
+            Some(l) if total_count > l => locations.into_iter().take(l).collect(),
+            _ => locations,
+        };
         Self {
             operation: operation.to_string(),
             locations: Some(locations),
             total_count: Some(total_count),
+            truncated: if truncated { Some(true) } else { None },
             ..Self::default()
         }
     }
@@ -140,7 +164,9 @@ pub async fn execute_lsp_symbol(
                 .await
                 .map_err(|e| e.to_string())?;
             let locations = definition_response_to_locations(response);
-            Ok(LspSymbolOutput::with_locations("definition", locations))
+            let mut output = LspSymbolOutput::with_locations("definition", locations, input.limit);
+            enrich_locations_with_context(&mut output, input.context_lines).await;
+            Ok(output)
         }
         SymbolLookupOperation::Implementation => {
             let resolved = registry
@@ -153,7 +179,9 @@ pub async fn execute_lsp_symbol(
                 .await
                 .map_err(|e| e.to_string())?;
             let locations = definition_response_to_locations(response);
-            Ok(LspSymbolOutput::with_locations("implementation", locations))
+            let mut output = LspSymbolOutput::with_locations("implementation", locations, input.limit);
+            enrich_locations_with_context(&mut output, input.context_lines).await;
+            Ok(output)
         }
         SymbolLookupOperation::References => {
             let resolved = registry
@@ -169,7 +197,9 @@ pub async fn execute_lsp_symbol(
                 .iter()
                 .map(LocationResult::from_location)
                 .collect();
-            Ok(LspSymbolOutput::with_locations("references", locations))
+            let mut output = LspSymbolOutput::with_locations("references", locations, input.limit);
+            enrich_locations_with_context(&mut output, input.context_lines).await;
+            Ok(output)
         }
         SymbolLookupOperation::Hover => {
             let resolved = registry
@@ -188,11 +218,11 @@ pub async fn execute_lsp_symbol(
             })
         }
         SymbolLookupOperation::IncomingCalls => {
-            execute_one_step_call_hierarchy(registry, &input.file_path, &input.symbol, line, CallDirection::Incoming)
+            execute_one_step_call_hierarchy(registry, &input.file_path, &input.symbol, line, CallDirection::Incoming, input.limit)
                 .await
         }
         SymbolLookupOperation::OutgoingCalls => {
-            execute_one_step_call_hierarchy(registry, &input.file_path, &input.symbol, line, CallDirection::Outgoing)
+            execute_one_step_call_hierarchy(registry, &input.file_path, &input.symbol, line, CallDirection::Outgoing, input.limit)
                 .await
         }
     }
@@ -205,6 +235,7 @@ async fn execute_one_step_call_hierarchy(
     symbol: &str,
     line: u32,
     direction: CallDirection,
+    limit: Option<usize>,
 ) -> Result<LspSymbolOutput, String> {
     let resolved = registry
         .resolve_symbol(file_path, symbol, line)
@@ -251,13 +282,30 @@ async fn execute_one_step_call_hierarchy(
         }
     };
 
-    let total_count = calls.iter().map(|c| c.call_sites.len()).sum();
+    let total_count = calls.len();
+    let truncated = limit.is_some_and(|l| total_count > l);
+    let calls = match limit {
+        Some(l) if total_count > l => calls.into_iter().take(l).collect(),
+        _ => calls,
+    };
+
     Ok(LspSymbolOutput {
         operation: direction.as_str().to_string(),
         call_sites: Some(calls),
         total_count: Some(total_count),
+        truncated: if truncated { Some(true) } else { None },
         ..LspSymbolOutput::default()
     })
+}
+
+/// Enrich locations in the output with source code context when `context_lines` is set.
+async fn enrich_locations_with_context(output: &mut LspSymbolOutput, context_lines: Option<u32>) {
+    let Some(n) = context_lines.filter(|&n| n > 0) else {
+        return;
+    };
+    if let Some(locations) = output.locations.as_mut() {
+        crate::lsp::common::enrich_locations(locations, n).await;
+    }
 }
 
 /// Convert `GotoDefinitionResponse` to a list of `LocationResult`
@@ -277,6 +325,7 @@ fn definition_response_to_locations(response: GotoDefinitionResponse) -> Vec<Loc
                     start_column: link.target_selection_range.start.character + 1,
                     end_line: link.target_selection_range.end.line + 1,
                     end_column: link.target_selection_range.end.character + 1,
+                    context: None,
                 }
             })
             .collect(),
