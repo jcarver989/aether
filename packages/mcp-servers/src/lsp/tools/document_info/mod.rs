@@ -91,6 +91,7 @@ fn convert_document_symbols(
                     start_column: sym.location.range.start.character + 1,
                     end_line: sym.location.range.end.line + 1,
                     end_column: sym.location.range.end.character + 1,
+                    context: None,
                 };
                 DocumentSymbolResult {
                     name: sym.name,
@@ -120,6 +121,7 @@ fn convert_document_symbol(
         start_column: sym.range.start.character + 1,
         end_line: sym.range.end.line + 1,
         end_column: sym.range.end.character + 1,
+        context: None,
     };
     let selection_range = LocationResult {
         file_path: file_path.to_string(),
@@ -127,6 +129,7 @@ fn convert_document_symbol(
         start_column: sym.selection_range.start.character + 1,
         end_line: sym.selection_range.end.line + 1,
         end_column: sym.selection_range.end.character + 1,
+        context: None,
     };
 
     let children = sym.children.map(|children| {

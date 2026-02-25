@@ -18,6 +18,9 @@ use super::tools::check_errors::{
 };
 use super::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
 use super::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
+use super::tools::workspace_search::{
+    LspWorkspaceSearchInput, LspWorkspaceSearchOutput, execute_lsp_workspace_search,
+};
 
 /// CLI arguments for `LspMcp` server
 #[derive(Debug, Clone, Parser)]
@@ -98,6 +101,7 @@ Code intelligence tools powered by Language Server Protocol.
 
 - **Errors & warnings** (instant check without build): `lsp_check_errors`
 - **Code symbols** (definitions, usages, types): `lsp_symbol`
+- **Find symbol across workspace** (don't know the file?): `lsp_workspace_search`
 - **File structure** (what's in this file?): `lsp_document`
 - **Call relationships** (who calls X?): `lsp_symbol` with incoming_calls/outgoing_calls operation
 ";
@@ -167,6 +171,18 @@ impl LspMcp {
     ) -> Result<Json<LspDiagnosticsOutput>, String> {
         let Parameters(input) = request;
         execute_lsp_diagnostics(input, self.lsp.as_ref())
+            .await
+            .map(Json)
+    }
+
+    #[doc = include_str!("tools/workspace_search/description.md")]
+    #[tool]
+    pub async fn lsp_workspace_search(
+        &self,
+        request: Parameters<LspWorkspaceSearchInput>,
+    ) -> Result<Json<LspWorkspaceSearchOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_workspace_search(input, self.lsp.as_ref())
             .await
             .map(Json)
     }

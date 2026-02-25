@@ -29,6 +29,8 @@ pub struct CallHierarchyItemResult {
     /// The range of the symbol name
     pub selection_range: LocationResult,
     /// JSON-serialized `CallHierarchyItem` for roundtrip (used internally)
+    #[serde(skip_serializing)]
+    #[schemars(skip)]
     pub lsp_item: String,
 }
 
@@ -41,6 +43,7 @@ impl From<CallHierarchyItem> for CallHierarchyItemResult {
             start_column: item.range.start.character + 1,
             end_line: item.range.end.line + 1,
             end_column: item.range.end.character + 1,
+            context: None,
         };
         let selection_range = LocationResult {
             file_path: file_path.clone(),
@@ -48,6 +51,7 @@ impl From<CallHierarchyItem> for CallHierarchyItemResult {
             start_column: item.selection_range.start.character + 1,
             end_line: item.selection_range.end.line + 1,
             end_column: item.selection_range.end.character + 1,
+            context: None,
         };
         let lsp_item = serde_json::to_string(&item).unwrap_or_default();
 
@@ -100,6 +104,7 @@ pub fn convert_incoming_calls(
                         start_column: range.start.character + 1,
                         end_line: range.end.line + 1,
                         end_column: range.end.character + 1,
+                        context: None,
                     }
                 })
                 .collect();
@@ -128,6 +133,7 @@ pub fn convert_outgoing_calls(
                     start_column: range.start.character + 1,
                     end_line: range.end.line + 1,
                     end_column: range.end.character + 1,
+                    context: None,
                 })
                 .collect();
             CallSiteResult {
@@ -223,5 +229,15 @@ mod tests {
     fn test_convert_outgoing_calls_empty() {
         let result = convert_outgoing_calls(vec![]);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_lsp_item_is_not_serialized() {
+        let item = CallHierarchyItemResult::from(make_item("my_fn", 5));
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(
+            !json.contains("lsp_item"),
+            "lsp_item should be excluded from serialized output, got: {json}"
+        );
     }
 }
