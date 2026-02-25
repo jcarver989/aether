@@ -1,19 +1,18 @@
-Explore call relationships: who calls a function, and what does it call.
+Explore call relationships using a previously prepared `CallHierarchyItem`.
+
+**Prefer `lsp_symbol`** with `operation: "incoming_calls"` or `"outgoing_calls"` instead — it handles preparation automatically in one step.
+
+This tool is only for advanced use cases where you already have a `CallHierarchyItem` from a prior operation.
 
 **When to use:**
 - "What calls this function?" → `direction: "incoming"`
 - "What does this function call?" → `direction: "outgoing"`
-- Tracing code flow, understanding dependencies, impact analysis
 
-**Workflow:**
-1. Call `lsp_symbol` with `operation: "prepare_call_hierarchy"` to get an `item`
-2. Pass that `item` to this tool with a `direction`
-
-**Example - Find all callers:**
+**Example:**
 ```json
 {
   "direction": "incoming",
-  "item": { /* CallHierarchyItemResult from step 1 */ }
+  "item": { /* CallHierarchyItemResult from a prior operation */ }
 }
 ```
 

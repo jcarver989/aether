@@ -580,8 +580,7 @@ impl App {
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
-        let attachments =
-            collect_submit_attachments(&user_input, self.text_input.take_mentions());
+        let attachments = collect_submit_attachments(&user_input, self.text_input.take_mentions());
         self.text_input.clear();
         self.close_input_pickers();
 

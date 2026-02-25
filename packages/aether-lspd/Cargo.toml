@@ -36,6 +36,10 @@ sha2 = { workspace = true }
 # LSP types shared across Aether packages
 lsp-types = { workspace = true }
 
+# File watching
+notify = { workspace = true }
+globset = { workspace = true }
+
 # Error handling
 thiserror = { workspace = true }
 

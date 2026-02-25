@@ -1,6 +1,7 @@
 mod client_handler;
 mod daemon;
 mod error;
+mod file_watcher;
 mod lsp_config;
 mod lsp_manager;
 mod pid_lockfile;

@@ -7,11 +7,13 @@ One `lsp_symbol` call replaces: grep → read file → grep again → read anoth
 - "Where is X used?" → `operation: "references"`
 - "What type is X?" / "Show docs for X" → `operation: "hover"`
 - "What implements this trait/interface?" → `operation: "implementation"`
-- "I need call hierarchy for X" → `operation: "prepare_call_hierarchy"` (then use `lsp_call_hierarchy`)
+- "What calls X?" → `operation: "incoming_calls"`
+- "What does X call?" → `operation: "outgoing_calls"`
 
 **Usage:**
-1. Provide `file_path`, `symbol` (exact name as it appears), and `line` (1-indexed)
-2. The file should be read first (establishes LSP context)
+1. Provide `file_path` and `symbol` (exact name as it appears)
+2. Optionally provide `line` (1-indexed) to skip automatic resolution (faster)
+3. If `line` is omitted, it is resolved automatically via document symbols
 
 ## Cross-Crate Navigation
 
@@ -30,13 +32,10 @@ you can jump directly:
 use rmcp::{ServerHandler, ...};
 
 # Jump to ServerHandler:
-lsp_symbol(symbol: "ServerHandler", operation: "definition", line: 3)
+lsp_symbol(file_path: "/path/to/file.rs", symbol: "ServerHandler", operation: "definition")
 
-# Then from there, jump to model:
-lsp_symbol(symbol: "model", operation: "definition", line: 3)
-
-# Then find CallToolResult:
-grep("struct CallToolResult", path: "model.rs")
+# Find all callers of a function:
+lsp_symbol(file_path: "/path/to/file.rs", symbol: "process_request", operation: "incoming_calls")
 ```
 
 **Example - Find definition:**
@@ -44,8 +43,7 @@ grep("struct CallToolResult", path: "model.rs")
 {
   "operation": "definition",
   "file_path": "/path/to/file.rs",
-  "symbol": "HashMap",
-  "line": "15"
+  "symbol": "HashMap"
 }
 ```
 
@@ -54,8 +52,16 @@ grep("struct CallToolResult", path: "model.rs")
 {
   "operation": "references",
   "file_path": "/path/to/file.rs",
-  "symbol": "process_request",
-  "line": "42"
+  "symbol": "process_request"
+}
+```
+
+**Example - Find all callers (one-step call hierarchy):**
+```json
+{
+  "operation": "incoming_calls",
+  "file_path": "/path/to/file.rs",
+  "symbol": "process_request"
 }
 ```
 

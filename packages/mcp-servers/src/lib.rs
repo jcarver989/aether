@@ -6,6 +6,9 @@ pub use setup::McpBuilderExt;
 #[cfg(feature = "coding")]
 pub mod coding;
 
+#[cfg(feature = "coding")]
+pub mod lsp;
+
 #[cfg(feature = "skills")]
 pub mod skills;
 
@@ -24,6 +27,9 @@ pub use coding::{CodingMcp, CodingMcpArgs, CodingTools, DefaultCodingTools};
 
 #[cfg(feature = "coding")]
 pub use coding::tools::lsp::LspCodingTools;
+
+#[cfg(feature = "coding")]
+pub use lsp::{LspMcp, LspMcpArgs};
 
 #[cfg(feature = "skills")]
 pub use skills::{SkillsMcp, SkillsMcpArgs};

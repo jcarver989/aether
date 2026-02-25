@@ -7,9 +7,9 @@
 use lsp_types::{
     CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, Diagnostic,
     DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    DocumentSymbolResponse, GotoDefinitionResponse, Hover, Location, SymbolInformation,
-    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem, Uri,
-    VersionedTextDocumentIdentifier,
+    DocumentSymbol, DocumentSymbolResponse, GotoDefinitionResponse, Hover, Location,
+    SymbolInformation, TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+    Uri, VersionedTextDocumentIdentifier,
 };
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -487,6 +487,52 @@ impl<T: CodingTools> CodingTools for LspCodingTools<T> {
     }
 }
 
+/// Resolve a symbol's line number using document symbols from the LSP.
+///
+/// Fetches the document symbol tree and searches for a symbol by name,
+/// returning its 1-indexed line number.
+pub async fn resolve_symbol_position<T: CodingTools>(
+    file_path: &str,
+    symbol: &str,
+    tools: &T,
+) -> Result<u32, CodingError> {
+    let response = tools.document_symbol(file_path).await?;
+    find_in_document_symbol_response(&response, symbol).ok_or_else(|| {
+        CodingError::NotConfigured(format!(
+            "Symbol '{symbol}' not found in document symbols for '{file_path}'"
+        ))
+    })
+}
+
+/// Search a `DocumentSymbolResponse` for a symbol by name. Returns 1-indexed line.
+fn find_in_document_symbol_response(
+    response: &DocumentSymbolResponse,
+    symbol: &str,
+) -> Option<u32> {
+    match response {
+        DocumentSymbolResponse::Flat(syms) => syms
+            .iter()
+            .find(|s| s.name == symbol)
+            .map(|s| s.location.range.start.line + 1),
+        DocumentSymbolResponse::Nested(syms) => find_in_nested(syms, symbol),
+    }
+}
+
+/// Recursively search nested document symbols for a target name.
+fn find_in_nested(symbols: &[DocumentSymbol], target: &str) -> Option<u32> {
+    for sym in symbols {
+        if sym.name == target {
+            return Some(sym.selection_range.start.line + 1);
+        }
+        if let Some(children) = &sym.children
+            && let Some(line) = find_in_nested(children, target)
+        {
+            return Some(line);
+        }
+    }
+    None
+}
+
 /// Find the column position of a symbol on a specific line.
 ///
 /// # Arguments
@@ -609,5 +655,126 @@ mod tests {
         // When there are multiple occurrences on a line, we return the first one
         let content = "let x = foo + foo;";
         assert_eq!(find_symbol_column(content, "foo", 1).unwrap(), 8);
+    }
+
+    use std::str::FromStr;
+
+    #[test]
+    fn test_find_in_document_symbol_response_nested() {
+        use lsp_types::{DocumentSymbol, SymbolKind};
+
+        let child = DocumentSymbol {
+            name: "inner_fn".to_string(),
+            detail: None,
+            kind: SymbolKind::FUNCTION,
+            tags: None,
+            deprecated: None,
+            range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 5,
+                    character: 4,
+                },
+                end: lsp_types::Position {
+                    line: 10,
+                    character: 5,
+                },
+            },
+            selection_range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 5,
+                    character: 7,
+                },
+                end: lsp_types::Position {
+                    line: 5,
+                    character: 15,
+                },
+            },
+            children: None,
+        };
+
+        let parent = DocumentSymbol {
+            name: "MyStruct".to_string(),
+            detail: None,
+            kind: SymbolKind::STRUCT,
+            tags: None,
+            deprecated: None,
+            range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: lsp_types::Position {
+                    line: 15,
+                    character: 1,
+                },
+            },
+            selection_range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 0,
+                    character: 4,
+                },
+                end: lsp_types::Position {
+                    line: 0,
+                    character: 12,
+                },
+            },
+            children: Some(vec![child]),
+        };
+
+        let response = DocumentSymbolResponse::Nested(vec![parent]);
+
+        // Find the parent (line 0 + 1 = 1)
+        assert_eq!(
+            find_in_document_symbol_response(&response, "MyStruct"),
+            Some(1)
+        );
+
+        // Find the nested child (line 5 + 1 = 6)
+        assert_eq!(
+            find_in_document_symbol_response(&response, "inner_fn"),
+            Some(6)
+        );
+
+        // Not found
+        assert_eq!(
+            find_in_document_symbol_response(&response, "nonexistent"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_find_in_document_symbol_response_flat() {
+        #[allow(deprecated)]
+        let sym = lsp_types::SymbolInformation {
+            name: "my_func".to_string(),
+            kind: lsp_types::SymbolKind::FUNCTION,
+            tags: None,
+            deprecated: None,
+            location: lsp_types::Location {
+                uri: lsp_types::Uri::from_str("file:///test.rs").unwrap(),
+                range: lsp_types::Range {
+                    start: lsp_types::Position {
+                        line: 10,
+                        character: 0,
+                    },
+                    end: lsp_types::Position {
+                        line: 20,
+                        character: 1,
+                    },
+                },
+            },
+            container_name: None,
+        };
+
+        let response = DocumentSymbolResponse::Flat(vec![sym]);
+
+        // Found (line 10 + 1 = 11)
+        assert_eq!(
+            find_in_document_symbol_response(&response, "my_func"),
+            Some(11)
+        );
+
+        // Not found
+        assert_eq!(find_in_document_symbol_response(&response, "other"), None);
     }
 }

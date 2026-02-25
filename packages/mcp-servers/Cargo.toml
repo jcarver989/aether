@@ -45,6 +45,7 @@ subagents = [
 ]
 survey = []
 all = ["coding", "skills", "tasks", "subagents", "survey"]
+stdio = ["coding", "skills", "tasks", "survey"]
 
 [dependencies]
 # Always required
@@ -80,6 +81,11 @@ llm = { path = "../llm", optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[[bin]]
+name = "mcp-servers-stdio"
+path = "src/bin/stdio.rs"
+required-features = ["stdio"]
 
 [[example]]
 name = "lsp_diagnostics"

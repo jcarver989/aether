@@ -5,16 +5,32 @@
 //! - implementation: Go to the implementation of an interface/trait
 //! - references: Find all references to a symbol
 //! - hover: Get type and documentation info for a symbol
-//! - `prepare_call_hierarchy`: Get call hierarchy items for a symbol
+//! - `incoming_calls` / `outgoing_calls`: One-step call hierarchy lookup
 
 use lsp_types::GotoDefinitionResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::coding::lsp::common::{LocationResult, parse_line, uri_to_path};
+use crate::coding::lsp::common::{LocationResult, uri_to_path};
 use crate::coding::tools_trait::CodingTools;
 
-use super::call_hierarchy::CallHierarchyItemResult;
+use super::call_hierarchy::CallSiteResult;
+use super::coding_tools::resolve_symbol_position;
+
+/// Direction for one-step call hierarchy lookups.
+enum CallDirection {
+    Incoming,
+    Outgoing,
+}
+
+impl CallDirection {
+    fn as_str(&self) -> &'static str {
+        match self {
+            CallDirection::Incoming => "incoming",
+            CallDirection::Outgoing => "outgoing",
+        }
+    }
+}
 
 /// The operation to perform on a symbol
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -28,8 +44,10 @@ pub enum SymbolLookupOperation {
     References,
     /// Get hover information (type, documentation) for the symbol
     Hover,
-    /// Prepare call hierarchy items for the symbol (used with `lsp_call_hierarchy`)
-    PrepareCallHierarchy,
+    /// Find functions/methods that call this symbol (one-step call hierarchy)
+    IncomingCalls,
+    /// Find functions/methods that this symbol calls (one-step call hierarchy)
+    OutgoingCalls,
 }
 
 /// Input for the `lsp_symbol` tool
@@ -42,8 +60,10 @@ pub struct LspSymbolInput {
     pub file_path: String,
     /// The symbol name to look up (e.g., "`HashMap`", "spawn", "`LspClient`")
     pub symbol: String,
-    /// Line number where the symbol appears (1-indexed, as shown by the `read_file` tool)
-    pub line: String,
+    /// Optional 1-indexed line number. When provided, skips automatic symbol resolution
+    /// (faster). When omitted, the line is resolved via document symbols.
+    #[serde(default)]
+    pub line: Option<u32>,
     /// Whether to include the declaration in references results (default: true, only used for references operation)
     #[serde(default = "default_true")]
     pub include_declaration: bool,
@@ -54,7 +74,7 @@ fn default_true() -> bool {
 }
 
 /// Output from the `lsp_symbol` tool
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LspSymbolOutput {
     /// The operation that was performed
@@ -65,12 +85,40 @@ pub struct LspSymbolOutput {
     /// Hover contents as markdown (for hover operation)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hover_contents: Option<String>,
-    /// Call hierarchy items (for `prepare_call_hierarchy` operation)
+    /// Call site results (for `incoming_calls` / `outgoing_calls` operations)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub call_hierarchy_items: Option<Vec<CallHierarchyItemResult>>,
+    pub call_sites: Option<Vec<CallSiteResult>>,
     /// Total count of results
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_count: Option<usize>,
+}
+
+impl LspSymbolOutput {
+    fn with_locations(operation: &str, locations: Vec<LocationResult>) -> Self {
+        let total_count = locations.len();
+        Self {
+            operation: operation.to_string(),
+            locations: Some(locations),
+            total_count: Some(total_count),
+            ..Self::default()
+        }
+    }
+}
+
+/// Resolve the line number for a symbol, using the explicit `line` if provided
+/// or falling back to automatic document symbol resolution.
+async fn resolve_line<T: CodingTools>(
+    file_path: &str,
+    symbol: &str,
+    explicit_line: Option<u32>,
+    tools: &T,
+) -> Result<u32, String> {
+    match explicit_line {
+        Some(line) => Ok(line),
+        None => resolve_symbol_position(file_path, symbol, tools)
+            .await
+            .map_err(|e| e.to_string()),
+    }
 }
 
 /// Execute the `lsp_symbol` operation
@@ -78,7 +126,7 @@ pub async fn execute_lsp_symbol<T: CodingTools>(
     input: LspSymbolInput,
     tools: &T,
 ) -> Result<LspSymbolOutput, String> {
-    let line = parse_line(&input.line)?;
+    let line = resolve_line(&input.file_path, &input.symbol, input.line, tools).await?;
 
     match input.operation {
         SymbolLookupOperation::Definition => {
@@ -87,14 +135,7 @@ pub async fn execute_lsp_symbol<T: CodingTools>(
                 .await
                 .map_err(|e| e.to_string())?;
             let locations = definition_response_to_locations(response);
-            let total_count = locations.len();
-            Ok(LspSymbolOutput {
-                operation: "definition".to_string(),
-                locations: Some(locations),
-                hover_contents: None,
-                call_hierarchy_items: None,
-                total_count: Some(total_count),
-            })
+            Ok(LspSymbolOutput::with_locations("definition", locations))
         }
         SymbolLookupOperation::Implementation => {
             let response = tools
@@ -102,14 +143,7 @@ pub async fn execute_lsp_symbol<T: CodingTools>(
                 .await
                 .map_err(|e| e.to_string())?;
             let locations = definition_response_to_locations(response);
-            let total_count = locations.len();
-            Ok(LspSymbolOutput {
-                operation: "implementation".to_string(),
-                locations: Some(locations),
-                hover_contents: None,
-                call_hierarchy_items: None,
-                total_count: Some(total_count),
-            })
+            Ok(LspSymbolOutput::with_locations("implementation", locations))
         }
         SymbolLookupOperation::References => {
             let lsp_locations = tools
@@ -125,48 +159,76 @@ pub async fn execute_lsp_symbol<T: CodingTools>(
                 .iter()
                 .map(LocationResult::from_location)
                 .collect();
-            let total_count = locations.len();
-            Ok(LspSymbolOutput {
-                operation: "references".to_string(),
-                locations: Some(locations),
-                hover_contents: None,
-                call_hierarchy_items: None,
-                total_count: Some(total_count),
-            })
+            Ok(LspSymbolOutput::with_locations("references", locations))
         }
         SymbolLookupOperation::Hover => {
             let hover = tools
                 .hover(&input.file_path, &input.symbol, line)
                 .await
                 .map_err(|e| e.to_string())?;
-            let hover_contents = hover.map(|h| format_hover_contents(&h));
             Ok(LspSymbolOutput {
                 operation: "hover".to_string(),
-                locations: None,
-                hover_contents,
-                call_hierarchy_items: None,
-                total_count: None,
+                hover_contents: hover.map(|h| format_hover_contents(&h)),
+                ..LspSymbolOutput::default()
             })
         }
-        SymbolLookupOperation::PrepareCallHierarchy => {
-            let items = tools
-                .prepare_call_hierarchy(&input.file_path, &input.symbol, line)
+        SymbolLookupOperation::IncomingCalls => {
+            execute_one_step_call_hierarchy(tools, &input.file_path, &input.symbol, line, CallDirection::Incoming)
                 .await
-                .map_err(|e| e.to_string())?;
-            let call_hierarchy_items: Vec<CallHierarchyItemResult> = items
-                .into_iter()
-                .map(CallHierarchyItemResult::from)
-                .collect();
-            let total_count = call_hierarchy_items.len();
-            Ok(LspSymbolOutput {
-                operation: "prepare_call_hierarchy".to_string(),
-                locations: None,
-                hover_contents: None,
-                call_hierarchy_items: Some(call_hierarchy_items),
-                total_count: Some(total_count),
-            })
+        }
+        SymbolLookupOperation::OutgoingCalls => {
+            execute_one_step_call_hierarchy(tools, &input.file_path, &input.symbol, line, CallDirection::Outgoing)
+                .await
         }
     }
+}
+
+/// Perform a one-step call hierarchy: prepare + query in a single operation.
+async fn execute_one_step_call_hierarchy<T: CodingTools>(
+    tools: &T,
+    file_path: &str,
+    symbol: &str,
+    line: u32,
+    direction: CallDirection,
+) -> Result<LspSymbolOutput, String> {
+    let items = tools
+        .prepare_call_hierarchy(file_path, symbol, line)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let Some(item) = items.into_iter().next() else {
+        return Ok(LspSymbolOutput {
+            operation: direction.as_str().to_string(),
+            call_sites: Some(Vec::new()),
+            total_count: Some(0),
+            ..LspSymbolOutput::default()
+        });
+    };
+
+    let calls = match direction {
+        CallDirection::Incoming => {
+            let incoming = tools
+                .incoming_calls(item)
+                .await
+                .map_err(|e| e.to_string())?;
+            super::call_hierarchy::convert_incoming_calls(incoming)
+        }
+        CallDirection::Outgoing => {
+            let outgoing = tools
+                .outgoing_calls(item)
+                .await
+                .map_err(|e| e.to_string())?;
+            super::call_hierarchy::convert_outgoing_calls(outgoing)
+        }
+    };
+
+    let total_count = calls.iter().map(|c| c.call_sites.len()).sum();
+    Ok(LspSymbolOutput {
+        operation: direction.as_str().to_string(),
+        call_sites: Some(calls),
+        total_count: Some(total_count),
+        ..LspSymbolOutput::default()
+    })
 }
 
 /// Convert `GotoDefinitionResponse` to a list of `LocationResult`
