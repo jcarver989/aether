@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "LSP daemon for sharing language servers across multiple agents"
 
+[features]
+testing = ["dep:tempfile"]
+
 [lints]
 workspace = true
 
@@ -43,13 +46,16 @@ globset = { workspace = true }
 # Error handling
 thiserror = { workspace = true }
 
+# Testing support (optional)
+tempfile = { workspace = true, optional = true }
+
 # Unix-specific features (daemonization, signals)
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["signal", "process", "fs"] }
 libc = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
+aether-lspd = { path = ".", features = ["testing"] }
 
 [[bin]]
 name = "aether-lspd"

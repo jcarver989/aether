@@ -4,7 +4,8 @@ use crate::language_id::LanguageId;
 use crate::protocol::{LspErrorResponse, LspNotification};
 use crate::uri::{path_to_uri, uri_to_path};
 use lsp_types::notification::{
-    DidChangeWatchedFiles, DidOpenTextDocument, Initialized, Notification, PublishDiagnostics,
+    DidChangeWatchedFiles, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
+    Initialized, Notification, PublishDiagnostics,
 };
 use lsp_types::request::{
     Initialize, RegisterCapability, Request, UnregisterCapability, WorkDoneProgressCreate,
@@ -19,14 +20,23 @@ use lsp_types::{
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tokio::fs::read_to_string;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-use tokio::sync::{RwLock, mpsc, oneshot};
+use tokio::sync::{Notify, RwLock, mpsc, oneshot};
 use tokio::task::JoinHandle;
+
+/// After the diagnostics version first advances, wait this long with no new
+/// `publishDiagnostics` before considering the result settled.  Rust-analyzer
+/// often sends a clearing (empty) publish immediately, followed by the real
+/// diagnostics 100–500 ms later.
+const DIAGNOSTICS_SETTLE_DURATION: Duration = Duration::from_millis(200);
 
 /// Key for identifying an LSP instance
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -49,8 +59,15 @@ pub struct LspHandle {
     notification_tx: mpsc::Sender<LspNotification>,
     /// Cached diagnostics keyed by file URI
     diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
-    /// Documents that have been opened with didOpen
-    open_documents: Arc<RwLock<HashSet<Uri>>>,
+    /// All URIs the daemon knows about — populated by publishDiagnostics
+    /// and didChangeWatchedFiles events.
+    known_uris: Arc<RwLock<HashSet<Uri>>>,
+    /// Documents that have been opened with didOpen, with version/content tracking
+    open_documents: Arc<RwLock<HashMap<Uri, OpenDocumentState>>>,
+    /// Notified whenever new PublishDiagnostics arrive in the cache
+    diagnostics_notify: Arc<Notify>,
+    /// Monotonically increasing counter, bumped on every publishDiagnostics
+    diagnostics_version: Arc<AtomicU64>,
     /// Background task handle
     _task: JoinHandle<()>,
 }
@@ -60,6 +77,16 @@ struct LspRequestEnvelope {
     method: String,
     params: Value,
     response_tx: oneshot::Sender<Result<Value, LspErrorResponse>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct OpenDocumentState {
+    content_hash: u64,
+}
+
+enum SyncAction {
+    Open,
+    Change,
 }
 
 impl LspManager {
@@ -107,7 +134,11 @@ impl LspHandle {
     /// Send a raw LSP request and wait for the JSON response.
     ///
     /// The daemon is a pure `(method, params) -> Value` passthrough.
-    pub async fn request_raw(&self, method: &str, params: Value) -> Result<Value, LspErrorResponse> {
+    pub async fn request_raw(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, LspErrorResponse> {
         let (response_tx, response_rx) = oneshot::channel();
         let envelope = LspRequestEnvelope {
             method: method.to_string(),
@@ -136,15 +167,41 @@ impl LspHandle {
     pub async fn get_diagnostics(&self, uri: Option<&Uri>) -> Vec<PublishDiagnosticsParams> {
         let cache = self.diagnostics_cache.read().await;
         match uri {
-            Some(u) => cache.get(u).cloned().into_iter().collect(),
-            None => cache.values().cloned().collect(),
+            Some(u) => {
+                let found = cache.get(u).cloned().into_iter().collect::<Vec<_>>();
+                tracing::debug!(
+                    uri = %u.as_str(),
+                    cached_files = cache.len(),
+                    found = !found.is_empty(),
+                    diagnostics = found.first().map_or(0, |p| p.diagnostics.len()),
+                    "get_diagnostics: single-file lookup"
+                );
+                found
+            }
+            None => {
+                let all: Vec<_> = cache.values().cloned().collect();
+                let total: usize = all.iter().map(|p| p.diagnostics.len()).sum();
+                tracing::debug!(
+                    cached_files = cache.len(),
+                    total_diagnostics = total,
+                    "get_diagnostics: all-files lookup"
+                );
+                all
+            }
         }
+    }
+
+    /// Return all URIs the daemon knows about (from publishDiagnostics
+    /// and didChangeWatchedFiles events).
+    pub async fn cached_uris(&self) -> Vec<Uri> {
+        self.known_uris.read().await.iter().cloned().collect()
     }
 
     /// Send a notification to the LSP server (fire-and-forget)
     pub async fn send_notification(&self, notification: LspNotification) {
+        tracing::debug!(method = %notification.method, "Queueing notification to LSP");
         if let Err(e) = self.notification_tx.send(notification).await {
-            tracing::warn!("Failed to send notification: {}", e);
+            tracing::warn!(%e, "Failed to send notification — channel closed");
         }
     }
 
@@ -153,27 +210,115 @@ impl LspHandle {
     /// If the document hasn't been opened yet, reads it from disk and sends
     /// a `didOpen` notification. This allows agents to skip explicit didOpen
     /// management — the daemon handles it transparently.
-    pub async fn ensure_document_open(&self, uri: &Uri) {
-        if self.open_documents.read().await.contains(uri) {
-            return;
-        }
-
+    ///
+    /// Returns `Some(version_before)` if the document was synced (opened or changed),
+    /// so the caller can wait for fresh diagnostics. Returns `None` if no sync was needed.
+    pub async fn ensure_document_open(&self, uri: &Uri) -> Option<u64> {
         let file_path = uri_to_path(uri);
+        tracing::debug!(uri = %uri.as_str(), %file_path, "ensure_document_open: reading file");
+
         let content = match read_to_string(&file_path).await {
             Ok(c) => c,
             Err(e) => {
-                tracing::debug!("Could not read file for auto-open {}: {}", file_path, e);
-                return;
+                tracing::warn!(uri = %uri.as_str(), %file_path, %e, "Could not read file for auto-open");
+                return None;
             }
         };
 
-        let mut open_docs = self.open_documents.write().await;
-        if open_docs.contains(uri) {
-            return;
+        let content_hash = hash_content(&content);
+        let sync_action = {
+            let mut open_docs = self.open_documents.write().await;
+            match open_docs.get_mut(uri) {
+                Some(state) if state.content_hash == content_hash => {
+                    tracing::debug!(
+                        uri = %uri.as_str(),
+                        "ensure_document_open: content unchanged (hash match), no sync needed"
+                    );
+                    None
+                }
+                Some(state) => {
+                    tracing::debug!(
+                        uri = %uri.as_str(),
+                        old_hash = state.content_hash,
+                        new_hash = content_hash,
+                        "ensure_document_open: content changed, will re-sync"
+                    );
+                    state.content_hash = content_hash;
+                    Some(SyncAction::Change)
+                }
+                None => {
+                    tracing::debug!(
+                        uri = %uri.as_str(),
+                        "ensure_document_open: new document, will open"
+                    );
+                    open_docs.insert(uri.clone(), OpenDocumentState { content_hash });
+                    Some(SyncAction::Open)
+                }
+            }
+        };
+
+        let version_before = self.diagnostics_version.load(Ordering::Relaxed);
+
+        match sync_action {
+            Some(SyncAction::Open) => {
+                tracing::debug!(
+                    uri = %uri.as_str(),
+                    version_before,
+                    "ensure_document_open: sending didOpen + didSave"
+                );
+                self.send_open_and_save(uri, &file_path, content).await;
+                Some(version_before)
+            }
+            Some(SyncAction::Change) => {
+                tracing::debug!(
+                    uri = %uri.as_str(),
+                    version_before,
+                    "ensure_document_open: sending didClose + didOpen + didSave (content changed)"
+                );
+
+                let close_params = lsp_types::DidCloseTextDocumentParams {
+                    text_document: lsp_types::TextDocumentIdentifier { uri: uri.clone() },
+                };
+                let close_notification = LspNotification {
+                    method: DidCloseTextDocument::METHOD.to_string(),
+                    params: serde_json::to_value(&close_params).unwrap(),
+                };
+                self.send_notification(close_notification).await;
+
+                self.send_open_and_save(uri, &file_path, content).await;
+                Some(version_before)
+            }
+            None => None,
+        }
+    }
+
+    /// Close a document that was opened by `ensure_document_open`, releasing it
+    /// back to file-watcher control.
+    ///
+    /// In the LSP protocol, once a file is `didOpen`'d the server ignores
+    /// `didChangeWatchedFiles` for it — the client "owns" the document. Closing
+    /// it lets the file watcher resume delivering external edits.
+    pub async fn close_document(&self, uri: &Uri) {
+        if self.open_documents.write().await.remove(uri).is_none() {
+            tracing::debug!(uri = %uri.as_str(), "close_document: not in open_documents, skipping");
+            return; // wasn't open
         }
 
-        let language_id = LanguageId::from_path(Path::new(&file_path));
-        let params = lsp_types::DidOpenTextDocumentParams {
+        let close_params = lsp_types::DidCloseTextDocumentParams {
+            text_document: lsp_types::TextDocumentIdentifier { uri: uri.clone() },
+        };
+        let notification = LspNotification {
+            method: DidCloseTextDocument::METHOD.to_string(),
+            params: serde_json::to_value(&close_params).unwrap(),
+        };
+        self.send_notification(notification).await;
+        tracing::debug!(uri = %uri.as_str(), "close_document: sent didClose, file watcher resumes");
+    }
+
+    /// Send `didOpen` + `didSave` notifications for a document.
+    async fn send_open_and_save(&self, uri: &Uri, file_path: &str, content: String) {
+        let language_id = LanguageId::from_path(Path::new(file_path));
+        let open_params = lsp_types::DidOpenTextDocumentParams {
             text_document: lsp_types::TextDocumentItem {
                 uri: uri.clone(),
                 language_id: language_id.as_str().to_string(),
@@ -181,19 +326,139 @@ impl LspHandle {
                 text: content,
             },
         };
-
-        let notification = LspNotification {
+        self.send_notification(LspNotification {
             method: DidOpenTextDocument::METHOD.to_string(),
-            params: serde_json::to_value(&params).unwrap(),
+            params: serde_json::to_value(&open_params).unwrap(),
+        })
+        .await;
+
+        let save_params = lsp_types::DidSaveTextDocumentParams {
+            text_document: lsp_types::TextDocumentIdentifier { uri: uri.clone() },
+            text: None,
         };
-        self.send_notification(notification).await;
-        open_docs.insert(uri.clone());
+        self.send_notification(LspNotification {
+            method: DidSaveTextDocument::METHOD.to_string(),
+            params: serde_json::to_value(&save_params).unwrap(),
+        })
+        .await;
+    }
+
+    /// Wait until the diagnostics version advances past `version_before` **and**
+    /// the LSP has stopped publishing new diagnostics for [`DIAGNOSTICS_SETTLE_DURATION`].
+    ///
+    /// **Phase 1** — wait for the version to advance (existing behaviour).
+    /// **Phase 2** — settle: keep waiting until no new `publishDiagnostics`
+    /// arrive for 200 ms, resetting the timer on each new publish.  This avoids
+    /// returning on rust-analyzer's initial clearing publish (empty diagnostics)
+    /// before the real diagnostics arrive ~200-500 ms later.
+    ///
+    /// Both phases are bounded by the overall `timeout`.
+    pub async fn wait_for_fresh_diagnostics(
+        &self,
+        version_before: u64,
+        timeout: Duration,
+    ) {
+        tracing::debug!(
+            version_before,
+            timeout_ms = timeout.as_millis(),
+            "wait_for_fresh_diagnostics: phase 1 — waiting for version to advance"
+        );
+
+        let deadline = tokio::time::Instant::now() + timeout;
+
+        // ── Phase 1: wait for version to advance ──
+        loop {
+            let current_version = self.diagnostics_version.load(Ordering::Relaxed);
+            if current_version != version_before {
+                tracing::debug!(
+                    version_before,
+                    current_version,
+                    "wait_for_fresh_diagnostics: version advanced, entering settle phase"
+                );
+                break;
+            }
+
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                tracing::warn!(
+                    version_before,
+                    current_version,
+                    "wait_for_fresh_diagnostics: TIMED OUT in phase 1"
+                );
+                return;
+            }
+
+            tokio::select! {
+                _ = self.diagnostics_notify.notified() => {
+                    tracing::debug!("wait_for_fresh_diagnostics: notified, checking version");
+                }
+                _ = tokio::time::sleep(remaining) => {
+                    let final_version = self.diagnostics_version.load(Ordering::Relaxed);
+                    tracing::warn!(
+                        version_before,
+                        final_version,
+                        "wait_for_fresh_diagnostics: TIMED OUT in phase 1 sleep"
+                    );
+                    return;
+                }
+            }
+        }
+
+        // ── Phase 2: settle — wait for DIAGNOSTICS_SETTLE_DURATION with no new publishes ──
+        let mut last_version = self.diagnostics_version.load(Ordering::Relaxed);
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                tracing::debug!(
+                    last_version,
+                    "wait_for_fresh_diagnostics: deadline reached during settle phase"
+                );
+                return;
+            }
+
+            let settle_wait = DIAGNOSTICS_SETTLE_DURATION.min(remaining);
+
+            tokio::select! {
+                _ = self.diagnostics_notify.notified() => {
+                    let new_version = self.diagnostics_version.load(Ordering::Relaxed);
+                    if new_version != last_version {
+                        tracing::debug!(
+                            last_version,
+                            new_version,
+                            "wait_for_fresh_diagnostics: new publish during settle, resetting timer"
+                        );
+                        last_version = new_version;
+                        // Loop again — restart the settle timer.
+                    }
+                }
+                _ = tokio::time::sleep(settle_wait) => {
+                    let final_version = self.diagnostics_version.load(Ordering::Relaxed);
+                    if final_version == last_version {
+                        tracing::debug!(
+                            final_version,
+                            "wait_for_fresh_diagnostics: settled (no new publishes for {:?})",
+                            settle_wait
+                        );
+                        return;
+                    }
+                    // Version changed just before we checked — go around again.
+                    last_version = final_version;
+                }
+            }
+        }
     }
 }
 
 /// Spawn a new LSP server process
 fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<LspHandle> {
     let args_str: Vec<&str> = args.iter().map(std::string::String::as_str).collect();
+
+    tracing::info!(
+        %command,
+        args = %args_str.join(" "),
+        root = %root_path.display(),
+        "Spawning LSP server process"
+    );
 
     let mut process = Command::new(command)
         .args(&args_str)
@@ -216,9 +481,15 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
     let (request_tx, request_rx) = mpsc::channel(100);
     let (notification_tx, notification_rx) = mpsc::channel(100);
     let diagnostics_cache = Arc::new(RwLock::new(HashMap::new()));
-    let open_documents = Arc::new(RwLock::new(HashSet::new()));
+    let diagnostics_notify = Arc::new(Notify::new());
+    let diagnostics_version = Arc::new(AtomicU64::new(0));
+    let known_uris = Arc::new(RwLock::new(HashSet::new()));
+    let open_documents = Arc::new(RwLock::new(HashMap::new()));
 
     let handler_diagnostics_cache = Arc::clone(&diagnostics_cache);
+    let handler_diagnostics_notify = Arc::clone(&diagnostics_notify);
+    let handler_diagnostics_version = Arc::clone(&diagnostics_version);
+    let handler_known_uris = Arc::clone(&known_uris);
 
     let (file_watch_tx, file_watch_rx) = mpsc::channel(64);
     let file_watcher = FileWatcherHandle::spawn(root_path.to_path_buf(), file_watch_tx);
@@ -231,6 +502,9 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
         file_watcher_handle: file_watcher,
         file_watcher_rx: file_watch_rx,
         diagnostics_cache: handler_diagnostics_cache,
+        diagnostics_notify: handler_diagnostics_notify,
+        diagnostics_version: handler_diagnostics_version,
+        known_uris: handler_known_uris,
         root_path: root_path.to_path_buf(),
         next_id: 1,
         pending: HashMap::new(),
@@ -241,9 +515,18 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
         request_tx,
         notification_tx,
         diagnostics_cache,
+        known_uris,
+        diagnostics_notify,
+        diagnostics_version,
         open_documents,
         _task: task,
     })
+}
+
+fn hash_content(content: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Owns all LSP handler state and runs the event loop.
@@ -256,6 +539,9 @@ struct LspHandler {
     file_watcher_handle: FileWatcherHandle,
     file_watcher_rx: mpsc::Receiver<DidChangeWatchedFilesParams>,
     diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
+    diagnostics_notify: Arc<Notify>,
+    diagnostics_version: Arc<AtomicU64>,
+    known_uris: Arc<RwLock<HashSet<Uri>>>,
     root_path: PathBuf,
     next_id: i64,
     pending: HashMap<i64, oneshot::Sender<Result<Value, LspErrorResponse>>>,
@@ -264,19 +550,27 @@ struct LspHandler {
 impl LspHandler {
     /// Run the LSP handler: initialize, process messages, clean up.
     async fn run(mut self) {
+        tracing::info!(
+            root = %self.root_path.display(),
+            "LspHandler: starting initialization"
+        );
+
         if let Err(e) = self.initialize().await {
-            tracing::error!("Failed to initialize LSP: {}", e);
+            tracing::error!(%e, "LspHandler: failed to send initialize request");
             return;
         }
 
         if !self.wait_for_init_response().await {
+            tracing::error!("LspHandler: initialization response failed");
             return;
         }
 
         let _ =
             send_notification(&mut self.stdin, Initialized::METHOD, serde_json::json!({})).await;
 
+        tracing::info!("LspHandler: initialization complete, entering main loop");
         self.run_main_loop().await;
+        tracing::info!("LspHandler: main loop exited, cleaning up");
         self.cleanup_pending();
     }
 
@@ -333,10 +627,21 @@ impl LspHandler {
                 }
 
                 Some(params) = self.file_watcher_rx.recv() => {
+                    tracing::info!(
+                        changes = params.changes.len(),
+                        files = %params.changes.iter().map(|c| c.uri.as_str()).collect::<Vec<_>>().join(", "),
+                        "File watcher: forwarding didChangeWatchedFiles to LSP"
+                    );
+                    {
+                        let mut uris = self.known_uris.write().await;
+                        for change in &params.changes {
+                            uris.insert(change.uri.clone());
+                        }
+                    }
                     if let Ok(value) = serde_json::to_value(&params)
                         && let Err(e) = send_notification(&mut self.stdin, DidChangeWatchedFiles::METHOD, value).await
                     {
-                        tracing::warn!("Failed to send didChangeWatchedFiles: {}", e);
+                        tracing::warn!(%e, "Failed to send didChangeWatchedFiles");
                     }
                 }
 
@@ -354,11 +659,13 @@ impl LspHandler {
         self.next_id += 1;
         self.pending.insert(id, envelope.response_tx);
 
+        tracing::debug!(id, method = %envelope.method, "Sending LSP request");
+
         if let Err(e) = self
             .send_request(id, &envelope.method, envelope.params)
             .await
         {
-            tracing::error!("Failed to send LSP request: {}", e);
+            tracing::error!(id, %e, "Failed to send LSP request");
             if let Some(tx) = self.pending.remove(&id) {
                 let _ = tx.send(Err(LspErrorResponse {
                     code: -1,
@@ -451,9 +758,44 @@ impl LspHandler {
                     if let Ok(diag_params) =
                         serde_json::from_value::<PublishDiagnosticsParams>(params)
                     {
+                        let error_count = diag_params
+                            .diagnostics
+                            .iter()
+                            .filter(|d| {
+                                d.severity
+                                    == Some(lsp_types::DiagnosticSeverity::ERROR)
+                            })
+                            .count();
+                        let warning_count = diag_params
+                            .diagnostics
+                            .iter()
+                            .filter(|d| {
+                                d.severity
+                                    == Some(lsp_types::DiagnosticSeverity::WARNING)
+                            })
+                            .count();
+
+                        let new_version =
+                            self.diagnostics_version.load(Ordering::Relaxed) + 1;
+
+                        tracing::info!(
+                            uri = %diag_params.uri.as_str(),
+                            total = diag_params.diagnostics.len(),
+                            errors = error_count,
+                            warnings = warning_count,
+                            new_version,
+                            "publishDiagnostics received"
+                        );
+
+                        self.known_uris.write().await.insert(diag_params.uri.clone());
                         let mut cache = self.diagnostics_cache.write().await;
                         cache.insert(diag_params.uri.clone(), diag_params);
+                        drop(cache);
+                        self.diagnostics_version.fetch_add(1, Ordering::Relaxed);
+                        self.diagnostics_notify.notify_waiters();
                     }
+                } else {
+                    tracing::debug!(method = method_str, "Server notification (non-diagnostic)");
                 }
             }
 
@@ -504,9 +846,8 @@ impl LspHandler {
 
     /// Send the `initialize` request to the LSP server.
     async fn initialize(&mut self) -> std::io::Result<()> {
-        let root_uri = path_to_uri(&self.root_path).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
-        })?;
+        let root_uri = path_to_uri(&self.root_path)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
         let capabilities = ClientCapabilities {
             general: Some(GeneralClientCapabilities::default()),
@@ -593,6 +934,7 @@ impl LspHandler {
         &mut self,
         notification: LspNotification,
     ) -> std::io::Result<()> {
+        tracing::debug!(method = %notification.method, "Forwarding client notification to LSP");
         send_notification(&mut self.stdin, &notification.method, notification.params).await
     }
 }
@@ -610,7 +952,6 @@ fn parse_file_system_watchers(
     let parsed: WatcherOpts = serde_json::from_value(opts.clone())?;
     Ok(parsed.watchers)
 }
-
 
 /// Send an LSP notification
 async fn send_notification(

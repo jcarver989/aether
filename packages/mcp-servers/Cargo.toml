@@ -81,6 +81,7 @@ llm = { path = "../llm", optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+aether-lspd = { path = "../aether-lspd", features = ["testing"] }
 
 [[bin]]
 name = "mcp-servers-stdio"

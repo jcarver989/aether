@@ -77,10 +77,7 @@ pub fn convert_outgoing_calls(
 }
 
 /// Shared conversion for both incoming and outgoing calls.
-fn convert_call(
-    item: CallHierarchyItem,
-    from_ranges: &[lsp_types::Range],
-) -> CallSiteResult {
+fn convert_call(item: CallHierarchyItem, from_ranges: &[lsp_types::Range]) -> CallSiteResult {
     let file_path = uri_to_path(&item.uri);
     let call_sites = from_ranges
         .iter()

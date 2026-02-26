@@ -10,6 +10,7 @@ use tokio::spawn;
 use tokio::sync::mpsc;
 
 /// Handle a client connection
+#[tracing::instrument(skip(stream, lsp_manager), fields(%client_id))]
 pub async fn handle_client(stream: UnixStream, lsp_manager: LspManager, client_id: uuid::Uuid) {
     let (reader, writer) = split(stream);
     let (response_tx, response_rx) = mpsc::channel::<DaemonResponse>(100);
@@ -86,11 +87,24 @@ async fn run_reader(
                     continue;
                 };
 
-                if let Some(uri) = extract_document_uri(&method, &params) {
-                    handle.ensure_document_open(&uri).await;
-                }
+                tracing::debug!(client_id, %method, "LspCall request");
+
+                let opened_uri = if let Some(uri) = extract_document_uri(&method, &params) {
+                    tracing::debug!(uri = %uri.as_str(), %method, "Auto-opening document for LspCall");
+                    let _ = handle.ensure_document_open(&uri).await;
+                    Some(uri)
+                } else {
+                    None
+                };
 
                 let result = handle.request_raw(&method, params).await;
+
+                // Release the document so the file watcher resumes control.
+                if let Some(uri) = opened_uri {
+                    tracing::debug!(uri = %uri.as_str(), "Closing document after LspCall");
+                    handle.close_document(&uri).await;
+                }
+
                 let _ = response_tx
                     .send(DaemonResponse::LspResult { client_id, result })
                     .await;
@@ -102,8 +116,7 @@ async fn run_reader(
                     continue;
                 };
 
-                let diagnostics = handle.get_diagnostics(uri.as_ref()).await;
-                let value = serde_json::to_value(&diagnostics).unwrap_or_default();
+                let value = get_diagnostics_and_cleanup(handle, uri).await;
                 let _ = response_tx
                     .send(DaemonResponse::LspResult {
                         client_id,
@@ -123,6 +136,95 @@ async fn run_reader(
     }
 }
 
+/// Sync documents, fetch diagnostics, and close synced documents.
+async fn get_diagnostics_and_cleanup(
+    handle: &LspHandle,
+    uri: Option<lsp_types::Uri>,
+) -> serde_json::Value {
+    let mode = if uri.is_some() { "single-file" } else { "all-files" };
+    tracing::info!(
+        mode,
+        uri = uri.as_ref().map(|u| u.as_str()).unwrap_or("<all>"),
+        "GetDiagnostics request"
+    );
+
+    // Sync documents before reading the cache so we return
+    // fresh diagnostics even when the file has changed on disk.
+    let synced_uris: Vec<lsp_types::Uri>;
+
+    if let Some(ref document_uri) = uri {
+        // ── Single-file mode ──
+        let version_before = handle.ensure_document_open(document_uri).await;
+        tracing::debug!(
+            uri = %document_uri.as_str(),
+            ?version_before,
+            "Synced document for diagnostics"
+        );
+
+        if let Some(version_before) = version_before {
+            handle
+                .wait_for_fresh_diagnostics(
+                    version_before,
+                    std::time::Duration::from_secs(5),
+                )
+                .await;
+        }
+
+        synced_uris = vec![document_uri.clone()];
+    } else {
+        // ── All-files mode ──
+        // Re-sync every URI in the diagnostics cache so that
+        // external edits (or MCP edits followed by didClose) are
+        // picked up before we return the cache.
+        let cached = handle.cached_uris().await;
+        tracing::debug!(
+            cached_count = cached.len(),
+            "All-files mode: syncing cached URIs"
+        );
+
+        let mut min_version: Option<u64> = None;
+        let mut opened = Vec::new();
+        for cached_uri in &cached {
+            if let Some(ver) = handle.ensure_document_open(cached_uri).await {
+                min_version = Some(min_version.map_or(ver, |m: u64| m.min(ver)));
+                opened.push(cached_uri.clone());
+            }
+        }
+
+        if let Some(version_before) = min_version {
+            tracing::debug!(
+                version_before,
+                synced_count = opened.len(),
+                "All-files mode: waiting for fresh diagnostics"
+            );
+            handle
+                .wait_for_fresh_diagnostics(
+                    version_before,
+                    std::time::Duration::from_secs(5),
+                )
+                .await;
+        }
+
+        synced_uris = opened;
+    }
+
+    let diagnostics = handle.get_diagnostics(uri.as_ref()).await;
+    let diag_count: usize = diagnostics.iter().map(|p| p.diagnostics.len()).sum();
+    tracing::info!(
+        mode,
+        files = diagnostics.len(),
+        total_diagnostics = diag_count,
+        "Returning diagnostics"
+    );
+
+    // Release all synced documents back to file-watcher control.
+    for synced_uri in &synced_uris {
+        handle.close_document(synced_uri).await;
+    }
+
+    serde_json::to_value(&diagnostics).unwrap_or_default()
+}
+
 async fn send_not_initialized(
     client_id: i64,
     tx: &mpsc::Sender<DaemonResponse>,
@@ -140,7 +242,10 @@ async fn try_initialize(
     init: crate::protocol::InitializeRequest,
 ) -> Result<Arc<LspHandle>, ProtocolError> {
     let config = get_config_for_language(init.language).ok_or_else(|| {
-        ProtocolError::new(format!("No LSP configured for language: {:?}", init.language))
+        ProtocolError::new(format!(
+            "No LSP configured for language: {:?}",
+            init.language
+        ))
     })?;
 
     let key = LspKey {

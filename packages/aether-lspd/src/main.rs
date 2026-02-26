@@ -1,19 +1,10 @@
-mod client_handler;
-mod daemon;
-mod error;
-mod file_watcher;
-mod language_id;
-mod lsp_config;
-mod lsp_manager;
-mod pid_lockfile;
-mod protocol;
-mod uri;
-use crate::daemon::run_daemon;
+use aether_lspd::run_daemon;
 use clap::Parser;
 use std::path::PathBuf;
 use std::process::exit;
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 /// LSP Daemon for sharing language servers across agents
 #[derive(Parser)]
@@ -31,6 +22,11 @@ struct Args {
     /// Log level (trace, debug, info, warn, error)
     #[arg(long, default_value = "info")]
     log_level: String,
+
+    /// Log file path. If provided, logs are written to this file instead of stderr.
+    /// Required for daemon mode since stderr is redirected to /dev/null.
+    #[arg(long)]
+    log_file: Option<PathBuf>,
 }
 
 fn main() {
@@ -47,10 +43,29 @@ fn main() {
         let filter =
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&args.log_level));
 
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_target(true)
-            .init();
+        if let Some(ref log_file) = args.log_file {
+            // Ensure parent directory exists
+            if let Some(parent) = log_file.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_file)
+                .expect("Failed to open log file");
+
+            tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_target(true)
+                .with_ansi(false)
+                .with_writer(file.with_max_level(tracing::Level::TRACE))
+                .init();
+        } else {
+            tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_target(true)
+                .init();
+        }
 
         let idle_timeout = if args.idle_timeout == 0 {
             None

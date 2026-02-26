@@ -212,8 +212,7 @@ impl LspRegistry {
     ) -> Result<ResolvedSymbol, LspError> {
         let content = tokio::fs::read_to_string(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
-        let uri = path_to_uri(Path::new(file_path))
-            .map_err(LspError::Transport)?;
+        let uri = path_to_uri(Path::new(file_path)).map_err(LspError::Transport)?;
         let client = self.require_client(file_path).await?;
         Ok(ResolvedSymbol {
             uri,
@@ -223,22 +222,47 @@ impl LspRegistry {
         })
     }
 
-    /// Collect diagnostics from all active LSP clients.
+    /// Collect diagnostics from LSP clients.
     ///
-    /// Iterates every connected client, fetches its diagnostics, and returns them
-    /// grouped by file path.
-    pub async fn collect_diagnostics(&self) -> HashMap<String, Vec<Diagnostic>> {
+    /// If `file_path` is provided, queries only the LSP for that file and requests
+    /// diagnostics for that specific document URI.
+    /// If `file_path` is `None`, iterates every active client and returns all
+    /// diagnostics grouped by file path.
+    pub async fn collect_diagnostics(
+        &self,
+        file_path: Option<&str>,
+    ) -> HashMap<String, Vec<Diagnostic>> {
+        if let Some(file_path) = file_path {
+            return self.collect_file_diagnostics(file_path).await;
+        }
+
         let mut result: HashMap<String, Vec<Diagnostic>> = HashMap::new();
         for client in self.active_clients().await {
             if let Ok(params_list) = client.get_diagnostics(None).await {
-                for params in params_list {
-                    let file_path = uri_to_path(&params.uri);
-                    result
-                        .entry(file_path)
-                        .or_default()
-                        .extend(params.diagnostics);
-                }
+                merge_diagnostics(&mut result, params_list);
             }
+        }
+        result
+    }
+
+    async fn collect_file_diagnostics(&self, file_path: &str) -> HashMap<String, Vec<Diagnostic>> {
+        let resolved_path = if Path::new(file_path).is_absolute() {
+            PathBuf::from(file_path)
+        } else {
+            self.root_path.join(file_path)
+        };
+
+        let Some(client) = self.get_or_spawn(&resolved_path).await else {
+            return HashMap::new();
+        };
+
+        let Ok(uri) = path_to_uri(&resolved_path) else {
+            return HashMap::new();
+        };
+
+        let mut result: HashMap<String, Vec<Diagnostic>> = HashMap::new();
+        if let Ok(params_list) = client.get_diagnostics(Some(uri)).await {
+            merge_diagnostics(&mut result, params_list);
         }
         result
     }
@@ -248,6 +272,16 @@ impl LspRegistry {
         self.get_or_spawn(Path::new(file_path))
             .await
             .ok_or_else(|| LspError::Transport("No LSP configured for this file type".to_string()))
+    }
+}
+
+fn merge_diagnostics(
+    result: &mut HashMap<String, Vec<Diagnostic>>,
+    params_list: Vec<lsp_types::PublishDiagnosticsParams>,
+) {
+    for params in params_list {
+        let path = uri_to_path(&params.uri);
+        result.entry(path).or_default().extend(params.diagnostics);
     }
 }
 
