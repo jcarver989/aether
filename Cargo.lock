@@ -102,6 +102,7 @@ dependencies = [
 name = "aether-lspd"
 version = "0.1.0"
 dependencies = [
+ "aether-lspd",
  "clap",
  "futures",
  "globset",

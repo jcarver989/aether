@@ -15,81 +15,99 @@ use tokio::sync::{RwLock, oneshot};
 use tokio::time::sleep;
 use uuid::Uuid;
 
-/// Run the daemon until shutdown
-pub async fn run_daemon(socket_path: PathBuf, idle_timeout: Option<Duration>) -> DaemonResult<()> {
-    if let Some(parent) = socket_path.parent() {
-        create_dir_all(parent).map_err(DaemonError::Io)?;
-    }
-
-    let _lockfile = PidLockfile::acquire(&socket_path.with_extension("lock"))
-        .map_err(|e| DaemonError::LockfileError(e.to_string()))?;
-
-    let _ = remove_file(&socket_path);
-
-    let shutdown_rx = spawn_shutdown_signal_handler();
-    let lsp_manager = LspManager::new();
-
-    tracing::info!("Daemon listening on {:?}", socket_path);
-    run_listener_loop(socket_path.clone(), shutdown_rx, &lsp_manager, idle_timeout).await?;
-
-    tracing::info!("Shutting down LSP servers");
-    lsp_manager.shutdown().await;
-
-    let _ = remove_file(&socket_path);
-    tracing::info!("Daemon shutdown complete");
-
-    Ok(())
+/// Stateful daemon runtime.
+pub struct LspDaemon {
+    socket_path: PathBuf,
+    idle_timeout: Option<Duration>,
+    lsp_manager: LspManager,
 }
 
-/// Main listener loop that handles connections and shutdown signals
-async fn run_listener_loop(
-    socket_path: PathBuf,
-    mut shutdown_rx: oneshot::Receiver<()>,
-    lsp_manager: &LspManager,
-    idle_timeout: Option<Duration>,
-) -> DaemonResult<()> {
-    let listener = UnixListener::bind(&socket_path).map_err(DaemonError::BindFailed)?;
-    let client_count = Arc::new(AtomicUsize::new(0));
-    let last_activity = Arc::new(RwLock::new(Instant::now()));
-    loop {
-        select! {
-            biased;
+impl LspDaemon {
+    /// Create a daemon with socket and idle-timeout settings.
+    pub fn new(socket_path: PathBuf, idle_timeout: Option<Duration>) -> Self {
+        Self {
+            socket_path,
+            idle_timeout,
+            lsp_manager: LspManager::new(),
+        }
+    }
 
-            _ = &mut shutdown_rx => {
-                tracing::info!("Shutting down");
-                return Ok(());
-            }
+    /// Run the daemon until shutdown.
+    pub async fn run(self) -> DaemonResult<()> {
+        if let Some(parent) = self.socket_path.parent() {
+            create_dir_all(parent).map_err(DaemonError::Io)?;
+        }
 
-            result = listener.accept() => {
-                match result {
-                    Ok((stream, _)) => {
-                        let client_id = Uuid::new_v4();
-                        let manager = lsp_manager.clone();
-                        let client_count = Arc::clone(&client_count);
-                        let last_activity = Arc::clone(&last_activity);
+        let _lockfile = PidLockfile::acquire(&self.socket_path.with_extension("lock"))
+            .map_err(|e| DaemonError::LockfileError(e.to_string()))?;
 
-                        client_count.fetch_add(1, Ordering::Relaxed);
-                        *last_activity.write().await = Instant::now();
+        let _ = remove_file(&self.socket_path);
 
-                        spawn(async move {
-                            handle_client(stream, manager, client_id).await;
-                            client_count.fetch_sub(1, Ordering::Relaxed);
+        let shutdown_rx = spawn_shutdown_signal_handler();
+
+        tracing::info!("Daemon listening on {:?}", self.socket_path);
+        self.run_listener_loop(shutdown_rx).await?;
+
+        tracing::info!("Shutting down LSP servers");
+        self.lsp_manager.shutdown().await;
+
+        let _ = remove_file(&self.socket_path);
+        tracing::info!("Daemon shutdown complete");
+
+        Ok(())
+    }
+
+    /// Main listener loop that handles connections and shutdown signals.
+    async fn run_listener_loop(&self, mut shutdown_rx: oneshot::Receiver<()>) -> DaemonResult<()> {
+        let listener = UnixListener::bind(&self.socket_path).map_err(DaemonError::BindFailed)?;
+        let client_count = Arc::new(AtomicUsize::new(0));
+        let last_activity = Arc::new(RwLock::new(Instant::now()));
+
+        loop {
+            select! {
+                biased;
+
+                _ = &mut shutdown_rx => {
+                    tracing::info!("Shutting down");
+                    return Ok(());
+                }
+
+                result = listener.accept() => {
+                    match result {
+                        Ok((stream, _)) => {
+                            let client_id = Uuid::new_v4();
+                            let manager = self.lsp_manager.clone();
+                            let client_count = Arc::clone(&client_count);
+                            let last_activity = Arc::clone(&last_activity);
+
+                            client_count.fetch_add(1, Ordering::Relaxed);
                             *last_activity.write().await = Instant::now();
-                            tracing::debug!("Client {} handler complete", client_id);
-                        });
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to accept connection: {}", e);
+
+                            spawn(async move {
+                                handle_client(stream, manager, client_id).await;
+                                client_count.fetch_sub(1, Ordering::Relaxed);
+                                *last_activity.write().await = Instant::now();
+                                tracing::debug!("Client {} handler complete", client_id);
+                            });
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to accept connection: {}", e);
+                        }
                     }
                 }
-            }
 
-            () = check_idle_timeout(client_count.clone(), last_activity.clone(), idle_timeout) => {
-                tracing::info!("Idle timeout reached, shutting down");
-                return Ok(());
+                () = check_idle_timeout(client_count.clone(), last_activity.clone(), self.idle_timeout) => {
+                    tracing::info!("Idle timeout reached, shutting down");
+                    return Ok(());
+                }
             }
         }
     }
+}
+
+/// Compatibility wrapper for the previous daemon entrypoint.
+pub async fn run_daemon(socket_path: PathBuf, idle_timeout: Option<Duration>) -> DaemonResult<()> {
+    LspDaemon::new(socket_path, idle_timeout).run().await
 }
 
 /// Wait until idle timeout is reached
@@ -98,13 +116,29 @@ async fn check_idle_timeout(
     last_activity: Arc<RwLock<Instant>>,
     timeout: Option<Duration>,
 ) {
+    check_idle_timeout_with_interval(
+        client_count,
+        last_activity,
+        timeout,
+        Duration::from_secs(10),
+    )
+    .await;
+}
+
+/// Wait until idle timeout is reached, polling at a configurable interval.
+async fn check_idle_timeout_with_interval(
+    client_count: Arc<AtomicUsize>,
+    last_activity: Arc<RwLock<Instant>>,
+    timeout: Option<Duration>,
+    poll_interval: Duration,
+) {
     let Some(timeout) = timeout else {
         pending::<()>().await;
         return;
     };
 
     loop {
-        sleep(Duration::from_secs(10)).await;
+        sleep(poll_interval).await;
 
         let count = client_count.load(Ordering::Relaxed);
         if count > 0 {
@@ -145,4 +179,51 @@ fn spawn_shutdown_signal_handler() -> oneshot::Receiver<()> {
     }
 
     rx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn idle_timeout_none_never_completes() {
+        let client_count = Arc::new(AtomicUsize::new(0));
+        let last_activity = Arc::new(RwLock::new(Instant::now()));
+
+        let result = timeout(
+            Duration::from_millis(40),
+            check_idle_timeout_with_interval(
+                client_count,
+                last_activity,
+                None,
+                Duration::from_millis(5),
+            ),
+        )
+        .await;
+
+        assert!(result.is_err(), "None timeout should not complete");
+    }
+
+    #[tokio::test]
+    async fn idle_timeout_completes_when_idle_elapsed() {
+        let client_count = Arc::new(AtomicUsize::new(0));
+        let stale_activity = Instant::now()
+            .checked_sub(Duration::from_millis(50))
+            .expect("subtracting from current instant should succeed");
+        let last_activity = Arc::new(RwLock::new(stale_activity));
+
+        let result = timeout(
+            Duration::from_millis(100),
+            check_idle_timeout_with_interval(
+                client_count,
+                last_activity,
+                Some(Duration::from_millis(10)),
+                Duration::from_millis(5),
+            ),
+        )
+        .await;
+
+        assert!(result.is_ok(), "Idle timeout should complete");
+    }
 }

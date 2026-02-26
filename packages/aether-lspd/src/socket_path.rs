@@ -34,6 +34,13 @@ pub fn lockfile_path(socket_path: &Path) -> PathBuf {
     socket_path.with_extension("lock")
 }
 
+/// Get the log file path corresponding to a socket path.
+///
+/// The log file lives alongside the socket with a `.log` extension.
+pub fn log_file_path(socket_path: &Path) -> PathBuf {
+    socket_path.with_extension("log")
+}
+
 /// Get the directory where sockets are stored
 ///
 /// Uses `XDG_RUNTIME_DIR` if available, otherwise falls back to /tmp/aether-lspd-{uid}

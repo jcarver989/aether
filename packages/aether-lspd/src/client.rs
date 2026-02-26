@@ -29,7 +29,7 @@ use crate::language_id::LanguageId;
 use crate::protocol::{
     DaemonRequest, DaemonResponse, InitializeRequest, LspNotification, read_frame, write_frame,
 };
-use crate::socket_path::ensure_socket_dir;
+use crate::socket_path::{ensure_socket_dir, log_file_path};
 
 /// Errors that can occur in the client (connecting to daemon)
 #[derive(Debug, Error)]
@@ -520,10 +520,22 @@ async fn run_reader(
 /// Spawn the daemon process
 async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
     let daemon_path = find_daemon_binary()?;
+    let log_file = log_file_path(socket_path);
+
+    tracing::info!(
+        daemon = %daemon_path.display(),
+        socket = %socket_path.display(),
+        log_file = %log_file.display(),
+        "Spawning LSP daemon"
+    );
 
     let mut child = Command::new(&daemon_path)
         .arg("--socket")
         .arg(socket_path)
+        .arg("--log-file")
+        .arg(&log_file)
+        .arg("--log-level")
+        .arg("debug")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

@@ -155,6 +155,11 @@ impl FileWatcherActor {
                 matches
             };
             if matches.is_empty() {
+                tracing::trace!(
+                    path = %path.display(),
+                    kind = ?ev.kind,
+                    "File event: no glob match, skipping"
+                );
                 continue;
             }
 
@@ -170,6 +175,11 @@ impl FileWatcherActor {
                 continue;
             };
             let key = uri.to_string();
+            tracing::debug!(
+                path = %path.display(),
+                change_type = ?change_type,
+                "File event: accumulated for debounced dispatch"
+            );
             self.pending.insert(key, (uri, change_type));
         }
     }

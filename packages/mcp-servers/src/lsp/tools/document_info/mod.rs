@@ -56,8 +56,7 @@ pub async fn execute_lsp_document(
     input: LspDocumentInput,
     registry: &LspRegistry,
 ) -> Result<LspDocumentOutput, String> {
-    let uri = path_to_uri(Path::new(&input.file_path))
-        .map_err(|e| e.to_string())?;
+    let uri = path_to_uri(Path::new(&input.file_path)).map_err(|e| e.to_string())?;
     let client = registry
         .require_client(&input.file_path)
         .await
@@ -85,8 +84,7 @@ fn convert_document_symbols(
         DocumentSymbolResponse::Flat(symbols) => symbols
             .into_iter()
             .map(|sym| {
-                let range =
-                    LocationResult::from_range(file_path.to_string(), &sym.location.range);
+                let range = LocationResult::from_range(file_path.to_string(), &sym.location.range);
                 DocumentSymbolResult {
                     name: sym.name,
                     kind: symbol_kind_to_string(sym.kind).to_string(),

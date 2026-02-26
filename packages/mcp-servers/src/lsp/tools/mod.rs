@@ -24,8 +24,7 @@ pub async fn resolve_symbol_position(
     symbol: &str,
     registry: &LspRegistry,
 ) -> Result<u32, LspError> {
-    let uri = path_to_uri(Path::new(file_path))
-        .map_err(LspError::Transport)?;
+    let uri = path_to_uri(Path::new(file_path)).map_err(LspError::Transport)?;
     let client = registry.require_client(file_path).await?;
     let response = client.document_symbol(uri).await?;
 

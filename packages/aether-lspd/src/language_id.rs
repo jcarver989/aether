@@ -124,16 +124,31 @@ mod tests {
     #[test]
     fn test_from_extension() {
         assert_eq!(LanguageId::from_extension("rs"), Some(LanguageId::Rust));
-        assert_eq!(LanguageId::from_extension("tsx"), Some(LanguageId::TypeScriptReact));
+        assert_eq!(
+            LanguageId::from_extension("tsx"),
+            Some(LanguageId::TypeScriptReact)
+        );
         assert_eq!(LanguageId::from_extension("xyz"), None);
     }
 
     #[test]
     fn test_from_path() {
         assert_eq!(LanguageId::from_path(Path::new("foo.rs")), LanguageId::Rust);
-        assert_eq!(LanguageId::from_path(Path::new("bar.py")), LanguageId::Python);
-        assert_eq!(LanguageId::from_path(Path::new("baz.tsx")), LanguageId::TypeScriptReact);
-        assert_eq!(LanguageId::from_path(Path::new("unknown.xyz")), LanguageId::PlainText);
-        assert_eq!(LanguageId::from_path(Path::new("no_extension")), LanguageId::PlainText);
+        assert_eq!(
+            LanguageId::from_path(Path::new("bar.py")),
+            LanguageId::Python
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("baz.tsx")),
+            LanguageId::TypeScriptReact
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("unknown.xyz")),
+            LanguageId::PlainText
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("no_extension")),
+            LanguageId::PlainText
+        );
     }
 }
