@@ -1,7 +1,7 @@
 pub mod cargo_project;
 pub mod daemon_harness;
 
-pub use cargo_project::CargoProject;
+pub use cargo_project::{CargoProject, TestProject};
 pub use daemon_harness::DaemonHarness;
 
 use lsp_types::{
