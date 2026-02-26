@@ -1,1 +1,1 @@
-pub use aether_lspd::testing::{CargoProject, CargoProjectError};
+pub use aether_lspd::testing::{CargoProject, TestProject};

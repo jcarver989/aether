@@ -1,7 +1,7 @@
 mod common;
 
 use aether_lspd::LanguageId;
-use common::{CargoProject, DaemonHarness, RA_INIT_TIMEOUT, did_change_params, did_open_params};
+use common::{CargoProject, DaemonHarness, RA_INIT_TIMEOUT, TestProject, did_change_params, did_open_params};
 use lsp_types::{DidCloseTextDocumentParams, TextDocumentIdentifier};
 use std::time::Duration;
 

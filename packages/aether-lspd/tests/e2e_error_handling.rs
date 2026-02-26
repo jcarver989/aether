@@ -1,7 +1,7 @@
 mod common;
 
 use aether_lspd::{ClientError, LanguageId, LspClient, socket_path};
-use common::{CargoProject, DaemonHarness, RA_INIT_TIMEOUT};
+use common::{CargoProject, DaemonHarness, RA_INIT_TIMEOUT, TestProject};
 use std::time::Duration;
 
 /// Test: Request on non-existent file returns appropriate response
