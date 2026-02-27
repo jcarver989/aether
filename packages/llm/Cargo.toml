@@ -27,9 +27,8 @@ serde_json = { workspace = true }
 
 tracing = { workspace = true }
 
-[[bin]]
-name = "llm-catalog-codegen"
-path = "src/bin/codegen.rs"
+[build-dependencies]
+llm-codegen = { path = "../llm-codegen" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
