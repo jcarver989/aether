@@ -9,6 +9,7 @@ members = [
     "packages/planning-agent",
     "packages/aether-lspd",
     "packages/llm",
+    "packages/llm-codegen",
     "packages/mcp-utils",
     "packages/mcp-servers",
 ]

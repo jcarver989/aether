@@ -2432,6 +2432,7 @@ dependencies = [
  "aws-smithy-types",
  "chrono",
  "futures",
+ "llm-codegen",
  "reqwest",
  "serde",
  "serde_json",
@@ -2442,6 +2443,15 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "llm-codegen"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

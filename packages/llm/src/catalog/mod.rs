@@ -1,8 +1,4 @@
-pub mod codegen;
-mod generated;
-pub mod raw;
-
-pub use generated::*;
+include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
 /// Returns models whose provider env var is set
 pub fn available_models() -> Vec<LlmModel> {
