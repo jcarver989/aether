@@ -1,13 +1,20 @@
-use acp_utils::notifications::DiffPreview;
 use crossterm::style::Color;
 use syntect::easy::HighlightLines;
 use syntect::parsing::SyntaxReference;
+
+use acp_utils::notifications::DiffPreview;
 
 use super::screen::{Line, Span, Style};
 use super::syntax::{SYNTECT, find_syntax_for_hint, syntect_to_wisp_style};
 use super::theme::Theme;
 
 const MAX_DIFF_LINES: usize = 20;
+
+struct DiffStyle<'a> {
+    prefix: &'a str,
+    fg: Color,
+    bg: Color,
+}
 
 /// Render a diff preview with syntax-highlighted removed/added lines.
 ///
@@ -28,24 +35,31 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
 
     let mut lines = Vec::with_capacity(budget + usize::from(truncated));
 
+    let removed_style = DiffStyle {
+        prefix: "  - ",
+        fg: theme.diff.removed_fg,
+        bg: theme.diff.removed_bg,
+    };
     render_diff_section(
         &mut lines,
         &preview.removed,
         removed_budget,
         syntax,
-        "  - ",
-        theme.diff.removed_fg,
-        theme.diff.removed_bg,
+        &removed_style,
         theme,
     );
+
+    let added_style = DiffStyle {
+        prefix: "  + ",
+        fg: theme.diff.added_fg,
+        bg: theme.diff.added_bg,
+    };
     render_diff_section(
         &mut lines,
         &preview.added,
         added_budget,
         syntax,
-        "  + ",
-        theme.diff.added_fg,
-        theme.diff.added_bg,
+        &added_style,
         theme,
     );
 
@@ -64,16 +78,17 @@ fn render_diff_section(
     source_lines: &[String],
     limit: usize,
     syntax: Option<&'static SyntaxReference>,
-    prefix: &str,
-    fg: Color,
-    bg: Color,
+    style: &DiffStyle<'_>,
     theme: &Theme,
 ) {
     let mut highlighter = syntax.map(|s| HighlightLines::new(s, &SYNTECT.theme));
     for src in source_lines.iter().take(limit) {
         let mut line = Line::default();
-        line.push_span(Span::with_style(prefix, Style::fg(fg).bg_color(bg)));
-        push_highlighted_spans(&mut line, src, &mut highlighter, bg, theme);
+        line.push_span(Span::with_style(
+            style.prefix,
+            Style::fg(style.fg).bg_color(style.bg),
+        ));
+        push_highlighted_spans(&mut line, src, &mut highlighter, style.bg, theme);
         lines.push(line);
     }
 }
