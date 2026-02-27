@@ -16,8 +16,8 @@ pub const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
 pub const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
 pub const CONTEXT_CLEARED_METHOD: &str = "_aether/context_cleared";
 
-/// Custom ext_method for tunneling MCP elicitation through ACP.
-/// Note: ACP auto-prefixes ext_method names with `_`, so the wire method
+/// Custom `ext_method` for tunneling MCP elicitation through ACP.
+/// Note: ACP auto-prefixes `ext_method` names with `_`, so the wire method
 /// becomes `_aether/elicitation`.
 pub const ELICITATION_METHOD: &str = "aether/elicitation";
 
@@ -33,7 +33,7 @@ pub struct ContextUsageParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ContextClearedParams {}
 
-/// Parameters sent via ext_method for `aether/elicitation`.
+/// Parameters sent via `ext_method` for `aether/elicitation`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElicitationParams {
     pub message: String,

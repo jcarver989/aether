@@ -31,6 +31,12 @@ pub struct SurveyMcp {
     tool_router: ToolRouter<Self>,
 }
 
+impl Default for SurveyMcp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SurveyMcp {
     pub fn new() -> Self {
         Self {

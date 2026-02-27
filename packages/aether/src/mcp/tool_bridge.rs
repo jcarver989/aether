@@ -65,21 +65,18 @@ fn extract_result_and_meta(
     structured_content: Option<serde_json::Value>,
     content: &[rmcp::model::Content],
 ) -> (serde_json::Value, Option<ToolResultMeta>) {
-    match structured_content {
-        Some(mut val) => {
-            let result_meta = extract_result_meta(&mut val);
-            (val, result_meta)
-        }
-        None => {
-            let fallback = content.first().map_or_else(
-                || serde_json::Value::String("No result".to_string()),
-                |c| {
-                    serde_json::to_value(c)
-                        .unwrap_or(serde_json::Value::String("Serialization error".to_string()))
-                },
-            );
-            (fallback, None)
-        }
+    if let Some(mut val) = structured_content {
+        let result_meta = extract_result_meta(&mut val);
+        (val, result_meta)
+    } else {
+        let fallback = content.first().map_or_else(
+            || serde_json::Value::String("No result".to_string()),
+            |c| {
+                serde_json::to_value(c)
+                    .unwrap_or(serde_json::Value::String("Serialization error".to_string()))
+            },
+        );
+        (fallback, None)
     }
 }
 

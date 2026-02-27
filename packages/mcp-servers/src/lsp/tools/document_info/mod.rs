@@ -56,7 +56,7 @@ pub async fn execute_lsp_document(
     input: LspDocumentInput,
     registry: &LspRegistry,
 ) -> Result<LspDocumentOutput, String> {
-    let uri = path_to_uri(Path::new(&input.file_path)).map_err(|e| e.to_string())?;
+    let uri = path_to_uri(Path::new(&input.file_path)).map_err(|e| e.clone())?;
     let client = registry
         .require_client(&input.file_path)
         .await
