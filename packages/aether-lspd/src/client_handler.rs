@@ -1,5 +1,5 @@
 use crate::lsp_config::get_config_for_language;
-use crate::lsp_manager::{LspHandle, LspKey, LspManager};
+use crate::lsp_manager::{EnsureDocumentOpenOutcome, LspHandle, LspKey, LspManager};
 use crate::protocol::{
     DaemonRequest, DaemonResponse, ProtocolError, extract_document_uri, read_frame, write_frame,
 };
@@ -185,11 +185,37 @@ async fn get_diagnostics_and_cleanup(
 
         let mut min_version: Option<u64> = None;
         let mut opened = Vec::new();
+        let mut unchanged_count = 0usize;
+        let mut sync_failures = 0usize;
+        let mut failed_uris = Vec::new();
         for cached_uri in &cached {
-            if let Some(ver) = handle.ensure_document_open(cached_uri).await {
-                min_version = Some(min_version.map_or(ver, |m: u64| m.min(ver)));
-                opened.push(cached_uri.clone());
+            match handle.ensure_document_open_with_outcome(cached_uri).await {
+                EnsureDocumentOpenOutcome::Synced(ver) => {
+                    min_version = Some(min_version.map_or(ver, |m: u64| m.min(ver)));
+                    opened.push(cached_uri.clone());
+                }
+                EnsureDocumentOpenOutcome::Unchanged => {
+                    unchanged_count += 1;
+                }
+                EnsureDocumentOpenOutcome::Failed => {
+                    sync_failures += 1;
+                    failed_uris.push(cached_uri.clone());
+                }
             }
+        }
+        tracing::debug!(
+            cached_count = cached.len(),
+            synced_count = opened.len(),
+            unchanged_count,
+            sync_failures,
+            "All-files mode: sync outcomes"
+        );
+        if !failed_uris.is_empty() {
+            tracing::debug!(
+                pruned_uris = failed_uris.len(),
+                "All-files mode: pruning unreadable/stale known URIs"
+            );
+            handle.forget_known_uris(&failed_uris).await;
         }
 
         if let Some(version_before) = min_version {

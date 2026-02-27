@@ -1,5 +1,5 @@
 use crate::error::{DaemonError, DaemonResult};
-use crate::file_watcher::FileWatcherHandle;
+use crate::file_watcher::{FileWatcherBatch, FileWatcherHandle};
 use crate::language_id::LanguageId;
 use crate::protocol::{LspErrorResponse, LspNotification};
 use crate::uri::{path_to_uri, uri_to_path};
@@ -19,7 +19,7 @@ use lsp_types::{
     WorkspaceClientCapabilities,
 };
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -57,11 +57,10 @@ pub struct LspHandle {
     request_tx: mpsc::Sender<LspRequestEnvelope>,
     /// Notification sender (fire-and-forget)
     notification_tx: mpsc::Sender<LspNotification>,
-    /// Cached diagnostics keyed by file URI
-    diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
-    /// All URIs the daemon knows about — populated by publishDiagnostics
-    /// and didChangeWatchedFiles events.
-    known_uris: Arc<RwLock<HashSet<Uri>>>,
+    /// All known URIs with optional cached diagnostics.
+    /// Key present with `None` = discovered, no diagnostics yet.
+    /// Key present with `Some(params)` = has diagnostics.
+    uri_state: Arc<RwLock<HashMap<Uri, Option<PublishDiagnosticsParams>>>>,
     /// Documents that have been opened with didOpen, with version/content tracking
     open_documents: Arc<RwLock<HashMap<Uri, OpenDocumentState>>>,
     /// Notified whenever new `PublishDiagnostics` arrive in the cache
@@ -87,6 +86,13 @@ struct OpenDocumentState {
 enum SyncAction {
     Open,
     Change,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EnsureDocumentOpenOutcome {
+    Synced(u64),
+    Unchanged,
+    Failed,
 }
 
 impl LspManager {
@@ -165,9 +171,14 @@ impl LspHandle {
     /// If `uri` is Some, returns diagnostics for that file only.
     /// If `uri` is None, returns all cached diagnostics.
     pub async fn get_diagnostics(&self, uri: Option<&Uri>) -> Vec<PublishDiagnosticsParams> {
-        let cache = self.diagnostics_cache.read().await;
+        let cache = self.uri_state.read().await;
         if let Some(u) = uri {
-            let found = cache.get(u).cloned().into_iter().collect::<Vec<_>>();
+            let found: Vec<_> = cache
+                .get(u)
+                .and_then(|opt| opt.as_ref())
+                .cloned()
+                .into_iter()
+                .collect();
             tracing::debug!(
                 uri = %u.as_str(),
                 cached_files = cache.len(),
@@ -177,7 +188,11 @@ impl LspHandle {
             );
             found
         } else {
-            let all: Vec<_> = cache.values().cloned().collect();
+            let all: Vec<_> = cache
+                .values()
+                .filter_map(|opt| opt.as_ref())
+                .cloned()
+                .collect();
             let total: usize = all.iter().map(|p| p.diagnostics.len()).sum();
             tracing::debug!(
                 cached_files = cache.len(),
@@ -191,7 +206,34 @@ impl LspHandle {
     /// Return all URIs the daemon knows about (from publishDiagnostics
     /// and didChangeWatchedFiles events).
     pub async fn cached_uris(&self) -> Vec<Uri> {
-        self.known_uris.read().await.iter().cloned().collect()
+        self.uri_state.read().await.keys().cloned().collect()
+    }
+
+    /// Remove unreadable/stale URIs from both known URI tracking and diagnostics cache.
+    pub(crate) async fn forget_known_uris(&self, uris: &[Uri]) {
+        if uris.is_empty() {
+            return;
+        }
+
+        let mut uri_state = self.uri_state.write().await;
+        let mut removed = 0usize;
+        for uri in uris {
+            if uri_state.remove(uri).is_some() {
+                removed += 1;
+            }
+        }
+        drop(uri_state);
+
+        let mut open_documents = self.open_documents.write().await;
+        for uri in uris {
+            open_documents.remove(uri);
+        }
+
+        tracing::debug!(
+            requested = uris.len(),
+            removed,
+            "forget_known_uris: pruned stale/unreadable URIs"
+        );
     }
 
     /// Send a notification to the LSP server (fire-and-forget)
@@ -209,8 +251,20 @@ impl LspHandle {
     /// management — the daemon handles it transparently.
     ///
     /// Returns `Some(version_before)` if the document was synced (opened or changed),
-    /// so the caller can wait for fresh diagnostics. Returns `None` if no sync was needed.
+    /// so the caller can wait for fresh diagnostics. Returns `None` if no sync was needed
+    /// or if syncing failed.
     pub async fn ensure_document_open(&self, uri: &Uri) -> Option<u64> {
+        match self.ensure_document_open_with_outcome(uri).await {
+            EnsureDocumentOpenOutcome::Synced(version_before) => Some(version_before),
+            EnsureDocumentOpenOutcome::Unchanged | EnsureDocumentOpenOutcome::Failed => None,
+        }
+    }
+
+    /// Ensure a document is open and return a detailed outcome.
+    pub(crate) async fn ensure_document_open_with_outcome(
+        &self,
+        uri: &Uri,
+    ) -> EnsureDocumentOpenOutcome {
         let file_path = uri_to_path(uri);
         tracing::debug!(uri = %uri.as_str(), %file_path, "ensure_document_open: reading file");
 
@@ -218,7 +272,7 @@ impl LspHandle {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(uri = %uri.as_str(), %file_path, %e, "Could not read file for auto-open");
-                return None;
+                return EnsureDocumentOpenOutcome::Failed;
             }
         };
 
@@ -264,7 +318,7 @@ impl LspHandle {
                     "ensure_document_open: sending didOpen + didSave"
                 );
                 self.send_open_and_save(uri, &file_path, content).await;
-                Some(version_before)
+                EnsureDocumentOpenOutcome::Synced(version_before)
             }
             Some(SyncAction::Change) => {
                 tracing::debug!(
@@ -283,9 +337,9 @@ impl LspHandle {
                 self.send_notification(close_notification).await;
 
                 self.send_open_and_save(uri, &file_path, content).await;
-                Some(version_before)
+                EnsureDocumentOpenOutcome::Synced(version_before)
             }
-            None => None,
+            None => EnsureDocumentOpenOutcome::Unchanged,
         }
     }
 
@@ -473,16 +527,14 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
 
     let (request_tx, request_rx) = mpsc::channel(100);
     let (notification_tx, notification_rx) = mpsc::channel(100);
-    let diagnostics_cache = Arc::new(RwLock::new(HashMap::new()));
+    let uri_state = Arc::new(RwLock::new(HashMap::new()));
     let diagnostics_notify = Arc::new(Notify::new());
     let diagnostics_version = Arc::new(AtomicU64::new(0));
-    let known_uris = Arc::new(RwLock::new(HashSet::new()));
     let open_documents = Arc::new(RwLock::new(HashMap::new()));
 
-    let handler_diagnostics_cache = Arc::clone(&diagnostics_cache);
+    let handler_uri_state = Arc::clone(&uri_state);
     let handler_diagnostics_notify = Arc::clone(&diagnostics_notify);
     let handler_diagnostics_version = Arc::clone(&diagnostics_version);
-    let handler_known_uris = Arc::clone(&known_uris);
 
     let (file_watch_tx, file_watch_rx) = mpsc::channel(64);
     let file_watcher = FileWatcherHandle::spawn(root_path.to_path_buf(), file_watch_tx);
@@ -494,10 +546,9 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
         notifications: notification_rx,
         file_watcher_handle: file_watcher,
         file_watcher_rx: file_watch_rx,
-        diagnostics_cache: handler_diagnostics_cache,
+        uri_state: handler_uri_state,
         diagnostics_notify: handler_diagnostics_notify,
         diagnostics_version: handler_diagnostics_version,
-        known_uris: handler_known_uris,
         root_path: root_path.to_path_buf(),
         next_id: 1,
         pending: HashMap::new(),
@@ -507,8 +558,7 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
     Ok(LspHandle {
         request_tx,
         notification_tx,
-        diagnostics_cache,
-        known_uris,
+        uri_state,
         diagnostics_notify,
         diagnostics_version,
         open_documents,
@@ -530,11 +580,10 @@ struct LspHandler {
     requests: mpsc::Receiver<LspRequestEnvelope>,
     notifications: mpsc::Receiver<LspNotification>,
     file_watcher_handle: FileWatcherHandle,
-    file_watcher_rx: mpsc::Receiver<DidChangeWatchedFilesParams>,
-    diagnostics_cache: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
+    file_watcher_rx: mpsc::Receiver<FileWatcherBatch>,
+    uri_state: Arc<RwLock<HashMap<Uri, Option<PublishDiagnosticsParams>>>>,
     diagnostics_notify: Arc<Notify>,
     diagnostics_version: Arc<AtomicU64>,
-    known_uris: Arc<RwLock<HashSet<Uri>>>,
     root_path: PathBuf,
     next_id: i64,
     pending: HashMap<i64, oneshot::Sender<Result<Value, LspErrorResponse>>>,
@@ -619,18 +668,37 @@ impl LspHandler {
                     }
                 }
 
-                Some(params) = self.file_watcher_rx.recv() => {
-                    tracing::info!(
-                        changes = params.changes.len(),
-                        files = %params.changes.iter().map(|c| c.uri.as_str()).collect::<Vec<_>>().join(", "),
-                        "File watcher: forwarding didChangeWatchedFiles to LSP"
-                    );
+                Some(batch) = self.file_watcher_rx.recv() => {
+                    let forwarded_count = batch.forwarded_changes.len();
+                    let discovered_count = batch.discovered_uris.len();
+
                     {
-                        let mut uris = self.known_uris.write().await;
-                        for change in &params.changes {
-                            uris.insert(change.uri.clone());
+                        let mut state = self.uri_state.write().await;
+                        for uri in &batch.discovered_uris {
+                            state.entry(uri.clone()).or_insert(None);
+                        }
+                        for change in &batch.forwarded_changes {
+                            state.entry(change.uri.clone()).or_insert(None);
                         }
                     }
+
+                    if forwarded_count == 0 {
+                        tracing::debug!(
+                            discovered_uris = discovered_count,
+                            "File watcher: discovered URIs with no forwarded didChangeWatchedFiles"
+                        );
+                        continue;
+                    }
+
+                    tracing::info!(
+                        forwarded_changes = forwarded_count,
+                        discovered_uris = discovered_count,
+                        files = %batch.forwarded_changes.iter().map(|c| c.uri.as_str()).collect::<Vec<_>>().join(", "),
+                        "File watcher: forwarding didChangeWatchedFiles to LSP"
+                    );
+                    let params = DidChangeWatchedFilesParams {
+                        changes: batch.forwarded_changes,
+                    };
                     if let Ok(value) = serde_json::to_value(&params)
                         && let Err(e) = send_notification(&mut self.stdin, DidChangeWatchedFiles::METHOD, value).await
                     {
@@ -773,13 +841,10 @@ impl LspHandler {
                             "publishDiagnostics received"
                         );
 
-                        self.known_uris
+                        self.uri_state
                             .write()
                             .await
-                            .insert(diag_params.uri.clone());
-                        let mut cache = self.diagnostics_cache.write().await;
-                        cache.insert(diag_params.uri.clone(), diag_params);
-                        drop(cache);
+                            .insert(diag_params.uri.clone(), Some(diag_params));
                         self.diagnostics_version.fetch_add(1, Ordering::Relaxed);
                         self.diagnostics_notify.notify_waiters();
                     }
@@ -998,4 +1063,72 @@ async fn write_lsp_message(stdin: &mut ChildStdin, msg: &Value) -> std::io::Resu
     stdin.write_all(header.as_bytes()).await?;
     stdin.write_all(content.as_bytes()).await?;
     stdin.flush().await
+}
+
+#[cfg(test)]
+#[allow(clippy::mutable_key_type)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    fn test_uri(path: &str) -> Uri {
+        path_to_uri(Path::new(path)).expect("valid test URI path")
+    }
+
+    fn test_diagnostics(uri: Uri) -> PublishDiagnosticsParams {
+        PublishDiagnosticsParams {
+            uri,
+            diagnostics: Vec::new(),
+            version: None,
+        }
+    }
+
+    fn test_handle_with_known_uris(known_uris: &[Uri]) -> LspHandle {
+        let (request_tx, _request_rx) = mpsc::channel(1);
+        let (notification_tx, _notification_rx) = mpsc::channel(1);
+
+        let mut uri_state = HashMap::new();
+        for uri in known_uris {
+            uri_state.insert(uri.clone(), Some(test_diagnostics(uri.clone())));
+        }
+
+        LspHandle {
+            request_tx,
+            notification_tx,
+            uri_state: Arc::new(RwLock::new(uri_state)),
+            open_documents: Arc::new(RwLock::new(HashMap::new())),
+            diagnostics_notify: Arc::new(Notify::new()),
+            diagnostics_version: Arc::new(AtomicU64::new(0)),
+            _task: tokio::spawn(async {}),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_forget_known_uris_prunes_known_and_diagnostics_cache() {
+        let uri_a = test_uri("/tmp/project/a.rs");
+        let uri_b = test_uri("/tmp/project/b.rs");
+        let handle = test_handle_with_known_uris(&[uri_a.clone(), uri_b.clone()]);
+
+        handle.forget_known_uris(std::slice::from_ref(&uri_a)).await;
+
+        let state = handle.uri_state.read().await;
+        assert!(!state.contains_key(&uri_a));
+        assert!(state.contains_key(&uri_b));
+    }
+
+    #[tokio::test]
+    async fn test_forget_known_uris_removes_future_all_files_sync_candidates() {
+        let removed_uri = test_uri("/tmp/project/stale.rs");
+        let retained_uri = test_uri("/tmp/project/stable.rs");
+        let handle = test_handle_with_known_uris(&[removed_uri.clone(), retained_uri.clone()]);
+
+        handle
+            .forget_known_uris(std::slice::from_ref(&removed_uri))
+            .await;
+
+        let cached_uris = handle.cached_uris().await;
+        assert!(!cached_uris.contains(&removed_uri));
+        assert!(cached_uris.contains(&retained_uri));
+    }
 }
