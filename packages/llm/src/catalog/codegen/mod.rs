@@ -13,8 +13,8 @@ struct ProviderConfig {
     enum_name: &'static str,
     /// Our internal provider name used for parsing (e.g. "gemini")
     parser_name: &'static str,
-    /// Env var our code actually checks
-    env_var: &'static str,
+    /// Env var our code actually checks (None for providers with complex credential chains)
+    env_var: Option<&'static str>,
 }
 
 /// Dynamic provider — model name is user-supplied at runtime, no fixed enum
@@ -30,37 +30,43 @@ const PROVIDERS: &[ProviderConfig] = &[
         dev_id: "anthropic",
         enum_name: "Anthropic",
         parser_name: "anthropic",
-        env_var: "ANTHROPIC_API_KEY",
+        env_var: Some("ANTHROPIC_API_KEY"),
     },
     ProviderConfig {
         dev_id: "deepseek",
         enum_name: "DeepSeek",
         parser_name: "deepseek",
-        env_var: "DEEPSEEK_API_KEY",
+        env_var: Some("DEEPSEEK_API_KEY"),
     },
     ProviderConfig {
         dev_id: "google",
         enum_name: "Gemini",
         parser_name: "gemini",
-        env_var: "GEMINI_API_KEY",
+        env_var: Some("GEMINI_API_KEY"),
     },
     ProviderConfig {
         dev_id: "moonshotai",
         enum_name: "Moonshot",
         parser_name: "moonshot",
-        env_var: "MOONSHOT_API_KEY",
+        env_var: Some("MOONSHOT_API_KEY"),
     },
     ProviderConfig {
         dev_id: "openrouter",
         enum_name: "OpenRouter",
         parser_name: "openrouter",
-        env_var: "OPENROUTER_API_KEY",
+        env_var: Some("OPENROUTER_API_KEY"),
     },
     ProviderConfig {
         dev_id: "zai",
         enum_name: "ZAi",
         parser_name: "zai",
-        env_var: "ZAI_API_KEY",
+        env_var: Some("ZAI_API_KEY"),
+    },
+    ProviderConfig {
+        dev_id: "amazon-bedrock",
+        enum_name: "Bedrock",
+        parser_name: "bedrock",
+        env_var: None,
     },
 ];
 

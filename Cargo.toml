@@ -23,6 +23,11 @@ return_self_not_must_use = "allow"
 pub_underscore_fields = "allow"
 
 [workspace.dependencies]
+# AWS SDK
+aws-config = { version = "1.8.14", features = ["behavior-version-latest"] }
+aws-sdk-bedrockruntime = "1.126.0"
+aws-smithy-types = "1.4.5"
+
 # Async runtime
 tokio = { version = "^1.49.0", features = ["full"] }
 tokio-stream = { version = "^0.1.18", features = ["io-util"] }

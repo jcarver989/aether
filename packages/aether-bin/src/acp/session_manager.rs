@@ -74,6 +74,7 @@ fn provider_display_name(provider: &str) -> &str {
         "zai" => "ZAI",
         "ollama" => "Ollama",
         "llamacpp" => "LlamaCpp",
+        "bedrock" => "AWS Bedrock",
         other => other,
     }
 }
@@ -96,16 +97,16 @@ fn effective_model<'a>(active_model: &'a str, pending_model: Option<&'a str>) ->
 /// Build the "Model" select config option with all models from all providers.
 /// Display names use "Provider / `ModelName`" format.
 /// Fully-unavailable providers are collapsed into a single summary line.
+struct ProviderGroup<'a> {
+    models: Vec<&'a LlmModel>,
+    available_count: usize,
+}
+
 fn build_model_config_option(available: &[LlmModel], current_model: &str) -> SessionConfigOption {
     let all_models = catalog::LlmModel::all();
     let available_models: HashSet<String> = available.iter().map(provider_model_str).collect();
 
     // Phase 1: Group models by provider, counting available models per provider
-    struct ProviderGroup<'a> {
-        models: Vec<&'a LlmModel>,
-        available_count: usize,
-    }
-
     let mut groups: BTreeMap<&str, ProviderGroup<'_>> = BTreeMap::new();
     for m in all_models {
         let value = provider_model_str(m);

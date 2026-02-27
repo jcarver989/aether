@@ -196,11 +196,12 @@ fn emit_required_env_var_method(out: &mut String) {
     pushln(out, "        match self {");
     emit_provider_arms(
         out,
-        |cfg| {
-            format!(
+        |cfg| match cfg.env_var {
+            Some(var) => format!(
                 "            LlmModel::{}(_) => Some(\"{}\"),",
-                cfg.enum_name, cfg.env_var
-            )
+                cfg.enum_name, var
+            ),
+            None => format!("            LlmModel::{}(_) => None,", cfg.enum_name),
         },
         |dyn_cfg| format!("            LlmModel::{}(_) => None,", dyn_cfg.enum_name),
     );
