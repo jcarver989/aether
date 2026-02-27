@@ -86,7 +86,7 @@ impl Component for Form {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = vec![self.render_title(context)];
         lines.extend(self.render_fields(context));
-        lines.extend(self.render_footer(context));
+        lines.extend(Self::render_footer(context));
         lines
     }
 }
@@ -142,7 +142,7 @@ impl Form {
         lines
     }
 
-    fn render_footer(&self, context: &RenderContext) -> Vec<Line> {
+    fn render_footer(context: &RenderContext) -> Vec<Line> {
         let border_width = context.size.0.saturating_sub(2) as usize;
         vec![
             Line::styled(
