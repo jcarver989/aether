@@ -155,12 +155,18 @@ pub fn map_agent_message_to_session_notification(
             message.as_ref(),
         ),
 
+        AgentMessage::Error { message } => Some(acp::SessionNotification::new(
+            session_id,
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(format!("[Error] {message}")),
+            ))),
+        )),
+
         AgentMessage::Thought {
             is_complete: true, ..
         }
         | AgentMessage::ContextUsageUpdate { .. }
         | AgentMessage::ContextCleared
-        | AgentMessage::Error { .. }
         | AgentMessage::Cancelled { .. }
         | AgentMessage::Done
         | AgentMessage::ContextCompactionStarted { .. }

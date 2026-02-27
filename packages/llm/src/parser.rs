@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::catalog::LlmModel;
 use crate::providers::{
     anthropic::AnthropicProvider,
+    bedrock::BedrockProvider,
     deepseek::DeepSeekProvider,
     gemini::GeminiProvider,
     local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
@@ -38,6 +39,7 @@ impl Default for ModelProviderParser {
             .with_provider::<OllamaProvider>("ollama")
             .with_provider::<ZAiProvider>("zai")
             .with_provider::<LlamaCppProvider>("llamacpp")
+            .with_provider::<BedrockProvider>("bedrock")
     }
 }
 
