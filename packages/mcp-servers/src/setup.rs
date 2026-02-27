@@ -1,5 +1,5 @@
 use crate::{CodingMcp, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp};
-use aether::mcp::McpBuilder;
+use aether_core::mcp::McpBuilder;
 use futures::FutureExt;
 use mcp_utils::ServiceExt;
 use std::path::{Path, PathBuf};

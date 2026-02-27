@@ -2,7 +2,7 @@ use crate::coding::CodingMcp;
 use crate::skills::SkillsMcp;
 use crate::subagents::subagent_file::AgentFile;
 use crate::tasks::TasksMcp;
-use aether::{
+use aether_core::{
     core::{AgentHandle, Prompt, agent},
     events::{AgentMessage, UserMessage},
     mcp::{McpSpawnResult, mcp, run_mcp_task::McpCommand},

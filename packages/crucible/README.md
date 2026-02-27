@@ -6,7 +6,7 @@ A Rust library for writing automated tests (evals) for LLM-powered agents.
 
 ```rust
 use crucible::{Crucible, EvalsConfig};
-use aether::llm::openrouter::OpenRouter;
+use aether_core::llm::openrouter::OpenRouter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

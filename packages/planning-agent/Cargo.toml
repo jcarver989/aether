@@ -10,7 +10,7 @@ workspace = true
 mcp_utils = { path = "../mcp-utils" }
 mcp-servers = { path = "../mcp-servers", features = ["coding"] }
 crucible = { path = "../crucible" }
-aether = { path = "../aether" }
+aether-core = { path = "../aether-core" }
 llm = { path = "../llm" }
 
 rmcp = { workspace = true }

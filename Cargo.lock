@@ -34,11 +34,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "aether"
+name = "aether-cli"
 version = "0.1.0"
 dependencies = [
  "acp_utils",
- "aether",
+ "aether-core",
+ "agent-client-protocol",
+ "async-trait",
+ "clap",
+ "dirs",
+ "futures",
+ "llm",
+ "mcp-servers",
+ "mcp_utils",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "aether-core"
+version = "0.1.0"
+dependencies = [
+ "acp_utils",
+ "aether-core",
  "agent-client-protocol",
  "async-openai",
  "chrono",
@@ -56,30 +80,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "aether-bin"
-version = "0.1.0"
-dependencies = [
- "acp_utils",
- "aether",
- "agent-client-protocol",
- "async-trait",
- "clap",
- "dirs",
- "futures",
- "llm",
- "mcp-servers",
- "mcp_utils",
- "rmcp",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-appender",
  "tracing-subscriber",
 ]
 
@@ -1137,7 +1137,7 @@ dependencies = [
 name = "crucible"
 version = "0.1.0"
 dependencies = [
- "aether",
+ "aether-core",
  "async-trait",
  "axum",
  "chrono",
@@ -2537,7 +2537,7 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 name = "mcp-servers"
 version = "0.1.0"
 dependencies = [
- "aether",
+ "aether-core",
  "aether-lspd",
  "chrono",
  "clap",
@@ -3017,7 +3017,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 name = "planning-agent"
 version = "0.1.0"
 dependencies = [
- "aether",
+ "aether-core",
  "anyhow",
  "async-trait",
  "clap",
