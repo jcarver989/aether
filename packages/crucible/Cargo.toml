@@ -43,7 +43,7 @@ tower-http = { workspace = true, features = ["fs", "cors"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 
 # Internal dependencies
-aether = { path = "../aether" }
+aether-core = { path = "../aether-core" }
 llm = { path = "../llm" }
 mcp_utils = { path = "../mcp-utils" }
 uuid = { workspace = true, features = ["v4", "serde"] }

@@ -1,6 +1,6 @@
-use aether::core::{Prompt, agent};
-use aether::events::{AgentMessage, UserMessage};
-use aether::mcp::{McpBuilder, McpSpawnResult, mcp};
+use aether_core::core::{Prompt, agent};
+use aether_core::events::{AgentMessage, UserMessage};
+use aether_core::mcp::{McpBuilder, McpSpawnResult, mcp};
 use llm::{StreamingModelProvider, ToolCallRequest};
 use mcp_utils::client::ServerFactory;
 use std::collections::HashMap;

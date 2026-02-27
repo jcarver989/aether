@@ -37,7 +37,7 @@ subagents = [
     "coding",
     "skills",
     "tasks",
-    "dep:aether",
+    "dep:aether-core",
     "dep:llm",
     "dep:futures",
     "dep:tracing",
@@ -76,7 +76,7 @@ url = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
 
 # subagents feature
-aether = { path = "../aether", optional = true }
+aether-core = { path = "../aether-core", optional = true }
 llm = { path = "../llm", optional = true }
 
 [dev-dependencies]

@@ -46,7 +46,7 @@ Each server key must match a factory registered with `McpBuilder::register_in_me
 To register factories and load the config:
 
 ```rust
-use aether::mcp::mcp;
+use aether_core::mcp::mcp;
 use futures::FutureExt;
 use mcp_servers::{CodingMcp, SkillsMcp, SubAgentsMcp, TasksMcp};
 

@@ -1,5 +1,5 @@
-use aether::events::AgentMessage;
-use aether::events::SubAgentProgressPayload;
+use aether_core::events::AgentMessage;
+use aether_core::events::SubAgentProgressPayload;
 use clap::Parser;
 use rmcp::{
     RoleServer, ServerHandler,
