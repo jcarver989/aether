@@ -1,4 +1,4 @@
-use crate::mappers::map_mcp_prompt_to_available_command;
+use super::mappers::map_mcp_prompt_to_available_command;
 use crate::prompt::build_system_prompt;
 use aether::core::{AgentHandle, Prompt, agent};
 use aether::events::{AgentMessage, UserMessage};

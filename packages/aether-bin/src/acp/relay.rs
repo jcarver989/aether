@@ -12,11 +12,11 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-use crate::mappers::{
+use super::mappers::{
     map_agent_message_to_session_notification, map_agent_message_to_stop_reason,
     try_into_ext_notification,
 };
-use crate::session::Session;
+use super::session::Session;
 use acp_utils::server::AcpActorHandle;
 
 pub(crate) enum SessionCommand {
