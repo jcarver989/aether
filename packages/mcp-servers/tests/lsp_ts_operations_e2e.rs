@@ -18,10 +18,7 @@ use common::{connect_lsp, poll_lsp_tool};
 async fn test_ts_hover_returns_type_info() {
     let project = NodeProject::new("ts_hover_test").expect("Failed to create project");
     project
-        .add_file(
-            "src/index.ts",
-            "const x: number = 42;\nconsole.log(x);\n",
-        )
+        .add_file("src/index.ts", "const x: number = 42;\nconsole.log(x);\n")
         .expect("Failed to add file");
 
     let index_ts = project.file_path_str("src/index.ts");

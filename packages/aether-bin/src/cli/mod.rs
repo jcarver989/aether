@@ -1,9 +1,14 @@
+pub mod error;
+mod run;
+
+pub use run::run;
+
 use clap::Parser;
 use llm::parser::ModelProviderParser;
 use std::io::{IsTerminal, Read as _, stdin};
 use std::path::PathBuf;
 
-use crate::error::CliError;
+use error::CliError;
 
 #[derive(Parser)]
 #[command(name = "aether")]

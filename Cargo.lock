@@ -60,7 +60,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aether-acp"
+name = "aether-bin"
 version = "0.1.0"
 dependencies = [
  "acp_utils",
@@ -80,21 +80,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-appender",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "aether-cli"
-version = "0.1.0"
-dependencies = [
- "aether",
- "clap",
- "llm",
- "mcp-servers",
- "mcp_utils",
- "serde_json",
- "tokio",
- "tracing",
  "tracing-subscriber",
 ]
 

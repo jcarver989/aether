@@ -4,14 +4,13 @@ members = [
     "packages/aether",
     "packages/wisp",
     "packages/crucible",
-    "packages/aether-acp",
+    "packages/aether-bin",
     "packages/acp-utils",
     "packages/planning-agent",
     "packages/aether-lspd",
     "packages/llm",
     "packages/mcp-utils",
     "packages/mcp-servers",
-    "packages/aether-cli",
 ]
 
 [workspace.lints.clippy]

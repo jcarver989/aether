@@ -69,7 +69,7 @@ impl From<ContextClearedParams> for ExtNotification {
 
 /// Parameters for `_aether/sub_agent_progress` notifications.
 ///
-/// This is the wire format sent from `aether-acp` to clients like `wisp`.
+/// This is the wire format sent from the ACP server (`aether-bin`) to clients like `wisp`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubAgentProgressParams {
     pub parent_tool_id: String,
@@ -86,7 +86,7 @@ impl From<SubAgentProgressParams> for ExtNotification {
 
 /// Subset of agent message variants relevant for sub-agent status display.
 ///
-/// The server (`aether-acp`) converts `AgentMessage` to this type before
+/// The ACP server (`aether-bin`) converts `AgentMessage` to this type before
 /// serializing, so the wire format only contains these known variants.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SubAgentEvent {
