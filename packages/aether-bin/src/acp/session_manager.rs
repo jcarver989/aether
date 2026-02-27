@@ -16,9 +16,9 @@ use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use tracing::{debug, error, info};
 
-use crate::mappers::map_acp_mcp_servers;
-use crate::relay::{SessionCommand, spawn_relay};
-use crate::session::Session;
+use super::mappers::map_acp_mcp_servers;
+use super::relay::{SessionCommand, spawn_relay};
+use super::session::Session;
 use acp_utils::content::map_content_blocks_to_text;
 use acp_utils::server::AcpActorHandle;
 

@@ -11,12 +11,8 @@ name = "aether_bin"
 path = "src/lib.rs"
 
 [[bin]]
-name = "aether-acp"
-path = "src/main.rs"
-
-[[bin]]
 name = "aether"
-path = "src/bin/aether.rs"
+path = "src/main.rs"
 
 [dependencies]
 aether = { path = "../aether" }

@@ -8,19 +8,17 @@ use std::process::ExitCode;
 use tracing::debug;
 
 use super::error::CliError;
-use super::{Cli, OutputFormat};
+use super::{OutputFormat, RunConfig};
 use crate::prompt::build_system_prompt;
 
-pub async fn run(cli: Cli) -> Result<ExitCode, CliError> {
-    setup_tracing(cli.verbose, &cli.output);
+pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
+    setup_tracing(config.verbose, &config.output);
 
-    let prompt = cli.resolve_prompt()?;
-    let llm = cli.resolve_model()?;
-    let cwd = cli.cwd.canonicalize().map_err(CliError::IoError)?;
+    let cwd = config.cwd.canonicalize().map_err(CliError::IoError)?;
     debug!("Working directory: {}", cwd.display());
 
     let mut builder = mcp().with_builtin_servers(cwd.clone(), &cwd);
-    let mcp_config_path = cli
+    let mcp_config_path = config
         .mcp_config
         .or_else(|| cwd.join("mcp.json").exists().then(|| cwd.join("mcp.json")));
 
@@ -47,11 +45,11 @@ pub async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         .await
         .map_err(|e| CliError::McpError(e.to_string()))?;
 
-    let system_prompt = build_system_prompt(&cwd, instructions, cli.system_prompt.as_deref())
+    let system_prompt = build_system_prompt(&cwd, instructions, config.system_prompt.as_deref())
         .await
         .map_err(CliError::AgentError)?;
 
-    let agent_builder = agent(llm)
+    let agent_builder = agent(config.model)
         .system_prompt(Prompt::text(&system_prompt))
         .tools(mcp_tx, tool_definitions);
 
@@ -61,11 +59,11 @@ pub async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         .map_err(|e| CliError::AgentError(e.to_string()))?;
 
     agent_tx
-        .send(UserMessage::text(&prompt))
+        .send(UserMessage::text(&config.prompt))
         .await
         .map_err(|e| CliError::AgentError(format!("Failed to send prompt: {e}")))?;
 
-    Ok(stream_output(agent_rx, &cli.output).await)
+    Ok(stream_output(agent_rx, &config.output).await)
 }
 
 async fn stream_output(
