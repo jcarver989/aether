@@ -109,21 +109,15 @@ async fn test_ts_external_file_change_produces_diagnostics() {
     assert!(errors > 0, "Expected type error diagnostics");
 
     // 4. Fix the error via direct filesystem write (bypassing MCP tools)
-    std::fs::write(
-        &index_ts_path,
-        "const x: number = 42;\nconsole.log(x);\n",
-    )
-    .expect("Failed to write file");
+    std::fs::write(&index_ts_path, "const x: number = 42;\nconsole.log(x);\n")
+        .expect("Failed to write file");
 
     // 5. Poll until errors clear (file watcher → didChangeWatchedFiles → tsserver re-reads)
     poll_diagnostics(&client, Some(&index_ts), has_no_errors).await;
 
     // 6. Introduce a new error via direct filesystem write
-    std::fs::write(
-        &index_ts_path,
-        "const x: number = true;\nconsole.log(x);\n",
-    )
-    .expect("Failed to write file");
+    std::fs::write(&index_ts_path, "const x: number = true;\nconsole.log(x);\n")
+        .expect("Failed to write file");
 
     // 7. Poll until errors reappear
     let result = poll_diagnostics(&client, Some(&index_ts), has_errors).await;
@@ -136,13 +130,9 @@ async fn test_ts_external_file_change_produces_diagnostics() {
 #[tokio::test]
 async fn test_ts_diagnostics_after_edit_without_polling() {
     // 1. Create a Node project with valid code
-    let project =
-        NodeProject::new("ts_diag_no_poll").expect("Failed to create project");
+    let project = NodeProject::new("ts_diag_no_poll").expect("Failed to create project");
     project
-        .add_file(
-            "src/index.ts",
-            "const x: number = 42;\nconsole.log(x);\n",
-        )
+        .add_file("src/index.ts", "const x: number = 42;\nconsole.log(x);\n")
         .expect("Failed to add file");
 
     let index_ts = project.file_path_str("src/index.ts");

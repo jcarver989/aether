@@ -353,11 +353,7 @@ impl LspHandle {
     /// before the real diagnostics arrive ~200-500 ms later.
     ///
     /// Both phases are bounded by the overall `timeout`.
-    pub async fn wait_for_fresh_diagnostics(
-        &self,
-        version_before: u64,
-        timeout: Duration,
-    ) {
+    pub async fn wait_for_fresh_diagnostics(&self, version_before: u64, timeout: Duration) {
         tracing::debug!(
             version_before,
             timeout_ms = timeout.as_millis(),
@@ -761,22 +757,15 @@ impl LspHandler {
                         let error_count = diag_params
                             .diagnostics
                             .iter()
-                            .filter(|d| {
-                                d.severity
-                                    == Some(lsp_types::DiagnosticSeverity::ERROR)
-                            })
+                            .filter(|d| d.severity == Some(lsp_types::DiagnosticSeverity::ERROR))
                             .count();
                         let warning_count = diag_params
                             .diagnostics
                             .iter()
-                            .filter(|d| {
-                                d.severity
-                                    == Some(lsp_types::DiagnosticSeverity::WARNING)
-                            })
+                            .filter(|d| d.severity == Some(lsp_types::DiagnosticSeverity::WARNING))
                             .count();
 
-                        let new_version =
-                            self.diagnostics_version.load(Ordering::Relaxed) + 1;
+                        let new_version = self.diagnostics_version.load(Ordering::Relaxed) + 1;
 
                         tracing::info!(
                             uri = %diag_params.uri.as_str(),
@@ -787,7 +776,10 @@ impl LspHandler {
                             "publishDiagnostics received"
                         );
 
-                        self.known_uris.write().await.insert(diag_params.uri.clone());
+                        self.known_uris
+                            .write()
+                            .await
+                            .insert(diag_params.uri.clone());
                         let mut cache = self.diagnostics_cache.write().await;
                         cache.insert(diag_params.uri.clone(), diag_params);
                         drop(cache);

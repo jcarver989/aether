@@ -73,13 +73,13 @@ Create a custom agent in ~10 minutes, no Rust code required.
    - **Headless CLI** — single prompt in, text out:
 
      ```bash
-     cargo run -p aether-cli -- -m anthropic:claude-sonnet-4-20250514 "Refactor auth module"
+     cargo run -p aether-bin --bin aether -- -m anthropic:claude-sonnet-4-20250514 "Refactor auth module"
      ```
 
    - **ACP server** — for editor/IDE integration via [ACP](https://agentclientprotocol.com/get-started/introduction):
 
      ```bash
-     cargo run -p aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
+     cargo run -p aether-bin --bin aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
      ```
 
 ### 2. Build a custom agent as a Rust library
@@ -158,13 +158,13 @@ Agents get their tools from [MCP](https://modelcontextprotocol.io/) servers — 
 
 ### Connect your agent to an IDE or UI
 
-[`aether-acp`](packages/aether-acp) Connect your agent to any [ACP](https://agentclientprotocol.com/get-started/introduction) compatible client ([see list](https://agentclientprotocol.com/get-started/clients)).
+[`aether-bin`](packages/aether-bin) Connect your agent to any [ACP](https://agentclientprotocol.com/get-started/introduction) compatible client ([see list](https://agentclientprotocol.com/get-started/clients)).
 
 ### Run a fully-fledged, open source coding agent
 
-Combine all the above for a "batteries-included" AI coding agent: [`wisp`](packages/wisp) (TUI) + [`aether-acp`](packages/aether-acp) (ACP server) + the pre-built [MCP tool servers](packages/mcp-servers).
+Combine all the above for a "batteries-included" AI coding agent: [`wisp`](packages/wisp) (TUI) + [`aether-bin`](packages/aether-bin) (ACP server) + the pre-built [MCP tool servers](packages/mcp-servers).
 
-See each package's README for detailed usage: [`aether`](packages/aether), [`llm`](packages/llm), [`wisp`](packages/wisp), [`aether-acp`](packages/aether-acp).
+See each package's README for detailed usage: [`aether`](packages/aether), [`llm`](packages/llm), [`wisp`](packages/wisp), [`aether-bin`](packages/aether-bin).
 
 ## Development
 

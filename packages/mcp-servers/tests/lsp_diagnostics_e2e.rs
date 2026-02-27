@@ -93,8 +93,7 @@ async fn test_mcp_edit_produces_diagnostics() {
 #[tokio::test]
 async fn test_diagnostics_available_after_edit_without_polling() {
     // 1. Create a Cargo project with valid code
-    let project =
-        CargoProject::new("diag_after_edit_no_poll").expect("Failed to create project");
+    let project = CargoProject::new("diag_after_edit_no_poll").expect("Failed to create project");
     project
         .add_file(
             "src/main.rs",
@@ -200,12 +199,7 @@ async fn test_diagnostics_all_files_after_edit() {
     // 5. Wait a bit for rust-analyzer to process, then call lsp_check_errors WITHOUT file_path
     tokio::time::sleep(Duration::from_secs(3)).await;
 
-    let result = call_tool(
-        &client,
-        "lsp_check_errors",
-        serde_json::json!({}),
-    )
-    .await;
+    let result = call_tool(&client, "lsp_check_errors", serde_json::json!({})).await;
 
     let errors = result["summary"]["errors"].as_u64().unwrap_or(0);
     assert!(
@@ -223,8 +217,7 @@ async fn test_diagnostics_all_files_after_edit() {
 #[tokio::test]
 async fn test_diagnostics_all_files_after_external_edit() {
     // 1. Create a Cargo project with valid code
-    let project =
-        CargoProject::new("diag_all_ext_edit").expect("Failed to create project");
+    let project = CargoProject::new("diag_all_ext_edit").expect("Failed to create project");
     project
         .add_file(
             "src/main.rs",
@@ -260,12 +253,7 @@ async fn test_diagnostics_all_files_after_external_edit() {
     // 5. Wait a bit, then call lsp_check_errors WITHOUT file_path
     tokio::time::sleep(Duration::from_secs(3)).await;
 
-    let result = call_tool(
-        &client,
-        "lsp_check_errors",
-        serde_json::json!({}),
-    )
-    .await;
+    let result = call_tool(&client, "lsp_check_errors", serde_json::json!({})).await;
 
     let errors = result["summary"]["errors"].as_u64().unwrap_or(0);
     assert!(
@@ -282,8 +270,7 @@ async fn test_diagnostics_all_files_after_external_edit() {
 #[tokio::test]
 async fn test_diagnostics_all_files_after_external_edit_single_call() {
     // 1. Create a Cargo project with valid code
-    let project =
-        CargoProject::new("diag_ext_single_call").expect("Failed to create project");
+    let project = CargoProject::new("diag_ext_single_call").expect("Failed to create project");
     project
         .add_file(
             "src/main.rs",
@@ -319,12 +306,7 @@ async fn test_diagnostics_all_files_after_external_edit_single_call() {
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // 6. Single call — no polling. The cache should already have the errors.
-    let result = call_tool(
-        &client,
-        "lsp_check_errors",
-        serde_json::json!({}),
-    )
-    .await;
+    let result = call_tool(&client, "lsp_check_errors", serde_json::json!({})).await;
 
     let errors = result["summary"]["errors"].as_u64().unwrap_or(0);
     assert!(
@@ -404,8 +386,7 @@ async fn test_external_file_change_produces_diagnostics() {
 #[tokio::test]
 async fn test_diagnostics_all_files_discovers_file_watcher_uris() {
     // 1. Create a Cargo project with valid code
-    let project =
-        CargoProject::new("diag_fw_discover").expect("Failed to create project");
+    let project = CargoProject::new("diag_fw_discover").expect("Failed to create project");
     project
         .add_file(
             "src/main.rs",
@@ -445,12 +426,7 @@ async fn test_diagnostics_all_files_discovers_file_watcher_uris() {
 
     // 6. Call lsp_check_errors in all-files mode (no file_path).
     //    The daemon should know about main.rs via the file watcher URI set.
-    let result = call_tool(
-        &client,
-        "lsp_check_errors",
-        serde_json::json!({}),
-    )
-    .await;
+    let result = call_tool(&client, "lsp_check_errors", serde_json::json!({})).await;
 
     let errors = result["summary"]["errors"].as_u64().unwrap_or(0);
     assert!(

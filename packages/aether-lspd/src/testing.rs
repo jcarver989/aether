@@ -39,10 +39,7 @@ pub trait TestProject {
 #[derive(Debug)]
 pub enum TestProjectError {
     Io(std::io::Error),
-    CommandFailed {
-        command: String,
-        stderr: String,
-    },
+    CommandFailed { command: String, stderr: String },
 }
 
 impl From<std::io::Error> for TestProjectError {

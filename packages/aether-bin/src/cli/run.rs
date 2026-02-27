@@ -1,34 +1,17 @@
-mod cli;
-mod error;
-
 use aether::core::{Prompt, agent};
 use aether::events::{AgentMessage, UserMessage};
 use aether::mcp::McpSpawnResult;
 use aether::mcp::mcp;
-use clap::Parser;
-use cli::{Cli, OutputFormat};
-use error::CliError;
 use mcp_servers::McpBuilderExt;
-use mcp_utils::client::ServerInstructions;
 use std::io;
-use std::path::Path;
 use std::process::ExitCode;
-use tokio::runtime::Runtime;
 use tracing::debug;
 
-fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let rt = Runtime::new().expect("Failed to create tokio runtime");
-    match rt.block_on(run(cli)) {
-        Ok(code) => code,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            ExitCode::FAILURE
-        }
-    }
-}
+use super::error::CliError;
+use super::{Cli, OutputFormat};
+use crate::prompt::build_system_prompt;
 
-async fn run(cli: Cli) -> Result<ExitCode, CliError> {
+pub async fn run(cli: Cli) -> Result<ExitCode, CliError> {
     setup_tracing(cli.verbose, &cli.output);
 
     let prompt = cli.resolve_prompt()?;
@@ -83,26 +66,6 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         .map_err(|e| CliError::AgentError(format!("Failed to send prompt: {e}")))?;
 
     Ok(stream_output(agent_rx, &cli.output).await)
-}
-
-async fn build_system_prompt(
-    roots_path: &Path,
-    instructions: Vec<ServerInstructions>,
-    custom_prompt: Option<&str>,
-) -> Result<String, String> {
-    let mut parts = vec![
-        Prompt::agents_md().with_cwd(roots_path.to_path_buf()),
-        Prompt::system_env().with_cwd(roots_path.to_path_buf()),
-        Prompt::mcp_instructions(instructions),
-    ];
-
-    if let Some(custom) = custom_prompt {
-        parts.push(Prompt::text(custom));
-    }
-
-    Prompt::build_all(&parts)
-        .await
-        .map_err(|e| format!("Failed to build system prompt: {e}"))
 }
 
 async fn stream_output(

@@ -141,7 +141,11 @@ async fn get_diagnostics_and_cleanup(
     handle: &LspHandle,
     uri: Option<lsp_types::Uri>,
 ) -> serde_json::Value {
-    let mode = if uri.is_some() { "single-file" } else { "all-files" };
+    let mode = if uri.is_some() {
+        "single-file"
+    } else {
+        "all-files"
+    };
     tracing::info!(
         mode,
         uri = uri.as_ref().map(|u| u.as_str()).unwrap_or("<all>"),
@@ -163,10 +167,7 @@ async fn get_diagnostics_and_cleanup(
 
         if let Some(version_before) = version_before {
             handle
-                .wait_for_fresh_diagnostics(
-                    version_before,
-                    std::time::Duration::from_secs(5),
-                )
+                .wait_for_fresh_diagnostics(version_before, std::time::Duration::from_secs(5))
                 .await;
         }
 
@@ -198,10 +199,7 @@ async fn get_diagnostics_and_cleanup(
                 "All-files mode: waiting for fresh diagnostics"
             );
             handle
-                .wait_for_fresh_diagnostics(
-                    version_before,
-                    std::time::Duration::from_secs(5),
-                )
+                .wait_for_fresh_diagnostics(version_before, std::time::Duration::from_secs(5))
                 .await;
         }
 

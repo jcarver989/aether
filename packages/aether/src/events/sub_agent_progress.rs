@@ -6,8 +6,8 @@ pub use acp_utils::notifications::SUB_AGENT_PROGRESS_METHOD;
 /// Payload for sub-agent progress updates emitted by MCP tools.
 ///
 /// This is the internal payload embedded in MCP progress messages between
-/// `mcp-subagents` and `aether-acp`. It uses `AgentMessage` for the event
-/// (the full fat type). The `aether-acp` relay converts this to
+/// `mcp-subagents` and the ACP relay (in `aether-bin`). It uses `AgentMessage`
+/// for the event (the full fat type). The relay converts this to
 /// `SubAgentProgressParams` (which uses the lightweight `SubAgentEvent`)
 /// before sending to clients.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

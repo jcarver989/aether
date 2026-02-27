@@ -1,4 +1,5 @@
 use crate::mappers::map_mcp_prompt_to_available_command;
+use crate::prompt::build_system_prompt;
 use aether::core::{AgentHandle, Prompt, agent};
 use aether::events::{AgentMessage, UserMessage};
 use aether::mcp::McpSpawnResult;
@@ -6,11 +7,11 @@ use aether::mcp::mcp;
 use aether::mcp::run_mcp_task::McpCommand;
 use llm::provider::StreamingModelProvider;
 use mcp_servers::McpBuilderExt;
-use mcp_utils::client::{ElicitationRequest, McpServerConfig, ServerInstructions};
+use mcp_utils::client::{ElicitationRequest, McpServerConfig};
 
 use agent_client_protocol as acp;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::debug;
@@ -116,26 +117,6 @@ fn builtin_commands() -> Vec<acp::AvailableCommand> {
         "clear",
         "Clear agent context and reset to a blank slate",
     )]
-}
-
-async fn build_system_prompt(
-    roots_path: &Path,
-    instructions: Vec<ServerInstructions>,
-    custom_prompt: Option<&str>,
-) -> Result<String, String> {
-    let mut parts = vec![
-        Prompt::agents_md().with_cwd(roots_path.to_path_buf()),
-        Prompt::system_env().with_cwd(roots_path.to_path_buf()),
-        Prompt::mcp_instructions(instructions),
-    ];
-
-    if let Some(custom) = custom_prompt {
-        parts.push(Prompt::text(custom));
-    }
-
-    Prompt::build_all(&parts)
-        .await
-        .map_err(|e| format!("Failed to build system prompt: {e}"))
 }
 
 #[cfg(test)]

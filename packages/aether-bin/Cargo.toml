@@ -1,5 +1,5 @@
 [package]
-name = "aether-acp"
+name = "aether-bin"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,12 +7,16 @@ edition = "2024"
 workspace = true
 
 [lib]
-name = "aether_acp"
+name = "aether_bin"
 path = "src/lib.rs"
 
 [[bin]]
 name = "aether-acp"
 path = "src/main.rs"
+
+[[bin]]
+name = "aether"
+path = "src/bin/aether.rs"
 
 [dependencies]
 aether = { path = "../aether" }
