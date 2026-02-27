@@ -64,7 +64,7 @@ pub struct LspHandle {
     known_uris: Arc<RwLock<HashSet<Uri>>>,
     /// Documents that have been opened with didOpen, with version/content tracking
     open_documents: Arc<RwLock<HashMap<Uri, OpenDocumentState>>>,
-    /// Notified whenever new PublishDiagnostics arrive in the cache
+    /// Notified whenever new `PublishDiagnostics` arrive in the cache
     diagnostics_notify: Arc<Notify>,
     /// Monotonically increasing counter, bumped on every publishDiagnostics
     diagnostics_version: Arc<AtomicU64>,
@@ -166,28 +166,25 @@ impl LspHandle {
     /// If `uri` is None, returns all cached diagnostics.
     pub async fn get_diagnostics(&self, uri: Option<&Uri>) -> Vec<PublishDiagnosticsParams> {
         let cache = self.diagnostics_cache.read().await;
-        match uri {
-            Some(u) => {
-                let found = cache.get(u).cloned().into_iter().collect::<Vec<_>>();
-                tracing::debug!(
-                    uri = %u.as_str(),
-                    cached_files = cache.len(),
-                    found = !found.is_empty(),
-                    diagnostics = found.first().map_or(0, |p| p.diagnostics.len()),
-                    "get_diagnostics: single-file lookup"
-                );
-                found
-            }
-            None => {
-                let all: Vec<_> = cache.values().cloned().collect();
-                let total: usize = all.iter().map(|p| p.diagnostics.len()).sum();
-                tracing::debug!(
-                    cached_files = cache.len(),
-                    total_diagnostics = total,
-                    "get_diagnostics: all-files lookup"
-                );
-                all
-            }
+        if let Some(u) = uri {
+            let found = cache.get(u).cloned().into_iter().collect::<Vec<_>>();
+            tracing::debug!(
+                uri = %u.as_str(),
+                cached_files = cache.len(),
+                found = !found.is_empty(),
+                diagnostics = found.first().map_or(0, |p| p.diagnostics.len()),
+                "get_diagnostics: single-file lookup"
+            );
+            found
+        } else {
+            let all: Vec<_> = cache.values().cloned().collect();
+            let total: usize = all.iter().map(|p| p.diagnostics.len()).sum();
+            tracing::debug!(
+                cached_files = cache.len(),
+                total_diagnostics = total,
+                "get_diagnostics: all-files lookup"
+            );
+            all
         }
     }
 
@@ -385,10 +382,10 @@ impl LspHandle {
             }
 
             tokio::select! {
-                _ = self.diagnostics_notify.notified() => {
+                () = self.diagnostics_notify.notified() => {
                     tracing::debug!("wait_for_fresh_diagnostics: notified, checking version");
                 }
-                _ = tokio::time::sleep(remaining) => {
+                () = tokio::time::sleep(remaining) => {
                     let final_version = self.diagnostics_version.load(Ordering::Relaxed);
                     tracing::warn!(
                         version_before,
@@ -415,7 +412,7 @@ impl LspHandle {
             let settle_wait = DIAGNOSTICS_SETTLE_DURATION.min(remaining);
 
             tokio::select! {
-                _ = self.diagnostics_notify.notified() => {
+                () = self.diagnostics_notify.notified() => {
                     let new_version = self.diagnostics_version.load(Ordering::Relaxed);
                     if new_version != last_version {
                         tracing::debug!(
@@ -427,7 +424,7 @@ impl LspHandle {
                         // Loop again — restart the settle timer.
                     }
                 }
-                _ = tokio::time::sleep(settle_wait) => {
+                () = tokio::time::sleep(settle_wait) => {
                     let final_version = self.diagnostics_version.load(Ordering::Relaxed);
                     if final_version == last_version {
                         tracing::debug!(

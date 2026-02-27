@@ -48,8 +48,10 @@ impl Component for ToolCallStatusView {
             .display_value
             .as_ref()
             .filter(|v| !v.is_empty() && !matches!(self.status, ToolCallStatus::Running))
-            .map(|v| format!(" ({v})"))
-            .unwrap_or_else(|| Self::format_arguments(&self.arguments));
+            .map_or_else(
+                || Self::format_arguments(&self.arguments),
+                |v| format!(" ({v})"),
+            );
         line.push_styled(display_text, context.theme.muted);
 
         if let ToolCallStatus::Error(msg) = &self.status {

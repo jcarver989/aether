@@ -148,7 +148,7 @@ async fn get_diagnostics_and_cleanup(
     };
     tracing::info!(
         mode,
-        uri = uri.as_ref().map(|u| u.as_str()).unwrap_or("<all>"),
+        uri = uri.as_ref().map_or("<all>", |u| u.as_str()),
         "GetDiagnostics request"
     );
 
