@@ -1,13 +1,10 @@
 use aether_core::mcp::{McpSpawnResult, mcp};
 use aether_core::testing::{FakeMcpServer, fake_mcp};
-use mcp_utils::client::McpServerConfig;
+use mcp_utils::client::{McpServerConfig, ServerConfig};
 
 /// Build a ToolProxy config wrapping one or more fake in-memory servers.
-fn tool_proxy_with_fakes(
-    proxy_name: &str,
-    servers: Vec<(&str, FakeMcpServer)>,
-) -> McpServerConfig {
-    let nested: Vec<McpServerConfig> = servers
+fn tool_proxy_with_fakes(proxy_name: &str, servers: Vec<(&str, FakeMcpServer)>) -> McpServerConfig {
+    let nested: Vec<ServerConfig> = servers
         .into_iter()
         .map(|(name, server)| fake_mcp(name, server))
         .collect();
@@ -32,9 +29,11 @@ async fn test_tool_proxy_exposes_only_call_tool() {
     // The proxy should expose exactly one tool: proxy__call_tool
     assert_eq!(tool_definitions.len(), 1);
     assert_eq!(tool_definitions[0].name, "proxy__call_tool");
-    assert!(tool_definitions[0]
-        .description
-        .contains("Execute a tool on a nested MCP server"));
+    assert!(
+        tool_definitions[0]
+            .description
+            .contains("Execute a tool on a nested MCP server")
+    );
 }
 
 #[tokio::test]
@@ -96,7 +95,10 @@ async fn test_tool_proxy_writes_tool_files_to_disk() {
     let tool_dir = extract_tool_dir(&proxy_instr.instructions)
         .expect("Should find tool directory in instructions");
     let tool_dir = std::path::Path::new(&tool_dir);
-    assert!(tool_dir.exists(), "Tool directory should exist: {tool_dir:?}");
+    assert!(
+        tool_dir.exists(),
+        "Tool directory should exist: {tool_dir:?}"
+    );
 
     // Should have a "math" subdirectory
     let math_dir = tool_dir.join("math");
@@ -117,10 +119,12 @@ async fn test_tool_proxy_writes_tool_files_to_disk() {
     let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert_eq!(parsed["name"], "add_numbers");
     assert_eq!(parsed["server"], "math");
-    assert!(parsed["description"]
-        .as_str()
-        .unwrap()
-        .contains("Adds two numbers"));
+    assert!(
+        parsed["description"]
+            .as_str()
+            .unwrap()
+            .contains("Adds two numbers")
+    );
 
     // Cleanup
     let _ = std::fs::remove_dir_all(tool_dir);
@@ -285,8 +289,7 @@ async fn test_tool_proxy_multiple_nested_servers() {
         .find(|i| i.server_name == "multi")
         .expect("Expected instructions");
 
-    let tool_dir =
-        extract_tool_dir(&proxy_instr.instructions).expect("Should find tool directory");
+    let tool_dir = extract_tool_dir(&proxy_instr.instructions).expect("Should find tool directory");
     let tool_dir = std::path::Path::new(&tool_dir);
 
     assert!(tool_dir.join("server_a").exists());
@@ -307,10 +310,7 @@ fn extract_tool_dir(instructions: &str) -> Option<String> {
     Some(instructions[start..end].to_string())
 }
 
-fn cleanup_tool_dir(
-    instructions: &[mcp_utils::client::ServerInstructions],
-    proxy_name: &str,
-) {
+fn cleanup_tool_dir(instructions: &[mcp_utils::client::ServerInstructions], proxy_name: &str) {
     if let Some(instr) = instructions.iter().find(|i| i.server_name == proxy_name) {
         if let Some(tool_dir) = extract_tool_dir(&instr.instructions) {
             let _ = std::fs::remove_dir_all(tool_dir);

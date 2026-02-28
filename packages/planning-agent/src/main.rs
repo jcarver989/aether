@@ -112,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runner = AetherRunner::new(Arc::new(llm))
         .with_mcp_server_factory(
             "coding",
-            Box::new(|_args| async move { CodingMcp::new().into_dyn() }.boxed()),
+            Box::new(|_args, _env| async move { CodingMcp::new().into_dyn() }.boxed()),
         )
         .with_mcp_json("mcp.json");
 

@@ -8,10 +8,10 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use mcp_utils::client::McpServerConfig;
+use mcp_utils::client::ServerConfig;
 
-pub fn fake_mcp(name: &str, server: FakeMcpServer) -> McpServerConfig {
-    McpServerConfig::InMemory {
+pub fn fake_mcp(name: &str, server: FakeMcpServer) -> ServerConfig {
+    ServerConfig::InMemory {
         name: name.to_string(),
         server: server.as_dyn(),
     }

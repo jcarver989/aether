@@ -2,7 +2,7 @@ use llm::ToolDefinition;
 
 use super::{
     McpError, Result,
-    config::McpServerConfig,
+    config::{McpServerConfig, ServerConfig},
     oauth::{OAuthHandler, create_auth_manager_from_store, perform_oauth_flow},
 };
 use rmcp::{
@@ -119,7 +119,7 @@ impl McpManager {
         // HTTP connections need special OAuth handling, so they go through
         // their own path. Everything else uses the shared `connect_to_server`.
         match config {
-            McpServerConfig::Http { name, config } => {
+            McpServerConfig::Server(ServerConfig::Http { name, config }) => {
                 self.connect_http_server(name, config).await
             }
 
@@ -127,7 +127,7 @@ impl McpManager {
                 self.connect_tool_proxy(name, servers).await
             }
 
-            config => {
+            McpServerConfig::Server(config) => {
                 let name = config.name().to_string();
                 let create_client = || self.create_mcp_client();
                 let (client, task) = connect_to_server(config, create_client).await?;
@@ -136,11 +136,7 @@ impl McpManager {
         }
     }
 
-    async fn connect_tool_proxy(
-        &mut self,
-        name: String,
-        servers: Vec<McpServerConfig>,
-    ) -> Result<()> {
+    async fn connect_tool_proxy(&mut self, name: String, servers: Vec<ServerConfig>) -> Result<()> {
         let create_client = || self.create_mcp_client();
         let proxy = ToolProxyServer::connect(&name, servers, create_client)
             .await
@@ -539,13 +535,14 @@ fn create_namespaced_tool_name(server_name: &str, tool_name: &str) -> String {
 /// This is the shared connection logic used by both `McpManager::add_mcp` and
 /// `ToolProxyServer::connect`.
 pub(crate) async fn connect_to_server(
-    config: McpServerConfig,
+    config: ServerConfig,
     create_mcp_client: impl Fn() -> McpClient,
-) -> Result<(RunningService<RoleClient, McpClient>, Option<JoinHandle<()>>)> {
+) -> Result<(
+    RunningService<RoleClient, McpClient>,
+    Option<JoinHandle<()>>,
+)> {
     match config {
-        McpServerConfig::Stdio {
-            command, args, ..
-        } => {
+        ServerConfig::Stdio { command, args, .. } => {
             let mut cmd = Command::new(&command);
             cmd.args(&args);
             let mcp_client = create_mcp_client();
@@ -553,7 +550,7 @@ pub(crate) async fn connect_to_server(
             Ok((client, None))
         }
 
-        McpServerConfig::Http { name, config: cfg } => {
+        ServerConfig::Http { name, config: cfg } => {
             let transport = StreamableHttpClientTransport::from_config(cfg);
             let mcp_client = create_mcp_client();
             let client = serve_client(mcp_client, transport).await.map_err(|e| {
@@ -564,17 +561,11 @@ pub(crate) async fn connect_to_server(
             Ok((client, None))
         }
 
-        McpServerConfig::InMemory { name, server } => {
+        ServerConfig::InMemory { name, server } => {
             let mcp_client = create_mcp_client();
             let (client, handle) = serve_in_memory(server, mcp_client, &name).await?;
             Ok((client, Some(handle)))
         }
-
-        // Config parsing already rejects nested ToolProxy, so this arm is a
-        // defensive guard that should never be reached at runtime.
-        McpServerConfig::ToolProxy { name, .. } => Err(McpError::Other(format!(
-            "Nested tool-proxy '{name}' is not supported"
-        ))),
     }
 }
 

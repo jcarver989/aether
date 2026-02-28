@@ -229,7 +229,10 @@ impl SkillFile {
         if self.human_content.is_empty() {
             format!("{AGENT_ENTRIES_HEADING}\n\n{entries_md}")
         } else {
-            format!("{}\n\n{AGENT_ENTRIES_HEADING}\n\n{entries_md}", self.human_content)
+            format!(
+                "{}\n\n{AGENT_ENTRIES_HEADING}\n\n{entries_md}",
+                self.human_content
+            )
         }
     }
 }
