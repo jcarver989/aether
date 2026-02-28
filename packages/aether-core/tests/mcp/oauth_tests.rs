@@ -1,7 +1,7 @@
 use aether_core::mcp::{McpSpawnResult, mcp};
 use futures::future::BoxFuture;
 use mcp_utils::client::oauth::{BrowserOAuthHandler, OAuthCallback, OAuthError, OAuthHandler};
-use mcp_utils::client::{ElicitationRequest, McpServerConfig};
+use mcp_utils::client::{ElicitationRequest, ServerConfig};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -92,10 +92,13 @@ async fn http_server_without_handler_returns_error() {
         ..Default::default()
     };
     let result = manager
-        .add_mcp(McpServerConfig::Http {
-            name: "test_server".to_string(),
-            config,
-        })
+        .add_mcp(
+            ServerConfig::Http {
+                name: "test_server".to_string(),
+                config,
+            }
+            .into(),
+        )
         .await;
 
     assert!(result.is_err());
@@ -112,10 +115,13 @@ async fn http_server_with_handler_attempts_oauth_on_failure() {
         ..Default::default()
     };
     let result = manager
-        .add_mcp(McpServerConfig::Http {
-            name: "test_oauth_server".to_string(),
-            config,
-        })
+        .add_mcp(
+            ServerConfig::Http {
+                name: "test_oauth_server".to_string(),
+                config,
+            }
+            .into(),
+        )
         .await;
 
     // Error should indicate OAuth was attempted, not just a plain connection failure
@@ -134,20 +140,22 @@ async fn add_mcps_continues_on_oauth_failure() {
     let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
 
     let configs = vec![
-        McpServerConfig::Http {
+        ServerConfig::Http {
             name: "failing_server_1".to_string(),
             config: StreamableHttpClientTransportConfig {
                 uri: "http://localhost:19998/mcp".into(),
                 ..Default::default()
             },
-        },
-        McpServerConfig::Http {
+        }
+        .into(),
+        ServerConfig::Http {
             name: "failing_server_2".to_string(),
             config: StreamableHttpClientTransportConfig {
                 uri: "http://localhost:19997/mcp".into(),
                 ..Default::default()
             },
-        },
+        }
+        .into(),
     ];
 
     let result = manager.add_mcps(configs).await;

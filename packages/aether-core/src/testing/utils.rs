@@ -87,7 +87,7 @@ impl TestAgentBuilder {
             elicitation_rx: _,
             handle: _mcp_handle,
         } = mcp()
-            .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
+            .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
             .spawn()
             .await?;
 

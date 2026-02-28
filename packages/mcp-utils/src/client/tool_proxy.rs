@@ -1,5 +1,5 @@
 use super::McpError;
-use super::config::McpServerConfig;
+use super::config::ServerConfig;
 use super::manager::connect_to_server;
 use super::mcp_client::McpClient;
 use rmcp::{
@@ -43,7 +43,7 @@ pub struct ToolProxyServer {
     tool_dir: PathBuf,
     /// The proxy name (used in instructions)
     name: String,
-    /// (server_name, description) pairs for connected servers
+    /// (`server_name`, description) pairs for connected servers
     server_descriptions: Vec<(String, String)>,
 }
 
@@ -52,7 +52,7 @@ impl ToolProxyServer {
     /// tool definition files to disk.
     pub async fn connect(
         name: &str,
-        configs: Vec<McpServerConfig>,
+        configs: Vec<ServerConfig>,
         create_mcp_client: impl Fn() -> McpClient,
     ) -> Result<Self, McpError> {
         let tool_dir = tool_proxy_dir(name)?;
@@ -269,7 +269,7 @@ fn extract_server_description(
                 .description
                 .as_deref()
                 .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
         })
         .unwrap_or_else(|| server_name.to_string())
 }

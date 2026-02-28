@@ -6,7 +6,7 @@ use agent_client_protocol::{
     ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
 };
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
-use mcp_utils::client::McpServerConfig;
+use mcp_utils::client::{McpServerConfig, ServerConfig};
 use mcp_utils::display_meta::ToolResultMeta;
 use rmcp::model::Prompt as McpPrompt;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
@@ -74,22 +74,31 @@ pub fn map_acp_mcp_servers(servers: Vec<McpServer>) -> Vec<McpServerConfig> {
 fn try_map_mcp_server(server: McpServer) -> Option<McpServerConfig> {
     use McpServer::{Http, Sse, Stdio};
     match server {
-        Stdio(stdio) => Some(McpServerConfig::Stdio {
-            name: stdio.name,
-            command: stdio.command.to_string_lossy().into_owned(),
-            args: stdio.args,
-            env: stdio.env.into_iter().map(|e| (e.name, e.value)).collect(),
-        }),
+        Stdio(stdio) => Some(
+            ServerConfig::Stdio {
+                name: stdio.name,
+                command: stdio.command.to_string_lossy().into_owned(),
+                args: stdio.args,
+                env: stdio.env.into_iter().map(|e| (e.name, e.value)).collect(),
+            }
+            .into(),
+        ),
 
-        Http(http) => Some(McpServerConfig::Http {
-            name: http.name,
-            config: http_config(http.url, &http.headers),
-        }),
+        Http(http) => Some(
+            ServerConfig::Http {
+                name: http.name,
+                config: http_config(http.url, &http.headers),
+            }
+            .into(),
+        ),
 
-        Sse(sse) => Some(McpServerConfig::Http {
-            name: sse.name,
-            config: http_config(sse.url, &sse.headers),
-        }),
+        Sse(sse) => Some(
+            ServerConfig::Http {
+                name: sse.name,
+                config: http_config(sse.url, &sse.headers),
+            }
+            .into(),
+        ),
 
         _ => None,
     }
@@ -495,12 +504,12 @@ mod tests {
         assert_eq!(configs.len(), 1);
 
         match &configs[0] {
-            McpServerConfig::Stdio {
+            McpServerConfig::Server(ServerConfig::Stdio {
                 name,
                 command,
                 args,
                 env,
-            } => {
+            }) => {
                 assert_eq!(name, "my-server");
                 assert_eq!(command, "/usr/bin/server");
                 assert_eq!(args, &["--port", "8080"]);
@@ -522,7 +531,7 @@ mod tests {
         assert_eq!(configs.len(), 1);
 
         match &configs[0] {
-            McpServerConfig::Http { name, config } => {
+            McpServerConfig::Server(ServerConfig::Http { name, config }) => {
                 assert_eq!(name, "http-server");
                 assert_eq!(config.uri.as_ref(), "https://example.com/mcp");
                 assert_eq!(config.auth_header.as_deref(), Some("Bearer token123"));
@@ -542,7 +551,7 @@ mod tests {
         assert_eq!(configs.len(), 1);
 
         match &configs[0] {
-            McpServerConfig::Http { name, config } => {
+            McpServerConfig::Server(ServerConfig::Http { name, config }) => {
                 assert_eq!(name, "sse-server");
                 assert_eq!(config.uri.as_ref(), "https://example.com/sse");
                 assert_eq!(config.auth_header, None);

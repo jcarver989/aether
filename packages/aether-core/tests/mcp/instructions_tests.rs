@@ -15,7 +15,7 @@ async fn test_fake_mcp_server_has_instructions() {
         elicitation_rx: _,
         handle: _,
     } = mcp()
-        .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
+        .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
         .spawn()
         .await
         .unwrap();
@@ -40,8 +40,8 @@ async fn test_multiple_servers_with_instructions() {
         handle: _,
     } = mcp()
         .with_servers(vec![
-            fake_mcp("server1", FakeMcpServer::new()),
-            fake_mcp("server2", FakeMcpServer::new()),
+            fake_mcp("server1", FakeMcpServer::new()).into(),
+            fake_mcp("server2", FakeMcpServer::new()).into(),
         ])
         .spawn()
         .await
@@ -84,7 +84,7 @@ async fn test_server_instructions_skips_empty_instructions() {
         elicitation_rx: _,
         handle: _,
     } = mcp()
-        .with_servers(vec![fake_mcp("with-content", FakeMcpServer::new())])
+        .with_servers(vec![fake_mcp("with-content", FakeMcpServer::new()).into()])
         .spawn()
         .await
         .unwrap();
@@ -151,7 +151,7 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
         elicitation_rx: _,
         handle: _,
     } = mcp()
-        .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
+        .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
         .spawn()
         .await
         .unwrap();
@@ -206,7 +206,7 @@ async fn test_agent_builder_works_without_mcp_instructions() {
         elicitation_rx: _,
         handle: _,
     } = mcp()
-        .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
+        .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
         .spawn()
         .await
         .unwrap();
@@ -245,7 +245,7 @@ async fn test_mcp_instructions_from_server_are_included() {
         elicitation_rx: _,
         handle: _,
     } = mcp()
-        .with_servers(vec![fake_mcp("test", FakeMcpServer::new())])
+        .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
         .spawn()
         .await
         .unwrap();

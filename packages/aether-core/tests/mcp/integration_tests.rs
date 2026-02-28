@@ -1,5 +1,5 @@
 use super::super::common::*;
-use mcp_utils::client::{ElicitationRequest, McpManager, McpServerConfig};
+use mcp_utils::client::{ElicitationRequest, McpManager, ServerConfig};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -23,10 +23,11 @@ async fn test_mcp_client_with_http_server() {
         uri: url.clone().into(),
         ..Default::default()
     };
-    let mcp_config = McpServerConfig::Http {
+    let mcp_config = ServerConfig::Http {
         name: server_name,
         config,
-    };
+    }
+    .into();
     let result = client.add_mcp(mcp_config).await;
 
     // The connection will fail, but we can still test that the API exists
@@ -52,10 +53,11 @@ async fn test_mcp_client_with_headers() {
         auth_header,
         ..Default::default()
     };
-    let mcp_config = McpServerConfig::Http {
+    let mcp_config = ServerConfig::Http {
         name: server_name,
         config,
-    };
+    }
+    .into();
     let result = client.add_mcp(mcp_config).await;
 
     // The connection will fail, but we can test that the API accepts headers

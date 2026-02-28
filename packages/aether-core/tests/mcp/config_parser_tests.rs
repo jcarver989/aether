@@ -1,4 +1,4 @@
-use mcp_utils::client::{McpServerConfig, ParseError, RawMcpConfig};
+use mcp_utils::client::{McpServerConfig, ParseError, RawMcpConfig, ServerConfig};
 use std::collections::HashMap;
 use std::env;
 
@@ -26,12 +26,12 @@ async fn test_parse_stdio_config() {
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
-        McpServerConfig::Stdio {
+        McpServerConfig::Server(ServerConfig::Stdio {
             name,
             command,
             args,
             env,
-        } => {
+        }) => {
             assert_eq!(name, "githubMcp");
             assert_eq!(command, "npx");
             assert_eq!(args.len(), 2);
@@ -68,7 +68,7 @@ async fn test_parse_http_config() {
 
     assert_eq!(configs.len(), 1);
     match &configs[0] {
-        McpServerConfig::Http { name, config } => {
+        McpServerConfig::Server(ServerConfig::Http { name, config }) => {
             assert_eq!(name, "mcpMesh");
             assert_eq!(config.uri.to_string(), "http://localhost:3000/mcp");
             assert_eq!(config.auth_header.as_ref().unwrap(), "Bearer secret_token");
@@ -99,7 +99,7 @@ async fn test_parse_sse_config() {
     assert_eq!(configs.len(), 1);
     // SSE maps to HTTP internally
     match &configs[0] {
-        McpServerConfig::Http { name, config } => {
+        McpServerConfig::Server(ServerConfig::Http { name, config }) => {
             assert_eq!(name, "sseServer");
             assert_eq!(config.uri.to_string(), "http://localhost:4000/sse");
         }
@@ -225,7 +225,7 @@ async fn test_env_var_in_url() {
     let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
 
     match &configs[0] {
-        McpServerConfig::Http { config, .. } => {
+        McpServerConfig::Server(ServerConfig::Http { config, .. }) => {
             assert_eq!(config.uri.to_string(), "http://localhost:8080/mcp");
         }
         _ => panic!("Expected Http config"),
@@ -272,8 +272,12 @@ async fn test_parse_tool_proxy_config() {
             assert_eq!(servers.len(), 2);
 
             // Verify nested servers are properly parsed
-            let has_stdio = servers.iter().any(|s| matches!(s, McpServerConfig::Stdio { .. }));
-            let has_http = servers.iter().any(|s| matches!(s, McpServerConfig::Http { .. }));
+            let has_stdio = servers
+                .iter()
+                .any(|s| matches!(s, ServerConfig::Stdio { .. }));
+            let has_http = servers
+                .iter()
+                .any(|s| matches!(s, ServerConfig::Http { .. }));
             assert!(has_stdio, "Expected a Stdio nested server");
             assert!(has_http, "Expected an Http nested server");
         }
