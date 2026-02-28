@@ -95,7 +95,7 @@ fn map_messages(messages: &[ChatMessage]) -> Vec<MoonshotChatMessage> {
                 })
             }
             ChatMessage::Summary { content, .. } => Some(MoonshotChatMessage::User {
-                content: format!("[Previous conversation summary]\n\n{content}"),
+                content: format!("[Previous conversation handoff]\n\n{content}"),
             }),
             ChatMessage::Error { .. } => None,
         })

@@ -90,7 +90,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
             ChatMessage::Summary { content, .. } => {
                 anthropic_messages.push(Message {
                     role: Role::User,
-                    content: Content::Text(format!("[Previous conversation summary]\n\n{content}")),
+                    content: Content::Text(format!("[Previous conversation handoff]\n\n{content}")),
                     cache_control: None,
                 });
             }

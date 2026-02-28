@@ -44,7 +44,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Vec<SystemContentBlock>
 
             ChatMessage::Summary { content, .. } => {
                 bedrock_messages.push(build_user_message(&format!(
-                    "[Previous conversation summary]\n\n{content}"
+                    "[Previous conversation handoff]\n\n{content}"
                 ))?);
             }
         }
@@ -317,7 +317,7 @@ mod tests {
         assert_eq!(mapped.len(), 1);
         match &mapped[0].content()[0] {
             ContentBlock::Text(text) => {
-                assert!(text.contains("[Previous conversation summary]"));
+                assert!(text.contains("[Previous conversation handoff]"));
                 assert!(text.contains("we talked about stuff"));
             }
             other => panic!("Expected text, got {other:?}"),
