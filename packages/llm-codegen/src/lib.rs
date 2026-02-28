@@ -215,11 +215,12 @@ fn emit_generated_source(ctx: &CodegenCtx) -> String {
     let mut out = String::with_capacity(64_000);
     emit_header(&mut out);
     emit_provider_enums(&mut out, &ctx.provider_models);
+    emit_provider_impls(&mut out, &ctx.provider_models);
     emit_llm_model_enum(&mut out);
     emit_from_impls(&mut out);
-    emit_llm_model_impl(&mut out, &ctx.provider_models);
+    emit_llm_model_impl(&mut out);
     emit_display_impl(&mut out);
-    emit_fromstr_impl(&mut out, &ctx.provider_models);
+    emit_fromstr_impl(&mut out);
     out
 }
 
@@ -244,6 +245,130 @@ fn emit_provider_enums(out: &mut String, provider_models: &ProviderModels) {
         }
         pushln(out, "}");
         blank(out);
+    }
+}
+
+fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
+    for cfg in PROVIDERS {
+        let models = &provider_models[cfg.dev_id];
+        let enum_name = format!("{}Model", cfg.enum_name);
+
+        pushln(out, format!("impl {enum_name} {{"));
+
+        // model_id — each model has a unique ID, no grouping needed
+        pushln(out, "    #[allow(clippy::too_many_lines)]");
+        pushln(out, "    fn model_id(self) -> &'static str {");
+        pushln(out, "        match self {");
+        for model in models {
+            pushln(
+                out,
+                format!(
+                    "            Self::{} => \"{}\",",
+                    model.variant_name, model.model_id
+                ),
+            );
+        }
+        pushln(out, "        }");
+        pushln(out, "    }");
+        blank(out);
+
+        // display_name — group variants that share the same name
+        pushln(out, "    #[allow(clippy::too_many_lines)]");
+        pushln(out, "    fn display_name(self) -> &'static str {");
+        pushln(out, "        match self {");
+        emit_grouped_arms(
+            out,
+            models,
+            |m| escape_rust_string(&m.display_name),
+            |name| format!("\"{name}\""),
+        );
+        pushln(out, "        }");
+        pushln(out, "    }");
+        blank(out);
+
+        // context_window — group variants that share the same value
+        pushln(out, "    fn context_window(self) -> u32 {");
+        pushln(out, "        match self {");
+        emit_grouped_arms(
+            out,
+            models,
+            |m| m.context_window.to_string(),
+            |val| format_number(val.parse::<u32>().unwrap()),
+        );
+        pushln(out, "        }");
+        pushln(out, "    }");
+        blank(out);
+
+        // ALL constant
+        pushln(out, format!("    const ALL: &[{enum_name}] = &["));
+        for model in models {
+            pushln(out, format!("        Self::{},", model.variant_name));
+        }
+        pushln(out, "    ];");
+
+        pushln(out, "}");
+        blank(out);
+
+        // FromStr for provider model
+        pushln(out, format!("impl std::str::FromStr for {enum_name} {{"));
+        pushln(out, "    type Err = String;");
+        blank(out);
+        pushln(out, "    #[allow(clippy::too_many_lines)]");
+        pushln(out, "    fn from_str(s: &str) -> Result<Self, Self::Err> {");
+        pushln(out, "        match s {");
+        for model in models {
+            pushln(
+                out,
+                format!(
+                    "            \"{}\" => Ok(Self::{}),",
+                    model.model_id, model.variant_name
+                ),
+            );
+        }
+        pushln(
+            out,
+            format!(
+                "            _ => Err(format!(\"Unknown {} model: '{{s}}'\")),",
+                cfg.parser_name
+            ),
+        );
+        pushln(out, "        }");
+        pushln(out, "    }");
+        pushln(out, "}");
+        blank(out);
+    }
+}
+
+/// Emit match arms grouped by value to avoid clippy `match_same_arms`.
+///
+/// `key_fn` extracts a grouping key from each model (e.g. `context_window` as string).
+/// `fmt_val` formats the key into the match arm's RHS.
+fn emit_grouped_arms(
+    out: &mut String,
+    models: &[ModelInfo],
+    key_fn: impl Fn(&ModelInfo) -> String,
+    fmt_val: impl Fn(&str) -> String,
+) {
+    // Group variants by value, preserving insertion order via BTreeMap
+    let mut groups: BTreeMap<String, Vec<&str>> = BTreeMap::new();
+    for model in models {
+        groups
+            .entry(key_fn(model))
+            .or_default()
+            .push(&model.variant_name);
+    }
+
+    for (key, variants) in &groups {
+        let rhs = fmt_val(key);
+        if variants.len() == 1 {
+            pushln(out, format!("            Self::{} => {rhs},", variants[0]));
+        } else {
+            let patterns: Vec<String> = variants.iter().map(|v| format!("Self::{v}")).collect();
+            pushln(
+                out,
+                format!("            {} => {rhs},", patterns.join(" | ")),
+            );
+        }
     }
 }
 
@@ -282,113 +407,129 @@ fn emit_from_impls(out: &mut String) {
     }
 }
 
-fn emit_llm_model_impl(out: &mut String, provider_models: &ProviderModels) {
+fn emit_llm_model_impl(out: &mut String) {
     pushln(out, "impl LlmModel {");
-    emit_model_id_method(out, provider_models);
-    emit_display_name_method(out, provider_models);
-    emit_provider_method(out);
-    emit_context_window_method(out, provider_models);
-    emit_required_env_var_method(out);
-    emit_all_method(out, provider_models);
+    emit_llm_model_id(out);
+    emit_llm_display_name(out);
+    emit_llm_provider(out);
+    emit_llm_context_window(out);
+    emit_llm_required_env_var(out);
+    emit_llm_all(out);
     pushln(out, "}");
     blank(out);
 }
 
-fn emit_model_id_method(out: &mut String, provider_models: &ProviderModels) {
+fn emit_llm_model_id(out: &mut String) {
     pushln(
         out,
-        "    /// Raw model ID (e.g. \"claude-opus-4-6\", \"llama3.2\")",
+        "    /// Raw model ID (e.g. `claude-opus-4-6`, `llama3.2`)",
     );
     pushln(out, "    pub fn model_id(&self) -> Cow<'static, str> {");
     pushln(out, "        match self {");
-    emit_static_model_arms(out, provider_models, |cfg, model| {
+    for cfg in PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            Self::{}(m) => Cow::Borrowed(m.model_id()),",
+                cfg.enum_name
+            ),
+        );
+    }
+    pushln(
+        out,
         format!(
-            "            LlmModel::{}({}Model::{}) => Cow::Borrowed(\"{}\"),",
-            cfg.enum_name, cfg.enum_name, model.variant_name, model.model_id
-        )
-    });
-    emit_dynamic_provider_arms(out, |dyn_cfg| {
-        format!(
-            "            LlmModel::{}(s) => Cow::Owned(s.clone()),",
-            dyn_cfg.enum_name
-        )
-    });
+            "            {} => Cow::Owned(s.clone()),",
+            dynamic_pattern_with_binding("s")
+        ),
+    );
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
-fn emit_display_name_method(out: &mut String, provider_models: &ProviderModels) {
+fn emit_llm_display_name(out: &mut String) {
     pushln(
         out,
-        "    /// Human-readable display name (e.g. \"Claude Opus 4.6\")",
+        "    /// Human-readable display name (e.g. `Claude Opus 4.6`)",
     );
     pushln(out, "    pub fn display_name(&self) -> Cow<'static, str> {");
     pushln(out, "        match self {");
-    emit_static_model_arms(out, provider_models, |cfg, model| {
-        let escaped = escape_rust_string(&model.display_name);
-        format!(
-            "            LlmModel::{}({}Model::{}) => Cow::Borrowed(\"{}\"),",
-            cfg.enum_name, cfg.enum_name, model.variant_name, escaped
-        )
-    });
-    emit_dynamic_provider_arms(out, |dyn_cfg| {
-        format!(
-            "            LlmModel::{name}(s) => Cow::Owned(format!(\"{name} {{}}\", s)),",
-            name = dyn_cfg.enum_name
-        )
-    });
+    for cfg in PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            Self::{}(m) => Cow::Borrowed(m.display_name()),",
+                cfg.enum_name
+            ),
+        );
+    }
+    for dyn_cfg in DYNAMIC_PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            Self::{}(s) => Cow::Owned(format!(\"{} {{s}}\")),",
+                dyn_cfg.enum_name, dyn_cfg.enum_name
+            ),
+        );
+    }
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
-fn emit_provider_method(out: &mut String) {
-    pushln(out, "    /// Provider identifier (e.g. \"anthropic\")");
+fn emit_llm_provider(out: &mut String) {
+    pushln(out, "    /// Provider identifier (e.g. `anthropic`)");
     pushln(out, "    pub fn provider(&self) -> &'static str {");
     pushln(out, "        match self {");
-    emit_provider_arms(
-        out,
-        |cfg| {
+    for cfg in PROVIDERS {
+        pushln(
+            out,
             format!(
-                "            LlmModel::{}(_) => \"{}\",",
+                "            Self::{}(_) => \"{}\",",
                 cfg.enum_name, cfg.parser_name
-            )
-        },
-        |dyn_cfg| {
+            ),
+        );
+    }
+    for dyn_cfg in DYNAMIC_PROVIDERS {
+        pushln(
+            out,
             format!(
-                "            LlmModel::{}(_) => \"{}\",",
+                "            Self::{}(_) => \"{}\",",
                 dyn_cfg.enum_name, dyn_cfg.parser_name
-            )
-        },
-    );
+            ),
+        );
+    }
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
-fn emit_context_window_method(out: &mut String, provider_models: &ProviderModels) {
+fn emit_llm_context_window(out: &mut String) {
     pushln(
         out,
         "    /// Context window size in tokens (None for dynamic providers)",
     );
     pushln(out, "    pub fn context_window(&self) -> Option<u32> {");
     pushln(out, "        match self {");
-    emit_static_model_arms(out, provider_models, |cfg, model| {
-        format!(
-            "            LlmModel::{}({}Model::{}) => Some({}),",
-            cfg.enum_name, cfg.enum_name, model.variant_name, model.context_window
-        )
-    });
-    emit_dynamic_provider_arms(out, |dyn_cfg| {
-        format!("            LlmModel::{}(_) => None,", dyn_cfg.enum_name)
-    });
+    for cfg in PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            Self::{}(m) => Some(m.context_window()),",
+                cfg.enum_name
+            ),
+        );
+    }
+    pushln(
+        out,
+        format!("            {} => None,", dynamic_pattern_with_binding("_")),
+    );
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
-fn emit_required_env_var_method(out: &mut String) {
+fn emit_llm_required_env_var(out: &mut String) {
     pushln(
         out,
         "    /// Required env var for this model's provider (None for local providers)",
@@ -398,23 +539,32 @@ fn emit_required_env_var_method(out: &mut String) {
         "    pub fn required_env_var(&self) -> Option<&'static str> {",
     );
     pushln(out, "        match self {");
-    emit_provider_arms(
-        out,
-        |cfg| match cfg.env_var {
-            Some(var) => format!(
-                "            LlmModel::{}(_) => Some(\"{}\"),",
-                cfg.enum_name, var
+    let mut none_arms: Vec<String> = Vec::new();
+    for cfg in PROVIDERS {
+        match cfg.env_var {
+            Some(var) => pushln(
+                out,
+                format!(
+                    "            Self::{}(_) => Some(\"{}\"),",
+                    cfg.enum_name, var
+                ),
             ),
-            None => format!("            LlmModel::{}(_) => None,", cfg.enum_name),
-        },
-        |dyn_cfg| format!("            LlmModel::{}(_) => None,", dyn_cfg.enum_name),
+            None => none_arms.push(format!("Self::{}(_)", cfg.enum_name)),
+        }
+    }
+    for dyn_cfg in DYNAMIC_PROVIDERS {
+        none_arms.push(format!("Self::{}(_)", dyn_cfg.enum_name));
+    }
+    pushln(
+        out,
+        format!("            {} => None,", none_arms.join(" | ")),
     );
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
-fn emit_all_method(out: &mut String, provider_models: &ProviderModels) {
+fn emit_llm_all(out: &mut String) {
     pushln(
         out,
         "    /// All catalog models (excludes dynamic providers)",
@@ -422,15 +572,20 @@ fn emit_all_method(out: &mut String, provider_models: &ProviderModels) {
     pushln(out, "    pub fn all() -> &'static [LlmModel] {");
     pushln(
         out,
-        "        static ALL: LazyLock<Vec<LlmModel>> = LazyLock::new(|| vec![",
+        "        static ALL: LazyLock<Vec<LlmModel>> = LazyLock::new(|| {",
     );
-    emit_static_model_arms(out, provider_models, |cfg, model| {
-        format!(
-            "            LlmModel::{}({}Model::{}),",
-            cfg.enum_name, cfg.enum_name, model.variant_name
-        )
-    });
-    pushln(out, "        ]);");
+    pushln(out, "            let mut v = Vec::new();");
+    for cfg in PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            v.extend({}Model::ALL.iter().copied().map(LlmModel::{}));",
+                cfg.enum_name, cfg.enum_name
+            ),
+        );
+    }
+    pushln(out, "            v");
+    pushln(out, "        });");
     pushln(out, "        &ALL");
     pushln(out, "    }");
 }
@@ -447,13 +602,13 @@ fn emit_display_impl(out: &mut String) {
     blank(out);
 }
 
-fn emit_fromstr_impl(out: &mut String, provider_models: &ProviderModels) {
+fn emit_fromstr_impl(out: &mut String) {
     pushln(out, "impl std::str::FromStr for LlmModel {");
     pushln(out, "    type Err = String;");
     blank(out);
     pushln(
         out,
-        "    /// Parse a \"provider:model\" string into an LlmModel",
+        "    /// Parse a `provider:model` string into an `LlmModel`",
     );
     pushln(out, "    fn from_str(s: &str) -> Result<Self, Self::Err> {");
     pushln(
@@ -462,77 +617,56 @@ fn emit_fromstr_impl(out: &mut String, provider_models: &ProviderModels) {
     );
     pushln(out, "        match provider_str {");
     for cfg in PROVIDERS {
-        emit_fromstr_provider_block(out, cfg, &provider_models[cfg.dev_id]);
+        pushln(
+            out,
+            format!(
+                "            \"{}\" => model_str.parse::<{}Model>().map(Self::{}),",
+                cfg.parser_name, cfg.enum_name, cfg.enum_name
+            ),
+        );
     }
-    emit_dynamic_provider_arms(out, |dyn_cfg| {
-        format!(
-            "            \"{}\" => Ok(LlmModel::{}(model_str.to_string())),",
-            dyn_cfg.parser_name, dyn_cfg.enum_name
-        )
-    });
+    for dyn_cfg in DYNAMIC_PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            \"{}\" => Ok(Self::{}(model_str.to_string())),",
+                dyn_cfg.parser_name, dyn_cfg.enum_name
+            ),
+        );
+    }
     pushln(
         out,
-        "            _ => Err(format!(\"Unknown provider: '{}'\", provider_str)),",
+        "            _ => Err(format!(\"Unknown provider: '{provider_str}'\")),",
     );
     pushln(out, "        }");
     pushln(out, "    }");
     pushln(out, "}");
 }
 
-fn emit_fromstr_provider_block(out: &mut String, cfg: &ProviderConfig, models: &[ModelInfo]) {
-    pushln(out, format!("            \"{}\" => {{", cfg.parser_name));
-    pushln(out, "                match model_str {");
-    for model in models {
-        pushln(
-            out,
-            format!(
-                "                    \"{}\" => Ok(LlmModel::{}({}Model::{})),",
-                model.model_id, cfg.enum_name, cfg.enum_name, model.variant_name
-            ),
-        );
-    }
-    pushln(
-        out,
-        format!(
-            "                    _ => Err(format!(\"Unknown {} model: '{{}}'\", model_str)),",
-            cfg.parser_name
-        ),
-    );
-    pushln(out, "                }");
-    pushln(out, "            }");
+/// Build a combined `|` pattern for all dynamic providers with a binding variable.
+/// e.g. `Self::Ollama(s) | Self::LlamaCpp(s)` or `Self::Ollama(_) | Self::LlamaCpp(_)`
+fn dynamic_pattern_with_binding(binding: &str) -> String {
+    DYNAMIC_PROVIDERS
+        .iter()
+        .map(|d| format!("Self::{}({binding})", d.enum_name))
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
-fn emit_static_model_arms<F>(out: &mut String, provider_models: &ProviderModels, mut arm_for: F)
-where
-    F: FnMut(&ProviderConfig, &ModelInfo) -> String,
-{
-    for cfg in PROVIDERS {
-        for model in &provider_models[cfg.dev_id] {
-            pushln(out, arm_for(cfg, model));
+/// Format a number with underscore separators (e.g. `200000` → `200_000`).
+fn format_number(n: u32) -> String {
+    let s = n.to_string();
+    if s.len() <= 4 {
+        return s;
+    }
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            result.push('_');
         }
+        result.push(ch);
     }
-}
-
-fn emit_dynamic_provider_arms<F>(out: &mut String, mut arm_for: F)
-where
-    F: FnMut(&DynamicProviderConfig) -> String,
-{
-    for dyn_cfg in DYNAMIC_PROVIDERS {
-        pushln(out, arm_for(dyn_cfg));
-    }
-}
-
-fn emit_provider_arms<F, G>(out: &mut String, mut provider_arm: F, mut dynamic_arm: G)
-where
-    F: FnMut(&ProviderConfig) -> String,
-    G: FnMut(&DynamicProviderConfig) -> String,
-{
-    for cfg in PROVIDERS {
-        pushln(out, provider_arm(cfg));
-    }
-    for dyn_cfg in DYNAMIC_PROVIDERS {
-        pushln(out, dynamic_arm(dyn_cfg));
-    }
+    result
 }
 
 fn escape_rust_string(raw: &str) -> String {
@@ -596,13 +730,15 @@ mod tests {
         );
 
         let source = generate_from_value(data);
-        let a_model = "\"a-model\" => Ok(LlmModel::Anthropic(AnthropicModel::AModel)),";
-        let b_model = "\"b-model\" => Ok(LlmModel::Anthropic(AnthropicModel::BModel)),";
+        // Provider-level FromStr: sorted model IDs
+        let a_model = "\"a-model\" => Ok(Self::AModel),";
+        let b_model = "\"b-model\" => Ok(Self::BModel),";
         let a_pos = source.find(a_model).expect("a-model parse arm");
         let b_pos = source.find(b_model).expect("b-model parse arm");
         assert!(a_pos < b_pos);
-        assert!(!source.contains("AnthropicModel::AlphaLatest"));
-        assert!(!source.contains("AnthropicModel::NoTools"));
+        // Aliases and non-tool-call models are excluded
+        assert!(!source.contains("AlphaLatest"));
+        assert!(!source.contains("NoTools"));
     }
 
     #[test]
@@ -617,10 +753,81 @@ mod tests {
     #[test]
     fn generate_contains_dynamic_provider_arms() {
         let source = generate_from_value(minimal_models_dev_json());
-        assert!(source.contains("\"ollama\" => Ok(LlmModel::Ollama(model_str.to_string())),"));
-        assert!(source.contains("\"llamacpp\" => Ok(LlmModel::LlamaCpp(model_str.to_string())),"));
-        assert!(source.contains("LlmModel::Ollama(_) => None,"));
-        assert!(source.contains("LlmModel::LlamaCpp(_) => None,"));
+        assert!(source.contains("\"ollama\" => Ok(Self::Ollama(model_str.to_string())),"));
+        assert!(source.contains("\"llamacpp\" => Ok(Self::LlamaCpp(model_str.to_string())),"));
+        // Dynamic providers are combined with | for None-returning arms
+        assert!(source.contains("Self::Ollama(_) | Self::LlamaCpp(_) => None,"));
+    }
+
+    #[test]
+    fn generate_delegates_to_provider_impls() {
+        let source = generate_from_value(minimal_models_dev_json());
+        // LlmModel delegates to per-provider methods
+        assert!(source.contains("Self::Anthropic(m) => Cow::Borrowed(m.model_id()),"));
+        assert!(source.contains("Self::Anthropic(m) => Some(m.context_window()),"));
+        // Provider-level FromStr is used by LlmModel::FromStr
+        assert!(source.contains(
+            "\"anthropic\" => model_str.parse::<AnthropicModel>().map(Self::Anthropic),"
+        ));
+    }
+
+    #[test]
+    fn generate_formats_large_numbers_with_separators() {
+        let mut data = minimal_models_dev_json();
+        let root = data.as_object_mut().expect("root object");
+        let anthropic = root
+            .get_mut("anthropic")
+            .and_then(Value::as_object_mut)
+            .expect("anthropic provider");
+
+        anthropic.insert(
+            "models".to_string(),
+            json!({
+                "big-model": {
+                    "id": "big-model",
+                    "name": "Big Model",
+                    "tool_call": true,
+                    "limit": {"context": 200000, "output": 0}
+                }
+            }),
+        );
+
+        let source = generate_from_value(data);
+        assert!(source.contains("200_000"));
+        assert!(!source.contains("200000"));
+    }
+
+    #[test]
+    fn generate_groups_identical_match_arms() {
+        let mut data = minimal_models_dev_json();
+        let root = data.as_object_mut().expect("root object");
+        let anthropic = root
+            .get_mut("anthropic")
+            .and_then(Value::as_object_mut)
+            .expect("anthropic provider");
+
+        anthropic.insert(
+            "models".to_string(),
+            json!({
+                "model-a": {
+                    "id": "model-a",
+                    "name": "Same Name",
+                    "tool_call": true,
+                    "limit": {"context": 100000, "output": 0}
+                },
+                "model-b": {
+                    "id": "model-b",
+                    "name": "Same Name",
+                    "tool_call": true,
+                    "limit": {"context": 100000, "output": 0}
+                }
+            }),
+        );
+
+        let source = generate_from_value(data);
+        // Both context_window and display_name should combine arms
+        assert!(source.contains("Self::ModelA | Self::ModelB => 100_000,"));
+        assert!(source.contains("Self::ModelA | Self::ModelB => \"Same Name\","));
     }
 
     #[test]
