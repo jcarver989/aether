@@ -6,4 +6,5 @@ mod mcp {
     mod integration_tests;
     mod oauth_tests;
     mod tool_collision_tests;
+    mod tool_proxy_tests;
 }

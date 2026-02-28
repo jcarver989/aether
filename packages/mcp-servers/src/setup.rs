@@ -21,7 +21,7 @@ impl McpBuilderExt for McpBuilder {
         let lsp_cwd = cwd.clone();
         self.register_in_memory_server(
             "coding",
-            Box::new(move |_args| {
+            Box::new(move |_args, _input| {
                 let project_path = cwd.clone();
                 async move {
                     debug!("CodingMcp created with LSP for coding server");
@@ -35,7 +35,7 @@ impl McpBuilderExt for McpBuilder {
         )
         .register_in_memory_server(
             "lsp",
-            Box::new(move |_args| {
+            Box::new(move |_args, _input| {
                 let project_path = lsp_cwd.clone();
                 async move {
                     debug!("LspMcp created with own registry");
@@ -48,7 +48,7 @@ impl McpBuilderExt for McpBuilder {
         )
         .register_in_memory_server(
             "skills",
-            Box::new(|args| {
+            Box::new(|args, _input| {
                 async move {
                     SkillsMcp::from_args(args)
                         .expect("Failed to parse SkillsMcp args")
@@ -59,7 +59,7 @@ impl McpBuilderExt for McpBuilder {
         )
         .register_in_memory_server(
             "subagents",
-            Box::new(|args| {
+            Box::new(|args, _input| {
                 async move {
                     SubAgentsMcp::from_args(args)
                         .expect("Failed to parse SubAgentsMcp args")
@@ -70,11 +70,11 @@ impl McpBuilderExt for McpBuilder {
         )
         .register_in_memory_server(
             "survey",
-            Box::new(|_args| async move { SurveyMcp::new().into_dyn() }.boxed()),
+            Box::new(|_args, _input| async move { SurveyMcp::new().into_dyn() }.boxed()),
         )
         .register_in_memory_server(
             "tasks",
-            Box::new(move |args| {
+            Box::new(move |args, _input| {
                 let project_path = tasks_cwd.clone();
                 async move {
                     TasksMcp::from_args(args)

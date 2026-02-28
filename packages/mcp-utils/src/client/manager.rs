@@ -6,13 +6,13 @@ use super::{
     oauth::{OAuthHandler, create_auth_manager_from_store, perform_oauth_flow},
 };
 use rmcp::{
-    RoleClient, ServiceExt,
+    RoleClient, RoleServer, ServiceExt,
     model::{
         ClientCapabilities, ClientInfo, CreateElicitationRequestParams, CreateElicitationResult,
         ElicitationAction, Implementation, ProtocolVersion, Root, Tool as RmcpTool,
     },
     serve_client,
-    service::RunningService,
+    service::{DynService, RunningService},
     transport::streamable_http_client::StreamableHttpClientTransportConfig,
     transport::{StreamableHttpClientTransport, TokioChildProcess, auth::AuthClient},
 };
@@ -20,7 +20,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use super::mcp_client::McpClient;
-use crate::transport::create_in_memory_transport;
+use crate::{client::tool_proxy::ToolProxyServer, transport::create_in_memory_transport};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::{process::Command, task::JoinHandle};
@@ -116,54 +116,39 @@ impl McpManager {
     }
 
     pub async fn add_mcp(&mut self, config: McpServerConfig) -> Result<()> {
-        use McpServerConfig::{Http, InMemory, Stdio};
+        // HTTP connections need special OAuth handling, so they go through
+        // their own path. Everything else uses the shared `connect_to_server`.
         match config {
-            Http { name, config } => self.connect_http_server(name, config).await,
-
-            Stdio {
-                name,
-                command,
-                args,
-                env: _env,
-            } => {
-                let cmd = {
-                    let mut cmd = Command::new(&command);
-                    cmd.args(&args);
-                    cmd
-                };
-
-                let mcp_client = self.create_mcp_client();
-                let client = mcp_client.serve(TokioChildProcess::new(cmd)?).await?;
-                self.register_server(name, client, None).await
+            McpServerConfig::Http { name, config } => {
+                self.connect_http_server(name, config).await
             }
 
-            InMemory { name, server } => {
-                let (client_transport, server_transport) = create_in_memory_transport();
+            McpServerConfig::ToolProxy { name, servers } => {
+                self.connect_tool_proxy(name, servers).await
+            }
 
-                let server_handle = tokio::spawn(async move {
-                    match server.serve(server_transport).await {
-                        Ok(_service) => {
-                            std::future::pending::<()>().await;
-                        }
-                        Err(e) => {
-                            eprintln!("MCP server error: {e}");
-                        }
-                    }
-                });
-
-                let mcp_client = self.create_mcp_client();
-                let client = serve_client(mcp_client, client_transport)
-                    .await
-                    .map_err(|e| {
-                        McpError::ConnectionFailed(format!(
-                            "Failed to connect to in-memory MCP server {name}: {e}"
-                        ))
-                    })?;
-
-                self.register_server(name, client, Some(server_handle))
-                    .await
+            config => {
+                let name = config.name().to_string();
+                let create_client = || self.create_mcp_client();
+                let (client, task) = connect_to_server(config, create_client).await?;
+                self.register_server(name, client, task).await
             }
         }
+    }
+
+    async fn connect_tool_proxy(
+        &mut self,
+        name: String,
+        servers: Vec<McpServerConfig>,
+    ) -> Result<()> {
+        let create_client = || self.create_mcp_client();
+        let proxy = ToolProxyServer::connect(&name, servers, create_client)
+            .await
+            .map_err(|e| McpError::ConnectionFailed(format!("tool-proxy '{name}': {e}")))?;
+
+        let mcp_client = self.create_mcp_client();
+        let (client, handle) = serve_in_memory(Box::new(proxy), mcp_client, &name).await?;
+        self.register_server(name, client, Some(handle)).await
     }
 
     /// Connect to an HTTP MCP server. Tries stored OAuth credentials first,
@@ -546,6 +531,83 @@ impl From<&RmcpTool> for Tool {
 
 fn create_namespaced_tool_name(server_name: &str, tool_name: &str) -> String {
     format!("{server_name}{SERVERNAME_DELIMITER}{tool_name}")
+}
+
+/// Connect to an MCP server described by `config`, returning the running client
+/// and an optional background task handle (for Stdio child processes / in-memory servers).
+///
+/// This is the shared connection logic used by both `McpManager::add_mcp` and
+/// `ToolProxyServer::connect`.
+pub(crate) async fn connect_to_server(
+    config: McpServerConfig,
+    create_mcp_client: impl Fn() -> McpClient,
+) -> Result<(RunningService<RoleClient, McpClient>, Option<JoinHandle<()>>)> {
+    match config {
+        McpServerConfig::Stdio {
+            command, args, ..
+        } => {
+            let mut cmd = Command::new(&command);
+            cmd.args(&args);
+            let mcp_client = create_mcp_client();
+            let client = mcp_client.serve(TokioChildProcess::new(cmd)?).await?;
+            Ok((client, None))
+        }
+
+        McpServerConfig::Http { name, config: cfg } => {
+            let transport = StreamableHttpClientTransport::from_config(cfg);
+            let mcp_client = create_mcp_client();
+            let client = serve_client(mcp_client, transport).await.map_err(|e| {
+                McpError::ConnectionFailed(format!(
+                    "Failed to connect to HTTP server '{name}': {e}"
+                ))
+            })?;
+            Ok((client, None))
+        }
+
+        McpServerConfig::InMemory { name, server } => {
+            let mcp_client = create_mcp_client();
+            let (client, handle) = serve_in_memory(server, mcp_client, &name).await?;
+            Ok((client, Some(handle)))
+        }
+
+        // Config parsing already rejects nested ToolProxy, so this arm is a
+        // defensive guard that should never be reached at runtime.
+        McpServerConfig::ToolProxy { name, .. } => Err(McpError::Other(format!(
+            "Nested tool-proxy '{name}' is not supported"
+        ))),
+    }
+}
+
+/// Spawn an in-memory MCP server on a background task and connect a client to it.
+///
+/// Returns the running client service and the server's join handle.
+pub(crate) async fn serve_in_memory(
+    server: Box<dyn DynService<RoleServer>>,
+    mcp_client: McpClient,
+    label: &str,
+) -> Result<(RunningService<RoleClient, McpClient>, JoinHandle<()>)> {
+    let (client_transport, server_transport) = create_in_memory_transport();
+
+    let server_handle = tokio::spawn(async move {
+        match server.serve(server_transport).await {
+            Ok(_service) => {
+                std::future::pending::<()>().await;
+            }
+            Err(e) => {
+                eprintln!("MCP server error: {e}");
+            }
+        }
+    });
+
+    let client = serve_client(mcp_client, client_transport)
+        .await
+        .map_err(|e| {
+            McpError::ConnectionFailed(format!(
+                "Failed to connect to in-memory server '{label}': {e}"
+            ))
+        })?;
+
+    Ok((client, server_handle))
 }
 
 /// Extract non-empty instructions from an MCP client's peer info.

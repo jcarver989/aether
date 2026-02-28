@@ -4,6 +4,7 @@ use rmcp::{
     transport::streamable_http_client::StreamableHttpClientTransportConfig,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -44,11 +45,18 @@ pub enum RawMcpServerConfig {
     },
 
     /// In-memory transport (Aether extension) - requires a registered factory
-    /// The factory is looked up using the server name from the mcp.json key
+    /// The factory is looked up using the server name from the mcp.json key.
+    ///
+    /// When `input` contains a `"servers"` key, this is treated as a tool-proxy
+    /// configuration: nested server configs are parsed and validated, producing
+    /// a `McpServerConfig::ToolProxy` at runtime.
     #[serde(rename = "in-memory")]
     InMemory {
         #[serde(default)]
         args: Vec<String>,
+
+        #[serde(default)]
+        input: Option<Value>,
     },
 }
 
@@ -69,6 +77,11 @@ pub enum McpServerConfig {
         name: String,
         server: Box<dyn DynService<RoleServer>>,
     },
+
+    ToolProxy {
+        name: String,
+        servers: Vec<McpServerConfig>,
+    },
 }
 
 impl McpServerConfig {
@@ -76,7 +89,8 @@ impl McpServerConfig {
         match self {
             McpServerConfig::Http { name, .. }
             | McpServerConfig::Stdio { name, .. }
-            | McpServerConfig::InMemory { name, .. } => name,
+            | McpServerConfig::InMemory { name, .. }
+            | McpServerConfig::ToolProxy { name, .. } => name,
         }
     }
 }
@@ -106,14 +120,23 @@ impl std::fmt::Debug for McpServerConfig {
                 .field("name", name)
                 .field("server", &"<DynService>")
                 .finish(),
+            McpServerConfig::ToolProxy { name, servers } => f
+                .debug_struct("ToolProxy")
+                .field("name", name)
+                .field("servers", &format!("{} nested servers", servers.len()))
+                .finish(),
         }
     }
 }
 
-/// Factory function that creates an MCP server instance asynchronously
-/// The factory receives parsed CLI arguments from the configuration
-pub type ServerFactory =
-    Box<dyn Fn(Vec<String>) -> BoxFuture<'static, Box<dyn DynService<RoleServer>>> + Send + Sync>;
+/// Factory function that creates an MCP server instance asynchronously.
+/// The factory receives parsed CLI arguments and an optional structured input from
+/// the `"input"` field in the config JSON.
+pub type ServerFactory = Box<
+    dyn Fn(Vec<String>, Option<Value>) -> BoxFuture<'static, Box<dyn DynService<RoleServer>>>
+        + Send
+        + Sync,
+>;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -121,6 +144,7 @@ pub enum ParseError {
     JsonError(serde_json::Error),
     VarError(VarError),
     FactoryNotFound(String),
+    InvalidNestedConfig(String),
 }
 
 impl std::fmt::Display for ParseError {
@@ -131,6 +155,9 @@ impl std::fmt::Display for ParseError {
             ParseError::VarError(e) => write!(f, "Variable expansion failed: {e}"),
             ParseError::FactoryNotFound(name) => {
                 write!(f, "InMemory server factory '{name}' not registered")
+            }
+            ParseError::InvalidNestedConfig(msg) => {
+                write!(f, "Invalid nested config in tool-proxy: {msg}")
             }
         }
     }
@@ -220,7 +247,13 @@ impl RawMcpServerConfig {
                 })
             }
 
-            RawMcpServerConfig::InMemory { args } => {
+            RawMcpServerConfig::InMemory { args, input } => {
+                let servers_val = input.as_ref().and_then(|v| v.get("servers"));
+
+                if let Some(servers_val) = servers_val {
+                    return parse_tool_proxy(name, servers_val, factories).await;
+                }
+
                 let server_factory = factories
                     .get(&name)
                     .ok_or_else(|| ParseError::FactoryNotFound(name.clone()))?;
@@ -230,9 +263,36 @@ impl RawMcpServerConfig {
                     .map(|a| expand_env_vars(&a))
                     .collect::<Result<Vec<_>, VarError>>()?;
 
-                let server = server_factory(expanded_args).await;
+                let server = server_factory(expanded_args, input).await;
                 Ok(McpServerConfig::InMemory { name, server })
             }
         }
     }
+}
+
+async fn parse_tool_proxy(
+    name: String,
+    servers_val: &Value,
+    factories: &HashMap<String, ServerFactory>,
+) -> Result<McpServerConfig, ParseError> {
+    let nested_raw: HashMap<String, RawMcpServerConfig> =
+        serde_json::from_value(servers_val.clone()).map_err(|e| {
+            ParseError::InvalidNestedConfig(format!("failed to parse input.servers: {e}"))
+        })?;
+
+    let mut nested_configs = Vec::with_capacity(nested_raw.len());
+    for (nested_name, nested_raw_cfg) in nested_raw {
+        if matches!(nested_raw_cfg, RawMcpServerConfig::InMemory { .. }) {
+            return Err(ParseError::InvalidNestedConfig(format!(
+                "in-memory servers cannot be nested inside tool-proxy (server: '{nested_name}')"
+            )));
+        }
+
+        nested_configs.push(Box::pin(nested_raw_cfg.into_config(nested_name, factories)).await?);
+    }
+
+    Ok(McpServerConfig::ToolProxy {
+        name,
+        servers: nested_configs,
+    })
 }

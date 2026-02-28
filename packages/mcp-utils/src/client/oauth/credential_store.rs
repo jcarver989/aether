@@ -188,16 +188,8 @@ fn build_token_response(
 
 /// Get the default MCP credentials file path
 fn default_path() -> Result<PathBuf, OAuthError> {
-    let base = match std::env::var("AETHER_HOME") {
-        Ok(value) if !value.trim().is_empty() => PathBuf::from(value),
-        _ => {
-            let home = std::env::var("HOME")
-                .or_else(|_| std::env::var("USERPROFILE"))
-                .map_err(|_| OAuthError::CredentialStore("Home directory not set".into()))?;
-            PathBuf::from(home).join(".aether")
-        }
-    };
-
+    let base = crate::client::aether_home()
+        .ok_or_else(|| OAuthError::CredentialStore("Home directory not set".into()))?;
     Ok(base.join("mcp_credentials.json"))
 }
 

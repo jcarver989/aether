@@ -87,7 +87,7 @@ impl CodingMcpArgs {
         let raw_config = RawMcpConfig::from_json_file(mcp_config_path).ok()?;
         let coding_config = raw_config.servers.get("coding")?;
 
-        if let RawMcpServerConfig::InMemory { args } = coding_config {
+        if let RawMcpServerConfig::InMemory { args, .. } = coding_config {
             let parsed_args = Self::from_args(args.clone()).ok()?;
             let root_dir = parsed_args.root_dir?;
 

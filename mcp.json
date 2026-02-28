@@ -16,6 +16,18 @@
     },
     "survey": {
       "type": "in-memory"
+    },
+    "proxy": {
+      "type": "in-memory",
+      "input": {
+        "servers": {
+          "playwright": {
+            "type": "stdio",
+            "command": "npx",
+            "args": ["@playwright/mcp@latest"]
+          }
+        }
+      }
     }
   }
 }

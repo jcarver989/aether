@@ -402,11 +402,11 @@ async fn spawn_mcps(agent_dir: &Path, roots: Vec<PathBuf>) -> Result<McpSpawnRes
     mcp()
         .register_in_memory_server(
             "coding",
-            Box::new(move |_args| async move { CodingMcp::new().into_dyn() }.boxed()),
+            Box::new(move |_args, _input| async move { CodingMcp::new().into_dyn() }.boxed()),
         )
         .register_in_memory_server(
             "skills",
-            Box::new(|args| {
+            Box::new(|args, _input| {
                 async move {
                     SkillsMcp::from_args(args)
                         .expect("Failed to parse SkillsMcp args")
@@ -417,7 +417,7 @@ async fn spawn_mcps(agent_dir: &Path, roots: Vec<PathBuf>) -> Result<McpSpawnRes
         )
         .register_in_memory_server(
             "subagents",
-            Box::new(|args| {
+            Box::new(|args, _input| {
                 async move {
                     crate::SubAgentsMcp::from_args(args)
                         .expect("Failed to parse SubAgentsMcp args")
@@ -428,7 +428,7 @@ async fn spawn_mcps(agent_dir: &Path, roots: Vec<PathBuf>) -> Result<McpSpawnRes
         )
         .register_in_memory_server(
             "tasks",
-            Box::new(move |_args| {
+            Box::new(move |_args, _input| {
                 let base_dir = tasks_base_dir.clone();
                 async move { TasksMcp::new(base_dir).into_dyn() }.boxed()
             }),
