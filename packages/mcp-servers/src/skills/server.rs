@@ -19,9 +19,16 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::error;
 
-use super::tools::{ListSkillsOutput, LoadSkillsInput, LoadSkillsOutput, Skill, SkillInfo};
-use crate::skills::prompt_file::{PromptFile, to_prompt};
-use crate::skills::skill_file::{SkillInfo as SkillMetadata, SkillsFile, load_skill_metadata};
+use super::tools::{
+    AddSkillEntryInput, AddSkillEntryOutput, ListSkillsOutput, LoadSkillsInput, LoadSkillsOutput,
+    ScoreSkillEntryInput, ScoreSkillEntryOutput, Skill, SkillInfo, add_skill_entry,
+    score_skill_entry,
+};
+use crate::skills::skill_file::{SKILL_FILENAME, SkillMetadata, SkillsFile, load_skill_metadata};
+use crate::skills::{
+    prompt_file::{PromptFile, to_prompt},
+    tools::score_skill_entry::ScoreStatus,
+};
 
 /// CLI arguments for `SkillsMcp` server
 #[derive(Debug, Clone, Parser)]
@@ -46,7 +53,7 @@ impl SkillsMcpArgs {
 pub struct SkillsMcp {
     commands_dir: PathBuf,
     skills_dir: PathBuf,
-    skills_info: Vec<SkillMetadata>,
+    skills_info: Arc<RwLock<Vec<SkillMetadata>>>,
     tool_router: ToolRouter<Self>,
     roots: Arc<RwLock<Vec<PathBuf>>>,
 }
@@ -59,7 +66,7 @@ impl SkillsMcp {
         Self {
             commands_dir: base_dir.join("commands"),
             skills_dir,
-            skills_info,
+            skills_info: Arc::new(RwLock::new(skills_info)),
             tool_router: Self::tool_router(),
             roots: Arc::new(RwLock::new(vec![base_dir])),
         }
@@ -76,14 +83,14 @@ impl SkillsMcp {
         self
     }
 
-    fn build_instructions(&self) -> String {
+    fn build_instructions(skills_info: &[SkillMetadata]) -> String {
         let mut instructions = include_str!("./instructions.md").to_string();
 
-        if !self.skills_info.is_empty() {
+        if !skills_info.is_empty() {
             instructions.push_str("\n\n## Available Skills\n");
             instructions.push_str("The following skills are available:\n\n");
 
-            for skill in &self.skills_info {
+            for skill in skills_info {
                 use std::fmt::Write as _;
                 let _ = writeln!(instructions, "- **{}**: {}", skill.name, skill.description);
             }
@@ -91,11 +98,26 @@ impl SkillsMcp {
 
         instructions
     }
+
+    /// Reload skill metadata from disk.
+    async fn reload_metadata(&self) {
+        let metadata = load_skill_metadata(&self.skills_dir);
+        *self.skills_info.write().await = metadata;
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for SkillsMcp {
     fn get_info(&self) -> ServerInfo {
+        // try_read() avoids blocking the synchronous get_info() callback.
+        // On contention (only possible during a concurrent tool call), we fall back
+        // to an empty skill list — this only affects the MCP handshake instructions,
+        // and the tools themselves always read fresh data.
+        let skills_info = self
+            .skills_info
+            .try_read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
         ServerInfo {
             server_info: Implementation {
                 name: "skills-mcp".to_string(),
@@ -105,7 +127,7 @@ impl ServerHandler for SkillsMcp {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some(self.build_instructions()),
+            instructions: Some(Self::build_instructions(&skills_info)),
             capabilities: ServerCapabilities::builder()
                 .enable_prompts()
                 .enable_tools()
@@ -186,7 +208,7 @@ impl SkillsMcp {
     #[tool]
     pub async fn list_skills(&self) -> Result<Json<ListSkillsOutput>, String> {
         let skills_with_dirs =
-            match SkillsFile::from_nested_dirs(&self.skills_dir, "SKILL.md").await {
+            match SkillsFile::from_nested_dirs(&self.skills_dir, SKILL_FILENAME).await {
                 Ok(skills) => skills,
                 Err(e) => {
                     error!(
@@ -199,6 +221,10 @@ impl SkillsMcp {
 
         let skills = skills_with_dirs
             .iter()
+            .filter(|(dir, _)| {
+                dir.file_name()
+                    .is_some_and(|n| !n.to_string_lossy().starts_with('.'))
+            })
             .filter_map(|(dir, file)| {
                 let name = dir.file_name()?.to_string_lossy().to_string();
                 let description = file
@@ -223,7 +249,7 @@ impl SkillsMcp {
 
         let mut skills = Vec::new();
         for skill_name in args.skills {
-            let skill_path = self.skills_dir.join(&skill_name).join("SKILL.md");
+            let skill_path = self.skills_dir.join(&skill_name).join(SKILL_FILENAME);
 
             if let Ok(skill_file) = SkillsFile::from_file(&skill_path) {
                 skills.push(Skill {
@@ -234,5 +260,38 @@ impl SkillsMcp {
         }
 
         Ok(Json(LoadSkillsOutput { skills }))
+    }
+
+    #[doc = include_str!("tools/add_skill_entry/description.md")]
+    #[tool]
+    pub async fn add_skill_entry(
+        &self,
+        request: Parameters<AddSkillEntryInput>,
+    ) -> Result<Json<AddSkillEntryOutput>, String> {
+        let Parameters(input) = request;
+        let dir_existed = self.skills_dir.join(&input.skill).exists();
+        let result = add_skill_entry(&input, &self.skills_dir).map_err(|e| e.to_string())?;
+
+        if !dir_existed {
+            self.reload_metadata().await;
+        }
+
+        Ok(Json(result))
+    }
+
+    #[doc = include_str!("tools/score_skill_entry/description.md")]
+    #[tool]
+    pub async fn score_skill_entry(
+        &self,
+        request: Parameters<ScoreSkillEntryInput>,
+    ) -> Result<Json<ScoreSkillEntryOutput>, String> {
+        let Parameters(input) = request;
+        let result = score_skill_entry(&input, &self.skills_dir).map_err(|e| e.to_string())?;
+
+        if matches!(result.status, ScoreStatus::Pruned) {
+            self.reload_metadata().await;
+        }
+
+        Ok(Json(result))
     }
 }
