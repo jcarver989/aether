@@ -70,7 +70,7 @@ impl From<ChatMessage> for Option<ChatCompletionRequestMessage> {
             }
             ChatMessage::Summary { content, .. } => Some(ChatCompletionRequestMessage::User(
                 ChatCompletionRequestUserMessage {
-                    content: format!("[Previous conversation summary]\n\n{content}").into(),
+                    content: format!("[Previous conversation handoff]\n\n{content}").into(),
                     name: None,
                 },
             )),

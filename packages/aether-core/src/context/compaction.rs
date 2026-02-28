@@ -88,7 +88,7 @@ impl Compactor {
         let mut summary_context = context.clone();
         summary_context.add_message(ChatMessage::User {
             content: format!(
-                "{SUMMARIZATION_PROMPT}\n\nPlease create a structured summary of the conversation above."
+                "{SUMMARIZATION_PROMPT}\n\nPlease perform a structured handoff of the conversation above."
             ),
             timestamp: IsoString::now(),
         });
@@ -152,7 +152,9 @@ mod tests {
 
         let summary_response = vec![
             LlmResponse::start("msg-1"),
-            LlmResponse::text("## Session Intent\nTest the compaction feature"),
+            LlmResponse::text(
+                "## Primary Goal\nTest the compaction feature\n\n## Completed Work\n- Wrote initial tests\n\n## File Changes\n- `src/main.rs` — added entry point\n\n## Key Decisions\n- Use structured handoff — preserves context better\n\n## Current State\nRunning compaction tests\n\n## Next Steps\n1. Verify all tests pass\n\n## Open Questions\n(none)\n\n## Constraints\n(none)",
+            ),
             LlmResponse::done(),
         ];
 
@@ -177,7 +179,9 @@ mod tests {
         assert!(result.is_ok());
 
         let result = result.unwrap();
-        assert!(result.summary.contains("Session Intent"));
+        assert!(result.summary.contains("Primary Goal"));
+        assert!(result.summary.contains("File Changes"));
+        assert!(result.summary.contains("Next Steps"));
         assert_eq!(result.messages_removed, 1);
     }
 
