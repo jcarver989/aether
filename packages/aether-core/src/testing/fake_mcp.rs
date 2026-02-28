@@ -30,7 +30,7 @@ impl ServerHandler for FakeMcpServer {
             server_info: Implementation {
                 name: "fake-mcp-server".to_string(),
                 version: "0.1.0".to_string(),
-                description: None,
+                description: Some("A fake MCP server for testing".to_string()),
                 title: None,
                 icons: None,
                 website_url: None,

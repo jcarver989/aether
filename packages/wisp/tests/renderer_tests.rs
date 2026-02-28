@@ -160,6 +160,7 @@ impl Renderer {
         Ok(action)
     }
 
+    #[allow(clippy::unused_async)]
     async fn apply_effects_no_prompt(&mut self, effects: Vec<AppEvent>) -> std::io::Result<()> {
         let mut should_render = false;
 
@@ -188,12 +189,12 @@ impl Renderer {
 
 /// Test events that can be fed to the renderer.
 enum TestEvent {
-    Update(acp::SessionUpdate),
+    Update(Box<acp::SessionUpdate>),
     PromptDone,
 }
 
 /// Build the expected bordered prompt lines for a given terminal width.
-/// Returns [top_border, input_line, bottom_border, status_line].
+/// Returns `[top_border, input_line, bottom_border, status_line]`.
 fn expected_prompt(width: u16, input: &str, agent_name: &str) -> Vec<String> {
     let w = width as usize;
     let inner = w - 2;
@@ -203,7 +204,7 @@ fn expected_prompt(width: u16, input: &str, agent_name: &str) -> Vec<String> {
     let pad = inner.saturating_sub(prefix_len);
     let middle = format!("│ > {}{:pad$}│", input, "");
     let bottom = format!("╰{}╯", "─".repeat(inner));
-    let status = format!("  {}", agent_name);
+    let status = format!("  {agent_name}");
     vec![top, middle, bottom, status]
 }
 
@@ -214,7 +215,7 @@ fn expected_with_prompt(
     input: &str,
     agent_name: &str,
 ) -> Vec<String> {
-    let mut lines: Vec<String> = scrollback.iter().map(|s| s.to_string()).collect();
+    let mut lines: Vec<String> = scrollback.iter().map(ToString::to_string).collect();
     lines.extend(expected_prompt(width, input, agent_name));
     lines
 }
@@ -583,7 +584,7 @@ async fn render_with_size(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer 
 
     for event in events {
         match event {
-            TestEvent::Update(update) => renderer.on_session_update(update).await.unwrap(),
+            TestEvent::Update(update) => renderer.on_session_update(*update).await.unwrap(),
             TestEvent::PromptDone => renderer.on_prompt_done().await.unwrap(),
         }
     }
@@ -619,15 +620,15 @@ async fn test_user_message_submission() {
 // ── Test helpers ──────────────────────────────────────────────────────
 
 fn text_chunk(text: &str) -> TestEvent {
-    TestEvent::Update(acp::SessionUpdate::AgentMessageChunk(
+    TestEvent::Update(Box::new(acp::SessionUpdate::AgentMessageChunk(
         acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(text))),
-    ))
+    )))
 }
 
 fn thought_chunk(text: &str) -> TestEvent {
-    TestEvent::Update(acp::SessionUpdate::AgentThoughtChunk(
+    TestEvent::Update(Box::new(acp::SessionUpdate::AgentThoughtChunk(
         acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(text))),
-    ))
+    )))
 }
 
 fn prompt_done() -> TestEvent {
@@ -645,41 +646,41 @@ fn tool_call_with_id(name: &str, id: &str, args: &str) -> TestEvent {
             .unwrap_or_else(|_| serde_json::Value::String(args.to_string()));
         tc = tc.raw_input(value);
     }
-    TestEvent::Update(acp::SessionUpdate::ToolCall(tc))
+    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCall(tc)))
 }
 
 fn tool_complete(id: &str) -> TestEvent {
-    TestEvent::Update(acp::SessionUpdate::ToolCallUpdate(
+    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCallUpdate(
         acp::ToolCallUpdate::new(
             id.to_string(),
             acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
         ),
-    ))
+    )))
 }
 
-fn tool_complete_with_display_meta(id: &str, display_meta: serde_json::Value) -> TestEvent {
+fn tool_complete_with_display_meta(id: &str, display_meta: &serde_json::Value) -> TestEvent {
     let meta_map =
         serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(serde_json::json!({
             "display": display_meta
         }))
         .unwrap();
-    TestEvent::Update(acp::SessionUpdate::ToolCallUpdate(
+    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCallUpdate(
         acp::ToolCallUpdate::new(
             id.to_string(),
             acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
         )
         .meta(meta_map),
-    ))
+    )))
 }
 
 fn tool_update_with_args(id: &str, args: &str) -> TestEvent {
     let value: serde_json::Value = serde_json::from_str(args).unwrap();
-    TestEvent::Update(acp::SessionUpdate::ToolCallUpdate(
+    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCallUpdate(
         acp::ToolCallUpdate::new(
             id.to_string(),
             acp::ToolCallUpdateFields::new().raw_input(value),
         ),
-    ))
+    )))
 }
 
 async fn type_string(
@@ -878,7 +879,7 @@ async fn test_multiple_scrollback_pushes_tiny_terminal() {
 
     let lines = renderer.writer().get_lines();
     assert!(
-        lines.iter().any(|l| l.contains(">")),
+        lines.iter().any(|l| l.contains('>')),
         "Prompt should be visible.\nBuffer:\n{}",
         lines.join("\n")
     );
@@ -1432,7 +1433,7 @@ fn picker_selected_display_name(renderer: &Renderer) -> Option<String> {
 
 fn assert_picker_renders_selected(terminal: &TestTerminal, expected_file: &str) {
     let lines = terminal.get_lines();
-    let marker = format!("▶ {}", expected_file);
+    let marker = format!("▶ {expected_file}");
     assert!(
         lines.iter().any(|l| l.contains(&marker)),
         "Expected '{}' to be selected in rendered output.\nBuffer:\n{}",
@@ -1827,6 +1828,7 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
     press_enter(&mut renderer, &handle, &session_id).await;
 
     let lines = renderer.writer().get_lines();
+    #[allow(clippy::cast_possible_truncation)]
     let search_row = lines
         .iter()
         .position(|l| l.contains("Model search:"))
@@ -1839,7 +1841,9 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
         "Cursor should be on overlay search row.\nBuffer:\n{}",
         lines.join("\n")
     );
-    assert_eq!(cursor_col, "  Model search: ".len() as u16);
+    #[allow(clippy::cast_possible_truncation)]
+    let expected_col = "  Model search: ".len() as u16;
+    assert_eq!(cursor_col, expected_col);
 }
 
 #[tokio::test]
@@ -1913,7 +1917,7 @@ async fn test_config_menu_swallows_other_keys() {
     let lines = renderer.writer().get_lines();
     // The input prompt should show empty (just "> ")
     assert!(
-        lines.iter().any(|l| l.contains("> ") && !l.contains("x")),
+        lines.iter().any(|l| l.contains("> ") && !l.contains('x')),
         "Typed char should be swallowed while config menu is open.\nBuffer:\n{}",
         lines.join("\n")
     );
@@ -2135,7 +2139,7 @@ async fn test_command_picker_esc_clears() {
     );
     let lines = renderer.writer().get_lines();
     assert!(
-        !lines.iter().any(|l| l.contains("/")),
+        !lines.iter().any(|l| l.contains('/')),
         "Input buffer should be cleared after Esc.\nBuffer:\n{}",
         lines.join("\n")
     );
@@ -2270,13 +2274,11 @@ async fn test_command_picker_shows_mcp_commands() {
     let names = renderer.screen().command_picker_match_names();
     assert!(
         names.contains(&"config"),
-        "Picker should include built-in config command. Got: {:?}",
-        names
+        "Picker should include built-in config command. Got: {names:?}",
     );
     assert!(
         names.contains(&"search"),
-        "Picker should include MCP search command. Got: {:?}",
-        names
+        "Picker should include MCP search command. Got: {names:?}",
     );
 }
 
@@ -2331,7 +2333,7 @@ async fn test_tool_complete_with_display_meta_shows_display_value() {
         ),
         tool_complete_with_display_meta(
             "call_1",
-            serde_json::json!({
+            &serde_json::json!({
                 "title": "Read file",
                 "value": "Cargo.toml, 156 lines"
             }),
@@ -2393,7 +2395,7 @@ async fn test_display_meta_title_overrides_tool_name() {
         tool_call_with_id("coding__read_file", "call_1", r#"{"filePath":"main.rs"}"#),
         tool_complete_with_display_meta(
             "call_1",
-            serde_json::json!({
+            &serde_json::json!({
                 "title": "Read file",
                 "value": "main.rs, 42 lines"
             }),
@@ -2420,7 +2422,7 @@ async fn test_multiple_tools_with_mixed_display_meta() {
         tool_call_with_id("external_tool", "call_2", r#"{"key":"value"}"#),
         tool_complete_with_display_meta(
             "call_1",
-            serde_json::json!({
+            &serde_json::json!({
                 "title": "Read file",
                 "value": "Cargo.toml, 156 lines"
             }),
@@ -2447,7 +2449,7 @@ async fn test_command_display_meta_shows_exit_code() {
         tool_call_with_id("bash", "call_1", r#"{"command":"cargo test"}"#),
         tool_complete_with_display_meta(
             "call_1",
-            serde_json::json!({
+            &serde_json::json!({
                 "title": "Run command",
                 "value": "cargo test (exit 0)"
             }),

@@ -228,13 +228,11 @@ mod tests {
 
         assert!(
             lines.iter().any(|l| l.contains("[query pattern]")),
-            "Should render hint for search command. Got: {:?}",
-            lines
+            "Should render hint for search command. Got: {lines:?}",
         );
         assert!(
             lines.iter().any(|l| l.contains("[url]")),
-            "Should render hint for web command. Got: {:?}",
-            lines
+            "Should render hint for web command. Got: {lines:?}",
         );
     }
 
@@ -249,8 +247,7 @@ mod tests {
             .expect("config command should be rendered");
         assert!(
             !config_line.contains("  ["),
-            "Config command should not have hint brackets. Got: {}",
-            config_line
+            "Config command should not have hint brackets. Got: {config_line}",
         );
     }
 

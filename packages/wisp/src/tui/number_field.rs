@@ -124,7 +124,9 @@ mod tests {
     #[test]
     fn to_json_float() {
         let field = NumberField::new("3.14".to_string(), false);
-        assert_eq!(field.to_json(), serde_json::json!(3.14));
+        #[allow(clippy::approx_constant)]
+        let expected = serde_json::json!(3.14);
+        assert_eq!(field.to_json(), expected);
     }
 
     #[test]
