@@ -106,6 +106,7 @@ mod tests {
             ..Spinner::default()
         };
         let mut spinner_b = Spinner {
+            #[allow(clippy::cast_possible_truncation)]
             tick: BRAILLE_FRAMES.len() as u16,
             visible: true,
             ..Spinner::default()

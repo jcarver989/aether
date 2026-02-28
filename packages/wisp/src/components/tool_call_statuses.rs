@@ -643,7 +643,7 @@ mod tests {
     fn view_running_spinner_changes_with_tick() {
         let mut view_a = ToolCallStatusView {
             name: "TestTool".to_string(),
-            arguments: "".to_string(),
+            arguments: String::new(),
             display_value: None,
             diff_preview: None,
             status: ToolCallStatus::Running,
@@ -651,7 +651,7 @@ mod tests {
         };
         let mut view_b = ToolCallStatusView {
             name: "TestTool".to_string(),
-            arguments: "".to_string(),
+            arguments: String::new(),
             display_value: None,
             diff_preview: None,
             status: ToolCallStatus::Running,

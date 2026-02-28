@@ -539,8 +539,8 @@ mod tests {
         // Differential: first line matches, writes only 2 new lines
         assert_eq!(written, 2);
         let output = String::from_utf8_lossy(&w2.bytes);
-        assert!(output.contains("b"));
-        assert!(output.contains("c"));
+        assert!(output.contains('b'));
+        assert!(output.contains('c'));
     }
 
     #[test]

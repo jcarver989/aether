@@ -728,7 +728,7 @@ mod tests {
         let lines = render(md);
         let text: String = lines
             .iter()
-            .map(|l| l.plain_text())
+            .map(Line::plain_text)
             .collect::<Vec<_>>()
             .join("\n");
         assert!(text.contains("fn main()"));
@@ -738,7 +738,7 @@ mod tests {
     fn unordered_list() {
         let md = "- alpha\n- beta\n- gamma";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         assert!(texts.iter().any(|t| t.contains("- alpha")));
         assert!(texts.iter().any(|t| t.contains("- beta")));
         assert!(texts.iter().any(|t| t.contains("- gamma")));
@@ -748,7 +748,7 @@ mod tests {
     fn ordered_list() {
         let md = "1. first\n2. second\n3. third";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         assert!(texts.iter().any(|t| t.contains("1. first")));
         assert!(texts.iter().any(|t| t.contains("2. second")));
         assert!(texts.iter().any(|t| t.contains("3. third")));
@@ -759,7 +759,7 @@ mod tests {
         let md = "> quoted text";
         let theme = test_theme();
         let lines = render_with_theme(md, &theme);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         assert!(texts.iter().any(|t| t.contains("quoted text")));
         // Should have some indentation from blockquote prefix
         let quoted_line = lines
@@ -773,7 +773,7 @@ mod tests {
     fn horizontal_rule() {
         let md = "above\n\n---\n\nbelow";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         assert!(texts.iter().any(|t| t.contains("───")));
     }
 
@@ -801,7 +801,7 @@ mod tests {
         let lines = render(md);
         // Should be: "para one", empty, "para two" (trailing empty stripped)
         assert!(lines.len() >= 3);
-        assert!(lines.iter().any(|l| l.is_empty()));
+        assert!(lines.iter().any(Line::is_empty));
     }
 
     #[test]
@@ -825,7 +825,7 @@ mod tests {
         let lines = render_with_theme(md, &theme);
         let text: String = lines
             .iter()
-            .map(|l| l.plain_text())
+            .map(Line::plain_text)
             .collect::<Vec<_>>()
             .join("\n");
         assert!(text.contains("some code"));
@@ -841,7 +841,7 @@ mod tests {
     fn nested_list_indents() {
         let md = "- outer\n  - inner";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         assert!(texts.iter().any(|t| t.contains("outer")));
         assert!(texts.iter().any(|t| t.contains("inner")));
         // Inner item should have more leading whitespace
@@ -875,8 +875,8 @@ mod tests {
         assert!(cache.get("rust", "fn b() {}\n").is_some());
         // And produce different output
         assert_ne!(
-            lines1.iter().map(|l| l.plain_text()).collect::<String>(),
-            lines2.iter().map(|l| l.plain_text()).collect::<String>(),
+            lines1.iter().map(Line::plain_text).collect::<String>(),
+            lines2.iter().map(Line::plain_text).collect::<String>(),
         );
     }
 
@@ -885,15 +885,14 @@ mod tests {
         let md =
             "| Name | Age | City |\n|------|-----|------|\n| Alice | 30 | NYC |\n| Bob | 25 | LA |";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         let all_text = texts.join("\n");
         let non_empty_lines: Vec<&String> = texts.iter().filter(|t| !t.is_empty()).collect();
 
         // Verify table structure with unicode borders
         assert!(
             all_text.contains('┌'),
-            "Should have top-left corner: {}",
-            all_text
+            "Should have top-left corner: {all_text}",
         );
         assert!(all_text.contains('┐'), "Should have top-right corner");
         assert!(all_text.contains('┬'), "Should have top T-junction");
@@ -924,7 +923,7 @@ mod tests {
     fn table_with_alignment() {
         let md = "| Left | Center | Right |\n|:-----|:------:|------:|\n| L | C | R |";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         let all_text = texts.join("\n");
 
         // Verify alignment markers are present
@@ -937,20 +936,20 @@ mod tests {
     fn table_with_empty_cells() {
         let md = "| A | B | C |\n|---|---|---|\n| 1 |   | 3 |";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         let all_text = texts.join("\n");
 
         // Should render without error
         assert!(all_text.contains('┌'));
-        assert!(all_text.contains("1"));
-        assert!(all_text.contains("3"));
+        assert!(all_text.contains('1'));
+        assert!(all_text.contains('3'));
     }
 
     #[test]
     fn table_cell_inline_code_does_not_leak_line() {
         let md = "| A | B |\n|---|---|\n| `x` and **y** | z |";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         let non_empty_lines: Vec<&String> = texts.iter().filter(|t| !t.is_empty()).collect();
 
         assert_eq!(non_empty_lines.len(), 5);
@@ -962,7 +961,7 @@ mod tests {
             .iter()
             .find(|t| t.starts_with('│') && t.contains("and y"))
             .expect("Expected a rendered table body row");
-        assert!(body_row.contains("x"));
+        assert!(body_row.contains('x'));
     }
 
     #[test]
@@ -1012,7 +1011,7 @@ mod tests {
         let lines = render(md);
         let row_texts: Vec<String> = lines
             .iter()
-            .map(|line| line.plain_text())
+            .map(Line::plain_text)
             .filter(|text| text.starts_with('│'))
             .collect();
 
@@ -1029,7 +1028,7 @@ mod tests {
         let lines = render(md);
         let row_texts: Vec<String> = lines
             .iter()
-            .map(|line| line.plain_text())
+            .map(Line::plain_text)
             .filter(|text| text.starts_with('│'))
             .collect();
 
@@ -1044,7 +1043,7 @@ mod tests {
     fn table_in_paragraph_context() {
         let md = "Here is a table:\n\n| Item | Price |\n|------|-------|\n| Apple | $1.00 |\n| Orange | $1.50 |\n\nThat's the table.";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         let all_text = texts.join("\n");
 
         // Verify surrounding text is preserved
@@ -1059,7 +1058,7 @@ mod tests {
     fn table_single_column() {
         let md = "| Value |\n|--------|\n| Hello |";
         let lines = render(md);
-        let texts: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         let all_text = texts.join("\n");
 
         assert!(all_text.contains('┌'));

@@ -1,4 +1,5 @@
 use super::component::RenderContext;
+use super::screen::Line;
 use super::{Component, HandlesInput};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -13,7 +14,7 @@ pub fn rendered_lines<P: Component>(picker: &mut P) -> Vec<String> {
     picker
         .render(&context)
         .iter()
-        .map(|l| l.plain_text())
+        .map(Line::plain_text)
         .collect()
 }
 

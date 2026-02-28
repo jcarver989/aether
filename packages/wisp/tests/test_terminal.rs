@@ -45,6 +45,7 @@ impl TestTerminal {
     }
 
     /// Get current cursor position as (column, row).
+    #[allow(dead_code)]
     pub fn cursor_position(&self) -> (u16, u16) {
         self.cursor
     }
@@ -128,7 +129,7 @@ impl TestTerminal {
 
     /// Write a character at the current cursor position (delayed wrap).
     ///
-    /// When the cursor is at the last column with pending_wrap set,
+    /// When the cursor is at the last column with `pending_wrap` set,
     /// the next printable character triggers the wrap first.
     fn write_char_at_cursor(&mut self, ch: char) {
         // If pending wrap, commit the wrap now before writing
@@ -143,16 +144,16 @@ impl TestTerminal {
             }
         }
 
-        if let Some(row) = self.buffer.get_mut(self.cursor.1 as usize) {
-            if let Some(cell) = row.get_mut(self.cursor.0 as usize) {
-                *cell = ch;
-                self.cursor.0 += 1;
-                if self.cursor.0 >= self.size.0 {
-                    // Don't wrap immediately — set pending flag.
-                    // Cursor stays at last column visually.
-                    self.cursor.0 = self.size.0 - 1;
-                    self.pending_wrap = true;
-                }
+        if let Some(row) = self.buffer.get_mut(self.cursor.1 as usize)
+            && let Some(cell) = row.get_mut(self.cursor.0 as usize)
+        {
+            *cell = ch;
+            self.cursor.0 += 1;
+            if self.cursor.0 >= self.size.0 {
+                // Don't wrap immediately — set pending flag.
+                // Cursor stays at last column visually.
+                self.cursor.0 = self.size.0 - 1;
+                self.pending_wrap = true;
             }
         }
     }
@@ -186,6 +187,7 @@ impl TestTerminal {
     }
 
     /// Process a CSI (Control Sequence Introducer) escape sequence
+    #[allow(clippy::too_many_lines)]
     fn process_csi_sequence(&mut self, chars: &mut std::iter::Peekable<std::str::Chars>) {
         // Detect private mode prefix (e.g., `?` in `CSI ?2026h`)
         let private_mode = if chars.peek() == Some(&'?') {
@@ -307,13 +309,8 @@ impl TestTerminal {
                         self.pending_wrap = false;
                     }
                 }
-                'm' => {
-                    // SGR - Select Graphic Rendition (colors, styles)
-                    // We ignore styling for now as we're just testing content
-                }
-                _ => {
-                    // Unknown sequence, ignore
-                }
+                // SGR, unknown sequences — ignored (content-only testing)
+                _ => {}
             }
         }
     }
@@ -344,16 +341,13 @@ pub fn assert_buffer_eq<S: AsRef<str>>(terminal: &TestTerminal, expected: &[S]) 
     let max_lines = expected.len().max(actual_lines.len());
 
     for i in 0..max_lines {
-        let expected_line = expected.get(i).map(|s| s.as_ref()).unwrap_or("");
-        let actual_line = actual_lines.get(i).map(|s| s.as_str()).unwrap_or("");
+        let expected_line = expected.get(i).map_or("", AsRef::as_ref);
+        let actual_line = actual_lines.get(i).map_or("", String::as_str);
 
         assert_eq!(
             actual_line,
             expected_line,
-            "Line {} mismatch:\n  Expected: '{}'\n  Got:      '{}'\n\nFull buffer:\n{}",
-            i,
-            expected_line,
-            actual_line,
+            "Line {i} mismatch:\n  Expected: '{expected_line}'\n  Got:      '{actual_line}'\n\nFull buffer:\n{}",
             actual_lines.join("\n")
         );
     }
