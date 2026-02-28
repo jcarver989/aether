@@ -77,7 +77,7 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
         for (name, factory) in &self.factories {
             // We need to create a new factory from the Arc by cloning the Arc and calling it
             let factory_arc = factory.clone();
-            let factory_fn: ServerFactory = Box::new(move |args| factory_arc(args));
+            let factory_fn: ServerFactory = Box::new(move |args, input| factory_arc(args, input));
             mcp_builder = mcp_builder.register_in_memory_server(name.clone(), factory_fn);
         }
 

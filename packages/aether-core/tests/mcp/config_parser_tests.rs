@@ -236,3 +236,114 @@ async fn test_env_var_in_url() {
         env::remove_var("PORT");
     }
 }
+
+#[tokio::test]
+async fn test_parse_tool_proxy_config() {
+    let json = r#"
+    {
+        "servers": {
+            "proxy": {
+                "type": "in-memory",
+                "input": {
+                    "servers": {
+                        "github": {
+                            "type": "stdio",
+                            "command": "npx",
+                            "args": ["-y", "@modelcontextprotocol/server-github"]
+                        },
+                        "sentry": {
+                            "type": "http",
+                            "url": "https://sentry.example.com/mcp"
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
+
+    assert_eq!(configs.len(), 1);
+    match &configs[0] {
+        McpServerConfig::ToolProxy { name, servers } => {
+            assert_eq!(name, "proxy");
+            assert_eq!(servers.len(), 2);
+
+            // Verify nested servers are properly parsed
+            let has_stdio = servers.iter().any(|s| matches!(s, McpServerConfig::Stdio { .. }));
+            let has_http = servers.iter().any(|s| matches!(s, McpServerConfig::Http { .. }));
+            assert!(has_stdio, "Expected a Stdio nested server");
+            assert!(has_http, "Expected an Http nested server");
+        }
+        other => panic!("Expected ToolProxy config, got {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn test_tool_proxy_rejects_nested_in_memory() {
+    let json = r#"
+    {
+        "servers": {
+            "proxy": {
+                "type": "in-memory",
+                "input": {
+                    "servers": {
+                        "bad": {
+                            "type": "in-memory"
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let result = raw_config.into_configs(&HashMap::new()).await;
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ParseError::InvalidNestedConfig(msg) => {
+            assert!(msg.contains("in-memory"));
+            assert!(msg.contains("bad"));
+        }
+        other => panic!("Expected InvalidNestedConfig, got {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn test_tool_proxy_rejects_nested_tool_proxy() {
+    let json = r#"
+    {
+        "servers": {
+            "outer": {
+                "type": "in-memory",
+                "input": {
+                    "servers": {
+                        "inner": {
+                            "type": "in-memory",
+                            "input": {
+                                "servers": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let raw_config = RawMcpConfig::from_json(json).unwrap();
+    let result = raw_config.into_configs(&HashMap::new()).await;
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ParseError::InvalidNestedConfig(msg) => {
+            assert!(msg.contains("in-memory"));
+            assert!(msg.contains("inner"));
+        }
+        other => panic!("Expected InvalidNestedConfig, got {:?}", other),
+    }
+}
