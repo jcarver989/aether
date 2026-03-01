@@ -1,7 +1,7 @@
 use super::error::AcpClientError;
 use super::event::AcpEvent;
 use super::prompt_handle::{AcpPromptHandle, PromptCommand};
-use crate::notifications::{ELICITATION_METHOD, ElicitationParams};
+use crate::notifications::{ELICITATION_METHOD, ElicitationParams, McpRequest};
 use agent_client_protocol::{
     self as acp, Agent, Client, ConfigOptionUpdate, ExtNotification, ExtRequest, ExtResponse,
     InitializeRequest, PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest,
@@ -344,6 +344,18 @@ async fn handle_side_command(
         }
         PromptCommand::Prompt { .. } => {
             tracing::warn!("ignoring duplicate Prompt while one is in-flight");
+        }
+        PromptCommand::AuthenticateMcpServer {
+            session_id,
+            server_name,
+        } => {
+            let msg = McpRequest::Authenticate {
+                session_id: session_id.0.to_string(),
+                server_name,
+            };
+            if let Err(e) = conn.ext_notification(msg.into()).await {
+                tracing::warn!("authenticate_mcp_server notification failed: {e:?}");
+            }
         }
     }
 }

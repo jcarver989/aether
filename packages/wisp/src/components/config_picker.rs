@@ -198,6 +198,7 @@ mod tests {
                 },
             ],
             current_value_index: 0,
+            entry_kind: crate::components::config_menu::ConfigMenuEntryKind::Select,
         }
     }
 

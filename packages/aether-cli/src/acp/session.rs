@@ -7,14 +7,16 @@ use aether_core::mcp::mcp;
 use aether_core::mcp::run_mcp_task::McpCommand;
 use llm::provider::StreamingModelProvider;
 use mcp_servers::McpBuilderExt;
+use mcp_utils::client::oauth::BrowserOAuthHandler;
 use mcp_utils::client::{ElicitationRequest, McpServerConfig};
+use mcp_utils::status::McpServerStatusEntry;
 
 use agent_client_protocol as acp;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tracing::debug;
+use tracing::{debug, error};
 
 /// Represents an active Aether agent session
 pub struct Session {
@@ -24,6 +26,7 @@ pub struct Session {
     pub _mcp_handle: JoinHandle<()>,
     pub mcp_tx: mpsc::Sender<McpCommand>,
     pub elicitation_rx: mpsc::Receiver<ElicitationRequest>,
+    pub initial_server_statuses: Vec<McpServerStatusEntry>,
 }
 
 impl Session {
@@ -43,6 +46,15 @@ impl Session {
             .with_builtin_servers(cwd, &roots_path)
             .with_servers(extra_mcp_servers);
 
+        match BrowserOAuthHandler::new() {
+            Ok(handler) => {
+                builder = builder.with_oauth_handler(handler);
+            }
+            Err(e) => {
+                error!("Failed to initialize browser OAuth handler: {e}");
+            }
+        }
+
         if let Some(ref config_path) = mcp_config_path {
             let config_str = config_path.to_str().ok_or("Invalid MCP config path")?;
             builder = builder.from_json_file(config_str).await?;
@@ -51,6 +63,7 @@ impl Session {
         let McpSpawnResult {
             tool_definitions,
             instructions,
+            server_statuses,
             command_tx: mcp_tx,
             elicitation_rx,
             handle: mcp_handle,
@@ -72,6 +85,7 @@ impl Session {
             _mcp_handle: mcp_handle,
             mcp_tx,
             elicitation_rx,
+            initial_server_statuses: server_statuses,
         })
     }
 
@@ -113,10 +127,10 @@ fn merge_builtin_commands(commands: Vec<acp::AvailableCommand>) -> Vec<acp::Avai
 }
 
 fn builtin_commands() -> Vec<acp::AvailableCommand> {
-    vec![acp::AvailableCommand::new(
-        "clear",
-        "Clear agent context and reset to a blank slate",
-    )]
+    vec![
+        acp::AvailableCommand::new("clear", "Clear agent context and reset to a blank slate"),
+        acp::AvailableCommand::new("servers", "View MCP server connection status"),
+    ]
 }
 
 #[cfg(test)]

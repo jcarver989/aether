@@ -2,8 +2,8 @@ use llm::ToolDefinition;
 use mcp_utils::client::oauth::OAuthHandler;
 
 use mcp_utils::client::{
-    ElicitationRequest, McpError, McpManager, McpServerConfig, ParseError, RawMcpConfig,
-    ServerFactory, ServerInstructions, root_from_path,
+    ElicitationRequest, McpError, McpManager, McpServerConfig, McpServerStatusEntry, ParseError,
+    RawMcpConfig, ServerFactory, ServerInstructions, root_from_path,
 };
 
 use super::run_mcp_task::{McpCommand, run_mcp_task};
@@ -23,6 +23,7 @@ pub fn mcp() -> McpBuilder {
 pub struct McpSpawnResult {
     pub tool_definitions: Vec<ToolDefinition>,
     pub instructions: Vec<ServerInstructions>,
+    pub server_statuses: Vec<McpServerStatusEntry>,
     pub command_tx: Sender<McpCommand>,
     pub elicitation_rx: Receiver<ElicitationRequest>,
     pub handle: JoinHandle<()>,
@@ -110,11 +111,13 @@ impl McpBuilder {
 
         let tool_definitions = mcp_manager.tool_definitions();
         let instructions = mcp_manager.server_instructions();
+        let server_statuses = mcp_manager.server_statuses().to_vec();
         let mcp_handle = tokio::spawn(run_mcp_task(mcp_manager, mcp_command_rx));
 
         Ok(McpSpawnResult {
             tool_definitions,
             instructions,
+            server_statuses,
             command_tx: mcp_command_tx,
             elicitation_rx,
             handle: mcp_handle,

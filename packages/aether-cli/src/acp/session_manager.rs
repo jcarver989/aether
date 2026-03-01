@@ -1,3 +1,4 @@
+use acp_utils::notifications::McpRequest;
 use agent_client_protocol::{
     self as acp, Agent, AgentCapabilities, AuthenticateRequest, AuthenticateResponse,
     AvailableCommandsUpdate, Implementation, InitializeRequest, InitializeResponse,
@@ -12,21 +13,23 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::spawn;
-use tokio::sync::Mutex;
 use tokio::sync::oneshot;
+use tokio::sync::{Mutex, mpsc};
+use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
 use super::mappers::map_acp_mcp_servers;
-use super::relay::{SessionCommand, spawn_relay};
+use super::relay::{RelayHandle, SessionCommand, spawn_relay};
 use super::session::Session;
 use acp_utils::content::map_content_blocks_to_text;
 use acp_utils::server::AcpActorHandle;
 
 /// Per-session state including active and staged model selections.
 struct SessionState {
-    relay_tx: tokio::sync::mpsc::Sender<SessionCommand>,
+    relay_tx: mpsc::Sender<SessionCommand>,
+    mcp_request_tx: mpsc::Sender<McpRequest>,
     #[allow(dead_code)]
-    _relay_handle: tokio::task::JoinHandle<()>,
+    _relay_handle: JoinHandle<()>,
     active_model: String,
     pending_model: Option<String>,
 }
@@ -249,12 +252,16 @@ impl Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
-        let (relay_tx, relay_handle) =
-            spawn_relay(session, self.actor_handle.clone(), acp_session_id.clone());
+        let RelayHandle {
+            cmd_tx,
+            mcp_request_tx,
+            join_handle,
+        } = spawn_relay(session, self.actor_handle.clone(), acp_session_id.clone());
 
         let state = SessionState {
-            relay_tx,
-            _relay_handle: relay_handle,
+            relay_tx: cmd_tx,
+            mcp_request_tx,
+            _relay_handle: join_handle,
             active_model: model_str.clone(),
             pending_model: None,
         };
@@ -448,6 +455,42 @@ impl Agent for SessionManager {
             "Received extension notification: {}, params: {:?}",
             args.method, args.params
         );
+
+        if let Ok(msg) = McpRequest::try_from(&args) {
+            match msg {
+                McpRequest::Authenticate {
+                    session_id,
+                    server_name,
+                } => {
+                    let mcp_request_tx = {
+                        let sessions = self.sessions.lock().await;
+                        let session = sessions.get(&session_id);
+                        session
+                            .ok_or_else(|| {
+                                error!(
+                                    "Session not found for authenticate_mcp_server: {}",
+                                    session_id
+                                );
+                                acp::Error::invalid_params()
+                            })?
+                            .mcp_request_tx
+                            .clone()
+                    };
+
+                    mcp_request_tx
+                        .send(McpRequest::Authenticate {
+                            session_id,
+                            server_name,
+                        })
+                        .await
+                        .map_err(|_| {
+                            error!("MCP request channel closed for session");
+                            acp::Error::internal_error()
+                        })?;
+                }
+            }
+        }
+
         Ok(())
     }
 }

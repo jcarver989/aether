@@ -87,7 +87,7 @@ impl Agent {
         let mut state = IterationState::new();
 
         while let Some((_, event)) = self.streams.next().await {
-            use UserMessage::{Cancel, ClearContext, SwitchModel, Text};
+            use UserMessage::{Cancel, ClearContext, SwitchModel, Text, UpdateTools};
             match event {
                 StreamEvent::UserMessage(Cancel) => {
                     self.on_user_cancel(&mut state).await;
@@ -104,6 +104,10 @@ impl Agent {
 
                 StreamEvent::UserMessage(SwitchModel(new_provider)) => {
                     self.on_switch_model(new_provider).await;
+                }
+
+                StreamEvent::UserMessage(UpdateTools(tools)) => {
+                    self.context.set_tools(tools);
                 }
 
                 StreamEvent::Llm(llm_event) => {

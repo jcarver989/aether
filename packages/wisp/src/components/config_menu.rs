@@ -1,3 +1,4 @@
+use crate::components::wrap_selection;
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
 use crossterm::event::{KeyCode, KeyEvent};
@@ -12,6 +13,13 @@ pub struct ConfigMenuEntry {
     pub title: String,
     pub values: Vec<ConfigMenuValue>,
     pub current_value_index: usize,
+    pub entry_kind: ConfigMenuEntryKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigMenuEntryKind {
+    Select,
+    McpServers,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +38,7 @@ pub struct ConfigChange {
 pub enum ConfigMenuAction {
     CloseAll,
     OpenSelectedPicker,
+    OpenMcpServers,
 }
 
 impl Component for ConfigMenu {
@@ -79,7 +88,13 @@ impl HandlesInput for ConfigMenu {
                 self.move_selection_down();
                 InputOutcome::consumed_and_render()
             }
-            KeyCode::Enter => InputOutcome::action_and_render(ConfigMenuAction::OpenSelectedPicker),
+            KeyCode::Enter => {
+                let action = match self.selected_entry().map(|e| e.entry_kind) {
+                    Some(ConfigMenuEntryKind::McpServers) => ConfigMenuAction::OpenMcpServers,
+                    _ => ConfigMenuAction::OpenSelectedPicker,
+                };
+                InputOutcome::action_and_render(action)
+            }
             _ => InputOutcome::consumed(),
         }
     }
@@ -124,6 +139,7 @@ impl ConfigMenu {
                     title: opt.name.clone(),
                     values,
                     current_value_index,
+                    entry_kind: ConfigMenuEntryKind::Select,
                 })
             })
             .collect();
@@ -134,20 +150,28 @@ impl ConfigMenu {
         }
     }
 
+    pub fn with_mcp_servers_entry(mut self, summary: &str) -> Self {
+        self.options.push(ConfigMenuEntry {
+            config_id: "__mcp_servers".to_string(),
+            title: "MCP Servers".to_string(),
+            values: vec![ConfigMenuValue {
+                value: String::new(),
+                name: summary.to_string(),
+                description: None,
+                is_disabled: false,
+            }],
+            current_value_index: 0,
+            entry_kind: ConfigMenuEntryKind::McpServers,
+        });
+        self
+    }
+
     pub fn move_selection_up(&mut self) {
-        match self.selected_index {
-            _ if self.options.is_empty() => {}
-            0 => self.selected_index = self.options.len() - 1,
-            i => self.selected_index = i - 1,
-        }
+        wrap_selection(&mut self.selected_index, self.options.len(), -1);
     }
 
     pub fn move_selection_down(&mut self) {
-        match self.selected_index {
-            _ if self.options.is_empty() => {}
-            i if i >= self.options.len() - 1 => self.selected_index = 0,
-            _ => self.selected_index += 1,
-        }
+        wrap_selection(&mut self.selected_index, self.options.len(), 1);
     }
 
     pub fn update_options(&mut self, options: &[SessionConfigOption]) {

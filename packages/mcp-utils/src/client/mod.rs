@@ -9,7 +9,10 @@ pub mod variables;
 
 pub use config::*;
 pub use error::{McpError, Result};
-pub use manager::{ElicitationRequest, McpManager, ServerInstructions};
+pub use manager::{
+    ElicitationRequest, McpManager, McpServerStatus, McpServerStatusEntry, ServerInstructions,
+    split_on_server_name,
+};
 pub use roots::root_from_path;
 pub use variables::{VarError, expand_env_vars};
 

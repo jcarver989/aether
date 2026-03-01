@@ -150,6 +150,12 @@ impl Renderer {
                     };
                     prompt_handle.cancel(session_id)?;
                 }
+                AppEvent::AuthenticateMcpServer { server_name } => {
+                    let Some((prompt_handle, session_id)) = prompt else {
+                        return Err(std::io::Error::other("missing prompt context").into());
+                    };
+                    let _ = prompt_handle.authenticate_mcp_server(session_id, &server_name);
+                }
             }
         }
 
@@ -173,7 +179,8 @@ impl Renderer {
                 }
                 AppEvent::PromptSubmit { .. }
                 | AppEvent::SetConfigOption { .. }
-                | AppEvent::Cancel => {
+                | AppEvent::Cancel
+                | AppEvent::AuthenticateMcpServer { .. } => {
                     panic!("unexpected prompt/config/cancel effect without prompt context");
                 }
             }
@@ -1681,7 +1688,7 @@ fn make_config_options() -> Vec<acp::SessionConfigOption> {
 }
 
 #[tokio::test]
-async fn test_config_command_opens_picker_directly_for_single_option() {
+async fn test_config_command_opens_menu_for_single_option() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
@@ -1694,15 +1701,9 @@ async fn test_config_command_opens_picker_directly_for_single_option() {
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
 
-    // Single config option should skip menu and open picker directly
+    // Config menu should open; picker requires explicit Enter
     assert!(renderer.screen().has_config_menu());
-    assert!(renderer.screen().has_config_picker());
-    let lines = renderer.writer().get_lines();
-    assert!(
-        lines.iter().any(|l| l.contains("Model search")),
-        "Should show model picker directly.\nBuffer:\n{}",
-        lines.join("\n")
-    );
+    assert!(!renderer.screen().has_config_picker());
 }
 
 #[tokio::test]
@@ -1721,8 +1722,14 @@ async fn test_config_menu_esc_closes() {
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
     assert!(renderer.screen().has_config_menu());
+    assert!(!renderer.screen().has_config_picker());
+
+    // Open the picker by pressing Enter on the selected menu entry
+    press_enter(&mut renderer, &handle, &session_id).await;
+    assert!(renderer.screen().has_config_menu());
     assert!(renderer.screen().has_config_picker());
 
+    // First ESC closes the picker
     send_key(
         &mut renderer,
         KeyCode::Esc,
@@ -1762,22 +1769,23 @@ async fn test_config_menu_arrow_navigation_single_entry() {
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
 
-    // With single config option, menu has 1 entry at index 0
+    // With single config option + MCP servers, menu has 2 entries at index 0
+    assert!(renderer.screen().has_config_menu());
+    assert!(!renderer.screen().has_config_picker());
     assert_eq!(renderer.screen().config_menu_selected_index(), Some(0));
 
-    // Close picker first (ESC closes picker, not menu, since picker is open)
+    // Down goes to MCP Servers entry (index 1)
     send_key(
         &mut renderer,
-        KeyCode::Esc,
+        KeyCode::Down,
         KeyModifiers::empty(),
         &handle,
         &session_id,
     )
     .await;
-    assert!(renderer.screen().has_config_menu());
-    assert!(!renderer.screen().has_config_picker());
+    assert_eq!(renderer.screen().config_menu_selected_index(), Some(1));
 
-    // Down wraps → still index 0 (only 1 entry)
+    // Down again wraps back to index 0
     send_key(
         &mut renderer,
         KeyCode::Down,
@@ -1939,9 +1947,8 @@ async fn test_config_menu_ctrl_c_exits() {
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
     assert!(renderer.screen().has_config_menu());
-    assert!(renderer.screen().has_config_picker());
 
-    // Ctrl+C should still exit even with picker open
+    // Ctrl+C should still exit even with menu open
     let action = renderer
         .on_key_event(
             crossterm::event::KeyEvent {
@@ -2048,9 +2055,10 @@ async fn test_config_with_no_options_shows_placeholder() {
 
     assert!(renderer.screen().has_config_menu());
     let lines = renderer.writer().get_lines();
+    // Even with no config options, the MCP Servers entry is always present
     assert!(
-        lines.iter().any(|l| l.contains("no config options")),
-        "Should show placeholder when no options.\nBuffer:\n{}",
+        lines.iter().any(|l| l.contains("MCP Servers")),
+        "Should show MCP Servers entry even when no config options.\nBuffer:\n{}",
         lines.join("\n")
     );
 }

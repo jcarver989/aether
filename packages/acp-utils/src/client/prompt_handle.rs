@@ -18,6 +18,10 @@ pub(crate) enum PromptCommand {
         config_id: String,
         value: String,
     },
+    AuthenticateMcpServer {
+        session_id: acp::SessionId,
+        server_name: String,
+    },
 }
 
 /// Send-safe handle for issuing prompt commands to the !Send ACP connection.
@@ -71,6 +75,21 @@ impl AcpPromptHandle {
                 value: value.to_string(),
             })
             .map_err(|_| AcpClientError::AgentCrashed("set_config_option channel closed".into()))
+    }
+
+    pub fn authenticate_mcp_server(
+        &self,
+        session_id: &acp::SessionId,
+        server_name: &str,
+    ) -> Result<(), AcpClientError> {
+        self.cmd_tx
+            .send(PromptCommand::AuthenticateMcpServer {
+                session_id: session_id.clone(),
+                server_name: server_name.to_string(),
+            })
+            .map_err(|_| {
+                AcpClientError::AgentCrashed("authenticate_mcp_server channel closed".into())
+            })
     }
 }
 

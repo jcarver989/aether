@@ -1,4 +1,4 @@
-use mcp_utils::client::manager::split_on_server_name;
+use mcp_utils::client::split_on_server_name;
 use mcp_utils::display_meta::ToolResultMeta;
 use rmcp::model::CallToolRequestParams;
 use serde_json;

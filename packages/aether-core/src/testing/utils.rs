@@ -83,6 +83,7 @@ impl TestAgentBuilder {
         let McpSpawnResult {
             tool_definitions,
             instructions: _,
+            server_statuses: _,
             command_tx: mcp_tx,
             elicitation_rx: _,
             handle: _mcp_handle,

@@ -60,7 +60,7 @@ pub enum RawMcpServerConfig {
     },
 }
 
-/// A single connectable MCP server endpoint (no proxy/composite).
+/// A single connectable MCP server endpoint.
 pub enum ServerConfig {
     Http {
         name: String,

@@ -11,6 +11,7 @@ async fn test_fake_mcp_server_has_instructions() {
     let McpSpawnResult {
         tool_definitions: _,
         instructions,
+        server_statuses: _,
         command_tx: _,
         elicitation_rx: _,
         handle: _,
@@ -35,6 +36,7 @@ async fn test_multiple_servers_with_instructions() {
     let McpSpawnResult {
         tool_definitions: _,
         instructions,
+        server_statuses: _,
         command_tx: _,
         elicitation_rx: _,
         handle: _,
@@ -80,6 +82,7 @@ async fn test_server_instructions_skips_empty_instructions() {
     let McpSpawnResult {
         tool_definitions: _,
         instructions,
+        server_statuses: _,
         command_tx: _,
         elicitation_rx: _,
         handle: _,
@@ -147,6 +150,7 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
     let McpSpawnResult {
         tool_definitions,
         instructions: _,
+        server_statuses: _,
         command_tx: mcp_tx,
         elicitation_rx: _,
         handle: _,
@@ -202,6 +206,7 @@ async fn test_agent_builder_works_without_mcp_instructions() {
     let McpSpawnResult {
         tool_definitions,
         instructions: _,
+        server_statuses: _,
         command_tx: mcp_tx,
         elicitation_rx: _,
         handle: _,
@@ -241,6 +246,7 @@ async fn test_mcp_instructions_from_server_are_included() {
     let McpSpawnResult {
         tool_definitions: _,
         instructions,
+        server_statuses: _,
         command_tx: _,
         elicitation_rx: _,
         handle: _,

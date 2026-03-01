@@ -21,6 +21,7 @@ async fn test_tool_proxy_exposes_only_call_tool() {
     let McpSpawnResult {
         tool_definitions,
         instructions: _,
+        server_statuses: _,
         command_tx: _,
         elicitation_rx: _,
         handle: _,
@@ -43,6 +44,7 @@ async fn test_tool_proxy_instructions_mention_tool_directory() {
     let McpSpawnResult {
         tool_definitions: _,
         instructions,
+        server_statuses: _,
         command_tx: _,
         elicitation_rx: _,
         handle: _,
@@ -76,12 +78,71 @@ async fn test_tool_proxy_instructions_mention_tool_directory() {
 }
 
 #[tokio::test]
+async fn test_tool_proxy_does_not_expose_nested_server_tools() {
+    let config = tool_proxy_with_fakes("hidden", vec![("math", FakeMcpServer::new())]);
+
+    let McpSpawnResult {
+        tool_definitions,
+        instructions: _,
+        server_statuses: _,
+        command_tx: _,
+        elicitation_rx: _,
+        handle: _,
+    } = mcp().with_servers(vec![config]).spawn().await.unwrap();
+
+    // The agent should NOT see individual tools like math__add_numbers
+    for td in &tool_definitions {
+        assert!(
+            !td.name.contains("add_numbers"),
+            "Nested tool should not be exposed: {}",
+            td.name
+        );
+        assert!(
+            !td.name.contains("divide_numbers"),
+            "Nested tool should not be exposed: {}",
+            td.name
+        );
+    }
+
+    // Only the proxy's call_tool
+    assert_eq!(tool_definitions.len(), 1);
+    assert_eq!(tool_definitions[0].name, "hidden__call_tool");
+}
+
+#[tokio::test]
+async fn test_tool_proxy_does_not_leak_nested_instructions() {
+    let config = tool_proxy_with_fakes("noleak", vec![("math", FakeMcpServer::new())]);
+
+    let McpSpawnResult {
+        tool_definitions: _,
+        instructions,
+        server_statuses: _,
+        command_tx: _,
+        elicitation_rx: _,
+        handle: _,
+    } = mcp().with_servers(vec![config]).spawn().await.unwrap();
+
+    // Nested server instructions should NOT appear as top-level entries
+    assert!(
+        !instructions.iter().any(|i| i.server_name == "math"),
+        "Nested server 'math' should not have its own instructions entry"
+    );
+
+    // Only the proxy should have instructions
+    assert!(
+        instructions.iter().any(|i| i.server_name == "noleak"),
+        "Proxy 'noleak' should have instructions"
+    );
+}
+
+#[tokio::test]
 async fn test_tool_proxy_writes_tool_files_to_disk() {
     let config = tool_proxy_with_fakes("filetest", vec![("math", FakeMcpServer::new())]);
 
     let McpSpawnResult {
         tool_definitions: _,
         instructions,
+        server_statuses: _,
         command_tx: _,
         elicitation_rx: _,
         handle: _,
@@ -140,6 +201,7 @@ async fn test_tool_proxy_call_tool_routes_to_nested_server() {
     let McpSpawnResult {
         tool_definitions: _,
         instructions,
+        server_statuses: _,
         command_tx,
         elicitation_rx: _,
         handle: _,
@@ -204,6 +266,7 @@ async fn test_tool_proxy_call_tool_unknown_server_returns_error() {
     let McpSpawnResult {
         tool_definitions: _,
         instructions,
+        server_statuses: _,
         command_tx,
         elicitation_rx: _,
         handle: _,
@@ -238,18 +301,16 @@ async fn test_tool_proxy_call_tool_unknown_server_returns_error() {
             match result {
                 Err(e) => {
                     assert!(
-                        e.error.contains("nonexistent") || e.error.contains("Unknown server"),
+                        e.error.contains("nonexistent")
+                            || e.error.contains("not part of proxy")
+                            || e.error.contains("not connected"),
                         "Expected error mentioning unknown server, got: {}",
                         e.error
                     );
                 }
                 Ok(r) => {
-                    // Some MCP implementations return error content instead of Err
-                    assert!(
-                        r.result.contains("error")
-                            || r.result.contains("nonexistent")
-                            || r.result.contains("Unknown"),
-                        "Expected error in result, got: {}",
+                    panic!(
+                        "Expected error for unknown server, got success: {}",
                         r.result
                     );
                 }
@@ -274,6 +335,7 @@ async fn test_tool_proxy_multiple_nested_servers() {
     let McpSpawnResult {
         tool_definitions,
         instructions,
+        server_statuses: _,
         command_tx: _,
         elicitation_rx: _,
         handle: _,
@@ -300,6 +362,37 @@ async fn test_tool_proxy_multiple_nested_servers() {
     assert!(tool_dir.join("server_b/add_numbers.json").exists());
 
     let _ = std::fs::remove_dir_all(tool_dir);
+}
+
+#[tokio::test]
+async fn test_tool_proxy_server_status_shows_connected() {
+    let config = tool_proxy_with_fakes("status-test", vec![("math", FakeMcpServer::new())]);
+
+    let McpSpawnResult {
+        tool_definitions: _,
+        instructions,
+        server_statuses,
+        command_tx: _,
+        elicitation_rx: _,
+        handle: _,
+    } = mcp().with_servers(vec![config]).spawn().await.unwrap();
+
+    // The proxy itself should show as Connected with tool_count=1 (just call_tool)
+    let proxy_status = server_statuses
+        .iter()
+        .find(|s| s.name == "status-test")
+        .expect("Expected proxy status entry");
+
+    assert!(
+        matches!(
+            proxy_status.status,
+            mcp_utils::status::McpServerStatus::Connected { tool_count: 1 }
+        ),
+        "Expected Connected with 1 tool, got: {:?}",
+        proxy_status.status
+    );
+
+    cleanup_tool_dir(&instructions, "status-test");
 }
 
 /// Extract the tool directory path from proxy instructions.

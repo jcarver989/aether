@@ -1,7 +1,9 @@
-use acp_utils::notifications::{ELICITATION_METHOD, ElicitationParams, ElicitationResponse};
+use acp_utils::notifications::{
+    ELICITATION_METHOD, ElicitationParams, ElicitationResponse, McpNotification, McpRequest,
+};
 use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::run_mcp_task::McpCommand;
-use agent_client_protocol::{self as acp, SessionId};
+use agent_client_protocol::{self as acp, ExtNotification, SessionId};
 use llm::parser::ModelProviderParser;
 use mcp_utils::client::ElicitationRequest;
 use rmcp::model::{CreateElicitationRequestParams, CreateElicitationResult, ElicitationSchema};
@@ -44,24 +46,37 @@ impl fmt::Display for RelayError {
     }
 }
 
+pub(crate) struct RelayHandle {
+    pub cmd_tx: mpsc::Sender<SessionCommand>,
+    pub mcp_request_tx: mpsc::Sender<McpRequest>,
+    pub join_handle: JoinHandle<()>,
+}
+
 pub(crate) fn spawn_relay(
     session: Session,
     actor_handle: AcpActorHandle,
     acp_session_id: SessionId,
-) -> (mpsc::Sender<SessionCommand>, JoinHandle<()>) {
-    let (cmd_tx, cmd_rx) = mpsc::channel(8);
-    let handle = tokio::spawn(run_session_relay(
+) -> RelayHandle {
+    let (cmd_tx, cmd_rx) = mpsc::channel(50);
+    let (mcp_request_tx, mcp_request_rx) = mpsc::channel(50);
+    let join_handle = tokio::spawn(run_session_relay(
         session,
         cmd_rx,
+        mcp_request_rx,
         actor_handle,
         acp_session_id,
     ));
-    (cmd_tx, handle)
+    RelayHandle {
+        cmd_tx,
+        mcp_request_tx,
+        join_handle,
+    }
 }
 
 async fn run_session_relay(
     session: Session,
     mut cmd_rx: mpsc::Receiver<SessionCommand>,
+    mut mcp_request_rx: mpsc::Receiver<McpRequest>,
     actor_handle: AcpActorHandle,
     acp_session_id: SessionId,
 ) {
@@ -72,31 +87,53 @@ async fn run_session_relay(
         _mcp_handle,
         mcp_tx,
         mut elicitation_rx,
+        initial_server_statuses,
     } = session;
 
-    while let Some(cmd) = cmd_rx.recv().await {
-        match cmd {
-            SessionCommand::Prompt {
-                text,
-                switch_model,
-                result_tx,
-            } => {
-                let mut ctx = PromptContext {
-                    agent_tx: &agent_tx,
-                    agent_rx: &mut agent_rx,
-                    mcp_tx: &mcp_tx,
-                    elicitation_rx: &mut elicitation_rx,
-                    cmd_rx: &mut cmd_rx,
-                    actor_handle: &actor_handle,
-                    acp_session_id: &acp_session_id,
-                };
-                let result = handle_prompt(&mut ctx, text, switch_model).await;
-                let _ = result_tx.send(result);
+    let notification: ExtNotification = McpNotification::ServerStatus {
+        servers: initial_server_statuses,
+    }
+    .into();
+
+    if let Err(e) = actor_handle.send_ext_notification(notification).await {
+        error!("Failed to send initial MCP server status: {:?}", e);
+    }
+
+    loop {
+        tokio::select! {
+            Some(cmd) = cmd_rx.recv() => {
+                match cmd {
+                    SessionCommand::Prompt {
+                        text,
+                        switch_model,
+                        result_tx,
+                    } => {
+                        let mut ctx = PromptContext {
+                            agent_tx: &agent_tx,
+                            agent_rx: &mut agent_rx,
+                            mcp_tx: &mcp_tx,
+                            elicitation_rx: &mut elicitation_rx,
+                            mcp_request_rx: &mut mcp_request_rx,
+                            cmd_rx: &mut cmd_rx,
+                            actor_handle: &actor_handle,
+                            acp_session_id: &acp_session_id,
+                        };
+                        let result = handle_prompt(&mut ctx, text, switch_model).await;
+                        let _ = result_tx.send(result);
+                    }
+                    SessionCommand::Cancel => {
+                        info!("Cancel received while idle, ignoring");
+                    }
+                }
             }
-            SessionCommand::Cancel => {
-                // No-op when idle — session isn't processing a prompt
-                info!("Cancel received while idle, ignoring");
+            Some(msg) = mcp_request_rx.recv() => {
+                match msg {
+                    McpRequest::Authenticate { server_name, .. } => {
+                        authenticate_mcp_server(&mcp_tx, &actor_handle, &agent_tx, &server_name).await;
+                    }
+                }
             }
+            else => break,
         }
     }
 }
@@ -106,6 +143,7 @@ struct PromptContext<'a> {
     agent_rx: &'a mut mpsc::Receiver<AgentMessage>,
     mcp_tx: &'a mpsc::Sender<McpCommand>,
     elicitation_rx: &'a mut mpsc::Receiver<ElicitationRequest>,
+    mcp_request_rx: &'a mut mpsc::Receiver<McpRequest>,
     cmd_rx: &'a mut mpsc::Receiver<SessionCommand>,
     actor_handle: &'a AcpActorHandle,
     acp_session_id: &'a SessionId,
@@ -208,6 +246,13 @@ where
             }
             Some(elicitation) = ctx.elicitation_rx.recv() => {
                 handle_elicitation_request(ctx.actor_handle, elicitation).await;
+            }
+            Some(msg) = ctx.mcp_request_rx.recv() => {
+                match msg {
+                    McpRequest::Authenticate { server_name, .. } => {
+                        authenticate_mcp_server(ctx.mcp_tx, ctx.actor_handle, ctx.agent_tx, &server_name).await;
+                    }
+                }
             }
             Some(cmd) = ctx.cmd_rx.recv() => {
                 handle_in_flight_command(ctx.agent_tx, cmd, cancel_policy).await;
@@ -421,6 +466,49 @@ fn parse_slash_command_arguments(
         }
 
         Some(arg_map)
+    }
+}
+
+async fn authenticate_mcp_server(
+    mcp_tx: &mpsc::Sender<McpCommand>,
+    actor_handle: &AcpActorHandle,
+    agent_tx: &mpsc::Sender<UserMessage>,
+    name: &str,
+) {
+    let (tx, rx) = oneshot::channel();
+    if let Err(e) = mcp_tx
+        .send(McpCommand::AuthenticateServer {
+            name: name.to_string(),
+            tx,
+        })
+        .await
+    {
+        error!("MCP server authentication failed: Failed to send AuthenticateServer command: {e}");
+        return;
+    }
+
+    let result = match rx.await {
+        Ok(Ok(result)) => result,
+        Ok(Err(e)) => {
+            error!("MCP server authentication failed: {e}");
+            return;
+        }
+        Err(e) => {
+            error!("MCP server authentication failed: Failed to receive auth result: {e}");
+            return;
+        }
+    };
+
+    let (statuses, tool_definitions) = result;
+    let notification: ExtNotification = McpNotification::ServerStatus { servers: statuses }.into();
+    if let Err(e) = actor_handle.send_ext_notification(notification).await {
+        error!("Failed to send updated MCP server status: {:?}", e);
+    }
+    if let Err(e) = agent_tx
+        .send(UserMessage::UpdateTools(tool_definitions))
+        .await
+    {
+        error!("Failed to send updated tools to agent: {:?}", e);
     }
 }
 
