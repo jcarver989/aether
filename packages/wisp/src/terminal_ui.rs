@@ -183,7 +183,13 @@ async fn apply_screen_effects<T: Write>(
         match effect {
             AppEvent::Exit => return Ok(true),
             AppEvent::Render => should_render = true,
-            AppEvent::PushScrollback(lines) => renderer.push_to_scrollback(&lines)?,
+            AppEvent::PushScrollback(lines) => {
+                if should_render {
+                    renderer.render(screen)?;
+                    should_render = false;
+                }
+                renderer.push_to_scrollback(&lines)?;
+            }
             AppEvent::PromptSubmit {
                 user_input,
                 attachments,
