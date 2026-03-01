@@ -20,14 +20,13 @@ use tokio::sync::RwLock;
 use tracing::error;
 
 use super::tools::{
-    AddSkillEntryInput, AddSkillEntryOutput, ListSkillsOutput, LoadSkillsInput, LoadSkillsOutput,
-    ScoreSkillEntryInput, ScoreSkillEntryOutput, Skill, SkillInfo, add_skill_entry,
-    score_skill_entry,
+    LoadSkillsInput, LoadSkillsOutput, RateSkillInput, RateSkillOutput, SaveSkillInput,
+    SaveSkillOutput, Skill, rate_skill, save_skill,
 };
 use crate::skills::skill_file::{SKILL_FILENAME, SkillMetadata, SkillsFile, load_skill_metadata};
 use crate::skills::{
     prompt_file::{PromptFile, to_prompt},
-    tools::score_skill_entry::ScoreStatus,
+    tools::rate_skill::RateSkillStatus,
 };
 
 /// CLI arguments for `SkillsMcp` server
@@ -87,12 +86,21 @@ impl SkillsMcp {
         let mut instructions = include_str!("./instructions.md").to_string();
 
         if !skills_info.is_empty() {
-            instructions.push_str("\n\n## Available Skills\n");
-            instructions.push_str("The following skills are available:\n\n");
+            instructions.push_str("\n\n## Complete List of Available Skills\n");
+            instructions.push_str("You have access to the following Skills:\n\n");
 
             for skill in skills_info {
                 use std::fmt::Write as _;
-                let _ = writeln!(instructions, "- **{}**: {}", skill.name, skill.description);
+                if skill.tags.is_empty() {
+                    let _ = writeln!(instructions, "- **{}**: {}", skill.name, skill.description);
+                } else {
+                    let tags = skill.tags.join(", ");
+                    let _ = writeln!(
+                        instructions,
+                        "- **{}** [{}]: {}",
+                        skill.name, tags, skill.description
+                    );
+                }
             }
         }
 
@@ -204,41 +212,6 @@ impl ServerHandler for SkillsMcp {
 
 #[tool_router]
 impl SkillsMcp {
-    #[doc = include_str!("tools/list_skills/description.md")]
-    #[tool]
-    pub async fn list_skills(&self) -> Result<Json<ListSkillsOutput>, String> {
-        let skills_with_dirs =
-            match SkillsFile::from_nested_dirs(&self.skills_dir, SKILL_FILENAME).await {
-                Ok(skills) => skills,
-                Err(e) => {
-                    error!(
-                        "Failed to load skill files from {:?}: {}",
-                        self.skills_dir, e
-                    );
-                    return Ok(Json(ListSkillsOutput { skills: Vec::new() }));
-                }
-            };
-
-        let skills = skills_with_dirs
-            .iter()
-            .filter(|(dir, _)| {
-                dir.file_name()
-                    .is_some_and(|n| !n.to_string_lossy().starts_with('.'))
-            })
-            .filter_map(|(dir, file)| {
-                let name = dir.file_name()?.to_string_lossy().to_string();
-                let description = file
-                    .frontmatter
-                    .as_ref()
-                    .map(|f| f.description.clone())
-                    .unwrap_or_default();
-                Some(SkillInfo { name, description })
-            })
-            .collect();
-
-        Ok(Json(ListSkillsOutput { skills }))
-    }
-
     #[doc = include_str!("tools/get_skills/description.md")]
     #[tool]
     pub async fn get_skills(
@@ -262,33 +235,30 @@ impl SkillsMcp {
         Ok(Json(LoadSkillsOutput { skills }))
     }
 
-    #[doc = include_str!("tools/add_skill_entry/description.md")]
+    #[doc = include_str!("tools/save_skill/description.md")]
     #[tool]
-    pub async fn add_skill_entry(
+    pub async fn save_skill(
         &self,
-        request: Parameters<AddSkillEntryInput>,
-    ) -> Result<Json<AddSkillEntryOutput>, String> {
+        request: Parameters<SaveSkillInput>,
+    ) -> Result<Json<SaveSkillOutput>, String> {
         let Parameters(input) = request;
-        let dir_existed = self.skills_dir.join(&input.skill).exists();
-        let result = add_skill_entry(&input, &self.skills_dir).map_err(|e| e.to_string())?;
+        let result = save_skill(&input, &self.skills_dir).map_err(|e| e.to_string())?;
 
-        if !dir_existed {
-            self.reload_metadata().await;
-        }
+        self.reload_metadata().await;
 
         Ok(Json(result))
     }
 
-    #[doc = include_str!("tools/score_skill_entry/description.md")]
+    #[doc = include_str!("tools/rate_skill/description.md")]
     #[tool]
-    pub async fn score_skill_entry(
+    pub async fn rate_skill(
         &self,
-        request: Parameters<ScoreSkillEntryInput>,
-    ) -> Result<Json<ScoreSkillEntryOutput>, String> {
+        request: Parameters<RateSkillInput>,
+    ) -> Result<Json<RateSkillOutput>, String> {
         let Parameters(input) = request;
-        let result = score_skill_entry(&input, &self.skills_dir).map_err(|e| e.to_string())?;
+        let result = rate_skill(&input, &self.skills_dir).map_err(|e| e.to_string())?;
 
-        if matches!(result.status, ScoreStatus::Pruned) {
+        if matches!(result.status, RateSkillStatus::Pruned) {
             self.reload_metadata().await;
         }
 

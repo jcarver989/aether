@@ -104,8 +104,6 @@ async fn test_load_from_nested_directories() {
         skill1.frontmatter.as_ref().unwrap().description,
         Some("First skill".to_string())
     );
-
-    // TempDir automatically cleans up when dropped
 }
 
 #[tokio::test]
@@ -223,67 +221,4 @@ async fn test_load_skills_tool() {
             assert!(skills.iter().any(|s| s["name"] == "skill-2"));
         }
     }
-
-    // TempDir automatically cleans up when dropped
-}
-
-#[tokio::test]
-async fn test_list_skills_tool() {
-    let test_files = vec![
-        (
-            "skills/skill-1/SKILL.md",
-            "---\ndescription: First skill\n---\nContent here.",
-        ),
-        ("skills/skill-2/SKILL.md", "# Skill 2\n\nNo frontmatter."),
-        (
-            "skills/skill-3/SKILL.md",
-            "---\ndescription: Third skill\n---\nContent.",
-        ),
-    ];
-
-    let temp_dir = create_test_files(&test_files);
-
-    // Create MCP server and client
-    let (_server_handle, client) = create_test_client(temp_dir.path()).await;
-
-    // Test list_skills tool
-    let result = client
-        .call_tool(CallToolRequestParams {
-            name: "list_skills".into(),
-            meta: None,
-            task: None,
-            arguments: None,
-        })
-        .await
-        .expect("Failed to call list_skills tool");
-
-    // Verify result
-    assert!(result.content.len() == 1);
-    if let Some(content) = result.content.first() {
-        if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
-
-            let skills = parsed["skills"].as_array().expect("Expected skills array");
-            assert_eq!(skills.len(), 3);
-
-            // Verify skill-1 has description
-            let skill1 = skills.iter().find(|s| s["name"] == "skill-1").unwrap();
-            assert_eq!(skill1["description"], "First skill");
-
-            // Verify skill-2 has empty description
-            let skill2 = skills.iter().find(|s| s["name"] == "skill-2").unwrap();
-            assert_eq!(skill2["description"], "");
-
-            // Verify skill-3 has description
-            let skill3 = skills.iter().find(|s| s["name"] == "skill-3").unwrap();
-            assert_eq!(skill3["description"], "Third skill");
-        } else {
-            panic!("Expected text content");
-        }
-    } else {
-        panic!("Expected content in result");
-    }
-
-    // TempDir automatically cleans up when dropped
 }
