@@ -3,7 +3,7 @@ use llm::ToolDefinition;
 use super::{
     McpError, Result,
     config::{McpServerConfig, ServerConfig},
-    connection::connect_to_server,
+    connection::{McpServerConnection, ServerInstructions, Tool},
     mcp_client::McpClient,
     naming::{create_namespaced_tool_name, split_on_server_name},
     oauth::{OAuthHandler, create_auth_manager_from_store, perform_oauth_flow},
@@ -14,7 +14,6 @@ use rmcp::{
     model::{
         CallToolRequestParams, ClientCapabilities, ClientInfo, CreateElicitationRequestParams,
         CreateElicitationResult, ElicitationAction, Implementation, ProtocolVersion, Root,
-        Tool as RmcpTool,
     },
     serve_client,
     service::RunningService,
@@ -173,7 +172,7 @@ impl McpManager {
             McpServerConfig::Server(config) => {
                 let name = config.name().to_string();
                 let create_client = || self.create_mcp_client();
-                let (client, task) = connect_to_server(config, create_client).await?;
+                let (client, task) = McpServerConnection::connect(config, create_client).await?;
                 self.register_server_inner(&name, client, task, Registration::Direct)
                     .await
             }
@@ -206,7 +205,7 @@ impl McpManager {
                 }
                 other => {
                     let create_client = || self.create_mcp_client();
-                    match connect_to_server(other, &create_client).await {
+                    match McpServerConnection::connect(other, &create_client).await {
                         Ok((client, task)) => {
                             self.register_server_inner(
                                 &server_name,
@@ -412,14 +411,8 @@ impl McpManager {
         // Remove from pending configs if it was there
         self.pending_configs.remove(name);
 
-        self.servers.insert(
-            name.to_string(),
-            McpServerConnection {
-                instructions: extract_instructions(&client),
-                client: Arc::new(client),
-                server_task,
-            },
-        );
+        self.servers
+            .insert(name.to_string(), McpServerConnection::new(client, server_task));
         Ok(())
     }
 
@@ -719,46 +712,3 @@ impl Drop for McpManager {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ServerInstructions {
-    pub server_name: String,
-    pub instructions: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct Tool {
-    pub description: String,
-    pub parameters: Value,
-}
-
-struct McpServerConnection {
-    client: Arc<RunningService<RoleClient, McpClient>>,
-    server_task: Option<JoinHandle<()>>,
-    instructions: Option<String>,
-}
-
-impl From<RmcpTool> for Tool {
-    fn from(tool: RmcpTool) -> Self {
-        Self {
-            description: tool.description.unwrap_or_default().to_string(),
-            parameters: serde_json::Value::Object((*tool.input_schema).clone()),
-        }
-    }
-}
-
-impl From<&RmcpTool> for Tool {
-    fn from(tool: &RmcpTool) -> Self {
-        Self {
-            description: tool.description.clone().unwrap_or_default().to_string(),
-            parameters: serde_json::Value::Object((*tool.input_schema).clone()),
-        }
-    }
-}
-
-/// Extract non-empty instructions from an MCP client's peer info.
-fn extract_instructions(client: &RunningService<RoleClient, McpClient>) -> Option<String> {
-    client
-        .peer_info()
-        .and_then(|info| info.instructions.clone())
-        .filter(|s| !s.is_empty())
-}
