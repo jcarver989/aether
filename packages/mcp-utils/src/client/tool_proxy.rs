@@ -48,7 +48,7 @@ impl ToolProxy {
         tool_dir: PathBuf,
         server_descriptions: &[(String, String)],
     ) -> Self {
-        let instructions = build_proxy_instructions(&tool_dir, server_descriptions);
+        let instructions = Self::build_instructions(&tool_dir, server_descriptions);
         Self {
             name,
             members,
@@ -100,6 +100,124 @@ impl ToolProxy {
     pub fn add_member(&mut self, server_name: String) {
         self.members.insert(server_name);
     }
+
+    /// Returns the directory for a tool-proxy's tool definitions.
+    ///
+    /// Uses `$AETHER_HOME/tool-proxy/<name>` or `~/.aether/tool-proxy/<name>`.
+    pub fn dir(name: &str) -> Result<PathBuf, McpError> {
+        let base =
+            super::aether_home().ok_or_else(|| McpError::Other("Home directory not set".into()))?;
+        Ok(base.join("tool-proxy").join(name))
+    }
+
+    /// Clean up the tool directory for a proxy, removing all tool files.
+    pub async fn clean_dir(tool_dir: &Path) -> Result<(), McpError> {
+        if tool_dir.exists() {
+            remove_dir_all(tool_dir)
+                .await
+                .map_err(|e| McpError::Other(format!("Failed to clean tool-proxy dir: {e}")))?;
+        }
+        Ok(())
+    }
+
+    /// Build the `call_tool` JSON schema used by the proxy's virtual tool.
+    pub fn call_tool_schema() -> Arc<Map<String, Value>> {
+        let schema = schemars::schema_for!(ProxyCallArgs);
+        let value = serde_json::to_value(schema).expect("schema serialization cannot fail");
+        Arc::new(
+            value
+                .as_object()
+                .expect("schema is always an object")
+                .clone(),
+        )
+    }
+
+    /// Build a `ToolDefinition` for the proxy's `call_tool` virtual tool.
+    pub fn call_tool_definition(proxy_name: &str) -> ToolDefinition {
+        let schema = Self::call_tool_schema();
+        let namespaced_name = format!("{proxy_name}__call_tool");
+        ToolDefinition {
+            name: namespaced_name,
+            description: "Execute a tool on a nested MCP server. Browse the tool-proxy directory to discover available tools first.".to_string(),
+            parameters: Value::Object((*schema).clone()).to_string(),
+            server: Some(proxy_name.to_string()),
+        }
+    }
+
+    /// Discover tools from a connected MCP server and write them as JSON files
+    /// to `tool_dir/<server_name>/`.
+    pub async fn write_tools_to_dir(
+        server_name: &str,
+        client: &RunningService<RoleClient, McpClient>,
+        tool_dir: &Path,
+    ) -> Result<(), McpError> {
+        let tools_response = client.list_tools(None).await.map_err(|e| {
+            McpError::ToolDiscoveryFailed(format!(
+                "Failed to list tools for nested server '{server_name}': {e}"
+            ))
+        })?;
+
+        let server_dir = tool_dir.join(server_name);
+        create_dir_all(&server_dir).await?;
+
+        for tool in &tools_response.tools {
+            let entry = ToolFileEntry {
+                name: tool.name.to_string(),
+                description: tool.description.clone().unwrap_or_default().to_string(),
+                server: server_name.to_string(),
+                parameters: Value::Object((*tool.input_schema).clone()),
+            };
+
+            let file_path = server_dir.join(format!("{}.json", tool.name));
+            let json = serde_json::to_string_pretty(&entry)?;
+            write(&file_path, json).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Extract a one-line description for a nested server from its peer info.
+    ///
+    /// Uses `server_info.description`, falling back to the server name.
+    pub fn extract_server_description(
+        client: &RunningService<RoleClient, McpClient>,
+        server_name: &str,
+    ) -> String {
+        client
+            .peer_info()
+            .and_then(|info| {
+                info.server_info
+                    .description
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+            })
+            .unwrap_or_else(|| server_name.to_string())
+    }
+
+    /// Build proxy instructions describing the tool directory and connected servers.
+    fn build_instructions(
+        tool_dir: &Path,
+        server_descriptions: &[(String, String)],
+    ) -> String {
+        use std::fmt::Write;
+
+        let mut instructions = format!(
+            "You are connected to a set of MCP servers, whose tools are available at `{tool_dir}`.\n\
+             Each subdirectory in `{tool_dir}` represents a MCP server you're connected. And each subdir contains tool definitions in the form of JSON files.\n\
+             Browse or grep the directory to discover tools, then use `call_tool` to execute them.",
+            tool_dir = tool_dir.display()
+        );
+
+        if !server_descriptions.is_empty() {
+            instructions.push_str("\n\n## Connected Servers\n");
+            for (name, desc) in server_descriptions {
+                let _ = writeln!(instructions, "- **{name}**: {desc}");
+            }
+        }
+
+        instructions
+    }
 }
 
 /// A tool definition written to disk for agent browsing.
@@ -111,123 +229,6 @@ pub struct ToolFileEntry {
     pub parameters: Value,
 }
 
-/// Returns the directory for a tool-proxy's tool definitions.
-///
-/// Uses `$AETHER_HOME/tool-proxy/<name>` or `~/.aether/tool-proxy/<name>`.
-pub fn tool_proxy_dir(name: &str) -> Result<PathBuf, McpError> {
-    let base =
-        super::aether_home().ok_or_else(|| McpError::Other("Home directory not set".into()))?;
-    Ok(base.join("tool-proxy").join(name))
-}
-
-/// Discover tools from a connected MCP server and write them as JSON files
-/// to `tool_dir/<server_name>/`.
-pub async fn discover_and_write_tools(
-    server_name: &str,
-    client: &RunningService<RoleClient, McpClient>,
-    tool_dir: &std::path::Path,
-) -> Result<(), McpError> {
-    let tools_response = client.list_tools(None).await.map_err(|e| {
-        McpError::ToolDiscoveryFailed(format!(
-            "Failed to list tools for nested server '{server_name}': {e}"
-        ))
-    })?;
-
-    let server_dir = tool_dir.join(server_name);
-    create_dir_all(&server_dir).await?;
-
-    for tool in &tools_response.tools {
-        let entry = ToolFileEntry {
-            name: tool.name.to_string(),
-            description: tool.description.clone().unwrap_or_default().to_string(),
-            server: server_name.to_string(),
-            parameters: Value::Object((*tool.input_schema).clone()),
-        };
-
-        let file_path = server_dir.join(format!("{}.json", tool.name));
-        let json = serde_json::to_string_pretty(&entry)?;
-        write(&file_path, json).await?;
-    }
-
-    Ok(())
-}
-
-/// Build the `call_tool` JSON schema used by the proxy's virtual tool.
-pub fn call_tool_schema() -> Arc<Map<String, Value>> {
-    let schema = schemars::schema_for!(ProxyCallArgs);
-    let value = serde_json::to_value(schema).expect("schema serialization cannot fail");
-    Arc::new(
-        value
-            .as_object()
-            .expect("schema is always an object")
-            .clone(),
-    )
-}
-
-/// Build a `ToolDefinition` for the proxy's `call_tool` virtual tool.
-pub fn call_tool_definition(proxy_name: &str) -> ToolDefinition {
-    let schema = call_tool_schema();
-    let namespaced_name = format!("{proxy_name}__call_tool");
-    ToolDefinition {
-        name: namespaced_name,
-        description: "Execute a tool on a nested MCP server. Browse the tool-proxy directory to discover available tools first.".to_string(),
-        parameters: Value::Object((*schema).clone()).to_string(),
-        server: Some(proxy_name.to_string()),
-    }
-}
-
-/// Build proxy instructions describing the tool directory and connected servers.
-pub fn build_proxy_instructions(
-    tool_dir: &std::path::Path,
-    server_descriptions: &[(String, String)],
-) -> String {
-    use std::fmt::Write;
-
-    let mut instructions = format!(
-        "You are connected to a set of MCP servers, whose tools are available at `{tool_dir}`.\n\
-         Each subdirectory in `{tool_dir}` represents a MCP server you're connected. And each subdir contains tool definitions in the form of JSON files.\n\
-         Browse or grep the directory to discover tools, then use `call_tool` to execute them.",
-        tool_dir = tool_dir.display()
-    );
-
-    if !server_descriptions.is_empty() {
-        instructions.push_str("\n\n## Connected Servers\n");
-        for (name, desc) in server_descriptions {
-            let _ = writeln!(instructions, "- **{name}**: {desc}");
-        }
-    }
-
-    instructions
-}
-
-/// Extract a one-line description for a nested server from its peer info.
-///
-/// Uses `server_info.description`, falling back to the server name.
-pub fn extract_server_description(
-    client: &RunningService<RoleClient, McpClient>,
-    server_name: &str,
-) -> String {
-    client
-        .peer_info()
-        .and_then(|info| {
-            info.server_info
-                .description
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .map(ToString::to_string)
-        })
-        .unwrap_or_else(|| server_name.to_string())
-}
-
-/// Clean up the tool directory for a proxy, removing all tool files.
-pub async fn clean_tool_dir(tool_dir: &std::path::Path) -> Result<(), McpError> {
-    if tool_dir.exists() {
-        remove_dir_all(tool_dir)
-            .await
-            .map_err(|e| McpError::Other(format!("Failed to clean tool-proxy dir: {e}")))?;
-    }
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
@@ -260,7 +261,7 @@ mod tests {
 
     #[test]
     fn call_tool_schema_is_valid() {
-        let schema = call_tool_schema();
+        let schema = ToolProxy::call_tool_schema();
         assert_eq!(schema.get("type").unwrap(), "object");
 
         let properties = schema.get("properties").unwrap().as_object().unwrap();
@@ -278,7 +279,7 @@ mod tests {
 
     #[test]
     fn tool_proxy_dir_appends_correct_suffix() {
-        let dir = tool_proxy_dir("proxy").unwrap();
+        let dir = ToolProxy::dir("proxy").unwrap();
         assert!(
             dir.ends_with("tool-proxy/proxy"),
             "Expected path to end with tool-proxy/proxy, got: {}",
@@ -312,7 +313,7 @@ mod tests {
 
     #[test]
     fn call_tool_definition_has_correct_name_and_server() {
-        let def = call_tool_definition("myproxy");
+        let def = ToolProxy::call_tool_definition("myproxy");
         assert_eq!(def.name, "myproxy__call_tool");
         assert_eq!(def.server, Some("myproxy".to_string()));
         assert!(def.description.contains("Execute a tool"));
@@ -325,7 +326,7 @@ mod tests {
             ("math".to_string(), "Math tools".to_string()),
             ("git".to_string(), "Git tools".to_string()),
         ];
-        let instr = build_proxy_instructions(tool_dir, &descriptions);
+        let instr = ToolProxy::build_instructions(tool_dir, &descriptions);
         assert!(instr.contains("/tmp/tool-proxy/test"));
         assert!(instr.contains("call_tool"));
         assert!(instr.contains("## Connected Servers"));

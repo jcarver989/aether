@@ -5,10 +5,7 @@ use super::{
     config::{McpServerConfig, ServerConfig},
     mcp_client::McpClient,
     oauth::{OAuthHandler, create_auth_manager_from_store, perform_oauth_flow},
-    tool_proxy::{
-        self, ToolProxy, call_tool_definition, clean_tool_dir, discover_and_write_tools,
-        extract_server_description, tool_proxy_dir,
-    },
+    tool_proxy::ToolProxy,
 };
 use crate::transport::create_in_memory_transport;
 use rmcp::{
@@ -192,8 +189,8 @@ impl McpManager {
         proxy_name: String,
         servers: Vec<ServerConfig>,
     ) -> Result<()> {
-        let tool_dir = tool_proxy_dir(&proxy_name)?;
-        clean_tool_dir(&tool_dir).await?;
+        let tool_dir = ToolProxy::dir(&proxy_name)?;
+        ToolProxy::clean_dir(&tool_dir).await?;
 
         let mut nested_names = HashSet::new();
         let mut server_descriptions = Vec::new();
@@ -231,14 +228,14 @@ impl McpManager {
                     if let Some(conn) = self.servers.get(&server_name) {
                         let client = conn.client.clone();
                         if let Err(e) =
-                            discover_and_write_tools(&server_name, &client, &tool_dir).await
+                            ToolProxy::write_tools_to_dir(&server_name, &client, &tool_dir).await
                         {
                             tracing::warn!(
                                 "Failed to write tool files for nested server '{server_name}': {e}"
                             );
                         }
 
-                        let description = extract_server_description(&client, &server_name);
+                        let description = ToolProxy::extract_server_description(&client, &server_name);
                         server_descriptions.push((server_name.clone(), description));
                     }
                     nested_names.insert(server_name);
@@ -254,7 +251,7 @@ impl McpManager {
             }
         }
 
-        let call_tool_def = call_tool_definition(&proxy_name);
+        let call_tool_def = ToolProxy::call_tool_definition(&proxy_name);
         self.tools.insert(
             call_tool_def.name.clone(),
             Tool {
@@ -353,7 +350,7 @@ impl McpManager {
             if let Some(conn) = self.servers.get(&name) {
                 let client = conn.client.clone();
                 if let Err(e) =
-                    tool_proxy::discover_and_write_tools(&name, &client, &tool_dir).await
+                    ToolProxy::write_tools_to_dir(&name, &client, &tool_dir).await
                 {
                     tracing::warn!("Failed to write tool files for '{name}' after OAuth: {e}");
                 }
