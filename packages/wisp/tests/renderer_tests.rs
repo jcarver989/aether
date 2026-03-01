@@ -1811,7 +1811,10 @@ async fn test_config_single_option_shows_model_picker() {
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
 
-    // Single config option auto-opens model picker
+    // Menu opens; press Enter to open the model picker
+    assert!(renderer.screen().has_config_menu());
+    press_enter(&mut renderer, &handle, &session_id).await;
+
     assert!(renderer.screen().has_config_picker());
     let lines = renderer.writer().get_lines();
     assert!(
@@ -1833,6 +1836,8 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
     let session_id = acp::SessionId::new("test-session");
 
     type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
+    // Open the picker from the menu
     press_enter(&mut renderer, &handle, &session_id).await;
 
     let lines = renderer.writer().get_lines();
@@ -1866,6 +1871,8 @@ async fn test_config_picker_filters_model_options() {
     let session_id = acp::SessionId::new("test-session");
 
     type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
+    // Open the picker from the menu
     press_enter(&mut renderer, &handle, &session_id).await;
 
     type_string(&mut renderer, "claude", &handle, &session_id).await;
