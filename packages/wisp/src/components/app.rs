@@ -1,6 +1,7 @@
 use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPickerAction};
-use crate::components::config_menu::{ConfigChange, ConfigMenu, ConfigMenuAction};
-use crate::components::config_picker::{ConfigPicker, ConfigPickerAction};
+use crate::components::config_menu::ConfigMenu;
+use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayAction};
+use crate::components::server_status::server_status_summary;
 use crate::components::container::Container;
 #[cfg(test)]
 use crate::components::conversation_window::SegmentContent;
@@ -9,7 +10,6 @@ use crate::components::elicitation_form::ElicitationForm;
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::progress_indicator::ProgressIndicator;
-use crate::components::server_status::{ServerStatusAction, ServerStatusOverlay};
 use crate::components::status_line::StatusLine;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputAction};
 use crate::components::tool_call_statuses::ToolCallStatuses;
@@ -82,11 +82,9 @@ pub struct App {
     context_usage_pct: Option<u8>,
     file_picker: Option<FilePicker>,
     command_picker: Option<CommandPicker>,
-    config_menu: Option<ConfigMenu>,
-    config_picker: Option<ConfigPicker>,
+    config_overlay: Option<ConfigOverlay>,
     elicitation_form: Option<ElicitationForm>,
     server_statuses: Vec<McpServerStatusEntry>,
-    server_status_overlay: Option<ServerStatusOverlay>,
 }
 
 impl App {
@@ -105,11 +103,9 @@ impl App {
             context_usage_pct: None,
             file_picker: None,
             command_picker: None,
-            config_menu: None,
-            config_picker: None,
+            config_overlay: None,
             elicitation_form: None,
             server_statuses: Vec::new(),
-            server_status_overlay: None,
         }
     }
 
@@ -205,7 +201,9 @@ impl App {
                 self.conversation.close_thought_block();
                 self.model_display = extract_model_display(&update.config_options);
                 self.config_options.clone_from(&update.config_options);
-                self.update_config_menu(&update.config_options);
+                if let Some(ref mut overlay) = self.config_overlay {
+                    overlay.update_config_options(&update.config_options);
+                }
                 should_render = true;
             }
             _ => {
@@ -258,6 +256,7 @@ impl App {
         params: ElicitationParams,
         response_tx: oneshot::Sender<ElicitationResponse>,
     ) -> Vec<AppEvent> {
+        self.config_overlay = None;
         self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
         vec![AppEvent::Render]
     }
@@ -293,9 +292,9 @@ impl App {
                 if let Ok(McpNotification::ServerStatus { servers }) =
                     McpNotification::try_from(notification)
                 {
-                    self.server_statuses = servers;
-                    if let Some(ref mut overlay) = self.server_status_overlay {
-                        overlay.update_entries(self.server_statuses.clone());
+                    self.server_statuses.clone_from(&servers);
+                    if let Some(ref mut overlay) = self.config_overlay {
+                        overlay.update_server_statuses(servers);
                     }
                     return vec![AppEvent::Render];
                 }
@@ -339,23 +338,34 @@ impl App {
     }
 
     #[allow(dead_code)]
+    pub fn has_config_overlay(&self) -> bool {
+        self.config_overlay.is_some()
+    }
+
+    #[allow(dead_code)]
     pub fn has_config_menu(&self) -> bool {
-        self.config_menu.is_some()
+        self.config_overlay.is_some()
     }
 
     #[allow(dead_code)]
     pub fn has_config_picker(&self) -> bool {
-        self.config_picker.is_some()
+        self.config_overlay
+            .as_ref()
+            .is_some_and(ConfigOverlay::has_picker)
     }
 
     #[allow(dead_code)]
     pub fn config_menu_selected_index(&self) -> Option<usize> {
-        self.config_menu.as_ref().map(|m| m.selected_index)
+        self.config_overlay
+            .as_ref()
+            .map(ConfigOverlay::menu_selected_index)
     }
 
     #[allow(dead_code)]
     pub fn config_picker_config_id(&self) -> Option<&str> {
-        self.config_picker.as_ref().map(|p| p.config_id.as_str())
+        self.config_overlay
+            .as_ref()
+            .and_then(|o| o.picker_config_id())
     }
 
     #[allow(dead_code)]
@@ -422,19 +432,9 @@ impl App {
             return Some(self.handle_command_picker_outcome(&outcome));
         }
 
-        if let Some(ref mut overlay) = self.server_status_overlay {
+        if let Some(ref mut overlay) = self.config_overlay {
             let outcome = overlay.handle_key(key_event);
-            return Some(self.handle_server_status_outcome(outcome));
-        }
-
-        if let Some(ref mut picker) = self.config_picker {
-            let outcome = picker.handle_key(key_event);
-            return Some(self.handle_config_picker_outcome(outcome));
-        }
-
-        if let Some(ref mut menu) = self.config_menu {
-            let outcome = menu.handle_key(key_event);
-            return Some(self.handle_config_menu_outcome(outcome));
+            return Some(self.handle_config_overlay_outcome(outcome));
         }
 
         None
@@ -507,28 +507,29 @@ impl App {
         }
     }
 
-    fn handle_config_picker_outcome(
+    fn handle_config_overlay_outcome(
         &mut self,
-        outcome: InputOutcome<ConfigPickerAction>,
+        outcome: InputOutcome<ConfigOverlayAction>,
     ) -> Vec<AppEvent> {
         match outcome.action {
-            Some(ConfigPickerAction::Close) => {
-                self.config_picker = None;
-                if outcome.needs_render {
-                    vec![AppEvent::Render]
-                } else {
-                    vec![]
-                }
+            Some(ConfigOverlayAction::Close) => {
+                self.config_overlay = None;
+                vec![AppEvent::Render]
             }
-            Some(ConfigPickerAction::ApplySelection(change)) => {
-                self.config_picker = None;
-                if let Some(change) = change {
-                    Self::handle_config_change(change)
-                } else if outcome.needs_render {
-                    vec![AppEvent::Render]
-                } else {
-                    vec![]
-                }
+            Some(ConfigOverlayAction::ApplyConfigChange(change)) => {
+                vec![
+                    AppEvent::SetConfigOption {
+                        config_id: change.config_id,
+                        new_value: change.new_value,
+                    },
+                    AppEvent::Render,
+                ]
+            }
+            Some(ConfigOverlayAction::AuthenticateServer(name)) => {
+                vec![
+                    AppEvent::AuthenticateMcpServer { server_name: name },
+                    AppEvent::Render,
+                ]
             }
             None => {
                 if outcome.needs_render {
@@ -540,84 +541,16 @@ impl App {
         }
     }
 
-    fn handle_config_menu_outcome(
-        &mut self,
-        outcome: InputOutcome<ConfigMenuAction>,
-    ) -> Vec<AppEvent> {
-        if let Some(action) = outcome.action {
-            match action {
-                ConfigMenuAction::CloseAll => {
-                    self.config_menu = None;
-                    self.config_picker = None;
-                }
-                ConfigMenuAction::OpenSelectedPicker => {
-                    self.config_picker = self
-                        .config_menu
-                        .as_ref()
-                        .and_then(|menu| menu.selected_entry())
-                        .and_then(ConfigPicker::from_entry);
-                }
-                ConfigMenuAction::OpenMcpServers => {
-                    self.server_status_overlay =
-                        Some(ServerStatusOverlay::new(self.server_statuses.clone()));
-                }
-            }
-        }
-
-        if outcome.needs_render {
-            vec![AppEvent::Render]
-        } else {
-            vec![]
-        }
-    }
-
-    fn handle_server_status_outcome(
-        &mut self,
-        outcome: InputOutcome<ServerStatusAction>,
-    ) -> Vec<AppEvent> {
-        if let Some(action) = outcome.action {
-            match action {
-                ServerStatusAction::Close => {
-                    self.server_status_overlay = None;
-                }
-                ServerStatusAction::Authenticate(name) => {
-                    return vec![
-                        AppEvent::AuthenticateMcpServer { server_name: name },
-                        AppEvent::Render,
-                    ];
-                }
-            }
-        }
-
-        if outcome.needs_render {
-            vec![AppEvent::Render]
-        } else {
-            vec![]
-        }
-    }
-
-    fn handle_config_change(change: ConfigChange) -> Vec<AppEvent> {
-        vec![
-            AppEvent::SetConfigOption {
-                config_id: change.config_id,
-                new_value: change.new_value,
-            },
-            AppEvent::Render,
-        ]
-    }
-
     fn apply_command(&mut self, cmd: &CommandEntry) -> Vec<AppEvent> {
         if cmd.builtin && cmd.name == "config" {
             self.text_input.clear();
             self.close_all_pickers();
-            self.open_config_menu();
+            self.open_config_overlay();
             vec![AppEvent::Render]
         } else if cmd.builtin && cmd.name == "servers" {
             self.text_input.clear();
             self.close_all_pickers();
-            self.open_config_menu();
-            self.server_status_overlay =
-                Some(ServerStatusOverlay::new(self.server_statuses.clone()));
+            self.open_config_overlay_with_servers();
             vec![AppEvent::Render]
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
@@ -685,47 +618,31 @@ impl App {
         self.command_picker = Some(CommandPicker::new(commands));
     }
 
-    fn open_config_menu(&mut self) {
+    fn open_config_overlay(&mut self) {
         let menu = ConfigMenu::from_config_options(&self.config_options);
         let summary = server_status_summary(&self.server_statuses);
-        self.config_menu = Some(menu.with_mcp_servers_entry(&summary));
+        let menu = menu.with_mcp_servers_entry(&summary);
+        self.config_overlay = Some(ConfigOverlay::new(menu, self.server_statuses.clone()));
     }
 
-    #[cfg(test)]
-    fn open_config_picker_for(&mut self, config_id: &str) -> bool {
-        let Some(menu) = self.config_menu.as_ref() else {
-            return false;
-        };
-        let Some(entry) = menu.entry_by_id(config_id) else {
-            return false;
-        };
-        let Some(picker) = ConfigPicker::from_entry(entry) else {
-            return false;
-        };
-        self.config_picker = Some(picker);
-        true
+    fn open_config_overlay_with_servers(&mut self) {
+        let menu = ConfigMenu::from_config_options(&self.config_options);
+        let summary = server_status_summary(&self.server_statuses);
+        let menu = menu.with_mcp_servers_entry(&summary);
+        self.config_overlay = Some(
+            ConfigOverlay::new(menu, self.server_statuses.clone()).with_server_overlay(),
+        );
     }
 
     fn close_all_pickers(&mut self) {
         self.file_picker = None;
         self.command_picker = None;
-        self.config_picker = None;
+        self.config_overlay = None;
     }
 
     fn close_input_pickers(&mut self) {
         self.file_picker = None;
         self.command_picker = None;
-    }
-
-    fn update_config_menu(&mut self, options: &[SessionConfigOption]) {
-        if let Some(ref mut menu) = self.config_menu {
-            menu.update_options(options);
-        }
-    }
-
-    fn config_picker_cursor_col(picker: &ConfigPicker) -> usize {
-        let prefix = format!("  {} search: ", picker.title);
-        UnicodeWidthStr::width(prefix.as_str()) + UnicodeWidthStr::width(picker.query())
     }
 
     fn command_picker_cursor_col(picker: &CommandPicker) -> usize {
@@ -827,15 +744,44 @@ async fn build_attachment_file_uri(path: &Path, display_name: &str) -> Result<St
 
 impl CursorComponent for App {
     fn render_with_cursor(&mut self, context: &RenderContext) -> RenderOutput {
-        // Compute values before borrowing fields mutably into the container.
+        let unhealthy_count = self
+            .server_statuses
+            .iter()
+            .filter(|s| !matches!(s.status, McpServerStatus::Connected { .. }))
+            .count();
+        let mut status_line = StatusLine {
+            agent_name: &self.agent_name,
+            model_display: self.model_display.as_deref(),
+            context_pct_left: self.context_usage_pct,
+            waiting_for_response: self.waiting_for_response,
+            unhealthy_server_count: unhealthy_count,
+        };
+
+        // Full-screen config overlay path
+        if let Some(ref mut overlay) = self.config_overlay {
+            let cursor_col = overlay.cursor_col();
+            let cursor_row = overlay.cursor_row_offset();
+
+            let mut container = Container::new(vec![overlay, &mut status_line]);
+            let (lines, _offsets) = container.render_with_offsets(context);
+
+            let cursor = Cursor {
+                logical_row: cursor_row,
+                col: cursor_col,
+            };
+
+            return RenderOutput {
+                lines,
+                cursor,
+                cursor_visible: overlay.has_picker(),
+            };
+        }
+
+        // Normal rendering path
         let command_picker_col = self
             .command_picker
             .as_ref()
             .map(Self::command_picker_cursor_col);
-        let config_picker_col = self
-            .config_picker
-            .as_ref()
-            .map(Self::config_picker_cursor_col);
         let picker_query_len = self.file_picker.as_ref().map(|p| p.query().len());
         let cursor_index = self.text_input.cursor_index(picker_query_len);
 
@@ -849,18 +795,6 @@ impl CursorComponent for App {
             cursor_index,
         };
         let input_layout = input_prompt.layout(context);
-        let unhealthy_count = self
-            .server_statuses
-            .iter()
-            .filter(|s| !matches!(s.status, McpServerStatus::Connected { .. }))
-            .count();
-        let mut status_line = StatusLine {
-            agent_name: &self.agent_name,
-            model_display: self.model_display.as_deref(),
-            context_pct_left: self.context_usage_pct,
-            waiting_for_response: self.waiting_for_response,
-            unhealthy_server_count: unhealthy_count,
-        };
 
         let progress = self.tool_call_statuses.progress();
         let mut progress_indicator = ProgressIndicator {
@@ -888,20 +822,6 @@ impl CursorComponent for App {
             None
         };
 
-        let config_picker_index = if let Some(ref mut picker) = self.config_picker {
-            let idx = container.len();
-            container.push(picker);
-            Some(idx)
-        } else if let Some(ref mut overlay) = self.server_status_overlay {
-            container.push(overlay);
-            None
-        } else {
-            if let Some(ref mut menu) = self.config_menu {
-                container.push(menu);
-            }
-            None
-        };
-
         if let Some(ref mut ef) = self.elicitation_form {
             container.push(&mut ef.form);
         }
@@ -921,14 +841,11 @@ impl CursorComponent for App {
             };
         }
 
-        if let Some(idx) = config_picker_index {
-            cursor = Cursor {
-                logical_row: offsets[idx],
-                col: config_picker_col.unwrap_or(0),
-            };
+        RenderOutput {
+            lines,
+            cursor,
+            cursor_visible: true,
         }
-
-        RenderOutput { lines, cursor }
     }
 }
 
@@ -968,26 +885,6 @@ fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<Strin
         .map(|o| o.name.clone())
 }
 
-fn server_status_summary(statuses: &[McpServerStatusEntry]) -> String {
-    if statuses.is_empty() {
-        return "none".to_string();
-    }
-    let (mut c, mut n, mut f) = (0usize, 0usize, 0usize);
-    for s in statuses {
-        match &s.status {
-            McpServerStatus::Connected { .. } => c += 1,
-            McpServerStatus::NeedsOAuth => n += 1,
-            McpServerStatus::Failed { .. } => f += 1,
-        }
-    }
-    [(c, "connected"), (n, "needs auth"), (f, "failed")]
-        .iter()
-        .filter(|(count, _)| *count > 0)
-        .map(|(count, label)| format!("{count} {label}"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1018,7 +915,7 @@ mod tests {
     }
 
     #[test]
-    fn config_picker_takes_precedence_over_config_menu() {
+    fn config_overlay_replaces_conversation_window() {
         let opts = vec![agent_client_protocol::SessionConfigOption::select(
             "model",
             "Model",
@@ -1028,19 +925,28 @@ mod tests {
             )],
         )];
         let mut screen = App::new("test-agent".to_string(), &opts);
-        screen.open_config_menu();
-        screen.open_config_picker_for("model");
+        screen.open_config_overlay();
 
         let context = RenderContext::new((120, 40));
         let output = screen.render_with_cursor(&context);
 
-        let has_menu_row = output
+        // The overlay should contain the bordered Configuration title
+        let has_config_title = output
             .lines
             .iter()
-            .any(|line| line.plain_text().contains("Model: M1"));
+            .any(|line| line.plain_text().contains("Configuration"));
+        assert!(has_config_title, "overlay should show Configuration title");
+
+        // Closing the overlay should restore normal layout
+        screen.config_overlay = None;
+        let output2 = screen.render_with_cursor(&context);
+        let has_config_title2 = output2
+            .lines
+            .iter()
+            .any(|line| line.plain_text().contains("Configuration"));
         assert!(
-            !has_menu_row,
-            "config menu should be hidden when picker is open"
+            !has_config_title2,
+            "normal layout should not show Configuration title"
         );
     }
 
@@ -1064,7 +970,7 @@ mod tests {
         });
 
         assert!(matches!(effects.as_slice(), [AppEvent::Render]));
-        assert!(screen.config_menu.is_some());
+        assert!(screen.has_config_overlay());
         assert_eq!(screen.text_input.buffer(), "");
     }
 
@@ -1119,9 +1025,12 @@ mod tests {
         });
 
         assert!(matches!(effects.as_slice(), [AppEvent::Render]));
-        assert!(screen.config_menu.is_some(), "Config menu should be open");
         assert!(
-            screen.config_picker.is_none(),
+            screen.has_config_overlay(),
+            "Config overlay should be open"
+        );
+        assert!(
+            !screen.has_config_picker(),
             "Picker should not auto-open; user navigates menu first"
         );
     }

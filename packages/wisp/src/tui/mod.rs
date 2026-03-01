@@ -29,6 +29,6 @@ pub use number_field::NumberField;
 pub use radio_select::RadioSelect;
 pub use renderer::{Cursor, CursorComponent, RenderOutput, Renderer};
 pub use runtime::spawn_terminal_event_task;
-pub use screen::Line;
+pub use screen::{Line, Style};
 pub use select_option::SelectOption;
 pub use text_field::TextField;
