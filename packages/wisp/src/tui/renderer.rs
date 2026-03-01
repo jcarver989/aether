@@ -81,7 +81,8 @@ impl<T: Write> Renderer<T> {
     /// Commit lines to permanent scrollback, replacing the managed region.
     pub fn push_to_scrollback(&mut self, lines: &[Line]) -> io::Result<()> {
         self.restore_cursor_position()?;
-        self.screen.push_to_scrollback(lines, &mut self.writer)
+        self.screen
+            .push_to_scrollback(lines, self.context.size.0, &mut self.writer)
     }
 
     /// Move the cursor to an absolute position relative to the end of the frame.
@@ -204,6 +205,44 @@ mod tests {
         assert_eq!(
             renderer.screen().prev_frame(),
             &[Line::new("abc"), Line::new("def")]
+        );
+    }
+
+    #[test]
+    fn push_to_scrollback_soft_wraps_long_lines() {
+        let mut renderer = Renderer::new(FakeWriter::new());
+        renderer.update_render_context_with((5, 20));
+
+        // Render a short line so prev_frame is populated
+        let mut root = StubRoot {
+            lines: vec![Line::new("abcde")],
+            cursor: Cursor {
+                logical_row: 0,
+                col: 0,
+            },
+        };
+        renderer.render(&mut root).unwrap();
+
+        // Push a 10-char line into scrollback at width 5 — should soft-wrap
+        renderer
+            .push_to_scrollback(&[Line::new("0123456789")])
+            .unwrap();
+
+        let output = String::from_utf8_lossy(&renderer.writer().bytes);
+        // Without soft-wrapping the full "0123456789" is written as one run.
+        // With soft-wrapping it becomes two visual lines: "01234" and "56789".
+        assert!(
+            output.contains("01234"),
+            "expected wrapped first half, got: {output}"
+        );
+        assert!(
+            output.contains("56789"),
+            "expected wrapped second half, got: {output}"
+        );
+        // The two halves must NOT appear as one contiguous string
+        assert!(
+            !output.contains("0123456789"),
+            "line should have been split by soft-wrap, got: {output}"
         );
     }
 
