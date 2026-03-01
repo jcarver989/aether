@@ -1,5 +1,6 @@
 use mcp_servers::skills::SkillsMcp;
 use mcp_utils::testing::connect;
+use rmcp::ServerHandler;
 use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
 use std::path::Path;
 use tempfile::TempDir;
@@ -44,7 +45,7 @@ fn parse_tool_result(result: &rmcp::model::CallToolResult) -> serde_json::Value 
 }
 
 #[tokio::test]
-async fn test_add_entry_to_new_skill() {
+async fn test_save_skill_creates_new() {
     let temp_dir = TempDir::new().unwrap();
     std::fs::create_dir_all(temp_dir.path().join("skills")).unwrap();
 
@@ -52,53 +53,102 @@ async fn test_add_entry_to_new_skill() {
 
     let result = client
         .call_tool(call_tool_params(
-            "add_skill_entry",
+            "save_skill",
             serde_json::json!({
-                "skill": "rust-borrow-checker",
-                "skillDescription": "Strategies for fixing borrow checker errors",
-                "content": "Prefer clone() over lifetime gymnastics in tests."
+                "name": "fake-not-mock",
+                "description": "Always use Fake prefix, never Mock",
+                "tags": ["convention", "testing"],
+                "content": "When writing test doubles, use the Fake prefix instead of Mock."
             }),
         ))
         .await
-        .expect("add_skill_entry failed");
+        .expect("save_skill failed");
 
     let parsed = parse_tool_result(&result);
-    assert_eq!(parsed["skillName"], "rust-borrow-checker");
+    assert_eq!(parsed["name"], "fake-not-mock");
     assert_eq!(parsed["status"], "created");
-    assert!(parsed["entryId"].as_str().unwrap().len() == 6);
 
     // Verify file on disk
-    let skill_md = temp_dir.path().join("skills/rust-borrow-checker/SKILL.md");
+    let skill_md = temp_dir.path().join("skills/fake-not-mock/SKILL.md");
     assert!(skill_md.exists());
     let content = std::fs::read_to_string(&skill_md).unwrap();
-    assert!(content.contains("description: Strategies for fixing borrow checker errors"));
-    assert!(content.contains("## Agent Entries"));
-    assert!(content.contains("Prefer clone()"));
-
-    // List skills — should include the new skill
-    let result = client
-        .call_tool(call_tool_params("list_skills", serde_json::json!({})))
-        .await
-        .expect("list_skills failed");
-
-    let parsed = parse_tool_result(&result);
-    let skills = parsed["skills"].as_array().unwrap();
-    assert_eq!(skills.len(), 1);
-    assert_eq!(skills[0]["name"], "rust-borrow-checker");
+    assert!(content.contains("description: Always use Fake prefix, never Mock"));
+    assert!(content.contains("agent_authored: true"));
+    assert!(content.contains("convention"));
+    assert!(content.contains("testing"));
+    assert!(content.contains("When writing test doubles"));
 }
 
 #[tokio::test]
-async fn test_add_entry_to_existing_human_skill() {
+async fn test_save_skill_updates_existing_agent_skill() {
+    let temp_dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(temp_dir.path().join("skills")).unwrap();
+
+    let (_server, client) = create_test_client(temp_dir.path()).await;
+
+    // Create
+    client
+        .call_tool(call_tool_params(
+            "save_skill",
+            serde_json::json!({
+                "name": "my-skill",
+                "description": "Original description",
+                "tags": ["rust"],
+                "content": "Original content."
+            }),
+        ))
+        .await
+        .unwrap();
+
+    // Rate it helpful to set counters
+    client
+        .call_tool(call_tool_params(
+            "rate_skill",
+            serde_json::json!({
+                "name": "my-skill",
+                "helpful": true
+            }),
+        ))
+        .await
+        .unwrap();
+
+    // Update
+    let result = client
+        .call_tool(call_tool_params(
+            "save_skill",
+            serde_json::json!({
+                "name": "my-skill",
+                "description": "Updated description",
+                "tags": ["rust", "convention"],
+                "content": "Updated content."
+            }),
+        ))
+        .await
+        .unwrap();
+
+    let parsed = parse_tool_result(&result);
+    assert_eq!(parsed["status"], "updated");
+
+    // Verify counters preserved
+    let content =
+        std::fs::read_to_string(temp_dir.path().join("skills/my-skill/SKILL.md")).unwrap();
+    assert!(content.contains("Updated description"));
+    assert!(content.contains("Updated content."));
+    assert!(content.contains("helpful: 1")); // counter preserved
+}
+
+#[tokio::test]
+async fn test_save_skill_rejects_human_skill() {
     let temp_dir = TempDir::new().unwrap();
     let skills_dir = temp_dir.path().join("skills");
     std::fs::create_dir_all(&skills_dir).unwrap();
 
     // Create a human-authored skill
-    let human_dir = skills_dir.join("rust-basics");
+    let human_dir = skills_dir.join("human-skill");
     std::fs::create_dir_all(&human_dir).unwrap();
     std::fs::write(
         human_dir.join("SKILL.md"),
-        "---\ndescription: Rust basics\n---\n# Rust Basics\n\nHuman-written content here.\n",
+        "---\ndescription: Human skill\n---\n# Human content\n",
     )
     .unwrap();
 
@@ -106,58 +156,46 @@ async fn test_add_entry_to_existing_human_skill() {
 
     let result = client
         .call_tool(call_tool_params(
-            "add_skill_entry",
+            "save_skill",
             serde_json::json!({
-                "skill": "rust-basics",
-                "content": "Agent-discovered tip about lifetimes."
+                "name": "human-skill",
+                "description": "Trying to overwrite",
+                "content": "Should fail."
             }),
         ))
         .await
         .unwrap();
 
-    let parsed = parse_tool_result(&result);
-    assert_eq!(parsed["status"], "added_to_existing");
-
-    // Verify human content preserved and entry appended
-    let content = std::fs::read_to_string(human_dir.join("SKILL.md")).unwrap();
-    assert!(content.contains("# Rust Basics"));
-    assert!(content.contains("Human-written content here."));
-    assert!(content.contains("## Agent Entries"));
-    assert!(content.contains("Agent-discovered tip about lifetimes."));
+    // Should return an error (is_error flag set)
+    assert!(result.is_error.unwrap_or(false));
 }
 
 #[tokio::test]
-async fn test_score_entry_helpful() {
+async fn test_rate_skill_helpful() {
     let temp_dir = TempDir::new().unwrap();
-    let skills_dir = temp_dir.path().join("skills");
-    std::fs::create_dir_all(&skills_dir).unwrap();
+    std::fs::create_dir_all(temp_dir.path().join("skills")).unwrap();
 
     let (_server, client) = create_test_client(temp_dir.path()).await;
 
-    // Create a skill with an entry
-    let result = client
+    // Create agent skill
+    client
         .call_tool(call_tool_params(
-            "add_skill_entry",
+            "save_skill",
             serde_json::json!({
-                "skill": "tips",
-                "skillDescription": "Useful tips",
+                "name": "tips",
+                "description": "Useful tips",
                 "content": "A helpful tip."
             }),
         ))
         .await
         .unwrap();
-    let entry_id = parse_tool_result(&result)["entryId"]
-        .as_str()
-        .unwrap()
-        .to_string();
 
-    // Score it helpful
+    // Rate helpful
     let result = client
         .call_tool(call_tool_params(
-            "score_skill_entry",
+            "rate_skill",
             serde_json::json!({
-                "skill": "tips",
-                "entryId": entry_id,
+                "name": "tips",
                 "helpful": true
             }),
         ))
@@ -169,40 +207,34 @@ async fn test_score_entry_helpful() {
     assert!(parsed["confidence"].as_f64().unwrap() > 0.0);
 
     // Verify on disk
-    let content = std::fs::read_to_string(skills_dir.join("tips/SKILL.md")).unwrap();
-    assert!(content.contains(&format!("### {entry_id} (+1/-0)")));
+    let content = std::fs::read_to_string(temp_dir.path().join("skills/tips/SKILL.md")).unwrap();
+    assert!(content.contains("helpful: 1"));
 }
 
 #[tokio::test]
-async fn test_score_entry_harmful() {
+async fn test_rate_skill_harmful() {
     let temp_dir = TempDir::new().unwrap();
-    let skills_dir = temp_dir.path().join("skills");
-    std::fs::create_dir_all(&skills_dir).unwrap();
+    std::fs::create_dir_all(temp_dir.path().join("skills")).unwrap();
 
     let (_server, client) = create_test_client(temp_dir.path()).await;
 
-    let result = client
+    client
         .call_tool(call_tool_params(
-            "add_skill_entry",
+            "save_skill",
             serde_json::json!({
-                "skill": "tips",
-                "skillDescription": "Tips",
+                "name": "tips",
+                "description": "Tips",
                 "content": "A bad tip."
             }),
         ))
         .await
         .unwrap();
-    let entry_id = parse_tool_result(&result)["entryId"]
-        .as_str()
-        .unwrap()
-        .to_string();
 
     let result = client
         .call_tool(call_tool_params(
-            "score_skill_entry",
+            "rate_skill",
             serde_json::json!({
-                "skill": "tips",
-                "entryId": entry_id,
+                "name": "tips",
                 "helpful": false
             }),
         ))
@@ -215,37 +247,31 @@ async fn test_score_entry_harmful() {
 }
 
 #[tokio::test]
-async fn test_entry_auto_prune() {
+async fn test_rate_skill_auto_prune() {
     let temp_dir = TempDir::new().unwrap();
-    let skills_dir = temp_dir.path().join("skills");
-    std::fs::create_dir_all(&skills_dir).unwrap();
+    std::fs::create_dir_all(temp_dir.path().join("skills")).unwrap();
 
     let (_server, client) = create_test_client(temp_dir.path()).await;
 
-    let result = client
+    client
         .call_tool(call_tool_params(
-            "add_skill_entry",
+            "save_skill",
             serde_json::json!({
-                "skill": "bad-advice",
-                "skillDescription": "Bad advice",
+                "name": "bad-advice",
+                "description": "Bad advice",
                 "content": "Don't do this."
             }),
         ))
         .await
         .unwrap();
-    let entry_id = parse_tool_result(&result)["entryId"]
-        .as_str()
-        .unwrap()
-        .to_string();
 
-    // Score harmful 3x to trigger prune (0 helpful, 3 harmful, confidence = 0/4 = 0.0 < 0.2, total >= 3)
+    // Score harmful 3x to trigger prune
     for i in 0..3 {
         let result = client
             .call_tool(call_tool_params(
-                "score_skill_entry",
+                "rate_skill",
                 serde_json::json!({
-                    "skill": "bad-advice",
-                    "entryId": entry_id,
+                    "name": "bad-advice",
                     "helpful": false
                 }),
             ))
@@ -258,126 +284,74 @@ async fn test_entry_auto_prune() {
         }
     }
 
-    // Entry should be removed from SKILL.md
-    let content = std::fs::read_to_string(skills_dir.join("bad-advice/SKILL.md")).unwrap();
-    assert!(!content.contains(&entry_id));
+    // Skill directory should be removed
+    assert!(!temp_dir.path().join("skills/bad-advice").exists());
 
     // Should be in archive log
-    let archive =
-        std::fs::read_to_string(skills_dir.join(".archived/bad-advice/pruned.log")).unwrap();
-    assert!(archive.contains(&entry_id));
+    let archive = std::fs::read_to_string(
+        temp_dir
+            .path()
+            .join("skills/.archived/bad-advice/pruned.log"),
+    )
+    .unwrap();
+    assert!(archive.contains("bad-advice"));
     assert!(archive.contains("Don't do this."));
 }
 
 #[tokio::test]
-async fn test_replace_entry() {
-    let temp_dir = TempDir::new().unwrap();
-    std::fs::create_dir_all(temp_dir.path().join("skills")).unwrap();
-
-    let (_server, client) = create_test_client(temp_dir.path()).await;
-
-    // Create
-    let result = client
-        .call_tool(call_tool_params(
-            "add_skill_entry",
-            serde_json::json!({
-                "skill": "evolving",
-                "skillDescription": "Evolving skill",
-                "content": "Original content."
-            }),
-        ))
-        .await
-        .unwrap();
-    let entry_id = parse_tool_result(&result)["entryId"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    // Score it a couple times
-    for _ in 0..2 {
-        client
-            .call_tool(call_tool_params(
-                "score_skill_entry",
-                serde_json::json!({
-                    "skill": "evolving",
-                    "entryId": entry_id,
-                    "helpful": true
-                }),
-            ))
-            .await
-            .unwrap();
-    }
-
-    // Replace it
-    let result = client
-        .call_tool(call_tool_params(
-            "add_skill_entry",
-            serde_json::json!({
-                "skill": "evolving",
-                "content": "Updated content.",
-                "replaceId": entry_id
-            }),
-        ))
-        .await
-        .unwrap();
-
-    let parsed = parse_tool_result(&result);
-    assert_eq!(parsed["status"], "replaced");
-    assert_eq!(parsed["entryId"], entry_id);
-
-    // Verify: updated content, counters reset
-    let content =
-        std::fs::read_to_string(temp_dir.path().join("skills/evolving/SKILL.md")).unwrap();
-    assert!(!content.contains("Original content."));
-    assert!(content.contains("Updated content."));
-    assert!(content.contains(&format!("### {entry_id} (+0/-0)")));
-}
-
-#[tokio::test]
-async fn test_list_and_get_unchanged() {
+async fn test_rate_skill_rejects_human_skill() {
     let temp_dir = TempDir::new().unwrap();
     let skills_dir = temp_dir.path().join("skills");
     std::fs::create_dir_all(&skills_dir).unwrap();
 
-    // Create a human-authored skill with some content
-    let human_dir = skills_dir.join("testing");
+    let human_dir = skills_dir.join("human-skill");
     std::fs::create_dir_all(&human_dir).unwrap();
     std::fs::write(
         human_dir.join("SKILL.md"),
-        "---\ndescription: Testing conventions\n---\n# Testing\n\nUse Fake prefix.\n",
+        "---\ndescription: Human skill\n---\n# Content\n",
     )
     .unwrap();
 
     let (_server, client) = create_test_client(temp_dir.path()).await;
 
-    // list_skills
-    let result = client
-        .call_tool(call_tool_params("list_skills", serde_json::json!({})))
-        .await
-        .unwrap();
-    let parsed = parse_tool_result(&result);
-    let skills = parsed["skills"].as_array().unwrap();
-    assert_eq!(skills.len(), 1);
-    assert_eq!(skills[0]["name"], "testing");
-    assert_eq!(skills[0]["description"], "Testing conventions");
-
-    // get_skills
     let result = client
         .call_tool(call_tool_params(
-            "get_skills",
-            serde_json::json!({"skills": ["testing"]}),
+            "rate_skill",
+            serde_json::json!({
+                "name": "human-skill",
+                "helpful": true
+            }),
         ))
         .await
         .unwrap();
-    let parsed = parse_tool_result(&result);
-    let loaded = parsed["skills"].as_array().unwrap();
-    assert_eq!(loaded.len(), 1);
+
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[tokio::test]
+async fn test_toc_includes_tags() {
+    let temp_dir = TempDir::new().unwrap();
+    let skills_dir = temp_dir.path().join("skills");
+    std::fs::create_dir_all(&skills_dir).unwrap();
+
+    // Create a skill with tags
+    let skill_dir = skills_dir.join("tagged-skill");
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\ndescription: A tagged skill\ntags:\n  - convention\n  - testing\nagent_authored: true\n---\nContent.\n",
+    )
+    .unwrap();
+
+    let server = SkillsMcp::new(temp_dir.path().to_path_buf());
+    let info = server.get_info();
+    let instructions = info.instructions.unwrap();
+
     assert!(
-        loaded[0]["content"]
-            .as_str()
-            .unwrap()
-            .contains("Use Fake prefix.")
+        instructions.contains("[convention, testing]"),
+        "Expected tags in TOC, got: {instructions}"
     );
+    assert!(instructions.contains("**tagged-skill**"));
 }
 
 #[tokio::test]
@@ -387,13 +361,14 @@ async fn test_full_lifecycle() {
 
     let (_server, client) = create_test_client(temp_dir.path()).await;
 
-    // 1. Add entry to new skill
+    // 1. Save a new skill
     let result = client
         .call_tool(call_tool_params(
-            "add_skill_entry",
+            "save_skill",
             serde_json::json!({
-                "skill": "lifecycle-skill",
-                "skillDescription": "Test lifecycle",
+                "name": "lifecycle-skill",
+                "description": "Test lifecycle",
+                "tags": ["test"],
                 "content": "Step 1: do stuff."
             }),
         ))
@@ -401,23 +376,8 @@ async fn test_full_lifecycle() {
         .unwrap();
     let parsed = parse_tool_result(&result);
     assert_eq!(parsed["status"], "created");
-    let entry_id = parsed["entryId"].as_str().unwrap().to_string();
 
-    // 2. List — shows up
-    let result = client
-        .call_tool(call_tool_params("list_skills", serde_json::json!({})))
-        .await
-        .unwrap();
-    let parsed = parse_tool_result(&result);
-    assert!(
-        parsed["skills"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|s| s["name"] == "lifecycle-skill")
-    );
-
-    // 3. Get — content loads (entries are just markdown)
+    // 2. Get — content loads
     let result = client
         .call_tool(call_tool_params(
             "get_skills",
@@ -433,14 +393,13 @@ async fn test_full_lifecycle() {
             .contains("Step 1")
     );
 
-    // 4. Score helpful 3x
+    // 3. Rate helpful 3x
     for _ in 0..3 {
         client
             .call_tool(call_tool_params(
-                "score_skill_entry",
+                "rate_skill",
                 serde_json::json!({
-                    "skill": "lifecycle-skill",
-                    "entryId": entry_id,
+                    "name": "lifecycle-skill",
                     "helpful": true
                 }),
             ))
@@ -448,22 +407,23 @@ async fn test_full_lifecycle() {
             .unwrap();
     }
 
-    // 5. Replace the entry with updated content
+    // 4. Update the skill
     let result = client
         .call_tool(call_tool_params(
-            "add_skill_entry",
+            "save_skill",
             serde_json::json!({
-                "skill": "lifecycle-skill",
-                "content": "Step 1: do better stuff.",
-                "replaceId": entry_id
+                "name": "lifecycle-skill",
+                "description": "Updated lifecycle",
+                "tags": ["test", "updated"],
+                "content": "Step 1: do better stuff."
             }),
         ))
         .await
         .unwrap();
     let parsed = parse_tool_result(&result);
-    assert_eq!(parsed["status"], "replaced");
+    assert_eq!(parsed["status"], "updated");
 
-    // 6. Verify update via get_skills
+    // 5. Verify update via get_skills — helpful counters preserved
     let result = client
         .call_tool(call_tool_params(
             "get_skills",
@@ -479,29 +439,29 @@ async fn test_full_lifecycle() {
             .contains("better stuff")
     );
 
-    // 7. Add a second entry, then prune it
-    let result = client
+    let content =
+        std::fs::read_to_string(temp_dir.path().join("skills/lifecycle-skill/SKILL.md")).unwrap();
+    assert!(content.contains("helpful: 3"));
+
+    // 6. Save a bad skill, then prune it
+    client
         .call_tool(call_tool_params(
-            "add_skill_entry",
+            "save_skill",
             serde_json::json!({
-                "skill": "lifecycle-skill",
+                "name": "bad-skill",
+                "description": "Bad advice",
                 "content": "Bad advice."
             }),
         ))
         .await
         .unwrap();
-    let bad_entry_id = parse_tool_result(&result)["entryId"]
-        .as_str()
-        .unwrap()
-        .to_string();
 
     for _ in 0..3 {
         client
             .call_tool(call_tool_params(
-                "score_skill_entry",
+                "rate_skill",
                 serde_json::json!({
-                    "skill": "lifecycle-skill",
-                    "entryId": bad_entry_id,
+                    "name": "bad-skill",
                     "helpful": false
                 }),
             ))
@@ -509,7 +469,10 @@ async fn test_full_lifecycle() {
             .unwrap();
     }
 
-    // 8. Skill still exists (first entry remains), but bad entry is gone
+    // Bad skill should be pruned
+    assert!(!temp_dir.path().join("skills/bad-skill").exists());
+
+    // Good skill should still exist
     let result = client
         .call_tool(call_tool_params(
             "get_skills",
@@ -518,21 +481,10 @@ async fn test_full_lifecycle() {
         .await
         .unwrap();
     let parsed = parse_tool_result(&result);
-    let content = parsed["skills"][0]["content"].as_str().unwrap();
-    assert!(content.contains("better stuff"));
-    assert!(!content.contains("Bad advice."));
-
-    // 9. List still shows the skill
-    let result = client
-        .call_tool(call_tool_params("list_skills", serde_json::json!({})))
-        .await
-        .unwrap();
-    let parsed = parse_tool_result(&result);
     assert!(
-        parsed["skills"]
-            .as_array()
+        parsed["skills"][0]["content"]
+            .as_str()
             .unwrap()
-            .iter()
-            .any(|s| s["name"] == "lifecycle-skill")
+            .contains("better stuff")
     );
 }
