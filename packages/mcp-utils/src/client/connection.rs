@@ -5,11 +5,17 @@ use rmcp::{
     model::Tool as RmcpTool,
     serve_client,
     service::{DynService, RunningService},
-    transport::{StreamableHttpClientTransport, TokioChildProcess},
+    transport::{
+        StreamableHttpClientTransport, TokioChildProcess,
+        auth::AuthClient,
+        streamable_http_client::StreamableHttpClientTransportConfig,
+    },
 };
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::{process::Command, task::JoinHandle};
+
+use super::oauth::{OAuthHandler, create_auth_manager_from_store};
 
 #[derive(Debug, Clone)]
 pub struct ServerInstructions {
@@ -41,6 +47,26 @@ impl From<&RmcpTool> for Tool {
     }
 }
 
+/// Everything the connection needs from the manager.
+pub(super) struct ConnectParams {
+    pub mcp_client: McpClient,
+    pub oauth_handler: Option<Arc<dyn OAuthHandler>>,
+}
+
+/// Result of attempting to connect to an MCP server.
+pub(super) enum ConnectResult {
+    /// Connection established successfully.
+    Connected(McpServerConnection),
+    /// HTTP server failed; may need OAuth. Carries the config for retry.
+    NeedsOAuth {
+        name: String,
+        config: StreamableHttpClientTransportConfig,
+        error: McpError,
+    },
+    /// Hard failure (non-HTTP, or no OAuth handler available).
+    Failed(McpError),
+}
+
 pub(super) struct McpServerConnection {
     pub(super) client: Arc<RunningService<RoleClient, McpClient>>,
     pub(super) server_task: Option<JoinHandle<()>>,
@@ -48,9 +74,66 @@ pub(super) struct McpServerConnection {
 }
 
 impl McpServerConnection {
-    /// Build a connection from an already-running client, extracting any
+    /// Connect to an MCP server described by `config`.
+    ///
+    /// This is the single entry point for establishing a connection — handling
+    /// transport creation, OAuth credential lookup, `serve_client()`, and
+    /// returning a ready-to-use connection.
+    pub(super) async fn connect(config: ServerConfig, params: ConnectParams) -> ConnectResult {
+        match config {
+            ServerConfig::Stdio {
+                command, args, ..
+            } => {
+                let mut cmd = Command::new(&command);
+                cmd.args(&args);
+                match params.mcp_client.serve(TokioChildProcess::new(cmd).unwrap()).await {
+                    Ok(client) => ConnectResult::Connected(Self::from_parts(client, None)),
+                    Err(e) => ConnectResult::Failed(McpError::from(e)),
+                }
+            }
+
+            ServerConfig::InMemory { name, server } => {
+                match serve_in_memory(server, params.mcp_client, &name).await {
+                    Ok((client, handle)) => {
+                        ConnectResult::Connected(Self::from_parts(client, Some(handle)))
+                    }
+                    Err(e) => ConnectResult::Failed(e),
+                }
+            }
+
+            ServerConfig::Http { name, config: cfg } => {
+                Self::connect_http(name, cfg, params).await
+            }
+        }
+    }
+
+    /// Reconnect to an HTTP server using an already-obtained `AuthClient`.
+    ///
+    /// Used after a successful OAuth flow to establish the authenticated connection.
+    pub(super) async fn reconnect_with_auth(
+        name: &str,
+        config: StreamableHttpClientTransportConfig,
+        auth_client: AuthClient<reqwest::Client>,
+        mcp_client: McpClient,
+    ) -> Result<Self> {
+        let transport = StreamableHttpClientTransport::with_client(auth_client, config);
+        let client = serve_client(mcp_client, transport).await.map_err(|e| {
+            McpError::ConnectionFailed(format!("reconnect failed for '{name}': {e}"))
+        })?;
+        Ok(Self::from_parts(client, None))
+    }
+
+    /// List tools from the connected server.
+    pub(super) async fn list_tools(&self) -> Result<Vec<RmcpTool>> {
+        let response = self.client.list_tools(None).await.map_err(|e| {
+            McpError::ToolDiscoveryFailed(format!("Failed to list tools: {e}"))
+        })?;
+        Ok(response.tools)
+    }
+
+    /// Build a connection from already-connected parts, extracting any
     /// server-provided instructions from peer info.
-    pub(super) fn new(
+    fn from_parts(
         client: RunningService<RoleClient, McpClient>,
         server_task: Option<JoinHandle<()>>,
     ) -> Self {
@@ -65,46 +148,61 @@ impl McpServerConnection {
         }
     }
 
-    /// Connect to an MCP server described by `config`, returning the running
-    /// client and an optional background task handle.
-    ///
-    /// This is the shared connection logic used by `McpManager::add_mcp` and
-    /// proxied server registration. Returns the raw pieces (not `Self`) because
-    /// tool discovery happens between connect and construction.
-    pub(super) async fn connect(
-        config: ServerConfig,
-        create_mcp_client: impl Fn() -> McpClient,
-    ) -> Result<(
-        RunningService<RoleClient, McpClient>,
-        Option<JoinHandle<()>>,
-    )> {
-        match config {
-            ServerConfig::Stdio { command, args, .. } => {
-                let mut cmd = Command::new(&command);
-                cmd.args(&args);
-                let mcp_client = create_mcp_client();
-                let client = mcp_client.serve(TokioChildProcess::new(cmd)?).await?;
-                Ok((client, None))
-            }
+    /// Connect to an HTTP MCP server. Tries stored OAuth credentials first,
+    /// falls back to plain connection, and returns `NeedsOAuth` on failure
+    /// if an OAuth handler is available.
+    async fn connect_http(
+        name: String,
+        config: StreamableHttpClientTransportConfig,
+        params: ConnectParams,
+    ) -> ConnectResult {
+        let conn_err =
+            |e| McpError::ConnectionFailed(format!("HTTP MCP server {name}: {e}"));
 
-            ServerConfig::Http { name, config: cfg } => {
-                let transport = StreamableHttpClientTransport::from_config(cfg);
-                let mcp_client = create_mcp_client();
-                let client = serve_client(mcp_client, transport).await.map_err(|e| {
-                    McpError::ConnectionFailed(format!(
-                        "Failed to connect to HTTP server '{name}': {e}"
-                    ))
-                })?;
-                Ok((client, None))
+        let result = match create_auth_client(&name, &config.uri).await {
+            Some(auth_client) if config.auth_header.is_none() => {
+                tracing::debug!("Using OAuth for server '{name}'");
+                let transport =
+                    StreamableHttpClientTransport::with_client(auth_client, config.clone());
+                serve_client(params.mcp_client, transport)
+                    .await
+                    .map_err(conn_err)
             }
+            _ => {
+                let transport = StreamableHttpClientTransport::from_config(config.clone());
+                serve_client(params.mcp_client, transport)
+                    .await
+                    .map_err(conn_err)
+            }
+        };
 
-            ServerConfig::InMemory { name, server } => {
-                let mcp_client = create_mcp_client();
-                let (client, handle) = serve_in_memory(server, mcp_client, &name).await?;
-                Ok((client, Some(handle)))
+        match result {
+            Ok(client) => ConnectResult::Connected(Self::from_parts(client, None)),
+            Err(err) => {
+                tracing::warn!("Failed to connect to MCP server '{name}': {err}");
+                if params.oauth_handler.is_some() {
+                    ConnectResult::NeedsOAuth {
+                        name,
+                        config,
+                        error: err,
+                    }
+                } else {
+                    ConnectResult::Failed(err)
+                }
             }
         }
     }
+}
+
+/// Try to build an `AuthClient` from stored OAuth credentials.
+async fn create_auth_client(
+    server_id: &str,
+    base_url: &str,
+) -> Option<AuthClient<reqwest::Client>> {
+    let auth_manager = create_auth_manager_from_store(server_id, base_url)
+        .await
+        .ok()??;
+    Some(AuthClient::new(reqwest::Client::default(), auth_manager))
 }
 
 /// Spawn an in-memory MCP server on a background task and connect a client to it.
