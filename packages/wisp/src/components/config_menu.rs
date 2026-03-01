@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext, Style};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -30,6 +30,7 @@ pub struct ConfigMenuValue {
     pub is_disabled: bool,
 }
 
+#[derive(Debug)]
 pub struct ConfigChange {
     pub config_id: String,
     pub new_value: String,
@@ -65,7 +66,11 @@ impl Component for ConfigMenu {
                 if current_disabled {
                     Line::styled(text, context.theme.muted)
                 } else if selected {
-                    Line::styled(text, context.theme.primary)
+                    Line::with_style(
+                        text,
+                        Style::fg(context.theme.text_primary)
+                            .bg_color(context.theme.highlight_bg),
+                    )
                 } else {
                     Line::new(text)
                 }
@@ -151,6 +156,11 @@ impl ConfigMenu {
     }
 
     pub fn with_mcp_servers_entry(mut self, summary: &str) -> Self {
+        self.add_mcp_servers_entry(summary);
+        self
+    }
+
+    pub fn add_mcp_servers_entry(&mut self, summary: &str) {
         self.options.push(ConfigMenuEntry {
             config_id: "__mcp_servers".to_string(),
             title: "MCP Servers".to_string(),
@@ -163,7 +173,6 @@ impl ConfigMenu {
             current_value_index: 0,
             entry_kind: ConfigMenuEntryKind::McpServers,
         });
-        self
     }
 
     pub fn move_selection_up(&mut self) {

@@ -26,6 +26,7 @@ pub struct Theme {
     pub diff: DiffTheme,
     pub link: Color,
     pub blockquote: Color,
+    pub highlight_bg: Color,
 }
 
 impl Default for Theme {
@@ -120,6 +121,11 @@ impl Default for Theme {
                 g: 128,
                 b: 128,
             }, // Same as muted #808080
+            highlight_bg: Color::Rgb {
+                r: 0x1a,
+                g: 0x4a,
+                b: 0x50,
+            }, // Dark teal #1A4A50
         }
     }
 }

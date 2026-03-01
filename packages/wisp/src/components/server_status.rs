@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext, Style};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -36,13 +36,37 @@ impl Component for ServerStatusOverlay {
                 match &entry.status {
                     McpServerStatus::Connected { .. } => {
                         if selected {
-                            Line::styled(text, context.theme.primary)
+                            Line::with_style(
+                                text,
+                                Style::fg(context.theme.text_primary)
+                                    .bg_color(context.theme.highlight_bg),
+                            )
                         } else {
                             Line::new(text)
                         }
                     }
-                    McpServerStatus::Failed { .. } => Line::styled(text, context.theme.error),
-                    McpServerStatus::NeedsOAuth => Line::styled(text, context.theme.warning),
+                    McpServerStatus::Failed { .. } => {
+                        if selected {
+                            Line::with_style(
+                                text,
+                                Style::fg(context.theme.error)
+                                    .bg_color(context.theme.highlight_bg),
+                            )
+                        } else {
+                            Line::styled(text, context.theme.error)
+                        }
+                    }
+                    McpServerStatus::NeedsOAuth => {
+                        if selected {
+                            Line::with_style(
+                                text,
+                                Style::fg(context.theme.warning)
+                                    .bg_color(context.theme.highlight_bg),
+                            )
+                        } else {
+                            Line::styled(text, context.theme.warning)
+                        }
+                    }
                 }
             })
             .collect()
@@ -78,6 +102,26 @@ impl HandlesInput for ServerStatusOverlay {
             _ => InputOutcome::consumed(),
         }
     }
+}
+
+pub fn server_status_summary(statuses: &[McpServerStatusEntry]) -> String {
+    if statuses.is_empty() {
+        return "none".to_string();
+    }
+    let (mut c, mut n, mut f) = (0usize, 0usize, 0usize);
+    for s in statuses {
+        match &s.status {
+            McpServerStatus::Connected { .. } => c += 1,
+            McpServerStatus::NeedsOAuth => n += 1,
+            McpServerStatus::Failed { .. } => f += 1,
+        }
+    }
+    [(c, "connected"), (n, "needs auth"), (f, "failed")]
+        .iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, label)| format!("{count} {label}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 impl ServerStatusOverlay {

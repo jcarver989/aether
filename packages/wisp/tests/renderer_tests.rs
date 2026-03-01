@@ -1854,9 +1854,8 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
         "Cursor should be on overlay search row.\nBuffer:\n{}",
         lines.join("\n")
     );
-    #[allow(clippy::cast_possible_truncation)]
-    let expected_col = "  Model search: ".len() as u16;
-    assert_eq!(cursor_col, expected_col);
+    // Overlay border "│ " (3 cols) + "  Model search: " (16 cols) = 19
+    assert_eq!(cursor_col, 19);
 }
 
 #[tokio::test]
@@ -1928,12 +1927,11 @@ async fn test_config_menu_swallows_other_keys() {
 
     // Menu should still be open
     assert!(renderer.screen().has_config_menu());
-    // Input buffer should be empty (was cleared when /config opened)
+    // Input prompt is not rendered while overlay is open, so 'x' shouldn't appear anywhere
     let lines = renderer.writer().get_lines();
-    // The input prompt should show empty (just "> ")
     assert!(
-        lines.iter().any(|l| l.contains("> ") && !l.contains('x')),
-        "Typed char should be swallowed while config menu is open.\nBuffer:\n{}",
+        !lines.iter().any(|l| l.contains('x')),
+        "Typed char should be swallowed while config overlay is open.\nBuffer:\n{}",
         lines.join("\n")
     );
 }

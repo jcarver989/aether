@@ -2,7 +2,7 @@ use super::component::RenderContext;
 use super::screen::{Line, Screen};
 use super::soft_wrap::soft_wrap_lines_with_map;
 use crossterm::QueueableCommand;
-use crossterm::cursor::MoveDown;
+use crossterm::cursor::{Hide, MoveDown, Show};
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +14,7 @@ pub struct Cursor {
 pub struct RenderOutput {
     pub lines: Vec<Line>,
     pub cursor: Cursor,
+    pub cursor_visible: bool,
 }
 
 pub trait CursorComponent {
@@ -28,6 +29,7 @@ pub struct Renderer<T: Write> {
     /// How many rows above the last frame line the cursor currently sits.
     /// 0 = cursor at last line (Screen's default assumption).
     cursor_row_offset: u16,
+    cursor_visible: bool,
 }
 
 impl<T: Write> Renderer<T> {
@@ -37,6 +39,7 @@ impl<T: Write> Renderer<T> {
             screen: Screen::new(),
             context: RenderContext::new((0, 0)),
             cursor_row_offset: 0,
+            cursor_visible: true,
         }
     }
 
@@ -66,6 +69,16 @@ impl<T: Write> Renderer<T> {
         self.restore_cursor_position()?;
         self.screen
             .render(&visual_lines, self.context.size.0, &mut self.writer)?;
+
+        // Show or hide the cursor based on the component's request.
+        if output.cursor_visible != self.cursor_visible {
+            if output.cursor_visible {
+                self.writer.queue(Show)?;
+            } else {
+                self.writer.queue(Hide)?;
+            }
+            self.cursor_visible = output.cursor_visible;
+        }
 
         let rows_up = u16::try_from(
             visual_lines
@@ -183,6 +196,7 @@ mod tests {
             RenderOutput {
                 lines: self.lines.clone(),
                 cursor: self.cursor,
+                cursor_visible: true,
             }
         }
     }
