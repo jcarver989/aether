@@ -59,7 +59,7 @@ mod tests {
         ];
         for input in models {
             let model: LlmModel = input.parse().unwrap();
-            let round_tripped = format!("{}:{}", model.provider(), model.model_id());
+            let round_tripped = model.to_string();
             assert_eq!(round_tripped, input);
         }
     }

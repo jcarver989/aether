@@ -97,14 +97,14 @@ async fn test_server_instructions_skips_empty_instructions() {
     assert_eq!(instructions[0].server_name, "with-content");
 }
 
-#[test]
-fn test_format_mcp_instructions_xml_structure() {
+#[tokio::test]
+async fn test_format_mcp_instructions_xml_structure() {
     let instructions = vec![ServerInstructions {
         server_name: "coding".to_string(),
         instructions: "Use absolute paths.".to_string(),
     }];
 
-    let formatted = aether_core::core::format_mcp_instructions(&instructions);
+    let formatted = Prompt::mcp_instructions(instructions).build().await.unwrap();
 
     // Check for XML tags with server names
     assert!(formatted.contains("<mcp-server-instructions name=\"coding\">"));
@@ -113,8 +113,8 @@ fn test_format_mcp_instructions_xml_structure() {
     assert!(formatted.contains("# MCP Server Instructions"));
 }
 
-#[test]
-fn test_format_mcp_instructions_multiple_servers() {
+#[tokio::test]
+async fn test_format_mcp_instructions_multiple_servers() {
     let instructions = vec![
         ServerInstructions {
             server_name: "coding".to_string(),
@@ -126,7 +126,7 @@ fn test_format_mcp_instructions_multiple_servers() {
         },
     ];
 
-    let formatted = aether_core::core::format_mcp_instructions(&instructions);
+    let formatted = Prompt::mcp_instructions(instructions).build().await.unwrap();
 
     // Check for XML tags with both server names
     assert!(formatted.contains("<mcp-server-instructions name=\"coding\">"));

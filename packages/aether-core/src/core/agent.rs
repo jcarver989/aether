@@ -319,7 +319,7 @@ impl Agent {
 
         match response {
             Start { message_id } => {
-                handle_llm_start(message_id, state);
+                state.on_llm_start(message_id);
             }
 
             Text { chunk } => {
@@ -639,13 +639,6 @@ impl Agent {
     }
 }
 
-fn handle_llm_start(message_id: String, state: &mut IterationState) {
-    state.current_message_id = Some(message_id);
-    state.message_content.clear();
-    state.reasoning_content.clear();
-    state.stop_reason = None;
-}
-
 pub(crate) struct AutoContinue {
     max: u32,
     count: u32,
@@ -705,6 +698,13 @@ impl IterationState {
             stop_reason: None,
             cancelled: false,
         }
+    }
+
+    fn on_llm_start(&mut self, message_id: String) {
+        self.current_message_id = Some(message_id);
+        self.message_content.clear();
+        self.reasoning_content.clear();
+        self.stop_reason = None;
     }
 
     fn is_complete(&self) -> bool {

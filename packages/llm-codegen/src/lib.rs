@@ -60,16 +60,21 @@ struct ProviderConfig {
     enum_name: &'static str,
     /// Our internal provider name used for parsing (e.g. "gemini")
     parser_name: &'static str,
+    /// Human-readable provider name (e.g. "AWS Bedrock")
+    display_name: &'static str,
     /// Env var our code actually checks (None for providers with complex credential chains)
     env_var: Option<&'static str>,
 }
 
 /// Dynamic provider — model name is user-supplied at runtime, no fixed enum
+#[allow(clippy::struct_field_names)]
 struct DynamicProviderConfig {
     /// Rust variant name in `LlmModel` (e.g. "Ollama")
     enum_name: &'static str,
     /// Parser name used in "provider:model" strings (e.g. "ollama")
     parser_name: &'static str,
+    /// Human-readable provider name (e.g. "Ollama")
+    display_name: &'static str,
 }
 
 const PROVIDERS: &[ProviderConfig] = &[
@@ -77,42 +82,49 @@ const PROVIDERS: &[ProviderConfig] = &[
         dev_id: "anthropic",
         enum_name: "Anthropic",
         parser_name: "anthropic",
+        display_name: "Anthropic",
         env_var: Some("ANTHROPIC_API_KEY"),
     },
     ProviderConfig {
         dev_id: "deepseek",
         enum_name: "DeepSeek",
         parser_name: "deepseek",
+        display_name: "DeepSeek",
         env_var: Some("DEEPSEEK_API_KEY"),
     },
     ProviderConfig {
         dev_id: "google",
         enum_name: "Gemini",
         parser_name: "gemini",
+        display_name: "Gemini",
         env_var: Some("GEMINI_API_KEY"),
     },
     ProviderConfig {
         dev_id: "moonshotai",
         enum_name: "Moonshot",
         parser_name: "moonshot",
+        display_name: "Moonshot",
         env_var: Some("MOONSHOT_API_KEY"),
     },
     ProviderConfig {
         dev_id: "openrouter",
         enum_name: "OpenRouter",
         parser_name: "openrouter",
+        display_name: "OpenRouter",
         env_var: Some("OPENROUTER_API_KEY"),
     },
     ProviderConfig {
         dev_id: "zai",
         enum_name: "ZAi",
         parser_name: "zai",
+        display_name: "ZAI",
         env_var: Some("ZAI_API_KEY"),
     },
     ProviderConfig {
         dev_id: "amazon-bedrock",
         enum_name: "Bedrock",
         parser_name: "bedrock",
+        display_name: "AWS Bedrock",
         env_var: None,
     },
 ];
@@ -121,10 +133,12 @@ const DYNAMIC_PROVIDERS: &[DynamicProviderConfig] = &[
     DynamicProviderConfig {
         enum_name: "Ollama",
         parser_name: "ollama",
+        display_name: "Ollama",
     },
     DynamicProviderConfig {
         enum_name: "LlamaCpp",
         parser_name: "llamacpp",
+        display_name: "LlamaCpp",
     },
 ];
 
@@ -412,6 +426,7 @@ fn emit_llm_model_impl(out: &mut String) {
     emit_llm_model_id(out);
     emit_llm_display_name(out);
     emit_llm_provider(out);
+    emit_llm_provider_display_name(out);
     emit_llm_context_window(out);
     emit_llm_required_env_var(out);
     emit_llm_all(out);
@@ -496,6 +511,39 @@ fn emit_llm_provider(out: &mut String) {
             format!(
                 "            Self::{}(_) => \"{}\",",
                 dyn_cfg.enum_name, dyn_cfg.parser_name
+            ),
+        );
+    }
+    pushln(out, "        }");
+    pushln(out, "    }");
+    blank(out);
+}
+
+fn emit_llm_provider_display_name(out: &mut String) {
+    pushln(
+        out,
+        "    /// Human-readable provider name (e.g. `AWS Bedrock`)",
+    );
+    pushln(
+        out,
+        "    pub fn provider_display_name(&self) -> &'static str {",
+    );
+    pushln(out, "        match self {");
+    for cfg in PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            Self::{}(_) => \"{}\",",
+                cfg.enum_name, cfg.display_name
+            ),
+        );
+    }
+    for dyn_cfg in DYNAMIC_PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            Self::{}(_) => \"{}\",",
+                dyn_cfg.enum_name, dyn_cfg.display_name
             ),
         );
     }
@@ -596,7 +644,10 @@ fn emit_display_impl(out: &mut String) {
         out,
         "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {",
     );
-    pushln(out, "        f.write_str(&self.display_name())");
+    pushln(
+        out,
+        "        write!(f, \"{}:{}\", self.provider(), self.model_id())",
+    );
     pushln(out, "    }");
     pushln(out, "}");
     blank(out);

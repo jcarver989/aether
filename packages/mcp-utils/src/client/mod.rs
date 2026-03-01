@@ -1,7 +1,9 @@
 pub mod config;
+pub mod connection;
 pub mod error;
 pub mod manager;
 pub mod mcp_client;
+pub mod naming;
 pub mod oauth;
 pub mod roots;
 pub mod tool_proxy;
@@ -11,8 +13,8 @@ pub use config::*;
 pub use error::{McpError, Result};
 pub use manager::{
     ElicitationRequest, McpManager, McpServerStatus, McpServerStatusEntry, ServerInstructions,
-    split_on_server_name,
 };
+pub use naming::split_on_server_name;
 pub use roots::root_from_path;
 pub use variables::{VarError, expand_env_vars};
 
