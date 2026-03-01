@@ -276,6 +276,7 @@ async fn execute_single_agent(
         let McpSpawnResult {
             tool_definitions,
             instructions,
+            server_statuses: _,
             command_tx,
             elicitation_rx: _,
             handle: _,

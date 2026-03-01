@@ -209,6 +209,10 @@ async fn apply_screen_effects<T: Write>(
                 prompt_handle.cancel(session_id)?;
                 should_render = true;
             }
+            AppEvent::AuthenticateMcpServer { server_name } => {
+                let _ = prompt_handle.authenticate_mcp_server(session_id, &server_name);
+                should_render = true;
+            }
         }
     }
 

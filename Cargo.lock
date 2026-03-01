@@ -2586,6 +2586,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rmcp",
+ "schemars",
  "serde",
  "serde_json",
  "serde_yaml",

@@ -5,6 +5,7 @@ pub struct StatusLine<'a> {
     pub model_display: Option<&'a str>,
     pub context_pct_left: Option<u8>,
     pub waiting_for_response: bool,
+    pub unhealthy_server_count: usize,
 }
 
 impl Component for StatusLine<'_> {
@@ -23,6 +24,14 @@ impl Component for StatusLine<'_> {
                 context.theme.muted
             };
             (format!("{pct}% context"), c)
+        } else if self.unhealthy_server_count > 0 {
+            let count = self.unhealthy_server_count;
+            let msg = if count == 1 {
+                "1 server needs auth".to_string()
+            } else {
+                format!("{count} servers unhealthy")
+            };
+            (msg, context.theme.warning)
         } else {
             return vec![Line::styled(left, context.theme.muted)];
         };
@@ -51,6 +60,7 @@ mod tests {
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
+            unhealthy_server_count: 0,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -65,6 +75,7 @@ mod tests {
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
+            unhealthy_server_count: 0,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -79,6 +90,7 @@ mod tests {
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
+            unhealthy_server_count: 0,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -99,6 +111,7 @@ mod tests {
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
+            unhealthy_server_count: 0,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -117,6 +130,7 @@ mod tests {
             model_display: Some("gpt-4o"),
             context_pct_left: Some(72),
             waiting_for_response: false,
+            unhealthy_server_count: 0,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -133,6 +147,7 @@ mod tests {
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
+            unhealthy_server_count: 0,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -147,6 +162,7 @@ mod tests {
             model_display: Some("gpt-4o"),
             context_pct_left: Some(72),
             waiting_for_response: true,
+            unhealthy_server_count: 0,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -169,6 +185,7 @@ mod tests {
             model_display: None,
             context_pct_left: None,
             waiting_for_response: true,
+            unhealthy_server_count: 0,
         };
         let ctx = RenderContext::new((80, 24));
         let lines = status.render(&ctx);
@@ -177,6 +194,82 @@ mod tests {
         assert!(
             text.contains("esc to interrupt"),
             "should contain interrupt message"
+        );
+    }
+
+    #[test]
+    fn renders_unhealthy_server_singular() {
+        let mut status = StatusLine {
+            agent_name: "aether",
+            model_display: Some("gpt-4o"),
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 1,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        let text = lines[0].plain_text();
+        assert!(
+            text.contains("1 server needs auth"),
+            "should show singular unhealthy message"
+        );
+    }
+
+    #[test]
+    fn renders_unhealthy_servers_plural() {
+        let mut status = StatusLine {
+            agent_name: "aether",
+            model_display: None,
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 3,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        let text = lines[0].plain_text();
+        assert!(
+            text.contains("3 servers unhealthy"),
+            "should show plural unhealthy message"
+        );
+    }
+
+    #[test]
+    fn zero_unhealthy_servers_shows_nothing() {
+        let mut status = StatusLine {
+            agent_name: "aether",
+            model_display: None,
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 0,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        let text = lines[0].plain_text();
+        assert!(
+            !text.contains("server"),
+            "should not show server info when count is 0"
+        );
+    }
+
+    #[test]
+    fn context_usage_takes_precedence_over_unhealthy() {
+        let mut status = StatusLine {
+            agent_name: "aether",
+            model_display: None,
+            context_pct_left: Some(50),
+            waiting_for_response: false,
+            unhealthy_server_count: 2,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        let text = lines[0].plain_text();
+        assert!(
+            text.contains("50% context"),
+            "context should take precedence"
+        );
+        assert!(
+            !text.contains("unhealthy"),
+            "should not show unhealthy when context is shown"
         );
     }
 }

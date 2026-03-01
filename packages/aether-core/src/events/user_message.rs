@@ -1,4 +1,4 @@
-use llm::StreamingModelProvider;
+use llm::{StreamingModelProvider, ToolDefinition};
 
 /// Message from the user to the agent.
 pub enum UserMessage {
@@ -6,6 +6,7 @@ pub enum UserMessage {
     Cancel,
     ClearContext,
     SwitchModel(Box<dyn StreamingModelProvider>),
+    UpdateTools(Vec<ToolDefinition>),
 }
 
 impl std::fmt::Debug for UserMessage {
@@ -20,6 +21,9 @@ impl std::fmt::Debug for UserMessage {
                 .debug_tuple("SwitchModel")
                 .field(&provider.display_name())
                 .finish(),
+            UserMessage::UpdateTools(tools) => {
+                f.debug_tuple("UpdateTools").field(&tools.len()).finish()
+            }
         }
     }
 }

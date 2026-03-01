@@ -1,5 +1,6 @@
 pub mod display_meta;
 pub mod markdown_file;
+pub mod status;
 pub mod substitution;
 pub mod testing;
 pub mod transport;

@@ -9,6 +9,7 @@ use crate::components::elicitation_form::ElicitationForm;
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::progress_indicator::ProgressIndicator;
+use crate::components::server_status::{ServerStatusAction, ServerStatusOverlay};
 use crate::components::status_line::StatusLine;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputAction};
 use crate::components::tool_call_statuses::ToolCallStatuses;
@@ -19,7 +20,8 @@ use crate::tui::{
 };
 use acp_utils::notifications::{
     CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
-    ElicitationResponse, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
+    ElicitationResponse, McpNotification, McpServerStatus, McpServerStatusEntry,
+    SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
 };
 use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
@@ -49,6 +51,9 @@ pub enum AppEvent {
         new_value: String,
     },
     Cancel,
+    AuthenticateMcpServer {
+        server_name: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +85,8 @@ pub struct App {
     config_menu: Option<ConfigMenu>,
     config_picker: Option<ConfigPicker>,
     elicitation_form: Option<ElicitationForm>,
+    server_statuses: Vec<McpServerStatusEntry>,
+    server_status_overlay: Option<ServerStatusOverlay>,
 }
 
 impl App {
@@ -101,6 +108,8 @@ impl App {
             config_menu: None,
             config_picker: None,
             elicitation_form: None,
+            server_statuses: Vec::new(),
+            server_status_overlay: None,
         }
     }
 
@@ -280,7 +289,17 @@ impl App {
                     return vec![AppEvent::Render];
                 }
             }
-            _ => {}
+            _ => {
+                if let Ok(McpNotification::ServerStatus { servers }) =
+                    McpNotification::try_from(notification)
+                {
+                    self.server_statuses = servers;
+                    if let Some(ref mut overlay) = self.server_status_overlay {
+                        overlay.update_entries(self.server_statuses.clone());
+                    }
+                    return vec![AppEvent::Render];
+                }
+            }
         }
         vec![]
     }
@@ -401,6 +420,11 @@ impl App {
         if let Some(ref mut picker) = self.command_picker {
             let outcome = picker.handle_key(key_event);
             return Some(self.handle_command_picker_outcome(&outcome));
+        }
+
+        if let Some(ref mut overlay) = self.server_status_overlay {
+            let outcome = overlay.handle_key(key_event);
+            return Some(self.handle_server_status_outcome(outcome));
         }
 
         if let Some(ref mut picker) = self.config_picker {
@@ -533,6 +557,35 @@ impl App {
                         .and_then(|menu| menu.selected_entry())
                         .and_then(ConfigPicker::from_entry);
                 }
+                ConfigMenuAction::OpenMcpServers => {
+                    self.server_status_overlay =
+                        Some(ServerStatusOverlay::new(self.server_statuses.clone()));
+                }
+            }
+        }
+
+        if outcome.needs_render {
+            vec![AppEvent::Render]
+        } else {
+            vec![]
+        }
+    }
+
+    fn handle_server_status_outcome(
+        &mut self,
+        outcome: InputOutcome<ServerStatusAction>,
+    ) -> Vec<AppEvent> {
+        if let Some(action) = outcome.action {
+            match action {
+                ServerStatusAction::Close => {
+                    self.server_status_overlay = None;
+                }
+                ServerStatusAction::Authenticate(name) => {
+                    return vec![
+                        AppEvent::AuthenticateMcpServer { server_name: name },
+                        AppEvent::Render,
+                    ];
+                }
             }
         }
 
@@ -558,12 +611,13 @@ impl App {
             self.text_input.clear();
             self.close_all_pickers();
             self.open_config_menu();
-            self.config_picker = self
-                .config_menu
-                .as_ref()
-                .filter(|menu| menu.options.len() == 1)
-                .and_then(|menu| menu.options.first())
-                .and_then(ConfigPicker::from_entry);
+            vec![AppEvent::Render]
+        } else if cmd.builtin && cmd.name == "servers" {
+            self.text_input.clear();
+            self.close_all_pickers();
+            self.open_config_menu();
+            self.server_status_overlay =
+                Some(ServerStatusOverlay::new(self.server_statuses.clone()));
             vec![AppEvent::Render]
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
@@ -632,7 +686,9 @@ impl App {
     }
 
     fn open_config_menu(&mut self) {
-        self.config_menu = Some(ConfigMenu::from_config_options(&self.config_options));
+        let menu = ConfigMenu::from_config_options(&self.config_options);
+        let summary = server_status_summary(&self.server_statuses);
+        self.config_menu = Some(menu.with_mcp_servers_entry(&summary));
     }
 
     #[cfg(test)]
@@ -793,11 +849,17 @@ impl CursorComponent for App {
             cursor_index,
         };
         let input_layout = input_prompt.layout(context);
+        let unhealthy_count = self
+            .server_statuses
+            .iter()
+            .filter(|s| !matches!(s.status, McpServerStatus::Connected { .. }))
+            .count();
         let mut status_line = StatusLine {
             agent_name: &self.agent_name,
             model_display: self.model_display.as_deref(),
             context_pct_left: self.context_usage_pct,
             waiting_for_response: self.waiting_for_response,
+            unhealthy_server_count: unhealthy_count,
         };
 
         let progress = self.tool_call_statuses.progress();
@@ -830,6 +892,9 @@ impl CursorComponent for App {
             let idx = container.len();
             container.push(picker);
             Some(idx)
+        } else if let Some(ref mut overlay) = self.server_status_overlay {
+            container.push(overlay);
+            None
         } else {
             if let Some(ref mut menu) = self.config_menu {
                 container.push(menu);
@@ -868,13 +933,22 @@ impl CursorComponent for App {
 }
 
 fn builtin_commands() -> Vec<CommandEntry> {
-    vec![CommandEntry {
-        name: "config".into(),
-        description: "Open configuration settings".into(),
-        has_input: false,
-        hint: None,
-        builtin: true,
-    }]
+    vec![
+        CommandEntry {
+            name: "config".into(),
+            description: "Open configuration settings".into(),
+            has_input: false,
+            hint: None,
+            builtin: true,
+        },
+        CommandEntry {
+            name: "servers".into(),
+            description: "View MCP server connection status".into(),
+            has_input: false,
+            hint: None,
+            builtin: true,
+        },
+    ]
 }
 
 fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
@@ -892,6 +966,26 @@ fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<Strin
         .iter()
         .find(|o| o.value == select.current_value)
         .map(|o| o.name.clone())
+}
+
+fn server_status_summary(statuses: &[McpServerStatusEntry]) -> String {
+    if statuses.is_empty() {
+        return "none".to_string();
+    }
+    let (mut c, mut n, mut f) = (0usize, 0usize, 0usize);
+    for s in statuses {
+        match &s.status {
+            McpServerStatus::Connected { .. } => c += 1,
+            McpServerStatus::NeedsOAuth => n += 1,
+            McpServerStatus::Failed { .. } => f += 1,
+        }
+    }
+    [(c, "connected"), (n, "needs auth"), (f, "failed")]
+        .iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, label)| format!("{count} {label}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[cfg(test)]
@@ -1005,7 +1099,7 @@ mod tests {
     }
 
     #[test]
-    fn config_with_single_option_opens_picker_directly() {
+    fn config_with_single_option_shows_menu_not_picker() {
         let options = vec![agent_client_protocol::SessionConfigOption::select(
             "model",
             "Model",
@@ -1025,12 +1119,11 @@ mod tests {
         });
 
         assert!(matches!(effects.as_slice(), [AppEvent::Render]));
-        assert!(screen.config_menu.is_some());
+        assert!(screen.config_menu.is_some(), "Config menu should be open");
         assert!(
-            screen.config_picker.is_some(),
-            "Single config option should auto-open picker"
+            screen.config_picker.is_none(),
+            "Picker should not auto-open; user navigates menu first"
         );
-        assert_eq!(screen.config_picker_config_id(), Some("model"));
     }
 
     #[test]

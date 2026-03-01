@@ -8,13 +8,17 @@ pub use mcp_utils::display_meta::{DiffPreview, ToolDisplayMeta, ToolResultMeta};
 use rmcp::model::ElicitationSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::value::to_raw_value;
+use std::fmt;
 use std::sync::Arc;
+
+pub use mcp_utils::status::{McpServerStatus, McpServerStatusEntry};
 
 /// Custom notification methods for sub-agent progress updates.
 /// Per ACP extensibility spec, custom notifications must start with underscore.
 pub const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
 pub const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
 pub const CONTEXT_CLEARED_METHOD: &str = "_aether/context_cleared";
+pub const MCP_MESSAGE_METHOD: &str = "_aether/mcp";
 
 /// Custom `ext_method` for tunneling MCP elicitation through ACP.
 /// Note: ACP auto-prefixes `ext_method` names with `_`, so the wire method
@@ -48,6 +52,71 @@ pub struct ElicitationResponse {
     pub action: ElicitationAction,
     /// Structured form data when action is "accept".
     pub content: Option<serde_json::Value>,
+}
+
+/// Server→client MCP extension notifications (relay → wisp).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum McpNotification {
+    ServerStatus { servers: Vec<McpServerStatusEntry> },
+}
+
+impl From<McpNotification> for ExtNotification {
+    fn from(msg: McpNotification) -> Self {
+        ext_notification(MCP_MESSAGE_METHOD, &msg)
+    }
+}
+
+/// Client→server MCP extension requests (wisp → relay).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum McpRequest {
+    Authenticate {
+        session_id: String,
+        server_name: String,
+    },
+}
+
+impl From<McpRequest> for ExtNotification {
+    fn from(msg: McpRequest) -> Self {
+        ext_notification(MCP_MESSAGE_METHOD, &msg)
+    }
+}
+
+/// Error returned when converting an `ExtNotification` into a typed MCP message.
+#[derive(Debug)]
+pub enum ExtNotificationParseError {
+    WrongMethod,
+    InvalidJson(serde_json::Error),
+}
+
+impl fmt::Display for ExtNotificationParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::WrongMethod => write!(f, "notification method is not {MCP_MESSAGE_METHOD}"),
+            Self::InvalidJson(e) => write!(f, "invalid JSON params: {e}"),
+        }
+    }
+}
+
+impl TryFrom<&ExtNotification> for McpRequest {
+    type Error = ExtNotificationParseError;
+
+    fn try_from(n: &ExtNotification) -> Result<Self, Self::Error> {
+        if n.method.as_ref() != MCP_MESSAGE_METHOD {
+            return Err(ExtNotificationParseError::WrongMethod);
+        }
+        serde_json::from_str(n.params.get()).map_err(ExtNotificationParseError::InvalidJson)
+    }
+}
+
+impl TryFrom<&ExtNotification> for McpNotification {
+    type Error = ExtNotificationParseError;
+
+    fn try_from(n: &ExtNotification) -> Result<Self, Self::Error> {
+        if n.method.as_ref() != MCP_MESSAGE_METHOD {
+            return Err(ExtNotificationParseError::WrongMethod);
+        }
+        serde_json::from_str(n.params.get()).map_err(ExtNotificationParseError::InvalidJson)
+    }
 }
 
 fn ext_notification<T: Serialize>(method: &str, params: &T) -> ExtNotification {
@@ -126,6 +195,63 @@ mod tests {
         assert!(SUB_AGENT_PROGRESS_METHOD.starts_with('_'));
         assert!(CONTEXT_USAGE_METHOD.starts_with('_'));
         assert!(CONTEXT_CLEARED_METHOD.starts_with('_'));
+        assert!(MCP_MESSAGE_METHOD.starts_with('_'));
+    }
+
+    #[test]
+    fn mcp_request_authenticate_roundtrip() {
+        let msg = McpRequest::Authenticate {
+            session_id: "session-0".to_string(),
+            server_name: "my oauth server".to_string(),
+        };
+
+        let notification: ExtNotification = msg.clone().into();
+        assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
+
+        let parsed: McpRequest =
+            serde_json::from_str(notification.params.get()).expect("valid JSON");
+        assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn mcp_notification_server_status_roundtrip() {
+        let msg = McpNotification::ServerStatus {
+            servers: vec![
+                McpServerStatusEntry {
+                    name: "github".to_string(),
+                    status: McpServerStatus::Connected { tool_count: 5 },
+                },
+                McpServerStatusEntry {
+                    name: "linear".to_string(),
+                    status: McpServerStatus::NeedsOAuth,
+                },
+                McpServerStatusEntry {
+                    name: "slack".to_string(),
+                    status: McpServerStatus::Failed {
+                        error: "connection timeout".to_string(),
+                    },
+                },
+            ],
+        };
+
+        let notification: ExtNotification = msg.clone().into();
+        assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
+
+        let parsed: McpNotification =
+            serde_json::from_str(notification.params.get()).expect("valid JSON");
+        assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn mcp_server_status_entry_serde_roundtrip() {
+        let entry = McpServerStatusEntry {
+            name: "test-server".to_string(),
+            status: McpServerStatus::Connected { tool_count: 3 },
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let parsed: McpServerStatusEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, entry);
     }
 
     #[test]
@@ -242,5 +368,71 @@ mod tests {
         let map = meta.clone().into_map();
         let parsed = ToolResultMeta::from_map(&map).expect("should deserialize ToolResultMeta");
         assert_eq!(parsed, meta);
+    }
+
+    #[test]
+    fn mcp_request_try_from_roundtrip() {
+        let msg = McpRequest::Authenticate {
+            session_id: "session-0".to_string(),
+            server_name: "my oauth server".to_string(),
+        };
+
+        let notification: ExtNotification = msg.clone().into();
+        let parsed = McpRequest::try_from(&notification).expect("should parse McpRequest");
+        assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn mcp_notification_try_from_roundtrip() {
+        let msg = McpNotification::ServerStatus {
+            servers: vec![McpServerStatusEntry {
+                name: "github".to_string(),
+                status: McpServerStatus::Connected { tool_count: 5 },
+            }],
+        };
+
+        let notification: ExtNotification = msg.clone().into();
+        let parsed =
+            McpNotification::try_from(&notification).expect("should parse McpNotification");
+        assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn try_from_wrong_method_returns_error() {
+        let notification = ext_notification(
+            CONTEXT_USAGE_METHOD,
+            &ContextUsageParams {
+                usage_ratio: 0.5,
+                tokens_used: 50000,
+                context_limit: 100000,
+            },
+        );
+
+        let result = McpRequest::try_from(&notification);
+        assert!(matches!(
+            result,
+            Err(ExtNotificationParseError::WrongMethod)
+        ));
+    }
+
+    #[test]
+    fn try_from_invalid_json_returns_error() {
+        let notification = ext_notification(MCP_MESSAGE_METHOD, &"not a valid McpRequest");
+
+        let result = McpRequest::try_from(&notification);
+        assert!(matches!(
+            result,
+            Err(ExtNotificationParseError::InvalidJson(_))
+        ));
+    }
+
+    #[test]
+    fn ext_notification_parse_error_display() {
+        let wrong = ExtNotificationParseError::WrongMethod;
+        assert!(wrong.to_string().contains(MCP_MESSAGE_METHOD));
+
+        let json_err = serde_json::from_str::<McpRequest>("{}").unwrap_err();
+        let invalid = ExtNotificationParseError::InvalidJson(json_err);
+        assert!(invalid.to_string().contains("invalid JSON"));
     }
 }

@@ -1,7 +1,9 @@
 use aether_core::mcp::{McpSpawnResult, mcp};
+use aether_core::testing::{FakeMcpServer, fake_mcp};
 use futures::future::BoxFuture;
 use mcp_utils::client::oauth::{BrowserOAuthHandler, OAuthCallback, OAuthError, OAuthHandler};
-use mcp_utils::client::{ElicitationRequest, ServerConfig};
+use mcp_utils::client::{ElicitationRequest, McpManager, McpServerConfig, ServerConfig};
+use mcp_utils::status::McpServerStatus;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -105,7 +107,7 @@ async fn http_server_without_handler_returns_error() {
 }
 
 #[tokio::test]
-async fn http_server_with_handler_attempts_oauth_on_failure() {
+async fn http_server_with_handler_stashes_needs_oauth_on_failure() {
     let handler = FakeOAuthHandler::new("test_code", "test_state");
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
     let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
@@ -124,12 +126,19 @@ async fn http_server_with_handler_attempts_oauth_on_failure() {
         )
         .await;
 
-    // Error should indicate OAuth was attempted, not just a plain connection failure
+    // Connection fails, server should be stashed as NeedsOAuth (not auto-trigger OAuth)
     assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
+
+    let statuses = manager.server_statuses();
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].name, "test_oauth_server");
     assert!(
-        err_msg.contains("OAuth"),
-        "Expected OAuth-related error, got: {err_msg}"
+        matches!(
+            statuses[0].status,
+            mcp_utils::status::McpServerStatus::NeedsOAuth
+        ),
+        "Expected NeedsOAuth, got: {:?}",
+        statuses[0].status
     );
 }
 
@@ -192,4 +201,96 @@ async fn oauth_handler_is_dyn_compatible() {
     let result = handler.authorize("https://example.com").await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap().code, "code");
+}
+
+#[tokio::test]
+async fn tool_proxy_with_failing_http_surfaces_needs_oauth() {
+    let handler = FakeOAuthHandler::new("code", "state");
+    let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
+    let mut manager = McpManager::new(elicitation_tx, Some(Arc::new(handler)));
+
+    // A tool-proxy with one in-memory server (succeeds) and one HTTP server (fails → NeedsOAuth)
+    let configs = vec![McpServerConfig::ToolProxy {
+        name: "proxy-oauth".to_string(),
+        servers: vec![
+            fake_mcp("local", FakeMcpServer::new()),
+            ServerConfig::Http {
+                name: "remote".to_string(),
+                config: StreamableHttpClientTransportConfig {
+                    uri: "http://localhost:19999/mcp".into(),
+                    ..Default::default()
+                },
+            },
+        ],
+    }];
+
+    let _ = manager.add_mcps(configs).await;
+    let statuses = manager.server_statuses();
+
+    // The failing HTTP server should be stashed as NeedsOAuth
+    let remote_status = statuses
+        .iter()
+        .find(|s| s.name == "remote")
+        .expect("Expected status entry for 'remote'");
+    assert!(
+        matches!(remote_status.status, McpServerStatus::NeedsOAuth),
+        "Expected NeedsOAuth for failing HTTP server, got: {:?}",
+        remote_status.status
+    );
+
+    // The proxy itself should still be connected
+    let proxy_status = statuses
+        .iter()
+        .find(|s| s.name == "proxy-oauth")
+        .expect("Expected status entry for proxy");
+
+    assert!(
+        matches!(proxy_status.status, McpServerStatus::Connected { .. }),
+        "Expected proxy to be Connected, got: {:?}",
+        proxy_status.status
+    );
+
+    // The proxy's call_tool should still be available
+    let defs = manager.tool_definitions();
+    assert_eq!(defs.len(), 1);
+    assert_eq!(defs[0].name, "proxy-oauth__call_tool");
+}
+
+#[tokio::test]
+async fn tool_proxy_partial_connection_works() {
+    let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
+    let mut manager = McpManager::new(elicitation_tx, None);
+
+    // A tool-proxy with two servers: one in-memory (succeeds), one HTTP (fails)
+    let configs = vec![McpServerConfig::ToolProxy {
+        name: "partial".to_string(),
+        servers: vec![
+            fake_mcp("working", FakeMcpServer::new()),
+            ServerConfig::Http {
+                name: "broken".to_string(),
+                config: StreamableHttpClientTransportConfig {
+                    uri: "http://localhost:19999/mcp".into(),
+                    ..Default::default()
+                },
+            },
+        ],
+    }];
+
+    let _ = manager.add_mcps(configs).await;
+
+    // The proxy should be connected with 1 tool (call_tool)
+    let defs = manager.tool_definitions();
+    assert_eq!(defs.len(), 1);
+    assert_eq!(defs[0].name, "partial__call_tool");
+
+    // Instructions should mention the working server
+    let instructions = manager.server_instructions();
+    let proxy_instr = instructions
+        .iter()
+        .find(|i| i.server_name == "partial")
+        .expect("Expected proxy instructions");
+    assert!(
+        proxy_instr.instructions.contains("working"),
+        "Instructions should mention the connected server"
+    );
 }

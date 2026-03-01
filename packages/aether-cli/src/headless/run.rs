@@ -37,6 +37,7 @@ pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
     let McpSpawnResult {
         tool_definitions,
         instructions,
+        server_statuses: _,
         command_tx: mcp_tx,
         elicitation_rx: _,
         handle: _mcp_handle,

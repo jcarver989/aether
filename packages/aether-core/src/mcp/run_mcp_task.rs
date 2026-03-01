@@ -1,12 +1,12 @@
-use mcp_utils::client::McpManager;
 use mcp_utils::client::mcp_client::McpClient;
+use mcp_utils::client::{McpManager, McpServerStatusEntry};
 use mcp_utils::display_meta::ToolResultMeta;
 
 use futures::future::Either;
 use futures::stream::{self, StreamExt};
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use rmcp::RoleClient;
-use rmcp::model::{GetPromptResult, ProgressNotificationParam, Prompt};
+use rmcp::model::{CallToolRequestParams, GetPromptResult, ProgressNotificationParam, Prompt};
 use rmcp::service::RunningService;
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,6 +31,8 @@ pub enum ToolExecutionEvent {
     },
 }
 
+type AuthResult = Result<(Vec<McpServerStatusEntry>, Vec<ToolDefinition>), String>;
+
 /// Commands that can be sent to the MCP manager task
 #[derive(Debug)]
 pub enum McpCommand {
@@ -47,24 +49,25 @@ pub enum McpCommand {
         arguments: Option<serde_json::Map<String, serde_json::Value>>,
         tx: oneshot::Sender<Result<GetPromptResult, String>>,
     },
-}
-
-/// Events emitted by the MCP manager task
-#[derive(Debug, Clone)]
-pub enum McpEvent {
-    ToolsChanged(Vec<ToolDefinition>),
+    GetServerStatuses {
+        tx: oneshot::Sender<Vec<McpServerStatusEntry>>,
+    },
+    AuthenticateServer {
+        name: String,
+        tx: oneshot::Sender<AuthResult>,
+    },
 }
 
 pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<McpCommand>) {
     while let Some(command) = command_rx.recv().await {
-        on_command(command, &mcp).await;
+        on_command(command, &mut mcp).await;
     }
 
     mcp.shutdown().await;
     tracing::debug!("MCP manager task ended");
 }
 
-async fn on_command(command: McpCommand, mcp: &McpManager) {
+async fn on_command(command: McpCommand, mcp: &mut McpManager) {
     match command {
         McpCommand::ExecuteTool {
             request,
@@ -81,19 +84,20 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
                 })
                 .await;
 
-            match mcp.get_client_for_tool(&request.name) {
-                Ok(client) => {
+            match mcp.get_client_for_tool(&request.name, &request.arguments) {
+                Ok((client, params)) => {
                     tokio::spawn(async move {
-                        let (result, result_meta) = match try_execute_tool(
+                        let outcome = execute_mcp_call(
                             client,
                             &request,
+                            params,
                             timeout,
                             tool_id.clone(),
                             tx.clone(),
                         )
-                        .await
-                        {
-                            Ok((tool_result, meta)) => (Ok(tool_result), meta),
+                        .await;
+                        let (result, result_meta) = match outcome {
+                            Ok((r, m)) => (Ok(r), m),
                             Err(e) => (Err(e), None),
                         };
                         let _ = tx
@@ -139,26 +143,38 @@ async fn on_command(command: McpCommand, mcp: &McpManager) {
                 .map_err(|e| format!("Failed to get prompt: {e}"));
             let _ = tx.send(result);
         }
+
+        McpCommand::GetServerStatuses { tx } => {
+            let _ = tx.send(mcp.server_statuses().to_vec());
+        }
+
+        McpCommand::AuthenticateServer { name, tx } => {
+            let result = match mcp.authenticate_server(&name).await {
+                Ok(()) => Ok((mcp.server_statuses().to_vec(), mcp.tool_definitions())),
+                Err(e) => Err(format!("Authentication failed for '{name}': {e}")),
+            };
+            let _ = tx.send(result);
+        }
     }
 }
 
-async fn try_execute_tool(
+/// Shared logic for sending an MCP tool call, streaming progress events,
+/// and collecting the result.
+async fn execute_mcp_call(
     client: Arc<RunningService<RoleClient, McpClient>>,
     request: &ToolCallRequest,
+    params: CallToolRequestParams,
     timeout: Duration,
     tool_call_id: String,
     event_tx: mpsc::Sender<ToolExecutionEvent>,
 ) -> Result<(ToolCallResult, Option<ToolResultMeta>), ToolCallError> {
-    use super::tool_bridge::{mcp_result_to_tool_call_result, tool_call_request_to_mcp};
+    use super::tool_bridge::mcp_result_to_tool_call_result;
     use rmcp::model::{ClientRequest::CallToolRequest, Request, ServerResult};
     use rmcp::service::PeerRequestOptions;
 
-    let tool_request_param =
-        tool_call_request_to_mcp(request).map_err(|e| ToolCallError::from_request(request, e))?;
-
     let handle = client
         .send_cancellable_request(
-            CallToolRequest(Request::new(tool_request_param)),
+            CallToolRequest(Request::new(params)),
             PeerRequestOptions {
                 timeout: Some(timeout),
                 meta: None,

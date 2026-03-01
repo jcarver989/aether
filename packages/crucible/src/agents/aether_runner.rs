@@ -226,6 +226,7 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
             command_tx,
             elicitation_rx: _,
             handle: _mcp_handle,
+            server_statuses: _,
         } = mcp_builder
             .spawn()
             .await

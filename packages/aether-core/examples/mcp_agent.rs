@@ -15,6 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let McpSpawnResult {
         tool_definitions: tools,
         instructions: _,
+        server_statuses: _,
         command_tx: mcp_tx,
         elicitation_rx: _,
         handle: _mcp_handle,
