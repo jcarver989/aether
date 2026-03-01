@@ -3,10 +3,10 @@ use llm::ToolDefinition;
 use super::{
     McpError, Result,
     config::{McpServerConfig, ServerConfig},
-    connection::{McpServerConnection, ServerInstructions, Tool},
+    connection::{ConnectParams, ConnectResult, McpServerConnection, ServerInstructions, Tool},
     mcp_client::McpClient,
     naming::{create_namespaced_tool_name, split_on_server_name},
-    oauth::{OAuthHandler, create_auth_manager_from_store, perform_oauth_flow},
+    oauth::{OAuthHandler, perform_oauth_flow},
     tool_proxy::ToolProxy,
 };
 use rmcp::{
@@ -15,16 +15,13 @@ use rmcp::{
         CallToolRequestParams, ClientCapabilities, ClientInfo, CreateElicitationRequestParams,
         CreateElicitationResult, ElicitationAction, Implementation, ProtocolVersion, Root,
     },
-    serve_client,
     service::RunningService,
     transport::streamable_http_client::StreamableHttpClientTransportConfig,
-    transport::{StreamableHttpClientTransport, auth::AuthClient},
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, oneshot};
-use tokio::task::JoinHandle;
 
 pub use crate::status::{McpServerStatus, McpServerStatusEntry};
 
@@ -109,6 +106,13 @@ impl McpManager {
         )
     }
 
+    fn connect_params(&self) -> ConnectParams {
+        ConnectParams {
+            mcp_client: self.create_mcp_client(),
+            oauth_handler: self.oauth_handler.clone(),
+        }
+    }
+
     /// Update or insert the status entry for a server.
     fn set_status(&mut self, name: &str, status: McpServerStatus) {
         if let Some(entry) = self.server_statuses.iter_mut().find(|s| s.name == name) {
@@ -127,7 +131,7 @@ impl McpManager {
             if let Err(e) = self.add_mcp(config).await {
                 // Log warning but continue with other servers
                 tracing::warn!("Failed to connect to MCP server '{}': {}", name, e);
-                // Only record Failed if not already recorded by connect_http_server
+                // Only record Failed if not already recorded by connect logic
                 if !self.server_statuses.iter().any(|s| s.name == name) {
                     self.set_status(
                         &name,
@@ -147,34 +151,49 @@ impl McpManager {
         base_url: &str,
         auth_header: String,
     ) -> Result<()> {
-        let config = StreamableHttpClientTransportConfig {
-            uri: base_url.into(),
-            auth_header: Some(auth_header),
-            ..Default::default()
+        let config = ServerConfig::Http {
+            name: name.clone(),
+            config: StreamableHttpClientTransportConfig {
+                uri: base_url.into(),
+                auth_header: Some(auth_header),
+                ..Default::default()
+            },
         };
-        self.connect_http_server_inner(name, config, Registration::Direct)
-            .await
+        let params = self.connect_params();
+        match McpServerConnection::connect(config, params).await {
+            ConnectResult::Connected(conn) => {
+                self.register_server(&name, conn, Registration::Direct).await
+            }
+            ConnectResult::NeedsOAuth { error, .. } => Err(error),
+            ConnectResult::Failed(e) => Err(e),
+        }
     }
 
     pub async fn add_mcp(&mut self, config: McpServerConfig) -> Result<()> {
-        // HTTP connections need special OAuth handling, so they go through
-        // their own path. Everything else uses the shared `connect_to_server`.
         match config {
-            McpServerConfig::Server(ServerConfig::Http { name, config }) => {
-                self.connect_http_server_inner(name, config, Registration::Direct)
-                    .await
-            }
-
             McpServerConfig::ToolProxy { name, servers } => {
                 self.connect_tool_proxy(name, servers).await
             }
 
             McpServerConfig::Server(config) => {
                 let name = config.name().to_string();
-                let create_client = || self.create_mcp_client();
-                let (client, task) = McpServerConnection::connect(config, create_client).await?;
-                self.register_server_inner(&name, client, task, Registration::Direct)
-                    .await
+                let params = self.connect_params();
+                match McpServerConnection::connect(config, params).await {
+                    ConnectResult::Connected(conn) => {
+                        self.register_server(&name, conn, Registration::Direct)
+                            .await
+                    }
+                    ConnectResult::NeedsOAuth {
+                        name,
+                        config,
+                        error,
+                    } => {
+                        self.pending_configs.insert(name.clone(), config);
+                        self.set_status(&name, McpServerStatus::NeedsOAuth);
+                        Err(error)
+                    }
+                    ConnectResult::Failed(e) => Err(e),
+                }
             }
         }
     }
@@ -195,29 +214,23 @@ impl McpManager {
 
         for config in servers {
             let server_name = config.name().to_string();
+            let params = self.connect_params();
 
-            // HTTP servers go through connect_http_server (gets OAuth for free).
-            // Everything else uses the normal connect_to_server path.
-            let result = match config {
-                ServerConfig::Http { name, config: cfg } => {
-                    self.connect_http_server_inner(name, cfg, Registration::Proxied)
+            let result = match McpServerConnection::connect(config, params).await {
+                ConnectResult::Connected(conn) => {
+                    self.register_server(&server_name, conn, Registration::Proxied)
                         .await
                 }
-                other => {
-                    let create_client = || self.create_mcp_client();
-                    match McpServerConnection::connect(other, &create_client).await {
-                        Ok((client, task)) => {
-                            self.register_server_inner(
-                                &server_name,
-                                client,
-                                task,
-                                Registration::Proxied,
-                            )
-                            .await
-                        }
-                        Err(e) => Err(e),
-                    }
+                ConnectResult::NeedsOAuth {
+                    name,
+                    config,
+                    error,
+                } => {
+                    self.pending_configs.insert(name.clone(), config);
+                    self.set_status(&name, McpServerStatus::NeedsOAuth);
+                    Err(error)
                 }
+                ConnectResult::Failed(e) => Err(e),
             };
 
             match result {
@@ -233,7 +246,8 @@ impl McpManager {
                             );
                         }
 
-                        let description = ToolProxy::extract_server_description(&client, &server_name);
+                        let description =
+                            ToolProxy::extract_server_description(&client, &server_name);
                         server_descriptions.push((server_name.clone(), description));
                     }
                     nested_names.insert(server_name);
@@ -273,54 +287,6 @@ impl McpManager {
         Ok(())
     }
 
-    /// Connect to an HTTP MCP server. Tries stored OAuth credentials first,
-    /// falls back to plain connection, and retries with a fresh OAuth flow on failure.
-    async fn connect_http_server_inner(
-        &mut self,
-        name: String,
-        config: StreamableHttpClientTransportConfig,
-        registration: Registration,
-    ) -> Result<()> {
-        let mcp_client = self.create_mcp_client();
-        let conn_err = |e| McpError::ConnectionFailed(format!("HTTP MCP server {name}: {e}"));
-
-        let result = match self.create_auth_client(&name, &config.uri).await {
-            Some(auth_client) if config.auth_header.is_none() => {
-                tracing::debug!("Using OAuth for server '{name}'");
-                let transport =
-                    StreamableHttpClientTransport::with_client(auth_client, config.clone());
-                serve_client(mcp_client, transport).await.map_err(conn_err)
-            }
-            _ => {
-                let transport = StreamableHttpClientTransport::from_config(config.clone());
-                serve_client(mcp_client, transport).await.map_err(conn_err)
-            }
-        };
-
-        match result {
-            Ok(client) => {
-                self.register_server_inner(&name, client, None, registration)
-                    .await
-            }
-            Err(err) => {
-                tracing::warn!("Failed to connect to MCP server '{name}': {err}");
-
-                // Only assume OAuth is needed if we have a handler that can
-                // perform the flow. Otherwise the server is simply unreachable.
-                let status = if self.oauth_handler.is_some() {
-                    self.pending_configs.insert(name.clone(), config);
-                    McpServerStatus::NeedsOAuth
-                } else {
-                    McpServerStatus::Failed {
-                        error: err.to_string(),
-                    }
-                };
-                self.set_status(&name, status);
-                Err(err)
-            }
-        }
-    }
-
     async fn oauth_and_reconnect(
         &mut self,
         name: String,
@@ -332,17 +298,16 @@ impl McpManager {
         let auth_client = perform_oauth_flow(&name, &config.uri, handler.as_ref())
             .await
             .map_err(|e| McpError::ConnectionFailed(format!("OAuth failed for '{name}': {e}")))?;
-        let transport = StreamableHttpClientTransport::with_client(auth_client, config);
 
         let mcp_client = self.create_mcp_client();
-        let client = serve_client(mcp_client, transport).await.map_err(|e| {
-            McpError::ConnectionFailed(format!("reconnect failed for '{name}': {e}"))
-        })?;
+        let conn =
+            McpServerConnection::reconnect_with_auth(&name, config, auth_client, mcp_client)
+                .await?;
 
         // If this server is proxied, register without exposing tools to the agent
         if let Some(proxy) = self.proxy.as_ref().filter(|p| p.contains_server(&name)) {
             let tool_dir = proxy.tool_dir().to_path_buf();
-            self.register_server_inner(&name, client, None, Registration::Proxied)
+            self.register_server(&name, conn, Registration::Proxied)
                 .await?;
             // Write tool files now that connection succeeded
             if let Some(conn) = self.servers.get(&name) {
@@ -355,39 +320,27 @@ impl McpManager {
             }
             Ok(())
         } else {
-            self.register_server_inner(&name, client, None, Registration::Direct)
+            self.register_server(&name, conn, Registration::Direct)
                 .await
         }
     }
 
-    async fn create_auth_client(
-        &self,
-        server_id: &str,
-        base_url: &str,
-    ) -> Option<AuthClient<reqwest::Client>> {
-        let auth_manager = create_auth_manager_from_store(server_id, base_url)
-            .await
-            .ok()??;
-        Some(AuthClient::new(reqwest::Client::default(), auth_manager))
-    }
-
-    /// Register a server connection and discover its tools.
+    /// Register a connected server and discover its tools.
     ///
     /// When `registration` is `Direct`, discovered tools are added to
     /// `self.tool_definitions` (visible to the agent). When `Proxied`, tools are
     /// only stored in `self.tools` for internal routing.
-    async fn register_server_inner(
+    async fn register_server(
         &mut self,
         name: &str,
-        client: RunningService<RoleClient, McpClient>,
-        server_task: Option<JoinHandle<()>>,
+        conn: McpServerConnection,
         registration: Registration,
     ) -> Result<()> {
-        let tools_response = client.list_tools(None).await.map_err(|e| {
+        let tools = conn.list_tools().await.map_err(|e| {
             McpError::ToolDiscoveryFailed(format!("Failed to list tools for {name}: {e}"))
         })?;
 
-        for rmcp_tool in &tools_response.tools {
+        for rmcp_tool in &tools {
             let tool_name = rmcp_tool.name.to_string();
             let namespaced_tool_name = create_namespaced_tool_name(name, &tool_name);
             let tool = Tool::from(rmcp_tool);
@@ -404,15 +357,14 @@ impl McpManager {
             self.tools.insert(namespaced_tool_name, tool);
         }
 
-        let tool_count = tools_response.tools.len();
+        let tool_count = tools.len();
 
         self.set_status(name, McpServerStatus::Connected { tool_count });
 
         // Remove from pending configs if it was there
         self.pending_configs.remove(name);
 
-        self.servers
-            .insert(name.to_string(), McpServerConnection::new(client, server_task));
+        self.servers.insert(name.to_string(), conn);
         Ok(())
     }
 
@@ -711,4 +663,3 @@ impl Drop for McpManager {
         }
     }
 }
-
