@@ -1,4 +1,5 @@
 pub mod mappers;
+pub(crate) mod model_config;
 pub(crate) mod relay;
 pub(crate) mod session;
 pub(crate) mod session_manager;

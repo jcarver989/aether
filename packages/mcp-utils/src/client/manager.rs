@@ -3,32 +3,31 @@ use llm::ToolDefinition;
 use super::{
     McpError, Result,
     config::{McpServerConfig, ServerConfig},
+    connection::connect_to_server,
     mcp_client::McpClient,
+    naming::{create_namespaced_tool_name, split_on_server_name},
     oauth::{OAuthHandler, create_auth_manager_from_store, perform_oauth_flow},
     tool_proxy::ToolProxy,
 };
-use crate::transport::create_in_memory_transport;
 use rmcp::{
-    RoleClient, RoleServer, ServiceExt,
+    RoleClient,
     model::{
         CallToolRequestParams, ClientCapabilities, ClientInfo, CreateElicitationRequestParams,
         CreateElicitationResult, ElicitationAction, Implementation, ProtocolVersion, Root,
         Tool as RmcpTool,
     },
     serve_client,
-    service::{DynService, RunningService},
+    service::RunningService,
     transport::streamable_http_client::StreamableHttpClientTransportConfig,
-    transport::{StreamableHttpClientTransport, TokioChildProcess, auth::AuthClient},
+    transport::{StreamableHttpClientTransport, auth::AuthClient},
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, oneshot};
-use tokio::{process::Command, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 pub use crate::status::{McpServerStatus, McpServerStatusEntry};
-
-const SERVERNAME_DELIMITER: &str = "__";
 
 #[derive(Debug)]
 pub struct ElicitationRequest {
@@ -756,90 +755,10 @@ impl From<&RmcpTool> for Tool {
     }
 }
 
-fn create_namespaced_tool_name(server_name: &str, tool_name: &str) -> String {
-    format!("{server_name}{SERVERNAME_DELIMITER}{tool_name}")
-}
-
-/// Connect to an MCP server described by `config`, returning the running client
-/// and an optional background task handle (for Stdio child processes / in-memory servers).
-///
-/// This is the shared connection logic used by `McpManager::add_mcp` and
-/// proxied server registration.
-pub(crate) async fn connect_to_server(
-    config: ServerConfig,
-    create_mcp_client: impl Fn() -> McpClient,
-) -> Result<(
-    RunningService<RoleClient, McpClient>,
-    Option<JoinHandle<()>>,
-)> {
-    match config {
-        ServerConfig::Stdio { command, args, .. } => {
-            let mut cmd = Command::new(&command);
-            cmd.args(&args);
-            let mcp_client = create_mcp_client();
-            let client = mcp_client.serve(TokioChildProcess::new(cmd)?).await?;
-            Ok((client, None))
-        }
-
-        ServerConfig::Http { name, config: cfg } => {
-            let transport = StreamableHttpClientTransport::from_config(cfg);
-            let mcp_client = create_mcp_client();
-            let client = serve_client(mcp_client, transport).await.map_err(|e| {
-                McpError::ConnectionFailed(format!(
-                    "Failed to connect to HTTP server '{name}': {e}"
-                ))
-            })?;
-            Ok((client, None))
-        }
-
-        ServerConfig::InMemory { name, server } => {
-            let mcp_client = create_mcp_client();
-            let (client, handle) = serve_in_memory(server, mcp_client, &name).await?;
-            Ok((client, Some(handle)))
-        }
-    }
-}
-
-/// Spawn an in-memory MCP server on a background task and connect a client to it.
-///
-/// Returns the running client service and the server's join handle.
-pub(crate) async fn serve_in_memory(
-    server: Box<dyn DynService<RoleServer>>,
-    mcp_client: McpClient,
-    label: &str,
-) -> Result<(RunningService<RoleClient, McpClient>, JoinHandle<()>)> {
-    let (client_transport, server_transport) = create_in_memory_transport();
-
-    let server_handle = tokio::spawn(async move {
-        match server.serve(server_transport).await {
-            Ok(_service) => {
-                std::future::pending::<()>().await;
-            }
-            Err(e) => {
-                eprintln!("MCP server error: {e}");
-            }
-        }
-    });
-
-    let client = serve_client(mcp_client, client_transport)
-        .await
-        .map_err(|e| {
-            McpError::ConnectionFailed(format!(
-                "Failed to connect to in-memory server '{label}': {e}"
-            ))
-        })?;
-
-    Ok((client, server_handle))
-}
-
 /// Extract non-empty instructions from an MCP client's peer info.
 fn extract_instructions(client: &RunningService<RoleClient, McpClient>) -> Option<String> {
     client
         .peer_info()
         .and_then(|info| info.instructions.clone())
         .filter(|s| !s.is_empty())
-}
-
-pub fn split_on_server_name(namespaced_name: &str) -> Option<(&str, &str)> {
-    namespaced_name.split_once(SERVERNAME_DELIMITER)
 }

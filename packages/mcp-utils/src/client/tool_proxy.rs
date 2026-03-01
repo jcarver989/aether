@@ -1,5 +1,5 @@
 use super::McpError;
-use super::manager::split_on_server_name;
+use super::naming::split_on_server_name;
 use super::mcp_client::McpClient;
 use llm::ToolDefinition;
 use rmcp::{RoleClient, service::RunningService};

@@ -207,7 +207,7 @@ impl Prompt {
 }
 
 /// Format MCP instructions with XML tags for the system prompt.
-pub fn format_mcp_instructions(instructions: &[ServerInstructions]) -> String {
+fn format_mcp_instructions(instructions: &[ServerInstructions]) -> String {
     if instructions.is_empty() {
         return String::new();
     }
