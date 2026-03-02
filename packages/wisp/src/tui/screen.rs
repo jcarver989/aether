@@ -1,10 +1,10 @@
+use super::soft_wrap::soft_wrap_line;
 use crossterm::{
     QueueableCommand,
     cursor::MoveUp,
     style::{Attribute, Color, SetAttribute, SetBackgroundColor, SetForegroundColor},
     terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate},
 };
-use super::soft_wrap::soft_wrap_line;
 use std::fmt::Write as _;
 use std::io::{self, Write};
 
