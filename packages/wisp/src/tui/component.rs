@@ -6,6 +6,7 @@ pub struct RenderContext {
     pub size: (u16, u16),
     pub theme: Theme,
     pub focused: bool,
+    pub max_height: Option<usize>,
 }
 
 impl RenderContext {
@@ -14,6 +15,7 @@ impl RenderContext {
             size,
             theme: Theme::default(),
             focused: true,
+            max_height: None,
         }
     }
 
@@ -22,6 +24,16 @@ impl RenderContext {
             size: self.size,
             theme: self.theme,
             focused,
+            max_height: self.max_height,
+        }
+    }
+
+    pub fn with_max_height(&self, max_height: usize) -> Self {
+        Self {
+            size: self.size,
+            theme: self.theme,
+            focused: self.focused,
+            max_height: Some(max_height),
         }
     }
 }

@@ -1,6 +1,7 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenu, ConfigMenuAction};
 use crate::components::config_picker::{ConfigPicker, ConfigPickerAction};
 use crate::components::container::Container;
+use crate::components::model_selector::{ModelSelector, ModelSelectorAction};
 use crate::components::server_status::{
     ServerStatusAction, ServerStatusOverlay, server_status_summary,
 };
@@ -10,9 +11,19 @@ use agent_client_protocol::SessionConfigOption;
 use crossterm::event::KeyEvent;
 use unicode_width::UnicodeWidthStr;
 
+const MIN_HEIGHT: usize = 3;
+const MIN_WIDTH: usize = 6;
+/// Container chrome above child content: top border (1) + blank line (1).
+const TOP_CHROME: usize = 2;
+/// Container left border width: "│ " = 2 chars.
+const BORDER_LEFT_WIDTH: usize = 2;
+/// Gap between menu and picker children inside the container.
+const GAP: usize = 1;
+
 pub struct ConfigOverlay {
     menu: ConfigMenu,
     picker: Option<ConfigPicker>,
+    model_selector: Option<ModelSelector>,
     server_overlay: Option<ServerStatusOverlay>,
     server_statuses: Vec<McpServerStatusEntry>,
 }
@@ -29,6 +40,7 @@ impl ConfigOverlay {
         Self {
             menu,
             picker: None,
+            model_selector: None,
             server_overlay: None,
             server_statuses,
         }
@@ -55,8 +67,14 @@ impl ConfigOverlay {
     pub fn cursor_col(&self) -> usize {
         if let Some(ref picker) = self.picker {
             let prefix = format!("  {} search: ", picker.title);
-            // +3 for "│ " border prefix and one extra space
-            3 + UnicodeWidthStr::width(prefix.as_str()) + UnicodeWidthStr::width(picker.query())
+            BORDER_LEFT_WIDTH
+                + UnicodeWidthStr::width(prefix.as_str())
+                + UnicodeWidthStr::width(picker.query())
+        } else if let Some(ref selector) = self.model_selector {
+            let prefix = "  Model search: ";
+            BORDER_LEFT_WIDTH
+                + UnicodeWidthStr::width(prefix)
+                + UnicodeWidthStr::width(selector.query())
         } else {
             0
         }
@@ -65,37 +83,42 @@ impl ConfigOverlay {
     /// Returns the row offset of the cursor within the overlay (0-indexed from top of overlay).
     /// Only meaningful when a picker is open (cursor sits on the search line).
     pub fn cursor_row_offset(&self) -> usize {
-        if self.picker.is_some() {
-            // Title bar (1) + blank line (1) + menu lines + blank separator line (1) + search header line (0-indexed = at this line)
+        if self.picker.is_some() || self.model_selector.is_some() {
             let menu_lines = self.menu.options.len().max(1);
-            1 + 1 + menu_lines + 1
+            TOP_CHROME + menu_lines + GAP
         } else {
             0
         }
     }
 
-    #[allow(dead_code)]
-    pub fn has_picker(&self) -> bool {
-        self.picker.is_some()
+    pub fn menu_entries(&self) -> &[crate::components::config_menu::ConfigMenuEntry] {
+        &self.menu.options
     }
 
-    #[allow(dead_code)]
-    pub fn has_server_overlay(&self) -> bool {
-        self.server_overlay.is_some()
-    }
-
-    #[allow(dead_code)]
     pub fn menu_selected_index(&self) -> usize {
         self.menu.selected_index
     }
 
-    #[allow(dead_code)]
     pub fn picker_config_id(&self) -> Option<&str> {
         self.picker.as_ref().map(|p| p.config_id.as_str())
     }
 
+    pub fn has_picker(&self) -> bool {
+        self.picker.is_some()
+    }
+
+    pub fn has_model_selector(&self) -> bool {
+        self.model_selector.is_some()
+    }
+
+    pub fn has_server_overlay(&self) -> bool {
+        self.server_overlay.is_some()
+    }
+
     fn footer_text(&self) -> &'static str {
-        if self.picker.is_some() {
+        if self.model_selector.is_some() {
+            "[Space/Enter] Toggle  [Esc] Done"
+        } else if self.picker.is_some() {
             "[Enter] Confirm  [Esc] Back"
         } else if self.server_overlay.is_some() {
             "[Enter] Authenticate  [Esc] Back"
@@ -109,14 +132,16 @@ impl Component for ConfigOverlay {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let height = (context.size.1.saturating_sub(1)) as usize;
         let width = context.size.0 as usize;
-        if height < 3 || width < 6 {
+        if height < MIN_HEIGHT || width < MIN_WIDTH {
             return vec![Line::new("(terminal too small)")];
         }
 
         let footer = self.footer_text();
 
         let mut children: Vec<&mut dyn Component> = vec![&mut self.menu];
-        if let Some(ref mut picker) = self.picker {
+        if let Some(ref mut selector) = self.model_selector {
+            children.push(selector);
+        } else if let Some(ref mut picker) = self.picker {
             children.push(picker);
         } else if let Some(ref mut server_overlay) = self.server_overlay {
             children.push(server_overlay);
@@ -127,7 +152,7 @@ impl Component for ConfigOverlay {
             .footer(footer)
             .border_color(context.theme.muted)
             .fill_height(height)
-            .gap(1)
+            .gap(GAP)
             .render(context)
     }
 }
@@ -157,7 +182,30 @@ impl HandlesInput for ConfigOverlay {
             };
         }
 
-        // Picker has second priority
+        // Model selector has second priority
+        if let Some(ref mut selector) = self.model_selector {
+            let outcome = selector.handle_key(key_event);
+            return match outcome.action {
+                Some(ModelSelectorAction::Done(change)) => {
+                    self.model_selector = None;
+                    match change {
+                        Some(change) => InputOutcome::action_and_render(
+                            ConfigOverlayAction::ApplyConfigChange(change),
+                        ),
+                        None => InputOutcome::consumed_and_render(),
+                    }
+                }
+                None => {
+                    if outcome.needs_render {
+                        InputOutcome::consumed_and_render()
+                    } else {
+                        InputOutcome::consumed()
+                    }
+                }
+            };
+        }
+
+        // Picker has third priority
         if let Some(ref mut picker) = self.picker {
             let outcome = picker.handle_key(key_event);
             return match outcome.action {
@@ -168,11 +216,9 @@ impl HandlesInput for ConfigOverlay {
                 Some(ConfigPickerAction::ApplySelection(change)) => {
                     self.picker = None;
                     match change {
-                        Some(change) => {
-                            InputOutcome::action_and_render(ConfigOverlayAction::ApplyConfigChange(
-                                change,
-                            ))
-                        }
+                        Some(change) => InputOutcome::action_and_render(
+                            ConfigOverlayAction::ApplyConfigChange(change),
+                        ),
                         None => InputOutcome::consumed_and_render(),
                     }
                 }
@@ -199,9 +245,15 @@ impl HandlesInput for ConfigOverlay {
                     .and_then(ConfigPicker::from_entry);
                 InputOutcome::consumed_and_render()
             }
+            Some(ConfigMenuAction::OpenModelSelector) => {
+                if let Some(entry) = self.menu.selected_entry() {
+                    let current = Some(entry.current_raw_value.as_str()).filter(|v| !v.is_empty());
+                    self.model_selector = Some(ModelSelector::from_model_entry(entry, current));
+                }
+                InputOutcome::consumed_and_render()
+            }
             Some(ConfigMenuAction::OpenMcpServers) => {
-                self.server_overlay =
-                    Some(ServerStatusOverlay::new(self.server_statuses.clone()));
+                self.server_overlay = Some(ServerStatusOverlay::new(self.server_statuses.clone()));
                 InputOutcome::consumed_and_render()
             }
             None => {
@@ -242,6 +294,33 @@ mod tests {
                     SessionConfigSelectOption::new("claude", "Claude"),
                 ],
             ),
+        ];
+        ConfigMenu::from_config_options(&options)
+    }
+
+    fn make_multi_select_menu() -> ConfigMenu {
+        let mut meta = serde_json::Map::new();
+        meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
+        let options = vec![
+            agent_client_protocol::SessionConfigOption::select(
+                "provider",
+                "Provider",
+                "openrouter",
+                vec![
+                    SessionConfigSelectOption::new("openrouter", "OpenRouter"),
+                    SessionConfigSelectOption::new("ollama", "Ollama"),
+                ],
+            ),
+            agent_client_protocol::SessionConfigOption::select(
+                "model",
+                "Model",
+                "gpt-4o",
+                vec![
+                    SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
+                    SessionConfigSelectOption::new("claude", "Claude"),
+                ],
+            )
+            .meta(meta),
         ];
         ConfigMenu::from_config_options(&options)
     }
@@ -421,13 +500,20 @@ mod tests {
     fn update_config_options_preserves_mcp_servers_entry() {
         use crate::components::config_menu::ConfigMenuEntryKind;
 
-        let menu = make_menu().with_mcp_servers_entry("1 connected, 1 needs auth");
+        let mut menu = make_menu();
+        menu.add_mcp_servers_entry("1 connected, 1 needs auth");
         let statuses = make_server_statuses();
         let mut overlay = ConfigOverlay::new(menu, statuses);
 
         // Verify MCP servers entry exists initially
-        assert!(overlay.menu.options.iter().any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
-            "MCP servers entry should exist before update");
+        assert!(
+            overlay
+                .menu
+                .options
+                .iter()
+                .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
+            "MCP servers entry should exist before update"
+        );
 
         // Simulate config update (e.g. after model selection)
         let new_options = vec![
@@ -450,7 +536,125 @@ mod tests {
         overlay.update_config_options(&new_options);
 
         // MCP servers entry should still be present after update
-        assert!(overlay.menu.options.iter().any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
-            "MCP servers entry should survive update_config_options");
+        assert!(
+            overlay
+                .menu
+                .options
+                .iter()
+                .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
+            "MCP servers entry should survive update_config_options"
+        );
+    }
+
+    #[test]
+    fn multi_select_entry_opens_model_selector() {
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+
+        // Navigate to the model entry (index 1: provider=0, model=1)
+        overlay.handle_key(key(KeyCode::Down));
+        overlay.handle_key(key(KeyCode::Enter));
+
+        assert!(overlay.has_model_selector());
+    }
+
+    #[test]
+    fn model_selector_esc_without_toggle_returns_no_change() {
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+
+        // Navigate to model and open model selector
+        overlay.handle_key(key(KeyCode::Down));
+        overlay.handle_key(key(KeyCode::Enter));
+        assert!(overlay.has_model_selector());
+
+        // Selector pre-selects current model (gpt-4o); Esc without toggling returns no change
+        let outcome = overlay.handle_key(key(KeyCode::Esc));
+        assert!(outcome.consumed);
+        assert!(!overlay.has_model_selector());
+        assert!(
+            outcome.action.is_none(),
+            "escape without toggling should produce no change"
+        );
+    }
+
+    #[test]
+    fn model_selector_esc_after_deselecting_all_returns_no_change() {
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+
+        overlay.handle_key(key(KeyCode::Down));
+        overlay.handle_key(key(KeyCode::Enter)); // open model selector
+        // Deselect the pre-selected model
+        overlay.handle_key(key(KeyCode::Char(' ')));
+
+        let outcome = overlay.handle_key(key(KeyCode::Esc));
+        assert!(!overlay.has_model_selector());
+        assert!(outcome.action.is_none()); // No selections => no change
+    }
+
+    #[test]
+    fn model_selector_enter_toggles_not_confirms() {
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+
+        overlay.handle_key(key(KeyCode::Down));
+        overlay.handle_key(key(KeyCode::Enter)); // open model selector
+        assert!(overlay.has_model_selector());
+
+        // Enter should toggle, not close the selector
+        overlay.handle_key(key(KeyCode::Enter));
+        assert!(
+            overlay.has_model_selector(),
+            "Enter should toggle, not close"
+        );
+    }
+
+    #[test]
+    fn tall_terminal_shows_more_picker_items() {
+        // Create a menu with many model options
+        let many_models: Vec<SessionConfigSelectOption> = (0..20)
+            .map(|i| SessionConfigSelectOption::new(format!("model-{i}"), format!("Model {i}")))
+            .collect();
+        let options = vec![agent_client_protocol::SessionConfigOption::select(
+            "model",
+            "Model",
+            "model-0",
+            many_models,
+        )];
+        let menu = ConfigMenu::from_config_options(&options);
+        let mut overlay = ConfigOverlay::new(menu, vec![]);
+        overlay.handle_key(key(KeyCode::Enter)); // open picker
+
+        // Render at a tall terminal (60 rows)
+        let context_tall = RenderContext::new((80, 60));
+        let lines_tall = overlay.render(&context_tall);
+        let tall_model_lines = lines_tall
+            .iter()
+            .filter(|l| l.plain_text().contains("Model "))
+            .count();
+
+        // Render at a short terminal (15 rows)
+        let context_short = RenderContext::new((80, 15));
+        let lines_short = overlay.render(&context_short);
+        let short_model_lines = lines_short
+            .iter()
+            .filter(|l| l.plain_text().contains("Model "))
+            .count();
+
+        assert!(
+            tall_model_lines > short_model_lines,
+            "tall terminal ({tall_model_lines} items) should show more picker items than short ({short_model_lines})"
+        );
+    }
+
+    #[test]
+    fn footer_shows_toggle_when_model_selector_open() {
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+
+        overlay.handle_key(key(KeyCode::Down));
+        overlay.handle_key(key(KeyCode::Enter));
+
+        let context = RenderContext::new((80, 24));
+        let lines = overlay.render(&context);
+        let footer = lines[lines.len() - 2].plain_text();
+        assert!(footer.contains("Toggle"), "footer: {footer}");
+        assert!(footer.contains("[Esc] Done"), "footer: {footer}");
     }
 }

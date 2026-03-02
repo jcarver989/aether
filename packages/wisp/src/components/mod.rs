@@ -8,6 +8,7 @@ pub mod conversation_window;
 pub mod elicitation_form;
 pub mod file_picker;
 pub mod input_prompt;
+pub mod model_selector;
 pub mod progress_indicator;
 pub mod server_status;
 pub mod status_line;
