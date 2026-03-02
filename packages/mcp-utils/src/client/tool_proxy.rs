@@ -1,6 +1,6 @@
 use super::McpError;
-use super::naming::split_on_server_name;
 use super::mcp_client::McpClient;
+use super::naming::split_on_server_name;
 use llm::ToolDefinition;
 use rmcp::{RoleClient, service::RunningService};
 use schemars::JsonSchema;
@@ -196,10 +196,7 @@ impl ToolProxy {
     }
 
     /// Build proxy instructions describing the tool directory and connected servers.
-    fn build_instructions(
-        tool_dir: &Path,
-        server_descriptions: &[(String, String)],
-    ) -> String {
+    fn build_instructions(tool_dir: &Path, server_descriptions: &[(String, String)]) -> String {
         use std::fmt::Write;
 
         let mut instructions = format!(
@@ -228,7 +225,6 @@ pub struct ToolFileEntry {
     pub server: String,
     pub parameters: Value,
 }
-
 
 #[cfg(test)]
 mod tests {
