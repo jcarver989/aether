@@ -93,10 +93,7 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
         total_lines,
         replacements_made,
         content: updated_content,
-        _meta: Some(ToolResultMeta {
-            display: display_meta,
-            diff_preview: Some(diff_preview),
-        }),
+        _meta: Some(ToolResultMeta::with_diff_preview(display_meta, diff_preview)),
     })
 }
 

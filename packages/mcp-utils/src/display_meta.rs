@@ -34,6 +34,28 @@ pub struct DiffPreview {
     pub lang_hint: String,
 }
 
+/// A snapshot of the agent's current task plan.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlanMeta {
+    pub entries: Vec<PlanMetaEntry>,
+}
+
+/// A single entry in a plan.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlanMetaEntry {
+    pub content: String,
+    pub status: PlanMetaStatus,
+}
+
+/// Execution status of a plan entry.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanMetaStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
 /// Typed wrapper for the MCP `_meta` field on tool results.
 ///
 /// Wraps a [`ToolDisplayMeta`] so that tool output structs can use
@@ -43,13 +65,41 @@ pub struct ToolResultMeta {
     pub display: ToolDisplayMeta,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff_preview: Option<DiffPreview>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan: Option<PlanMeta>,
 }
 
 impl From<ToolDisplayMeta> for ToolResultMeta {
     fn from(display: ToolDisplayMeta) -> Self {
+        Self::new(display)
+    }
+}
+
+impl ToolResultMeta {
+    /// Create a new metadata wrapper with just display info.
+    pub fn new(display: ToolDisplayMeta) -> Self {
         Self {
             display,
             diff_preview: None,
+            plan: None,
+        }
+    }
+
+    /// Create a metadata wrapper with a plan.
+    pub fn with_plan(display: ToolDisplayMeta, plan: PlanMeta) -> Self {
+        Self {
+            display,
+            diff_preview: None,
+            plan: Some(plan),
+        }
+    }
+
+    /// Create a metadata wrapper with a diff preview.
+    pub fn with_diff_preview(display: ToolDisplayMeta, diff_preview: DiffPreview) -> Self {
+        Self {
+            display,
+            diff_preview: Some(diff_preview),
+            plan: None,
         }
     }
 }
@@ -171,6 +221,7 @@ mod tests {
             ToolResultMeta {
                 display,
                 diff_preview: None,
+                plan: None,
             }
         );
     }
@@ -189,14 +240,14 @@ mod tests {
 
     #[test]
     fn test_tool_result_meta_with_diff_preview() {
-        let meta = ToolResultMeta {
-            display: ToolDisplayMeta::new("Edit file", "main.rs"),
-            diff_preview: Some(DiffPreview {
+        let meta = ToolResultMeta::with_diff_preview(
+            ToolDisplayMeta::new("Edit file", "main.rs"),
+            DiffPreview {
                 removed: vec!["old".to_string()],
                 added: vec!["new".to_string()],
                 lang_hint: "rs".to_string(),
-            }),
-        };
+            },
+        );
         let map = meta.clone().into_map();
         let parsed = ToolResultMeta::from_map(&map).expect("should deserialize");
         assert_eq!(parsed, meta);
@@ -260,5 +311,57 @@ mod tests {
     #[test]
     fn test_basename_bare_name() {
         assert_eq!(basename("Cargo.toml"), "Cargo.toml");
+    }
+
+    #[test]
+    fn test_plan_meta_serde_roundtrip() {
+        let plan = PlanMeta {
+            entries: vec![
+                PlanMetaEntry {
+                    content: "Research AI agents".to_string(),
+                    status: PlanMetaStatus::Completed,
+                },
+                PlanMetaEntry {
+                    content: "Implement tracking".to_string(),
+                    status: PlanMetaStatus::InProgress,
+                },
+                PlanMetaEntry {
+                    content: "Write tests".to_string(),
+                    status: PlanMetaStatus::Pending,
+                },
+            ],
+        };
+        let json = serde_json::to_string(&plan).unwrap();
+        let parsed: PlanMeta = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, plan);
+    }
+
+    #[test]
+    fn test_plan_meta_status_serde_snake_case() {
+        let json = serde_json::to_value(&PlanMetaStatus::InProgress).unwrap();
+        assert_eq!(json, serde_json::Value::String("in_progress".to_string()));
+    }
+
+    #[test]
+    fn test_tool_result_meta_with_plan() {
+        let meta = ToolResultMeta::with_plan(
+            ToolDisplayMeta::new("Todo", "Research AI agents"),
+            PlanMeta {
+                entries: vec![PlanMetaEntry {
+                    content: "Research AI agents".to_string(),
+                    status: PlanMetaStatus::InProgress,
+                }],
+            },
+        );
+        let map = meta.clone().into_map();
+        let parsed = ToolResultMeta::from_map(&map).expect("should deserialize");
+        assert_eq!(parsed, meta);
+    }
+
+    #[test]
+    fn test_tool_result_meta_plan_omitted_when_none() {
+        let meta: ToolResultMeta = ToolDisplayMeta::new("Read file", "main.rs").into();
+        let json = serde_json::to_value(&meta).unwrap();
+        assert!(json.get("plan").is_none());
     }
 }

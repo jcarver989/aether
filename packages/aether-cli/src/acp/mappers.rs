@@ -1,13 +1,14 @@
 use acp_utils::notifications::{ContextClearedParams, ContextUsageParams, SubAgentProgressParams};
 use aether_core::events::{AgentMessage, SubAgentProgressPayload};
 use agent_client_protocol::{
-    self as acp, Content, ContentBlock, ContentChunk, HttpHeader, McpServer, SessionId,
-    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
-    ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
+    self as acp, Content, ContentBlock, ContentChunk, HttpHeader, McpServer, PlanEntry,
+    PlanEntryPriority, PlanEntryStatus, SessionId, SessionNotification, SessionUpdate, StopReason,
+    TextContent, ToolCall, ToolCallContent, ToolCallId, ToolCallStatus, ToolCallUpdate,
+    ToolCallUpdateFields,
 };
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use mcp_utils::client::{McpServerConfig, ServerConfig};
-use mcp_utils::display_meta::ToolResultMeta;
+use mcp_utils::display_meta::{PlanMetaStatus, ToolResultMeta};
 use rmcp::model::Prompt as McpPrompt;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
@@ -208,6 +209,38 @@ pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotificat
         }
         AgentMessage::ContextCleared => Some(ContextClearedParams::default().into()),
         _ => None,
+    }
+}
+
+/// If the tool result carries plan metadata, build a `SessionUpdate::Plan` notification.
+pub fn try_extract_plan_notification(
+    session_id: SessionId,
+    result_meta: Option<&ToolResultMeta>,
+) -> Option<SessionNotification> {
+    let plan_meta = result_meta?.plan.as_ref()?;
+    let entries = plan_meta
+        .entries
+        .iter()
+        .map(|e| {
+            PlanEntry::new(
+                e.content.clone(),
+                PlanEntryPriority::Medium,
+                plan_status_to_acp(e.status),
+            )
+        })
+        .collect();
+    Some(SessionNotification::new(
+        session_id,
+        SessionUpdate::Plan(acp::Plan::new(entries)),
+    ))
+}
+
+/// Convert internal plan status to ACP protocol status.
+fn plan_status_to_acp(status: PlanMetaStatus) -> PlanEntryStatus {
+    match status {
+        PlanMetaStatus::InProgress => PlanEntryStatus::InProgress,
+        PlanMetaStatus::Completed => PlanEntryStatus::Completed,
+        PlanMetaStatus::Pending => PlanEntryStatus::Pending,
     }
 }
 
@@ -628,5 +661,55 @@ mod tests {
             }
             other => panic!("Expected ToolCallUpdate, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_plan_notification_extracted_from_result_meta() {
+        use mcp_utils::display_meta::{PlanMeta, PlanMetaEntry, PlanMetaStatus, ToolDisplayMeta};
+
+        let session_id = acp::SessionId::new("test-session");
+        let meta = ToolResultMeta::with_plan(
+            ToolDisplayMeta::new("Todo", "Research AI agents"),
+            PlanMeta {
+                entries: vec![
+                    PlanMetaEntry {
+                        content: "Research AI agents".to_string(),
+                        status: PlanMetaStatus::InProgress,
+                    },
+                    PlanMetaEntry {
+                        content: "Write tests".to_string(),
+                        status: PlanMetaStatus::Pending,
+                    },
+                ],
+            },
+        );
+
+        let notification =
+            try_extract_plan_notification(session_id, Some(&meta)).expect("should produce plan");
+        match notification.update {
+            acp::SessionUpdate::Plan(plan) => {
+                assert_eq!(plan.entries.len(), 2);
+                assert_eq!(plan.entries[0].content, "Research AI agents");
+                assert_eq!(plan.entries[0].status, acp::PlanEntryStatus::InProgress);
+                assert_eq!(plan.entries[1].content, "Write tests");
+                assert_eq!(plan.entries[1].status, acp::PlanEntryStatus::Pending);
+            }
+            other => panic!("Expected Plan, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_plan_notification_none_when_no_plan() {
+        use mcp_utils::display_meta::ToolDisplayMeta;
+
+        let session_id = acp::SessionId::new("test-session");
+        let meta: ToolResultMeta = ToolDisplayMeta::new("Read file", "main.rs").into();
+        assert!(try_extract_plan_notification(session_id, Some(&meta)).is_none());
+    }
+
+    #[test]
+    fn test_plan_notification_none_when_no_meta() {
+        let session_id = acp::SessionId::new("test-session");
+        assert!(try_extract_plan_notification(session_id, None).is_none());
     }
 }

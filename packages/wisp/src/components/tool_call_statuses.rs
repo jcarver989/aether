@@ -1218,14 +1218,14 @@ mod tests {
         statuses.on_tool_call(&make_tool_call("tool-1", "coding__edit_file", None));
 
         // Complete with diff_preview in meta
-        let rm = ToolResultMeta {
-            display: ToolDisplayMeta::new("Edit file", "main.rs"),
-            diff_preview: Some(DiffPreview {
+        let rm = ToolResultMeta::with_diff_preview(
+            ToolDisplayMeta::new("Edit file", "main.rs"),
+            DiffPreview {
                 removed: vec!["old".to_string()],
                 added: vec!["new".to_string()],
                 lang_hint: String::new(),
-            }),
-        };
+            },
+        );
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
             acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),

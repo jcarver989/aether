@@ -1,10 +1,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::common::TaskSummary;
+use super::common::{TaskSummary, task_result_meta};
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
 use crate::tasks::types::{TaskId, TaskUpdate};
-use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
+use mcp_utils::display_meta::ToolResultMeta;
 
 /// Input for the `task_create` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -88,13 +88,11 @@ pub fn execute_task_create(
         "task tree"
     };
 
-    let display_meta = ToolDisplayMeta::new("Todo", task.title.clone());
-
     Ok(TaskCreateOutput {
         status: "success".to_string(),
         message: format!("Created {} '{}' with ID {}", task_type, task.title, task.id),
         task: TaskSummary::from(&task),
-        _meta: Some(display_meta.into()),
+        _meta: Some(task_result_meta(store, &task.title)),
     })
 }
 

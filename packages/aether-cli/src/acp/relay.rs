@@ -16,7 +16,7 @@ use tracing::{error, info};
 
 use super::mappers::{
     map_agent_message_to_session_notification, map_agent_message_to_stop_reason,
-    try_into_ext_notification,
+    try_extract_plan_notification, try_into_ext_notification,
 };
 use super::session::Session;
 use acp_utils::server::AcpActorHandle;
@@ -527,6 +527,16 @@ async fn forward_notification(
         && let Err(e) = actor_handle.send_ext_notification(ext_notification).await
     {
         error!("Failed to send ext notification: {:?}", e);
+    }
+
+    if let AgentMessage::ToolResult { result_meta, .. } = msg {
+        if let Some(plan_notif) =
+            try_extract_plan_notification(acp_session_id.clone(), result_meta.as_ref())
+        {
+            if let Err(e) = actor_handle.send_session_notification(plan_notif).await {
+                error!("Failed to send plan notification: {:?}", e);
+            }
+        }
     }
 }
 

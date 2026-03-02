@@ -89,8 +89,9 @@ fn extract_result_meta(value: &mut serde_json::Value) -> Option<ToolResultMeta> 
 
     let meta_empty = {
         let meta = obj.get_mut("_meta")?.as_object_mut()?;
-        meta.remove("display");
-        meta.remove("diff_preview");
+        for key in ["display", "diff_preview", "plan"] {
+            meta.remove(key);
+        }
         meta.is_empty()
     };
 
@@ -332,6 +333,51 @@ mod tests {
 
         // _meta should be stripped from the result
         assert!(stripped.get("_meta").is_none());
+    }
+
+    #[test]
+    fn test_extracts_meta_with_plan() {
+        let request = make_request();
+
+        let structured = json!({
+            "status": "success",
+            "_meta": {
+                "display": {
+                    "title": "Todo",
+                    "value": "Research AI agents"
+                },
+                "plan": {
+                    "entries": [
+                        { "content": "Research AI agents", "status": "in_progress" },
+                        { "content": "Write tests", "status": "pending" }
+                    ]
+                }
+            }
+        });
+
+        let mcp_result = McpCallToolResult {
+            content: vec![],
+            structured_content: Some(structured),
+            is_error: Some(false),
+            meta: None,
+        };
+
+        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        assert!(!result.result.contains("_meta"));
+
+        let rm = result_meta.expect("result_meta should be present");
+        assert_eq!(rm.display.title, "Todo");
+        let plan = rm.plan.expect("plan should be present");
+        assert_eq!(plan.entries.len(), 2);
+        assert_eq!(plan.entries[0].content, "Research AI agents");
+        assert_eq!(
+            plan.entries[0].status,
+            mcp_utils::display_meta::PlanMetaStatus::InProgress
+        );
+        assert_eq!(
+            plan.entries[1].status,
+            mcp_utils::display_meta::PlanMetaStatus::Pending
+        );
     }
 
     /// Demonstrates the bug: without `#[serde(rename = "_meta")]`, camelCase
