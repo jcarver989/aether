@@ -16,7 +16,7 @@ pub use catalog::LlmModel;
 pub use chat_message::ChatMessage;
 pub use context::Context;
 pub use credential::ProviderCredential;
-pub use error::{LlmError, Result};
+pub use error::{ContextOverflowError, LlmError, Result};
 pub use llm_response::{LlmResponse, StopReason};
 pub use provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
 pub use tools::*;

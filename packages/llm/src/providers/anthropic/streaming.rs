@@ -102,7 +102,7 @@ fn process_stream_event(
         MessageStop { .. } => Ok(handle_message_stop()),
         Error { data } => Err(LlmError::ApiError(format!(
             "Anthropic API error: {} - {}",
-            data.error.error_type, data.error.message
+            data.error.error_type, data.error.message,
         ))),
         Ping => Ok(handle_ping()),
     }

@@ -1,4 +1,5 @@
 use super::types::OpenRouterChatRequest;
+use crate::provider::get_context_window;
 use crate::providers::openai_compatible::{
     build_chat_request, streaming::create_custom_stream_generic,
 };
@@ -63,6 +64,10 @@ impl ProviderFactory for OpenRouterProvider {
 }
 
 impl StreamingModelProvider for OpenRouterProvider {
+    fn context_window(&self) -> Option<u32> {
+        get_context_window("openrouter", &self.model)
+    }
+
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
         // Build base request and convert to OpenRouter-specific format
         // The From trait automatically adds usage tracking parameters

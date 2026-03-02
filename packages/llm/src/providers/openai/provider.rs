@@ -8,7 +8,7 @@ use super::{
     mappers::{map_messages, map_tools},
     streaming::process_completion_stream,
 };
-use crate::{Context, LlmResponseStream, StreamingModelProvider};
+use crate::{Context, LlmError, LlmResponseStream, StreamingModelProvider};
 
 /// A Provider that's compatible with `OpenAI`'s chat completion API
 /// Other providers (e.g. Ollama, Llama.cpp etc) that are "`OpenAI` compatible" should implement this trait
@@ -70,16 +70,24 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
                         }
                     }
 
-                    yield Err(crate::LlmError::ApiRequest(e.to_string()));
+                    yield Err(LlmError::ApiRequest(e.to_string()));
                     return;
                 }
             };
+
+            let stream = stream.map(|result| {
+                result.map_err(|e| LlmError::ApiError(e.to_string()))
+            });
 
             let mut shared_stream = Box::pin(process_completion_stream(stream));
             while let Some(result) = shared_stream.next().await {
                 yield result;
             }
         })
+    }
+
+    fn context_window(&self) -> Option<u32> {
+        None
     }
 
     fn display_name(&self) -> String {

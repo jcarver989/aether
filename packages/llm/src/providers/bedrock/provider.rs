@@ -1,6 +1,8 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_bedrock_stream;
-use crate::provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
+use crate::provider::{
+    LlmResponseStream, ProviderFactory, StreamingModelProvider, get_context_window,
+};
 use crate::{Context, LlmError, Result};
 use aws_config::Region;
 use aws_sdk_bedrockruntime::config::{BehaviorVersion, Credentials};
@@ -106,7 +108,7 @@ impl BedrockProvider {
 
         let response = request.send().await.map_err(|e| {
             error!(model = %self.model, error = ?e, "Bedrock API error");
-            LlmError::ApiError(format!("Bedrock error for model {}: {e}", self.model))
+            LlmError::ApiError(format!("Bedrock API error: {e}"))
         })?;
 
         Ok(response.stream)
@@ -127,6 +129,10 @@ impl ProviderFactory for BedrockProvider {
 }
 
 impl StreamingModelProvider for BedrockProvider {
+    fn context_window(&self) -> Option<u32> {
+        get_context_window("bedrock", &self.model)
+    }
+
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
         let provider = self.clone();
         let context = context.clone();

@@ -28,9 +28,9 @@ pub const ELICITATION_METHOD: &str = "aether/elicitation";
 /// Parameters for `_aether/context_usage` notifications.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContextUsageParams {
-    pub usage_ratio: f64,
+    pub usage_ratio: Option<f64>,
     pub tokens_used: u32,
-    pub context_limit: u32,
+    pub context_limit: Option<u32>,
 }
 
 /// Parameters for `_aether/context_cleared` notifications.
@@ -279,9 +279,9 @@ mod tests {
     #[test]
     fn context_usage_params_roundtrip() {
         let params = ContextUsageParams {
-            usage_ratio: 0.75,
+            usage_ratio: Some(0.75),
             tokens_used: 75000,
-            context_limit: 100000,
+            context_limit: Some(100000),
         };
 
         let notification: ExtNotification = params.clone().into();
@@ -402,9 +402,9 @@ mod tests {
         let notification = ext_notification(
             CONTEXT_USAGE_METHOD,
             &ContextUsageParams {
-                usage_ratio: 0.5,
+                usage_ratio: Some(0.5),
                 tokens_used: 50000,
-                context_limit: 100000,
+                context_limit: Some(100000),
             },
         );
 

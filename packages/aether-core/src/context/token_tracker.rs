@@ -12,38 +12,17 @@ pub struct TokenTracker {
     /// Input tokens from the most recent API call (current context size)
     last_input_tokens: u32,
     /// Configured context limit for the current provider
-    context_limit: u32,
+    context_limit: Option<u32>,
 }
 
 impl TokenTracker {
-    pub fn new(context_limit: u32) -> Self {
+    pub fn new(context_limit: Option<u32>) -> Self {
         Self {
             total_input_tokens: 0,
             total_output_tokens: 0,
             last_input_tokens: 0,
             context_limit,
         }
-    }
-
-    // Factory methods for common context limits
-    pub fn claude_opus() -> Self {
-        Self::new(200_000)
-    }
-
-    pub fn claude_sonnet() -> Self {
-        Self::new(200_000)
-    }
-
-    pub fn claude_haiku() -> Self {
-        Self::new(200_000)
-    }
-
-    pub fn gpt4o() -> Self {
-        Self::new(128_000)
-    }
-
-    pub fn gpt4o_mini() -> Self {
-        Self::new(128_000)
     }
 
     /// Record usage from an LLM API response
@@ -54,16 +33,17 @@ impl TokenTracker {
     }
 
     /// Current context usage as a ratio (0.0 - 1.0)
-    pub fn usage_ratio(&self) -> f64 {
-        if self.context_limit == 0 {
-            return 0.0;
+    pub fn usage_ratio(&self) -> Option<f64> {
+        let context_limit = self.context_limit?;
+        if context_limit == 0 {
+            return None;
         }
-        f64::from(self.last_input_tokens) / f64::from(self.context_limit)
+        Some(f64::from(self.last_input_tokens) / f64::from(context_limit))
     }
 
     /// Whether current usage exceeds the given threshold
     pub fn exceeds_threshold(&self, threshold: f64) -> bool {
-        self.usage_ratio() >= threshold
+        self.usage_ratio().is_some_and(|ratio| ratio >= threshold)
     }
 
     /// Check if context should be compacted based on the given threshold.
@@ -71,17 +51,26 @@ impl TokenTracker {
     /// a minimum context size requirement to avoid unnecessary compaction
     /// on small conversations.
     pub fn should_compact(&self, threshold: f64) -> bool {
-        let min_tokens = std::cmp::max(self.context_limit / 10, 1000);
+        let Some(context_limit) = self.context_limit else {
+            return false;
+        };
+        let min_tokens = std::cmp::max(context_limit / 10, 1000);
         self.last_input_tokens >= min_tokens && self.exceeds_threshold(threshold)
     }
 
     /// Tokens remaining before hitting limit
-    pub fn tokens_remaining(&self) -> u32 {
-        self.context_limit.saturating_sub(self.last_input_tokens)
+    pub fn tokens_remaining(&self) -> Option<u32> {
+        self.context_limit
+            .map(|context_limit| context_limit.saturating_sub(self.last_input_tokens))
+    }
+
+    /// Update the context limit (e.g. when switching models)
+    pub fn set_context_limit(&mut self, limit: Option<u32>) {
+        self.context_limit = limit;
     }
 
     /// Get the context limit
-    pub fn context_limit(&self) -> u32 {
+    pub fn context_limit(&self) -> Option<u32> {
         self.context_limit
     }
 
@@ -114,27 +103,27 @@ mod tests {
 
     #[test]
     fn test_usage_tracking() {
-        let mut tracker = TokenTracker::new(1000);
+        let mut tracker = TokenTracker::new(Some(1000));
 
         tracker.record_usage(500, 100);
-        assert_eq!(tracker.usage_ratio(), 0.5);
+        assert_eq!(tracker.usage_ratio(), Some(0.5));
         assert!(!tracker.exceeds_threshold(0.85));
 
         tracker.record_usage(900, 50);
-        assert_eq!(tracker.usage_ratio(), 0.9);
+        assert_eq!(tracker.usage_ratio(), Some(0.9));
         assert!(tracker.exceeds_threshold(0.85));
     }
 
     #[test]
     fn test_tokens_remaining() {
-        let mut tracker = TokenTracker::new(1000);
+        let mut tracker = TokenTracker::new(Some(1000));
         tracker.record_usage(700, 50);
-        assert_eq!(tracker.tokens_remaining(), 300);
+        assert_eq!(tracker.tokens_remaining(), Some(300));
     }
 
     #[test]
     fn test_cumulative_totals() {
-        let mut tracker = TokenTracker::new(1000);
+        let mut tracker = TokenTracker::new(Some(1000));
         tracker.record_usage(100, 50);
         tracker.record_usage(200, 60);
 
@@ -144,23 +133,16 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_context_limit() {
-        let tracker = TokenTracker::new(0);
-        assert_eq!(tracker.usage_ratio(), 0.0);
-    }
-
-    #[test]
-    fn test_factory_methods() {
-        assert_eq!(TokenTracker::claude_opus().context_limit(), 200_000);
-        assert_eq!(TokenTracker::claude_sonnet().context_limit(), 200_000);
-        assert_eq!(TokenTracker::claude_haiku().context_limit(), 200_000);
-        assert_eq!(TokenTracker::gpt4o().context_limit(), 128_000);
-        assert_eq!(TokenTracker::gpt4o_mini().context_limit(), 128_000);
+    fn test_unknown_context_limit() {
+        let tracker = TokenTracker::new(None);
+        assert_eq!(tracker.usage_ratio(), None);
+        assert_eq!(tracker.tokens_remaining(), None);
+        assert!(!tracker.should_compact(0.85));
     }
 
     #[test]
     fn test_exceeds_threshold() {
-        let mut tracker = TokenTracker::new(1000);
+        let mut tracker = TokenTracker::new(Some(1000));
 
         tracker.record_usage(500, 100);
         assert!(!tracker.exceeds_threshold(0.6));
@@ -173,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_should_compact() {
-        let mut tracker = TokenTracker::new(10000);
+        let mut tracker = TokenTracker::new(Some(10000));
 
         tracker.record_usage(500, 100);
         assert!(!tracker.should_compact(0.04));
@@ -192,8 +174,22 @@ mod tests {
     }
 
     #[test]
+    fn test_set_context_limit() {
+        let mut tracker = TokenTracker::new(Some(200_000));
+        assert_eq!(tracker.context_limit(), Some(200_000));
+
+        tracker.set_context_limit(Some(128_000));
+        assert_eq!(tracker.context_limit(), Some(128_000));
+
+        // Verify usage ratio recalculates against new limit
+        tracker.record_usage(100_000, 50);
+        let expected_ratio = 100_000.0 / 128_000.0;
+        assert!((tracker.usage_ratio().unwrap_or_default() - expected_ratio).abs() < 0.001);
+    }
+
+    #[test]
     fn test_reset_current_usage() {
-        let mut tracker = TokenTracker::new(10000);
+        let mut tracker = TokenTracker::new(Some(10000));
         tracker.record_usage(9000, 100);
 
         assert!(tracker.should_compact(0.85));

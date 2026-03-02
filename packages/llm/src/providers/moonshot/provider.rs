@@ -1,3 +1,4 @@
+use crate::provider::get_context_window;
 use crate::providers::openai::mappers::map_tools;
 use crate::providers::openai_compatible::streaming::create_custom_stream_generic;
 use crate::{
@@ -156,6 +157,10 @@ impl ProviderFactory for MoonshotProvider {
 }
 
 impl StreamingModelProvider for MoonshotProvider {
+    fn context_window(&self) -> Option<u32> {
+        get_context_window("moonshot", &self.model)
+    }
+
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
         let request = match build_moonshot_request(&self.model, context) {
             Ok(req) => req,
