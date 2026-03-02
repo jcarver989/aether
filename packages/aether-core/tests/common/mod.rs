@@ -132,6 +132,10 @@ impl StreamingModelProvider for FakeLlmProvider {
     fn display_name(&self) -> String {
         "Fake LLM".to_string()
     }
+
+    fn context_window(&self) -> Option<u32> {
+        None
+    }
 }
 
 // Chat Message Test Helpers
