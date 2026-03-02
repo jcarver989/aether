@@ -211,11 +211,7 @@ mod tests {
                 kind: FormFieldKind::Text(TextField::new(String::new())),
             }],
         );
-        let context = RenderContext {
-            size: (10, 10), // Very narrow terminal
-            theme: Theme::default(),
-            focused: true,
-        };
+        let context = RenderContext::new((10, 10));
 
         // Should not panic with "attempt to subtract with overflow"
         let lines = form.render(&context);

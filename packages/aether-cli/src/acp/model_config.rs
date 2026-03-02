@@ -10,7 +10,10 @@ pub(crate) fn unavailable_reason(model: &LlmModel) -> String {
 }
 
 pub(crate) fn model_exists(available: &[LlmModel], model_str: &str) -> bool {
-    available.iter().any(|m| m.to_string() == model_str)
+    model_str
+        .split(',')
+        .map(str::trim)
+        .all(|part| available.iter().any(|m| m.to_string() == part))
 }
 
 pub(crate) fn effective_model<'a>(
@@ -33,8 +36,7 @@ pub(crate) fn build_model_config_option(
     current_model: &str,
 ) -> SessionConfigOption {
     let all_models = catalog::LlmModel::all();
-    let available_models: HashSet<String> =
-        available.iter().map(ToString::to_string).collect();
+    let available_models: HashSet<String> = available.iter().map(ToString::to_string).collect();
 
     // Phase 1: Group models by provider, counting available models per provider
     let mut groups: BTreeMap<&str, ProviderGroup<'_>> = BTreeMap::new();
@@ -87,8 +89,12 @@ pub(crate) fn build_model_config_option(
         }
     }
 
+    let mut meta = serde_json::Map::new();
+    meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
+
     SessionConfigOption::select("model", "Model", current_model.to_string(), options)
         .category(SessionConfigOptionCategory::Model)
+        .meta(meta)
 }
 
 /// Build config options for the given state
@@ -255,6 +261,35 @@ mod tests {
         let models = test_models();
         assert!(!model_exists(&models, "anthropic:not-real"));
         assert!(!model_exists(&models, "mystery:some-model"));
+    }
+
+    #[test]
+    fn model_exists_accepts_comma_separated_known_models() {
+        let models = test_models();
+        assert!(model_exists(
+            &models,
+            "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"
+        ));
+    }
+
+    #[test]
+    fn model_exists_rejects_comma_separated_with_unknown() {
+        let models = test_models();
+        assert!(!model_exists(
+            &models,
+            "anthropic:claude-sonnet-4-5,mystery:nope"
+        ));
+    }
+
+    #[test]
+    fn build_model_config_option_includes_multi_select_meta() {
+        let models = test_models();
+        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
+        let meta = opt.meta.expect("meta should be set");
+        assert_eq!(
+            meta.get("multi_select"),
+            Some(&serde_json::Value::Bool(true))
+        );
     }
 
     #[test]

@@ -90,6 +90,11 @@ impl ConfigPicker {
 
 impl Component for ConfigPicker {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+        if let Some(h) = context.max_height {
+            // 1 line for search header
+            self.combobox.set_max_visible(h.saturating_sub(1).max(1));
+        }
+
         let mut lines = Vec::new();
         let header = format!("  {} search: {}", self.title, self.combobox.query());
         lines.push(Line::styled(header, context.theme.muted));
@@ -125,8 +130,7 @@ impl Component for ConfigPicker {
                 } else if is_selected {
                     Line::with_style(
                         line_text,
-                        Style::fg(ctx.theme.text_primary)
-                            .bg_color(ctx.theme.highlight_bg),
+                        Style::fg(ctx.theme.text_primary).bg_color(ctx.theme.highlight_bg),
                     )
                 } else {
                     Line::new(line_text)
@@ -181,6 +185,8 @@ mod tests {
         ConfigMenuEntry {
             config_id: "model".to_string(),
             title: "Model".to_string(),
+            multi_select: false,
+            display_name: None,
             values: vec![
                 ConfigMenuValue {
                     value: "openrouter:openai/gpt-4o".to_string(),
@@ -202,6 +208,7 @@ mod tests {
                 },
             ],
             current_value_index: 0,
+            current_raw_value: "openrouter:openai/gpt-4o".to_string(),
             entry_kind: crate::components::config_menu::ConfigMenuEntryKind::Select,
         }
     }

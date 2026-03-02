@@ -1854,8 +1854,8 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
         "Cursor should be on overlay search row.\nBuffer:\n{}",
         lines.join("\n")
     );
-    // Overlay border "│ " (3 cols) + "  Model search: " (16 cols) = 19
-    assert_eq!(cursor_col, 19);
+    // Overlay border "│ " (2 cols) + "  Model search: " (16 cols) = 18
+    assert_eq!(cursor_col, 18);
 }
 
 #[tokio::test]

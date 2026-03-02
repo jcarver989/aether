@@ -49,8 +49,7 @@ impl Component for ServerStatusOverlay {
                         if selected {
                             Line::with_style(
                                 text,
-                                Style::fg(context.theme.error)
-                                    .bg_color(context.theme.highlight_bg),
+                                Style::fg(context.theme.error).bg_color(context.theme.highlight_bg),
                             )
                         } else {
                             Line::styled(text, context.theme.error)

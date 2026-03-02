@@ -2,6 +2,9 @@ use crate::tui::{Component, Line, RenderContext, Style};
 use crossterm::style::Color;
 use unicode_width::UnicodeWidthStr;
 
+/// Width consumed by left ("│ ") and right (" │") borders.
+const BORDER_H_PAD: usize = 4;
+
 pub struct Container<'a> {
     children: Vec<&'a mut dyn Component>,
     title: Option<String>,
@@ -89,19 +92,37 @@ impl Component for Container<'_> {
         }
 
         let width = context.size.0 as usize;
-        let inner_width = width.saturating_sub(4); // "│ " + " │"
-        let border_style = self
-            .border_color
-            .map(Style::fg)
-            .unwrap_or_default();
+        let inner_width = width.saturating_sub(BORDER_H_PAD);
+        let border_style = self.border_color.map(Style::fg).unwrap_or_default();
+
+        // Compute chrome overhead so we can tell children how much space they have.
+        // Chrome: top border (1) + blank line (1) + bottom border (1) + optional footer (1).
+        let chrome_lines = 3 + usize::from(self.footer.is_some());
+        let gap_lines = if self.children.len() > 1 {
+            self.gap * (self.children.len() - 1)
+        } else {
+            0
+        };
+        let total_for_children = self
+            .fill_height
+            .map(|fh| fh.saturating_sub(chrome_lines + gap_lines));
+
+        #[allow(clippy::cast_possible_truncation)] // inner_width ≤ context.size.0 (u16)
+        let inner_context = RenderContext {
+            size: (inner_width as u16, context.size.1),
+            theme: context.theme,
+            focused: context.focused,
+            max_height: None,
+        };
 
         let mut lines = Vec::new();
 
         // ── Top border ──
         let title_text = self.title.as_deref().unwrap_or("");
         let bar_left = "┌─";
-        let bar_right_pad = width
-            .saturating_sub(bar_left.len() + UnicodeWidthStr::width(title_text) + 1); // 1 for ┐
+        let bar_right_pad = width.saturating_sub(
+            UnicodeWidthStr::width(bar_left) + UnicodeWidthStr::width(title_text) + 1,
+        ); // 1 for ┐
         let title_line = format!(
             "{bar_left}{title_text}{:─>bar_right_pad$}┐",
             "",
@@ -113,13 +134,34 @@ impl Component for Container<'_> {
         lines.push(empty_border_line(inner_width));
 
         // ── Render children with gap ──
+        // Track how many content rows have been consumed so far, so that
+        // later children receive a `max_height` reflecting remaining space.
+        let mut content_rows_used: usize = 0;
+
         for (i, child) in self.children.iter_mut().enumerate() {
             if i > 0 {
                 for _ in 0..self.gap {
                     lines.push(empty_border_line(inner_width));
                 }
+                content_rows_used += self.gap;
             }
-            let child_lines = child.render(context);
+
+            // For children after the first, pass remaining rows via max_height.
+            let child_ctx = if i > 0 {
+                if let Some(total) = total_for_children {
+                    inner_context.with_max_height(total.saturating_sub(content_rows_used))
+                } else {
+                    inner_context.with_max_height(usize::MAX)
+                }
+            } else {
+                RenderContext {
+                    max_height: None,
+                    ..inner_context
+                }
+            };
+
+            let child_lines = child.render(&child_ctx);
+            content_rows_used += child_lines.len();
             for cl in &child_lines {
                 lines.push(wrap_in_border(cl, inner_width));
             }
@@ -139,8 +181,11 @@ impl Component for Container<'_> {
         if let Some(ref footer_text) = self.footer {
             let footer_pad =
                 inner_width.saturating_sub(UnicodeWidthStr::width(footer_text.as_str()));
-            let footer_line_str =
-                format!("│ {footer_text}{:footer_pad$} │", "", footer_pad = footer_pad);
+            let footer_line_str = format!(
+                "│ {footer_text}{:footer_pad$} │",
+                "",
+                footer_pad = footer_pad
+            );
             lines.push(Line::with_style(footer_line_str, border_style));
         }
 
@@ -182,7 +227,11 @@ fn wrap_in_border(content: &Line, inner_width: usize) -> Line {
 }
 
 fn empty_border_line(inner_width: usize) -> Line {
-    Line::new(format!("│ {:inner_width$} │", "", inner_width = inner_width))
+    Line::new(format!(
+        "│ {:inner_width$} │",
+        "",
+        inner_width = inner_width
+    ))
 }
 
 #[cfg(test)]
@@ -375,6 +424,25 @@ mod tests {
         let gap_line = lines[3].plain_text();
         assert!(gap_line.starts_with('│'), "gap: {gap_line}");
         assert!(gap_line.ends_with('│'), "gap: {gap_line}");
+    }
+
+    #[test]
+    fn top_and_bottom_border_have_equal_visual_width() {
+        let mut a = StubComponent {
+            lines: vec![Line::new("x")],
+        };
+        let mut container = Container::new(vec![&mut a])
+            .title(" Config ")
+            .border_color(Color::Grey);
+        let context = RenderContext::new((40, 10));
+        let lines = container.render(&context);
+        let top = lines.first().unwrap().plain_text();
+        let bottom = lines.last().unwrap().plain_text();
+        assert_eq!(
+            UnicodeWidthStr::width(top.as_str()),
+            UnicodeWidthStr::width(bottom.as_str()),
+            "top ({top}) and bottom ({bottom}) border should have equal visual width"
+        );
     }
 
     #[test]

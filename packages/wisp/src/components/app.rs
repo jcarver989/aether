@@ -1,7 +1,6 @@
 use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPickerAction};
 use crate::components::config_menu::ConfigMenu;
 use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayAction};
-use crate::components::server_status::server_status_summary;
 use crate::components::container::Container;
 #[cfg(test)]
 use crate::components::conversation_window::SegmentContent;
@@ -10,6 +9,7 @@ use crate::components::elicitation_form::ElicitationForm;
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::progress_indicator::ProgressIndicator;
+use crate::components::server_status::server_status_summary;
 use crate::components::status_line::StatusLine;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputAction};
 use crate::components::tool_call_statuses::ToolCallStatuses;
@@ -271,12 +271,13 @@ impl App {
                 if let Ok(params) =
                     serde_json::from_str::<ContextUsageParams>(notification.params.get())
                 {
-                    // Safety: clamp guarantees value is in [0.0, 100.0], round() keeps it integral
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    let pct_left = ((1.0 - params.usage_ratio) * 100.0)
-                        .clamp(0.0, 100.0)
-                        .round() as u8;
-                    self.context_usage_pct = Some(pct_left);
+                    self.context_usage_pct = params.usage_ratio.map(|usage_ratio| {
+                        // Safety: clamp guarantees value is in [0.0, 100.0], round() keeps it integral
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        let pct_left =
+                            ((1.0 - usage_ratio) * 100.0).clamp(0.0, 100.0).round() as u8;
+                        pct_left
+                    });
                     return vec![AppEvent::Render];
                 }
             }
@@ -620,18 +621,21 @@ impl App {
 
     fn open_config_overlay(&mut self) {
         let menu = ConfigMenu::from_config_options(&self.config_options);
-        let summary = server_status_summary(&self.server_statuses);
-        let menu = menu.with_mcp_servers_entry(&summary);
+        let menu = self.decorate_config_menu(menu);
         self.config_overlay = Some(ConfigOverlay::new(menu, self.server_statuses.clone()));
     }
 
     fn open_config_overlay_with_servers(&mut self) {
         let menu = ConfigMenu::from_config_options(&self.config_options);
-        let summary = server_status_summary(&self.server_statuses);
-        let menu = menu.with_mcp_servers_entry(&summary);
-        self.config_overlay = Some(
-            ConfigOverlay::new(menu, self.server_statuses.clone()).with_server_overlay(),
-        );
+        let menu = self.decorate_config_menu(menu);
+        self.config_overlay =
+            Some(ConfigOverlay::new(menu, self.server_statuses.clone()).with_server_overlay());
+    }
+
+    fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {
+        let server_summary = server_status_summary(&self.server_statuses);
+        menu.add_mcp_servers_entry(&server_summary);
+        menu
     }
 
     fn close_all_pickers(&mut self) {
@@ -879,10 +883,30 @@ fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<Strin
         return None;
     };
 
-    options
-        .iter()
-        .find(|o| o.value == select.current_value)
-        .map(|o| o.name.clone())
+    let current = select.current_value.0.as_ref();
+    if current.contains(',') {
+        // Multi-select model — look up each component's display name
+        let names: Vec<&str> = current
+            .split(',')
+            .filter_map(|part| {
+                let trimmed = part.trim();
+                options
+                    .iter()
+                    .find(|o| o.value.0.as_ref() == trimmed)
+                    .map(|o| o.name.as_str())
+            })
+            .collect();
+        if names.is_empty() {
+            None
+        } else {
+            Some(names.join(" + "))
+        }
+    } else {
+        options
+            .iter()
+            .find(|o| o.value == select.current_value)
+            .map(|o| o.name.clone())
+    }
 }
 
 #[cfg(test)]
@@ -1025,10 +1049,7 @@ mod tests {
         });
 
         assert!(matches!(effects.as_slice(), [AppEvent::Render]));
-        assert!(
-            screen.has_config_overlay(),
-            "Config overlay should be open"
-        );
+        assert!(screen.has_config_overlay(), "Config overlay should be open");
         assert!(
             !screen.has_config_picker(),
             "Picker should not auto-open; user navigates menu first"
@@ -1141,6 +1162,26 @@ mod tests {
 
         assert!(matches!(effects.as_slice(), [AppEvent::Render]));
         assert_eq!(app.context_usage_pct, Some(25));
+    }
+
+    #[test]
+    fn context_usage_notification_with_unknown_limit_clears_meter() {
+        let mut app = App::new("test-agent".to_string(), &[]);
+        app.context_usage_pct = Some(33);
+
+        let raw = serde_json::value::to_raw_value(&serde_json::json!({
+            "usage_ratio": null,
+            "tokens_used": 0,
+            "context_limit": null
+        }))
+        .unwrap();
+        let notification =
+            acp::ExtNotification::new(CONTEXT_USAGE_METHOD, std::sync::Arc::from(raw));
+
+        let effects = app.on_ext_notification(&notification);
+
+        assert!(matches!(effects.as_slice(), [AppEvent::Render]));
+        assert_eq!(app.context_usage_pct, None);
     }
 
     #[test]
@@ -1283,5 +1324,65 @@ mod tests {
             .expect("URI should be built from original absolute path");
 
         assert_eq!(uri, expected);
+    }
+
+    #[test]
+    fn extract_model_display_handles_comma_separated_value() {
+        let opts = vec![SessionConfigOption::select(
+            "model",
+            "Model",
+            "a:x,b:y",
+            vec![
+                acp::SessionConfigSelectOption::new("a:x", "Alpha / X"),
+                acp::SessionConfigSelectOption::new("b:y", "Beta / Y"),
+                acp::SessionConfigSelectOption::new("c:z", "Gamma / Z"),
+            ],
+        )];
+        let display = extract_model_display(&opts).expect("display");
+        assert_eq!(display, "Alpha / X + Beta / Y");
+    }
+
+    #[test]
+    fn extract_model_display_single_value() {
+        let opts = vec![SessionConfigOption::select(
+            "model",
+            "Model",
+            "a:x",
+            vec![
+                acp::SessionConfigSelectOption::new("a:x", "Alpha / X"),
+                acp::SessionConfigSelectOption::new("b:y", "Beta / Y"),
+            ],
+        )];
+        let display = extract_model_display(&opts).expect("display");
+        assert_eq!(display, "Alpha / X");
+    }
+
+    #[test]
+    fn multi_select_model_entry_routes_to_model_selector() {
+        let mut meta = serde_json::Map::new();
+        meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
+        let opts = vec![
+            SessionConfigOption::select(
+                "model",
+                "Model",
+                "a:x",
+                vec![acp::SessionConfigSelectOption::new("a:x", "A")],
+            )
+            .meta(meta),
+        ];
+
+        let mut screen = App::new("test-agent".to_string(), &opts);
+        screen.open_config_overlay();
+
+        let overlay = screen.config_overlay.as_ref().expect("overlay should open");
+        let model_entry = overlay
+            .menu_entries()
+            .iter()
+            .find(|e| e.config_id == "model")
+            .expect("model entry should exist");
+        assert!(
+            model_entry.multi_select,
+            "model entry should be multi_select"
+        );
     }
 }
