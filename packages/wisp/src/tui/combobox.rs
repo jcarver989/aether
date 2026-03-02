@@ -5,7 +5,7 @@ use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Nucleo};
 use std::sync::Arc;
 
-const MAX_VISIBLE: usize = 10;
+const DEFAULT_MAX_VISIBLE: usize = 10;
 const MAX_MATCHES: u32 = 200;
 const MATCH_TIMEOUT_MS: u64 = 10;
 const MAX_TICKS_PER_QUERY: usize = 4;
@@ -31,6 +31,7 @@ pub struct Combobox<T: Searchable + Send + Sync + 'static> {
     matches: Vec<T>,
     selected_index: usize,
     scroll_offset: usize,
+    max_visible: usize,
     matcher: Nucleo<T>,
 }
 
@@ -51,6 +52,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             matches: Vec::new(),
             selected_index: 0,
             scroll_offset: 0,
+            max_visible: DEFAULT_MAX_VISIBLE,
             matcher,
         };
         combobox.matches = combobox.search(false);
@@ -64,6 +66,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             matches,
             selected_index: 0,
             scroll_offset: 0,
+            max_visible: DEFAULT_MAX_VISIBLE,
             matcher: nucleo,
         }
     }
@@ -78,6 +81,11 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
 
     pub fn selected_index(&self) -> usize {
         self.selected_index
+    }
+
+    pub fn set_max_visible(&mut self, max: usize) {
+        self.max_visible = max;
+        self.ensure_visible();
     }
 
     pub fn is_empty(&self) -> bool {
@@ -170,7 +178,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     }
 
     fn visible_matches(&self) -> &[T] {
-        let end = (self.scroll_offset + MAX_VISIBLE).min(self.matches.len());
+        let end = (self.scroll_offset + self.max_visible).min(self.matches.len());
         &self.matches[self.scroll_offset..end]
     }
 
@@ -185,8 +193,8 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
         }
         if self.selected_index < self.scroll_offset {
             self.scroll_offset = self.selected_index;
-        } else if self.selected_index >= self.scroll_offset + MAX_VISIBLE {
-            self.scroll_offset = self.selected_index + 1 - MAX_VISIBLE;
+        } else if self.selected_index >= self.scroll_offset + self.max_visible {
+            self.scroll_offset = self.selected_index + 1 - self.max_visible;
         }
     }
 
@@ -383,7 +391,7 @@ mod tests {
     #[test]
     fn visible_matches_returns_viewport_window() {
         let combobox = Combobox::from_matches(many_items(25));
-        assert_eq!(combobox.visible_matches().len(), MAX_VISIBLE);
+        assert_eq!(combobox.visible_matches().len(), DEFAULT_MAX_VISIBLE);
         assert_eq!(combobox.visible_matches()[0].text, "item-0");
         assert_eq!(combobox.visible_matches()[9].text, "item-9");
     }
@@ -575,6 +583,18 @@ mod tests {
         assert_eq!(lines[0].plain_text(), "> a");
         assert_eq!(lines[1].plain_text(), "  b");
         assert_eq!(lines[2].plain_text(), "  c");
+    }
+
+    #[test]
+    fn set_max_visible_changes_viewport_size() {
+        let mut combobox = Combobox::from_matches(many_items(25));
+        assert_eq!(combobox.visible_matches().len(), DEFAULT_MAX_VISIBLE);
+
+        combobox.set_max_visible(5);
+        assert_eq!(combobox.visible_matches().len(), 5);
+
+        combobox.set_max_visible(30);
+        assert_eq!(combobox.visible_matches().len(), 25); // clamped to total items
     }
 
     #[test]
