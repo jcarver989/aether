@@ -107,6 +107,14 @@ impl AgentBuilder {
         self
     }
 
+    /// Disable context compaction entirely.
+    ///
+    /// Overflow errors from the model will be surfaced directly to callers.
+    pub fn disable_compaction(mut self) -> Self {
+        self.compaction_config = None;
+        self
+    }
+
     /// Configure the maximum number of auto-continue attempts.
     ///
     /// When the LLM stops without making tool calls, the agent may inject a

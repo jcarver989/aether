@@ -173,14 +173,19 @@ async fn stream_agent_messages(
                 usage_ratio,
                 tokens_used,
                 context_limit,
-            } => {
-                tracing::debug!(
-                    "Context usage: {:.1}% ({}/{} tokens)",
-                    usage_ratio * 100.0,
-                    tokens_used,
-                    context_limit
-                );
-            }
+            } => match (usage_ratio, context_limit) {
+                (Some(usage_ratio), Some(context_limit)) => {
+                    tracing::debug!(
+                        "Context usage: {:.1}% ({}/{} tokens)",
+                        usage_ratio * 100.0,
+                        tokens_used,
+                        context_limit
+                    );
+                }
+                _ => {
+                    tracing::debug!("Context usage: unknown limit ({} tokens used)", tokens_used);
+                }
+            },
             AgentMessage::AutoContinue {
                 attempt,
                 max_attempts,

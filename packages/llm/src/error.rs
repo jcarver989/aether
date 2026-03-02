@@ -1,6 +1,53 @@
+use std::fmt;
+
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextOverflowError {
+    pub provider: String,
+    pub model: Option<String>,
+    pub requested_tokens: Option<u32>,
+    pub max_tokens: Option<u32>,
+    pub message: String,
+}
+
+impl ContextOverflowError {
+    pub fn new(
+        provider: impl Into<String>,
+        model: Option<String>,
+        requested_tokens: Option<u32>,
+        max_tokens: Option<u32>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            provider: provider.into(),
+            model,
+            requested_tokens,
+            max_tokens,
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for ContextOverflowError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let model = self.model.as_deref().unwrap_or("unknown-model");
+        match (self.requested_tokens, self.max_tokens) {
+            (Some(requested), Some(max)) => write!(
+                f,
+                "{} (provider={}, model={}, requested={}, max={})",
+                self.message, self.provider, model, requested, max
+            ),
+            _ => write!(
+                f,
+                "{} (provider={}, model={})",
+                self.message, self.provider, model
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Error, Clone)]
 pub enum LlmError {
     /// Environment variable not set or invalid
     #[error("{0} environment variable not set")]
@@ -17,6 +64,9 @@ pub enum LlmError {
     /// API returned an error response
     #[error("API error: {0}")]
     ApiError(String),
+    /// API rejected the request because the prompt exceeded the model's context window.
+    #[error("Context overflow: {0}")]
+    ContextOverflow(ContextOverflowError),
     /// IO error while reading stream
     #[error("IO error reading stream: {0}")]
     IoError(String),

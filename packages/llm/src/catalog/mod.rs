@@ -20,9 +20,9 @@ mod tests {
     fn display_fromstr_roundtrip_all_catalog_models() {
         for model in LlmModel::all() {
             let s = model.to_string();
-            let parsed: LlmModel = s.parse().unwrap_or_else(|e| {
-                panic!("Failed to parse '{s}' back to LlmModel: {e}")
-            });
+            let parsed: LlmModel = s
+                .parse()
+                .unwrap_or_else(|e| panic!("Failed to parse '{s}' back to LlmModel: {e}"));
             assert_eq!(&parsed, model, "roundtrip failed for '{s}'");
         }
     }
@@ -45,8 +45,9 @@ mod tests {
         let anthropic: LlmModel = "anthropic:claude-opus-4-6".parse().unwrap();
         assert_eq!(anthropic.provider_display_name(), "Anthropic");
 
-        let bedrock: LlmModel =
-            "bedrock:anthropic.claude-3-5-haiku-20241022-v1:0".parse().unwrap();
+        let bedrock: LlmModel = "bedrock:anthropic.claude-3-5-haiku-20241022-v1:0"
+            .parse()
+            .unwrap();
         assert_eq!(bedrock.provider_display_name(), "AWS Bedrock");
 
         let zai: LlmModel = "zai:glm-4.5".parse().unwrap();

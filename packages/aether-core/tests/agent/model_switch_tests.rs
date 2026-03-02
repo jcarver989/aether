@@ -65,3 +65,60 @@ async fn test_switch_model_emits_model_switched() {
         assert_eq!(new, "Fake LLM");
     }
 }
+
+#[tokio::test]
+async fn test_switch_model_unknown_context_limit_resets_context_meter() {
+    let initial_provider = FakeLlmProvider::from_results(vec![vec![
+        Ok(LlmResponse::start("msg-1")),
+        Ok(LlmResponse::usage(1000, 50)),
+        Ok(LlmResponse::text("Hello")),
+        Ok(LlmResponse::done()),
+    ]])
+    .with_context_window(Some(200_000));
+
+    let unknown_limit_provider = FakeLlmProvider::from_results(vec![vec![
+        Ok(LlmResponse::start("after-switch")),
+        Ok(LlmResponse::text("Switched!")),
+        Ok(LlmResponse::done()),
+    ]])
+    .with_context_window(None);
+
+    let (tx, mut rx, _handle) = agent(initial_provider).spawn().await.unwrap();
+
+    tx.send(UserMessage::text("hi")).await.unwrap();
+    while let Some(msg) = rx.recv().await {
+        if matches!(msg, AgentMessage::Done) {
+            break;
+        }
+    }
+
+    tx.send(UserMessage::SwitchModel(Box::new(unknown_limit_provider)))
+        .await
+        .unwrap();
+    drop(tx);
+
+    let mut messages = Vec::new();
+    while let Some(msg) = rx.recv().await {
+        messages.push(msg);
+    }
+
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, AgentMessage::ModelSwitched { .. })),
+        "Expected ModelSwitched message, got: {messages:?}"
+    );
+    assert!(
+        messages.iter().any(|m| {
+            matches!(
+                m,
+                AgentMessage::ContextUsageUpdate {
+                    usage_ratio: None,
+                    context_limit: None,
+                    tokens_used: 0,
+                }
+            )
+        }),
+        "Expected context usage reset for unknown context limit, got: {messages:?}"
+    );
+}

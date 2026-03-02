@@ -66,12 +66,12 @@ pub enum AgentMessage {
 
     /// Context usage update for UI display.
     ContextUsageUpdate {
-        /// Current usage ratio (0.0 - 1.0).
-        usage_ratio: f64,
+        /// Current usage ratio (0.0 - 1.0), if context window is known.
+        usage_ratio: Option<f64>,
         /// Tokens used in current context.
         tokens_used: u32,
-        /// Maximum context limit.
-        context_limit: u32,
+        /// Maximum context limit, if known.
+        context_limit: Option<u32>,
     },
 
     /// Agent is auto-continuing because LLM stopped with a resumable stop reason.

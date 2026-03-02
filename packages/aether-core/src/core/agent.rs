@@ -60,6 +60,8 @@ impl Agent {
             Box::pin(ReceiverStream::new(user_message_rx).map(StreamEvent::UserMessage)),
         );
 
+        let context_limit = config.llm.context_window();
+
         Self {
             llm: config.llm,
             context: config.context,
@@ -67,7 +69,7 @@ impl Agent {
             message_tx,
             streams,
             tool_timeout: config.tool_timeout,
-            token_tracker: TokenTracker::new(200_000), // Default to Claude's 200k context limit
+            token_tracker: TokenTracker::new(context_limit),
             compaction_config: config.compaction_config,
             auto_continue: config.auto_continue,
             active_requests: HashMap::new(),
@@ -229,11 +231,23 @@ impl Agent {
 
     async fn on_switch_model(&mut self, new_provider: Box<dyn StreamingModelProvider>) {
         let previous = self.llm.display_name();
+        let new_context_limit = new_provider.context_window();
         self.llm = Arc::from(new_provider);
+        self.token_tracker.reset_current_usage();
+        self.token_tracker.set_context_limit(new_context_limit);
         let new = self.llm.display_name();
         let _ = self
             .message_tx
             .send(AgentMessage::ModelSwitched { previous, new })
+            .await;
+
+        let _ = self
+            .message_tx
+            .send(AgentMessage::ContextUsageUpdate {
+                usage_ratio: self.token_tracker.usage_ratio(),
+                tokens_used: self.token_tracker.last_input_tokens(),
+                context_limit: self.token_tracker.context_limit(),
+            })
             .await;
     }
 
@@ -454,13 +468,27 @@ impl Agent {
 
     async fn handle_llm_usage(&mut self, input_tokens: u32, output_tokens: u32) {
         self.token_tracker.record_usage(input_tokens, output_tokens);
-        tracing::debug!(
-            "Token usage - input: {}, output: {}, ratio: {:.2}%, remaining: {}",
-            input_tokens,
-            output_tokens,
-            self.token_tracker.usage_ratio() * 100.0,
-            self.token_tracker.tokens_remaining()
-        );
+        match (
+            self.token_tracker.usage_ratio(),
+            self.token_tracker.tokens_remaining(),
+        ) {
+            (Some(usage_ratio), Some(tokens_remaining)) => {
+                tracing::debug!(
+                    "Token usage - input: {}, output: {}, ratio: {:.2}%, remaining: {}",
+                    input_tokens,
+                    output_tokens,
+                    usage_ratio * 100.0,
+                    tokens_remaining
+                );
+            }
+            _ => {
+                tracing::debug!(
+                    "Token usage - input: {}, output: {}, ratio: unknown (context limit unavailable)",
+                    input_tokens,
+                    output_tokens
+                );
+            }
+        }
 
         let _ = self
             .message_tx
@@ -476,19 +504,40 @@ impl Agent {
 
     /// Check if compaction is needed and perform it if so.
     async fn maybe_compact_context(&mut self) {
-        let Some(ref config) = self.compaction_config else {
-            return;
-        };
-
-        if !self.token_tracker.should_compact(config.threshold) {
+        if !self
+            .compaction_config
+            .as_ref()
+            .is_some_and(|config| self.token_tracker.should_compact(config.threshold))
+        {
             return;
         }
 
-        tracing::info!(
-            "Starting context compaction - {} messages, {:.1}% of context limit",
-            self.context.message_count(),
-            self.token_tracker.usage_ratio() * 100.0
-        );
+        if let CompactionOutcome::Failed(error_message) = self.compact_context().await {
+            tracing::warn!("Context compaction failed: {}", error_message);
+        }
+    }
+
+    async fn compact_context(&mut self) -> CompactionOutcome {
+        let Some(ref _config) = self.compaction_config else {
+            tracing::warn!("Context compaction requested but compaction is disabled");
+            return CompactionOutcome::SkippedDisabled;
+        };
+
+        match self.token_tracker.usage_ratio() {
+            Some(usage_ratio) => {
+                tracing::info!(
+                    "Starting context compaction - {} messages, {:.1}% of context limit",
+                    self.context.message_count(),
+                    usage_ratio * 100.0
+                );
+            }
+            None => {
+                tracing::info!(
+                    "Starting context compaction - {} messages (context limit unknown)",
+                    self.context.message_count(),
+                );
+            }
+        }
 
         let _ = self
             .message_tx
@@ -516,10 +565,9 @@ impl Agent {
                         messages_removed: result.messages_removed,
                     })
                     .await;
+                CompactionOutcome::Compacted
             }
-            Err(e) => {
-                tracing::warn!("Context compaction failed: {}", e);
-            }
+            Err(e) => CompactionOutcome::Failed(e.to_string()),
         }
     }
 
@@ -637,6 +685,13 @@ impl Agent {
                 .add_message(ChatMessage::ToolCallResult(result));
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CompactionOutcome {
+    Compacted,
+    SkippedDisabled,
+    Failed(String),
 }
 
 pub(crate) struct AutoContinue {

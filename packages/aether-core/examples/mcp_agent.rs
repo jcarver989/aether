@@ -100,14 +100,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 usage_ratio,
                 tokens_used,
                 context_limit,
-            }) => {
-                println!(
-                    "Context usage: {:.1}% ({}/{} tokens)",
-                    usage_ratio * 100.0,
-                    tokens_used,
-                    context_limit
-                );
-            }
+            }) => match (usage_ratio, context_limit) {
+                (Some(usage_ratio), Some(context_limit)) => {
+                    println!(
+                        "Context usage: {:.1}% ({}/{} tokens)",
+                        usage_ratio * 100.0,
+                        tokens_used,
+                        context_limit
+                    );
+                }
+                _ => {
+                    println!("Context usage: unknown limit ({tokens_used} tokens used)");
+                }
+            },
             Some(AutoContinue {
                 attempt,
                 max_attempts,

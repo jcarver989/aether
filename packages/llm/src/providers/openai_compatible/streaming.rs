@@ -38,7 +38,9 @@ pub fn create_custom_stream_generic<R: Serialize + Send + 'static>(
             }
         };
 
-        let stream = stream.map(|result| result.map_err(|e| LlmError::ApiError(e.to_string())));
+        let stream = stream.map(|result| {
+            result.map_err(|e| LlmError::ApiError(e.to_string()))
+        });
 
         for await item in process_compatible_stream(stream) {
             yield item;

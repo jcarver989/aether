@@ -1,7 +1,9 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
 use super::types::Request;
-use crate::provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
+use crate::provider::{
+    LlmResponseStream, ProviderFactory, StreamingModelProvider, get_context_window,
+};
 use crate::{Context, LlmError, Result};
 use async_stream;
 use futures::StreamExt;
@@ -183,6 +185,10 @@ impl ProviderFactory for AnthropicProvider {
 }
 
 impl StreamingModelProvider for AnthropicProvider {
+    fn context_window(&self) -> Option<u32> {
+        get_context_window("anthropic", &self.model)
+    }
+
     fn stream_response<'a>(&self, context: &Context) -> LlmResponseStream {
         let provider = self.clone();
         let context = context.clone();
