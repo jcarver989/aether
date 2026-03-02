@@ -162,7 +162,8 @@ impl McpManager {
         let params = self.connect_params();
         match McpServerConnection::connect(config, params).await {
             ConnectResult::Connected(conn) => {
-                self.register_server(&name, conn, Registration::Direct).await
+                self.register_server(&name, conn, Registration::Direct)
+                    .await
             }
             ConnectResult::NeedsOAuth { error, .. } => Err(error),
             ConnectResult::Failed(e) => Err(e),
@@ -300,9 +301,8 @@ impl McpManager {
             .map_err(|e| McpError::ConnectionFailed(format!("OAuth failed for '{name}': {e}")))?;
 
         let mcp_client = self.create_mcp_client();
-        let conn =
-            McpServerConnection::reconnect_with_auth(&name, config, auth_client, mcp_client)
-                .await?;
+        let conn = McpServerConnection::reconnect_with_auth(&name, config, auth_client, mcp_client)
+            .await?;
 
         // If this server is proxied, register without exposing tools to the agent
         if let Some(proxy) = self.proxy.as_ref().filter(|p| p.contains_server(&name)) {
@@ -312,9 +312,7 @@ impl McpManager {
             // Write tool files now that connection succeeded
             if let Some(conn) = self.servers.get(&name) {
                 let client = conn.client.clone();
-                if let Err(e) =
-                    ToolProxy::write_tools_to_dir(&name, &client, &tool_dir).await
-                {
+                if let Err(e) = ToolProxy::write_tools_to_dir(&name, &client, &tool_dir).await {
                     tracing::warn!("Failed to write tool files for '{name}' after OAuth: {e}");
                 }
             }

@@ -10,8 +10,8 @@ pub mod tool_proxy;
 pub mod variables;
 
 pub use config::*;
-pub use error::{McpError, Result};
 pub use connection::ServerInstructions;
+pub use error::{McpError, Result};
 pub use manager::{ElicitationRequest, McpManager, McpServerStatus, McpServerStatusEntry};
 pub use naming::split_on_server_name;
 pub use roots::root_from_path;

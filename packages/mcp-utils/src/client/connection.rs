@@ -6,8 +6,7 @@ use rmcp::{
     serve_client,
     service::{DynService, RunningService},
     transport::{
-        StreamableHttpClientTransport, TokioChildProcess,
-        auth::AuthClient,
+        StreamableHttpClientTransport, TokioChildProcess, auth::AuthClient,
         streamable_http_client::StreamableHttpClientTransportConfig,
     },
 };
@@ -81,12 +80,14 @@ impl McpServerConnection {
     /// returning a ready-to-use connection.
     pub(super) async fn connect(config: ServerConfig, params: ConnectParams) -> ConnectResult {
         match config {
-            ServerConfig::Stdio {
-                command, args, ..
-            } => {
+            ServerConfig::Stdio { command, args, .. } => {
                 let mut cmd = Command::new(&command);
                 cmd.args(&args);
-                match params.mcp_client.serve(TokioChildProcess::new(cmd).unwrap()).await {
+                match params
+                    .mcp_client
+                    .serve(TokioChildProcess::new(cmd).unwrap())
+                    .await
+                {
                     Ok(client) => ConnectResult::Connected(Self::from_parts(client, None)),
                     Err(e) => ConnectResult::Failed(McpError::from(e)),
                 }
@@ -101,9 +102,7 @@ impl McpServerConnection {
                 }
             }
 
-            ServerConfig::Http { name, config: cfg } => {
-                Self::connect_http(name, cfg, params).await
-            }
+            ServerConfig::Http { name, config: cfg } => Self::connect_http(name, cfg, params).await,
         }
     }
 
@@ -125,9 +124,11 @@ impl McpServerConnection {
 
     /// List tools from the connected server.
     pub(super) async fn list_tools(&self) -> Result<Vec<RmcpTool>> {
-        let response = self.client.list_tools(None).await.map_err(|e| {
-            McpError::ToolDiscoveryFailed(format!("Failed to list tools: {e}"))
-        })?;
+        let response = self
+            .client
+            .list_tools(None)
+            .await
+            .map_err(|e| McpError::ToolDiscoveryFailed(format!("Failed to list tools: {e}")))?;
         Ok(response.tools)
     }
 
@@ -156,8 +157,7 @@ impl McpServerConnection {
         config: StreamableHttpClientTransportConfig,
         params: ConnectParams,
     ) -> ConnectResult {
-        let conn_err =
-            |e| McpError::ConnectionFailed(format!("HTTP MCP server {name}: {e}"));
+        let conn_err = |e| McpError::ConnectionFailed(format!("HTTP MCP server {name}: {e}"));
 
         let result = match create_auth_client(&name, &config.uri).await {
             Some(auth_client) if config.auth_header.is_none() => {

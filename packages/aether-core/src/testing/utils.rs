@@ -10,7 +10,7 @@ use crate::mcp::McpSpawnResult;
 use crate::mcp::mcp;
 use crate::testing::FakeMcpServer;
 use crate::testing::fake_mcp::fake_mcp;
-use llm::{Context, LlmResponse};
+use llm::{Context, LlmError, LlmResponse};
 
 use llm::testing::FakeLlmProvider;
 
@@ -26,7 +26,7 @@ pub struct TestAgentResult {
 
 pub struct TestAgentBuilder {
     messages: Vec<UserMessage>,
-    responses: Vec<Vec<LlmResponse>>,
+    responses: Vec<Vec<Result<LlmResponse, LlmError>>>,
     timeout: Option<Duration>,
     max_auto_continues: Option<u32>,
 }
@@ -53,6 +53,17 @@ impl TestAgentBuilder {
     }
 
     pub fn llm_responses(mut self, llm_responses: &[Vec<LlmResponse>]) -> Self {
+        self.responses = llm_responses
+            .iter()
+            .map(|turn| turn.iter().cloned().map(Ok).collect())
+            .collect();
+        self
+    }
+
+    pub fn llm_result_responses(
+        mut self,
+        llm_responses: &[Vec<Result<LlmResponse, LlmError>>],
+    ) -> Self {
         self.responses = Vec::from(llm_responses);
         self
     }
@@ -77,7 +88,7 @@ impl TestAgentBuilder {
     /// Use this when you need to verify what context was passed to the LLM,
     /// for example when testing that file attachments are properly formatted.
     pub async fn run_with_context(self) -> Result<TestAgentResult, Box<dyn Error>> {
-        let llm = FakeLlmProvider::new(self.responses);
+        let llm = FakeLlmProvider::from_results(self.responses);
         let captured_contexts = llm.captured_contexts();
 
         let McpSpawnResult {

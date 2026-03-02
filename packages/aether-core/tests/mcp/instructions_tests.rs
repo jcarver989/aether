@@ -104,7 +104,10 @@ async fn test_format_mcp_instructions_xml_structure() {
         instructions: "Use absolute paths.".to_string(),
     }];
 
-    let formatted = Prompt::mcp_instructions(instructions).build().await.unwrap();
+    let formatted = Prompt::mcp_instructions(instructions)
+        .build()
+        .await
+        .unwrap();
 
     // Check for XML tags with server names
     assert!(formatted.contains("<mcp-server-instructions name=\"coding\">"));
@@ -126,7 +129,10 @@ async fn test_format_mcp_instructions_multiple_servers() {
         },
     ];
 
-    let formatted = Prompt::mcp_instructions(instructions).build().await.unwrap();
+    let formatted = Prompt::mcp_instructions(instructions)
+        .build()
+        .await
+        .unwrap();
 
     // Check for XML tags with both server names
     assert!(formatted.contains("<mcp-server-instructions name=\"coding\">"));
