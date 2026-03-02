@@ -51,6 +51,20 @@ impl StreamingModelProvider for AlloyedModelProvider {
             None => "Alloyed (no providers)".to_string(),
         }
     }
+
+    fn context_window(&self) -> Option<u32> {
+        if self.providers.is_empty() {
+            return None;
+        }
+
+        let mut min_context: Option<u32> = None;
+        for provider in &self.providers {
+            let context = provider.context_window()?;
+            min_context = Some(min_context.map_or(context, |current| current.min(context)));
+        }
+
+        min_context
+    }
 }
 
 #[cfg(test)]
@@ -58,6 +72,24 @@ mod tests {
     use super::*;
     use crate::LlmResponse;
     use crate::testing::FakeLlmProvider;
+
+    struct FixedContextProvider {
+        context_window: Option<u32>,
+    }
+
+    impl StreamingModelProvider for FixedContextProvider {
+        fn stream_response(&self, _context: &Context) -> LlmResponseStream {
+            Box::pin(tokio_stream::iter(vec![Ok(LlmResponse::done())]))
+        }
+
+        fn display_name(&self) -> String {
+            "Fixed Context".to_string()
+        }
+
+        fn context_window(&self) -> Option<u32> {
+            self.context_window
+        }
+    }
 
     #[test]
     fn test_alloyed_provider_display_name_empty() {
@@ -126,5 +158,27 @@ mod tests {
         assert_eq!(name1, "Fake LLM");
         assert_eq!(name2, "Fake LLM");
         assert_eq!(name3, "Fake LLM");
+    }
+
+    #[test]
+    fn test_context_window_unknown_if_any_provider_unknown() {
+        let known = FixedContextProvider {
+            context_window: Some(200_000),
+        };
+        let unknown = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
+        let provider = AlloyedModelProvider::new(vec![Box::new(known), Box::new(unknown)]);
+        assert_eq!(provider.context_window(), None);
+    }
+
+    #[test]
+    fn test_context_window_uses_min_of_known_providers() {
+        let p1 = FixedContextProvider {
+            context_window: Some(200_000),
+        };
+        let p2 = FixedContextProvider {
+            context_window: Some(128_000),
+        };
+        let provider = AlloyedModelProvider::new(vec![Box::new(p1), Box::new(p2)]);
+        assert_eq!(provider.context_window(), Some(128_000));
     }
 }
