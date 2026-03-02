@@ -892,6 +892,25 @@ async fn test_multiple_scrollback_pushes_tiny_terminal() {
     );
 }
 
+#[tokio::test]
+async fn test_prompt_done_does_not_duplicate_overflowed_lines() {
+    let markers: Vec<String> = (1..=16).map(|i| format!("L{i:02}")).collect();
+    let chunk = format!("```text\n{}\n```", markers.join("\n"));
+
+    let renderer = render_with_size(vec![text_chunk(&chunk), prompt_done()], (40, 8)).await;
+
+    let transcript = renderer.writer().get_transcript_lines();
+    for marker in markers.iter().take(8) {
+        let count = transcript.iter().filter(|line| line.contains(marker)).count();
+        assert_eq!(
+            count,
+            1,
+            "Marker {marker} should appear exactly once in transcript, got {count}.\nTranscript:\n{}",
+            transcript.join("\n")
+        );
+    }
+}
+
 // ── New tests: bordered input + status line ──────────────────────────
 
 #[tokio::test]

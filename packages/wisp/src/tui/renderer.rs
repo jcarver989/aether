@@ -45,13 +45,13 @@ impl<T: Write> Renderer<T> {
 
     pub fn render<C: CursorComponent + ?Sized>(&mut self, root: &mut C) -> io::Result<()> {
         let output = root.render_with_cursor(&self.context);
-        let (visual_lines, logical_to_visual) =
+        let (full_visual_lines, logical_to_visual) =
             soft_wrap_lines_with_map(&output.lines, self.context.size.0);
 
         let mut cursor_row = logical_to_visual
             .get(output.cursor.logical_row)
             .copied()
-            .unwrap_or_else(|| visual_lines.len().saturating_sub(1));
+            .unwrap_or_else(|| full_visual_lines.len().saturating_sub(1));
 
         let width = usize::from(self.context.size.0);
         let mut cursor_col = output.cursor.col;
@@ -62,6 +62,20 @@ impl<T: Write> Renderer<T> {
             cursor_col = 0;
         }
 
+        if cursor_row >= full_visual_lines.len() {
+            cursor_row = full_visual_lines.len().saturating_sub(1);
+        }
+
+        // Keep the live managed frame bounded to the viewport height so we
+        // don't stream overflow lines into terminal scrollback before prompt end.
+        let viewport_rows = usize::from(self.context.size.1.max(1));
+        let clip_start = full_visual_lines.len().saturating_sub(viewport_rows);
+        let visual_lines = if clip_start > 0 {
+            full_visual_lines[clip_start..].to_vec()
+        } else {
+            full_visual_lines
+        };
+        cursor_row = cursor_row.saturating_sub(clip_start);
         if cursor_row >= visual_lines.len() {
             cursor_row = visual_lines.len().saturating_sub(1);
         }
@@ -275,5 +289,31 @@ mod tests {
 
         renderer.render(&mut root).unwrap();
         assert_eq!(renderer.screen().prev_frame(), &[Line::new("a")]);
+    }
+
+    #[test]
+    fn render_clips_to_viewport_height() {
+        let mut renderer = Renderer::new(FakeWriter::new());
+        renderer.update_render_context_with((20, 3));
+
+        let mut root = StubRoot {
+            lines: vec![
+                Line::new("L1"),
+                Line::new("L2"),
+                Line::new("L3"),
+                Line::new("L4"),
+                Line::new("L5"),
+            ],
+            cursor: Cursor {
+                logical_row: 4,
+                col: 0,
+            },
+        };
+
+        renderer.render(&mut root).unwrap();
+        assert_eq!(
+            renderer.screen().prev_frame(),
+            &[Line::new("L3"), Line::new("L4"), Line::new("L5")]
+        );
     }
 }
