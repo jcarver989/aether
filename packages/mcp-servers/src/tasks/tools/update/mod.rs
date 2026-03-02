@@ -1,10 +1,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::common::TaskSummary;
+use super::common::{TaskSummary, task_result_meta};
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
 use crate::tasks::types::{TaskId, TaskStatus, TaskUpdate};
-use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
+use mcp_utils::display_meta::ToolResultMeta;
 
 /// Input for the `task_update` tool
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
@@ -160,15 +160,13 @@ pub fn execute_task_update(
         format!("Updated {} on task {}", changes.join(", "), id)
     };
 
-    let display_meta = ToolDisplayMeta::new("Todo", task.title.clone());
-
     Ok(TaskUpdateOutput {
         status: "success".to_string(),
         task: TaskSummary::from(&task),
         message,
         changes,
         newly_ready,
-        _meta: Some(display_meta.into()),
+        _meta: Some(task_result_meta(store, &task.title)),
     })
 }
 

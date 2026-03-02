@@ -8,6 +8,7 @@ use crate::components::conversation_window::{ConversationBuffer, ConversationWin
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
+use crate::components::plan_view::PlanView;
 use crate::components::progress_indicator::ProgressIndicator;
 use crate::components::server_status::server_status_summary;
 use crate::components::status_line::StatusLine;
@@ -85,6 +86,7 @@ pub struct App {
     config_overlay: Option<ConfigOverlay>,
     elicitation_form: Option<ElicitationForm>,
     server_statuses: Vec<McpServerStatusEntry>,
+    plan_entries: Vec<acp::PlanEntry>,
 }
 
 impl App {
@@ -106,6 +108,7 @@ impl App {
             config_overlay: None,
             elicitation_form: None,
             server_statuses: Vec::new(),
+            plan_entries: Vec::new(),
         }
     }
 
@@ -206,6 +209,10 @@ impl App {
                 }
                 should_render = true;
             }
+            SessionUpdate::Plan(plan) => {
+                self.plan_entries = plan.entries;
+                should_render = true;
+            }
             _ => {
                 self.conversation.close_thought_block();
             }
@@ -241,7 +248,14 @@ impl App {
     }
 
     pub fn on_tick(&mut self) -> Vec<AppEvent> {
-        if self.waiting_for_response || self.tool_call_statuses.progress().running_any {
+        let has_in_progress_plan = self
+            .plan_entries
+            .iter()
+            .any(|e| e.status == acp::PlanEntryStatus::InProgress);
+        if self.waiting_for_response
+            || self.tool_call_statuses.progress().running_any
+            || has_in_progress_plan
+        {
             self.animation_tick = self.animation_tick.wrapping_add(1);
             self.grid_loader.tick = self.animation_tick;
             self.tool_call_statuses.set_tick(self.animation_tick);
@@ -310,6 +324,7 @@ impl App {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
         self.animation_tick = 0;
+        self.plan_entries.clear();
     }
 
     pub fn on_prompt_error(&mut self) -> Vec<AppEvent> {
@@ -800,6 +815,11 @@ impl CursorComponent for App {
         };
         let input_layout = input_prompt.layout(context);
 
+        let mut plan_view = PlanView {
+            entries: &self.plan_entries,
+            tick: self.animation_tick,
+        };
+
         let progress = self.tool_call_statuses.progress();
         let mut progress_indicator = ProgressIndicator {
             completed: progress.completed_top_level,
@@ -809,10 +829,11 @@ impl CursorComponent for App {
 
         let mut container: Container<'_> = Container::new(vec![
             &mut conversation_window,
+            &mut plan_view,
             &mut progress_indicator,
             &mut input_prompt,
         ]);
-        let input_component_index = 2;
+        let input_component_index = container.len() - 1;
 
         if let Some(ref mut picker) = self.file_picker {
             container.push(picker);
