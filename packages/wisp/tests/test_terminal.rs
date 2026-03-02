@@ -10,6 +10,8 @@ use std::io::{self, Write};
 pub struct TestTerminal {
     /// 2D buffer of characters (row, column)
     buffer: Vec<Vec<char>>,
+    /// Rows that have scrolled off the top of the visible buffer.
+    scrollback: Vec<Vec<char>>,
     /// Current cursor position (column, row)
     cursor: (u16, u16),
     /// Saved cursor position (for save/restore)
@@ -28,6 +30,7 @@ impl TestTerminal {
         let buffer = vec![vec![' '; columns as usize]; rows as usize];
         Self {
             buffer,
+            scrollback: Vec::new(),
             cursor: (0, 0),
             saved_cursor: None,
             size: (columns, rows),
@@ -40,6 +43,15 @@ impl TestTerminal {
     pub fn get_lines(&self) -> Vec<String> {
         self.buffer
             .iter()
+            .map(|chars| chars.iter().collect::<String>().trim_end().to_string())
+            .collect()
+    }
+
+    /// Get full terminal transcript (scrollback history + visible buffer).
+    pub fn get_transcript_lines(&self) -> Vec<String> {
+        self.scrollback
+            .iter()
+            .chain(self.buffer.iter())
             .map(|chars| chars.iter().collect::<String>().trim_end().to_string())
             .collect()
     }
@@ -102,7 +114,8 @@ impl TestTerminal {
                 self.pending_wrap = false;
                 if self.cursor.1 >= self.size.1.saturating_sub(1) {
                     // At last row: scroll buffer up by 1
-                    self.buffer.remove(0);
+                    let removed = self.buffer.remove(0);
+                    self.scrollback.push(removed);
                     self.buffer.push(vec![' '; self.size.0 as usize]);
                     // Cursor stays at last row
                 } else {
@@ -137,7 +150,8 @@ impl TestTerminal {
             self.pending_wrap = false;
             self.cursor.0 = 0;
             if self.cursor.1 >= self.size.1.saturating_sub(1) {
-                self.buffer.remove(0);
+                let removed = self.buffer.remove(0);
+                self.scrollback.push(removed);
                 self.buffer.push(vec![' '; self.size.0 as usize]);
             } else {
                 self.cursor.1 += 1;
@@ -455,5 +469,19 @@ mod tests {
         assert_eq!(lines[0], "Second");
         // "First" starts at column 10, cursor saved at 15, "Third" written at 15
         assert_eq!(lines[5], "          FirstThird");
+    }
+
+    #[test]
+    fn test_transcript_includes_scrolled_off_lines() {
+        let mut term = TestTerminal::new(6, 2);
+        write!(term, "L1\nL2\nL3").unwrap();
+        term.flush().unwrap();
+
+        let visible = term.get_lines();
+        assert_eq!(visible[0], "L2");
+        assert_eq!(visible[1], "L3");
+
+        let transcript = term.get_transcript_lines();
+        assert_eq!(transcript, vec!["L1", "L2", "L3"]);
     }
 }
