@@ -1,6 +1,7 @@
 use crate::tui::{
     Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
-    classify_key,
+    Style, classify_key,
+    soft_wrap::{display_width_text, pad_text_to_width, truncate_text},
 };
 use crossterm::event::KeyEvent;
 
@@ -55,6 +56,14 @@ impl Component for CommandPicker {
             return lines;
         }
 
+        let max_name_width = self
+            .combobox
+            .matches()
+            .iter()
+            .map(|cmd| display_width_text(&format!("  /{}", cmd.name)))
+            .max()
+            .unwrap_or(0);
+
         let item_lines = self
             .combobox
             .render_items(context, |command, is_selected, ctx| {
@@ -65,20 +74,18 @@ impl Component for CommandPicker {
                     None => String::new(),
                 };
 
-                let line_text = format!(
-                    "{prefix}/{} - {}{}",
-                    command.name, command.description, hint_suffix
-                );
+                let name_part = format!("{prefix}/{}", command.name);
+                let padded_name = pad_text_to_width(&name_part, max_name_width);
+                let line_text =
+                    format!("{padded_name}  {}{}", command.description, hint_suffix);
+
+                let max_width = ctx.size.0 as usize;
+                let truncated = truncate_text(&line_text, max_width);
+
                 if is_selected {
-                    Line::styled(line_text, ctx.theme.primary)
+                    Line::styled(truncated, ctx.theme.primary)
                 } else {
-                    let name_part = format!("{prefix}/{}", command.name);
-                    let desc_part = format!(" - {}", command.description);
-                    let hint_part = hint_suffix;
-                    let mut line = Line::new(name_part);
-                    line.push_styled(desc_part, ctx.theme.muted);
-                    line.push_styled(hint_part, ctx.theme.muted);
-                    line
+                    build_styled_command_line(&truncated, padded_name.len(), ctx.theme.muted)
                 }
             });
         lines.extend(item_lines);
@@ -123,10 +130,23 @@ impl HandlesInput for CommandPicker {
     }
 }
 
+fn build_styled_command_line(truncated: &str, name_byte_len: usize, muted: crossterm::style::Color) -> Line {
+    if truncated.len() <= name_byte_len {
+        Line::new(truncated)
+    } else {
+        let mut line = Line::new(&truncated[..name_byte_len]);
+        line.push_with_style(&truncated[name_byte_len..], Style::fg(muted));
+        line
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::test_picker::{rendered_lines, selected_text, type_query};
+    use crate::tui::soft_wrap::display_width_text;
+    use crate::tui::test_picker::{
+        rendered_lines, rendered_lines_with_size, rendered_raw_lines, selected_text, type_query,
+    };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn sample_commands() -> Vec<CommandEntry> {
@@ -276,5 +296,89 @@ mod tests {
             outcome.action,
             Some(CommandPickerAction::CloseAndClearInput)
         ));
+    }
+
+    #[test]
+    fn non_selected_items_have_multi_span_styling() {
+        let mut picker = CommandPicker::new(sample_commands());
+        let raw_lines = rendered_raw_lines(&mut picker);
+
+        // Find a non-selected command line (starts with "  /" but not the header)
+        let non_selected = raw_lines
+            .iter()
+            .skip(1) // skip header
+            .find(|l| l.plain_text().starts_with("  /"))
+            .expect("should have a non-selected command line");
+
+        // Non-selected items should have multiple spans with different styles:
+        // the name part in default style and the description in muted style
+        assert!(
+            non_selected.spans().len() >= 2,
+            "Non-selected item should have multiple spans for different styling, \
+             got {} span(s): {:?}",
+            non_selected.spans().len(),
+            non_selected.spans().iter().map(|s| s.text()).collect::<Vec<_>>(),
+        );
+
+        let first_style = non_selected.spans()[0].style();
+        let last_style = non_selected.spans().last().unwrap().style();
+        assert_ne!(
+            first_style, last_style,
+            "Name and description spans should have different styles",
+        );
+    }
+
+    #[test]
+    fn descriptions_are_column_aligned() {
+        let mut picker = CommandPicker::new(sample_commands());
+        let lines = rendered_lines(&mut picker);
+
+        // Skip header line, collect command lines
+        let command_lines: Vec<&str> = lines[1..].iter().map(|s| s.as_str()).collect();
+        assert_eq!(command_lines.len(), 3);
+
+        // All descriptions should start at the same display column.
+        // Find the display column where the description text begins for each line.
+        let desc_positions: Vec<usize> = sample_commands()
+            .iter()
+            .zip(command_lines.iter())
+            .map(|(cmd, line)| {
+                let byte_pos = line.find(&cmd.description)
+                    .unwrap_or_else(|| panic!("description '{}' not found in '{}'", cmd.description, line));
+                display_width_text(&line[..byte_pos])
+            })
+            .collect();
+
+        assert!(
+            desc_positions.windows(2).all(|w| w[0] == w[1]),
+            "Descriptions should start at the same column, but positions are: {desc_positions:?}\nLines: {command_lines:?}",
+        );
+    }
+
+    #[test]
+    fn long_commands_are_truncated_to_terminal_width() {
+        let commands = vec![CommandEntry {
+            name: "verylongcommandnamethatgoesonandon".into(),
+            description: "This is a very long description that would normally wrap to multiple lines if we didn't truncate it".into(),
+            has_input: false,
+            hint: Some("some hint text".into()),
+            builtin: false,
+        }];
+
+        let mut picker = CommandPicker::new(commands);
+        let lines = rendered_lines_with_size(&mut picker, (30, 10));
+        let command_line = &lines[1];
+
+        assert_eq!(lines.len(), 2);
+        assert!(
+            command_line.ends_with("..."),
+            "Expected truncation, got: {command_line}"
+        );
+
+        let width = display_width_text(command_line);
+        assert!(
+            width <= 30,
+            "Line width {width} exceeds terminal width 30: {command_line}"
+        );
     }
 }
