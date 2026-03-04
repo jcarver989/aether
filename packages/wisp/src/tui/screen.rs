@@ -1,4 +1,3 @@
-use super::soft_wrap::soft_wrap_line;
 use crossterm::{
     QueueableCommand,
     cursor::MoveUp,
@@ -392,7 +391,7 @@ impl Screen {
         Ok(lines_written)
     }
 
-    /// Commit lines to scrollback, replacing the current managed region.
+    /// Flush pre-wrapped visual lines to scrollback, clearing `prev_frame`.
     ///
     /// Moves to the start of the managed region, clears it, writes the
     /// scrollback lines with `\r\n` so they become permanent, then clears
@@ -400,18 +399,12 @@ impl Screen {
     /// line.
     pub fn push_to_scrollback<W: Write>(
         &mut self,
-        lines: &[Line],
-        width: u16,
+        visual_lines: &[Line],
         writer: &mut W,
     ) -> io::Result<()> {
-        if lines.is_empty() {
+        if visual_lines.is_empty() {
             return Ok(());
         }
-
-        let wrapped: Vec<Line> = lines
-            .iter()
-            .flat_map(|l| soft_wrap_line(l, width))
-            .collect();
 
         writer.queue(BeginSynchronizedUpdate)?;
 
@@ -427,12 +420,13 @@ impl Screen {
         writer.queue(Clear(ClearType::FromCursorDown))?;
 
         // Write scrollback lines (permanent, with \r\n)
-        for line in &wrapped {
+        for line in visual_lines {
             write!(writer, "{}\r\n", line.to_ansi_string())?;
         }
 
         writer.queue(EndSynchronizedUpdate)?;
         writer.flush()?;
+
         self.prev_frame.clear();
         Ok(())
     }
@@ -587,7 +581,7 @@ mod tests {
         screen.render(&frame, 80, &mut w).unwrap();
 
         screen
-            .push_to_scrollback(&[Line::new("scrolled")], 80, &mut w)
+            .push_to_scrollback(&[Line::new("scrolled")], &mut w)
             .unwrap();
 
         assert!(screen.prev_frame().is_empty());
@@ -597,7 +591,7 @@ mod tests {
     fn push_to_scrollback_empty_is_noop() {
         let mut screen = Screen::new();
         let mut w = FakeWriter::new();
-        screen.push_to_scrollback(&[], 80, &mut w).unwrap();
+        screen.push_to_scrollback(&[], &mut w).unwrap();
         assert!(w.bytes.is_empty());
     }
 
@@ -621,23 +615,6 @@ mod tests {
         let mut w2 = FakeWriter::new();
         let written = screen.render(&frame, 120, &mut w2).unwrap();
         assert_eq!(written, 2);
-    }
-
-    #[test]
-    fn push_to_scrollback_soft_wraps_lines() {
-        let mut screen = Screen::new();
-        let mut w = FakeWriter::new();
-        screen.render(&[Line::new("abcde")], 5, &mut w).unwrap();
-
-        let mut w2 = FakeWriter::new();
-        screen
-            .push_to_scrollback(&[Line::new("0123456789")], 5, &mut w2)
-            .unwrap();
-
-        let output = String::from_utf8_lossy(&w2.bytes);
-        // 10-char line at width 5 should soft-wrap to two lines
-        assert!(output.contains("01234"));
-        assert!(output.contains("56789"));
     }
 
     #[test]
