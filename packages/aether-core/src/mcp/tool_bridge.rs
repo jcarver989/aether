@@ -54,7 +54,9 @@ pub fn mcp_result_to_tool_call_result(
                 id: request.id.clone(),
                 name: request.name.clone(),
                 arguments: request.arguments.clone(),
-                result: result_value.to_string(),
+                // YAML is ~18% more token-efficient than JSON for LLM consumption
+                result: serde_yml::to_string(&result_value)
+                    .unwrap_or_else(|_| result_value.to_string()),
             },
             result_meta,
         ))
@@ -221,10 +223,12 @@ mod tests {
         let rm = result_meta.expect("result_meta should be present");
         assert_eq!(rm.display.title, "Edit file");
         assert!(rm.diff_preview.is_some());
-        assert!(!result.result.contains("\"display\""));
-        assert!(!result.result.contains("\"diff_preview\""));
-        assert!(result.result.contains("\"trace_id\":\"trace-123\""));
-        assert!(result.result.contains("\"duration_ms\":18"));
+        assert!(!result.result.contains("display:"));
+        assert!(!result.result.contains("diff_preview:"));
+        assert!(result.result.contains("trace_id:"));
+        assert!(result.result.contains("trace-123"));
+        assert!(result.result.contains("duration_ms:"));
+        assert!(result.result.contains("18"));
     }
 
     #[test]
@@ -247,11 +251,8 @@ mod tests {
 
         let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         assert!(result_meta.is_none());
-        assert!(
-            result
-                .result
-                .contains("\"display\":\"not a valid ToolDisplayMeta\"")
-        );
+        assert!(result.result.contains("display:"));
+        assert!(result.result.contains("not a valid ToolDisplayMeta"));
     }
 
     #[test]
@@ -433,5 +434,61 @@ mod tests {
 
         let err = mcp_result_to_tool_call_result(&request, mcp_result).unwrap_err();
         assert!(err.error.contains("file not found"));
+    }
+
+    #[test]
+    fn test_result_is_yaml_format() {
+        let request = make_request();
+
+        let structured = json!({
+            "status": "success",
+            "files": [
+                {"name": "Cargo.toml", "path": "./Cargo.toml"},
+                {"name": "src", "path": "./src"}
+            ],
+            "totalCount": 2
+        });
+
+        let mcp_result = McpCallToolResult {
+            content: vec![],
+            structured_content: Some(structured),
+            is_error: Some(false),
+            meta: None,
+        };
+
+        let (result, _) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+
+        // YAML uses unquoted keys with colons, not JSON braces/quotes
+        assert!(
+            result.result.contains("status: success"),
+            "expected YAML key: value format, got: {}",
+            result.result
+        );
+        assert!(
+            result.result.contains("totalCount: 2"),
+            "expected YAML key: value format, got: {}",
+            result.result
+        );
+        // YAML lists use `- ` prefix
+        assert!(
+            result.result.contains("- name:"),
+            "expected YAML list items, got: {}",
+            result.result
+        );
+        // Should NOT contain JSON braces/brackets at the top level
+        assert!(
+            !result.result.starts_with('{'),
+            "expected YAML, not JSON: {}",
+            result.result
+        );
+    }
+
+    #[test]
+    fn test_serde_yml_produces_yaml_not_json() {
+        let value = json!({"key": "value"});
+        let yaml = serde_yml::to_string(&value).unwrap();
+        assert!(yaml.contains("key:"));
+        assert!(yaml.contains("value"));
+        assert!(!yaml.starts_with('{'));
     }
 }
