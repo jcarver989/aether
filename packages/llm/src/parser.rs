@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use crate::catalog::LlmModel;
 use crate::providers::{
     anthropic::AnthropicProvider,
-    bedrock::BedrockProvider,
     deepseek::DeepSeekProvider,
     gemini::GeminiProvider,
     local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
@@ -11,6 +10,8 @@ use crate::providers::{
     openrouter::OpenRouterProvider,
     z_ai::ZAiProvider,
 };
+#[cfg(feature = "bedrock")]
+use crate::providers::bedrock::BedrockProvider;
 use crate::{LlmError, ProviderFactory, StreamingModelProvider, alloyed::AlloyedModelProvider};
 
 /// Parser that turns a provider:model string (e.g. anthropic:claude-sonnet-4.5) into
@@ -30,7 +31,7 @@ impl ModelProviderParser {
 impl Default for ModelProviderParser {
     /// Create a parser with all built-in providers registered
     fn default() -> Self {
-        Self::new(HashMap::new())
+        let parser = Self::new(HashMap::new())
             .with_provider::<AnthropicProvider>("anthropic")
             .with_provider::<DeepSeekProvider>("deepseek")
             .with_provider::<GeminiProvider>("gemini")
@@ -38,8 +39,12 @@ impl Default for ModelProviderParser {
             .with_provider::<OpenRouterProvider>("openrouter")
             .with_provider::<OllamaProvider>("ollama")
             .with_provider::<ZAiProvider>("zai")
-            .with_provider::<LlamaCppProvider>("llamacpp")
-            .with_provider::<BedrockProvider>("bedrock")
+            .with_provider::<LlamaCppProvider>("llamacpp");
+
+        #[cfg(feature = "bedrock")]
+        let parser = parser.with_provider::<BedrockProvider>("bedrock");
+
+        parser
     }
 }
 

@@ -13,7 +13,6 @@
 /// cargo run --bin gen-eval -- https://github.com/owner/repo/issues/123 easy
 /// cargo run --bin gen-eval -- https://github.com/owner/repo/issues/456 medium
 /// ```
-use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use planning_agent::PrInfo;
 use regex::Regex;
@@ -21,6 +20,44 @@ use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+#[derive(Debug, thiserror::Error)]
+pub enum GenEvalError {
+    #[error("Invalid GitHub issue URL: {0}")]
+    InvalidIssueUrl(String),
+    #[error("Invalid GitHub PR URL: {0}")]
+    InvalidPrUrl(String),
+    #[error("PR repo ({pr_repo}) doesn't match issue repo ({issue_repo})")]
+    RepositoryMismatch { issue_repo: String, pr_repo: String },
+    #[error("Issue #{0} was not closed by a PR. Provide a PR URL with --pr")]
+    IssueMissingPr(u32),
+    #[error("gh command failed: {stderr}")]
+    GhCommandFailed { stderr: String },
+    #[error("Could not find commits around PR merge time")]
+    CommitsNotFound,
+    #[error("Failed to parse commit SHAs")]
+    InvalidCommitShas,
+    #[error("{context}: {source}")]
+    Io {
+        context: String,
+        source: std::io::Error,
+    },
+    #[error("{context}: {source}")]
+    Json {
+        context: String,
+        source: serde_json::Error,
+    },
+    #[error("{context}: {source}")]
+    ParseInt {
+        context: String,
+        source: std::num::ParseIntError,
+    },
+    #[error("{context}: {source}")]
+    Utf8 {
+        context: String,
+        source: std::string::FromUtf8Error,
+    },
+}
 
 #[derive(Parser)]
 #[command(name = "gen-eval")]
@@ -77,7 +114,7 @@ struct PrData {
     base_ref_name: String,
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<(), GenEvalError> {
     let cli = Cli::parse();
     let (owner, repo, issue_number) = parse_github_url(&cli.issue_url)?;
     println!("Creating eval from: {owner}/{repo} #{issue_number}...");
@@ -86,9 +123,10 @@ fn main() -> Result<()> {
     let pr_number = if let Some(pr_url) = &cli.pr_url {
         let (pr_owner, pr_repo, pr_num) = parse_pr_url(pr_url)?;
         if pr_owner != owner || pr_repo != repo {
-            return Err(anyhow!(
-                "PR must be from the same repository as the issue. Issue: {owner}/{repo}, PR: {pr_owner}/{pr_repo}"
-            ));
+            return Err(GenEvalError::RepositoryMismatch {
+                issue_repo: format!("{owner}/{repo}"),
+                pr_repo: format!("{pr_owner}/{pr_repo}"),
+            });
         }
 
         println!("Using manually specified PR #{pr_num}...");
@@ -97,11 +135,7 @@ fn main() -> Result<()> {
         let pr_num = issue
             .closed_by_pull_requests_references
             .first()
-            .ok_or_else(|| {
-                anyhow!(
-                    "Issue #{issue_number} was not closed by a PR. Please provide a PR URL with --pr"
-                )
-            })?
+            .ok_or(GenEvalError::IssueMissingPr(issue_number))?
             .number;
 
         println!("Auto-detected PR #{pr_num}...");
@@ -123,132 +157,136 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parse_github_url(url: &str) -> Result<(String, String, u32)> {
+fn parse_github_url(url: &str) -> Result<(String, String, u32), GenEvalError> {
     // Expected format: https://github.com/owner/repo/issues/123
     let re = Regex::new(r"^https?://github\.com/([^/]+)/([^/]+)/issues/(\d+)/?$")
         .expect("Invalid regex pattern");
 
-    let caps = re.captures(url).ok_or_else(|| {
-        anyhow!(
-            "Invalid GitHub issue URL format. Expected: https://github.com/owner/repo/issues/123"
-        )
-    })?;
+    let caps = re
+        .captures(url)
+        .ok_or_else(|| GenEvalError::InvalidIssueUrl(url.to_string()))?;
 
     let owner = caps[1].to_string();
     let repo = caps[2].to_string();
-    let issue_number = caps[3]
-        .parse::<u32>()
-        .context("Failed to parse issue number")?;
+    let issue_number = caps[3].parse::<u32>().map_err(|e| GenEvalError::ParseInt {
+        context: "Failed to parse issue number".into(),
+        source: e,
+    })?;
 
     Ok((owner, repo, issue_number))
 }
 
-fn parse_pr_url(url: &str) -> Result<(String, String, u32)> {
+fn parse_pr_url(url: &str) -> Result<(String, String, u32), GenEvalError> {
     // Expected format: https://github.com/owner/repo/pull/456
     let re = Regex::new(r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)/?$")
         .expect("Invalid regex pattern");
 
-    let caps = re.captures(url).ok_or_else(|| {
-        anyhow!("Invalid GitHub PR URL format. Expected: https://github.com/owner/repo/pull/456")
-    })?;
+    let caps = re
+        .captures(url)
+        .ok_or_else(|| GenEvalError::InvalidPrUrl(url.to_string()))?;
 
     let owner = caps[1].to_string();
     let repo = caps[2].to_string();
-    let pr_number = caps[3]
-        .parse::<u32>()
-        .context("Failed to parse PR number")?;
+    let pr_number = caps[3].parse::<u32>().map_err(|e| GenEvalError::ParseInt {
+        context: "Failed to parse PR number".into(),
+        source: e,
+    })?;
 
     Ok((owner, repo, pr_number))
 }
 
-fn fetch_issue(owner: &str, repo: &str, issue_number: u32) -> Result<IssueData> {
-    let output = Command::new("gh")
-        .args([
+fn run_gh(args: &[&str], context: &str) -> Result<Vec<u8>, GenEvalError> {
+    let output = Command::new("gh").args(args).output().map_err(|e| {
+        GenEvalError::Io {
+            context: context.into(),
+            source: e,
+        }
+    })?;
+
+    if !output.status.success() {
+        return Err(GenEvalError::GhCommandFailed {
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+
+    Ok(output.stdout)
+}
+
+fn fetch_issue(owner: &str, repo: &str, issue_number: u32) -> Result<IssueData, GenEvalError> {
+    let num = issue_number.to_string();
+    let repo_arg = format!("{owner}/{repo}");
+    let stdout = run_gh(
+        &[
             "issue",
             "view",
-            &issue_number.to_string(),
+            &num,
             "--repo",
-            &format!("{owner}/{repo}"),
+            &repo_arg,
             "--json",
             "title,body,closedByPullRequestsReferences",
-        ])
-        .output()
-        .context("Failed to execute gh command. Is gh CLI installed?")?;
+        ],
+        "Failed to execute gh issue view",
+    )?;
 
-    if !output.status.success() {
-        return Err(anyhow!(
-            "gh command failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let issue: IssueData =
-        serde_json::from_slice(&output.stdout).context("Failed to parse issue JSON")?;
-
-    Ok(issue)
+    serde_json::from_slice(&stdout).map_err(|e| GenEvalError::Json {
+        context: "Failed to parse issue JSON".into(),
+        source: e,
+    })
 }
 
-fn fetch_pr(owner: &str, repo: &str, pr_number: u32) -> Result<PrData> {
-    let output = Command::new("gh")
-        .args([
+fn fetch_pr(owner: &str, repo: &str, pr_number: u32) -> Result<PrData, GenEvalError> {
+    let num = pr_number.to_string();
+    let repo_arg = format!("{owner}/{repo}");
+    let stdout = run_gh(
+        &[
             "pr",
             "view",
-            &pr_number.to_string(),
+            &num,
             "--repo",
-            &format!("{owner}/{repo}"),
+            &repo_arg,
             "--json",
             "number,mergedAt,baseRefName",
-        ])
-        .output()
-        .context("Failed to execute gh command")?;
+        ],
+        "Failed to execute gh pr view",
+    )?;
 
-    if !output.status.success() {
-        return Err(anyhow!(
-            "gh command failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let pr: PrData = serde_json::from_slice(&output.stdout).context("Failed to parse PR JSON")?;
-
-    Ok(pr)
+    serde_json::from_slice(&stdout).map_err(|e| GenEvalError::Json {
+        context: "Failed to parse PR JSON".into(),
+        source: e,
+    })
 }
 
-fn get_commits_around_pr(owner: &str, repo: &str, pr: &PrData) -> Result<(String, String)> {
+fn get_commits_around_pr(
+    owner: &str,
+    repo: &str,
+    pr: &PrData,
+) -> Result<(String, String), GenEvalError> {
     // Get the 2 most recent commits on the base branch at the time the PR was merged
     // These give us the HEAD commit after merge and the commit right before it
-    let output = Command::new("gh")
-        .args([
-            "api",
-            &format!(
-                "/repos/{}/{}/commits?sha={}&until={}&per_page=2",
-                owner, repo, pr.base_ref_name, pr.merged_at
-            ),
-            "--jq",
-            ".[0].sha, .[1].sha",
-        ])
-        .output()
-        .context("Failed to execute gh command")?;
+    let api_path = format!(
+        "/repos/{}/{}/commits?sha={}&until={}&per_page=2",
+        owner, repo, pr.base_ref_name, pr.merged_at
+    );
+    let stdout = run_gh(
+        &["api", &api_path, "--jq", ".[0].sha, .[1].sha"],
+        "Failed to execute gh api",
+    )?;
 
-    if !output.status.success() {
-        return Err(anyhow!(
-            "gh command failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let output_str = String::from_utf8(output.stdout).context("Invalid UTF-8 in gh output")?;
+    let output_str = String::from_utf8(stdout).map_err(|e| GenEvalError::Utf8 {
+        context: "Invalid UTF-8 in gh output".into(),
+        source: e,
+    })?;
     let commits: Vec<&str> = output_str.lines().collect();
 
     if commits.len() < 2 {
-        return Err(anyhow!("Could not find commits around PR merge time"));
+        return Err(GenEvalError::CommitsNotFound);
     }
 
     let after_sha = commits[0].trim().to_string();
     let before_sha = commits[1].trim().to_string();
 
     if after_sha.is_empty() || before_sha.is_empty() {
-        return Err(anyhow!("Failed to parse commit SHAs"));
+        return Err(GenEvalError::InvalidCommitShas);
     }
 
     Ok((before_sha, after_sha))
@@ -258,7 +296,7 @@ fn create_eval_directory(
     repo: &str,
     difficulty: &Difficulty,
     issue_number: u32,
-) -> Result<PathBuf> {
+) -> Result<PathBuf, GenEvalError> {
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let eval_dir = base_dir
         .join("tests")
@@ -267,22 +305,31 @@ fn create_eval_directory(
         .join(difficulty.to_string())
         .join(format!("issue-{issue_number}"));
 
-    fs::create_dir_all(&eval_dir).context("Failed to create eval directory")?;
+    fs::create_dir_all(&eval_dir).map_err(|e| GenEvalError::Io {
+        context: "Failed to create eval directory".into(),
+        source: e,
+    })?;
 
     Ok(eval_dir)
 }
 
-fn write_prompt_file(eval_dir: &Path, issue: &IssueData) -> Result<()> {
+fn write_prompt_file(eval_dir: &Path, issue: &IssueData) -> Result<(), GenEvalError> {
     let prompt_path = eval_dir.join("prompt.md");
     let body = issue.body.as_deref().unwrap_or("");
     let content = format!("# {}\n\n{}\n", issue.title, body);
 
-    fs::write(&prompt_path, content).context("Failed to write prompt.md")?;
-
-    Ok(())
+    fs::write(&prompt_path, content).map_err(|e| GenEvalError::Io {
+        context: "Failed to write prompt.md".into(),
+        source: e,
+    })
 }
 
-fn write_pr_json(eval_dir: &Path, before_sha: &str, after_sha: &str, pr: &PrData) -> Result<()> {
+fn write_pr_json(
+    eval_dir: &Path,
+    before_sha: &str,
+    after_sha: &str,
+    pr: &PrData,
+) -> Result<(), GenEvalError> {
     let pr_info = PrInfo {
         pr_number: pr.number,
         base_branch: pr.base_ref_name.clone(),
@@ -291,12 +338,15 @@ fn write_pr_json(eval_dir: &Path, before_sha: &str, after_sha: &str, pr: &PrData
     };
 
     let pr_path = eval_dir.join("pr.json");
-    let json =
-        serde_json::to_string_pretty(&pr_info).context("Failed to serialize PR info to JSON")?;
+    let json = serde_json::to_string_pretty(&pr_info).map_err(|e| GenEvalError::Json {
+        context: "Failed to serialize PR info to JSON".into(),
+        source: e,
+    })?;
 
-    fs::write(&pr_path, json).context("Failed to write pr.json")?;
-
-    Ok(())
+    fs::write(&pr_path, json).map_err(|e| GenEvalError::Io {
+        context: "Failed to write pr.json".into(),
+        source: e,
+    })
 }
 
 #[cfg(test)]

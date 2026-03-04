@@ -186,7 +186,7 @@ fn split_frontmatter<T: DeserializeOwned>(content: &str) -> (Option<T>, String) 
     let frontmatter_str = &rest[..end_pos];
     let template = rest[end_pos + 4..].trim().to_string();
 
-    match serde_yaml::from_str(frontmatter_str) {
+    match serde_yml::from_str(frontmatter_str) {
         Ok(frontmatter) => (Some(frontmatter), template),
         Err(_) => (None, content.to_string()),
     }

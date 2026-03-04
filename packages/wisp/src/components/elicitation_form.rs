@@ -1,7 +1,7 @@
 use crate::tui::{Checkbox, MultiSelect, NumberField, RadioSelect, SelectOption, TextField};
 use crate::tui::{Form, FormField, FormFieldKind};
 use acp_utils::notifications::{ElicitationAction, ElicitationParams, ElicitationResponse};
-use rmcp::model::{
+use acp_utils::{
     ConstTitle, ElicitationSchema, EnumSchema, MultiSelectEnumSchema, PrimitiveSchema,
     SingleSelectEnumSchema,
 };
@@ -192,7 +192,7 @@ fn options_from_const_titles(items: &[ConstTitle]) -> Vec<SelectOption> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::EnumSchema;
+    use acp_utils::EnumSchema;
     use std::collections::BTreeMap;
 
     fn test_schema() -> ElicitationSchema {
