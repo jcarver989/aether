@@ -47,6 +47,7 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
         syntax,
         &removed_style,
         theme,
+        preview.start_line,
     );
 
     let added_style = DiffStyle {
@@ -61,6 +62,7 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
         syntax,
         &added_style,
         theme,
+        preview.start_line,
     );
 
     if truncated {
@@ -80,10 +82,15 @@ fn render_diff_section(
     syntax: Option<&'static SyntaxReference>,
     style: &DiffStyle<'_>,
     theme: &Theme,
+    start_line: Option<usize>,
 ) {
     let mut highlighter = syntax.map(|s| HighlightLines::new(s, &SYNTECT.theme));
-    for src in source_lines.iter().take(limit) {
+    for (i, src) in source_lines.iter().take(limit).enumerate() {
         let mut line = Line::default();
+        if let Some(start) = start_line {
+            let line_num = format!("{:>4} ", start + i);
+            line.push_styled(line_num, theme.muted);
+        }
         line.push_span(Span::with_style(
             style.prefix,
             Style::fg(style.fg).bg_color(style.bg),
@@ -131,6 +138,7 @@ mod tests {
             removed: vec!["old line".to_string()],
             added: vec![],
             lang_hint: String::new(),
+            start_line: None,
         };
         let lines = highlight_diff(&preview, &test_theme());
         assert_eq!(lines.len(), 1);
@@ -143,6 +151,7 @@ mod tests {
             removed: vec![],
             added: vec!["new line".to_string()],
             lang_hint: String::new(),
+            start_line: None,
         };
         let lines = highlight_diff(&preview, &test_theme());
         assert_eq!(lines.len(), 1);
@@ -155,6 +164,7 @@ mod tests {
             removed: vec!["old".to_string()],
             added: vec!["new".to_string()],
             lang_hint: String::new(),
+            start_line: None,
         };
         let lines = highlight_diff(&preview, &test_theme());
         assert_eq!(lines.len(), 2);
@@ -168,6 +178,7 @@ mod tests {
             removed: (0..15).map(|i| format!("removed {i}")).collect(),
             added: (0..15).map(|i| format!("added {i}")).collect(),
             lang_hint: String::new(),
+            start_line: None,
         };
         let lines = highlight_diff(&preview, &test_theme());
         // 20 content lines + 1 overflow line
@@ -185,6 +196,7 @@ mod tests {
             removed: (0..10).map(|i| format!("r{i}")).collect(),
             added: (0..10).map(|i| format!("a{i}")).collect(),
             lang_hint: String::new(),
+            start_line: None,
         };
         let lines = highlight_diff(&preview, &test_theme());
         assert_eq!(lines.len(), 20);
@@ -197,6 +209,7 @@ mod tests {
             removed: vec!["fn old() {}".to_string()],
             added: vec!["fn new() {}".to_string()],
             lang_hint: "rs".to_string(),
+            start_line: None,
         };
         let lines = highlight_diff(&preview, &test_theme());
         assert_eq!(lines.len(), 2);
@@ -214,6 +227,7 @@ mod tests {
             removed: vec!["old".to_string()],
             added: vec![],
             lang_hint: String::new(),
+            start_line: None,
         };
         let theme = test_theme();
         let lines = highlight_diff(&preview, &theme);
@@ -228,6 +242,7 @@ mod tests {
             removed: vec![],
             added: vec!["new".to_string()],
             lang_hint: String::new(),
+            start_line: None,
         };
         let theme = test_theme();
         let lines = highlight_diff(&preview, &theme);
@@ -246,6 +261,7 @@ mod tests {
             removed: vec!["old".to_string()],
             added: vec![],
             lang_hint: String::new(),
+            start_line: None,
         };
         let lines = highlight_diff(&preview, &theme);
         let prefix_span = &lines[0].spans()[0];
@@ -259,8 +275,50 @@ mod tests {
             removed: vec![],
             added: vec![],
             lang_hint: String::new(),
+            start_line: None,
         };
         let lines = highlight_diff(&preview, &test_theme());
         assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn line_numbers_rendered_when_start_line_set() {
+        let preview = DiffPreview {
+            removed: vec!["old1".to_string(), "old2".to_string()],
+            added: vec!["new1".to_string()],
+            lang_hint: String::new(),
+            start_line: Some(10),
+        };
+        let lines = highlight_diff(&preview, &test_theme());
+        assert_eq!(lines.len(), 3);
+        assert!(
+            lines[0].plain_text().contains("10"),
+            "first removed line should show 10"
+        );
+        assert!(
+            lines[1].plain_text().contains("11"),
+            "second removed line should show 11"
+        );
+        assert!(
+            lines[2].plain_text().contains("10"),
+            "first added line should show 10"
+        );
+    }
+
+    #[test]
+    fn no_line_numbers_when_start_line_none() {
+        let preview = DiffPreview {
+            removed: vec!["old".to_string()],
+            added: vec![],
+            lang_hint: String::new(),
+            start_line: None,
+        };
+        let lines = highlight_diff(&preview, &test_theme());
+        let text = lines[0].plain_text();
+        // Without line numbers, the line should start with the prefix directly
+        assert!(
+            text.starts_with("  - "),
+            "expected prefix without line number gutter: {text}"
+        );
     }
 }

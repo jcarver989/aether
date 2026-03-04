@@ -14,7 +14,11 @@ pub fn truncate_text(text: &str, max_width: usize) -> Cow<'_, str> {
     }
 
     let use_ellipsis = max_width >= ELLIPSIS_WIDTH;
-    let budget = if use_ellipsis { max_width - ELLIPSIS_WIDTH } else { max_width };
+    let budget = if use_ellipsis {
+        max_width - ELLIPSIS_WIDTH
+    } else {
+        max_width
+    };
 
     let mut width = 0;
     let mut fit_end = 0; // byte offset after last char fitting within budget

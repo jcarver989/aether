@@ -45,20 +45,23 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     // Read current file content
     let current_content = read_text_file(&args.file_path).await?;
 
-    // Perform string replacement
-    let (updated_content, replacements_made) = if args.replace_all {
+    // Perform string replacement, capturing the first match offset for diff preview
+    let (updated_content, replacements_made, first_match_offset) = if args.replace_all {
+        let first_offset = current_content.find(&args.old_string);
         let count = current_content.matches(&args.old_string).count();
         (
             current_content.replace(&args.old_string, &args.new_string),
             count,
+            first_offset,
         )
-    } else if current_content.contains(&args.old_string) {
+    } else if let Some(offset) = current_content.find(&args.old_string) {
         (
             current_content.replacen(&args.old_string, &args.new_string, 1),
             1,
+            Some(offset),
         )
     } else {
-        (current_content.clone(), 0)
+        (current_content.clone(), 0, None)
     };
 
     // Check if any replacement actually occurred
@@ -80,11 +83,15 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     // Count lines for response
     let total_lines = updated_content.lines().count();
 
+    let start_line =
+        first_match_offset.map(|byte_offset| current_content[..byte_offset].lines().count() + 1);
+
     let display_meta = ToolDisplayMeta::new("Edit file", basename(&args.file_path));
     let diff_preview = DiffPreview {
         removed: args.old_string.lines().map(String::from).collect(),
         added: args.new_string.lines().map(String::from).collect(),
         lang_hint: extension_hint(&args.file_path),
+        start_line,
     };
 
     Ok(EditFileResponse {
@@ -93,7 +100,10 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
         total_lines,
         replacements_made,
         content: updated_content,
-        _meta: Some(ToolResultMeta::with_diff_preview(display_meta, diff_preview)),
+        _meta: Some(ToolResultMeta::with_diff_preview(
+            display_meta,
+            diff_preview,
+        )),
     })
 }
 
@@ -134,5 +144,45 @@ mod tests {
         .await;
 
         assert!(matches!(result, Err(FileError::PatternNotFound { .. })));
+    }
+
+    #[tokio::test]
+    async fn edit_file_sets_start_line_in_diff_preview() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("lines.txt");
+        fs::write(&file_path, "line1\nline2\nline3\nline4\n").unwrap();
+
+        let result = edit_file_contents(EditFileArgs {
+            file_path: file_path.to_string_lossy().to_string(),
+            old_string: "line3".to_string(),
+            new_string: "replaced".to_string(),
+            replace_all: false,
+        })
+        .await
+        .unwrap();
+
+        let meta = result._meta.unwrap();
+        let diff = meta.diff_preview.unwrap();
+        assert_eq!(diff.start_line, Some(3));
+    }
+
+    #[tokio::test]
+    async fn edit_file_start_line_is_one_for_first_line() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("first.txt");
+        fs::write(&file_path, "hello world\nsecond line\n").unwrap();
+
+        let result = edit_file_contents(EditFileArgs {
+            file_path: file_path.to_string_lossy().to_string(),
+            old_string: "hello".to_string(),
+            new_string: "goodbye".to_string(),
+            replace_all: false,
+        })
+        .await
+        .unwrap();
+
+        let meta = result._meta.unwrap();
+        let diff = meta.diff_preview.unwrap();
+        assert_eq!(diff.start_line, Some(1));
     }
 }

@@ -129,72 +129,84 @@ impl Agent {
                 let Some(id) = state.current_message_id.take() else {
                     continue;
                 };
-                let IterationState {
-                    message_content,
-                    reasoning_content,
-                    completed_tool_calls,
-                    stop_reason,
-                    ..
-                } = std::mem::replace(&mut state, IterationState::new());
-                let has_tool_calls = !completed_tool_calls.is_empty();
-
-                self.update_context(&message_content, &reasoning_content, completed_tool_calls);
-
-                let _ = self
-                    .message_tx
-                    .send(AgentMessage::Text {
-                        message_id: id.clone(),
-                        chunk: message_content.clone(),
-                        is_complete: true,
-                        model_name: self.llm.display_name(),
-                    })
-                    .await;
-
-                if !reasoning_content.is_empty() {
-                    let _ = self
-                        .message_tx
-                        .send(AgentMessage::Thought {
-                            message_id: id.clone(),
-                            chunk: reasoning_content,
-                            is_complete: true,
-                            model_name: self.llm.display_name(),
-                        })
-                        .await;
-                }
-
-                if has_tool_calls {
-                    self.auto_continue.on_tool_calls();
-                    self.start_llm_stream();
-                } else if self.auto_continue.should_continue(stop_reason.as_ref()) {
-                    self.auto_continue.advance();
-                    tracing::info!(
-                        "LLM stopped with {:?}, auto-continuing (attempt {}/{})",
-                        stop_reason,
-                        self.auto_continue.count(),
-                        self.auto_continue.max()
-                    );
-
-                    let _ = self
-                        .message_tx
-                        .send(AgentMessage::AutoContinue {
-                            attempt: self.auto_continue.count(),
-                            max_attempts: self.auto_continue.max(),
-                        })
-                        .await;
-
-                    self.inject_continuation_prompt(&message_content, stop_reason.as_ref());
-                    self.start_llm_stream();
-                } else {
-                    tracing::debug!("LLM completed turn with stop reason: {:?}", stop_reason);
-                    self.auto_continue.on_completion();
-                    if let Err(e) = self.message_tx.send(AgentMessage::Done).await {
-                        tracing::warn!("Failed to send Done message: {:?}", e);
-                    }
-                }
+                let iteration = std::mem::replace(&mut state, IterationState::new());
+                self.on_iteration_complete(id, iteration).await;
             }
         }
 
         tracing::debug!("Agent task shutting down - input channel closed");
+    }
+
+    async fn on_iteration_complete(&mut self, id: String, iteration: IterationState) {
+        let IterationState {
+            message_content,
+            reasoning_content,
+            completed_tool_calls,
+            stop_reason,
+            ..
+        } = iteration;
+        let has_tool_calls = !completed_tool_calls.is_empty();
+        let has_content = !message_content.is_empty() || has_tool_calls;
+
+        // Skip context update for empty responses (e.g., API errors mid-stream)
+        if !has_content {
+            let _ = self.message_tx.send(AgentMessage::Done).await;
+            return;
+        }
+
+        self.update_context(&message_content, &reasoning_content, completed_tool_calls);
+
+        let _ = self
+            .message_tx
+            .send(AgentMessage::Text {
+                message_id: id.clone(),
+                chunk: message_content.clone(),
+                is_complete: true,
+                model_name: self.llm.display_name(),
+            })
+            .await;
+
+        if !reasoning_content.is_empty() {
+            let _ = self
+                .message_tx
+                .send(AgentMessage::Thought {
+                    message_id: id.clone(),
+                    chunk: reasoning_content,
+                    is_complete: true,
+                    model_name: self.llm.display_name(),
+                })
+                .await;
+        }
+
+        if has_tool_calls {
+            self.auto_continue.on_tool_calls();
+            self.start_llm_stream();
+        } else if self.auto_continue.should_continue(stop_reason.as_ref()) {
+            self.auto_continue.advance();
+            tracing::info!(
+                "LLM stopped with {:?}, auto-continuing (attempt {}/{})",
+                stop_reason,
+                self.auto_continue.count(),
+                self.auto_continue.max()
+            );
+
+            let _ = self
+                .message_tx
+                .send(AgentMessage::AutoContinue {
+                    attempt: self.auto_continue.count(),
+                    max_attempts: self.auto_continue.max(),
+                })
+                .await;
+
+            self.inject_continuation_prompt(&message_content, stop_reason.as_ref());
+            self.start_llm_stream();
+        } else {
+            tracing::debug!("LLM completed turn with stop reason: {:?}", stop_reason);
+            self.auto_continue.on_completion();
+            if let Err(e) = self.message_tx.send(AgentMessage::Done).await {
+                tracing::warn!("Failed to send Done message: {:?}", e);
+            }
+        }
     }
 
     async fn on_user_cancel(&mut self, state: &mut IterationState) {

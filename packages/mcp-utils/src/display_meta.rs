@@ -32,6 +32,9 @@ pub struct DiffPreview {
     pub removed: Vec<String>,
     pub added: Vec<String>,
     pub lang_hint: String,
+    /// 1-indexed line number where the edit begins in the original file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<usize>,
 }
 
 /// A snapshot of the agent's current task plan.
@@ -232,6 +235,7 @@ mod tests {
             removed: vec!["old line".to_string()],
             added: vec!["new line".to_string()],
             lang_hint: "rs".to_string(),
+            start_line: None,
         };
         let json = serde_json::to_string(&preview).unwrap();
         let parsed: DiffPreview = serde_json::from_str(&json).unwrap();
@@ -246,6 +250,7 @@ mod tests {
                 removed: vec!["old".to_string()],
                 added: vec!["new".to_string()],
                 lang_hint: "rs".to_string(),
+                start_line: None,
             },
         );
         let map = meta.clone().into_map();
@@ -363,5 +368,37 @@ mod tests {
         let meta: ToolResultMeta = ToolDisplayMeta::new("Read file", "main.rs").into();
         let json = serde_json::to_value(&meta).unwrap();
         assert!(json.get("plan").is_none());
+    }
+
+    #[test]
+    fn test_diff_preview_start_line_roundtrip() {
+        let preview = DiffPreview {
+            removed: vec!["old".to_string()],
+            added: vec!["new".to_string()],
+            lang_hint: "rs".to_string(),
+            start_line: Some(42),
+        };
+        let json = serde_json::to_string(&preview).unwrap();
+        let parsed: DiffPreview = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.start_line, Some(42));
+    }
+
+    #[test]
+    fn test_diff_preview_start_line_omitted_when_none() {
+        let preview = DiffPreview {
+            removed: vec![],
+            added: vec![],
+            lang_hint: String::new(),
+            start_line: None,
+        };
+        let json = serde_json::to_value(&preview).unwrap();
+        assert!(json.get("start_line").is_none());
+    }
+
+    #[test]
+    fn test_diff_preview_missing_start_line_defaults_to_none() {
+        let json = r#"{"removed":["x"],"added":["y"],"lang_hint":"rs"}"#;
+        let parsed: DiffPreview = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.start_line, None);
     }
 }
