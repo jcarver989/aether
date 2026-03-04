@@ -5,6 +5,8 @@ mod context;
 mod credential;
 pub mod error;
 mod llm_response;
+#[cfg(feature = "oauth")]
+pub mod oauth;
 pub mod parser;
 pub mod provider;
 pub mod providers;
