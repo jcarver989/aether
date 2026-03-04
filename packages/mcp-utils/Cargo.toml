@@ -10,9 +10,8 @@ workspace = true
 default = ["client", "server"]
 client = [
     "dep:llm",
-    "dep:oauth2",
+    "llm/oauth",
     "dep:reqwest",
-    "dep:async-trait",
     "dep:thiserror",
     "dep:schemars",
     "rmcp/transport-streamable-http-client-reqwest",
@@ -31,10 +30,8 @@ serde_yml = { workspace = true }
 # client-only deps
 llm = { path = "../llm", optional = true }
 serde_json = { workspace = true }
-oauth2 = { workspace = true, optional = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
-async-trait = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 

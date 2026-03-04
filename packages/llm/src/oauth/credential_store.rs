@@ -10,9 +10,9 @@ use tokio::fs;
 
 use super::OAuthError;
 
-/// Credential for an MCP server (OAuth only)
+/// Credential for an OAuth provider
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpCredential {
+pub struct OAuthCredential {
     pub client_id: String,
     pub access_token: String,
     pub refresh_token: Option<String>,
@@ -20,18 +20,18 @@ pub struct McpCredential {
     pub expires_at: Option<u64>,
 }
 
-/// MCP credential store that persists OAuth credentials to disk
+/// OAuth credential store that persists credentials to disk
 /// and directly implements rmcp's `CredentialStore` trait.
 ///
-/// Stores credentials in `~/.aether/mcp_credentials.json` keyed by server ID.
+/// Stores credentials in `~/.aether/mcp_credentials.json` keyed by server/provider ID.
 #[derive(Clone)]
-pub struct McpCredentialStore {
+pub struct OAuthCredentialStore {
     server_id: String,
     path: PathBuf,
-    cache: Arc<RwLock<Option<HashMap<String, McpCredential>>>>,
+    cache: Arc<RwLock<Option<HashMap<String, OAuthCredential>>>>,
 }
 
-impl McpCredentialStore {
+impl OAuthCredentialStore {
     /// Create a new store for the given server at the default path
     pub fn new(server_id: &str) -> Result<Self, OAuthError> {
         let path = default_path()?;
@@ -51,7 +51,7 @@ impl McpCredentialStore {
         }
     }
 
-    async fn load_file(&self) -> Result<HashMap<String, McpCredential>, OAuthError> {
+    async fn load_file(&self) -> Result<HashMap<String, OAuthCredential>, OAuthError> {
         if let Some(data) = self.cache.read().unwrap().clone() {
             return Ok(data);
         }
@@ -67,7 +67,7 @@ impl McpCredentialStore {
         Ok(data)
     }
 
-    async fn save_file(&self, data: &HashMap<String, McpCredential>) -> Result<(), OAuthError> {
+    async fn save_file(&self, data: &HashMap<String, OAuthCredential>) -> Result<(), OAuthError> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).await?;
         }
@@ -88,7 +88,7 @@ impl McpCredentialStore {
 }
 
 #[async_trait]
-impl CredentialStore for McpCredentialStore {
+impl CredentialStore for OAuthCredentialStore {
     async fn load(&self) -> Result<Option<StoredCredentials>, AuthError> {
         let data = self
             .load_file()
@@ -124,7 +124,7 @@ impl CredentialStore for McpCredentialStore {
             now_ms.saturating_add(duration_ms)
         });
 
-        let credential = McpCredential {
+        let credential = OAuthCredential {
             client_id: credentials.client_id,
             access_token: token.access_token().secret().clone(),
             refresh_token: token.refresh_token().map(|t| t.secret().clone()),
@@ -155,7 +155,7 @@ impl CredentialStore for McpCredentialStore {
 
 /// Build an oauth2 token response from our stored credential
 fn build_token_response(
-    cred: &McpCredential,
+    cred: &OAuthCredential,
 ) -> oauth2::StandardTokenResponse<oauth2::EmptyExtraTokenFields, oauth2::basic::BasicTokenType> {
     use oauth2::{EmptyExtraTokenFields, StandardTokenResponse, basic::BasicTokenType};
 
@@ -186,10 +186,23 @@ fn build_token_response(
     response
 }
 
-/// Get the default MCP credentials file path
+/// Resolve the Aether home directory.
+fn aether_home() -> Option<PathBuf> {
+    match std::env::var("AETHER_HOME") {
+        Ok(value) if !value.trim().is_empty() => Some(PathBuf::from(value)),
+        _ => {
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .ok()?;
+            Some(PathBuf::from(home).join(".aether"))
+        }
+    }
+}
+
+/// Get the default credentials file path
 fn default_path() -> Result<PathBuf, OAuthError> {
-    let base = crate::client::aether_home()
-        .ok_or_else(|| OAuthError::CredentialStore("Home directory not set".into()))?;
+    let base =
+        aether_home().ok_or_else(|| OAuthError::CredentialStore("Home directory not set".into()))?;
     Ok(base.join("mcp_credentials.json"))
 }
 
@@ -212,7 +225,7 @@ mod tests {
     async fn test_save_and_load() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("mcp_credentials.json");
-        let store = McpCredentialStore::with_path("test-server", path);
+        let store = OAuthCredentialStore::with_path("test-server", path);
 
         // Create a token response
         let mut token_response = oauth2::StandardTokenResponse::new(
@@ -249,7 +262,7 @@ mod tests {
     async fn test_clear() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("mcp_credentials.json");
-        let store = McpCredentialStore::with_path("test-server", path);
+        let store = OAuthCredentialStore::with_path("test-server", path);
 
         // Save a credential
         let token_response = oauth2::StandardTokenResponse::new(
@@ -275,7 +288,7 @@ mod tests {
     async fn test_load_nonexistent() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("mcp_credentials.json");
-        let store = McpCredentialStore::with_path("nonexistent", path);
+        let store = OAuthCredentialStore::with_path("nonexistent", path);
 
         let loaded = store.load().await.unwrap();
         assert!(loaded.is_none());
@@ -288,7 +301,7 @@ mod tests {
 
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("mcp_credentials.json");
-        let store = McpCredentialStore::with_path("test-server", path.clone());
+        let store = OAuthCredentialStore::with_path("test-server", path.clone());
 
         let token_response = oauth2::StandardTokenResponse::new(
             AccessToken::new("token".to_string()),

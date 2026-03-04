@@ -4,7 +4,7 @@ pub mod error;
 pub mod manager;
 pub mod mcp_client;
 pub mod naming;
-pub mod oauth;
+pub use llm::oauth;
 pub mod roots;
 pub mod tool_proxy;
 pub mod variables;

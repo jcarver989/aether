@@ -1,10 +1,10 @@
 use super::OAuthError;
-use super::credential_store::McpCredentialStore;
+use super::credential_store::OAuthCredentialStore;
 use super::handler::OAuthHandler;
 use rmcp::transport::auth::{AuthClient, AuthorizationManager, OAuthState};
 
-fn create_credential_store(server_id: &str) -> Result<McpCredentialStore, OAuthError> {
-    McpCredentialStore::new(server_id)
+fn create_credential_store(server_id: &str) -> Result<OAuthCredentialStore, OAuthError> {
+    OAuthCredentialStore::new(server_id)
 }
 
 /// Returns `Ok(Some(manager))` if credentials were found and initialized successfully,
