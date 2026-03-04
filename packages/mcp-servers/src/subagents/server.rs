@@ -15,10 +15,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::tools::{
-    AgentExecutor, ListAgentsOutput, SpawnSubAgentsInput, SpawnSubAgentsOutput, SubAgentListItem,
-};
-use crate::subagents::subagent_file::{AgentFile, SubAgentInfo, load_agent_metadata};
+use super::tools::{AgentExecutor, SpawnSubAgentsInput, SpawnSubAgentsOutput};
+use crate::subagents::subagent_file::{SubAgentInfo, load_agent_metadata};
 
 /// Callback type for reporting agent progress during subagent execution.
 type ProgressCallback = Box<dyn Fn(&str, &str, &AgentMessage) + Send + Sync>;
@@ -112,32 +110,6 @@ impl ServerHandler for SubAgentsMcp {
 
 #[tool_router]
 impl SubAgentsMcp {
-    #[doc = include_str!("tools/list_subagents/description.md")]
-    #[tool]
-    pub async fn list_subagents(&self) -> Result<Json<ListAgentsOutput>, String> {
-        let agents_with_dirs =
-            match AgentFile::from_nested_dirs(&self.agents_dir, "AGENTS.md").await {
-                Ok(agents) => agents,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-                Err(e) => return Err(format!("Failed to load agents: {e}")),
-            };
-
-        let agents = agents_with_dirs
-            .iter()
-            .filter_map(|(dir, file)| {
-                let name = dir.file_name()?.to_string_lossy().to_string();
-                let description = file
-                    .frontmatter
-                    .as_ref()
-                    .map(|f| f.description.clone())
-                    .unwrap_or_default();
-                Some(SubAgentListItem { name, description })
-            })
-            .collect();
-
-        Ok(Json(ListAgentsOutput { agents }))
-    }
-
     #[doc = include_str!("tools/spawn_subagent/description.md")]
     #[tool]
     pub async fn spawn_subagent(
