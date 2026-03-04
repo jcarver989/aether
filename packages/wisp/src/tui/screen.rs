@@ -430,7 +430,6 @@ impl Screen {
         self.prev_frame.clear();
         Ok(())
     }
-
 }
 
 #[cfg(test)]

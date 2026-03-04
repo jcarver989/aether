@@ -76,8 +76,7 @@ impl Component for CommandPicker {
 
                 let name_part = format!("{prefix}/{}", command.name);
                 let padded_name = pad_text_to_width(&name_part, max_name_width);
-                let line_text =
-                    format!("{padded_name}  {}{}", command.description, hint_suffix);
+                let line_text = format!("{padded_name}  {}{}", command.description, hint_suffix);
 
                 let max_width = ctx.size.0 as usize;
                 let truncated = truncate_text(&line_text, max_width);
@@ -130,7 +129,11 @@ impl HandlesInput for CommandPicker {
     }
 }
 
-fn build_styled_command_line(truncated: &str, name_byte_len: usize, muted: crossterm::style::Color) -> Line {
+fn build_styled_command_line(
+    truncated: &str,
+    name_byte_len: usize,
+    muted: crossterm::style::Color,
+) -> Line {
     if truncated.len() <= name_byte_len {
         Line::new(truncated)
     } else {
@@ -317,7 +320,11 @@ mod tests {
             "Non-selected item should have multiple spans for different styling, \
              got {} span(s): {:?}",
             non_selected.spans().len(),
-            non_selected.spans().iter().map(|s| s.text()).collect::<Vec<_>>(),
+            non_selected
+                .spans()
+                .iter()
+                .map(|s| s.text())
+                .collect::<Vec<_>>(),
         );
 
         let first_style = non_selected.spans()[0].style();
@@ -343,8 +350,9 @@ mod tests {
             .iter()
             .zip(command_lines.iter())
             .map(|(cmd, line)| {
-                let byte_pos = line.find(&cmd.description)
-                    .unwrap_or_else(|| panic!("description '{}' not found in '{}'", cmd.description, line));
+                let byte_pos = line.find(&cmd.description).unwrap_or_else(|| {
+                    panic!("description '{}' not found in '{}'", cmd.description, line)
+                });
                 display_width_text(&line[..byte_pos])
             })
             .collect();

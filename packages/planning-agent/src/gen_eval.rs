@@ -196,12 +196,13 @@ fn parse_pr_url(url: &str) -> Result<(String, String, u32), GenEvalError> {
 }
 
 fn run_gh(args: &[&str], context: &str) -> Result<Vec<u8>, GenEvalError> {
-    let output = Command::new("gh").args(args).output().map_err(|e| {
-        GenEvalError::Io {
+    let output = Command::new("gh")
+        .args(args)
+        .output()
+        .map_err(|e| GenEvalError::Io {
             context: context.into(),
             source: e,
-        }
-    })?;
+        })?;
 
     if !output.status.success() {
         return Err(GenEvalError::GhCommandFailed {

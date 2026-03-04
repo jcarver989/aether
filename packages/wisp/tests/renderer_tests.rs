@@ -901,7 +901,10 @@ async fn test_prompt_done_does_not_duplicate_overflowed_lines() {
 
     let transcript = renderer.writer().get_transcript_lines();
     for marker in markers.iter().take(8) {
-        let count = transcript.iter().filter(|line| line.contains(marker)).count();
+        let count = transcript
+            .iter()
+            .filter(|line| line.contains(marker))
+            .count();
         assert_eq!(
             count,
             1,

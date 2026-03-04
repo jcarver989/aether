@@ -1182,6 +1182,7 @@ mod tests {
                 removed: vec!["old line".to_string()],
                 added: vec!["new line".to_string()],
                 lang_hint: String::new(),
+                start_line: None,
             }),
             status: ToolCallStatus::Success,
             tick: 0,
@@ -1204,6 +1205,7 @@ mod tests {
                 removed: vec!["old".to_string()],
                 added: vec!["new".to_string()],
                 lang_hint: String::new(),
+                start_line: None,
             }),
             status: ToolCallStatus::Running,
             tick: 0,
@@ -1224,6 +1226,7 @@ mod tests {
                 removed: vec!["old".to_string()],
                 added: vec!["new".to_string()],
                 lang_hint: String::new(),
+                start_line: None,
             },
         );
         let update = acp::ToolCallUpdate::new(

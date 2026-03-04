@@ -3,7 +3,9 @@ use serde::Serialize;
 
 use crate::tasks::task_store::TaskStore;
 use crate::tasks::types::{Task, TaskStatus};
-use mcp_utils::display_meta::{PlanMeta, PlanMetaEntry, PlanMetaStatus, ToolDisplayMeta, ToolResultMeta};
+use mcp_utils::display_meta::{
+    PlanMeta, PlanMetaEntry, PlanMetaStatus, ToolDisplayMeta, ToolResultMeta,
+};
 
 impl From<TaskStatus> for PlanMetaStatus {
     fn from(status: TaskStatus) -> Self {

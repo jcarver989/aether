@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use crate::catalog::LlmModel;
+#[cfg(feature = "bedrock")]
+use crate::providers::bedrock::BedrockProvider;
 use crate::providers::{
     anthropic::AnthropicProvider,
     deepseek::DeepSeekProvider,
@@ -10,8 +12,6 @@ use crate::providers::{
     openrouter::OpenRouterProvider,
     z_ai::ZAiProvider,
 };
-#[cfg(feature = "bedrock")]
-use crate::providers::bedrock::BedrockProvider;
 use crate::{LlmError, ProviderFactory, StreamingModelProvider, alloyed::AlloyedModelProvider};
 
 /// Parser that turns a provider:model string (e.g. anthropic:claude-sonnet-4.5) into
