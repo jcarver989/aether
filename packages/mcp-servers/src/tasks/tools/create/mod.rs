@@ -1,10 +1,21 @@
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::common::{TaskSummary, task_result_meta};
 use crate::tasks::task_store::{TaskStore, TaskStoreError};
 use crate::tasks::types::{TaskId, TaskUpdate};
 use mcp_utils::display_meta::ToolResultMeta;
+
+fn empty_string_as_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(value.and_then(|s| {
+        let trimmed = s.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }))
+}
 
 /// Input for the `task_create` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -17,7 +28,7 @@ pub struct TaskCreateInput {
     pub description: String,
 
     /// Parent task ID - if provided, creates a subtask
-    #[serde(default)]
+    #[serde(default, deserialize_with = "empty_string_as_none")]
     pub parent_id: Option<String>,
 
     /// Agent or worker to assign the task to
@@ -53,19 +64,25 @@ pub fn execute_task_create(
     input: &TaskCreateInput,
     store: &mut TaskStore,
 ) -> Result<TaskCreateOutput, TaskStoreError> {
-    let task = if let Some(parent_id) = &input.parent_id {
-        let parent = TaskId::from(parent_id.as_str());
+    let normalized_parent_id = input
+        .parent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let task = if let Some(parent_id) = normalized_parent_id {
+        let parent = TaskId::from(parent_id);
         store.add_subtask(&parent, &input.title)?
     } else {
         store.create_tree(&input.title, Some(&input.description))?
     };
 
-    let needs_update =
-        input.assignee.is_some() || input.deps.is_some() || input.parent_id.is_some();
+    let is_subtask = normalized_parent_id.is_some();
+    let needs_update = input.assignee.is_some() || input.deps.is_some() || is_subtask;
 
     let task = if needs_update {
         let update = TaskUpdate {
-            description: if input.parent_id.is_some() {
+            description: if is_subtask {
                 Some(input.description.clone())
             } else {
                 None // Already set during create_tree
@@ -82,11 +99,7 @@ pub fn execute_task_create(
         task
     };
 
-    let task_type = if input.parent_id.is_some() {
-        "subtask"
-    } else {
-        "task tree"
-    };
+    let task_type = if is_subtask { "subtask" } else { "task tree" };
 
     Ok(TaskCreateOutput {
         status: "success".to_string(),
@@ -99,6 +112,7 @@ pub fn execute_task_create(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use tempfile::TempDir;
 
     fn setup() -> (TempDir, TaskStore) {
@@ -176,6 +190,64 @@ mod tests {
         let output = execute_task_create(&input, &mut store).unwrap();
 
         assert_eq!(output.task.deps, vec![sub1.id.to_string()]);
+    }
+
+    #[test]
+    fn test_parent_id_empty_string_deserializes_to_none() {
+        let input: TaskCreateInput = serde_json::from_value(json!({
+            "title": "Root via empty parent",
+            "description": "Should be root",
+            "parent_id": ""
+        }))
+        .unwrap();
+
+        assert_eq!(input.parent_id, None);
+    }
+
+    #[test]
+    fn test_parent_id_whitespace_deserializes_to_none() {
+        let input: TaskCreateInput = serde_json::from_value(json!({
+            "title": "Root via whitespace parent",
+            "description": "Should be root",
+            "parent_id": "   "
+        }))
+        .unwrap();
+
+        assert_eq!(input.parent_id, None);
+    }
+
+    #[test]
+    fn test_create_with_empty_parent_id_treated_as_root() {
+        let (_temp, mut store) = setup();
+
+        let input: TaskCreateInput = serde_json::from_value(json!({
+            "title": "Root from empty parent_id",
+            "description": "Created as root",
+            "parent_id": ""
+        }))
+        .unwrap();
+
+        let output = execute_task_create(&input, &mut store).unwrap();
+
+        assert_eq!(output.task.parent, None);
+        assert!(output.message.contains("task tree"));
+    }
+
+    #[test]
+    fn test_create_with_whitespace_parent_id_treated_as_root() {
+        let (_temp, mut store) = setup();
+
+        let input: TaskCreateInput = serde_json::from_value(json!({
+            "title": "Root from whitespace parent_id",
+            "description": "Created as root",
+            "parent_id": "  \t\n  "
+        }))
+        .unwrap();
+
+        let output = execute_task_create(&input, &mut store).unwrap();
+
+        assert_eq!(output.task.parent, None);
+        assert!(output.message.contains("task tree"));
     }
 
     #[test]
