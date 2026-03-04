@@ -36,7 +36,7 @@ impl SubAgentInfo {
         let description = if let Some(rest) = content.strip_prefix("---") {
             let end_pos = rest.find("\n---")?;
             let frontmatter_str = &rest[..end_pos];
-            serde_yaml::from_str::<AgentFrontmatter>(frontmatter_str)
+            serde_yml::from_str::<AgentFrontmatter>(frontmatter_str)
                 .ok()
                 .map(|f| f.description)
                 .unwrap_or_default()

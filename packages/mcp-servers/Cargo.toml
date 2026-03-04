@@ -26,7 +26,7 @@ coding = [
     "dep:url",
 ]
 skills = [
-    "dep:serde_yaml",
+    "dep:serde_yml",
     "dep:tracing",
 ]
 tasks = [
@@ -41,7 +41,7 @@ subagents = [
     "dep:llm",
     "dep:futures",
     "dep:tracing",
-    "dep:serde_yaml",
+    "dep:serde_yml",
 ]
 survey = []
 all = ["coding", "skills", "tasks", "subagents", "survey"]
@@ -73,7 +73,7 @@ htmd = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 
 # skills feature
-serde_yaml = { workspace = true, optional = true }
+serde_yml = { workspace = true, optional = true }
 
 # subagents feature
 aether-core = { path = "../aether-core", optional = true }

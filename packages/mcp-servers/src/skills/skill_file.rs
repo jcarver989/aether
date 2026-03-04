@@ -53,7 +53,7 @@ impl SkillMetadata {
         let frontmatter = if let Some(rest) = content.strip_prefix("---") {
             let end_pos = rest.find("\n---")?;
             let frontmatter_str = &rest[..end_pos];
-            serde_yaml::from_str::<SkillsFrontmatter>(frontmatter_str).ok()
+            serde_yml::from_str::<SkillsFrontmatter>(frontmatter_str).ok()
         } else {
             None
         };
@@ -93,7 +93,7 @@ pub fn read_and_parse(dir: &Path) -> Result<(SkillsFrontmatter, String), SkillFi
     let body = rest[end_pos + 4..].trim().to_string();
 
     let frontmatter: SkillsFrontmatter =
-        serde_yaml::from_str(frontmatter_str).map_err(|e| SkillFileError::Yaml(e.to_string()))?;
+        serde_yml::from_str(frontmatter_str).map_err(|e| SkillFileError::Yaml(e.to_string()))?;
 
     Ok((frontmatter, body))
 }
@@ -107,7 +107,7 @@ pub fn write_skill(
     fs::create_dir_all(dir)?;
 
     let yaml =
-        serde_yaml::to_string(frontmatter).map_err(|e| SkillFileError::Yaml(e.to_string()))?;
+        serde_yml::to_string(frontmatter).map_err(|e| SkillFileError::Yaml(e.to_string()))?;
 
     let file_content = if body.is_empty() {
         format!("---\n{yaml}---\n")
@@ -324,8 +324,8 @@ mod tests {
             harmful: 0,
         };
 
-        let yaml = serde_yaml::to_string(&fm).unwrap();
-        let parsed: SkillsFrontmatter = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = serde_yml::to_string(&fm).unwrap();
+        let parsed: SkillsFrontmatter = serde_yml::from_str(&yaml).unwrap();
         assert_eq!(parsed.description, "A simple skill");
         assert!(parsed.tags.is_empty());
         assert!(!parsed.agent_authored);
@@ -341,8 +341,8 @@ mod tests {
             harmful: 2,
         };
 
-        let yaml = serde_yaml::to_string(&fm).unwrap();
-        let parsed: SkillsFrontmatter = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = serde_yml::to_string(&fm).unwrap();
+        let parsed: SkillsFrontmatter = serde_yml::from_str(&yaml).unwrap();
         assert_eq!(parsed.description, "A full skill");
         assert_eq!(parsed.tags, vec!["convention", "testing"]);
         assert!(parsed.agent_authored);
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn test_backward_compat_old_frontmatter() {
         let yaml = "description: An old skill\n";
-        let parsed: SkillsFrontmatter = serde_yaml::from_str(yaml).unwrap();
+        let parsed: SkillsFrontmatter = serde_yml::from_str(yaml).unwrap();
         assert_eq!(parsed.description, "An old skill");
         assert!(parsed.tags.is_empty());
         assert!(!parsed.agent_authored);
@@ -461,7 +461,7 @@ mod tests {
             harmful: 0,
         };
 
-        let yaml = serde_yaml::to_string(&fm).unwrap();
+        let yaml = serde_yml::to_string(&fm).unwrap();
         assert!(!yaml.contains("tags"));
         assert!(!yaml.contains("agent_authored"));
         assert!(!yaml.contains("helpful"));
