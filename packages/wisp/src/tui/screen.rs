@@ -431,10 +431,6 @@ impl Screen {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn prev_frame(&self) -> &[Line] {
-        &self.prev_frame
-    }
 }
 
 #[cfg(test)]
@@ -584,7 +580,11 @@ mod tests {
             .push_to_scrollback(&[Line::new("scrolled")], &mut w)
             .unwrap();
 
-        assert!(screen.prev_frame().is_empty());
+        // After push_to_scrollback, prev_frame is cleared. Rendering the same
+        // frame again should produce writes (full re-render, not a no-op diff).
+        let mut w2 = FakeWriter::new();
+        let written = screen.render(&frame, 80, &mut w2).unwrap();
+        assert!(written > 0, "expected re-render after scrollback push");
     }
 
     #[test]
@@ -593,15 +593,6 @@ mod tests {
         let mut w = FakeWriter::new();
         screen.push_to_scrollback(&[], &mut w).unwrap();
         assert!(w.bytes.is_empty());
-    }
-
-    #[test]
-    fn prev_frame_tracks_last_render() {
-        let mut screen = Screen::new();
-        let mut w = FakeWriter::new();
-        let frame = vec![Line::new("x"), Line::new("y")];
-        screen.render(&frame, 80, &mut w).unwrap();
-        assert_eq!(screen.prev_frame(), &frame);
     }
 
     #[test]
