@@ -91,10 +91,6 @@ impl ConfigOverlay {
         }
     }
 
-    pub fn menu_entries(&self) -> &[crate::components::config_menu::ConfigMenuEntry] {
-        &self.menu.options
-    }
-
     pub fn menu_selected_index(&self) -> usize {
         self.menu.selected_index
     }
@@ -105,14 +101,6 @@ impl ConfigOverlay {
 
     pub fn has_picker(&self) -> bool {
         self.picker.is_some()
-    }
-
-    pub fn has_model_selector(&self) -> bool {
-        self.model_selector.is_some()
-    }
-
-    pub fn has_server_overlay(&self) -> bool {
-        self.server_overlay.is_some()
     }
 
     fn footer_text(&self) -> &'static str {
@@ -342,6 +330,13 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    /// Render the overlay and return the footer line text.
+    fn render_footer(overlay: &mut ConfigOverlay) -> String {
+        let context = RenderContext::new((80, 24));
+        let lines = overlay.render(&context);
+        lines[lines.len() - 2].plain_text()
+    }
+
     #[test]
     fn bordered_box_fills_terminal_height_minus_one() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
@@ -456,11 +451,11 @@ mod tests {
         let menu = make_menu();
         let statuses = make_server_statuses();
         let mut overlay = ConfigOverlay::new(menu, statuses).with_server_overlay();
-        assert!(overlay.has_server_overlay());
+        assert!(render_footer(&mut overlay).contains("Authenticate"));
 
         let outcome = overlay.handle_key(key(KeyCode::Esc));
         assert!(outcome.consumed);
-        assert!(!overlay.has_server_overlay());
+        assert!(render_footer(&mut overlay).contains("[Enter] Select"));
         assert!(outcome.action.is_none());
     }
 
@@ -554,7 +549,8 @@ mod tests {
         overlay.handle_key(key(KeyCode::Down));
         overlay.handle_key(key(KeyCode::Enter));
 
-        assert!(overlay.has_model_selector());
+        let footer = render_footer(&mut overlay);
+        assert!(footer.contains("Toggle"), "expected model selector, got: {footer}");
     }
 
     #[test]
@@ -564,12 +560,12 @@ mod tests {
         // Navigate to model and open model selector
         overlay.handle_key(key(KeyCode::Down));
         overlay.handle_key(key(KeyCode::Enter));
-        assert!(overlay.has_model_selector());
+        assert!(render_footer(&mut overlay).contains("Toggle"));
 
         // Selector pre-selects current model (gpt-4o); Esc without toggling returns no change
         let outcome = overlay.handle_key(key(KeyCode::Esc));
         assert!(outcome.consumed);
-        assert!(!overlay.has_model_selector());
+        assert!(render_footer(&mut overlay).contains("[Enter] Select"));
         assert!(
             outcome.action.is_none(),
             "escape without toggling should produce no change"
@@ -586,7 +582,7 @@ mod tests {
         overlay.handle_key(key(KeyCode::Char(' ')));
 
         let outcome = overlay.handle_key(key(KeyCode::Esc));
-        assert!(!overlay.has_model_selector());
+        assert!(render_footer(&mut overlay).contains("[Enter] Select"));
         assert!(outcome.action.is_none()); // No selections => no change
     }
 
@@ -596,13 +592,14 @@ mod tests {
 
         overlay.handle_key(key(KeyCode::Down));
         overlay.handle_key(key(KeyCode::Enter)); // open model selector
-        assert!(overlay.has_model_selector());
+        assert!(render_footer(&mut overlay).contains("Toggle"));
 
         // Enter should toggle, not close the selector
         overlay.handle_key(key(KeyCode::Enter));
+        let footer = render_footer(&mut overlay);
         assert!(
-            overlay.has_model_selector(),
-            "Enter should toggle, not close"
+            footer.contains("Toggle"),
+            "Enter should toggle, not close; got: {footer}"
         );
     }
 

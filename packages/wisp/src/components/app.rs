@@ -933,6 +933,7 @@ fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::Component;
     use crossterm::event::KeyModifiers;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -1395,15 +1396,17 @@ mod tests {
         let mut screen = App::new("test-agent".to_string(), &opts);
         screen.open_config_overlay();
 
-        let overlay = screen.config_overlay.as_ref().expect("overlay should open");
-        let model_entry = overlay
-            .menu_entries()
-            .iter()
-            .find(|e| e.config_id == "model")
-            .expect("model entry should exist");
+        let overlay = screen.config_overlay.as_mut().expect("overlay should open");
+        // Press Enter on the model entry (first and only entry)
+        overlay.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        // Model selector footer should show Toggle, not regular picker's Confirm
+        let context = RenderContext::new((80, 24));
+        let lines = overlay.render(&context);
+        let footer = lines[lines.len() - 2].plain_text();
         assert!(
-            model_entry.multi_select,
-            "model entry should be multi_select"
+            footer.contains("Toggle"),
+            "expected model selector (Toggle footer), got: {footer}"
         );
     }
 }

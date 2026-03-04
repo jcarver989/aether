@@ -529,15 +529,12 @@ async fn forward_notification(
         error!("Failed to send ext notification: {:?}", e);
     }
 
-    if let AgentMessage::ToolResult { result_meta, .. } = msg {
-        if let Some(plan_notif) =
+    if let AgentMessage::ToolResult { result_meta, .. } = msg
+        && let Some(plan_notif) =
             try_extract_plan_notification(acp_session_id.clone(), result_meta.as_ref())
-        {
-            if let Err(e) = actor_handle.send_session_notification(plan_notif).await {
+            && let Err(e) = actor_handle.send_session_notification(plan_notif).await {
                 error!("Failed to send plan notification: {:?}", e);
             }
-        }
-    }
 }
 
 #[cfg(test)]
