@@ -161,7 +161,7 @@ impl ConfigMenu {
                     .meta
                     .as_ref()
                     .and_then(|m| m.get("multi_select"))
-                    .and_then(|v| v.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false);
 
                 let display_name = if multi_select && select.current_value.0.contains(',') {
@@ -169,7 +169,7 @@ impl ConfigMenu {
                         .current_value
                         .0
                         .split(',')
-                        .map(|s| s.trim())
+                        .map(str::trim)
                         .collect();
 
                     let names: Vec<&str> = parts

@@ -97,6 +97,7 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
 }
 
 /// Convert `AgentMessages` to `AgentRunnerMessages` in real-time, streaming them as they arrive
+#[allow(clippy::too_many_lines)]
 async fn stream_agent_messages(
     mut rx: Receiver<AgentMessage>,
     tx: Sender<AgentRunnerMessage>,
