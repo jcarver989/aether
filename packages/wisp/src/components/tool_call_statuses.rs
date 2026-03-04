@@ -143,10 +143,16 @@ impl ToolCallStatuses {
     }
 
     fn top_level_counts(&self) -> (usize, usize) {
-        let total = self.tool_order.len();
+        let total = self
+            .tool_order
+            .iter()
+            .filter(|id| !self.has_sub_agents(id))
+            .count();
         let completed = self
-            .tool_calls
-            .values()
+            .tool_order
+            .iter()
+            .filter(|id| !self.has_sub_agents(id))
+            .filter_map(|id| self.tool_calls.get(id))
             .filter(|tc| !matches!(tc.status, ToolCallStatus::Running))
             .count();
         (completed, total)
@@ -295,6 +301,12 @@ impl ToolCallStatuses {
         }
     }
 
+    fn has_sub_agents(&self, tool_id: &str) -> bool {
+        self.sub_agents
+            .get(tool_id)
+            .is_some_and(|a| !a.is_empty())
+    }
+
     pub fn remove_tool(&mut self, id: &str) {
         self.tool_calls.remove(id);
         self.tool_order.retain(|tool_id| tool_id != id);
@@ -302,14 +314,22 @@ impl ToolCallStatuses {
     }
 
     pub fn render_tool(&self, id: &str, context: &RenderContext) -> Vec<Line> {
-        let mut lines = self
-            .view_for(id, self.tick)
-            .map(|mut view| view.render(context))
-            .unwrap_or_default();
+        let has_sub_agents = self.has_sub_agents(id);
+
+        let mut lines = if has_sub_agents {
+            Vec::new()
+        } else {
+            self.view_for(id, self.tick)
+                .map(|mut view| view.render(context))
+                .unwrap_or_default()
+        };
 
         if let Some(agents) = self.sub_agents.get(id) {
-            for agent in agents {
-                lines.push(Line::default());
+            for (i, agent) in agents.iter().enumerate() {
+                // Blank line between multiple agents, but not before the first
+                if i > 0 {
+                    lines.push(Line::default());
+                }
                 lines.push(self.render_agent_header(agent, context));
 
                 let hidden_count = agent
@@ -764,13 +784,12 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // Line 0: parent tool, Line 1: blank, Line 2: agent header, Line 3: sub-tool
-        assert_eq!(lines.len(), 4);
-        assert!(lines[0].plain_text().contains("spawn_subagent"));
-        assert!(lines[2].plain_text().contains("explorer"));
-        assert!(lines[2].plain_text().starts_with("  ")); // 2-space indent
-        assert!(lines[3].plain_text().starts_with("  └─ ")); // tree connector
-        assert!(lines[3].plain_text().contains("grep"));
+        // Line 0: agent header, Line 1: sub-tool (parent line hidden)
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].plain_text().contains("explorer"));
+        assert!(lines[0].plain_text().starts_with("  ")); // 2-space indent
+        assert!(lines[1].plain_text().starts_with("  └─ ")); // tree connector
+        assert!(lines[1].plain_text().contains("grep"));
     }
 
     #[test]
@@ -790,9 +809,9 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + blank + agent header + last tool (completed)
-        assert_eq!(lines.len(), 4);
-        assert!(lines[3].plain_text().contains("✓"));
+        // agent header + last tool (completed); parent line hidden
+        assert_eq!(lines.len(), 2);
+        assert!(lines[1].plain_text().contains("✓"));
     }
 
     #[test]
@@ -812,8 +831,8 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        assert_eq!(lines.len(), 4);
-        let tool_line = lines[3].plain_text();
+        assert_eq!(lines.len(), 2);
+        let tool_line = lines[1].plain_text();
         assert!(tool_line.contains("✓"));
         assert!(tool_line.contains("Read file"));
         assert!(tool_line.contains("(Cargo.toml, 156 lines)"));
@@ -837,9 +856,9 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + blank + agent header + last tool (errored)
-        assert_eq!(lines.len(), 4);
-        assert!(lines[3].plain_text().contains("✗"));
+        // agent header + last tool (errored); parent line hidden
+        assert_eq!(lines.len(), 2);
+        assert!(lines[1].plain_text().contains("✗"));
     }
 
     #[test]
@@ -859,10 +878,10 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + blank + explorer header + explorer tool + blank + writer header + writer tool
-        assert_eq!(lines.len(), 7);
-        assert!(lines[2].plain_text().contains("explorer"));
-        assert!(lines[5].plain_text().contains("writer"));
+        // explorer header + explorer tool + blank + writer header + writer tool
+        assert_eq!(lines.len(), 5);
+        assert!(lines[0].plain_text().contains("explorer"));
+        assert!(lines[3].plain_text().contains("writer"));
     }
 
     #[test]
@@ -890,11 +909,11 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + 3 * (blank + agent header + tool) = 10 lines
-        assert_eq!(lines.len(), 10);
-        assert!(lines[3].plain_text().contains("grep"));
-        assert!(lines[6].plain_text().contains("read_file"));
-        assert!(lines[9].plain_text().contains("list_files"));
+        // (header + tool) + 2 * (blank + header + tool) = 8 lines
+        assert_eq!(lines.len(), 8);
+        assert!(lines[1].plain_text().contains("grep"));
+        assert!(lines[4].plain_text().contains("read_file"));
+        assert!(lines[7].plain_text().contains("list_files"));
     }
 
     #[test]
@@ -933,15 +952,15 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        // parent + blank + agent header + overflow summary + latest 3 tools
-        assert_eq!(lines.len(), 7);
-        assert!(lines[3].plain_text().contains("1 earlier tool calls"));
-        assert!(lines[4].plain_text().contains("read_file"));
-        assert!(lines[4].plain_text().contains("├─"));
-        assert!(lines[5].plain_text().contains("list_files"));
-        assert!(lines[5].plain_text().contains("├─"));
-        assert!(lines[6].plain_text().contains("write_file"));
-        assert!(lines[6].plain_text().contains("└─"));
+        // agent header + overflow summary + latest 3 tools (parent line hidden)
+        assert_eq!(lines.len(), 5);
+        assert!(lines[1].plain_text().contains("1 earlier tool calls"));
+        assert!(lines[2].plain_text().contains("read_file"));
+        assert!(lines[2].plain_text().contains("├─"));
+        assert!(lines[3].plain_text().contains("list_files"));
+        assert!(lines[3].plain_text().contains("├─"));
+        assert!(lines[4].plain_text().contains("write_file"));
+        assert!(lines[4].plain_text().contains("└─"));
     }
 
     #[test]
@@ -1009,7 +1028,7 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        let header = lines[2].plain_text();
+        let header = lines[0].plain_text();
         // Agent is still running (no Done event), so header should show spinner
         assert!(
             !header.contains('✓'),
@@ -1034,7 +1053,7 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        let header = lines[2].plain_text();
+        let header = lines[0].plain_text();
         assert!(header.contains('✓'), "Expected ✓ in header: {header}");
     }
 
@@ -1282,5 +1301,53 @@ mod tests {
         assert_eq!(progress.completed_top_level, 2);
         assert_eq!(progress.total_top_level, 3);
         assert!(progress.running_any);
+    }
+
+    #[test]
+    fn parent_tool_hidden_when_sub_agents_exist() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        let all_text: String = lines.iter().map(|l| l.plain_text()).collect();
+        assert!(
+            !all_text.contains("spawn_subagent"),
+            "Parent tool line should be hidden when sub-agents exist: {all_text}"
+        );
+    }
+
+    #[test]
+    fn parent_tool_shown_before_sub_agent_events() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        // No sub-agent events yet — parent spinner should render normally
+        let lines = statuses.render_tool("parent-1", &ctx());
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].plain_text().contains("spawn_subagent"));
+    }
+
+    #[test]
+    fn progress_excludes_sub_agent_parents() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        let progress = statuses.progress();
+        assert_eq!(
+            progress.total_top_level, 0,
+            "Sub-agent parent should be excluded from top-level count"
+        );
     }
 }
