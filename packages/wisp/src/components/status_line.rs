@@ -16,7 +16,11 @@ impl Component for StatusLine<'_> {
         };
 
         let (right, color) = if self.waiting_for_response {
-            ("esc to interrupt".to_string(), context.theme.warning)
+            let mut parts = vec!["esc to interrupt".to_string()];
+            if let Some(pct) = self.context_pct_left {
+                parts.push(format!("{pct}% context"));
+            }
+            (parts.join(" · "), context.theme.warning)
         } else if let Some(pct) = self.context_pct_left {
             let c = if pct <= 15 {
                 context.theme.warning
@@ -173,8 +177,8 @@ mod tests {
             "should contain interrupt message"
         );
         assert!(
-            !text.contains("72% context"),
-            "should not contain context when waiting"
+            text.contains("72% context"),
+            "should contain context when waiting"
         );
     }
 

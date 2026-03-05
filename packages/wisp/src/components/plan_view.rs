@@ -22,7 +22,8 @@ impl Component for PlanView<'_> {
             return vec![];
         }
 
-        let mut lines = Vec::with_capacity(self.entries.len() + 1);
+        let mut lines = Vec::with_capacity(self.entries.len() + 2);
+        lines.push(Line::default());
 
         let mut header = Line::default();
         header.push_styled("Plan".to_string(), context.theme.muted);
@@ -86,9 +87,10 @@ mod tests {
             tick: 0,
         };
         let lines = view.render(&ctx());
-        // header + 3 entries
-        assert_eq!(lines.len(), 4);
-        assert_eq!(lines[0].plain_text(), "Plan");
+        // margin + header + 3 entries
+        assert_eq!(lines.len(), 5);
+        assert_eq!(lines[0].plain_text(), "");
+        assert_eq!(lines[1].plain_text(), "Plan");
     }
 
     #[test]
@@ -99,7 +101,7 @@ mod tests {
             tick: 0,
         };
         let lines = view.render(&ctx());
-        let text = lines[1].plain_text();
+        let text = lines[2].plain_text();
         assert!(text.contains('✓'));
         assert!(text.contains("Done task"));
     }
@@ -112,7 +114,7 @@ mod tests {
             tick: 0,
         };
         let lines = view.render(&ctx());
-        let text = lines[1].plain_text();
+        let text = lines[2].plain_text();
         assert!(text.contains(BRAILLE_FRAMES[0]));
         assert!(text.contains("Working"));
     }
@@ -125,7 +127,7 @@ mod tests {
             tick: 0,
         };
         let lines = view.render(&ctx());
-        let text = lines[1].plain_text();
+        let text = lines[2].plain_text();
         assert!(text.contains('○'));
         assert!(text.contains("Todo"));
     }
@@ -141,8 +143,8 @@ mod tests {
             entries: &entries,
             tick: 1,
         };
-        let text_a = view_a.render(&ctx())[1].plain_text();
-        let text_b = view_b.render(&ctx())[1].plain_text();
+        let text_a = view_a.render(&ctx())[2].plain_text();
+        let text_b = view_b.render(&ctx())[2].plain_text();
         assert_ne!(text_a, text_b);
     }
 }
