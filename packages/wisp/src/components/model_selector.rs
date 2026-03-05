@@ -396,7 +396,9 @@ mod tests {
         let openrouter_headers = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
         assert_eq!(openrouter_headers, 1, "expected one OpenRouter header line");
         assert!(
-            lines.windows(2).any(|w| w[0].trim().is_empty() && w[1].trim() == "Anthropic"),
+            lines
+                .windows(2)
+                .any(|w| w[0].trim().is_empty() && w[1].trim() == "Anthropic"),
             "expected blank separator before next provider: {lines:?}"
         );
         assert!(lines.iter().any(|l| l.contains("[ ] Claude Sonnet 4.5")));
@@ -435,7 +437,9 @@ mod tests {
             "rendered too many lines for viewport: {lines:?}"
         );
         assert!(
-            !lines.iter().any(|l| l.contains("model selected") || l.contains("selected")),
+            !lines
+                .iter()
+                .any(|l| l.contains("model selected") || l.contains("selected")),
             "did not expect bottom selected-count footer: {lines:?}"
         );
     }
@@ -489,7 +493,10 @@ mod tests {
         );
         let lines = rendered_lines(&mut builder);
         // Second line after header should be a spacer, then selected models line
-        assert!(lines[1].trim().is_empty(), "expected spacer line after header");
+        assert!(
+            lines[1].trim().is_empty(),
+            "expected spacer line after header"
+        );
         assert!(
             lines[2].contains("Selected:"),
             "expected Selected line, got: {}",
