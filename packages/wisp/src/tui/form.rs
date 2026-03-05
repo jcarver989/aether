@@ -197,7 +197,6 @@ impl HandlesInput for Form {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::theme::Theme;
 
     #[test]
     fn render_does_not_panic_when_title_wider_than_terminal() {

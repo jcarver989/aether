@@ -169,12 +169,19 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
         context: &RenderContext,
         render_item: impl Fn(&T, bool, &RenderContext) -> Line,
     ) -> Vec<Line> {
-        let mut lines = Vec::new();
-        for (i, item) in self.visible_matches().iter().enumerate() {
-            let is_selected = Some(i) == self.visible_selected_index();
-            lines.push(render_item(item, is_selected, context));
-        }
-        lines
+        self.visible_matches_with_selection()
+            .into_iter()
+            .map(|(item, is_selected)| render_item(item, is_selected, context))
+            .collect()
+    }
+
+    pub fn visible_matches_with_selection(&self) -> Vec<(&T, bool)> {
+        let visible_selected_index = self.visible_selected_index();
+        self.visible_matches()
+            .iter()
+            .enumerate()
+            .map(|(i, item)| (item, Some(i) == visible_selected_index))
+            .collect()
     }
 
     fn visible_matches(&self) -> &[T] {

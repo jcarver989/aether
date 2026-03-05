@@ -13,6 +13,39 @@ pub struct ModelEntry {
     pub is_disabled: bool,
 }
 
+impl ModelEntry {
+    fn provider_key(&self) -> &str {
+        self.value
+            .split_once(':')
+            .map_or("Other", |(provider, _)| provider)
+    }
+
+    fn provider_label(&self) -> String {
+        if let Some((provider, _)) = self.name.split_once(" / ") {
+            return provider.to_string();
+        }
+
+        let key = self.provider_key();
+        if key.is_empty() {
+            return "Other".to_string();
+        }
+
+        let mut chars = key.chars();
+        let first = chars
+            .next()
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_default();
+        let rest = chars.as_str().to_lowercase();
+        format!("{first}{rest}")
+    }
+
+    fn model_label(&self) -> &str {
+        self.name
+            .split_once(" / ")
+            .map_or(self.name.as_str(), |(_, model)| model)
+    }
+}
+
 impl Searchable for ModelEntry {
     fn search_text(&self) -> String {
         format!("{} {}", self.name, self.value)
@@ -100,19 +133,20 @@ impl ModelSelector {
 
 impl Component for ModelSelector {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+        let has_selected_line = !self.selected_models.is_empty();
         if let Some(h) = context.max_height {
-            // Overhead: header (1) + optional "Selected:" line (0-1) + footer (1)
-            let has_selected_line = !self.selected_models.is_empty();
-            let overhead = 1 + usize::from(has_selected_line) + 1;
+            // Overhead: header (1) + spacer (1) + optional "Selected:" line (0-1) + optional selected spacer (0-1)
+            let overhead = if has_selected_line { 4 } else { 2 };
             self.combobox
                 .set_max_visible(h.saturating_sub(overhead).max(1));
         }
 
         let mut lines = Vec::new();
         let header = format!("  Model search: {}", self.combobox.query());
-        lines.push(Line::styled(header, context.theme.muted));
+        lines.push(Line::new(header));
+        lines.push(Line::new(String::new()));
 
-        if !self.selected_models.is_empty() {
+        if has_selected_line {
             let names: Vec<&str> = self
                 .all_items
                 .iter()
@@ -121,46 +155,55 @@ impl Component for ModelSelector {
                 .collect();
             let selected_text = format!("  Selected: {}", names.join(", "));
             lines.push(Line::styled(selected_text, context.theme.muted));
+            lines.push(Line::new(String::new()));
         }
 
+        let mut item_lines = Vec::new();
         if self.combobox.is_empty() {
-            lines.push(Line::new("  (no matches found)".to_string()));
+            item_lines.push(Line::new("  (no matches found)".to_string()));
         } else {
             let selected = &self.selected_models;
-            let item_lines = self
-                .combobox
-                .render_items(context, |entry, is_focused, ctx| {
-                    let check = if selected.contains(&entry.value) {
-                        "[x] "
-                    } else {
-                        "[ ] "
-                    };
-                    let prefix = if is_focused { "▶ " } else { "  " };
-                    let label = format!("{prefix}{check}{}", entry.name);
+            let mut last_provider: Option<&str> = None;
 
-                    if entry.is_disabled {
-                        Line::styled(label, ctx.theme.muted)
-                    } else if is_focused {
-                        Line::with_style(
-                            label,
-                            Style::fg(ctx.theme.text_primary).bg_color(ctx.theme.highlight_bg),
-                        )
-                    } else {
-                        Line::new(label)
+            for (entry, is_focused) in self.combobox.visible_matches_with_selection() {
+                let provider = entry.provider_key();
+                if last_provider != Some(provider) {
+                    if !item_lines.is_empty() {
+                        item_lines.push(Line::new(String::new()));
                     }
-                });
-            lines.extend(item_lines);
+                    item_lines.push(Line::styled(
+                        format!("  {}", entry.provider_label()),
+                        context.theme.muted,
+                    ));
+                    last_provider = Some(provider);
+                }
+
+                let check = if selected.contains(&entry.value) {
+                    "[x] "
+                } else {
+                    "[ ] "
+                };
+                let prefix = if is_focused { "▶ " } else { "  " };
+                let label = format!("{prefix}{check}{}", entry.model_label());
+
+                if entry.is_disabled {
+                    item_lines.push(Line::styled(label, context.theme.muted));
+                } else if is_focused {
+                    item_lines.push(Line::with_style(
+                        label,
+                        Style::fg(context.theme.text_primary).bg_color(context.theme.highlight_bg),
+                    ));
+                } else {
+                    item_lines.push(Line::new(label));
+                }
+            }
         }
 
-        let count = self.selected_models.len();
-        let footer = if count == 0 {
-            "  0 selected".to_string()
-        } else if count == 1 {
-            "  1 model selected".to_string()
-        } else {
-            format!("  {count} models selected")
-        };
-        lines.push(Line::styled(footer, context.theme.muted));
+        if let Some(h) = context.max_height {
+            let available_for_items = h.saturating_sub(lines.len());
+            item_lines.truncate(available_for_items);
+        }
+        lines.extend(item_lines);
 
         lines
     }
@@ -241,6 +284,43 @@ mod tests {
         }
     }
 
+    fn model_entry_with_groups() -> ConfigMenuEntry {
+        ConfigMenuEntry {
+            config_id: "model".to_string(),
+            title: "Model".to_string(),
+            values: vec![
+                ConfigMenuValue {
+                    value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
+                    name: "OpenRouter / Claude Sonnet 4.5".to_string(),
+                    description: None,
+                    is_disabled: false,
+                },
+                ConfigMenuValue {
+                    value: "openrouter:google/gemini-2.5-pro".to_string(),
+                    name: "OpenRouter / Gemini 2.5 Pro".to_string(),
+                    description: None,
+                    is_disabled: false,
+                },
+                ConfigMenuValue {
+                    value: "anthropic:claude-sonnet-4-5".to_string(),
+                    name: "Anthropic / Claude Sonnet 4.5".to_string(),
+                    description: None,
+                    is_disabled: false,
+                },
+                ConfigMenuValue {
+                    value: "gemini:gemini-2.5-pro".to_string(),
+                    name: "Google / Gemini 2.5 Pro".to_string(),
+                    description: None,
+                    is_disabled: false,
+                },
+            ],
+            current_value_index: 0,
+            current_raw_value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
+            entry_kind: ConfigMenuEntryKind::Select,
+            multi_select: true,
+            display_name: None,
+        }
+    }
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
@@ -304,20 +384,60 @@ mod tests {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None);
         type_query(&mut builder, "deepseek");
         let lines = rendered_lines(&mut builder);
-        // header + 1 match + footer
-        assert_eq!(lines.len(), 3);
-        assert!(lines[1].contains("DeepSeek"));
+        assert!(lines.iter().any(|l| l.trim() == "DeepSeek"));
+        assert!(lines.iter().any(|l| l.contains("[ ] DeepSeek Chat")));
     }
 
     #[test]
-    fn render_shows_checkboxes() {
-        let mut builder =
-            ModelSelector::from_model_entry(&model_entry(), Some("anthropic:claude-sonnet-4-5"));
+    fn render_groups_models_under_provider_headers() {
+        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None);
         let lines = rendered_lines(&mut builder);
-        // First entry should be checked
-        assert!(lines.iter().any(|l| l.contains("[x]")));
-        // Others unchecked
-        assert!(lines.iter().any(|l| l.contains("[ ]")));
+
+        let openrouter_headers = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
+        assert_eq!(openrouter_headers, 1, "expected one OpenRouter header line");
+        assert!(
+            lines.windows(2).any(|w| w[0].trim().is_empty() && w[1].trim() == "Anthropic"),
+            "expected blank separator before next provider: {lines:?}"
+        );
+        assert!(lines.iter().any(|l| l.contains("[ ] Claude Sonnet 4.5")));
+        assert!(lines.iter().any(|l| l.contains("[ ] Gemini 2.5 Pro")));
+    }
+
+    #[test]
+    fn search_filters_and_keeps_provider_headers() {
+        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None);
+        type_query(&mut builder, "gemini");
+        let lines = rendered_lines(&mut builder);
+
+        assert!(
+            lines.iter().any(|l| l.trim() == "OpenRouter"),
+            "missing OpenRouter header in filtered results: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.trim() == "Google"),
+            "missing Google header in filtered results: {lines:?}"
+        );
+        assert!(lines.iter().any(|l| l.contains("[ ] Gemini 2.5 Pro")));
+    }
+
+    #[test]
+    fn grouped_render_respects_small_height() {
+        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None);
+        let context = RenderContext::new((120, 40)).with_max_height(6);
+        let lines: Vec<String> = builder
+            .render(&context)
+            .iter()
+            .map(Line::plain_text)
+            .collect();
+
+        assert!(
+            lines.len() <= 6,
+            "rendered too many lines for viewport: {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|l| l.contains("model selected") || l.contains("selected")),
+            "did not expect bottom selected-count footer: {lines:?}"
+        );
     }
 
     #[test]
@@ -368,14 +488,19 @@ mod tests {
             Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
         );
         let lines = rendered_lines(&mut builder);
-        // Second line (after header) should show selected models
+        // Second line after header should be a spacer, then selected models line
+        assert!(lines[1].trim().is_empty(), "expected spacer line after header");
         assert!(
-            lines[1].contains("Selected:"),
+            lines[2].contains("Selected:"),
             "expected Selected line, got: {}",
-            lines[1]
+            lines[2]
         );
-        assert!(lines[1].contains("Claude Sonnet 4.5"));
-        assert!(lines[1].contains("DeepSeek Chat"));
+        assert!(lines[2].contains("Claude Sonnet 4.5"));
+        assert!(lines[2].contains("DeepSeek Chat"));
+        assert!(
+            lines.get(3).is_some_and(|l| l.trim().is_empty()),
+            "expected spacer line after selected line"
+        );
     }
 
     #[test]
@@ -385,6 +510,10 @@ mod tests {
         assert!(
             !lines.iter().any(|l| l.contains("Selected:")),
             "should not show Selected line when nothing is selected"
+        );
+        assert!(
+            lines.get(1).is_some_and(|l| l.trim().is_empty()),
+            "expected blank line after search header"
         );
     }
 
