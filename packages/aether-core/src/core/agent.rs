@@ -180,6 +180,7 @@ impl Agent {
 
         if has_tool_calls {
             self.auto_continue.on_tool_calls();
+            self.maybe_preflight_compact().await;
             self.start_llm_stream();
         } else if self.auto_continue.should_continue(stop_reason.as_ref()) {
             self.auto_continue.advance();
@@ -199,6 +200,7 @@ impl Agent {
                 .await;
 
             self.inject_continuation_prompt(&message_content, stop_reason.as_ref());
+            self.maybe_preflight_compact().await;
             self.start_llm_stream();
         } else {
             tracing::debug!("LLM completed turn with stop reason: {:?}", stop_reason);
@@ -512,6 +514,28 @@ impl Agent {
             .await;
 
         self.maybe_compact_context().await;
+    }
+
+    /// Pre-flight check: estimate context size and compact proactively if it would
+    /// overflow before the LLM even sees it. This catches the case where large tool
+    /// results push context past the limit before usage-based compaction can fire.
+    async fn maybe_preflight_compact(&mut self) {
+        let Some(context_limit) = self.token_tracker.context_limit() else {
+            return;
+        };
+        if self.compaction_config.is_none() {
+            return;
+        }
+        let estimated = self.context.estimated_token_count();
+        let threshold = context_limit - context_limit / 10;
+        if estimated >= threshold {
+            tracing::info!(
+                "Pre-flight compaction triggered: estimated {estimated} tokens >= 90% of {context_limit} limit"
+            );
+            if let CompactionOutcome::Failed(e) = self.compact_context().await {
+                tracing::warn!("Pre-flight compaction failed: {e}");
+            }
+        }
     }
 
     /// Check if compaction is needed and perform it if so.
