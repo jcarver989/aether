@@ -1,15 +1,16 @@
 use acp_utils::notifications::McpRequest;
 use agent_client_protocol::{
-    self as acp, Agent, AgentCapabilities, AuthenticateRequest, AuthenticateResponse,
-    AvailableCommandsUpdate, Implementation, InitializeRequest, InitializeResponse,
-    LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse,
-    PromptCapabilities, PromptResponse, ProtocolVersion, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
-    SetSessionModeResponse,
+    self as acp, Agent, AgentCapabilities, AuthMethod, AuthenticateRequest, AuthenticateResponse,
+    AvailableCommandsUpdate, ConfigOptionUpdate, Implementation, InitializeRequest,
+    InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
+    NewSessionResponse, PromptCapabilities, PromptResponse, ProtocolVersion, SessionId,
+    SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
 };
-use llm::catalog;
+use llm::catalog::{self, LlmModel};
+use llm::oauth::OAuthCredentialStore;
 use llm::parser::ModelProviderParser;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::spawn;
@@ -71,10 +72,29 @@ fn resolve_mcp_config(cwd: &Path) -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+/// Build auth methods for OAuth providers that lack credentials.
+fn build_auth_methods() -> Vec<AuthMethod> {
+    let credential_ids = OAuthCredentialStore::credential_ids_sync();
+    let mut seen = HashSet::new();
+    LlmModel::all()
+        .iter()
+        .filter_map(LlmModel::oauth_provider_id)
+        .filter(|id| !credential_ids.contains(*id) && seen.insert(*id))
+        .map(|id| {
+            let display = LlmModel::all()
+                .iter()
+                .find(|m| m.oauth_provider_id() == Some(id))
+                .map_or(id, |m| m.provider_display_name());
+            AuthMethod::new(id, display)
+        })
+        .collect()
+}
+
 #[async_trait::async_trait(?Send)]
 impl Agent for SessionManager {
     async fn initialize(&self, args: InitializeRequest) -> Result<InitializeResponse, acp::Error> {
         info!("Received initialize request: {:?}", args);
+        let auth_methods = build_auth_methods();
         Ok(InitializeResponse::new(ProtocolVersion::V1)
             .agent_info(Implementation::new("Aether", "0.1.0"))
             .agent_capabilities(
@@ -86,7 +106,8 @@ impl Agent for SessionManager {
                             .image(false)
                             .audio(false),
                     ),
-            ))
+            )
+            .auth_methods(auth_methods))
     }
 
     async fn authenticate(
@@ -94,7 +115,33 @@ impl Agent for SessionManager {
         args: AuthenticateRequest,
     ) -> Result<AuthenticateResponse, acp::Error> {
         info!("Received authenticate request: {:?}", args);
-        // No authentication required
+        let method_id = args.method_id.0.as_ref();
+        match method_id {
+            "codex" => {
+                llm::perform_codex_oauth_flow().await.map_err(|e| {
+                    error!("OAuth flow failed for {method_id}: {e}");
+                    acp::Error::internal_error()
+                })?;
+            }
+            _ => return Err(acp::Error::invalid_params()),
+        }
+
+        // Broadcast updated config options to all active sessions
+        let available = catalog::available_models();
+        let sessions = self.sessions.lock().await;
+        for (id, state) in sessions.iter() {
+            let model = effective_model(&state.active_model, state.pending_model.as_deref());
+            let options = build_config_options(&available, model);
+            let notification = SessionNotification::new(
+                SessionId::new(id.clone()),
+                SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(options)),
+            );
+            let _ = self
+                .actor_handle
+                .send_session_notification(notification)
+                .await;
+        }
+
         Ok(AuthenticateResponse::default())
     }
 

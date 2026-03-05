@@ -3,7 +3,6 @@ use std::process::ExitCode;
 use tokio::runtime::Runtime;
 
 use aether_cli::acp::AcpArgs;
-use aether_cli::auth::AuthArgs;
 use aether_cli::headless::HeadlessArgs;
 
 #[derive(Parser)]
@@ -20,8 +19,6 @@ enum Command {
     Headless(HeadlessArgs),
     /// Start the ACP server
     Acp(AcpArgs),
-    /// Authenticate with a provider (e.g. `aether auth codex`)
-    Auth(AuthArgs),
 }
 
 fn main() -> ExitCode {
@@ -36,10 +33,6 @@ fn main() -> ExitCode {
             .block_on(aether_cli::acp::run_acp(args))
             .map(|()| ExitCode::SUCCESS)
             .map_err(|e| e.to_string()),
-
-        Command::Auth(args) => rt
-            .block_on(aether_cli::auth::run_auth(args))
-            .map(|()| ExitCode::SUCCESS),
     };
 
     match result {

@@ -55,6 +55,9 @@ pub enum AppEvent {
     AuthenticateMcpServer {
         server_name: String,
     },
+    AuthenticateProvider {
+        method_id: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -86,11 +89,16 @@ pub struct App {
     config_overlay: Option<ConfigOverlay>,
     elicitation_form: Option<ElicitationForm>,
     server_statuses: Vec<McpServerStatusEntry>,
+    auth_methods: Vec<acp::AuthMethod>,
     plan_entries: Vec<acp::PlanEntry>,
 }
 
 impl App {
-    pub fn new(agent_name: String, config_options: &[SessionConfigOption]) -> Self {
+    pub fn new(
+        agent_name: String,
+        config_options: &[SessionConfigOption],
+        auth_methods: Vec<acp::AuthMethod>,
+    ) -> Self {
         Self {
             tool_call_statuses: ToolCallStatuses::new(),
             grid_loader: Spinner::default(),
@@ -108,6 +116,7 @@ impl App {
             config_overlay: None,
             elicitation_form: None,
             server_statuses: Vec::new(),
+            auth_methods,
             plan_entries: Vec::new(),
         }
     }
@@ -409,6 +418,25 @@ impl App {
         &self.available_commands
     }
 
+    pub fn on_authenticate_started(&mut self, method_id: &str) {
+        if let Some(ref mut overlay) = self.config_overlay {
+            overlay.on_authenticate_started(method_id);
+        }
+    }
+
+    pub fn on_authenticate_complete(&mut self, method_id: &str) {
+        self.auth_methods.retain(|m| m.id.0.as_ref() != method_id);
+        if let Some(ref mut overlay) = self.config_overlay {
+            overlay.remove_auth_method(method_id);
+        }
+    }
+
+    pub fn on_authenticate_failed(&mut self, method_id: &str) {
+        if let Some(ref mut overlay) = self.config_overlay {
+            overlay.on_authenticate_failed(method_id);
+        }
+    }
+
     fn handle_elicitation_key(&mut self, key_event: KeyEvent) -> Option<Vec<AppEvent>> {
         let ef = self.elicitation_form.as_mut()?;
         let outcome = ef.form.handle_key(key_event);
@@ -547,6 +575,12 @@ impl App {
                     AppEvent::Render,
                 ]
             }
+            Some(ConfigOverlayAction::AuthenticateProvider(method_id)) => {
+                vec![
+                    AppEvent::AuthenticateProvider { method_id },
+                    AppEvent::Render,
+                ]
+            }
             None => {
                 if outcome.needs_render {
                     vec![AppEvent::Render]
@@ -637,19 +671,33 @@ impl App {
     fn open_config_overlay(&mut self) {
         let menu = ConfigMenu::from_config_options(&self.config_options);
         let menu = self.decorate_config_menu(menu);
-        self.config_overlay = Some(ConfigOverlay::new(menu, self.server_statuses.clone()));
+        self.config_overlay = Some(ConfigOverlay::new(
+            menu,
+            self.server_statuses.clone(),
+            self.auth_methods.clone(),
+        ));
     }
 
     fn open_config_overlay_with_servers(&mut self) {
         let menu = ConfigMenu::from_config_options(&self.config_options);
         let menu = self.decorate_config_menu(menu);
-        self.config_overlay =
-            Some(ConfigOverlay::new(menu, self.server_statuses.clone()).with_server_overlay());
+        self.config_overlay = Some(
+            ConfigOverlay::new(
+                menu,
+                self.server_statuses.clone(),
+                self.auth_methods.clone(),
+            )
+            .with_server_overlay(),
+        );
     }
 
     fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {
         let server_summary = server_status_summary(&self.server_statuses);
         menu.add_mcp_servers_entry(&server_summary);
+        if !self.auth_methods.is_empty() {
+            let summary = format!("{} needs login", self.auth_methods.len());
+            menu.add_provider_logins_entry(&summary);
+        }
         menu
     }
 
@@ -940,7 +988,7 @@ mod tests {
 
     #[test]
     fn command_picker_cursor_targets_picker_header() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
+        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
         screen.command_picker = Some(CommandPicker::new(vec![CommandEntry {
             name: "config".to_string(),
             description: "Open config".to_string(),
@@ -970,7 +1018,7 @@ mod tests {
                 "m1", "M1",
             )],
         )];
-        let mut screen = App::new("test-agent".to_string(), &opts);
+        let mut screen = App::new("test-agent".to_string(), &opts, vec![]);
         screen.open_config_overlay();
 
         let context = RenderContext::new((120, 40));
@@ -1006,7 +1054,7 @@ mod tests {
                 "m1", "M1",
             )],
         )];
-        let mut screen = App::new("test-agent".to_string(), &options);
+        let mut screen = App::new("test-agent".to_string(), &options, vec![]);
         let effects = screen.apply_command(&CommandEntry {
             name: "config".to_string(),
             description: "Open configuration settings".to_string(),
@@ -1022,7 +1070,7 @@ mod tests {
 
     #[test]
     fn command_without_input_submits_prompt_immediately() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
+        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
         let effects = screen.apply_command(&CommandEntry {
             name: "status".to_string(),
             description: "status".to_string(),
@@ -1040,7 +1088,7 @@ mod tests {
 
     #[test]
     fn file_selection_updates_mentions_and_input() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
+        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
         screen.text_input.set_input("@fo".to_string());
 
         screen
@@ -1061,7 +1109,7 @@ mod tests {
                 agent_client_protocol::SessionConfigSelectOption::new("m2", "M2"),
             ],
         )];
-        let mut screen = App::new("test-agent".to_string(), &options);
+        let mut screen = App::new("test-agent".to_string(), &options, vec![]);
         let effects = screen.apply_command(&CommandEntry {
             name: "config".to_string(),
             description: "Open configuration settings".to_string(),
@@ -1080,7 +1128,7 @@ mod tests {
 
     #[test]
     fn prompt_done_keeps_running_tool_segment() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
+        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
 
         let tool_call = acp::ToolCall::new("tool-1", "Read file");
         screen.tool_call_statuses.on_tool_call(&tool_call);
@@ -1095,7 +1143,7 @@ mod tests {
 
     #[test]
     fn ctrl_c_exits() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
+        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
 
         let effects = screen.on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
 
@@ -1104,7 +1152,7 @@ mod tests {
 
     #[test]
     fn escape_while_waiting_emits_cancel() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
+        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
         screen.waiting_for_response = true;
 
         let effects = screen.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -1114,7 +1162,7 @@ mod tests {
 
     #[test]
     fn streaming_chunks_keep_waiting_for_response() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
+        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
         screen.waiting_for_response = true;
 
         // Simulate a streaming text chunk arriving
@@ -1134,7 +1182,7 @@ mod tests {
 
     #[test]
     fn escape_while_not_waiting_does_nothing() {
-        let mut screen = App::new("test-agent".to_string(), &[]);
+        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
         screen.waiting_for_response = false;
 
         let effects = screen.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -1144,7 +1192,7 @@ mod tests {
 
     #[test]
     fn sub_agent_progress_notification_triggers_render() {
-        let mut app = App::new("test-agent".to_string(), &[]);
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
         let json = r#"{"parent_tool_id":"p1","task_id":"t1","agent_name":"explorer","event":{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}}"#;
         let raw = serde_json::value::to_raw_value(
             &serde_json::from_str::<serde_json::Value>(json).unwrap(),
@@ -1159,7 +1207,7 @@ mod tests {
 
     #[test]
     fn invalid_sub_agent_progress_json_silently_ignored() {
-        let mut app = App::new("test-agent".to_string(), &[]);
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
         let raw = serde_json::value::to_raw_value(&serde_json::json!({"bad": "data"})).unwrap();
         let notification =
             acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
@@ -1170,7 +1218,7 @@ mod tests {
 
     #[test]
     fn context_usage_notification_updates_percent_left() {
-        let mut app = App::new("test-agent".to_string(), &[]);
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
         let raw = serde_json::value::to_raw_value(&serde_json::json!({
             "usage_ratio": 0.75,
             "tokens_used": 150_000,
@@ -1188,7 +1236,7 @@ mod tests {
 
     #[test]
     fn context_usage_notification_with_unknown_limit_clears_meter() {
-        let mut app = App::new("test-agent".to_string(), &[]);
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
         app.context_usage_pct = Some(33);
 
         let raw = serde_json::value::to_raw_value(&serde_json::json!({
@@ -1208,7 +1256,7 @@ mod tests {
 
     #[test]
     fn context_cleared_notification_resets_conversation_and_tool_state() {
-        let mut app = App::new("test-agent".to_string(), &[]);
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
         app.waiting_for_response = true;
         app.grid_loader.visible = true;
         app.conversation
@@ -1231,7 +1279,7 @@ mod tests {
 
     #[test]
     fn paste_inserts_at_cursor_position() {
-        let mut app = App::new("test".to_string(), &[]);
+        let mut app = App::new("test".to_string(), &[], vec![]);
         app.text_input.set_input("hd".to_string());
         // Move cursor to position 1
         app.on_key_event(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
@@ -1245,7 +1293,7 @@ mod tests {
 
     #[test]
     fn execute_resets_cursor_pos() {
-        let mut app = App::new("test".to_string(), &[]);
+        let mut app = App::new("test".to_string(), &[], vec![]);
         app.text_input.set_input("hello".to_string());
 
         app.execute_input();
@@ -1256,7 +1304,7 @@ mod tests {
 
     #[test]
     fn execute_input_emits_render_before_prompt_submit() {
-        let mut app = App::new("test".to_string(), &[]);
+        let mut app = App::new("test".to_string(), &[], vec![]);
         app.text_input.set_input("hello".to_string());
 
         let effects = app.execute_input();
@@ -1393,7 +1441,7 @@ mod tests {
             .meta(meta),
         ];
 
-        let mut screen = App::new("test-agent".to_string(), &opts);
+        let mut screen = App::new("test-agent".to_string(), &opts, vec![]);
         screen.open_config_overlay();
 
         let overlay = screen.config_overlay.as_mut().expect("overlay should open");

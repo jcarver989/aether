@@ -11,8 +11,7 @@ fn needs_oauth_login(model: &LlmModel, credential_ids: &HashSet<String>) -> bool
 
 pub(crate) fn unavailable_reason(model: &LlmModel, credential_ids: &HashSet<String>) -> String {
     if needs_oauth_login(model, credential_ids) {
-        let oauth_id = model.oauth_provider_id().unwrap_or("unknown");
-        return format!("Needs login: run `aether auth {oauth_id}`");
+        return "Needs login".to_string();
     }
     model.required_env_var().map_or_else(
         || "Unavailable: provider is not configured".to_string(),
@@ -87,11 +86,7 @@ pub(crate) fn build_model_config_option(
                 let name = if is_available && !needs_login {
                     format!("{display} / {}", m.display_name())
                 } else if needs_login {
-                    format!(
-                        "{display} / {} (needs login — run `aether auth {}`)",
-                        m.display_name(),
-                        m.oauth_provider_id().unwrap_or("unknown")
-                    )
+                    format!("{display} / {} (needs login)", m.display_name(),)
                 } else {
                     format!("{display} / {} (unavailable)", m.display_name())
                 };
