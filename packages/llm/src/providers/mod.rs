@@ -1,6 +1,8 @@
 pub mod anthropic;
 #[cfg(feature = "bedrock")]
 pub mod bedrock;
+#[cfg(feature = "codex")]
+pub mod codex;
 pub mod deepseek;
 pub mod gemini;
 pub mod local;

@@ -50,17 +50,18 @@ impl<T: Eq + Ord + Copy + Display> ToolCallCollector<T> {
         responses
     }
 
+    /// Complete the tool call at a specific index and return it, if present.
+    pub fn complete_one(&mut self, index: T) -> Option<ToolCallRequest> {
+        self.active_tool_calls.remove(&index).map(to_request)
+    }
+
     /// Complete all pending tool calls and return them.
     pub fn complete_all(&mut self) -> Vec<ToolCallRequest> {
         self.active_tool_calls
             .pop_first()
             .into_iter()
             .chain(from_fn(|| self.active_tool_calls.pop_first()))
-            .map(|(_, (id, name, arguments))| ToolCallRequest {
-                id,
-                name,
-                arguments,
-            })
+            .map(|(_, fields)| to_request(fields))
             .collect()
     }
 
@@ -75,6 +76,14 @@ impl<T: Eq + Ord + Copy + Display> ToolCallCollector<T> {
             return Some(id.clone());
         }
         None
+    }
+}
+
+fn to_request((id, name, arguments): (String, String, String)) -> ToolCallRequest {
+    ToolCallRequest {
+        id,
+        name,
+        arguments,
     }
 }
 
@@ -145,6 +154,39 @@ mod tests {
         collector.handle_delta(0, Some("id".into()), Some("tool".into()), None);
         let responses = collector.handle_delta(0, None, None, Some(String::new()));
         assert!(responses.is_empty());
+    }
+
+    #[test]
+    fn test_complete_one_returns_specific_tool_call() {
+        let mut collector = ToolCallCollector::<u32>::new();
+
+        collector.handle_delta(
+            0,
+            Some("a".into()),
+            Some("tool_a".into()),
+            Some("{}".into()),
+        );
+        collector.handle_delta(
+            1,
+            Some("b".into()),
+            Some("tool_b".into()),
+            Some("{}".into()),
+        );
+
+        let completed = collector.complete_one(0);
+        assert!(completed.is_some());
+        assert_eq!(completed.unwrap().id, "a");
+
+        // Index 1 should still be present
+        let remaining = collector.complete_all();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, "b");
+    }
+
+    #[test]
+    fn test_complete_one_nonexistent_returns_none() {
+        let mut collector = ToolCallCollector::<u32>::new();
+        assert!(collector.complete_one(99).is_none());
     }
 
     #[test]

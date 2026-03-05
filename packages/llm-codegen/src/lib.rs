@@ -54,8 +54,12 @@ struct LimitData {
 
 /// Provider configuration for codegen (catalog providers with known model lists)
 struct ProviderConfig {
-    /// models.dev provider ID (e.g. "google")
+    /// Unique provider key used in `provider_models` map (e.g. "codex")
     dev_id: &'static str,
+    /// models.dev provider ID to read models from (defaults to `dev_id` when `None`)
+    source_dev_id: Option<&'static str>,
+    /// Only include models whose ID passes this filter (None = include all)
+    model_filter: Option<fn(&str) -> bool>,
     /// Our Rust enum name (e.g. "Gemini")
     enum_name: &'static str,
     /// Our internal provider name used for parsing (e.g. "gemini")
@@ -64,6 +68,35 @@ struct ProviderConfig {
     display_name: &'static str,
     /// Env var our code actually checks (None for providers with complex credential chains)
     env_var: Option<&'static str>,
+    /// OAuth provider ID for providers that require OAuth login (e.g. "codex")
+    oauth_provider_id: Option<&'static str>,
+}
+
+impl ProviderConfig {
+    /// Shorthand for providers with default `source_dev_id`, `model_filter`, and `oauth_provider_id`.
+    const fn standard(
+        dev_id: &'static str,
+        enum_name: &'static str,
+        parser_name: &'static str,
+        display_name: &'static str,
+        env_var: Option<&'static str>,
+    ) -> Self {
+        Self {
+            dev_id,
+            source_dev_id: None,
+            model_filter: None,
+            enum_name,
+            parser_name,
+            display_name,
+            env_var,
+            oauth_provider_id: None,
+        }
+    }
+
+    /// The models.dev key to look up in the JSON data.
+    fn json_key(&self) -> &'static str {
+        self.source_dev_id.unwrap_or(self.dev_id)
+    }
 }
 
 /// Dynamic provider — model name is user-supplied at runtime, no fixed enum
@@ -78,55 +111,53 @@ struct DynamicProviderConfig {
 }
 
 const PROVIDERS: &[ProviderConfig] = &[
+    ProviderConfig::standard(
+        "anthropic",
+        "Anthropic",
+        "anthropic",
+        "Anthropic",
+        Some("ANTHROPIC_API_KEY"),
+    ),
     ProviderConfig {
-        dev_id: "anthropic",
-        enum_name: "Anthropic",
-        parser_name: "anthropic",
-        display_name: "Anthropic",
-        env_var: Some("ANTHROPIC_API_KEY"),
-    },
-    ProviderConfig {
-        dev_id: "deepseek",
-        enum_name: "DeepSeek",
-        parser_name: "deepseek",
-        display_name: "DeepSeek",
-        env_var: Some("DEEPSEEK_API_KEY"),
-    },
-    ProviderConfig {
-        dev_id: "google",
-        enum_name: "Gemini",
-        parser_name: "gemini",
-        display_name: "Gemini",
-        env_var: Some("GEMINI_API_KEY"),
-    },
-    ProviderConfig {
-        dev_id: "moonshotai",
-        enum_name: "Moonshot",
-        parser_name: "moonshot",
-        display_name: "Moonshot",
-        env_var: Some("MOONSHOT_API_KEY"),
-    },
-    ProviderConfig {
-        dev_id: "openrouter",
-        enum_name: "OpenRouter",
-        parser_name: "openrouter",
-        display_name: "OpenRouter",
-        env_var: Some("OPENROUTER_API_KEY"),
-    },
-    ProviderConfig {
-        dev_id: "zai",
-        enum_name: "ZAi",
-        parser_name: "zai",
-        display_name: "ZAI",
-        env_var: Some("ZAI_API_KEY"),
-    },
-    ProviderConfig {
-        dev_id: "amazon-bedrock",
-        enum_name: "Bedrock",
-        parser_name: "bedrock",
-        display_name: "AWS Bedrock",
+        dev_id: "codex",
+        source_dev_id: Some("openai"),
+        model_filter: Some(|id| id.contains("codex")),
+        enum_name: "Codex",
+        parser_name: "codex",
+        display_name: "Codex",
         env_var: None,
+        oauth_provider_id: Some("codex"),
     },
+    ProviderConfig::standard(
+        "deepseek",
+        "DeepSeek",
+        "deepseek",
+        "DeepSeek",
+        Some("DEEPSEEK_API_KEY"),
+    ),
+    ProviderConfig::standard(
+        "google",
+        "Gemini",
+        "gemini",
+        "Gemini",
+        Some("GEMINI_API_KEY"),
+    ),
+    ProviderConfig::standard(
+        "moonshotai",
+        "Moonshot",
+        "moonshot",
+        "Moonshot",
+        Some("MOONSHOT_API_KEY"),
+    ),
+    ProviderConfig::standard(
+        "openrouter",
+        "OpenRouter",
+        "openrouter",
+        "OpenRouter",
+        Some("OPENROUTER_API_KEY"),
+    ),
+    ProviderConfig::standard("zai", "ZAi", "zai", "ZAI", Some("ZAI_API_KEY")),
+    ProviderConfig::standard("amazon-bedrock", "Bedrock", "bedrock", "AWS Bedrock", None),
 ];
 
 const DYNAMIC_PROVIDERS: &[DynamicProviderConfig] = &[
@@ -171,15 +202,17 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
     let mut provider_models = ProviderModels::new();
 
     for cfg in PROVIDERS {
+        let json_key = cfg.json_key();
         let provider_data = data
-            .get(cfg.dev_id)
-            .ok_or_else(|| format!("Provider '{}' not found in models.dev data", cfg.dev_id))?;
+            .get(json_key)
+            .ok_or_else(|| format!("Provider '{json_key}' not found in models.dev data"))?;
 
         let mut models: Vec<ModelInfo> = provider_data
             .models
             .values()
             .filter(|m| m.tool_call == Some(true))
             .filter(|m| !is_alias(&m.id))
+            .filter(|m| cfg.model_filter.is_none_or(|f| f(&m.id)))
             .map(|m| ModelInfo {
                 variant_name: model_id_to_variant(&m.id),
                 model_id: m.id.clone(),
@@ -429,6 +462,7 @@ fn emit_llm_model_impl(out: &mut String) {
     emit_llm_provider_display_name(out);
     emit_llm_context_window(out);
     emit_llm_required_env_var(out);
+    emit_llm_oauth_provider_id(out);
     emit_llm_all(out);
     pushln(out, "}");
     blank(out);
@@ -595,6 +629,41 @@ fn emit_llm_required_env_var(out: &mut String) {
                 format!(
                     "            Self::{}(_) => Some(\"{}\"),",
                     cfg.enum_name, var
+                ),
+            ),
+            None => none_arms.push(format!("Self::{}(_)", cfg.enum_name)),
+        }
+    }
+    for dyn_cfg in DYNAMIC_PROVIDERS {
+        none_arms.push(format!("Self::{}(_)", dyn_cfg.enum_name));
+    }
+    pushln(
+        out,
+        format!("            {} => None,", none_arms.join(" | ")),
+    );
+    pushln(out, "        }");
+    pushln(out, "    }");
+    blank(out);
+}
+
+fn emit_llm_oauth_provider_id(out: &mut String) {
+    pushln(
+        out,
+        "    /// OAuth provider ID if this model requires OAuth login (e.g. `\"codex\"`)",
+    );
+    pushln(
+        out,
+        "    pub fn oauth_provider_id(&self) -> Option<&'static str> {",
+    );
+    pushln(out, "        match self {");
+    let mut none_arms: Vec<String> = Vec::new();
+    for cfg in PROVIDERS {
+        match cfg.oauth_provider_id {
+            Some(id) => pushln(
+                out,
+                format!(
+                    "            Self::{}(_) => Some(\"{}\"),",
+                    cfg.enum_name, id
                 ),
             ),
             None => none_arms.push(format!("Self::{}(_)", cfg.enum_name)),
@@ -811,6 +880,24 @@ mod tests {
     }
 
     #[test]
+    fn generate_codex_is_catalog_provider() {
+        let source = generate_from_value(minimal_models_dev_json());
+        // Codex is a catalog provider, not dynamic
+        assert!(source.contains("pub enum CodexModel {"));
+        assert!(source.contains("\"codex\" => model_str.parse::<CodexModel>().map(Self::Codex),"));
+        assert!(source.contains("Self::Codex(m) => Some(m.context_window()),"));
+    }
+
+    #[test]
+    fn generate_oauth_provider_id_for_codex() {
+        let source = generate_from_value(minimal_models_dev_json());
+        // Codex models return Some("codex") for oauth_provider_id
+        assert!(source.contains("Self::Codex(_) => Some(\"codex\"),"));
+        // Non-OAuth providers return None
+        assert!(source.contains("pub fn oauth_provider_id(&self) -> Option<&'static str>"));
+    }
+
+    #[test]
     fn generate_delegates_to_provider_impls() {
         let source = generate_from_value(minimal_models_dev_json());
         // LlmModel delegates to per-provider methods
@@ -924,16 +1011,16 @@ mod tests {
 
     fn minimal_models_dev_json() -> Value {
         let mut root = serde_json::Map::new();
-        for provider_id in PROVIDERS.iter().map(|p| p.dev_id) {
-            root.insert(
-                provider_id.to_string(),
+        for cfg in PROVIDERS {
+            let json_key = cfg.json_key();
+            root.entry(json_key.to_string()).or_insert_with(|| {
                 json!({
-                    "id": provider_id,
-                    "name": provider_id,
+                    "id": json_key,
+                    "name": json_key,
                     "env": [],
                     "models": {}
-                }),
-            );
+                })
+            });
         }
         Value::Object(root)
     }

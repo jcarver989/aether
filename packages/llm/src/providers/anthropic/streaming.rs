@@ -21,20 +21,10 @@ pub fn process_anthropic_stream<T: Stream<Item = Result<String>> + Send + Sync +
         while let Some(result) = stream.next().await {
             match result {
                 Ok(line) => {
-                    if line.trim().is_empty() || line.starts_with(':') {
-                        continue;
-                    }
-
-                    let data_line = line.strip_prefix("data: ").unwrap_or(&line);
-
-                    if data_line.trim() == "[DONE]" {
-                        break;
-                    }
-
-                    let event: StreamEvent = match serde_json::from_str(data_line) {
+                    let event: StreamEvent = match serde_json::from_str(&line) {
                         Ok(event) => event,
                         Err(e) => {
-                            debug!("Failed to parse SSE line: {} - Error: {}", data_line, e);
+                            debug!("Failed to parse SSE line: {} - Error: {}", line, e);
                             continue;
                         }
                     };
@@ -247,13 +237,13 @@ mod tests {
     #[tokio::test]
     async fn test_process_text_stream() {
         let lines = vec![
-            "data: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_123\", \"type\": \"message\", \"role\": \"assistant\", \"content\": [], \"model\": \"claude-3\", \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 0}}}".to_string(),
-            "data: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}".to_string(),
-            "data: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Hello\"}}".to_string(),
-            "data: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \" world\"}}".to_string(),
-            "data: {\"type\": \"content_block_stop\", \"index\": 0}".to_string(),
-            "data: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 25}}}".to_string(),
-            "data: {\"type\": \"message_stop\"}".to_string(),
+            "{\"type\": \"message_start\", \"message\": {\"id\": \"msg_123\", \"type\": \"message\", \"role\": \"assistant\", \"content\": [], \"model\": \"claude-3\", \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 0}}}".to_string(),
+            "{\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}".to_string(),
+            "{\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Hello\"}}".to_string(),
+            "{\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \" world\"}}".to_string(),
+            "{\"type\": \"content_block_stop\", \"index\": 0}".to_string(),
+            "{\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 25}}}".to_string(),
+            "{\"type\": \"message_stop\"}".to_string(),
         ];
 
         let stream = tokio_stream::iter(lines.into_iter().map(Ok));
@@ -285,12 +275,12 @@ mod tests {
     #[tokio::test]
     async fn test_process_tool_use_stream() {
         let lines = vec![
-            "data: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_123\", \"type\": \"message\", \"role\": \"assistant\", \"content\": [], \"model\": \"claude-3\", \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 0}}}".to_string(),
-            "data: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"tool_123\", \"name\": \"search\"}}".to_string(),
-            "data: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\":\\\"test\\\"}\"}".to_string(),
-            "data: {\"type\": \"content_block_stop\", \"index\": 0}".to_string(),
-            "data: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 15}}}".to_string(),
-            "data: {\"type\": \"message_stop\"}".to_string(),
+            "{\"type\": \"message_start\", \"message\": {\"id\": \"msg_123\", \"type\": \"message\", \"role\": \"assistant\", \"content\": [], \"model\": \"claude-3\", \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 0}}}".to_string(),
+            "{\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"tool_123\", \"name\": \"search\"}}".to_string(),
+            "{\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\":\\\"test\\\"}\"}".to_string(),
+            "{\"type\": \"content_block_stop\", \"index\": 0}".to_string(),
+            "{\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 15}}}".to_string(),
+            "{\"type\": \"message_stop\"}".to_string(),
         ];
 
         let stream = tokio_stream::iter(lines.into_iter().map(Ok));
@@ -329,15 +319,15 @@ mod tests {
         // If multiple tool calls happen to have the same index (which shouldn't happen
         // but could theoretically), the current implementation would overwrite them
         let lines = vec![
-            r#"data: {"type": "message_start", "message": {"id": "msg_123", "type": "message", "role": "assistant", "content": [], "model": "claude-3", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 0}}}"#.to_string(),
-            r#"data: {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "tool_123", "name": "search"}}"#.to_string(),
-            r#"data: {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"query\":\"test1\"}"}}"#.to_string(),
-            r#"data: {"type": "content_block_stop", "index": 0}"#.to_string(),
+            r#"{"type": "message_start", "message": {"id": "msg_123", "type": "message", "role": "assistant", "content": [], "model": "claude-3", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 0}}}"#.to_string(),
+            r#"{"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "tool_123", "name": "search"}}"#.to_string(),
+            r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"query\":\"test1\"}"}}"#.to_string(),
+            r#"{"type": "content_block_stop", "index": 0}"#.to_string(),
             // Another tool call with different ID but same index (simulating potential edge case)
-            r#"data: {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "tool_456", "name": "calculate"}}"#.to_string(),
-            r#"data: {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"expression\":\"2+2\"}"}}"#.to_string(),
-            r#"data: {"type": "content_block_stop", "index": 0}"#.to_string(),
-            r#"data: {"type": "message_stop"}"#.to_string(),
+            r#"{"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "tool_456", "name": "calculate"}}"#.to_string(),
+            r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"expression\":\"2+2\"}"}}"#.to_string(),
+            r#"{"type": "content_block_stop", "index": 0}"#.to_string(),
+            r#"{"type": "message_stop"}"#.to_string(),
         ];
 
         let stream = tokio_stream::iter(lines.into_iter().map(Ok));

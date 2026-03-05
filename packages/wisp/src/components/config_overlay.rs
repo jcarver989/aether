@@ -550,7 +550,10 @@ mod tests {
         overlay.handle_key(key(KeyCode::Enter));
 
         let footer = render_footer(&mut overlay);
-        assert!(footer.contains("Toggle"), "expected model selector, got: {footer}");
+        assert!(
+            footer.contains("Toggle"),
+            "expected model selector, got: {footer}"
+        );
     }
 
     #[test]

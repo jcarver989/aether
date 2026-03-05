@@ -35,6 +35,7 @@ tokio-stream = { version = "^0.1.18", features = ["io-util"] }
 tokio-util = "^0.7.18"
 futures = "^0.3.31"
 async-stream = "^0.3.6"
+eventsource-stream = "^0.2"
 
 # Serialization
 serde = { version = "1.0.228", features = ["derive"] }
@@ -53,7 +54,7 @@ agent-client-protocol = "0.9.4"
 
 # MCP and API clients
 rmcp = { version = "^0.15.0", features = ["client", "server", "macros", "schemars", "auth", "elicitation", "transport-io"] }
-async-openai = { version = "^0.32.4", features = ["byot", "chat-completion"] }
+async-openai = { version = "^0.33.0", features = ["byot", "chat-completion", "responses"] }
 reqwest = { version = "^0.12.28", default-features = false, features = ["json", "rustls-tls", "http2"] }
 oauth2 = "5.0"
 url = "2.5"

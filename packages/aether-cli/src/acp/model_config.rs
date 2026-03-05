@@ -1,8 +1,19 @@
 use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
 use llm::catalog::{self, LlmModel};
+use llm::oauth::OAuthCredentialStore;
 use std::collections::{BTreeMap, HashSet};
 
-pub(crate) fn unavailable_reason(model: &LlmModel) -> String {
+fn needs_oauth_login(model: &LlmModel, credential_ids: &HashSet<String>) -> bool {
+    model
+        .oauth_provider_id()
+        .is_some_and(|id| !credential_ids.contains(id))
+}
+
+pub(crate) fn unavailable_reason(model: &LlmModel, credential_ids: &HashSet<String>) -> String {
+    if needs_oauth_login(model, credential_ids) {
+        let oauth_id = model.oauth_provider_id().unwrap_or("unknown");
+        return format!("Needs login: run `aether auth {oauth_id}`");
+    }
     model.required_env_var().map_or_else(
         || "Unavailable: provider is not configured".to_string(),
         |var| format!("Unavailable: set {var}"),
@@ -37,6 +48,7 @@ pub(crate) fn build_model_config_option(
 ) -> SessionConfigOption {
     let all_models = catalog::LlmModel::all();
     let available_models: HashSet<String> = available.iter().map(ToString::to_string).collect();
+    let credential_ids = OAuthCredentialStore::credential_ids_sync();
 
     // Phase 1: Group models by provider, counting available models per provider
     let mut groups: BTreeMap<&str, ProviderGroup<'_>> = BTreeMap::new();
@@ -64,26 +76,30 @@ pub(crate) fn build_model_config_option(
             let noun = if count == 1 { "model" } else { "models" };
             let name = format!("{display} ({count} {noun})");
             let value = format!("__unavailable:{provider_key}");
-            let reason = group.models[0].required_env_var().map_or_else(
-                || "Unavailable: provider is not configured".to_string(),
-                |var| format!("Unavailable: set {var}"),
-            );
+            let reason = unavailable_reason(group.models[0], &credential_ids);
             options.push(acp::SessionConfigSelectOption::new(value, name).description(reason));
         } else {
             // Mixed or fully available — list each model individually
             for m in &group.models {
                 let value = m.to_string();
                 let is_available = available_models.contains(&value);
-                let name = if is_available {
+                let needs_login = needs_oauth_login(m, &credential_ids);
+                let name = if is_available && !needs_login {
                     format!("{display} / {}", m.display_name())
+                } else if needs_login {
+                    format!(
+                        "{display} / {} (needs login — run `aether auth {}`)",
+                        m.display_name(),
+                        m.oauth_provider_id().unwrap_or("unknown")
+                    )
                 } else {
                     format!("{display} / {} (unavailable)", m.display_name())
                 };
                 let option = acp::SessionConfigSelectOption::new(value, name);
-                if is_available {
+                if is_available && !needs_login {
                     options.push(option);
                 } else {
-                    options.push(option.description(unavailable_reason(m)));
+                    options.push(option.description(unavailable_reason(m, &credential_ids)));
                 }
             }
         }

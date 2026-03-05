@@ -23,6 +23,20 @@ impl BrowserOAuthHandler {
             redirect_uri: format!("http://127.0.0.1:{port}/oauth2callback"),
         })
     }
+
+    /// Create a handler bound to a specific port with a custom redirect URI.
+    ///
+    /// Use this when the OAuth provider has a fixed redirect URI registered
+    /// (e.g. `http://localhost:1455/auth/callback` for Codex).
+    pub fn with_redirect_uri(redirect_uri: impl Into<String>, port: u16) -> Result<Self, std::io::Error> {
+        let std_listener = std::net::TcpListener::bind(format!("127.0.0.1:{port}"))?;
+        std_listener.set_nonblocking(true)?;
+        let listener = TcpListener::from_std(std_listener)?;
+        Ok(Self {
+            listener,
+            redirect_uri: redirect_uri.into(),
+        })
+    }
 }
 
 impl OAuthHandler for BrowserOAuthHandler {
@@ -248,6 +262,13 @@ mod tests {
                 .to_string()
                 .contains("No state parameter")
         );
+    }
+
+    #[tokio::test]
+    async fn with_redirect_uri_binds_to_specified_port() {
+        let handler =
+            BrowserOAuthHandler::with_redirect_uri("http://localhost:9999/callback", 0).unwrap();
+        assert_eq!(handler.redirect_uri(), "http://localhost:9999/callback");
     }
 
     #[test]
