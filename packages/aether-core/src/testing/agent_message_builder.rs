@@ -43,7 +43,10 @@ impl AgentMessageBuilder {
         result: &U,
     ) -> Self {
         let request_json = serde_json::to_string(request).expect("Failed to serialize request");
-        let result_json = serde_json::to_string(result).expect("Failed to serialize result");
+        // Match mcp_result_to_tool_call_result which serializes to YAML
+        let result_value = serde_json::to_value(result).expect("Failed to serialize result");
+        let result_yaml =
+            serde_yml::to_string(&result_value).unwrap_or_else(|_| result_value.to_string());
 
         use llm::{ToolCallRequest, ToolCallResult};
 
@@ -82,7 +85,7 @@ impl AgentMessageBuilder {
                 id: tool_call_id.to_string(),
                 name: name.to_string(),
                 arguments: request_json,
-                result: result_json,
+                result: result_yaml,
             },
             result_meta: None,
             model_name: self.model_name.clone(),

@@ -36,6 +36,19 @@ impl Context {
         self.messages.len()
     }
 
+    /// Estimate total token count using the ~4 bytes/token heuristic.
+    /// Includes messages and tool definitions. Used for pre-flight overflow detection.
+    pub fn estimated_token_count(&self) -> u32 {
+        let message_bytes: usize = self.messages.iter().map(ChatMessage::estimated_bytes).sum();
+        let tool_bytes: usize = self
+            .tools
+            .iter()
+            .map(|t| t.name.len() + t.description.len() + t.parameters.len())
+            .sum();
+        let total_bytes = message_bytes + tool_bytes;
+        u32::try_from(total_bytes / 4).unwrap_or(u32::MAX)
+    }
+
     /// Get all non-system messages for summarization
     pub fn messages_for_summary(&self) -> Vec<&ChatMessage> {
         self.messages
@@ -152,5 +165,33 @@ mod tests {
 
         assert_eq!(msgs.len(), 5);
         assert!(msgs.iter().all(|m| !m.is_system()));
+    }
+
+    #[test]
+    fn test_estimated_token_count() {
+        use crate::ToolDefinition;
+
+        // "You are a helpful assistant." = 28 bytes
+        // "Hello" = 5 bytes
+        // "Hi there!" = 9 bytes (assistant, no reasoning, no tool calls)
+        // 3 tool results: "Result 1" (8) + "tool1" (5) + "{}" (2) = 15 each = 45 total
+        // Total message bytes = 28 + 5 + 9 + 45 = 87
+        let ctx = create_test_context();
+        let base_estimate = ctx.estimated_token_count();
+
+        // With no tools, estimate = message_bytes / 4
+        assert_eq!(base_estimate, 87 / 4);
+
+        // Now add a tool definition and verify it increases
+        let tool = ToolDefinition {
+            name: "read_file".to_string(),           // 9
+            description: "Reads a file".to_string(), // 12
+            parameters: "{}".to_string(),            // 2
+            server: None,
+        };
+        let ctx_with_tools = Context::new(ctx.messages().clone(), vec![tool]);
+        let with_tools_estimate = ctx_with_tools.estimated_token_count();
+        assert_eq!(with_tools_estimate, (87 + 9 + 12 + 2) / 4);
+        assert!(with_tools_estimate > base_estimate);
     }
 }

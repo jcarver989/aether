@@ -53,6 +53,40 @@ impl ChatMessage {
         matches!(self, ChatMessage::Summary { .. })
     }
 
+    /// Rough byte-size estimate of the message content for pre-flight context checks.
+    /// Not meant to be exact — just close enough to detect overflow before calling the LLM.
+    pub fn estimated_bytes(&self) -> usize {
+        match self {
+            ChatMessage::System { content, .. }
+            | ChatMessage::User { content, .. }
+            | ChatMessage::Error {
+                message: content, ..
+            }
+            | ChatMessage::Summary { content, .. } => content.len(),
+            ChatMessage::Assistant {
+                content,
+                reasoning_content,
+                tool_calls,
+                ..
+            } => {
+                content.len()
+                    + reasoning_content.as_ref().map_or(0, String::len)
+                    + tool_calls
+                        .iter()
+                        .map(|tc| tc.name.len() + tc.arguments.len())
+                        .sum::<usize>()
+            }
+            ChatMessage::ToolCallResult(Ok(result)) => {
+                result.name.len() + result.arguments.len() + result.result.len()
+            }
+            ChatMessage::ToolCallResult(Err(error)) => {
+                error.name.len()
+                    + error.arguments.as_ref().map_or(0, String::len)
+                    + error.error.len()
+            }
+        }
+    }
+
     /// Returns the timestamp of this message, if it has one
     pub fn timestamp(&self) -> Option<&IsoString> {
         match self {
@@ -63,5 +97,76 @@ impl ChatMessage {
             | ChatMessage::Summary { timestamp, .. } => Some(timestamp),
             ChatMessage::ToolCallResult(_) => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ToolCallError, ToolCallRequest, ToolCallResult};
+
+    #[test]
+    fn test_estimated_bytes_system() {
+        let msg = ChatMessage::System {
+            content: "hello".to_string(),
+            timestamp: IsoString::now(),
+        };
+        assert_eq!(msg.estimated_bytes(), 5);
+    }
+
+    #[test]
+    fn test_estimated_bytes_user() {
+        let msg = ChatMessage::User {
+            content: "a".repeat(100),
+            timestamp: IsoString::now(),
+        };
+        assert_eq!(msg.estimated_bytes(), 100);
+    }
+
+    #[test]
+    fn test_estimated_bytes_assistant_with_tools() {
+        let msg = ChatMessage::Assistant {
+            content: "response".to_string(),              // 8
+            reasoning_content: Some("think".to_string()), // 5
+            timestamp: IsoString::now(),
+            tool_calls: vec![ToolCallRequest {
+                id: "1".to_string(),
+                name: "read".to_string(),    // 4
+                arguments: "{}".to_string(), // 2
+            }],
+        };
+        assert_eq!(msg.estimated_bytes(), 8 + 5 + 4 + 2);
+    }
+
+    #[test]
+    fn test_estimated_bytes_tool_result_ok() {
+        let msg = ChatMessage::ToolCallResult(Ok(ToolCallResult {
+            id: "1".to_string(),
+            name: "tool".to_string(),    // 4
+            arguments: "{}".to_string(), // 2
+            result: "x".repeat(1000),    // 1000
+        }));
+        assert_eq!(msg.estimated_bytes(), 4 + 2 + 1000);
+    }
+
+    #[test]
+    fn test_estimated_bytes_tool_result_err() {
+        let msg = ChatMessage::ToolCallResult(Err(ToolCallError {
+            id: "1".to_string(),
+            name: "tool".to_string(),                  // 4
+            arguments: Some("args".to_string()),       // 4
+            error: "something went wrong".to_string(), // 20
+        }));
+        assert_eq!(msg.estimated_bytes(), 4 + 4 + 20);
+    }
+
+    #[test]
+    fn test_estimated_bytes_summary() {
+        let msg = ChatMessage::Summary {
+            content: "summary text".to_string(), // 12
+            timestamp: IsoString::now(),
+            messages_compacted: 5,
+        };
+        assert_eq!(msg.estimated_bytes(), 12);
     }
 }

@@ -1,9 +1,18 @@
+use std::path::{Path, PathBuf};
+
 use mcp_utils::client::split_on_server_name;
 use mcp_utils::display_meta::ToolResultMeta;
 use rmcp::model::CallToolRequestParams;
 use serde_json;
 
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
+
+/// Maximum bytes for a tool result before spilling to disk.
+/// ~50K tokens at ~4 bytes/token.
+const TOOL_RESULT_MAX_BYTES: usize = 200_000;
+
+/// Size of the head preview included inline when a result spills to disk.
+const SPILLOVER_PREVIEW_BYTES: usize = 10_000;
 
 /// Convert a `ToolCallRequest` to `rmcp::CallToolRequestParams`
 pub fn tool_call_request_to_mcp(
@@ -49,18 +58,53 @@ pub fn mcp_result_to_tool_call_result(
     } else {
         let (result_value, result_meta) =
             extract_result_and_meta(mcp_result.structured_content, &mcp_result.content);
+        // YAML is ~18% more token-efficient than JSON for LLM consumption
+        let yaml = serde_yml::to_string(&result_value).unwrap_or_else(|_| result_value.to_string());
+        let result_str =
+            maybe_spillover(&request.id, yaml, TOOL_RESULT_MAX_BYTES, &spillover_dir());
         Ok((
             ToolCallResult {
                 id: request.id.clone(),
                 name: request.name.clone(),
                 arguments: request.arguments.clone(),
-                // YAML is ~18% more token-efficient than JSON for LLM consumption
-                result: serde_yml::to_string(&result_value)
-                    .unwrap_or_else(|_| result_value.to_string()),
+                result: result_str,
             },
             result_meta,
         ))
     }
+}
+
+fn spillover_dir() -> PathBuf {
+    std::env::temp_dir().join("aether-tool-output")
+}
+
+/// If `result` exceeds `max_bytes`, write the full output to disk and return
+/// a head preview with a pointer to the file. Otherwise return unchanged.
+fn maybe_spillover(tool_id: &str, result: String, max_bytes: usize, dir: &Path) -> String {
+    if result.len() <= max_bytes {
+        return result;
+    }
+
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        tracing::warn!("Failed to create tool-output dir: {e}");
+        return result;
+    }
+
+    let file_path = dir.join(format!("{tool_id}.txt"));
+
+    if let Err(e) = std::fs::write(&file_path, &result) {
+        tracing::warn!("Failed to write spillover file: {e}");
+        return result;
+    }
+
+    let preview_end = result.floor_char_boundary(SPILLOVER_PREVIEW_BYTES);
+    let preview = &result[..preview_end];
+    let total_bytes = result.len();
+
+    format!(
+        "<preview>\n{preview}\n</preview>\n\n[Tool result too large ({total_bytes} bytes). Full output saved to {path}. Use grep, read, or tail to explore the full result.]",
+        path = file_path.display()
+    )
 }
 
 fn extract_result_and_meta(
@@ -490,5 +534,85 @@ mod tests {
         assert!(yaml.contains("key:"));
         assert!(yaml.contains("value"));
         assert!(!yaml.starts_with('{'));
+    }
+
+    #[test]
+    fn test_spillover_small_input_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = "hello world".to_string();
+        let result = maybe_spillover("test_small", input.clone(), 1000, dir.path());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_spillover_large_input_writes_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let large = "x".repeat(5000);
+        let result = maybe_spillover("test_large_write", large.clone(), 1000, dir.path());
+
+        assert!(result.contains("<preview>"));
+        assert!(result.contains("</preview>"));
+        assert!(result.contains("Tool result too large"));
+        assert!(result.contains("5000 bytes"));
+        assert!(result.contains("test_large_write.txt"));
+
+        let file_path = dir.path().join("test_large_write.txt");
+        assert!(file_path.exists());
+        let on_disk = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(on_disk, large);
+    }
+
+    #[test]
+    fn test_spillover_preview_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let head = "HEAD_CONTENT_";
+        let tail_marker = "TAIL_MARKER";
+        let padding = "z".repeat(SPILLOVER_PREVIEW_BYTES + 5000);
+        let large = format!("{head}{padding}{tail_marker}");
+        let result = maybe_spillover("test_preview", large, 1000, dir.path());
+
+        assert!(result.contains(head));
+        assert!(!result.contains(tail_marker));
+    }
+
+    #[test]
+    fn test_spillover_preserves_utf8_boundaries() {
+        let dir = tempfile::tempdir().unwrap();
+        let emoji_line = "\u{1F600}".repeat(300); // 1200 bytes of emoji
+        let large = format!("{}{}", emoji_line, "a".repeat(5000));
+
+        let result = maybe_spillover("test_utf8", large, 100, dir.path());
+
+        assert!(result.contains("<preview>"));
+
+        let preview_start = result.find("<preview>\n").unwrap() + "<preview>\n".len();
+        let preview_end = result.find("\n</preview>").unwrap();
+        let preview = &result[preview_start..preview_end];
+        assert!(preview.chars().count() > 0);
+    }
+
+    #[test]
+    fn test_mcp_result_spills_large_output() {
+        let request = ToolCallRequest {
+            id: "spill_integration".to_string(),
+            name: "big_tool".to_string(),
+            arguments: "{}".to_string(),
+        };
+
+        let big_value = "x".repeat(TOOL_RESULT_MAX_BYTES + 1000);
+        let structured = json!({ "data": big_value });
+
+        let mcp_result = McpCallToolResult {
+            content: vec![],
+            structured_content: Some(structured),
+            is_error: Some(false),
+            meta: None,
+        };
+
+        let (result, _) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+
+        assert!(result.result.contains("<preview>"));
+        assert!(result.result.contains("Tool result too large"));
+        assert!(result.result.contains("spill_integration.txt"));
     }
 }
