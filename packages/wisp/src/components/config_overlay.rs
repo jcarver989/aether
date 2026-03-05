@@ -730,6 +730,66 @@ mod tests {
     }
 
     #[test]
+    fn update_config_options_removes_reasoning_when_model_lacks_support() {
+        // Start with model + reasoning_effort options (reasoning model selected)
+        let initial_options = vec![
+            agent_client_protocol::SessionConfigOption::select(
+                "model",
+                "Model",
+                "claude-opus",
+                vec![
+                    SessionConfigSelectOption::new("claude-opus", "Claude Opus"),
+                    SessionConfigSelectOption::new("deepseek-chat", "DeepSeek Chat"),
+                ],
+            ),
+            agent_client_protocol::SessionConfigOption::select(
+                "reasoning_effort",
+                "Reasoning Effort",
+                "high",
+                vec![
+                    SessionConfigSelectOption::new("none", "None"),
+                    SessionConfigSelectOption::new("low", "Low"),
+                    SessionConfigSelectOption::new("medium", "Medium"),
+                    SessionConfigSelectOption::new("high", "High"),
+                ],
+            ),
+        ];
+        let menu = ConfigMenu::from_config_options(&initial_options);
+        let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
+
+        // Verify reasoning_effort is rendered initially
+        let context = RenderContext::new((80, 24));
+        let lines = overlay.render(&context);
+        let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        assert!(
+            text.iter().any(|l| l.contains("Reasoning Effort")),
+            "Reasoning Effort should appear initially; got:\n{}",
+            text.join("\n")
+        );
+
+        // Simulate switching to a non-reasoning model: server returns only model option
+        let updated_options = vec![agent_client_protocol::SessionConfigOption::select(
+            "model",
+            "Model",
+            "deepseek-chat",
+            vec![
+                SessionConfigSelectOption::new("claude-opus", "Claude Opus"),
+                SessionConfigSelectOption::new("deepseek-chat", "DeepSeek Chat"),
+            ],
+        )];
+        overlay.update_config_options(&updated_options);
+
+        // Verify reasoning_effort is gone from the rendered output
+        let lines = overlay.render(&context);
+        let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        assert!(
+            !text.iter().any(|l| l.contains("Reasoning Effort")),
+            "Reasoning Effort should NOT appear after switching to non-reasoning model; got:\n{}",
+            text.join("\n")
+        );
+    }
+
+    #[test]
     fn footer_shows_toggle_when_model_selector_open() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 

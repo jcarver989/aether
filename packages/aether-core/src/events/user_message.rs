@@ -1,4 +1,4 @@
-use llm::{StreamingModelProvider, ToolDefinition};
+use llm::{ReasoningEffort, StreamingModelProvider, ToolDefinition};
 
 /// Message from the user to the agent.
 pub enum UserMessage {
@@ -7,6 +7,7 @@ pub enum UserMessage {
     ClearContext,
     SwitchModel(Box<dyn StreamingModelProvider>),
     UpdateTools(Vec<ToolDefinition>),
+    SetReasoningEffort(Option<ReasoningEffort>),
 }
 
 impl std::fmt::Debug for UserMessage {
@@ -23,6 +24,9 @@ impl std::fmt::Debug for UserMessage {
                 .finish(),
             UserMessage::UpdateTools(tools) => {
                 f.debug_tuple("UpdateTools").field(&tools.len()).finish()
+            }
+            UserMessage::SetReasoningEffort(effort) => {
+                f.debug_tuple("SetReasoningEffort").field(effort).finish()
             }
         }
     }

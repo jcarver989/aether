@@ -1,10 +1,10 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
-use super::types::Request;
+use super::types::{Request, Thinking};
 use crate::provider::{
     LlmResponseStream, ProviderFactory, StreamingModelProvider, get_context_window,
 };
-use crate::{Context, LlmError, Result};
+use crate::{Context, LlmError, ReasoningEffort, Result};
 use async_stream;
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
@@ -91,6 +91,17 @@ impl AnthropicProvider {
 
         if let Some(tools) = tools {
             request = request.with_tools(tools);
+        }
+
+        if let Some(effort) = context.reasoning_effort() {
+            let budget_tokens = effort_to_budget_tokens(effort);
+            request = request.with_thinking(Thinking::new(budget_tokens));
+            // Anthropic requires temperature to be unset when thinking is enabled
+            request.temperature = None;
+            // max_tokens must be > budget_tokens
+            if request.max_tokens <= budget_tokens {
+                request.max_tokens = budget_tokens + 1024;
+            }
         }
 
         debug!("Built Anthropic request for model: {}", request.model);
@@ -239,6 +250,14 @@ fn build_client() -> Result<Client> {
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| LlmError::HttpClientCreation(e.to_string()))
+}
+
+fn effort_to_budget_tokens(effort: ReasoningEffort) -> u32 {
+    match effort {
+        ReasoningEffort::Low => 1024,
+        ReasoningEffort::Medium => 4096,
+        ReasoningEffort::High => 10240,
+    }
 }
 
 fn should_redact_header(name: &str) -> bool {
@@ -444,6 +463,70 @@ mod tests {
         } else {
             panic!("Expected system prompt");
         }
+    }
+
+    #[test]
+    fn test_build_request_with_reasoning_effort() {
+        let provider = create_test_provider();
+
+        let mut context = Context::new(
+            vec![ChatMessage::User {
+                content: "Think hard".to_string(),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+        context.set_reasoning_effort(Some(crate::ReasoningEffort::High));
+
+        let request = provider.build_request(&context).unwrap();
+        let thinking = request.thinking.expect("thinking should be set");
+        assert_eq!(thinking.thinking_type, "enabled");
+        assert_eq!(thinking.budget_tokens, 10240);
+        // Temperature must be unset when thinking is enabled
+        assert!(request.temperature.is_none());
+        // max_tokens must exceed budget_tokens
+        assert!(request.max_tokens > thinking.budget_tokens);
+    }
+
+    #[test]
+    fn test_build_request_without_reasoning_effort_has_no_thinking() {
+        let provider = create_test_provider();
+        let context = Context::new(
+            vec![ChatMessage::User {
+                content: "Hello".to_string(),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+
+        let request = provider.build_request(&context).unwrap();
+        assert!(request.thinking.is_none());
+    }
+
+    #[test]
+    fn test_build_request_thinking_bumps_max_tokens_if_needed() {
+        let provider = AnthropicProvider::new(Some("test-api-key".to_string()))
+            .unwrap()
+            .with_max_tokens(500)
+            .with_prompt_caching(false);
+
+        let mut context = Context::new(
+            vec![ChatMessage::User {
+                content: "Hi".to_string(),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+        context.set_reasoning_effort(Some(crate::ReasoningEffort::Low));
+
+        let request = provider.build_request(&context).unwrap();
+        let thinking = request.thinking.as_ref().unwrap();
+        assert!(
+            request.max_tokens > thinking.budget_tokens,
+            "max_tokens ({}) should exceed budget_tokens ({})",
+            request.max_tokens,
+            thinking.budget_tokens
+        );
     }
 
     #[test]

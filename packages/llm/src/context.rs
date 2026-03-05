@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::reasoning::ReasoningEffort;
 use crate::types::IsoString;
 
 use super::{ChatMessage, ToolDefinition};
@@ -8,11 +9,25 @@ use super::{ChatMessage, ToolDefinition};
 pub struct Context {
     messages: Vec<ChatMessage>,
     tools: Vec<ToolDefinition>,
+    #[serde(skip)]
+    reasoning_effort: Option<ReasoningEffort>,
 }
 
 impl Context {
     pub fn new(messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Self {
-        Self { messages, tools }
+        Self {
+            messages,
+            tools,
+            reasoning_effort: None,
+        }
+    }
+
+    pub fn reasoning_effort(&self) -> Option<ReasoningEffort> {
+        self.reasoning_effort
+    }
+
+    pub fn set_reasoning_effort(&mut self, effort: Option<ReasoningEffort>) {
+        self.reasoning_effort = effort;
     }
 
     pub fn add_message(&mut self, message: ChatMessage) {
@@ -81,6 +96,7 @@ impl Context {
         Context {
             messages,
             tools: self.tools.clone(),
+            reasoning_effort: self.reasoning_effort,
         }
     }
 }
@@ -165,6 +181,33 @@ mod tests {
 
         assert_eq!(msgs.len(), 5);
         assert!(msgs.iter().all(|m| !m.is_system()));
+    }
+
+    #[test]
+    fn test_reasoning_effort_default_is_none() {
+        let ctx = create_test_context();
+        assert_eq!(ctx.reasoning_effort(), None);
+    }
+
+    #[test]
+    fn test_reasoning_effort_set_and_get() {
+        let mut ctx = create_test_context();
+        ctx.set_reasoning_effort(Some(crate::ReasoningEffort::High));
+        assert_eq!(ctx.reasoning_effort(), Some(crate::ReasoningEffort::High));
+
+        ctx.set_reasoning_effort(None);
+        assert_eq!(ctx.reasoning_effort(), None);
+    }
+
+    #[test]
+    fn test_reasoning_effort_preserved_through_compaction() {
+        let mut ctx = create_test_context();
+        ctx.set_reasoning_effort(Some(crate::ReasoningEffort::Medium));
+        let compacted = ctx.with_compacted_summary("Summary");
+        assert_eq!(
+            compacted.reasoning_effort(),
+            Some(crate::ReasoningEffort::Medium)
+        );
     }
 
     #[test]

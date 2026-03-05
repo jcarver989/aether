@@ -124,6 +124,10 @@ fn handle_content_block_start(
             debug!("Text block started at index {}", start_data.index);
             (None, None)
         }
+        ContentBlockStartData::Thinking { .. } => {
+            debug!("Thinking block started at index {}", start_data.index);
+            (None, None)
+        }
         ContentBlockStartData::ToolUse { id, name } => {
             debug!("Tool use started: {} ({})", name, id);
             index_to_id.insert(start_data.index, id.clone());
@@ -144,6 +148,13 @@ fn handle_content_block_delta(
                 (None, None)
             } else {
                 (Some(LlmResponse::Text { chunk: text }), None)
+            }
+        }
+        ContentBlockDeltaData::ThinkingDelta { thinking } => {
+            if thinking.is_empty() {
+                (None, None)
+            } else {
+                (Some(LlmResponse::Reasoning { chunk: thinking }), None)
             }
         }
         ContentBlockDeltaData::InputJsonDelta { partial_json } => {
@@ -351,6 +362,54 @@ mod tests {
         // With ID-based tracking, we should get both tool calls
         assert_eq!(tool_starts.len(), 2);
         assert_eq!(tool_completes.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_process_thinking_stream() {
+        let lines = vec![
+            r#"{"type": "message_start", "message": {"id": "msg_123", "type": "message", "role": "assistant", "content": [], "model": "claude-opus-4-6", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 0}}}"#.to_string(),
+            r#"{"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}"#.to_string(),
+            r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me think"}}"#.to_string(),
+            r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": " about this"}}"#.to_string(),
+            r#"{"type": "content_block_stop", "index": 0}"#.to_string(),
+            r#"{"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}"#.to_string(),
+            r#"{"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Here is my answer"}}"#.to_string(),
+            r#"{"type": "content_block_stop", "index": 1}"#.to_string(),
+            r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 50}}}"#.to_string(),
+            r#"{"type": "message_stop"}"#.to_string(),
+        ];
+
+        let stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut response_stream = Box::pin(process_anthropic_stream(stream));
+
+        let mut responses = Vec::new();
+        while let Some(result) = response_stream.next().await {
+            responses.push(result.unwrap());
+        }
+
+        assert!(matches!(responses[0], LlmResponse::Start { .. }));
+        assert!(
+            matches!(responses[1], LlmResponse::Reasoning { ref chunk } if chunk == "Let me think")
+        );
+        assert!(
+            matches!(responses[2], LlmResponse::Reasoning { ref chunk } if chunk == " about this")
+        );
+        assert!(
+            matches!(responses[3], LlmResponse::Text { ref chunk } if chunk == "Here is my answer")
+        );
+        assert!(matches!(
+            responses[4],
+            LlmResponse::Usage {
+                input_tokens: 10,
+                output_tokens: 50
+            }
+        ));
+        assert!(matches!(
+            responses[5],
+            LlmResponse::Done {
+                stop_reason: Some(StopReason::EndTurn)
+            }
+        ));
     }
 
     #[tokio::test]

@@ -42,6 +42,10 @@ impl CodexProvider {
             Some(map_tools(context.tools())?)
         };
 
+        let codex_effort = context
+            .reasoning_effort()
+            .map_or(ReasoningEffort::Medium, Into::into);
+
         Ok(CreateResponse {
             model: Some(self.model.clone()),
             input: InputParam::Items(input),
@@ -50,7 +54,7 @@ impl CodexProvider {
             store: Some(false),
             stream: Some(true),
             reasoning: Some(Reasoning {
-                effort: Some(ReasoningEffort::Medium),
+                effort: Some(codex_effort),
                 summary: Some(ReasoningSummary::Auto),
             }),
             include: Some(vec![IncludeEnum::ReasoningEncryptedContent]),
@@ -208,6 +212,16 @@ impl StreamingModelProvider for CodexProvider {
     }
 }
 
+impl From<crate::ReasoningEffort> for ReasoningEffort {
+    fn from(effort: crate::ReasoningEffort) -> Self {
+        match effort {
+            crate::ReasoningEffort::Low => Self::Low,
+            crate::ReasoningEffort::Medium => Self::Medium,
+            crate::ReasoningEffort::High => Self::High,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,6 +304,39 @@ mod tests {
     fn display_name_includes_model() {
         let provider = create_test_provider();
         assert_eq!(provider.display_name(), "Codex (gpt-5.2-codex)");
+    }
+
+    #[test]
+    fn build_request_defaults_to_medium_effort() {
+        let provider = create_test_provider();
+        let context = Context::new(
+            vec![ChatMessage::User {
+                content: "Hi".to_string(),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+
+        let request = provider.build_request(&context).unwrap();
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["reasoning"]["effort"], "medium");
+    }
+
+    #[test]
+    fn build_request_uses_context_reasoning_effort() {
+        let provider = create_test_provider();
+        let mut context = Context::new(
+            vec![ChatMessage::User {
+                content: "Think hard".to_string(),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+        context.set_reasoning_effort(Some(crate::ReasoningEffort::High));
+
+        let request = provider.build_request(&context).unwrap();
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["reasoning"]["effort"], "high");
     }
 
     #[test]

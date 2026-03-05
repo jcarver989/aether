@@ -26,6 +26,24 @@ pub struct Request {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Tool>>,
     pub stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<Thinking>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Thinking {
+    #[serde(rename = "type")]
+    pub thinking_type: String,
+    pub budget_tokens: u32,
+}
+
+impl Thinking {
+    pub fn new(budget_tokens: u32) -> Self {
+        Self {
+            thinking_type: "enabled".to_string(),
+            budget_tokens,
+        }
+    }
 }
 
 impl Request {
@@ -38,6 +56,7 @@ impl Request {
             system: None,
             tools: None,
             stream: false,
+            thinking: None,
         }
     }
 
@@ -71,6 +90,11 @@ impl Request {
 
     pub fn with_stream(mut self, stream: bool) -> Self {
         self.stream = stream;
+        self
+    }
+
+    pub fn with_thinking(mut self, thinking: Thinking) -> Self {
+        self.thinking = Some(thinking);
         self
     }
 }
@@ -237,6 +261,8 @@ pub enum ContentBlockStartData {
     Text { text: String },
     #[serde(rename = "tool_use")]
     ToolUse { id: String, name: String },
+    #[serde(rename = "thinking")]
+    Thinking { thinking: String },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -251,6 +277,7 @@ pub struct ContentBlockDelta {
 pub enum ContentBlockDeltaData {
     TextDelta { text: String },
     InputJsonDelta { partial_json: String },
+    ThinkingDelta { thinking: String },
 }
 
 #[derive(Debug, Clone, Deserialize)]

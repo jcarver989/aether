@@ -25,7 +25,6 @@ struct ModelData {
     #[serde(default)]
     tool_call: Option<bool>,
     #[serde(default)]
-    #[allow(dead_code)]
     reasoning: Option<bool>,
     #[serde(default)]
     #[allow(dead_code)]
@@ -179,6 +178,7 @@ struct ModelInfo {
     model_id: String,
     display_name: String,
     context_window: u32,
+    supports_reasoning: bool,
 }
 
 type ProviderModels = BTreeMap<&'static str, Vec<ModelInfo>>;
@@ -218,6 +218,7 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
                 model_id: m.id.clone(),
                 display_name: m.name.clone(),
                 context_window: m.limit.as_ref().map_or(0, |l| l.context),
+                supports_reasoning: m.reasoning.unwrap_or(false),
             })
             .collect();
 
@@ -346,6 +347,19 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
         pushln(out, "    }");
         blank(out);
 
+        // supports_reasoning — group variants that share the same value
+        pushln(out, "    pub fn supports_reasoning(self) -> bool {");
+        pushln(out, "        match self {");
+        emit_grouped_arms(
+            out,
+            models,
+            |m| m.supports_reasoning.to_string(),
+            |val| val.to_string(),
+        );
+        pushln(out, "        }");
+        pushln(out, "    }");
+        blank(out);
+
         // ALL constant
         pushln(out, format!("    const ALL: &[{enum_name}] = &["));
         for model in models {
@@ -463,6 +477,7 @@ fn emit_llm_model_impl(out: &mut String) {
     emit_llm_context_window(out);
     emit_llm_required_env_var(out);
     emit_llm_oauth_provider_id(out);
+    emit_llm_supports_reasoning(out);
     emit_llm_all(out);
     pushln(out, "}");
     blank(out);
@@ -675,6 +690,34 @@ fn emit_llm_oauth_provider_id(out: &mut String) {
     pushln(
         out,
         format!("            {} => None,", none_arms.join(" | ")),
+    );
+    pushln(out, "        }");
+    pushln(out, "    }");
+    blank(out);
+}
+
+fn emit_llm_supports_reasoning(out: &mut String) {
+    pushln(
+        out,
+        "    /// Whether this model supports reasoning/extended thinking",
+    );
+    pushln(out, "    pub fn supports_reasoning(&self) -> bool {");
+    pushln(out, "        match self {");
+    for cfg in PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            Self::{}(m) => m.supports_reasoning(),",
+                cfg.enum_name
+            ),
+        );
+    }
+    pushln(
+        out,
+        format!(
+            "            {} => false,",
+            dynamic_pattern_with_binding("_")
+        ),
     );
     pushln(out, "        }");
     pushln(out, "    }");
@@ -1000,6 +1043,46 @@ mod tests {
         assert!(is_alias("claude-sonnet-4-5-latest"));
         assert!(is_alias("claude-3-7-sonnet-latest"));
         assert!(!is_alias("claude-sonnet-4-5-20250929"));
+    }
+
+    #[test]
+    fn generate_contains_supports_reasoning() {
+        let mut data = minimal_models_dev_json();
+        let root = data.as_object_mut().expect("root object");
+        let anthropic = root
+            .get_mut("anthropic")
+            .and_then(Value::as_object_mut)
+            .expect("anthropic provider");
+
+        anthropic.insert(
+            "models".to_string(),
+            json!({
+                "thinker": {
+                    "id": "thinker",
+                    "name": "Thinker",
+                    "tool_call": true,
+                    "reasoning": true,
+                    "limit": {"context": 1000, "output": 0}
+                },
+                "fast": {
+                    "id": "fast",
+                    "name": "Fast",
+                    "tool_call": true,
+                    "reasoning": false,
+                    "limit": {"context": 1000, "output": 0}
+                }
+            }),
+        );
+
+        let source = generate_from_value(data);
+        // Provider enum should have supports_reasoning method
+        assert!(source.contains("pub fn supports_reasoning(self) -> bool {"));
+        // LlmModel should delegate to provider
+        assert!(source.contains("pub fn supports_reasoning(&self) -> bool {"));
+        assert!(source.contains("Self::Thinker => true,"));
+        assert!(source.contains("Self::Fast => false,"));
+        // Dynamic providers return false
+        assert!(source.contains("Self::Ollama(_) | Self::LlamaCpp(_) => false,"));
     }
 
     fn generate_from_value(data: Value) -> String {
