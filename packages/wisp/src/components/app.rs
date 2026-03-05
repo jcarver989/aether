@@ -333,6 +333,7 @@ impl App {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
         self.animation_tick = 0;
+        self.context_usage_pct = None;
         self.plan_entries.clear();
     }
 
@@ -1259,6 +1260,7 @@ mod tests {
         let mut app = App::new("test-agent".to_string(), &[], vec![]);
         app.waiting_for_response = true;
         app.grid_loader.visible = true;
+        app.context_usage_pct = Some(25);
         app.conversation
             .set_segments(vec![SegmentContent::Text("hello".to_string())]);
         app.tool_call_statuses
@@ -1273,6 +1275,7 @@ mod tests {
         assert!(matches!(effects.as_slice(), [AppEvent::Render]));
         assert!(!app.waiting_for_response);
         assert!(!app.grid_loader.visible);
+        assert_eq!(app.context_usage_pct, None);
         assert_eq!(app.conversation.segments().len(), 0);
         assert_eq!(app.tool_call_statuses.progress().total_top_level, 0);
     }
