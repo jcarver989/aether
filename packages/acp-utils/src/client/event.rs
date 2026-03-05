@@ -14,5 +14,12 @@ pub enum AcpEvent {
     },
     PromptDone(StopReason),
     PromptError(Error),
+    AuthenticateComplete {
+        method_id: String,
+    },
+    AuthenticateFailed {
+        method_id: String,
+        error: String,
+    },
     ConnectionClosed,
 }

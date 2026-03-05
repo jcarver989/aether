@@ -23,6 +23,7 @@ pub struct AcpSession {
     pub session_id: SessionId,
     pub agent_name: String,
     pub config_options: Vec<SessionConfigOption>,
+    pub auth_methods: Vec<acp::AuthMethod>,
     pub event_rx: mpsc::UnboundedReceiver<AcpEvent>,
     pub prompt_handle: AcpPromptHandle,
 }
@@ -181,21 +182,30 @@ where
         });
     });
 
-    let (session_id, agent_name, config_options) = session_rx.await.map_err(|_| {
-        AcpClientError::AgentCrashed("ACP thread died during handshake".to_string())
-    })??;
+    let (session_id, agent_name, config_options, auth_methods) =
+        session_rx.await.map_err(|_| {
+            AcpClientError::AgentCrashed("ACP thread died during handshake".to_string())
+        })??;
 
     Ok(AcpSession {
         session_id,
         agent_name,
         config_options,
+        auth_methods,
         event_rx,
         prompt_handle: AcpPromptHandle { cmd_tx },
     })
 }
 
-type HandshakeResult =
-    Result<(acp::SessionId, String, Vec<acp::SessionConfigOption>), AcpClientError>;
+type HandshakeResult = Result<
+    (
+        acp::SessionId,
+        String,
+        Vec<acp::SessionConfigOption>,
+        Vec<acp::AuthMethod>,
+    ),
+    AcpClientError,
+>;
 
 struct AcpThreadContext<F> {
     child_stdin: tokio::process::ChildStdin,
@@ -253,15 +263,7 @@ where
         init_resp.protocol_version, init_resp.agent_info
     );
 
-    if !init_resp.auth_methods.is_empty() {
-        let method_id = init_resp.auth_methods[0].id.clone();
-        if let Err(e) = conn
-            .authenticate(acp::AuthenticateRequest::new(method_id))
-            .await
-        {
-            tracing::warn!("authenticate call failed, continuing anyway: {e:?}");
-        }
-    }
+    let auth_methods = init_resp.auth_methods;
 
     let session_resp = match conn.new_session(new_session_request).await {
         Ok(r) => r,
@@ -275,7 +277,7 @@ where
     info!("ACP session created: {session_id}");
 
     let config_options = session_resp.config_options.unwrap_or_default();
-    let _ = session_tx.send(Ok((session_id, agent_name, config_options)));
+    let _ = session_tx.send(Ok((session_id, agent_name, config_options, auth_methods)));
 
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
@@ -355,6 +357,26 @@ async fn handle_side_command(
             };
             if let Err(e) = conn.ext_notification(msg.into()).await {
                 tracing::warn!("authenticate_mcp_server notification failed: {e:?}");
+            }
+        }
+        PromptCommand::Authenticate {
+            session_id: _,
+            method_id,
+        } => {
+            match conn
+                .authenticate(acp::AuthenticateRequest::new(method_id.clone()))
+                .await
+            {
+                Ok(_) => {
+                    let _ = event_tx.send(AcpEvent::AuthenticateComplete { method_id });
+                }
+                Err(e) => {
+                    tracing::warn!("authenticate failed: {e:?}");
+                    let _ = event_tx.send(AcpEvent::AuthenticateFailed {
+                        method_id,
+                        error: format!("{e:?}"),
+                    });
+                }
             }
         }
     }

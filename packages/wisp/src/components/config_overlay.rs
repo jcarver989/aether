@@ -2,12 +2,16 @@ use crate::components::config_menu::{ConfigChange, ConfigMenu, ConfigMenuAction}
 use crate::components::config_picker::{ConfigPicker, ConfigPickerAction};
 use crate::components::container::Container;
 use crate::components::model_selector::{ModelSelector, ModelSelectorAction};
+use crate::components::provider_login::{
+    ProviderLoginAction, ProviderLoginEntry, ProviderLoginOverlay, ProviderLoginStatus,
+    provider_login_summary,
+};
 use crate::components::server_status::{
     ServerStatusAction, ServerStatusOverlay, server_status_summary,
 };
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use acp_utils::notifications::McpServerStatusEntry;
-use agent_client_protocol::SessionConfigOption;
+use agent_client_protocol::{self as acp, SessionConfigOption};
 use crossterm::event::KeyEvent;
 use unicode_width::UnicodeWidthStr;
 
@@ -25,7 +29,9 @@ pub struct ConfigOverlay {
     picker: Option<ConfigPicker>,
     model_selector: Option<ModelSelector>,
     server_overlay: Option<ServerStatusOverlay>,
+    provider_login_overlay: Option<ProviderLoginOverlay>,
     server_statuses: Vec<McpServerStatusEntry>,
+    auth_methods: Vec<acp::AuthMethod>,
 }
 
 #[derive(Debug)]
@@ -33,16 +39,23 @@ pub enum ConfigOverlayAction {
     Close,
     ApplyConfigChange(ConfigChange),
     AuthenticateServer(String),
+    AuthenticateProvider(String),
 }
 
 impl ConfigOverlay {
-    pub fn new(menu: ConfigMenu, server_statuses: Vec<McpServerStatusEntry>) -> Self {
+    pub fn new(
+        menu: ConfigMenu,
+        server_statuses: Vec<McpServerStatusEntry>,
+        auth_methods: Vec<acp::AuthMethod>,
+    ) -> Self {
         Self {
             menu,
             picker: None,
             model_selector: None,
             server_overlay: None,
+            provider_login_overlay: None,
             server_statuses,
+            auth_methods,
         }
     }
 
@@ -55,12 +68,54 @@ impl ConfigOverlay {
         self.menu.update_options(options);
         let summary = server_status_summary(&self.server_statuses);
         self.menu.add_mcp_servers_entry(&summary);
+        if !self.auth_methods.is_empty() {
+            let login_entries = self.build_login_entries();
+            let login_summary = provider_login_summary(&login_entries);
+            self.menu.add_provider_logins_entry(&login_summary);
+        }
     }
 
     pub fn update_server_statuses(&mut self, statuses: Vec<McpServerStatusEntry>) {
         self.server_statuses = statuses;
         if let Some(ref mut overlay) = self.server_overlay {
             overlay.update_entries(self.server_statuses.clone());
+        }
+    }
+
+    pub fn on_authenticate_started(&mut self, method_id: &str) {
+        if let Some(ref mut overlay) = self.provider_login_overlay {
+            overlay.set_authenticating(method_id);
+        }
+    }
+
+    pub fn remove_auth_method(&mut self, method_id: &str) {
+        self.auth_methods.retain(|m| m.id.0.as_ref() != method_id);
+        if let Some(ref mut overlay) = self.provider_login_overlay {
+            overlay.remove_entry(method_id);
+            if overlay.entries.is_empty() {
+                self.provider_login_overlay = None;
+            }
+        }
+    }
+
+    fn build_login_entries(&self) -> Vec<ProviderLoginEntry> {
+        self.auth_methods
+            .iter()
+            .map(|m| ProviderLoginEntry {
+                method_id: m.id.0.to_string(),
+                name: m.name.clone(),
+                status: ProviderLoginStatus::NeedsLogin,
+            })
+            .collect()
+    }
+
+    pub fn on_authenticate_failed(&mut self, method_id: &str) {
+        if let Some(entry) = self
+            .provider_login_overlay
+            .as_mut()
+            .and_then(|o| o.entries.iter_mut().find(|e| e.method_id == method_id))
+        {
+            entry.status = ProviderLoginStatus::NeedsLogin;
         }
     }
 
@@ -108,7 +163,7 @@ impl ConfigOverlay {
             "[Space/Enter] Toggle  [Esc] Done"
         } else if self.picker.is_some() {
             "[Enter] Confirm  [Esc] Back"
-        } else if self.server_overlay.is_some() {
+        } else if self.server_overlay.is_some() || self.provider_login_overlay.is_some() {
             "[Enter] Authenticate  [Esc] Back"
         } else {
             "[Enter] Select  [Esc] Close"
@@ -133,6 +188,8 @@ impl Component for ConfigOverlay {
             children.push(picker);
         } else if let Some(ref mut server_overlay) = self.server_overlay {
             children.push(server_overlay);
+        } else if let Some(ref mut provider_login_overlay) = self.provider_login_overlay {
+            children.push(provider_login_overlay);
         }
 
         Container::new(children)
@@ -170,7 +227,30 @@ impl HandlesInput for ConfigOverlay {
             };
         }
 
-        // Model selector has second priority
+        // Provider login overlay has second priority
+        if let Some(ref mut overlay) = self.provider_login_overlay {
+            let outcome = overlay.handle_key(key_event);
+            return match outcome.action {
+                Some(ProviderLoginAction::Close) => {
+                    self.provider_login_overlay = None;
+                    InputOutcome::consumed_and_render()
+                }
+                Some(ProviderLoginAction::Authenticate(method_id)) => {
+                    InputOutcome::action_and_render(ConfigOverlayAction::AuthenticateProvider(
+                        method_id,
+                    ))
+                }
+                None => {
+                    if outcome.needs_render {
+                        InputOutcome::consumed_and_render()
+                    } else {
+                        InputOutcome::consumed()
+                    }
+                }
+            };
+        }
+
+        // Model selector has third priority
         if let Some(ref mut selector) = self.model_selector {
             let outcome = selector.handle_key(key_event);
             return match outcome.action {
@@ -242,6 +322,11 @@ impl HandlesInput for ConfigOverlay {
             }
             Some(ConfigMenuAction::OpenMcpServers) => {
                 self.server_overlay = Some(ServerStatusOverlay::new(self.server_statuses.clone()));
+                InputOutcome::consumed_and_render()
+            }
+            Some(ConfigMenuAction::OpenProviderLogins) => {
+                let entries = self.build_login_entries();
+                self.provider_login_overlay = Some(ProviderLoginOverlay::new(entries));
                 InputOutcome::consumed_and_render()
             }
             None => {
@@ -339,7 +424,7 @@ mod tests {
 
     #[test]
     fn bordered_box_fills_terminal_height_minus_one() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         // Should fill exactly height - 1 = 23 lines
@@ -348,7 +433,7 @@ mod tests {
 
     #[test]
     fn title_contains_configuration() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         assert!(lines[0].plain_text().contains("Configuration"));
@@ -356,7 +441,7 @@ mod tests {
 
     #[test]
     fn footer_shows_select_and_close_for_menu() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         let footer = lines[lines.len() - 2].plain_text(); // second to last (last is bottom border)
@@ -366,7 +451,7 @@ mod tests {
 
     #[test]
     fn footer_shows_confirm_and_back_for_picker() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         // Open picker
         overlay.handle_key(key(KeyCode::Enter));
         let context = RenderContext::new((80, 24));
@@ -380,7 +465,7 @@ mod tests {
     fn footer_shows_authenticate_and_back_for_servers() {
         let menu = make_menu();
         let statuses = make_server_statuses();
-        let mut overlay = ConfigOverlay::new(menu, statuses).with_server_overlay();
+        let mut overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         let footer = lines[lines.len() - 2].plain_text();
@@ -390,7 +475,7 @@ mod tests {
 
     #[test]
     fn selected_entry_has_bg_color() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         // The first menu entry (Provider) should be selected with highlight_bg
@@ -404,14 +489,14 @@ mod tests {
 
     #[test]
     fn esc_closes_overlay() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let outcome = overlay.handle_key(key(KeyCode::Esc));
         assert!(matches!(outcome.action, Some(ConfigOverlayAction::Close)));
     }
 
     #[test]
     fn enter_opens_picker() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let outcome = overlay.handle_key(key(KeyCode::Enter));
         assert!(outcome.consumed);
         assert!(overlay.has_picker());
@@ -419,7 +504,7 @@ mod tests {
 
     #[test]
     fn picker_esc_closes_picker_not_overlay() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         overlay.handle_key(key(KeyCode::Enter)); // open picker
         assert!(overlay.has_picker());
 
@@ -432,7 +517,7 @@ mod tests {
 
     #[test]
     fn picker_confirm_returns_config_change_action() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         overlay.handle_key(key(KeyCode::Enter)); // open picker
         overlay.handle_key(key(KeyCode::Down)); // move to second option
         let outcome = overlay.handle_key(key(KeyCode::Enter)); // confirm
@@ -450,7 +535,7 @@ mod tests {
     fn server_overlay_esc_closes_server_not_config_overlay() {
         let menu = make_menu();
         let statuses = make_server_statuses();
-        let mut overlay = ConfigOverlay::new(menu, statuses).with_server_overlay();
+        let mut overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
         assert!(render_footer(&mut overlay).contains("Authenticate"));
 
         let outcome = overlay.handle_key(key(KeyCode::Esc));
@@ -461,13 +546,13 @@ mod tests {
 
     #[test]
     fn cursor_col_without_picker_is_zero() {
-        let overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         assert_eq!(overlay.cursor_col(), 0);
     }
 
     #[test]
     fn cursor_col_with_picker_includes_border_and_prefix() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         overlay.handle_key(key(KeyCode::Enter)); // open picker for Provider
         let col = overlay.cursor_col();
         // "│ " (2) + "  Provider search: " (19) + query (0) = should be > 0
@@ -476,7 +561,7 @@ mod tests {
 
     #[test]
     fn narrow_terminal_does_not_panic() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((4, 3));
         let lines = overlay.render(&context);
         assert!(!lines.is_empty());
@@ -484,7 +569,7 @@ mod tests {
 
     #[test]
     fn very_small_terminal_shows_fallback() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((3, 2));
         let lines = overlay.render(&context);
         assert_eq!(lines.len(), 1);
@@ -498,7 +583,7 @@ mod tests {
         let mut menu = make_menu();
         menu.add_mcp_servers_entry("1 connected, 1 needs auth");
         let statuses = make_server_statuses();
-        let mut overlay = ConfigOverlay::new(menu, statuses);
+        let mut overlay = ConfigOverlay::new(menu, statuses, vec![]);
 
         // Verify MCP servers entry exists initially
         assert!(
@@ -543,7 +628,7 @@ mod tests {
 
     #[test]
     fn multi_select_entry_opens_model_selector() {
-        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         // Navigate to the model entry (index 1: provider=0, model=1)
         overlay.handle_key(key(KeyCode::Down));
@@ -558,7 +643,7 @@ mod tests {
 
     #[test]
     fn model_selector_esc_without_toggle_returns_no_change() {
-        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         // Navigate to model and open model selector
         overlay.handle_key(key(KeyCode::Down));
@@ -577,7 +662,7 @@ mod tests {
 
     #[test]
     fn model_selector_esc_after_deselecting_all_returns_no_change() {
-        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         overlay.handle_key(key(KeyCode::Down));
         overlay.handle_key(key(KeyCode::Enter)); // open model selector
@@ -591,7 +676,7 @@ mod tests {
 
     #[test]
     fn model_selector_enter_toggles_not_confirms() {
-        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         overlay.handle_key(key(KeyCode::Down));
         overlay.handle_key(key(KeyCode::Enter)); // open model selector
@@ -619,7 +704,7 @@ mod tests {
             many_models,
         )];
         let menu = ConfigMenu::from_config_options(&options);
-        let mut overlay = ConfigOverlay::new(menu, vec![]);
+        let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
         overlay.handle_key(key(KeyCode::Enter)); // open picker
 
         // Render at a tall terminal (60 rows)
@@ -646,7 +731,7 @@ mod tests {
 
     #[test]
     fn footer_shows_toggle_when_model_selector_open() {
-        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![]);
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         overlay.handle_key(key(KeyCode::Down));
         overlay.handle_key(key(KeyCode::Enter));

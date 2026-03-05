@@ -14,6 +14,7 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
         session_id,
         agent_name,
         config_options,
+        auth_methods,
         mut event_rx,
         prompt_handle,
     } = state;
@@ -21,7 +22,7 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
     enable_raw_mode()?;
     crossterm::execute!(io::stdout(), EnableBracketedPaste)?;
 
-    let mut screen = App::new(agent_name, &config_options);
+    let mut screen = App::new(agent_name, &config_options, auth_methods);
     let mut renderer = Renderer::new(io::stdout());
     renderer.update_render_context();
     renderer.render(&mut screen)?;
@@ -97,6 +98,15 @@ fn collect_acp_events<T: Write>(
             params,
             response_tx,
         } => screen.on_elicitation_request(params, response_tx),
+        AcpEvent::AuthenticateComplete { method_id } => {
+            screen.on_authenticate_complete(&method_id);
+            vec![AppEvent::Render]
+        }
+        AcpEvent::AuthenticateFailed { method_id, error } => {
+            tracing::warn!("Provider auth failed for {method_id}: {error}");
+            screen.on_authenticate_failed(&method_id);
+            vec![AppEvent::Render]
+        }
         AcpEvent::ConnectionClosed => vec![AppEvent::Exit],
     }
 }
@@ -217,6 +227,11 @@ async fn apply_screen_effects<T: Write>(
             }
             AppEvent::AuthenticateMcpServer { server_name } => {
                 let _ = prompt_handle.authenticate_mcp_server(session_id, &server_name);
+                should_render = true;
+            }
+            AppEvent::AuthenticateProvider { method_id } => {
+                let _ = prompt_handle.authenticate(session_id, &method_id);
+                screen.on_authenticate_started(&method_id);
                 should_render = true;
             }
         }

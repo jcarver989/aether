@@ -23,6 +23,7 @@ pub struct ConfigMenuEntry {
 pub enum ConfigMenuEntryKind {
     Select,
     McpServers,
+    ProviderLogins,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,7 @@ pub enum ConfigMenuAction {
     CloseAll,
     OpenSelectedPicker,
     OpenMcpServers,
+    OpenProviderLogins,
     OpenModelSelector,
 }
 
@@ -107,6 +109,9 @@ impl HandlesInput for ConfigMenu {
                 let action = match self.selected_entry() {
                     Some(e) if e.entry_kind == ConfigMenuEntryKind::McpServers => {
                         ConfigMenuAction::OpenMcpServers
+                    }
+                    Some(e) if e.entry_kind == ConfigMenuEntryKind::ProviderLogins => {
+                        ConfigMenuAction::OpenProviderLogins
                     }
                     Some(e) if e.multi_select => ConfigMenuAction::OpenModelSelector,
                     _ => ConfigMenuAction::OpenSelectedPicker,
@@ -219,6 +224,24 @@ impl ConfigMenu {
             current_value_index: 0,
             current_raw_value: String::new(),
             entry_kind: ConfigMenuEntryKind::McpServers,
+            multi_select: false,
+            display_name: None,
+        });
+    }
+
+    pub fn add_provider_logins_entry(&mut self, summary: &str) {
+        self.options.push(ConfigMenuEntry {
+            config_id: "__provider_logins".to_string(),
+            title: "Provider Logins".to_string(),
+            values: vec![ConfigMenuValue {
+                value: String::new(),
+                name: summary.to_string(),
+                description: None,
+                is_disabled: false,
+            }],
+            current_value_index: 0,
+            current_raw_value: String::new(),
+            entry_kind: ConfigMenuEntryKind::ProviderLogins,
             multi_select: false,
             display_name: None,
         });

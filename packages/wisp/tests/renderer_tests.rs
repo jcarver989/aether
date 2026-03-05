@@ -28,7 +28,7 @@ impl Renderer {
         config_options: &[acp::SessionConfigOption],
     ) -> Self {
         Self {
-            screen: App::new(agent_name, config_options),
+            screen: App::new(agent_name, config_options, vec![]),
             renderer: FrameRenderer::new(terminal),
         }
     }
@@ -156,6 +156,12 @@ impl Renderer {
                     };
                     let _ = prompt_handle.authenticate_mcp_server(session_id, &server_name);
                 }
+                AppEvent::AuthenticateProvider { method_id } => {
+                    let Some((prompt_handle, session_id)) = prompt else {
+                        return Err(std::io::Error::other("missing prompt context").into());
+                    };
+                    let _ = prompt_handle.authenticate(session_id, &method_id);
+                }
             }
         }
 
@@ -180,7 +186,8 @@ impl Renderer {
                 AppEvent::PromptSubmit { .. }
                 | AppEvent::SetConfigOption { .. }
                 | AppEvent::Cancel
-                | AppEvent::AuthenticateMcpServer { .. } => {
+                | AppEvent::AuthenticateMcpServer { .. }
+                | AppEvent::AuthenticateProvider { .. } => {
                     panic!("unexpected prompt/config/cancel effect without prompt context");
                 }
             }
