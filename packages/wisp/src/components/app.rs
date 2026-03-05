@@ -866,7 +866,6 @@ impl CursorComponent for App {
 
         let mut plan_view = PlanView {
             entries: &self.plan_entries,
-            tick: self.animation_tick,
         };
 
         let progress = self.tool_call_statuses.progress();

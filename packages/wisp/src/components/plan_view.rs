@@ -1,19 +1,20 @@
 use agent_client_protocol::{PlanEntry, PlanEntryStatus};
 
-use crate::tui::spinner::BRAILLE_FRAMES;
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Component, Line, RenderContext, Style};
+
+const CHECKBOX_EMPTY: &str = "\u{2610}"; // Ballot Box
+const CHECKBOX_FILLED: &str = "\u{2611}"; // Ballot Box with Check
 
 /// Renders the agent's task plan as a compact checklist.
 ///
 /// ```text
 /// Plan
-///   ✓ Research AI agent patterns
-///   ⠋ Implement task tracking
-///   ○ Write integration tests
+///   ☑ ~~Research AI agent patterns~~
+///   ☑ Implement task tracking
+///   ☐ Write integration tests
 /// ```
 pub struct PlanView<'a> {
     pub entries: &'a [PlanEntry],
-    pub tick: u16,
 }
 
 impl Component for PlanView<'_> {
@@ -33,16 +34,16 @@ impl Component for PlanView<'_> {
             let mut line = Line::default();
             match entry.status {
                 PlanEntryStatus::Completed => {
-                    line.push_styled("  ✓ ".to_string(), context.theme.success);
-                    line.push_styled(entry.content.clone(), context.theme.muted);
+                    line.push_styled(format!("  {CHECKBOX_FILLED} "), context.theme.muted);
+                    let completed_style = Style::fg(context.theme.muted).strikethrough();
+                    line.push_with_style(entry.content.clone(), completed_style);
                 }
                 PlanEntryStatus::InProgress => {
-                    let frame = BRAILLE_FRAMES[self.tick as usize % BRAILLE_FRAMES.len()];
-                    line.push_styled(format!("  {frame} "), context.theme.info);
+                    line.push_styled(format!("  {CHECKBOX_FILLED} "), context.theme.primary);
                     line.push_text(entry.content.clone());
                 }
                 _ => {
-                    line.push_styled("  ○ ".to_string(), context.theme.muted);
+                    line.push_styled(format!("  {CHECKBOX_EMPTY} "), context.theme.muted);
                     line.push_styled(entry.content.clone(), context.theme.muted);
                 }
             }
@@ -68,10 +69,7 @@ mod tests {
 
     #[test]
     fn empty_entries_render_nothing() {
-        let mut view = PlanView {
-            entries: &[],
-            tick: 0,
-        };
+        let mut view = PlanView { entries: &[] };
         assert!(view.render(&ctx()).is_empty());
     }
 
@@ -82,69 +80,50 @@ mod tests {
             entry("Implement", PlanEntryStatus::InProgress),
             entry("Test", PlanEntryStatus::Pending),
         ];
-        let mut view = PlanView {
-            entries: &entries,
-            tick: 0,
-        };
+        let mut view = PlanView { entries: &entries };
         let lines = view.render(&ctx());
-        // margin + header + 3 entries
         assert_eq!(lines.len(), 5);
         assert_eq!(lines[0].plain_text(), "");
         assert_eq!(lines[1].plain_text(), "Plan");
     }
 
     #[test]
-    fn completed_entry_has_checkmark() {
+    fn completed_entry_has_filled_checkbox() {
         let entries = vec![entry("Done task", PlanEntryStatus::Completed)];
-        let mut view = PlanView {
-            entries: &entries,
-            tick: 0,
-        };
+        let mut view = PlanView { entries: &entries };
         let lines = view.render(&ctx());
         let text = lines[2].plain_text();
-        assert!(text.contains('✓'));
+        assert!(text.contains(CHECKBOX_FILLED));
         assert!(text.contains("Done task"));
     }
 
     #[test]
-    fn in_progress_entry_has_spinner() {
+    fn completed_entry_has_strikethrough() {
+        let entries = vec![entry("Done task", PlanEntryStatus::Completed)];
+        let mut view = PlanView { entries: &entries };
+        let lines = view.render(&ctx());
+        let spans = lines[2].spans();
+        let text_span = &spans[1];
+        assert!(text_span.style().strikethrough);
+    }
+
+    #[test]
+    fn in_progress_entry_has_filled_checkbox() {
         let entries = vec![entry("Working", PlanEntryStatus::InProgress)];
-        let mut view = PlanView {
-            entries: &entries,
-            tick: 0,
-        };
+        let mut view = PlanView { entries: &entries };
         let lines = view.render(&ctx());
         let text = lines[2].plain_text();
-        assert!(text.contains(BRAILLE_FRAMES[0]));
+        assert!(text.contains(CHECKBOX_FILLED));
         assert!(text.contains("Working"));
     }
 
     #[test]
-    fn pending_entry_has_circle() {
+    fn pending_entry_has_empty_checkbox() {
         let entries = vec![entry("Todo", PlanEntryStatus::Pending)];
-        let mut view = PlanView {
-            entries: &entries,
-            tick: 0,
-        };
+        let mut view = PlanView { entries: &entries };
         let lines = view.render(&ctx());
         let text = lines[2].plain_text();
-        assert!(text.contains('○'));
+        assert!(text.contains(CHECKBOX_EMPTY));
         assert!(text.contains("Todo"));
-    }
-
-    #[test]
-    fn spinner_animates_with_tick() {
-        let entries = vec![entry("Working", PlanEntryStatus::InProgress)];
-        let mut view_a = PlanView {
-            entries: &entries,
-            tick: 0,
-        };
-        let mut view_b = PlanView {
-            entries: &entries,
-            tick: 1,
-        };
-        let text_a = view_a.render(&ctx())[2].plain_text();
-        let text_b = view_b.render(&ctx())[2].plain_text();
-        assert_ne!(text_a, text_b);
     }
 }
