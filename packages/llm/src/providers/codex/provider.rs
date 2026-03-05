@@ -100,11 +100,11 @@ impl CodexProvider {
         debug!("Sending request to Codex API: {url}");
         debug!(
             "Codex request body: {}",
-            serde_json::to_string(&request)
-                .unwrap_or_else(|_| "<failed to serialize>".to_string())
+            serde_json::to_string(&request).unwrap_or_else(|_| "<failed to serialize>".to_string())
         );
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .headers(headers)
             .json(&request)
@@ -313,5 +313,4 @@ mod tests {
         assert_eq!(json["text"]["verbosity"], "medium");
         assert_eq!(json["include"][0], "reasoning.encrypted_content");
     }
-
 }

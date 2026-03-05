@@ -28,7 +28,10 @@ impl BrowserOAuthHandler {
     ///
     /// Use this when the OAuth provider has a fixed redirect URI registered
     /// (e.g. `http://localhost:1455/auth/callback` for Codex).
-    pub fn with_redirect_uri(redirect_uri: impl Into<String>, port: u16) -> Result<Self, std::io::Error> {
+    pub fn with_redirect_uri(
+        redirect_uri: impl Into<String>,
+        port: u16,
+    ) -> Result<Self, std::io::Error> {
         let std_listener = std::net::TcpListener::bind(format!("127.0.0.1:{port}"))?;
         std_listener.set_nonblocking(true)?;
         let listener = TcpListener::from_std(std_listener)?;
