@@ -4,6 +4,7 @@ use acp_utils::notifications::{
 use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol::{self as acp, ExtNotification, SessionId};
+use llm::ReasoningEffort;
 use llm::parser::ModelProviderParser;
 use mcp_utils::client::ElicitationRequest;
 use rmcp::model::{CreateElicitationRequestParams, CreateElicitationResult, ElicitationSchema};
@@ -25,6 +26,7 @@ pub(crate) enum SessionCommand {
     Prompt {
         text: String,
         switch_model: Option<String>,
+        reasoning_effort: Option<ReasoningEffort>,
         result_tx: oneshot::Sender<Result<acp::StopReason, RelayError>>,
     },
     Cancel,
@@ -106,6 +108,7 @@ async fn run_session_relay(
                     SessionCommand::Prompt {
                         text,
                         switch_model,
+                        reasoning_effort,
                         result_tx,
                     } => {
                         let mut ctx = PromptContext {
@@ -118,7 +121,7 @@ async fn run_session_relay(
                             actor_handle: &actor_handle,
                             acp_session_id: &acp_session_id,
                         };
-                        let result = handle_prompt(&mut ctx, text, switch_model).await;
+                        let result = handle_prompt(&mut ctx, text, switch_model, reasoning_effort).await;
                         let _ = result_tx.send(result);
                     }
                     SessionCommand::Cancel => {
@@ -159,6 +162,7 @@ async fn handle_prompt(
     ctx: &mut PromptContext<'_>,
     text: String,
     switch_model: Option<String>,
+    reasoning_effort: Option<llm::ReasoningEffort>,
 ) -> Result<acp::StopReason, RelayError> {
     if let Some(model) = switch_model {
         let parser = ModelProviderParser::default();
@@ -170,6 +174,11 @@ async fn handle_prompt(
             .await
             .map_err(|e| RelayError::SwitchModelFailed(format!("{e}")))?;
     }
+
+    ctx.agent_tx
+        .send(UserMessage::SetReasoningEffort(reasoning_effort))
+        .await
+        .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
 
     if is_clear_command(&text) {
         return handle_clear_context(ctx).await;
@@ -635,6 +644,7 @@ mod tests {
             SessionCommand::Prompt {
                 text: "second prompt".to_string(),
                 switch_model: None,
+                reasoning_effort: None,
                 result_tx,
             },
             CancelPolicy::Ignore,

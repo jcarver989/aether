@@ -1,4 +1,5 @@
 use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
+use llm::ReasoningEffort;
 use llm::catalog::{self, LlmModel};
 use llm::oauth::OAuthCredentialStore;
 use std::collections::{BTreeMap, HashSet};
@@ -108,12 +109,49 @@ pub(crate) fn build_model_config_option(
         .meta(meta)
 }
 
+fn build_reasoning_effort_config_option(
+    current_effort: Option<ReasoningEffort>,
+    supports_reasoning: bool,
+) -> Option<SessionConfigOption> {
+    if !supports_reasoning {
+        return None;
+    }
+
+    let current = current_effort.map_or("none".to_string(), |e| e.as_str().to_string());
+
+    let mut options = vec![acp::SessionConfigSelectOption::new("none", "None")];
+    options.extend(ReasoningEffort::all().iter().map(|e| {
+        let value = e.as_str();
+        let mut label = value.to_string();
+        label[..1].make_ascii_uppercase();
+        acp::SessionConfigSelectOption::new(value, label)
+    }));
+
+    Some(
+        SessionConfigOption::select("reasoning_effort", "Reasoning Effort", current, options)
+            .category(SessionConfigOptionCategory::Model),
+    )
+}
+
 /// Build config options for the given state
 pub(crate) fn build_config_options(
     available: &[LlmModel],
     current_model: &str,
+    reasoning_effort: Option<ReasoningEffort>,
 ) -> Vec<SessionConfigOption> {
-    vec![build_model_config_option(available, current_model)]
+    let mut options = vec![build_model_config_option(available, current_model)];
+
+    let supports_reasoning = current_model
+        .split(',')
+        .map(str::trim)
+        .filter_map(|m| m.parse::<LlmModel>().ok())
+        .any(|m| m.supports_reasoning());
+
+    if let Some(opt) = build_reasoning_effort_config_option(reasoning_effort, supports_reasoning) {
+        options.push(opt);
+    }
+
+    options
 }
 
 /// Pick a default model from the available list.
@@ -231,7 +269,7 @@ mod tests {
     #[test]
     fn build_config_options_returns_single_model_option() {
         let models = test_models();
-        let opts = build_config_options(&models, "deepseek:deepseek-chat");
+        let opts = build_config_options(&models, "deepseek:deepseek-chat", None);
 
         assert_eq!(opts.len(), 1);
         assert_eq!(opts[0].id.0.as_ref(), "model");
@@ -354,6 +392,64 @@ mod tests {
                 .description
                 .as_deref()
                 .is_some_and(|d| d.starts_with("Unavailable:"))
+        );
+    }
+
+    #[test]
+    fn build_config_options_includes_reasoning_for_reasoning_model() {
+        let models = test_models();
+        // ClaudeOpus46 supports reasoning
+        let opts = build_config_options(
+            &models,
+            "anthropic:claude-opus-4-6",
+            Some(ReasoningEffort::High),
+        );
+
+        assert!(opts.len() >= 2, "Expected model + reasoning options");
+        let reasoning_opt = opts.iter().find(|o| o.id.0.as_ref() == "reasoning_effort");
+        assert!(
+            reasoning_opt.is_some(),
+            "Expected reasoning_effort option for reasoning model"
+        );
+        let reasoning_opt = reasoning_opt.unwrap();
+        let SessionConfigKind::Select(ref select) = reasoning_opt.kind else {
+            panic!("Expected Select kind");
+        };
+        assert_eq!(select.current_value.0.as_ref(), "high");
+    }
+
+    #[test]
+    fn build_config_options_hides_reasoning_for_non_reasoning_model() {
+        let models = test_models();
+        let opts = build_config_options(&models, "deepseek:deepseek-chat", None);
+        assert!(
+            !opts.iter().any(|o| o.id.0.as_ref() == "reasoning_effort"),
+            "Non-reasoning model should not have reasoning_effort option"
+        );
+    }
+
+    #[test]
+    fn reasoning_option_removed_when_switching_to_non_reasoning_model() {
+        let models = test_models();
+
+        // Start with a reasoning model — should include reasoning option
+        let opts_with = build_config_options(
+            &models,
+            "anthropic:claude-opus-4-6",
+            Some(ReasoningEffort::High),
+        );
+        assert!(
+            opts_with.iter().any(|o| o.id.0.as_ref() == "reasoning_effort"),
+            "reasoning_effort should be present for claude-opus-4-6"
+        );
+
+        // Switch to a non-reasoning model — reasoning option should be gone
+        let opts_without = build_config_options(&models, "deepseek:deepseek-chat", None);
+        assert!(
+            !opts_without
+                .iter()
+                .any(|o| o.id.0.as_ref() == "reasoning_effort"),
+            "reasoning_effort should NOT be present for deepseek-chat"
         );
     }
 

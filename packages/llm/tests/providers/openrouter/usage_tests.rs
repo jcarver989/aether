@@ -208,6 +208,7 @@ fn test_openrouter_request_serialization() {
         frequency_penalty: None,
         stop: None,
         response_format: None,
+        reasoning_effort: None,
     };
 
     let json = serde_json::to_value(&request).unwrap();

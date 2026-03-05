@@ -7,6 +7,7 @@ use agent_client_protocol::{
     SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
     SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
 };
+use llm::ReasoningEffort;
 use llm::catalog::{self, LlmModel};
 use llm::oauth::OAuthCredentialStore;
 use llm::parser::ModelProviderParser;
@@ -36,6 +37,7 @@ struct SessionState {
     _relay_handle: JoinHandle<()>,
     active_model: String,
     pending_model: Option<String>,
+    reasoning_effort: Option<ReasoningEffort>,
 }
 
 /// Manages ACP sessions, each session has its own agent and state
@@ -131,7 +133,7 @@ impl Agent for SessionManager {
         let sessions = self.sessions.lock().await;
         for (id, state) in sessions.iter() {
             let model = effective_model(&state.active_model, state.pending_model.as_deref());
-            let options = build_config_options(&available, model);
+            let options = build_config_options(&available, model, state.reasoning_effort);
             let notification = SessionNotification::new(
                 SessionId::new(id.clone()),
                 SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(options)),
@@ -196,6 +198,7 @@ impl Agent for SessionManager {
             _relay_handle: join_handle,
             active_model: model_str.clone(),
             pending_model: None,
+            reasoning_effort: None,
         };
 
         let mut sessions = self.sessions.lock().await;
@@ -203,7 +206,7 @@ impl Agent for SessionManager {
 
         info!("Session {} created successfully", session_id);
 
-        let config_options = build_config_options(&available, &model_str);
+        let config_options = build_config_options(&available, &model_str, None);
         let response =
             NewSessionResponse::new(acp_session_id.clone()).config_options(config_options);
 
@@ -248,7 +251,7 @@ impl Agent for SessionManager {
         info!("Received prompt for session: {:?}", args.session_id);
         let session_id_str = args.session_id.0.to_string();
 
-        let (relay_tx, prompt_text, switch_model) = {
+        let (relay_tx, prompt_text, switch_model, reasoning_effort) = {
             let mut sessions = self.sessions.lock().await;
             let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
                 error!("Session not found: {}", session_id_str);
@@ -267,7 +270,14 @@ impl Agent for SessionManager {
                 }
             });
 
-            (state.relay_tx.clone(), prompt_text, switch_model)
+            let reasoning_effort = state.reasoning_effort;
+
+            (
+                state.relay_tx.clone(),
+                prompt_text,
+                switch_model,
+                reasoning_effort,
+            )
         };
 
         let (result_tx, result_rx) = oneshot::channel();
@@ -275,6 +285,7 @@ impl Agent for SessionManager {
             .send(SessionCommand::Prompt {
                 text: prompt_text,
                 switch_model,
+                reasoning_effort,
                 result_tx,
             })
             .await
@@ -339,27 +350,36 @@ impl Agent for SessionManager {
 
         let available = catalog::available_models();
 
-        if config_id.as_str() != "model" {
-            error!("Unknown config option: {}", config_id);
-            return Err(acp::Error::invalid_params());
-        }
-
-        if !model_exists(&available, &value) {
-            error!("Unknown model in set_session_config_option: {}", value);
-            return Err(acp::Error::invalid_params());
-        }
-
         let mut sessions = self.sessions.lock().await;
         let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
             error!("Session not found: {}", session_id_str);
             acp::Error::invalid_params()
         })?;
 
-        state.pending_model = (state.active_model != value).then_some(value);
+        match config_id.as_str() {
+            "model" => {
+                if !model_exists(&available, &value) {
+                    error!("Unknown model in set_session_config_option: {}", value);
+                    return Err(acp::Error::invalid_params());
+                }
+                state.pending_model = (state.active_model != value).then_some(value);
+            }
+            "reasoning_effort" => {
+                state.reasoning_effort = ReasoningEffort::parse(&value).map_err(|e| {
+                    error!("{e}");
+                    acp::Error::invalid_params()
+                })?;
+            }
+            _ => {
+                error!("Unknown config option: {}", config_id);
+                return Err(acp::Error::invalid_params());
+            }
+        }
 
         let options = build_config_options(
             &available,
             effective_model(&state.active_model, state.pending_model.as_deref()),
+            state.reasoning_effort,
         );
         Ok(SetSessionConfigOptionResponse::new(options))
     }

@@ -43,6 +43,8 @@ pub struct OpenRouterChatRequest {
     pub stop: Option<StopConfiguration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<crate::ReasoningEffort>,
 }
 
 impl From<CreateChatCompletionRequest> for OpenRouterChatRequest {
@@ -65,6 +67,7 @@ impl From<CreateChatCompletionRequest> for OpenRouterChatRequest {
             frequency_penalty: request.frequency_penalty,
             stop: request.stop,
             response_format: request.response_format,
+            reasoning_effort: None,
         }
     }
 }

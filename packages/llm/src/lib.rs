@@ -10,6 +10,7 @@ pub mod oauth;
 pub mod parser;
 pub mod provider;
 pub mod providers;
+mod reasoning;
 pub mod testing;
 mod tools;
 pub mod types;
@@ -21,6 +22,7 @@ pub use credential::ProviderCredential;
 pub use error::{ContextOverflowError, LlmError, Result};
 pub use llm_response::{LlmResponse, StopReason};
 pub use provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
+pub use reasoning::ReasoningEffort;
 pub use tools::*;
 
 #[cfg(feature = "codex")]
