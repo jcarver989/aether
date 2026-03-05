@@ -6,9 +6,7 @@ use crate::oauth::credential_store::OAuthCredentialStore;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use oauth2::basic::BasicClient;
-use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, PkceCodeChallenge, RedirectUrl, TokenUrl,
-};
+use oauth2::{AuthUrl, AuthorizationCode, ClientId, PkceCodeChallenge, RedirectUrl, TokenUrl};
 use rmcp::transport::auth::{CredentialStore, StoredCredentials};
 use tokio::sync::Mutex;
 use url::Url;
