@@ -165,12 +165,8 @@ impl ConfigMenu {
                     .unwrap_or(false);
 
                 let display_name = if multi_select && select.current_value.0.contains(',') {
-                    let parts: Vec<&str> = select
-                        .current_value
-                        .0
-                        .split(',')
-                        .map(str::trim)
-                        .collect();
+                    let parts: Vec<&str> =
+                        select.current_value.0.split(',').map(str::trim).collect();
 
                     let names: Vec<&str> = parts
                         .iter()

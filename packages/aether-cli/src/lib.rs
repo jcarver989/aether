@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod auth;
 pub mod headless;
 pub mod prompt;
 

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use oauth2::{AccessToken, RefreshToken, TokenResponse};
 use rmcp::transport::auth::{AuthError, CredentialStore, StoredCredentials};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -65,6 +65,42 @@ impl OAuthCredentialStore {
 
         *self.cache.write().unwrap() = Some(data.clone());
         Ok(data)
+    }
+
+    /// Load the raw `OAuthCredential` for this store's server ID.
+    pub async fn load_credential(&self) -> Result<Option<OAuthCredential>, OAuthError> {
+        let data = self.load_file().await?;
+        Ok(data.get(&self.server_id).cloned())
+    }
+
+    /// Save a raw `OAuthCredential` directly, keyed by this store's server ID.
+    ///
+    /// This bypasses the rmcp `CredentialStore` trait and lets callers like
+    /// the Codex OAuth flow save credentials without constructing a full
+    /// `StoredCredentials` / `StandardTokenResponse`.
+    pub async fn save_credential(&self, credential: OAuthCredential) -> Result<(), OAuthError> {
+        let mut data = self.load_file().await?;
+        data.insert(self.server_id.clone(), credential);
+        self.save_file(&data).await
+    }
+
+    /// Check synchronously whether credentials exist for a given server ID.
+    ///
+    /// Reads the credential file from disk each time so that newly-saved
+    /// credentials (e.g. from `aether auth codex`) are visible immediately.
+    pub fn has_credentials_sync(server_id: &str) -> bool {
+        load_file_sync()
+            .map(|data| data.contains_key(server_id))
+            .unwrap_or(false)
+    }
+
+    /// Return the set of server IDs that have stored credentials.
+    ///
+    /// Reads the credential file once, suitable for batch checks.
+    pub fn credential_ids_sync() -> HashSet<String> {
+        load_file_sync()
+            .map(|data| data.into_keys().collect())
+            .unwrap_or_default()
     }
 
     async fn save_file(&self, data: &HashMap<String, OAuthCredential>) -> Result<(), OAuthError> {
@@ -199,10 +235,17 @@ fn aether_home() -> Option<PathBuf> {
     }
 }
 
+/// Synchronously load and parse the credentials file.
+fn load_file_sync() -> Result<HashMap<String, OAuthCredential>, OAuthError> {
+    let path = default_path()?;
+    let content = std::fs::read_to_string(&path)?;
+    serde_json::from_str(&content).map_err(|e| OAuthError::CredentialStore(e.to_string()))
+}
+
 /// Get the default credentials file path
 fn default_path() -> Result<PathBuf, OAuthError> {
-    let base =
-        aether_home().ok_or_else(|| OAuthError::CredentialStore("Home directory not set".into()))?;
+    let base = aether_home()
+        .ok_or_else(|| OAuthError::CredentialStore("Home directory not set".into()))?;
     Ok(base.join("mcp_credentials.json"))
 }
 
@@ -292,6 +335,29 @@ mod tests {
 
         let loaded = store.load().await.unwrap();
         assert!(loaded.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_save_credential_and_load() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("mcp_credentials.json");
+        let store = OAuthCredentialStore::with_path("codex", path);
+
+        let credential = OAuthCredential {
+            client_id: "my-client".to_string(),
+            access_token: "my-access-token".to_string(),
+            refresh_token: Some("my-refresh-token".to_string()),
+            expires_at: Some(9999999999999),
+        };
+
+        store.save_credential(credential).await.unwrap();
+
+        let loaded = store.load().await.unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.client_id, "my-client");
+        let token = loaded.token_response.unwrap();
+        assert_eq!(token.access_token().secret(), "my-access-token");
     }
 
     #[tokio::test]

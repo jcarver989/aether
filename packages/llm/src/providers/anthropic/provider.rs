@@ -6,14 +6,12 @@ use crate::provider::{
 };
 use crate::{Context, LlmError, Result};
 use async_stream;
+use eventsource_stream::Eventsource;
 use futures::StreamExt;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{Client, header};
 use std::env;
 use std::time::Duration;
-use tokio::io::AsyncBufReadExt;
-use tokio_stream::wrappers::LinesStream;
-use tokio_util::io::StreamReader;
 use tracing::debug;
 
 #[derive(Clone)]
@@ -161,14 +159,20 @@ impl AnthropicProvider {
             )));
         }
 
-        let stream = response.bytes_stream();
-        let stream_reader =
-            StreamReader::new(stream.map(|result| result.map_err(std::io::Error::other)));
-
-        let lines_stream = LinesStream::new(tokio::io::BufReader::new(stream_reader).lines());
-
-        let processed_stream =
-            lines_stream.map(|result| result.map_err(|e| LlmError::IoError(e.to_string())));
+        let event_stream = response.bytes_stream().eventsource();
+        let processed_stream = event_stream.filter_map(|result| {
+            std::future::ready(match result {
+                Ok(event) => {
+                    let data = event.data;
+                    if data == "[DONE]" {
+                        None
+                    } else {
+                        Some(Ok(data))
+                    }
+                }
+                Err(e) => Some(Err(LlmError::IoError(e.to_string()))),
+            })
+        });
 
         Ok(processed_stream)
     }

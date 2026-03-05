@@ -76,6 +76,9 @@ pub enum LlmError {
     /// Tool parameter parsing error
     #[error("Failed to parse tool parameters for {tool_name}: {error}")]
     ToolParameterParsing { tool_name: String, error: String },
+    /// OAuth authentication error
+    #[error("OAuth error: {0}")]
+    OAuthError(String),
     /// Generic error for other cases
     #[error("{0}")]
     Other(String),
@@ -108,6 +111,13 @@ impl From<reqwest::header::InvalidHeaderValue> for LlmError {
 impl From<async_openai::error::OpenAIError> for LlmError {
     fn from(error: async_openai::error::OpenAIError) -> Self {
         LlmError::ApiError(error.to_string())
+    }
+}
+
+#[cfg(feature = "oauth")]
+impl From<crate::oauth::OAuthError> for LlmError {
+    fn from(error: crate::oauth::OAuthError) -> Self {
+        LlmError::OAuthError(error.to_string())
     }
 }
 

@@ -22,3 +22,6 @@ pub use error::{ContextOverflowError, LlmError, Result};
 pub use llm_response::{LlmResponse, StopReason};
 pub use provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
 pub use tools::*;
+
+#[cfg(feature = "codex")]
+pub use providers::codex::perform_codex_oauth_flow;

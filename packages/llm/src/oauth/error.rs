@@ -16,4 +16,16 @@ pub enum OAuthError {
 
     #[error("Invalid OAuth callback: {0}")]
     InvalidCallback(String),
+
+    #[error("Invalid JWT: {0}")]
+    InvalidJwt(String),
+
+    #[error("Token exchange failed: {0}")]
+    TokenExchange(String),
+
+    #[error("OAuth state mismatch — possible CSRF attack")]
+    StateMismatch,
+
+    #[error("No credentials found: {0}")]
+    NoCredentials(String),
 }

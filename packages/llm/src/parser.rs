@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use crate::catalog::LlmModel;
 #[cfg(feature = "bedrock")]
 use crate::providers::bedrock::BedrockProvider;
+#[cfg(feature = "codex")]
+use crate::providers::codex::CodexProvider;
 use crate::providers::{
     anthropic::AnthropicProvider,
     deepseek::DeepSeekProvider,
@@ -43,6 +45,9 @@ impl Default for ModelProviderParser {
 
         #[cfg(feature = "bedrock")]
         let parser = parser.with_provider::<BedrockProvider>("bedrock");
+
+        #[cfg(feature = "codex")]
+        let parser = parser.with_provider::<CodexProvider>("codex");
 
         parser
     }

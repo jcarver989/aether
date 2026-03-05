@@ -302,9 +302,7 @@ impl ToolCallStatuses {
     }
 
     fn has_sub_agents(&self, tool_id: &str) -> bool {
-        self.sub_agents
-            .get(tool_id)
-            .is_some_and(|a| !a.is_empty())
+        self.sub_agents.get(tool_id).is_some_and(|a| !a.is_empty())
     }
 
     pub fn remove_tool(&mut self, id: &str) {
