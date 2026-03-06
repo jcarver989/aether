@@ -154,7 +154,7 @@ impl Component for ModelSelector {
                 .map(|item| item.name.as_str())
                 .collect();
             let selected_text = format!("  Selected: {}", names.join(", "));
-            lines.push(Line::styled(selected_text, context.theme.muted));
+            lines.push(Line::styled(selected_text, context.theme.muted()));
             lines.push(Line::new(String::new()));
         }
 
@@ -173,7 +173,7 @@ impl Component for ModelSelector {
                     }
                     item_lines.push(Line::styled(
                         format!("  {}", entry.provider_label()),
-                        context.theme.muted,
+                        context.theme.muted(),
                     ));
                     last_provider = Some(provider);
                 }
@@ -187,11 +187,12 @@ impl Component for ModelSelector {
                 let label = format!("{prefix}{check}{}", entry.model_label());
 
                 if entry.is_disabled {
-                    item_lines.push(Line::styled(label, context.theme.muted));
+                    item_lines.push(Line::styled(label, context.theme.muted()));
                 } else if is_focused {
                     item_lines.push(Line::with_style(
                         label,
-                        Style::fg(context.theme.text_primary).bg_color(context.theme.highlight_bg),
+                        Style::fg(context.theme.text_primary())
+                            .bg_color(context.theme.highlight_bg()),
                     ));
                 } else {
                     item_lines.push(Line::new(label));

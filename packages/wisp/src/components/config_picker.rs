@@ -97,7 +97,7 @@ impl Component for ConfigPicker {
 
         let mut lines = Vec::new();
         let header = format!("  {} search: {}", self.title, self.combobox.query());
-        lines.push(Line::styled(header, context.theme.muted));
+        lines.push(Line::styled(header, context.theme.muted()));
 
         if self.combobox.is_empty() {
             lines.push(Line::new("  (no matches found)".to_string()));
@@ -126,11 +126,11 @@ impl Component for ConfigPicker {
 
                 let line_text = format!("{prefix}{label}");
                 if option.is_disabled {
-                    Line::styled(line_text, ctx.theme.muted)
+                    Line::styled(line_text, ctx.theme.muted())
                 } else if is_selected {
                     Line::with_style(
                         line_text,
-                        Style::fg(ctx.theme.text_primary).bg_color(ctx.theme.highlight_bg),
+                        Style::fg(ctx.theme.text_primary()).bg_color(ctx.theme.highlight_bg()),
                     )
                 } else {
                     Line::new(line_text)

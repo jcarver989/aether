@@ -38,8 +38,8 @@ impl Component for ServerStatusOverlay {
                         if selected {
                             Line::with_style(
                                 text,
-                                Style::fg(context.theme.text_primary)
-                                    .bg_color(context.theme.highlight_bg),
+                                Style::fg(context.theme.text_primary())
+                                    .bg_color(context.theme.highlight_bg()),
                             )
                         } else {
                             Line::new(text)
@@ -49,21 +49,22 @@ impl Component for ServerStatusOverlay {
                         if selected {
                             Line::with_style(
                                 text,
-                                Style::fg(context.theme.error).bg_color(context.theme.highlight_bg),
+                                Style::fg(context.theme.error())
+                                    .bg_color(context.theme.highlight_bg()),
                             )
                         } else {
-                            Line::styled(text, context.theme.error)
+                            Line::styled(text, context.theme.error())
                         }
                     }
                     McpServerStatus::NeedsOAuth => {
                         if selected {
                             Line::with_style(
                                 text,
-                                Style::fg(context.theme.warning)
-                                    .bg_color(context.theme.highlight_bg),
+                                Style::fg(context.theme.warning())
+                                    .bg_color(context.theme.highlight_bg()),
                             )
                         } else {
-                            Line::styled(text, context.theme.warning)
+                            Line::styled(text, context.theme.warning())
                         }
                     }
                 }

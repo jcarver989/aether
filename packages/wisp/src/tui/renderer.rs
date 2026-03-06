@@ -1,6 +1,7 @@
 use super::component::RenderContext;
 use super::screen::{Line, Screen};
 use super::soft_wrap::{soft_wrap_line, soft_wrap_lines_with_map};
+use super::theme::Theme;
 use crossterm::QueueableCommand;
 use crossterm::cursor::{Hide, MoveDown, Show};
 use std::io::{self, Write};
@@ -36,11 +37,12 @@ pub struct Renderer<T: Write> {
 }
 
 impl<T: Write> Renderer<T> {
-    pub fn new(writer: T) -> Self {
+    pub fn new(writer: T, theme: Theme) -> Self {
+        let context = RenderContext::new((0, 0)).with_theme(theme);
         Self {
             writer,
             screen: Screen::new(),
-            context: RenderContext::new((0, 0)),
+            context,
             cursor_row_offset: 0,
             cursor_visible: true,
             flushed_visual_count: 0,
@@ -162,11 +164,11 @@ impl<T: Write> Renderer<T> {
                 (80, 24)
             }
         };
-        self.context = RenderContext::new(size);
+        self.context.size = size;
     }
 
     pub fn update_render_context_with(&mut self, size: (u16, u16)) {
-        self.context = RenderContext::new(size);
+        self.context.size = size;
     }
 
     pub fn context(&self) -> &RenderContext {

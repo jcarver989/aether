@@ -195,7 +195,7 @@ impl Component for ConfigOverlay {
         Container::new(children)
             .title(" Configuration ")
             .footer(footer)
-            .border_color(context.theme.muted)
+            .border_color(context.theme.muted())
             .fill_height(height)
             .gap(GAP)
             .render(context)
@@ -483,7 +483,7 @@ mod tests {
         let has_bg = selected_line
             .spans()
             .iter()
-            .any(|s| s.style().bg == Some(context.theme.highlight_bg));
+            .any(|s| s.style().bg == Some(context.theme.highlight_bg()));
         assert!(has_bg, "selected entry should have highlight_bg");
     }
 

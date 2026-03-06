@@ -98,7 +98,7 @@ impl Form {
         let border_len = width.saturating_sub(title.len() + 4);
         Line::styled(
             format!("┌─{title}{}┐", "─".repeat(border_len)),
-            context.theme.primary,
+            context.theme.primary(),
         )
     }
 
@@ -109,9 +109,9 @@ impl Form {
             let prefix = if is_selected { "▶ " } else { "  " };
             let required_marker = if field.required { "*" } else { "" };
             let label_style = if is_selected {
-                Style::fg(context.theme.primary).bold()
+                Style::fg(context.theme.primary()).bold()
             } else {
-                Style::fg(context.theme.text_primary)
+                Style::fg(context.theme.text_primary())
             };
 
             let mut label_line = Line::with_style(
@@ -126,7 +126,7 @@ impl Form {
 
                 if is_selected {
                     if let Some(desc) = &field.description {
-                        lines.push(Line::styled(format!("│     {desc}"), context.theme.muted));
+                        lines.push(Line::styled(format!("│     {desc}"), context.theme.muted()));
                     }
 
                     for extra_line in rest {
@@ -147,11 +147,11 @@ impl Form {
         vec![
             Line::styled(
                 format!("│ {}", "[Enter] Submit  [Esc] Cancel"),
-                context.theme.muted,
+                context.theme.muted(),
             ),
             Line::styled(
                 format!("└{}┘", "─".repeat(border_width)),
-                context.theme.primary,
+                context.theme.primary(),
             ),
         ]
     }

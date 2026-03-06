@@ -37,7 +37,7 @@ impl Component for RadioSelect {
 impl RadioSelect {
     fn render_inline(&self, context: &RenderContext) -> Line {
         if let Some(opt) = self.options.get(self.selected) {
-            Line::styled(&opt.title, context.theme.info)
+            Line::styled(&opt.title, context.theme.info())
         } else {
             Line::default()
         }
@@ -50,7 +50,7 @@ impl RadioSelect {
             .map(|(j, opt)| {
                 let marker = if j == self.selected { "● " } else { "○ " };
                 let style = if j == self.selected {
-                    Style::fg(context.theme.primary)
+                    Style::fg(context.theme.primary())
                 } else {
                     Style::default()
                 };

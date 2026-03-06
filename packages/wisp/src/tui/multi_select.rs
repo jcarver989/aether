@@ -53,9 +53,9 @@ impl MultiSelect {
             .collect();
 
         if chosen.is_empty() {
-            Line::styled("(none)", context.theme.muted)
+            Line::styled("(none)", context.theme.muted())
         } else {
-            Line::styled(chosen.join(", "), context.theme.info)
+            Line::styled(chosen.join(", "), context.theme.info())
         }
     }
 
@@ -67,9 +67,9 @@ impl MultiSelect {
                 let marker = if self.selected[j] { "[x] " } else { "[ ] " };
                 let is_cursor = j == self.cursor;
                 let style = if is_cursor {
-                    Style::fg(context.theme.primary).bold()
+                    Style::fg(context.theme.primary()).bold()
                 } else if self.selected[j] {
-                    Style::fg(context.theme.primary)
+                    Style::fg(context.theme.primary())
                 } else {
                     Style::default()
                 };

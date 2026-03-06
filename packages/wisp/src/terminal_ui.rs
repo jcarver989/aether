@@ -15,6 +15,7 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
         agent_name,
         config_options,
         auth_methods,
+        theme,
         mut event_rx,
         prompt_handle,
     } = state;
@@ -23,7 +24,7 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
     crossterm::execute!(io::stdout(), EnableBracketedPaste)?;
 
     let mut screen = App::new(agent_name, &config_options, auth_methods);
-    let mut renderer = Renderer::new(io::stdout());
+    let mut renderer = Renderer::new(io::stdout(), theme);
     renderer.update_render_context();
     renderer.render(&mut screen)?;
 
@@ -89,7 +90,7 @@ fn collect_acp_events<T: Write>(
     match event {
         AcpEvent::SessionUpdate(update) => screen.on_session_update(*update),
         AcpEvent::ExtNotification(notification) => screen.on_ext_notification(&notification),
-        AcpEvent::PromptDone(_) => screen.on_prompt_done(renderer.context().size),
+        AcpEvent::PromptDone(_) => screen.on_prompt_done(renderer.context()),
         AcpEvent::PromptError(e) => {
             eprintln!("Prompt error: {e}");
             screen.on_prompt_error()

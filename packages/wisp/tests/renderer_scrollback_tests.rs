@@ -1,7 +1,9 @@
 mod test_terminal;
 
 use test_terminal::TestTerminal;
-use wisp::tui::{Cursor, CursorComponent, Line, RenderContext, RenderOutput, Renderer};
+use wisp::tui::{
+    Cursor, CursorComponent, Line, RenderContext, RenderOutput, Renderer, theme::Theme,
+};
 
 struct StubRoot {
     lines: Vec<Line>,
@@ -231,7 +233,7 @@ fn push_to_scrollback_resets_flushed_count() {
 
 fn create_renderer(cols: u16, rows: u16) -> Renderer<TestTerminal> {
     let terminal = TestTerminal::new(cols, rows);
-    let mut renderer = Renderer::new(terminal);
+    let mut renderer = Renderer::new(terminal, Theme::default());
     renderer.update_render_context_with((cols, rows));
     renderer
 }

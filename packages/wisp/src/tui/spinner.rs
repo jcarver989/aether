@@ -42,7 +42,7 @@ impl Component for Spinner {
 
         let frame = self.current_frame();
         let mut line = Line::default();
-        line.push_styled(frame.to_string(), context.theme.info);
+        line.push_styled(frame.to_string(), context.theme.info());
         vec![line]
     }
 }

@@ -1,5 +1,7 @@
 use crate::cli::Cli;
 use crate::error::WispError;
+use crate::settings::load_or_create_settings;
+use crate::tui::theme::Theme;
 use acp_utils::client::{AcpEvent, AcpPromptHandle, AutoApproveClient, spawn_acp_session};
 use agent_client_protocol::{
     self as acp, Implementation, InitializeRequest, NewSessionRequest, ProtocolVersion,
@@ -12,6 +14,7 @@ pub struct AppState {
     pub agent_name: String,
     pub config_options: Vec<acp::SessionConfigOption>,
     pub auth_methods: Vec<acp::AuthMethod>,
+    pub theme: Theme,
     pub event_rx: mpsc::UnboundedReceiver<AcpEvent>,
     pub prompt_handle: AcpPromptHandle,
 }
@@ -32,11 +35,14 @@ impl AppState {
         .await
         .map_err(WispError::Acp)?;
 
+        let settings = load_or_create_settings();
+
         Ok(Self {
             session_id: session.session_id,
             agent_name: session.agent_name,
             config_options: session.config_options,
             auth_methods: session.auth_methods,
+            theme: Theme::load(&settings),
             event_rx: session.event_rx,
             prompt_handle: session.prompt_handle,
         })

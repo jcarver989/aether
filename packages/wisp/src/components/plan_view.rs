@@ -27,24 +27,24 @@ impl Component for PlanView<'_> {
         lines.push(Line::default());
 
         let mut header = Line::default();
-        header.push_styled("Plan".to_string(), context.theme.muted);
+        header.push_styled("Plan".to_string(), context.theme.muted());
         lines.push(header);
 
         for entry in self.entries {
             let mut line = Line::default();
             match entry.status {
                 PlanEntryStatus::Completed => {
-                    line.push_styled(format!("  {CHECKBOX_FILLED} "), context.theme.muted);
-                    let completed_style = Style::fg(context.theme.muted).strikethrough();
+                    line.push_styled(format!("  {CHECKBOX_FILLED} "), context.theme.muted());
+                    let completed_style = Style::fg(context.theme.muted()).strikethrough();
                     line.push_with_style(entry.content.clone(), completed_style);
                 }
                 PlanEntryStatus::InProgress => {
-                    line.push_styled(format!("  {CHECKBOX_FILLED} "), context.theme.primary);
+                    line.push_styled(format!("  {CHECKBOX_FILLED} "), context.theme.primary());
                     line.push_text(entry.content.clone());
                 }
                 _ => {
-                    line.push_styled(format!("  {CHECKBOX_EMPTY} "), context.theme.muted);
-                    line.push_styled(entry.content.clone(), context.theme.muted);
+                    line.push_styled(format!("  {CHECKBOX_EMPTY} "), context.theme.muted());
+                    line.push_styled(entry.content.clone(), context.theme.muted());
                 }
             }
             lines.push(line);

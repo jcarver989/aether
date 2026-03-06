@@ -33,10 +33,10 @@ impl Component for ToolCallStatusView {
         let (indicator, indicator_color) = match &self.status {
             ToolCallStatus::Running => {
                 let frame = FRAMES[self.tick as usize % FRAMES.len()];
-                (frame.to_string(), context.theme.info)
+                (frame.to_string(), context.theme.info())
             }
-            ToolCallStatus::Success => ("✓".to_string(), context.theme.success),
-            ToolCallStatus::Error(_) => ("✗".to_string(), context.theme.error),
+            ToolCallStatus::Success => ("✓".to_string(), context.theme.success()),
+            ToolCallStatus::Error(_) => ("✗".to_string(), context.theme.error()),
         };
 
         let mut line = Line::default();
@@ -52,11 +52,11 @@ impl Component for ToolCallStatusView {
                 || Self::format_arguments(&self.arguments),
                 |v| format!(" ({v})"),
             );
-        line.push_styled(display_text, context.theme.muted);
+        line.push_styled(display_text, context.theme.muted());
 
         if let ToolCallStatus::Error(msg) = &self.status {
             line.push_text(" ");
-            line.push_styled(msg, context.theme.error);
+            line.push_styled(msg, context.theme.error());
         }
 
         let mut lines = vec![line];
@@ -339,7 +339,7 @@ impl ToolCallStatuses {
                     let mut summary = Line::default();
                     summary.push_styled(
                         format!("  … {hidden_count} earlier tool calls"),
-                        context.theme.muted,
+                        context.theme.muted(),
                     );
                     lines.push(summary);
                 }
@@ -361,7 +361,7 @@ impl ToolCallStatuses {
                     let mut view = Self::tool_call_view(tc, self.tick);
                     for tool_line in view.render(context) {
                         let mut indented = Line::default();
-                        indented.push_styled(connector, context.theme.muted);
+                        indented.push_styled(connector, context.theme.muted());
                         for span in tool_line.spans() {
                             indented.push_with_style(span.text(), span.style());
                         }
@@ -416,10 +416,10 @@ impl ToolCallStatuses {
         let mut line = Line::default();
         line.push_text("  ");
         if agent.done {
-            line.push_styled("✓".to_string(), context.theme.success);
+            line.push_styled("✓".to_string(), context.theme.success());
         } else {
             let frame = FRAMES[self.tick as usize % FRAMES.len()];
-            line.push_styled(frame.to_string(), context.theme.info);
+            line.push_styled(frame.to_string(), context.theme.info());
         }
         line.push_text(" ");
         line.push_text(&agent.agent_name);

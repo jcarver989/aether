@@ -49,7 +49,7 @@ impl Component for CommandPicker {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let header = format!("  / search: {}", self.combobox.query());
-        lines.push(Line::styled(header, context.theme.muted));
+        lines.push(Line::styled(header, context.theme.muted()));
 
         if self.combobox.is_empty() {
             lines.push(Line::new("  (no matching commands)".to_string()));
@@ -82,9 +82,9 @@ impl Component for CommandPicker {
                 let truncated = truncate_text(&line_text, max_width);
 
                 if is_selected {
-                    Line::styled(truncated, ctx.theme.primary)
+                    Line::styled(truncated, ctx.theme.primary())
                 } else {
-                    build_styled_command_line(&truncated, padded_name.len(), ctx.theme.muted)
+                    build_styled_command_line(&truncated, padded_name.len(), ctx.theme.muted())
                 }
             });
         lines.extend(item_lines);

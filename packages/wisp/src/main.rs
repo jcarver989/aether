@@ -2,6 +2,7 @@ mod app_state;
 mod cli;
 mod components;
 mod error;
+mod settings;
 mod terminal_ui;
 mod tui;
 

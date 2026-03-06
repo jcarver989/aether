@@ -58,29 +58,29 @@ impl InputPrompt<'_> {
         let mut lines = Vec::with_capacity(content_rows + 2);
         lines.push(Line::styled(
             format!("╭{}╮", "─".repeat(inner_width)),
-            context.theme.muted,
+            context.theme.muted(),
         ));
 
         for row in 0..content_rows {
             let chunk = wrapped_chunks.get(row).cloned().unwrap_or_default();
             let pad_len = content_width.saturating_sub(display_width_line(&chunk));
             let mut middle = Line::default();
-            middle.push_styled("│", context.theme.muted);
+            middle.push_styled("│", context.theme.muted());
             middle.push_text(" ");
             if row == 0 {
-                middle.push_styled("> ", context.theme.primary);
+                middle.push_styled("> ", context.theme.primary());
             } else {
-                middle.push_styled("  ", context.theme.muted);
+                middle.push_styled("  ", context.theme.muted());
             }
             middle.append_line(&chunk);
             middle.push_text(" ".repeat(pad_len));
-            middle.push_styled("│", context.theme.muted);
+            middle.push_styled("│", context.theme.muted());
             lines.push(middle);
         }
 
         lines.push(Line::styled(
             format!("╰{}╯", "─".repeat(inner_width)),
-            context.theme.muted,
+            context.theme.muted(),
         ));
 
         InputPromptLayout {
@@ -100,7 +100,7 @@ impl Component for InputPrompt<'_> {
 
 fn style_input(input: &str, context: &RenderContext) -> Line {
     if !input.contains('@') {
-        return Line::styled(input, context.theme.text_primary);
+        return Line::styled(input, context.theme.text_primary());
     }
     style_mentions(input, context)
 }
@@ -114,17 +114,17 @@ fn style_mentions(input: &str, context: &RenderContext) -> Line {
             continue;
         }
 
-        styled.push_styled(&input[last_pos..at_pos], context.theme.text_primary);
+        styled.push_styled(&input[last_pos..at_pos], context.theme.text_primary());
 
         let mention_end = input[at_pos..]
             .find(' ')
             .map_or(input.len(), |i| at_pos + i);
-        styled.push_styled(&input[at_pos..mention_end], context.theme.info);
+        styled.push_styled(&input[at_pos..mention_end], context.theme.info());
         last_pos = mention_end;
     }
 
     if last_pos < input.len() {
-        styled.push_styled(&input[last_pos..], context.theme.text_primary);
+        styled.push_styled(&input[last_pos..], context.theme.text_primary());
     }
 
     styled

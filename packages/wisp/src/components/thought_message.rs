@@ -9,8 +9,8 @@ pub struct ThoughtMessage<'a> {
 impl ThoughtMessage<'_> {
     fn format_line(text: &str, theme: &Theme) -> Line {
         let mut line = Line::default();
-        line.push_styled("│ ", theme.muted);
-        line.push_with_style(text, Style::fg(theme.muted).dim());
+        line.push_styled("│ ", theme.muted());
+        line.push_with_style(text, Style::fg(theme.muted()).dim());
         line
     }
 
@@ -75,7 +75,7 @@ mod tests {
             assert!(
                 row.spans()
                     .iter()
-                    .all(|span| span.style().fg == Some(context.theme.muted))
+                    .all(|span| span.style().fg == Some(context.theme.muted()))
             );
         }
     }
