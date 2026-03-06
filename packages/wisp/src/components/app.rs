@@ -861,6 +861,7 @@ impl CursorComponent for App {
         let mut status_line = StatusLine {
             agent_name: &self.agent_name,
             mode_display: self.mode_display.as_deref(),
+            mode_index: extract_mode_index(&self.config_options).unwrap_or(0),
             model_display: self.model_display.as_deref(),
             context_pct_left: self.context_usage_pct,
             waiting_for_response: self.waiting_for_response,
@@ -1023,6 +1024,27 @@ fn extract_select_display(
 
 fn extract_mode_display(config_options: &[SessionConfigOption]) -> Option<String> {
     extract_select_display(config_options, ConfigOptionId::Mode)
+}
+
+fn extract_mode_index(config_options: &[SessionConfigOption]) -> Option<usize> {
+    let option = config_options
+        .iter()
+        .find(|o| o.id.0.as_ref() == ConfigOptionId::Mode.as_str())?;
+
+    let SessionConfigKind::Select(ref select) = option.kind else {
+        return None;
+    };
+
+    match &select.options {
+        SessionConfigSelectOptions::Ungrouped(options) => options
+            .iter()
+            .position(|o| o.value == select.current_value),
+        SessionConfigSelectOptions::Grouped(groups) => groups
+            .iter()
+            .flat_map(|group| group.options.iter())
+            .position(|o| o.value == select.current_value),
+        _ => None,
+    }
 }
 
 fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
