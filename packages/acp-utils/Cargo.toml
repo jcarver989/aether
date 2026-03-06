@@ -28,3 +28,4 @@ tokio-util = { workspace = true, features = ["compat"], optional = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 serde_json = { workspace = true }
+tempfile = { workspace = true }

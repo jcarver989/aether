@@ -33,3 +33,7 @@ tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
 futures = { workspace = true }
 dirs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
