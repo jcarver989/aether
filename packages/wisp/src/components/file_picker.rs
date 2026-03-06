@@ -123,7 +123,7 @@ impl Component for FilePicker {
                 let prefix = if is_selected { "▶ " } else { "  " };
                 let line_text = format!("{}{}", prefix, file.display_name);
                 if is_selected {
-                    Line::styled(line_text, ctx.theme.primary)
+                    Line::styled(line_text, ctx.theme.primary())
                 } else {
                     Line::new(line_text)
                 }

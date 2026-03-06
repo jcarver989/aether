@@ -20,12 +20,12 @@ impl Component for StatusLine<'_> {
             if let Some(pct) = self.context_pct_left {
                 parts.push(format!("{pct}% context"));
             }
-            (parts.join(" · "), context.theme.warning)
+            (parts.join(" · "), context.theme.warning())
         } else if let Some(pct) = self.context_pct_left {
             let c = if pct <= 15 {
-                context.theme.warning
+                context.theme.warning()
             } else {
-                context.theme.muted
+                context.theme.muted()
             };
             (format!("{pct}% context"), c)
         } else if self.unhealthy_server_count > 0 {
@@ -35,9 +35,9 @@ impl Component for StatusLine<'_> {
             } else {
                 format!("{count} servers unhealthy")
             };
-            (msg, context.theme.warning)
+            (msg, context.theme.warning())
         } else {
-            return vec![Line::styled(left, context.theme.muted)];
+            return vec![Line::styled(left, context.theme.muted())];
         };
 
         let width = context.size.0 as usize;
@@ -46,7 +46,7 @@ impl Component for StatusLine<'_> {
 
         let padding = width.saturating_sub(left_visible_len + right_visible_len);
         let mut line = Line::default();
-        line.push_styled(left, context.theme.muted);
+        line.push_styled(left, context.theme.muted());
         line.push_text(" ".repeat(padding));
         line.push_styled(right, color);
         vec![line]

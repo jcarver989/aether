@@ -5,7 +5,7 @@ use syntect::parsing::SyntaxReference;
 use acp_utils::notifications::DiffPreview;
 
 use super::screen::{Line, Span, Style};
-use super::syntax::{SYNTECT, find_syntax_for_hint, syntect_to_wisp_style};
+use super::syntax::{find_syntax_for_hint, syntax_set, syntect_to_wisp_style};
 use super::theme::Theme;
 
 const MAX_DIFF_LINES: usize = 20;
@@ -37,8 +37,8 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
 
     let removed_style = DiffStyle {
         prefix: "  - ",
-        fg: theme.diff.removed_fg,
-        bg: theme.diff.removed_bg,
+        fg: theme.diff_removed_fg(),
+        bg: theme.diff_removed_bg(),
     };
     render_diff_section(
         &mut lines,
@@ -52,8 +52,8 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
 
     let added_style = DiffStyle {
         prefix: "  + ",
-        fg: theme.diff.added_fg,
-        bg: theme.diff.added_bg,
+        fg: theme.diff_added_fg(),
+        bg: theme.diff_added_bg(),
     };
     render_diff_section(
         &mut lines,
@@ -68,7 +68,7 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
     if truncated {
         let remaining = total - budget;
         let mut overflow = Line::default();
-        overflow.push_styled(format!("    ... {remaining} more lines"), theme.muted);
+        overflow.push_styled(format!("    ... {remaining} more lines"), theme.muted());
         lines.push(overflow);
     }
 
@@ -84,12 +84,13 @@ fn render_diff_section(
     theme: &Theme,
     start_line: Option<usize>,
 ) {
-    let mut highlighter = syntax.map(|s| HighlightLines::new(s, &SYNTECT.theme));
+    let syntect_theme = theme.syntect_theme();
+    let mut highlighter = syntax.map(|s| HighlightLines::new(s, syntect_theme));
     for (i, src) in source_lines.iter().take(limit).enumerate() {
         let mut line = Line::default();
         if let Some(start) = start_line {
             let line_num = format!("{:>4} ", start + i);
-            line.push_styled(line_num, theme.muted);
+            line.push_styled(line_num, theme.muted());
         }
         line.push_span(Span::with_style(
             style.prefix,
@@ -107,10 +108,8 @@ fn push_highlighted_spans(
     bg: Color,
     theme: &Theme,
 ) {
-    let st = &*SYNTECT;
-
     if let Some(h) = highlighter
-        && let Ok(ranges) = h.highlight_line(src, &st.syntax_set)
+        && let Ok(ranges) = h.highlight_line(src, syntax_set())
     {
         for (syntect_style, text) in ranges {
             let mut style = syntect_to_wisp_style(syntect_style);
@@ -121,7 +120,10 @@ fn push_highlighted_spans(
     }
 
     // Fallback: plain text with bg tint
-    line.push_span(Span::with_style(src, Style::fg(theme.code_fg).bg_color(bg)));
+    line.push_span(Span::with_style(
+        src,
+        Style::fg(theme.code_fg()).bg_color(bg),
+    ));
 }
 
 #[cfg(test)]
@@ -232,8 +234,8 @@ mod tests {
         let theme = test_theme();
         let lines = highlight_diff(&preview, &theme);
         let prefix_span = &lines[0].spans()[0];
-        assert_eq!(prefix_span.style().bg, Some(theme.diff.removed_bg));
-        assert_eq!(prefix_span.style().fg, Some(theme.diff.removed_fg));
+        assert_eq!(prefix_span.style().bg, Some(theme.diff_removed_bg()));
+        assert_eq!(prefix_span.style().fg, Some(theme.diff_removed_fg()));
     }
 
     #[test]
@@ -247,26 +249,8 @@ mod tests {
         let theme = test_theme();
         let lines = highlight_diff(&preview, &theme);
         let prefix_span = &lines[0].spans()[0];
-        assert_eq!(prefix_span.style().bg, Some(theme.diff.added_bg));
-        assert_eq!(prefix_span.style().fg, Some(theme.diff.added_fg));
-    }
-
-    #[test]
-    fn diff_uses_theme_palette_values() {
-        let mut theme = test_theme();
-        theme.diff.removed_bg = Color::Blue;
-        theme.diff.removed_fg = Color::White;
-
-        let preview = DiffPreview {
-            removed: vec!["old".to_string()],
-            added: vec![],
-            lang_hint: String::new(),
-            start_line: None,
-        };
-        let lines = highlight_diff(&preview, &theme);
-        let prefix_span = &lines[0].spans()[0];
-        assert_eq!(prefix_span.style().bg, Some(Color::Blue));
-        assert_eq!(prefix_span.style().fg, Some(Color::White));
+        assert_eq!(prefix_span.style().bg, Some(theme.diff_added_bg()));
+        assert_eq!(prefix_span.style().fg, Some(theme.diff_added_fg()));
     }
 
     #[test]

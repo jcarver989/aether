@@ -5,7 +5,7 @@ use agent_client_protocol as acp;
 use test_terminal::{TestTerminal, assert_buffer_eq};
 use wisp::components::app::{App, AppEvent, build_attachment_blocks};
 use wisp::components::command_picker::CommandEntry;
-use wisp::tui::{Line, Renderer as FrameRenderer};
+use wisp::tui::{Line, Renderer as FrameRenderer, theme::Theme};
 
 const TEST_AGENT: &str = "test-agent";
 const TEST_WIDTH: u16 = 200;
@@ -29,7 +29,7 @@ impl Renderer {
     ) -> Self {
         Self {
             screen: App::new(agent_name, config_options, vec![]),
-            renderer: FrameRenderer::new(terminal),
+            renderer: FrameRenderer::new(terminal, Theme::default()),
         }
     }
 
@@ -62,7 +62,7 @@ impl Renderer {
     }
 
     async fn on_prompt_done(&mut self) -> std::io::Result<()> {
-        let effects = self.screen.on_prompt_done(self.renderer.context().size);
+        let effects = self.screen.on_prompt_done(self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 

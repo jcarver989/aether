@@ -77,11 +77,12 @@ impl Component for ConfigMenu {
                         .is_some_and(|v| v.is_disabled);
                 let text = format!("{}{}: {}", prefix, entry.title, current_name);
                 if current_disabled {
-                    Line::styled(text, context.theme.muted)
+                    Line::styled(text, context.theme.muted())
                 } else if selected {
                     Line::with_style(
                         text,
-                        Style::fg(context.theme.text_primary).bg_color(context.theme.highlight_bg),
+                        Style::fg(context.theme.text_primary())
+                            .bg_color(context.theme.highlight_bg()),
                     )
                 } else {
                     Line::new(text)
@@ -554,7 +555,7 @@ mod tests {
         let has_highlight = lines[0]
             .spans()
             .iter()
-            .any(|s| s.style().bg == Some(context.theme.highlight_bg));
+            .any(|s| s.style().bg == Some(context.theme.highlight_bg()));
         assert!(
             has_highlight,
             "multi-select with display_name should get highlight_bg, not muted"

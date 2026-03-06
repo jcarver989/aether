@@ -22,9 +22,9 @@ impl Component for Checkbox {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let display = if self.checked { "[x]" } else { "[ ]" };
         let style = if context.focused {
-            context.theme.primary
+            context.theme.primary()
         } else {
-            context.theme.text_primary
+            context.theme.text_primary()
         };
         vec![Line::styled(display, style)]
     }

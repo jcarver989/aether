@@ -17,13 +17,13 @@ impl Component for ProgressIndicator {
 
         let frame = FRAMES[self.tick as usize % FRAMES.len()];
         let mut line = Line::default();
-        line.push_styled(frame.to_string(), context.theme.info);
+        line.push_styled(frame.to_string(), context.theme.info());
         line.push_styled(
             format!(
                 " Working... ({}/{} tools complete)",
                 self.completed, self.total
             ),
-            context.theme.muted,
+            context.theme.muted(),
         );
         vec![line]
     }

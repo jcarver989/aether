@@ -26,7 +26,7 @@ use acp_utils::notifications::{
 };
 use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
-    SessionConfigSelectOptions, SessionUpdate,
+    SessionConfigOptionCategory, SessionConfigSelectOptions, SessionUpdate,
 };
 use crossterm::event::{self, KeyCode, KeyEvent};
 use std::collections::HashSet;
@@ -136,6 +136,13 @@ impl App {
             return effects;
         }
 
+        if key_event.code == KeyCode::BackTab {
+            if let Some(cycle_event) = self.cycle_quick_option() {
+                return vec![cycle_event, AppEvent::Render];
+            }
+            return vec![];
+        }
+
         if key_event.code == KeyCode::Esc && self.waiting_for_response {
             return vec![AppEvent::Cancel];
         }
@@ -234,15 +241,14 @@ impl App {
         }
     }
 
-    pub fn on_prompt_done(&mut self, render_size: (u16, u16)) -> Vec<AppEvent> {
+    pub fn on_prompt_done(&mut self, context: &RenderContext) -> Vec<AppEvent> {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
         self.conversation.close_thought_block();
 
-        let context = RenderContext::new(render_size);
         let (scrollback_lines, completed_tool_ids) = self
             .conversation
-            .flush_completed(&self.tool_call_statuses, &context);
+            .flush_completed(&self.tool_call_statuses, context);
 
         for id in completed_tool_ids {
             self.tool_call_statuses.remove_tool(&id);
@@ -483,6 +489,37 @@ impl App {
         }
 
         None
+    }
+
+    fn cycle_quick_option(&self) -> Option<AppEvent> {
+        let option = self
+            .config_options
+            .iter()
+            .find(|option| is_cycleable_mode_option(option))?;
+
+        let SessionConfigKind::Select(ref select) = option.kind else {
+            return None;
+        };
+
+        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
+            return None;
+        };
+
+        if options.is_empty() {
+            return None;
+        }
+
+        let current_index = options
+            .iter()
+            .position(|entry| entry.value == select.current_value)
+            .unwrap_or(0);
+        let next_index = (current_index + 1) % options.len();
+        let next_value = options.get(next_index)?.value.0.to_string();
+
+        Some(AppEvent::SetConfigOption {
+            config_id: option.id.0.to_string(),
+            new_value: next_value,
+        })
     }
 
     fn handle_file_picker_outcome(
@@ -922,6 +959,11 @@ impl CursorComponent for App {
     }
 }
 
+fn is_cycleable_mode_option(option: &SessionConfigOption) -> bool {
+    matches!(option.kind, SessionConfigKind::Select(_))
+        && option.category == Some(SessionConfigOptionCategory::Mode)
+}
+
 fn builtin_commands() -> Vec<CommandEntry> {
     vec![
         CommandEntry {
@@ -942,7 +984,9 @@ fn builtin_commands() -> Vec<CommandEntry> {
 }
 
 fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
-    let option = config_options.iter().find(|o| o.id.0.as_ref() == "model")?;
+    let option = config_options
+        .iter()
+        .find(|o| o.id.0.as_ref() == acp_utils::config_option_id::ConfigOptionId::Model.as_str())?;
 
     let SessionConfigKind::Select(ref select) = option.kind else {
         return None;
@@ -981,10 +1025,65 @@ fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings};
     use crate::tui::Component;
     use crossterm::event::KeyModifiers;
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{Path, PathBuf};
     use tempfile::TempDir;
+
+    const CUSTOM_TMTHEME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>Custom</string>
+    <key>settings</key>
+    <array>
+        <dict>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#112233</string>
+                <key>background</key>
+                <string>#000000</string>
+                <key>selection</key>
+                <string>#334455</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>"#;
+
+    fn with_wisp_home(path: &Path, f: impl FnOnce()) {
+        let old = std::env::var_os("WISP_HOME");
+        unsafe { std::env::set_var("WISP_HOME", path) };
+        f();
+        if let Some(value) = old {
+            unsafe { std::env::set_var("WISP_HOME", value) };
+        } else {
+            unsafe { std::env::remove_var("WISP_HOME") };
+        }
+    }
+
+    fn custom_theme() -> crate::tui::theme::Theme {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let themes_dir = temp_dir.path().join("themes");
+        fs::create_dir_all(&themes_dir).expect("create themes dir");
+        fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).expect("write theme file");
+
+        let settings = WispSettings {
+            theme: WispThemeSettings {
+                file: Some("custom.tmTheme".to_string()),
+            },
+        };
+
+        let mut theme = crate::tui::theme::Theme::default();
+        with_wisp_home(temp_dir.path(), || {
+            theme = crate::tui::theme::Theme::load(&settings);
+        });
+        theme
+    }
 
     #[test]
     fn command_picker_cursor_targets_picker_header() {
@@ -1134,7 +1233,7 @@ mod tests {
         screen.tool_call_statuses.on_tool_call(&tool_call);
         screen.conversation.ensure_tool_segment("tool-1");
 
-        let effects = screen.on_prompt_done((120, 40));
+        let effects = screen.on_prompt_done(&RenderContext::new((120, 40)));
 
         assert!(matches!(effects.as_slice(), [AppEvent::Render]));
         let segments: Vec<_> = screen.conversation.segments().collect();
@@ -1142,7 +1241,132 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_c_exits() {
+    fn prompt_done_flush_respects_custom_theme() {
+        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
+        screen
+            .conversation
+            .append_thought_chunk("theme should be preserved");
+
+        let custom_theme = custom_theme();
+        let context = RenderContext::new((120, 40)).with_theme(custom_theme.clone());
+        let effects = screen.on_prompt_done(&context);
+
+        let AppEvent::PushScrollback(lines) = &effects[0] else {
+            panic!("expected first effect to push scrollback");
+        };
+        let first_span = lines
+            .first()
+            .and_then(|line| line.spans().first())
+            .expect("thought line should include spans");
+        assert_eq!(
+            first_span.style().fg,
+            Some(custom_theme.muted()),
+            "scrollback flush should render with active theme muted color"
+        );
+    }
+
+    #[test]
+    fn shift_tab_cycles_mode_option() {
+        let options = vec![
+            SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "Planner",
+                vec![
+                    acp::SessionConfigSelectOption::new("Planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("Coder", "Coder"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::Mode),
+        ];
+
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        let effects = app.on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+
+        assert!(effects.iter().any(|event| {
+            matches!(
+                event,
+                AppEvent::SetConfigOption { config_id, new_value }
+                if config_id == "mode" && new_value == "Coder"
+            )
+        }));
+    }
+
+    #[test]
+    fn shift_tab_wraps_mode_option() {
+        let options = vec![
+            SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "Coder",
+                vec![
+                    acp::SessionConfigSelectOption::new("Planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("Coder", "Coder"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::Mode),
+        ];
+
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        let effects = app.on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+
+        assert!(effects.iter().any(|event| {
+            matches!(
+                event,
+                AppEvent::SetConfigOption { config_id, new_value }
+                if config_id == "mode" && new_value == "Planner"
+            )
+        }));
+    }
+
+    #[test]
+    fn shift_tab_ignored_when_overlay_consumes_input() {
+        let options = vec![
+            SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "Planner",
+                vec![acp::SessionConfigSelectOption::new("Planner", "Planner")],
+            )
+            .category(SessionConfigOptionCategory::Mode),
+        ];
+
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        app.open_config_overlay();
+
+        let effects = app.on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+
+        assert!(
+            !effects
+                .iter()
+                .any(|event| matches!(event, AppEvent::SetConfigOption { .. })),
+            "overlay should consume shift+tab"
+        );
+    }
+
+    #[test]
+    fn shift_tab_noop_when_no_cycleable_option_exists() {
+        let options = vec![
+            SessionConfigOption::select(
+                "model",
+                "Model",
+                "m1",
+                vec![
+                    acp::SessionConfigSelectOption::new("m1", "M1"),
+                    acp::SessionConfigSelectOption::new("m2", "M2"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::Model),
+        ];
+
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        let effects = app.on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn ctrl_c_emits_exit() {
         let mut screen = App::new("test-agent".to_string(), &[], vec![]);
 
         let effects = screen.on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));

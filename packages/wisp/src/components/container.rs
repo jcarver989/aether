@@ -108,12 +108,7 @@ impl Component for Container<'_> {
             .map(|fh| fh.saturating_sub(chrome_lines + gap_lines));
 
         #[allow(clippy::cast_possible_truncation)] // inner_width ≤ context.size.0 (u16)
-        let inner_context = RenderContext {
-            size: (inner_width as u16, context.size.1),
-            theme: context.theme,
-            focused: context.focused,
-            max_height: None,
-        };
+        let inner_context = context.with_size((inner_width as u16, context.size.1));
 
         let mut lines = Vec::new();
 
@@ -154,10 +149,7 @@ impl Component for Container<'_> {
                     inner_context.with_max_height(usize::MAX)
                 }
             } else {
-                RenderContext {
-                    max_height: None,
-                    ..inner_context
-                }
+                inner_context.without_max_height()
             };
 
             let child_lines = child.render(&child_ctx);

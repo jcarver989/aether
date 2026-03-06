@@ -5,7 +5,7 @@ use syntect::easy::HighlightLines;
 use unicode_width::UnicodeWidthStr;
 
 use super::screen::{Line, Span, Style};
-use super::syntax::{SYNTECT, find_syntax_by_token, syntect_to_wisp_style};
+use super::syntax::{find_syntax_by_token, syntax_set, syntect_to_wisp_style};
 use super::theme::Theme;
 
 /// A single rendered cell in a table row.
@@ -135,7 +135,7 @@ impl TableState {
         }
 
         let mut lines = Vec::new();
-        let border_style = Style::fg(theme.muted);
+        let border_style = Style::fg(theme.muted());
         lines.push(self.render_border(num_cols, '┌', '┬', '┐', border_style));
 
         for (row_idx, row) in self.rows.iter().enumerate() {
@@ -332,7 +332,7 @@ impl<'a> MarkdownRenderer<'a> {
                 self.finish_current_line();
                 self.lines.push(Line::with_style(
                     "───────────────",
-                    Style::fg(self.theme.muted),
+                    Style::fg(self.theme.muted()),
                 ));
                 self.lines.push(Line::default());
             }
@@ -345,8 +345,12 @@ impl<'a> MarkdownRenderer<'a> {
             Tag::Heading { level, .. } => {
                 self.finish_current_line();
                 let prefix = "#".repeat(level as usize);
-                self.push_styled_text(&format!("{prefix} "), Style::fg(self.theme.heading).bold());
-                self.style_stack.push(Style::fg(self.theme.heading).bold());
+                self.push_styled_text(
+                    &format!("{prefix} "),
+                    Style::fg(self.theme.heading()).bold(),
+                );
+                self.style_stack
+                    .push(Style::fg(self.theme.heading()).bold());
             }
             Tag::Strong => {
                 self.style_stack.push(Style::default().bold());
@@ -361,7 +365,7 @@ impl<'a> MarkdownRenderer<'a> {
                 self.finish_current_line();
                 self.blockquote_depth += 1;
                 self.style_stack
-                    .push(Style::fg(self.theme.blockquote).dim());
+                    .push(Style::fg(self.theme.blockquote()).dim());
             }
             Tag::CodeBlock(kind) => {
                 self.finish_current_line();
@@ -391,11 +395,11 @@ impl<'a> MarkdownRenderer<'a> {
                     }
                     _ => "- ".to_string(),
                 };
-                self.push_styled_text(&format!("{indent}{marker}"), Style::fg(self.theme.muted));
+                self.push_styled_text(&format!("{indent}{marker}"), Style::fg(self.theme.muted()));
             }
             Tag::Link { dest_url, .. } => {
                 self.style_stack
-                    .push(Style::fg(self.theme.link).underline());
+                    .push(Style::fg(self.theme.link()).underline());
                 // Store URL to emit after text if desired; for now just style the text
                 let _ = dest_url;
             }
@@ -516,7 +520,7 @@ impl<'a> MarkdownRenderer<'a> {
             }
             if i > 0 && !prefix.is_empty() {
                 self.current_line
-                    .push_with_style(&*prefix, Style::fg(self.theme.blockquote));
+                    .push_with_style(&*prefix, Style::fg(self.theme.blockquote()));
             }
             if !chunk.is_empty() {
                 self.current_line.push_span(Span::with_style(chunk, style));
@@ -549,7 +553,7 @@ impl<'a> MarkdownRenderer<'a> {
             return;
         }
 
-        let style = Style::fg(self.theme.code_fg);
+        let style = Style::fg(self.theme.code_fg());
         if let Some(cell) = self.active_cell.as_mut() {
             cell.push_code(code, style);
         } else {
@@ -598,7 +602,7 @@ impl<'a> MarkdownRenderer<'a> {
         let prefix = self.blockquote_prefix();
         if !prefix.is_empty() && self.current_line.is_empty() {
             self.current_line
-                .push_with_style(&*prefix, Style::fg(self.theme.blockquote));
+                .push_with_style(&*prefix, Style::fg(self.theme.blockquote()));
         }
         let line = std::mem::take(&mut self.current_line);
         self.lines.push(line);
@@ -614,20 +618,19 @@ impl<'a> MarkdownRenderer<'a> {
 }
 
 fn highlight_code(code: &str, lang: &str, theme: &Theme) -> Vec<Line> {
-    let st = &*SYNTECT;
-
     let syntax = find_syntax_by_token(lang);
 
     let Some(syntax) = syntax else {
         return plain_code_lines(code, theme);
     };
 
-    let mut h = HighlightLines::new(syntax, &st.theme);
+    let syntect_theme = theme.syntect_theme();
+    let mut h = HighlightLines::new(syntax, syntect_theme);
     let mut lines = Vec::new();
 
     for source_line in code.lines() {
-        let Ok(ranges) = h.highlight_line(source_line, &st.syntax_set) else {
-            lines.push(Line::with_style(source_line, Style::fg(theme.code_fg)));
+        let Ok(ranges) = h.highlight_line(source_line, syntax_set()) else {
+            lines.push(Line::with_style(source_line, Style::fg(theme.code_fg())));
             continue;
         };
 
@@ -642,7 +645,7 @@ fn highlight_code(code: &str, lang: &str, theme: &Theme) -> Vec<Line> {
 }
 
 fn plain_code_lines(code: &str, theme: &Theme) -> Vec<Line> {
-    let style = Style::fg(theme.code_fg);
+    let style = Style::fg(theme.code_fg());
     code.lines()
         .map(|line| Line::with_style(line, style))
         .collect()
@@ -718,7 +721,7 @@ mod tests {
         assert_eq!(lines.len(), 1);
         let spans = lines[0].spans();
         let code_span = spans.iter().find(|s| s.text().contains("foo()")).unwrap();
-        assert_eq!(code_span.style().fg, Some(theme.code_fg));
+        assert_eq!(code_span.style().fg, Some(theme.code_fg()));
         assert_eq!(code_span.style().bg, None);
     }
 
@@ -786,7 +789,7 @@ mod tests {
         let spans = lines[0].spans();
         let link_span = spans.iter().find(|s| s.text().contains("here")).unwrap();
         assert!(link_span.style().underline);
-        assert_eq!(link_span.style().fg, Some(theme.link));
+        assert_eq!(link_span.style().fg, Some(theme.link()));
     }
 
     #[test]
@@ -834,7 +837,7 @@ mod tests {
             .iter()
             .find(|l| l.plain_text().contains("some code"))
             .unwrap();
-        assert_eq!(code_line.spans()[0].style().fg, Some(theme.code_fg));
+        assert_eq!(code_line.spans()[0].style().fg, Some(theme.code_fg()));
     }
 
     #[test]
@@ -984,14 +987,14 @@ mod tests {
             .find(|span| span.text() == "link")
             .expect("Expected link span inside table");
         assert!(link_span.style().underline);
-        assert_eq!(link_span.style().fg, Some(theme.link));
+        assert_eq!(link_span.style().fg, Some(theme.link()));
 
         let code_span = lines
             .iter()
             .flat_map(|line| line.spans().iter())
             .find(|span| span.text() == "code")
             .expect("Expected inline code span inside table");
-        assert_eq!(code_span.style().fg, Some(theme.code_fg));
+        assert_eq!(code_span.style().fg, Some(theme.code_fg()));
     }
 
     fn row_inner_display_widths(row: &str) -> Vec<usize> {
