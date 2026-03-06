@@ -21,6 +21,7 @@ use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
+use super::config_setting::ConfigSetting;
 use super::mappers::map_acp_mcp_servers;
 use super::model_config::{
     build_config_options, effective_model, mode_name_for_state, model_exists, pick_default_model,
@@ -55,16 +56,10 @@ impl SessionConfigState {
         &mut self,
         settings: &AetherCliSettings,
         available: &[LlmModel],
-        config_id: &str,
-        value: &str,
+        setting: &ConfigSetting,
     ) -> Result<(), acp::Error> {
-        let id: ConfigOptionId = config_id.parse().map_err(|e| {
-            error!("{e}");
-            acp::Error::invalid_params()
-        })?;
-
-        match id {
-            ConfigOptionId::Mode => {
+        match setting {
+            ConfigSetting::Mode(value) => {
                 let Some((mode_model, mode_reasoning_effort)) =
                     resolve_mode(settings, available, value)
                 else {
@@ -74,25 +69,22 @@ impl SessionConfigState {
 
                 self.pending_model = (self.active_model != mode_model).then_some(mode_model);
                 self.reasoning_effort = mode_reasoning_effort;
-                self.selected_mode = Some(value.to_string());
+                self.selected_mode = Some(value.clone());
             }
-            ConfigOptionId::Model => {
+            ConfigSetting::Model(value) => {
                 if !model_exists(available, value) {
                     error!("Unknown model in set_session_config_option: {}", value);
                     return Err(acp::Error::invalid_params());
                 }
-                self.pending_model = (self.active_model != value).then_some(value.to_string());
+                self.pending_model = (self.active_model != *value).then_some(value.clone());
             }
-            ConfigOptionId::ReasoningEffort => {
-                self.reasoning_effort = ReasoningEffort::parse(value).map_err(|e| {
-                    error!("{e}");
-                    acp::Error::invalid_params()
-                })?;
+            ConfigSetting::ReasoningEffort(effort) => {
+                self.reasoning_effort = *effort;
             }
         }
 
         let effective = effective_model(&self.active_model, self.pending_model.as_deref());
-        if id != ConfigOptionId::Mode {
+        if setting.config_id() != ConfigOptionId::Mode {
             self.selected_mode =
                 mode_name_for_state(settings, available, effective, self.reasoning_effort);
         }
@@ -178,6 +170,7 @@ fn select_initial_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::acp::config_setting::ConfigSetting;
     use crate::acp::settings::Mode;
 
     fn available_models() -> Vec<LlmModel> {
@@ -226,8 +219,9 @@ mod tests {
         let settings = settings_with_modes();
         let available = available_models();
         let mut state = fake_config_state("deepseek:deepseek-chat");
+        let setting = ConfigSetting::Mode("Planner".to_string());
 
-        let result = state.apply_config_change(&settings, &available, "mode", "Planner");
+        let result = state.apply_config_change(&settings, &available, &setting);
 
         assert!(result.is_ok());
         assert_eq!(
@@ -243,8 +237,9 @@ mod tests {
         let settings = settings_with_modes();
         let available = available_models();
         let mut state = fake_config_state("deepseek:deepseek-chat");
+        let setting = ConfigSetting::Mode("Unknown".to_string());
 
-        let result = state.apply_config_change(&settings, &available, "mode", "Unknown");
+        let result = state.apply_config_change(&settings, &available, &setting);
 
         assert!(result.is_err());
     }
@@ -256,9 +251,9 @@ mod tests {
         let mut state = fake_config_state("anthropic:claude-sonnet-4-5");
         state.reasoning_effort = Some(ReasoningEffort::Medium);
         state.selected_mode = Some("Planner".to_string());
+        let setting = ConfigSetting::Model("deepseek:deepseek-chat".to_string());
 
-        let result =
-            state.apply_config_change(&settings, &available, "model", "deepseek:deepseek-chat");
+        let result = state.apply_config_change(&settings, &available, &setting);
 
         assert!(result.is_ok());
         assert_eq!(
@@ -555,6 +550,11 @@ impl Agent for SessionManager {
             session_id_str, config_id, value
         );
 
+        let setting = ConfigSetting::parse(&config_id, &value).map_err(|e| {
+            error!("{e}");
+            acp::Error::invalid_params()
+        })?;
+
         let available = catalog::available_models();
 
         let mut sessions = self.sessions.lock().await;
@@ -565,7 +565,7 @@ impl Agent for SessionManager {
 
         state
             .config
-            .apply_config_change(&self.settings, &available, &config_id, &value)?;
+            .apply_config_change(&self.settings, &available, &setting)?;
 
         let effective_model = effective_model(
             &state.config.active_model,
