@@ -19,6 +19,7 @@ use crate::tui::{
     Cursor, CursorComponent, FormAction, HandlesInput, InputOutcome, Line, RenderContext,
     RenderOutput,
 };
+use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::{
     CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
     ElicitationResponse, McpNotification, McpServerStatus, McpServerStatusEntry,
@@ -78,6 +79,7 @@ pub struct App {
     conversation: ConversationBuffer,
     pub(crate) text_input: TextInput,
     agent_name: String,
+    mode_display: Option<String>,
     model_display: Option<String>,
     config_options: Vec<SessionConfigOption>,
     waiting_for_response: bool,
@@ -105,6 +107,7 @@ impl App {
             conversation: ConversationBuffer::new(),
             text_input: TextInput::new(),
             agent_name,
+            mode_display: extract_mode_display(config_options),
             model_display: extract_model_display(config_options),
             config_options: config_options.to_vec(),
             waiting_for_response: false,
@@ -218,6 +221,7 @@ impl App {
             }
             SessionUpdate::ConfigOptionUpdate(update) => {
                 self.conversation.close_thought_block();
+                self.mode_display = extract_mode_display(&update.config_options);
                 self.model_display = extract_model_display(&update.config_options);
                 self.config_options.clone_from(&update.config_options);
                 if let Some(ref mut overlay) = self.config_overlay {
@@ -856,6 +860,7 @@ impl CursorComponent for App {
             .count();
         let mut status_line = StatusLine {
             agent_name: &self.agent_name,
+            mode_display: self.mode_display.as_deref(),
             model_display: self.model_display.as_deref(),
             context_pct_left: self.context_usage_pct,
             waiting_for_response: self.waiting_for_response,
@@ -983,17 +988,58 @@ fn builtin_commands() -> Vec<CommandEntry> {
     ]
 }
 
-fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
+fn option_display_name(
+    options: &SessionConfigSelectOptions,
+    current_value: &acp::SessionConfigValueId,
+) -> Option<String> {
+    match options {
+        SessionConfigSelectOptions::Ungrouped(options) => options
+            .iter()
+            .find(|o| &o.value == current_value)
+            .map(|o| o.name.clone()),
+        SessionConfigSelectOptions::Grouped(groups) => groups
+            .iter()
+            .flat_map(|group| group.options.iter())
+            .find(|o| &o.value == current_value)
+            .map(|o| o.name.clone()),
+        _ => None,
+    }
+}
+
+fn extract_select_display(
+    config_options: &[SessionConfigOption],
+    id: ConfigOptionId,
+) -> Option<String> {
     let option = config_options
         .iter()
-        .find(|o| o.id.0.as_ref() == acp_utils::config_option_id::ConfigOptionId::Model.as_str())?;
+        .find(|o| o.id.0.as_ref() == id.as_str())?;
 
     let SessionConfigKind::Select(ref select) = option.kind else {
         return None;
     };
 
-    let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
+    option_display_name(&select.options, &select.current_value)
+}
+
+fn extract_mode_display(config_options: &[SessionConfigOption]) -> Option<String> {
+    extract_select_display(config_options, ConfigOptionId::Mode)
+}
+
+fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
+    let option = config_options
+        .iter()
+        .find(|o| o.id.0.as_ref() == ConfigOptionId::Model.as_str())?;
+
+    let SessionConfigKind::Select(ref select) = option.kind else {
         return None;
+    };
+
+    let options = match &select.options {
+        SessionConfigSelectOptions::Ungrouped(options) => options,
+        SessionConfigSelectOptions::Grouped(_) => {
+            return extract_select_display(config_options, ConfigOptionId::Model);
+        }
+        _ => return None,
     };
 
     let current = select.current_value.0.as_ref();
@@ -1015,10 +1061,7 @@ fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<Strin
             Some(names.join(" + "))
         }
     } else {
-        options
-            .iter()
-            .find(|o| o.value == select.current_value)
-            .map(|o| o.name.clone())
+        extract_select_display(config_options, ConfigOptionId::Model)
     }
 }
 
@@ -1682,5 +1725,122 @@ mod tests {
             footer.contains("Toggle"),
             "expected model selector (Toggle footer), got: {footer}"
         );
+    }
+
+    #[test]
+    fn extract_mode_display_single_value() {
+        let opts = vec![
+            SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "planner",
+                vec![
+                    acp::SessionConfigSelectOption::new("planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("coder", "Coder"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::Mode),
+        ];
+
+        let display = extract_mode_display(&opts).expect("should extract mode display");
+        assert_eq!(display, "Planner");
+    }
+
+    #[test]
+    fn extract_mode_display_prefers_mode_id_over_category() {
+        let opts = vec![
+            SessionConfigOption::select(
+                "not-mode",
+                "Not Mode",
+                "alt",
+                vec![acp::SessionConfigSelectOption::new("alt", "Alt")],
+            )
+            .category(SessionConfigOptionCategory::Mode),
+            SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "planner",
+                vec![
+                    acp::SessionConfigSelectOption::new("planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("coder", "Coder"),
+                ],
+            ),
+        ];
+
+        let display = extract_mode_display(&opts).expect("should extract mode display");
+        assert_eq!(display, "Planner");
+    }
+
+    #[test]
+    fn extract_mode_display_grouped_options() {
+        let opts = vec![SessionConfigOption::new(
+            "mode",
+            "Mode",
+            SessionConfigKind::Select(acp::SessionConfigSelect::new(
+                "planner",
+                vec![acp::SessionConfigSelectGroup::new(
+                    "default",
+                    "Default",
+                    vec![acp::SessionConfigSelectOption::new("planner", "Planner")],
+                )],
+            )),
+        )];
+
+        let display = extract_mode_display(&opts).expect("should extract mode display");
+        assert_eq!(display, "Planner");
+    }
+
+    #[test]
+    fn extract_mode_display_returns_none_when_no_mode_option() {
+        let opts = vec![SessionConfigOption::select(
+            "model",
+            "Model",
+            "m1",
+            vec![acp::SessionConfigSelectOption::new("m1", "M1")],
+        )];
+
+        assert!(
+            extract_mode_display(&opts).is_none(),
+            "should return None when no mode option exists"
+        );
+    }
+
+    #[test]
+    fn config_option_update_refreshes_mode_display() {
+        let initial_opts = vec![
+            SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "planner",
+                vec![
+                    acp::SessionConfigSelectOption::new("planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("coder", "Coder"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::Mode),
+        ];
+
+        let mut app = App::new("test-agent".to_string(), &initial_opts, vec![]);
+        assert_eq!(app.mode_display, Some("Planner".to_string()));
+
+        // Simulate config update changing mode to coder
+        let updated_opts = vec![
+            SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "coder",
+                vec![
+                    acp::SessionConfigSelectOption::new("planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("coder", "Coder"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::Mode),
+        ];
+
+        let update =
+            SessionUpdate::ConfigOptionUpdate(acp::ConfigOptionUpdate::new(updated_opts.clone()));
+        app.on_session_update(update);
+
+        assert_eq!(app.mode_display, Some("Coder".to_string()));
     }
 }
