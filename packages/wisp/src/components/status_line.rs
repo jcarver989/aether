@@ -4,6 +4,7 @@ use crate::tui::{Component, Line, RenderContext, Style};
 pub struct StatusLine<'a> {
     pub agent_name: &'a str,
     pub mode_display: Option<&'a str>,
+    pub mode_index: usize,
     pub model_display: Option<&'a str>,
     pub context_pct_left: Option<u8>,
     pub waiting_for_response: bool,
@@ -13,21 +14,21 @@ pub struct StatusLine<'a> {
 impl Component for StatusLine<'_> {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut left_line = Line::default();
+        let muted = context.theme.muted();
+        let sep = context.theme.text_secondary();
+
         left_line.push_text("  ");
-        left_line.push_styled(self.agent_name, context.theme.muted());
+        left_line.push_styled(self.agent_name, muted);
 
         if let Some(mode) = self.mode_display {
-            let badge_text = format!(" {mode} ");
-            let badge_bg = context.theme.mode_badge_bg(mode);
-            left_line.push_with_style(
-                &badge_text,
-                Style::fg(context.theme.text_primary()).bg_color(badge_bg),
-            );
+            left_line.push_styled(" · ", sep);
+            let color = context.theme.mode_badge_bg(self.mode_index);
+            left_line.push_styled(mode, color);
         }
 
         if let Some(model) = self.model_display {
-            left_line.push_styled(" ", context.theme.muted());
-            left_line.push_styled(model, context.theme.muted());
+            left_line.push_styled(" · ", sep);
+            left_line.push_styled(model, muted);
         }
 
         let (right, color) = if self.waiting_for_response {
@@ -75,6 +76,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "claude-code",
             mode_display: None,
+            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -91,6 +93,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "test-agent",
             mode_display: None,
+            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -107,6 +110,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether-acp",
             mode_display: None,
+            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
@@ -118,10 +122,6 @@ mod tests {
         let text = lines[0].plain_text();
         assert!(text.contains("aether-acp"), "should contain agent name");
         assert!(text.contains("gpt-4o"), "should contain model name");
-        assert!(
-            text.contains("aether-acp gpt-4o"),
-            "should contain single-space separator between agent and model"
-        );
     }
 
     #[test]
@@ -129,6 +129,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether-acp",
             mode_display: None,
+            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -149,6 +150,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
+            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: Some(72),
             waiting_for_response: false,
@@ -167,6 +169,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
+            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
@@ -183,6 +186,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
+            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: Some(72),
             waiting_for_response: true,
@@ -207,6 +211,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
+            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: true,
@@ -227,6 +232,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
+            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
@@ -246,6 +252,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
+            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -265,6 +272,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
+            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -285,6 +293,7 @@ mod tests {
             agent_name: "aether",
             model_display: None,
             mode_display: None,
+            mode_index: 0,
             context_pct_left: Some(50),
             waiting_for_response: false,
             unhealthy_server_count: 2,
@@ -307,6 +316,7 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "wisp",
             mode_display: Some("Planner"),
+            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
@@ -335,10 +345,11 @@ mod tests {
     }
 
     #[test]
-    fn renders_mode_badge_with_background_color() {
+    fn renders_mode_with_colored_text() {
         let mut status = StatusLine {
             agent_name: "wisp",
             mode_display: Some("Planner"),
+            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -348,24 +359,25 @@ mod tests {
         let lines = status.render(&ctx);
         assert_eq!(lines.len(), 1);
 
-        // Find the span containing the mode text
         let spans = lines[0].spans();
         let mode_span = spans
             .iter()
             .find(|s| s.text().contains("Planner"))
             .expect("should have a span containing the mode");
         let style = mode_span.style();
-        assert!(
-            style.bg.is_some(),
-            "mode badge should have a background color"
+        assert_eq!(
+            style.fg,
+            Some(ctx.theme.mode_badge_bg(0)),
+            "mode text should be colored by index"
         );
     }
 
     #[test]
-    fn renders_different_mode_badge_colors() {
+    fn renders_different_mode_text_colors() {
         let mut status1 = StatusLine {
             agent_name: "wisp",
             mode_display: Some("Planner"),
+            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -378,11 +390,12 @@ mod tests {
             .iter()
             .find(|s| s.text().contains("Planner"))
             .expect("planner mode span");
-        let bg1 = mode_span1.style().bg;
+        let fg1 = mode_span1.style().fg;
 
         let mut status2 = StatusLine {
             agent_name: "wisp",
             mode_display: Some("Coder"),
+            mode_index: 1,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -394,47 +407,12 @@ mod tests {
             .iter()
             .find(|s| s.text().contains("Coder"))
             .expect("coder mode span");
-        let bg2 = mode_span2.style().bg;
+        let fg2 = mode_span2.style().fg;
 
-        assert!(
-            bg1.is_some() && bg2.is_some(),
-            "both modes should have background colors"
-        );
         assert_ne!(
-            bg1, bg2,
-            "different modes should have different badge colors"
+            fg1, fg2,
+            "different mode indices should have different text colors"
         );
     }
 
-    #[test]
-    fn unknown_mode_uses_fallback_badge_color() {
-        let mut status = StatusLine {
-            agent_name: "wisp",
-            mode_display: Some("UnknownMode123"),
-            model_display: None,
-            context_pct_left: None,
-            waiting_for_response: false,
-            unhealthy_server_count: 0,
-        };
-        let ctx = RenderContext::new((80, 24));
-        let lines = status.render(&ctx);
-        let spans = lines[0].spans();
-        let mode_span = spans
-            .iter()
-            .find(|s| s.text().contains("UnknownMode123"))
-            .expect("unknown mode span");
-        let style = mode_span.style();
-        assert!(
-            style.bg.is_some(),
-            "unknown mode should use fallback badge color"
-        );
-
-        // The fallback should be a specific color from the theme
-        let expected_fallback = ctx.theme.mode_badge_bg("unknown");
-        assert_eq!(
-            style.bg,
-            Some(expected_fallback),
-            "unknown mode should use theme fallback color"
-        );
-    }
 }

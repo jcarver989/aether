@@ -134,18 +134,15 @@ impl Theme {
         self.diff_removed_fg
     }
 
-    /// Returns the background color for a mode badge.
-    ///
-    /// Normalizes the mode name (trim, lowercase) and maps it to a distinct
-    /// color. Unknown modes use a fallback color.
-    pub fn mode_badge_bg(&self, mode: &str) -> Color {
-        let normalized = mode.trim().to_ascii_lowercase();
-        match normalized.as_str() {
-            "planner" | "read" | "query" => self.info,
-            "coder" | "write" | "edit" => self.secondary,
-            "review" | "debug" => self.warning,
-            _ => MODE_FALLBACK,
-        }
+    /// Returns the background color for a mode badge, cycling through a
+    /// fixed palette based on the mode's index in the options list.
+    pub fn mode_badge_bg(&self, index: usize) -> Color {
+        const PALETTE_FIELDS: [fn(&Theme) -> Color; 3] = [
+            |t| t.info,
+            |t| t.secondary,
+            |t| t.warning,
+        ];
+        PALETTE_FIELDS[index % PALETTE_FIELDS.len()](self)
     }
 
     pub fn syntect_theme(&self) -> &SyntectTheme {
@@ -338,12 +335,6 @@ const DEFAULT_HIGHLIGHT_BG: Color = Color::Rgb {
     r: 0x1a,
     g: 0x4a,
     b: 0x50,
-};
-
-const MODE_FALLBACK: Color = Color::Rgb {
-    r: 100,
-    g: 100,
-    b: 120,
 };
 
 /// Darken a color to ~20% brightness for use as a subtle background.
@@ -705,56 +696,23 @@ mod tests {
     }
 
     #[test]
-    fn mode_badge_bg_returns_distinct_colors_for_known_modes() {
+    fn mode_badge_bg_cycles_through_palette() {
         let theme = Theme::default();
+        assert_eq!(theme.mode_badge_bg(0), CATPPUCCIN_INFO);
+        assert_eq!(theme.mode_badge_bg(1), CATPPUCCIN_SECONDARY);
+        assert_eq!(theme.mode_badge_bg(2), CATPPUCCIN_WARNING);
+        // Wraps around
+        assert_eq!(theme.mode_badge_bg(3), CATPPUCCIN_INFO);
+    }
 
-        let planner_color = theme.mode_badge_bg("planner");
-        let coder_color = theme.mode_badge_bg("coder");
-
+    #[test]
+    fn mode_badge_bg_distinct_for_adjacent_indices() {
+        let theme = Theme::default();
         assert_ne!(
-            planner_color, coder_color,
-            "different modes should have distinct badge colors"
+            theme.mode_badge_bg(0),
+            theme.mode_badge_bg(1),
+            "adjacent indices should have distinct badge colors"
         );
-    }
-
-    #[test]
-    fn mode_badge_bg_normalizes_mode_name() {
-        let theme = Theme::default();
-
-        assert_eq!(
-            theme.mode_badge_bg("Planner"),
-            theme.mode_badge_bg("planner"),
-            "case should be normalized"
-        );
-        assert_eq!(
-            theme.mode_badge_bg("PLANNER"),
-            theme.mode_badge_bg("planner"),
-            "uppercase should be normalized"
-        );
-        assert_eq!(
-            theme.mode_badge_bg("  planner  "),
-            theme.mode_badge_bg("planner"),
-            "whitespace should be trimmed"
-        );
-    }
-
-    #[test]
-    fn mode_badge_bg_unknown_mode_returns_fallback() {
-        let theme = Theme::default();
-
-        assert_eq!(
-            theme.mode_badge_bg("nonexistent_mode_xyz"),
-            theme.mode_badge_bg("unknown"),
-            "unknown modes should use fallback color"
-        );
-    }
-
-    #[test]
-    fn mode_badge_bg_uses_theme_derived_colors() {
-        let theme = Theme::default();
-        assert_eq!(theme.mode_badge_bg("planner"), CATPPUCCIN_INFO);
-        assert_eq!(theme.mode_badge_bg("coder"), CATPPUCCIN_SECONDARY);
-        assert_eq!(theme.mode_badge_bg("review"), CATPPUCCIN_WARNING);
     }
 
     #[test]
