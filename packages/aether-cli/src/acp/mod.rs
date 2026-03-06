@@ -1,3 +1,4 @@
+pub(crate) mod config_setting;
 pub mod mappers;
 pub(crate) mod model_config;
 pub(crate) mod relay;
