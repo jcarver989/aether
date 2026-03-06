@@ -1,5 +1,7 @@
+pub mod config_option_id;
 pub mod content;
 pub mod notifications;
+pub mod settings;
 
 #[cfg(feature = "client")]
 pub mod client;

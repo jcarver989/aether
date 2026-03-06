@@ -1,3 +1,4 @@
+use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpRequest;
 use agent_client_protocol::{
     self as acp, Agent, AgentCapabilities, AuthMethod, AuthenticateRequest, AuthenticateResponse,
@@ -22,12 +23,83 @@ use tracing::{debug, error, info};
 
 use super::mappers::map_acp_mcp_servers;
 use super::model_config::{
-    build_config_options, effective_model, model_exists, pick_default_model,
+    build_config_options, effective_model, mode_name_for_state, model_exists, pick_default_model,
+    resolve_mode, validated_modes,
 };
 use super::relay::{RelayHandle, SessionCommand, spawn_relay};
 use super::session::Session;
+use super::settings::{AetherCliSettings, load_or_create_settings};
 use acp_utils::content::map_content_blocks_to_text;
 use acp_utils::server::AcpActorHandle;
+
+/// Mutable per-session config state.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct SessionConfigState {
+    active_model: String,
+    pending_model: Option<String>,
+    reasoning_effort: Option<ReasoningEffort>,
+    selected_mode: Option<String>,
+}
+
+impl SessionConfigState {
+    fn new(active_model: String) -> Self {
+        Self {
+            active_model,
+            pending_model: None,
+            reasoning_effort: None,
+            selected_mode: None,
+        }
+    }
+
+    fn apply_config_change(
+        &mut self,
+        settings: &AetherCliSettings,
+        available: &[LlmModel],
+        config_id: &str,
+        value: &str,
+    ) -> Result<(), acp::Error> {
+        let id: ConfigOptionId = config_id.parse().map_err(|e| {
+            error!("{e}");
+            acp::Error::invalid_params()
+        })?;
+
+        match id {
+            ConfigOptionId::Mode => {
+                let Some((mode_model, mode_reasoning_effort)) =
+                    resolve_mode(settings, available, value)
+                else {
+                    error!("Unknown or invalid mode: {}", value);
+                    return Err(acp::Error::invalid_params());
+                };
+
+                self.pending_model = (self.active_model != mode_model).then_some(mode_model);
+                self.reasoning_effort = mode_reasoning_effort;
+                self.selected_mode = Some(value.to_string());
+            }
+            ConfigOptionId::Model => {
+                if !model_exists(available, value) {
+                    error!("Unknown model in set_session_config_option: {}", value);
+                    return Err(acp::Error::invalid_params());
+                }
+                self.pending_model = (self.active_model != value).then_some(value.to_string());
+            }
+            ConfigOptionId::ReasoningEffort => {
+                self.reasoning_effort = ReasoningEffort::parse(value).map_err(|e| {
+                    error!("{e}");
+                    acp::Error::invalid_params()
+                })?;
+            }
+        }
+
+        let effective = effective_model(&self.active_model, self.pending_model.as_deref());
+        if id != ConfigOptionId::Mode {
+            self.selected_mode =
+                mode_name_for_state(settings, available, effective, self.reasoning_effort);
+        }
+
+        Ok(())
+    }
+}
 
 /// Per-session state including active and staged model selections.
 struct SessionState {
@@ -35,14 +107,13 @@ struct SessionState {
     mcp_request_tx: mpsc::Sender<McpRequest>,
     #[allow(dead_code)]
     _relay_handle: JoinHandle<()>,
-    active_model: String,
-    pending_model: Option<String>,
-    reasoning_effort: Option<ReasoningEffort>,
+    config: SessionConfigState,
 }
 
 /// Manages ACP sessions, each session has its own agent and state
 pub struct SessionManager {
     system_prompt: Option<String>,
+    settings: AetherCliSettings,
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
     next_session_id: Arc<Mutex<u64>>,
     actor_handle: AcpActorHandle,
@@ -53,6 +124,7 @@ impl SessionManager {
         info!("Creating SessionManager");
         Self {
             system_prompt,
+            settings: load_or_create_settings(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             next_session_id: Arc::new(Mutex::new(0)),
             actor_handle,
@@ -90,6 +162,111 @@ fn build_auth_methods() -> Vec<AuthMethod> {
             AuthMethod::new(id, display)
         })
         .collect()
+}
+
+fn select_initial_mode(
+    settings: &AetherCliSettings,
+    available: &[LlmModel],
+) -> (Option<String>, Option<(String, Option<ReasoningEffort>)>) {
+    validated_modes(settings, available)
+        .into_iter()
+        .next()
+        .map(|mode| (Some(mode.name), Some((mode.model, mode.reasoning_effort))))
+        .unwrap_or((None, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::acp::settings::Mode;
+
+    fn available_models() -> Vec<LlmModel> {
+        vec![
+            "anthropic:claude-sonnet-4-5".parse().expect("valid model"),
+            "anthropic:claude-opus-4-6".parse().expect("valid model"),
+            "deepseek:deepseek-chat".parse().expect("valid model"),
+        ]
+    }
+
+    fn settings_with_modes() -> AetherCliSettings {
+        let mut settings = AetherCliSettings::default();
+        settings.modes.insert(
+            "Planner".to_string(),
+            Mode {
+                model: "anthropic:claude-sonnet-4-5".to_string(),
+                reasoning_effort: Some("high".to_string()),
+            },
+        );
+        settings.modes.insert(
+            "Coder".to_string(),
+            Mode {
+                model: "deepseek:deepseek-chat".to_string(),
+                reasoning_effort: None,
+            },
+        );
+        settings
+    }
+
+    fn fake_config_state(active_model: &str) -> SessionConfigState {
+        SessionConfigState::new(active_model.to_string())
+    }
+
+    #[test]
+    fn session_config_state_new_initializes_defaults() {
+        let state = SessionConfigState::new("deepseek:deepseek-chat".to_string());
+
+        assert_eq!(state.active_model, "deepseek:deepseek-chat");
+        assert_eq!(state.pending_model, None);
+        assert_eq!(state.reasoning_effort, None);
+        assert_eq!(state.selected_mode, None);
+    }
+
+    #[test]
+    fn mode_selection_updates_pending_model_and_reasoning() {
+        let settings = settings_with_modes();
+        let available = available_models();
+        let mut state = fake_config_state("deepseek:deepseek-chat");
+
+        let result = state.apply_config_change(&settings, &available, "mode", "Planner");
+
+        assert!(result.is_ok());
+        assert_eq!(
+            state.pending_model.as_deref(),
+            Some("anthropic:claude-sonnet-4-5")
+        );
+        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::High));
+        assert_eq!(state.selected_mode.as_deref(), Some("Planner"));
+    }
+
+    #[test]
+    fn unknown_mode_is_rejected() {
+        let settings = settings_with_modes();
+        let available = available_models();
+        let mut state = fake_config_state("deepseek:deepseek-chat");
+
+        let result = state.apply_config_change(&settings, &available, "mode", "Unknown");
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn manual_model_change_clears_mode_selection_when_no_tuple_match() {
+        let settings = settings_with_modes();
+        let available = available_models();
+        let mut state = fake_config_state("anthropic:claude-sonnet-4-5");
+        state.reasoning_effort = Some(ReasoningEffort::Medium);
+        state.selected_mode = Some("Planner".to_string());
+
+        let result =
+            state.apply_config_change(&settings, &available, "model", "deepseek:deepseek-chat");
+
+        assert!(result.is_ok());
+        assert_eq!(
+            state.pending_model.as_deref(),
+            Some("deepseek:deepseek-chat")
+        );
+        assert!(state.selected_mode.is_none());
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -132,8 +309,17 @@ impl Agent for SessionManager {
         let available = catalog::available_models();
         let sessions = self.sessions.lock().await;
         for (id, state) in sessions.iter() {
-            let model = effective_model(&state.active_model, state.pending_model.as_deref());
-            let options = build_config_options(&available, model, state.reasoning_effort);
+            let model = effective_model(
+                &state.config.active_model,
+                state.config.pending_model.as_deref(),
+            );
+            let options = build_config_options(
+                &self.settings,
+                &available,
+                state.config.selected_mode.as_deref(),
+                model,
+                state.config.reasoning_effort,
+            );
             let notification = SessionNotification::new(
                 SessionId::new(id.clone()),
                 SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(options)),
@@ -158,7 +344,20 @@ impl Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
-        let model_str = default_model.to_string();
+        let mut initial_model = default_model.to_string();
+        let mut initial_reasoning_effort = None;
+        let mut initial_selected_mode = None;
+
+        if !self.settings.modes.is_empty() {
+            let (mode_name, mode_config) = select_initial_mode(&self.settings, &available);
+            if let Some((model, reasoning_effort)) = mode_config {
+                initial_model = model;
+                initial_reasoning_effort = reasoning_effort;
+                initial_selected_mode = mode_name;
+            }
+        }
+
+        let model_str = initial_model;
 
         let parser = ModelProviderParser::default();
         let (llm, _) = parser.parse(&model_str).map_err(|e| {
@@ -192,13 +391,15 @@ impl Agent for SessionManager {
             join_handle,
         } = spawn_relay(session, self.actor_handle.clone(), acp_session_id.clone());
 
+        let mut config = SessionConfigState::new(model_str.clone());
+        config.reasoning_effort = initial_reasoning_effort;
+        config.selected_mode = initial_selected_mode.clone();
+
         let state = SessionState {
             relay_tx: cmd_tx,
             mcp_request_tx,
             _relay_handle: join_handle,
-            active_model: model_str.clone(),
-            pending_model: None,
-            reasoning_effort: None,
+            config,
         };
 
         let mut sessions = self.sessions.lock().await;
@@ -206,7 +407,13 @@ impl Agent for SessionManager {
 
         info!("Session {} created successfully", session_id);
 
-        let config_options = build_config_options(&available, &model_str, None);
+        let config_options = build_config_options(
+            &self.settings,
+            &available,
+            initial_selected_mode.as_deref(),
+            &model_str,
+            initial_reasoning_effort,
+        );
         let response =
             NewSessionResponse::new(acp_session_id.clone()).config_options(config_options);
 
@@ -261,16 +468,16 @@ impl Agent for SessionManager {
             let prompt_text = map_content_blocks_to_text(args.prompt);
             debug!("Prompt text: {}", prompt_text);
 
-            let switch_model = state.pending_model.take().and_then(|pending| {
-                if pending == state.active_model {
+            let switch_model = state.config.pending_model.take().and_then(|pending| {
+                if pending == state.config.active_model {
                     None
                 } else {
-                    state.active_model.clone_from(&pending);
+                    state.config.active_model.clone_from(&pending);
                     Some(pending)
                 }
             });
 
-            let reasoning_effort = state.reasoning_effort;
+            let reasoning_effort = state.config.reasoning_effort;
 
             (
                 state.relay_tx.clone(),
@@ -356,30 +563,20 @@ impl Agent for SessionManager {
             acp::Error::invalid_params()
         })?;
 
-        match config_id.as_str() {
-            "model" => {
-                if !model_exists(&available, &value) {
-                    error!("Unknown model in set_session_config_option: {}", value);
-                    return Err(acp::Error::invalid_params());
-                }
-                state.pending_model = (state.active_model != value).then_some(value);
-            }
-            "reasoning_effort" => {
-                state.reasoning_effort = ReasoningEffort::parse(&value).map_err(|e| {
-                    error!("{e}");
-                    acp::Error::invalid_params()
-                })?;
-            }
-            _ => {
-                error!("Unknown config option: {}", config_id);
-                return Err(acp::Error::invalid_params());
-            }
-        }
+        state
+            .config
+            .apply_config_change(&self.settings, &available, &config_id, &value)?;
 
+        let effective_model = effective_model(
+            &state.config.active_model,
+            state.config.pending_model.as_deref(),
+        );
         let options = build_config_options(
+            &self.settings,
             &available,
-            effective_model(&state.active_model, state.pending_model.as_deref()),
-            state.reasoning_effort,
+            state.config.selected_mode.as_deref(),
+            effective_model,
+            state.config.reasoning_effort,
         );
         Ok(SetSessionConfigOptionResponse::new(options))
     }

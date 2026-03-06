@@ -116,6 +116,28 @@ $ARGUMENTS
 - `$ARGUMENTS` — Full argument string (e.g., `/plan add user auth` -> "add user auth")
 - `$1`, `$2`, `$3` — Positional arguments
 
+## Settings
+
+Aether stores its settings in `~/.aether/settings.json` (override with `AETHER_HOME` env var). The file is created with defaults on first run.
+
+### Modes
+
+Define named modes to quickly switch between model + reasoning configurations:
+
+```json
+{
+  "modes": {
+    "Planner": { "model": "anthropic:claude-opus-4-6", "reasoningEffort": "high" },
+    "Coder": { "model": "deepseek:deepseek-chat" }
+  }
+}
+```
+
+- Mode names appear as an ACP `mode` config option alongside the existing `Model` and `Reasoning Effort` options.
+- Selecting a mode updates the model and reasoning effort for the next prompt.
+- ACP clients can cycle modes with Shift+Tab only when the option is emitted as `SessionConfigOptionCategory::Mode` (e.g. Wisp uses this category to detect cycleable mode options).
+- Invalid modes (unknown model or invalid reasoning effort) are silently skipped.
+
 ## Logs
 
 Logs are written to `--log-dir` (default: `/tmp/aether-acp-logs/`). Control verbosity with the `RUST_LOG` environment variable.
