@@ -19,6 +19,15 @@ pub struct Theme {
     muted: Color,
     code_fg: Color,
     text_secondary: Color,
+    success: Color,
+    warning: Color,
+    error: Color,
+    info: Color,
+    secondary: Color,
+    diff_added_fg: Color,
+    diff_removed_fg: Color,
+    diff_added_bg: Color,
+    diff_removed_bg: Color,
 }
 
 static DEFAULT_THEME: LazyLock<Arc<SyntectTheme>> = LazyLock::new(|| {
@@ -70,7 +79,7 @@ impl Theme {
     }
 
     pub fn secondary(&self) -> Color {
-        SECONDARY
+        self.secondary
     }
 
     pub fn text_secondary(&self) -> Color {
@@ -78,19 +87,19 @@ impl Theme {
     }
 
     pub fn success(&self) -> Color {
-        SUCCESS
+        self.success
     }
 
     pub fn warning(&self) -> Color {
-        WARNING
+        self.warning
     }
 
     pub fn error(&self) -> Color {
-        ERROR
+        self.error
     }
 
     pub fn info(&self) -> Color {
-        INFO
+        self.info
     }
 
     pub fn muted(&self) -> Color {
@@ -110,19 +119,33 @@ impl Theme {
     }
 
     pub fn diff_added_bg(&self) -> Color {
-        DIFF_ADDED_BG
+        self.diff_added_bg
     }
 
     pub fn diff_removed_bg(&self) -> Color {
-        DIFF_REMOVED_BG
+        self.diff_removed_bg
     }
 
     pub fn diff_added_fg(&self) -> Color {
-        DIFF_ADDED_FG
+        self.diff_added_fg
     }
 
     pub fn diff_removed_fg(&self) -> Color {
-        DIFF_REMOVED_FG
+        self.diff_removed_fg
+    }
+
+    /// Returns the background color for a mode badge.
+    ///
+    /// Normalizes the mode name (trim, lowercase) and maps it to a distinct
+    /// color. Unknown modes use a fallback color.
+    pub fn mode_badge_bg(&self, mode: &str) -> Color {
+        let normalized = mode.trim().to_ascii_lowercase();
+        match normalized.as_str() {
+            "planner" | "read" | "query" => self.info,
+            "coder" | "write" | "edit" => self.secondary,
+            "review" | "debug" => self.warning,
+            _ => MODE_FALLBACK,
+        }
     }
 
     pub fn syntect_theme(&self) -> &SyntectTheme {
@@ -151,6 +174,7 @@ impl Theme {
         }
     }
 
+    #[allow(clippy::similar_names)] // diff_added_fg/bg and diff_removed_fg/bg are intentionally paired
     fn from_syntect(syntect: Arc<SyntectTheme>) -> Self {
         let accent = syntect
             .settings
@@ -167,16 +191,10 @@ impl Theme {
             .or_else(|| resolve_scope_fg(&syntect, "markup.link"))
             .unwrap_or(accent);
 
-        let blockquote = resolve_scope_fg(&syntect, "markup.quote")
-            .unwrap_or(text_secondary);
+        let blockquote = resolve_scope_fg(&syntect, "markup.quote").unwrap_or(text_secondary);
 
         let muted = resolve_scope_fg(&syntect, "markup.list.bullet")
-            .or_else(|| {
-                syntect
-                    .settings
-                    .gutter_foreground
-                    .map(color_from_syntect)
-            })
+            .or_else(|| syntect.settings.gutter_foreground.map(color_from_syntect))
             .unwrap_or(text_secondary);
 
         let fg = syntect
@@ -188,6 +206,38 @@ impl Theme {
             .or_else(|| resolve_scope_fg(&syntect, "markup.raw"))
             .unwrap_or(fg);
 
+        let error = resolve_scope_fg(&syntect, "markup.deleted")
+            .or_else(|| resolve_scope_fg(&syntect, "markup.deleted.diff"))
+            .or_else(|| resolve_scope_fg(&syntect, "invalid"))
+            .unwrap_or(accent);
+
+        let warning = resolve_scope_fg(&syntect, "constant.numeric").unwrap_or(accent);
+
+        let success = resolve_scope_fg(&syntect, "markup.inserted")
+            .or_else(|| resolve_scope_fg(&syntect, "markup.inserted.diff"))
+            .or_else(|| resolve_scope_fg(&syntect, "string"))
+            .unwrap_or(accent);
+
+        let info = resolve_scope_fg(&syntect, "entity.name.function")
+            .or_else(|| resolve_scope_fg(&syntect, "support.function"))
+            .unwrap_or(accent);
+
+        let secondary = resolve_scope_fg(&syntect, "keyword")
+            .or_else(|| resolve_scope_fg(&syntect, "storage.type"))
+            .unwrap_or(accent);
+
+        let diff_added_fg = resolve_scope_fg(&syntect, "markup.inserted.diff")
+            .or_else(|| resolve_scope_fg(&syntect, "markup.inserted"))
+            .or_else(|| resolve_scope_fg(&syntect, "string"))
+            .unwrap_or(accent);
+
+        let diff_removed_fg = resolve_scope_fg(&syntect, "markup.deleted.diff")
+            .or_else(|| resolve_scope_fg(&syntect, "markup.deleted"))
+            .unwrap_or(accent);
+
+        let diff_added_bg = darken_color(diff_added_fg);
+        let diff_removed_bg = darken_color(diff_removed_fg);
+
         Self {
             syntect,
             heading,
@@ -196,6 +246,15 @@ impl Theme {
             muted,
             code_fg,
             text_secondary,
+            success,
+            warning,
+            error,
+            info,
+            secondary,
+            diff_added_fg,
+            diff_removed_fg,
+            diff_added_bg,
+            diff_removed_bg,
         }
     }
 
@@ -281,44 +340,24 @@ const DEFAULT_HIGHLIGHT_BG: Color = Color::Rgb {
     b: 0x50,
 };
 
-const SECONDARY: Color = Color::Rgb {
-    r: 138,
-    g: 43,
-    b: 226,
-};
-const SUCCESS: Color = Color::Rgb {
-    r: 0,
-    g: 255,
-    b: 127,
-};
-const WARNING: Color = Color::Rgb {
-    r: 255,
-    g: 165,
-    b: 0,
-};
-const ERROR: Color = Color::Rgb {
-    r: 255,
-    g: 59,
-    b: 48,
-};
-const INFO: Color = Color::Rgb {
-    r: 78,
-    g: 205,
-    b: 196,
+const MODE_FALLBACK: Color = Color::Rgb {
+    r: 100,
+    g: 100,
+    b: 120,
 };
 
-const DIFF_ADDED_BG: Color = Color::Rgb {
-    r: 20,
-    g: 50,
-    b: 20,
-};
-const DIFF_REMOVED_BG: Color = Color::Rgb {
-    r: 60,
-    g: 20,
-    b: 20,
-};
-const DIFF_ADDED_FG: Color = Color::Green;
-const DIFF_REMOVED_FG: Color = Color::Red;
+/// Darken a color to ~20% brightness for use as a subtle background.
+#[allow(clippy::cast_possible_truncation)] // max input is 255, 255*20/100 = 51
+fn darken_color(color: Color) -> Color {
+    match color {
+        Color::Rgb { r, g, b } => Color::Rgb {
+            r: (u16::from(r) * 20 / 100) as u8,
+            g: (u16::from(g) * 20 / 100) as u8,
+            b: (u16::from(b) * 20 / 100) as u8,
+        },
+        other => other,
+    }
+}
 
 fn color_from_syntect(color: syntect::highlighting::Color) -> Color {
     Color::Rgb {
@@ -334,14 +373,128 @@ mod tests {
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings};
     use std::fs;
     use std::path::Path;
+    use syntect::highlighting::ThemeSettings;
     use tempfile::TempDir;
 
-    const CUSTOM_TMTHEME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+    /// Catppuccin Mocha palette constants used by the embedded theme.
+    const CATPPUCCIN_HEADING: Color = Color::Rgb {
+        r: 0xf9,
+        g: 0xe2,
+        b: 0xaf,
+    }; // yellow
+    const CATPPUCCIN_LINK: Color = Color::Rgb {
+        r: 0x89,
+        g: 0xb4,
+        b: 0xfa,
+    }; // blue
+    const CATPPUCCIN_BLOCKQUOTE: Color = Color::Rgb {
+        r: 0xf5,
+        g: 0xc2,
+        b: 0xe7,
+    }; // pink
+    const CATPPUCCIN_MUTED: Color = Color::Rgb {
+        r: 0x94,
+        g: 0xe2,
+        b: 0xd5,
+    }; // teal (markup.list.bullet)
+    const CATPPUCCIN_CODE_FG: Color = Color::Rgb {
+        r: 0xa6,
+        g: 0xe3,
+        b: 0xa1,
+    }; // green (markup.inline.raw)
+    const CATPPUCCIN_ERROR: Color = Color::Rgb {
+        r: 0xf3,
+        g: 0x8b,
+        b: 0xa8,
+    }; // red (markup.deleted)
+    const CATPPUCCIN_WARNING: Color = Color::Rgb {
+        r: 0xfa,
+        g: 0xb3,
+        b: 0x87,
+    }; // peach (constant.numeric)
+    const CATPPUCCIN_SUCCESS: Color = Color::Rgb {
+        r: 0xa6,
+        g: 0xe3,
+        b: 0xa1,
+    }; // green (markup.inserted)
+    const CATPPUCCIN_INFO: Color = Color::Rgb {
+        r: 0x89,
+        g: 0xb4,
+        b: 0xfa,
+    }; // blue (entity.name.function)
+    const CATPPUCCIN_SECONDARY: Color = Color::Rgb {
+        r: 0xcb,
+        g: 0xa6,
+        b: 0xf7,
+    }; // mauve (keyword)
+    const CATPPUCCIN_ACCENT: Color = Color::Rgb {
+        r: 0xf5,
+        g: 0xe0,
+        b: 0xdc,
+    }; // rosewater (caret)
+
+    /// Build a bare `SyntectTheme` with only global settings, no scope rules.
+    /// Used to test that all colors fall back to accent.
+    fn bare_syntect_theme() -> Arc<SyntectTheme> {
+        Arc::new(SyntectTheme {
+            name: Some("Bare".into()),
+            author: None,
+            settings: ThemeSettings {
+                foreground: Some(syntect::highlighting::Color {
+                    r: 0xCC,
+                    g: 0xCC,
+                    b: 0xCC,
+                    a: 0xFF,
+                }),
+                background: Some(syntect::highlighting::Color {
+                    r: 0x11,
+                    g: 0x11,
+                    b: 0x11,
+                    a: 0xFF,
+                }),
+                caret: Some(syntect::highlighting::Color {
+                    r: 0xAA,
+                    g: 0xBB,
+                    b: 0xCC,
+                    a: 0xFF,
+                }),
+                ..ThemeSettings::default()
+            },
+            scopes: Vec::new(),
+        })
+    }
+
+    /// Build a bare theme with no caret, so accent falls back to `DEFAULT_ACCENT`.
+    fn bare_syntect_theme_no_caret() -> Arc<SyntectTheme> {
+        Arc::new(SyntectTheme {
+            name: Some("BareNoCaret".into()),
+            author: None,
+            settings: ThemeSettings {
+                foreground: Some(syntect::highlighting::Color {
+                    r: 0xCC,
+                    g: 0xCC,
+                    b: 0xCC,
+                    a: 0xFF,
+                }),
+                background: Some(syntect::highlighting::Color {
+                    r: 0x11,
+                    g: 0x11,
+                    b: 0x11,
+                    a: 0xFF,
+                }),
+                ..ThemeSettings::default()
+            },
+            scopes: Vec::new(),
+        })
+    }
+
+    /// Inline XML theme for file-loading tests only (Theme::load needs a file).
+    const LOADABLE_TMTHEME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>name</key>
-    <string>Custom</string>
+    <string>Loadable</string>
     <key>settings</key>
     <array>
         <dict>
@@ -359,88 +512,13 @@ mod tests {
 </dict>
 </plist>"#;
 
-    /// A theme that defines markup scopes with specific colors.
-    const MARKUP_TMTHEME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>name</key>
-    <string>MarkupTest</string>
-    <key>settings</key>
-    <array>
-        <dict>
-            <key>settings</key>
-            <dict>
-                <key>foreground</key>
-                <string>#AABBCC</string>
-                <key>background</key>
-                <string>#000000</string>
-                <key>caret</key>
-                <string>#FF0000</string>
-            </dict>
-        </dict>
-        <dict>
-            <key>name</key>
-            <string>Heading</string>
-            <key>scope</key>
-            <string>markup.heading</string>
-            <key>settings</key>
-            <dict>
-                <key>foreground</key>
-                <string>#FF1111</string>
-            </dict>
-        </dict>
-        <dict>
-            <key>name</key>
-            <string>Link</string>
-            <key>scope</key>
-            <string>markup.underline.link</string>
-            <key>settings</key>
-            <dict>
-                <key>foreground</key>
-                <string>#22FF22</string>
-            </dict>
-        </dict>
-        <dict>
-            <key>name</key>
-            <string>Quote</string>
-            <key>scope</key>
-            <string>markup.quote</string>
-            <key>settings</key>
-            <dict>
-                <key>foreground</key>
-                <string>#3333FF</string>
-            </dict>
-        </dict>
-        <dict>
-            <key>name</key>
-            <string>Raw</string>
-            <key>scope</key>
-            <string>markup.raw</string>
-            <key>settings</key>
-            <dict>
-                <key>foreground</key>
-                <string>#44FF44</string>
-            </dict>
-        </dict>
-        <dict>
-            <key>name</key>
-            <string>Bullet</string>
-            <key>scope</key>
-            <string>markup.list.bullet</string>
-            <key>settings</key>
-            <dict>
-                <key>foreground</key>
-                <string>#FF5555</string>
-            </dict>
-        </dict>
-    </array>
-</dict>
-</plist>"#;
+    /// Mutex that serializes all tests which mutate the `WISP_HOME` env var.
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn with_wisp_home(path: &Path, f: impl FnOnce()) {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let old = std::env::var_os("WISP_HOME");
-        // SAFETY: test-only; tests using this helper run serially (single-threaded test binary).
+        // SAFETY: test-only; serialized by ENV_MUTEX above.
         unsafe { std::env::set_var("WISP_HOME", path) };
         f();
         if let Some(value) = old {
@@ -460,21 +538,44 @@ mod tests {
     }
 
     #[test]
-    fn default_theme_resolves_catppuccin_heading_color() {
+    fn catppuccin_resolves_markdown_colors() {
         let theme = Theme::default();
-        // Catppuccin mocha defines markup.heading as yellow (#f9e2af)
-        assert_eq!(
-            theme.heading(),
-            Color::Rgb {
-                r: 0xf9,
-                g: 0xe2,
-                b: 0xaf
-            }
-        );
+        assert_eq!(theme.heading(), CATPPUCCIN_HEADING);
+        assert_eq!(theme.link(), CATPPUCCIN_LINK);
+        assert_eq!(theme.blockquote(), CATPPUCCIN_BLOCKQUOTE);
+        assert_eq!(theme.code_fg(), CATPPUCCIN_CODE_FG);
+        assert_eq!(theme.muted(), CATPPUCCIN_MUTED);
     }
 
     #[test]
-    fn default_theme_code_fg_differs_from_text_primary() {
+    fn catppuccin_resolves_semantic_colors() {
+        let theme = Theme::default();
+        assert_eq!(theme.error(), CATPPUCCIN_ERROR);
+        assert_eq!(theme.warning(), CATPPUCCIN_WARNING);
+        assert_eq!(theme.success(), CATPPUCCIN_SUCCESS);
+        assert_eq!(theme.info(), CATPPUCCIN_INFO);
+        assert_eq!(theme.secondary(), CATPPUCCIN_SECONDARY);
+    }
+
+    #[test]
+    fn catppuccin_resolves_diff_colors() {
+        let theme = Theme::default();
+        // diff fg comes from markup.inserted.diff / markup.deleted.diff
+        assert_eq!(theme.diff_added_fg(), CATPPUCCIN_SUCCESS);
+        assert_eq!(theme.diff_removed_fg(), CATPPUCCIN_ERROR);
+        // diff bg is darkened to ~20%
+        assert_eq!(theme.diff_added_bg(), darken_color(CATPPUCCIN_SUCCESS));
+        assert_eq!(theme.diff_removed_bg(), darken_color(CATPPUCCIN_ERROR));
+    }
+
+    #[test]
+    fn catppuccin_accent_is_caret_color() {
+        let theme = Theme::default();
+        assert_eq!(theme.accent(), CATPPUCCIN_ACCENT);
+    }
+
+    #[test]
+    fn catppuccin_code_fg_differs_from_text_primary() {
         let theme = Theme::default();
         assert_ne!(
             theme.code_fg(),
@@ -484,108 +585,54 @@ mod tests {
     }
 
     #[test]
-    fn custom_theme_with_markup_scopes_uses_those_colors() {
-        let temp_dir = TempDir::new().unwrap();
-        let themes_dir = temp_dir.path().join("themes");
-        fs::create_dir_all(&themes_dir).unwrap();
-        fs::write(themes_dir.join("markup.tmTheme"), MARKUP_TMTHEME).unwrap();
-
-        let settings = WispSettings {
-            theme: WispThemeSettings {
-                file: Some("markup.tmTheme".to_string()),
-            },
+    fn bare_theme_falls_back_to_accent() {
+        let accent = Color::Rgb {
+            r: 0xAA,
+            g: 0xBB,
+            b: 0xCC,
         };
+        let theme = Theme::from_syntect(bare_syntect_theme());
 
-        let loaded = {
-            let mut result = Theme::default();
-            with_wisp_home(temp_dir.path(), || {
-                result = Theme::load(&settings);
-            });
-            result
-        };
-
-        assert_eq!(
-            loaded.heading(),
-            Color::Rgb {
-                r: 0xFF,
-                g: 0x11,
-                b: 0x11
-            }
-        );
-        assert_eq!(
-            loaded.link(),
-            Color::Rgb {
-                r: 0x22,
-                g: 0xFF,
-                b: 0x22
-            }
-        );
-        assert_eq!(
-            loaded.blockquote(),
-            Color::Rgb {
-                r: 0x33,
-                g: 0x33,
-                b: 0xFF
-            }
-        );
-        assert_eq!(
-            loaded.code_fg(),
-            Color::Rgb {
-                r: 0x44,
-                g: 0xFF,
-                b: 0x44
-            }
-        );
-        assert_eq!(
-            loaded.muted(),
-            Color::Rgb {
-                r: 0xFF,
-                g: 0x55,
-                b: 0x55
-            }
-        );
+        assert_eq!(theme.heading(), accent);
+        assert_eq!(theme.link(), accent);
+        assert_eq!(theme.error(), accent);
+        assert_eq!(theme.warning(), accent);
+        assert_eq!(theme.success(), accent);
+        assert_eq!(theme.info(), accent);
+        assert_eq!(theme.secondary(), accent);
+        assert_eq!(theme.diff_added_fg(), accent);
+        assert_eq!(theme.diff_removed_fg(), accent);
     }
 
     #[test]
-    fn sparse_theme_uses_theme_derived_fallbacks() {
-        let temp_dir = TempDir::new().unwrap();
-        let themes_dir = temp_dir.path().join("themes");
-        fs::create_dir_all(&themes_dir).unwrap();
-        // CUSTOM_TMTHEME has no markup scopes, no caret — tests pure fallback path
-        fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).unwrap();
+    fn bare_theme_no_caret_falls_back_to_default_accent() {
+        let theme = Theme::from_syntect(bare_syntect_theme_no_caret());
 
-        let settings = WispSettings {
-            theme: WispThemeSettings {
-                file: Some("custom.tmTheme".to_string()),
-            },
+        assert_eq!(theme.heading(), DEFAULT_ACCENT);
+        assert_eq!(theme.link(), DEFAULT_ACCENT);
+        assert_eq!(theme.error(), DEFAULT_ACCENT);
+        assert_eq!(theme.warning(), DEFAULT_ACCENT);
+        assert_eq!(theme.success(), DEFAULT_ACCENT);
+        assert_eq!(theme.info(), DEFAULT_ACCENT);
+        assert_eq!(theme.secondary(), DEFAULT_ACCENT);
+    }
+
+    #[test]
+    fn bare_theme_blockquote_falls_back_to_text_secondary() {
+        let theme = Theme::from_syntect(bare_syntect_theme());
+        assert_eq!(theme.blockquote(), theme.text_secondary());
+    }
+
+    #[test]
+    fn bare_theme_diff_bg_is_darkened_accent() {
+        let accent = Color::Rgb {
+            r: 0xAA,
+            g: 0xBB,
+            b: 0xCC,
         };
-
-        let loaded = {
-            let mut result = Theme::default();
-            with_wisp_home(temp_dir.path(), || {
-                result = Theme::load(&settings);
-            });
-            result
-        };
-
-        // heading/link should fall back to accent (DEFAULT_ACCENT since no caret)
-        assert_eq!(loaded.heading(), DEFAULT_ACCENT);
-        assert_eq!(loaded.link(), DEFAULT_ACCENT);
-
-        // blockquote/muted should fall back to text_secondary (derived blend)
-        let expected_secondary = loaded.text_secondary();
-        assert_eq!(loaded.blockquote(), expected_secondary);
-
-        // text_secondary should NOT be the old hardcoded constant
-        assert_ne!(
-            loaded.text_secondary(),
-            Color::Rgb {
-                r: 176,
-                g: 176,
-                b: 208
-            },
-            "text_secondary should be derived from theme, not hardcoded"
-        );
+        let theme = Theme::from_syntect(bare_syntect_theme());
+        assert_eq!(theme.diff_added_bg(), darken_color(accent));
+        assert_eq!(theme.diff_removed_bg(), darken_color(accent));
     }
 
     #[test]
@@ -593,7 +640,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let themes_dir = temp_dir.path().join("themes");
         fs::create_dir_all(&themes_dir).unwrap();
-        fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).unwrap();
+        fs::write(themes_dir.join("custom.tmTheme"), LOADABLE_TMTHEME).unwrap();
 
         let settings = WispSettings {
             theme: WispThemeSettings {
@@ -655,5 +702,76 @@ mod tests {
         let loaded = Theme::load(&settings);
         let default = Theme::default();
         assert_eq!(loaded.primary(), default.primary());
+    }
+
+    #[test]
+    fn mode_badge_bg_returns_distinct_colors_for_known_modes() {
+        let theme = Theme::default();
+
+        let planner_color = theme.mode_badge_bg("planner");
+        let coder_color = theme.mode_badge_bg("coder");
+
+        assert_ne!(
+            planner_color, coder_color,
+            "different modes should have distinct badge colors"
+        );
+    }
+
+    #[test]
+    fn mode_badge_bg_normalizes_mode_name() {
+        let theme = Theme::default();
+
+        assert_eq!(
+            theme.mode_badge_bg("Planner"),
+            theme.mode_badge_bg("planner"),
+            "case should be normalized"
+        );
+        assert_eq!(
+            theme.mode_badge_bg("PLANNER"),
+            theme.mode_badge_bg("planner"),
+            "uppercase should be normalized"
+        );
+        assert_eq!(
+            theme.mode_badge_bg("  planner  "),
+            theme.mode_badge_bg("planner"),
+            "whitespace should be trimmed"
+        );
+    }
+
+    #[test]
+    fn mode_badge_bg_unknown_mode_returns_fallback() {
+        let theme = Theme::default();
+
+        assert_eq!(
+            theme.mode_badge_bg("nonexistent_mode_xyz"),
+            theme.mode_badge_bg("unknown"),
+            "unknown modes should use fallback color"
+        );
+    }
+
+    #[test]
+    fn mode_badge_bg_uses_theme_derived_colors() {
+        let theme = Theme::default();
+        assert_eq!(theme.mode_badge_bg("planner"), CATPPUCCIN_INFO);
+        assert_eq!(theme.mode_badge_bg("coder"), CATPPUCCIN_SECONDARY);
+        assert_eq!(theme.mode_badge_bg("review"), CATPPUCCIN_WARNING);
+    }
+
+    #[test]
+    fn darken_color_reduces_brightness() {
+        let bright = Color::Rgb {
+            r: 200,
+            g: 100,
+            b: 50,
+        };
+        let dark = darken_color(bright);
+        assert_eq!(
+            dark,
+            Color::Rgb {
+                r: 40,
+                g: 20,
+                b: 10
+            }
+        );
     }
 }
