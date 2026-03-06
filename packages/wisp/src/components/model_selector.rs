@@ -165,7 +165,10 @@ impl Component for ModelSelector {
             let selected = &self.selected_models;
             let mut last_provider: Option<&str> = None;
 
-            for (entry, is_focused) in self.combobox.visible_matches_with_selection() {
+            let mut items = self.combobox.visible_matches_with_selection();
+            items.sort_by(|(a, _), (b, _)| a.provider_key().cmp(b.provider_key()));
+
+            for (entry, is_focused) in &items {
                 let provider = entry.provider_key();
                 if last_provider != Some(provider) {
                     if !item_lines.is_empty() {
@@ -183,12 +186,12 @@ impl Component for ModelSelector {
                 } else {
                     "[ ] "
                 };
-                let prefix = if is_focused { "▶ " } else { "  " };
+                let prefix = if *is_focused { "▶ " } else { "  " };
                 let label = format!("{prefix}{check}{}", entry.model_label());
 
                 if entry.is_disabled {
                     item_lines.push(Line::styled(label, context.theme.muted()));
-                } else if is_focused {
+                } else if *is_focused {
                     item_lines.push(Line::with_style(
                         label,
                         Style::fg(context.theme.text_primary())
@@ -421,6 +424,59 @@ mod tests {
             "missing Google header in filtered results: {lines:?}"
         );
         assert!(lines.iter().any(|l| l.contains("[ ] Gemini 2.5 Pro")));
+    }
+
+    #[test]
+    fn search_does_not_duplicate_provider_headers() {
+        let entry = ConfigMenuEntry {
+            config_id: "model".to_string(),
+            title: "Model".to_string(),
+            values: vec![
+                ConfigMenuValue {
+                    value: "codex:gpt-5".to_string(),
+                    name: "Codex / GPT-5".to_string(),
+                    description: None,
+                    is_disabled: false,
+                },
+                ConfigMenuValue {
+                    value: "openrouter:gpt-5".to_string(),
+                    name: "OpenRouter / GPT-5".to_string(),
+                    description: None,
+                    is_disabled: false,
+                },
+                ConfigMenuValue {
+                    value: "codex:gpt-5-mini".to_string(),
+                    name: "Codex / GPT-5 Mini".to_string(),
+                    description: None,
+                    is_disabled: false,
+                },
+                ConfigMenuValue {
+                    value: "openrouter:gpt-5-mini".to_string(),
+                    name: "OpenRouter / GPT-5 Mini".to_string(),
+                    description: None,
+                    is_disabled: false,
+                },
+            ],
+            current_value_index: 0,
+            current_raw_value: "codex:gpt-5".to_string(),
+            entry_kind: ConfigMenuEntryKind::Select,
+            multi_select: true,
+            display_name: None,
+        };
+        let mut selector = ModelSelector::from_model_entry(&entry, None);
+        type_query(&mut selector, "gpt");
+        let lines = rendered_lines(&mut selector);
+
+        let codex_count = lines.iter().filter(|l| l.trim() == "Codex").count();
+        let openrouter_count = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
+        assert_eq!(
+            codex_count, 1,
+            "expected exactly one Codex header, got {codex_count}: {lines:?}"
+        );
+        assert_eq!(
+            openrouter_count, 1,
+            "expected exactly one OpenRouter header, got {openrouter_count}: {lines:?}"
+        );
     }
 
     #[test]
