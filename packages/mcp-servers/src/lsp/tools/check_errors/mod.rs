@@ -3,6 +3,7 @@
 use crate::lsp::diagnostics::{DiagnosticCounts, FormattedDiagnostic, count_by_severity};
 use crate::lsp::registry::LspRegistry;
 use lsp_types::Diagnostic;
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,6 +25,10 @@ pub struct LspDiagnosticsOutput {
     pub diagnostics: Vec<FormattedDiagnostic>,
     /// Summary counts
     pub summary: DiagnosticCounts,
+    /// Display metadata for human-friendly rendering
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 /// Execute the `lsp_diagnostics` operation
@@ -34,7 +39,26 @@ pub async fn execute_lsp_diagnostics(
     let diagnostics_cache = registry
         .collect_diagnostics(input.file_path.as_deref())
         .await;
-    Ok(get_diagnostics(&diagnostics_cache))
+    let mut output = get_diagnostics(&diagnostics_cache);
+
+    let value = if output.summary.errors == 0 && output.summary.warnings == 0 {
+        match &input.file_path {
+            Some(fp) => format!("{}, no issues", basename(fp)),
+            None => "no issues".to_string(),
+        }
+    } else {
+        let counts = format!(
+            "{} errors, {} warnings",
+            output.summary.errors, output.summary.warnings
+        );
+        match &input.file_path {
+            Some(fp) => format!("{}, {counts}", basename(fp)),
+            None => counts,
+        }
+    };
+    output._meta = Some(ToolDisplayMeta::new("LSP errors", value).into());
+
+    Ok(output)
 }
 
 fn get_diagnostics(diagnostics_cache: &HashMap<String, Vec<Diagnostic>>) -> LspDiagnosticsOutput {
@@ -63,6 +87,7 @@ fn get_diagnostics(diagnostics_cache: &HashMap<String, Vec<Diagnostic>>) -> LspD
     LspDiagnosticsOutput {
         diagnostics: all_diagnostics,
         summary,
+        _meta: None,
     }
 }
 

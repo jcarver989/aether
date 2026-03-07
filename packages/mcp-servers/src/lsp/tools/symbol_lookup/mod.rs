@@ -11,6 +11,8 @@ use lsp_types::GotoDefinitionResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
+
 use crate::lsp::common::{LocationResult, uri_to_path};
 use crate::lsp::registry::LspRegistry;
 
@@ -105,6 +107,10 @@ pub struct LspSymbolOutput {
     /// Whether the results were truncated due to `limit`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
+    /// Display metadata for human-friendly rendering
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 impl LspSymbolOutput {
@@ -152,7 +158,7 @@ pub async fn execute_lsp_symbol(
 ) -> Result<LspSymbolOutput, String> {
     let line = resolve_line(&input.file_path, &input.symbol, input.line, registry).await?;
 
-    match input.operation {
+    let mut output = match input.operation {
         SymbolLookupOperation::Definition => {
             let resolved = registry
                 .resolve_symbol(&input.file_path, &input.symbol, line)
@@ -166,7 +172,7 @@ pub async fn execute_lsp_symbol(
             let locations = definition_response_to_locations(response);
             let mut output = LspSymbolOutput::with_locations("definition", locations, input.limit);
             enrich_locations_with_context(&mut output, input.context_lines).await;
-            Ok(output)
+            output
         }
         SymbolLookupOperation::Implementation => {
             let resolved = registry
@@ -182,7 +188,7 @@ pub async fn execute_lsp_symbol(
             let mut output =
                 LspSymbolOutput::with_locations("implementation", locations, input.limit);
             enrich_locations_with_context(&mut output, input.context_lines).await;
-            Ok(output)
+            output
         }
         SymbolLookupOperation::References => {
             let resolved = registry
@@ -205,7 +211,7 @@ pub async fn execute_lsp_symbol(
                 .collect();
             let mut output = LspSymbolOutput::with_locations("references", locations, input.limit);
             enrich_locations_with_context(&mut output, input.context_lines).await;
-            Ok(output)
+            output
         }
         SymbolLookupOperation::Hover => {
             let resolved = registry
@@ -217,11 +223,11 @@ pub async fn execute_lsp_symbol(
                 .hover(resolved.uri, resolved.line, resolved.column)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(LspSymbolOutput {
+            LspSymbolOutput {
                 operation: "hover".to_string(),
                 hover_contents: hover.map(|h| format_hover_contents(&h)),
                 ..LspSymbolOutput::default()
-            })
+            }
         }
         SymbolLookupOperation::IncomingCalls => {
             execute_one_step_call_hierarchy(
@@ -232,7 +238,7 @@ pub async fn execute_lsp_symbol(
                 CallDirection::Incoming,
                 input.limit,
             )
-            .await
+            .await?
         }
         SymbolLookupOperation::OutgoingCalls => {
             execute_one_step_call_hierarchy(
@@ -243,9 +249,12 @@ pub async fn execute_lsp_symbol(
                 CallDirection::Outgoing,
                 input.limit,
             )
-            .await
+            .await?
         }
-    }
+    };
+
+    output._meta = Some(symbol_display_meta(&input, &output).into());
+    Ok(output)
 }
 
 /// Perform a one-step call hierarchy: prepare + query in a single operation.
@@ -359,6 +368,34 @@ fn format_hover_contents(hover: &lsp_types::Hover) -> String {
             .collect::<Vec<_>>()
             .join("\n\n"),
         HoverContents::Markup(markup) => markup.value.clone(),
+    }
+}
+
+fn symbol_display_meta(input: &LspSymbolInput, output: &LspSymbolOutput) -> ToolDisplayMeta {
+    let symbol = &input.symbol;
+    let file = basename(&input.file_path);
+    match input.operation {
+        SymbolLookupOperation::Definition => {
+            ToolDisplayMeta::new("LSP definition", format!("{symbol} in {file}"))
+        }
+        SymbolLookupOperation::Implementation => {
+            ToolDisplayMeta::new("LSP implementation", format!("{symbol} in {file}"))
+        }
+        SymbolLookupOperation::References => {
+            let count = output.total_count.unwrap_or(0);
+            ToolDisplayMeta::new("LSP references", format!("{symbol} ({count} refs)"))
+        }
+        SymbolLookupOperation::Hover => {
+            ToolDisplayMeta::new("LSP hover", format!("{symbol} in {file}"))
+        }
+        SymbolLookupOperation::IncomingCalls => {
+            let count = output.total_count.unwrap_or(0);
+            ToolDisplayMeta::new("LSP callers", format!("{symbol} ({count} callers)"))
+        }
+        SymbolLookupOperation::OutgoingCalls => {
+            let count = output.total_count.unwrap_or(0);
+            ToolDisplayMeta::new("LSP callees", format!("{symbol} ({count} callees)"))
+        }
     }
 }
 
