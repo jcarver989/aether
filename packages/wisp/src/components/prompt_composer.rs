@@ -100,39 +100,23 @@ impl PromptComposer {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn has_file_picker(&self) -> bool {
         self.file_picker.is_some()
     }
 
+    #[cfg(test)]
     pub(crate) fn has_command_picker(&self) -> bool {
         self.command_picker.is_some()
     }
 
+    #[cfg(test)]
     pub(crate) fn available_commands(&self) -> &[CommandEntry] {
         &self.available_commands
     }
 
     pub(crate) fn open_file_picker_with_matches(&mut self, matches: Vec<FileMatch>) {
         self.file_picker = Some(FilePicker::from_matches(matches));
-    }
-
-    pub(crate) fn file_picker_selected_display_name(&self) -> Option<String> {
-        self.file_picker
-            .as_ref()
-            .and_then(|picker| picker.selected().map(|file| file.display_name.clone()))
-    }
-
-    pub(crate) fn command_picker_match_names(&self) -> Vec<&str> {
-        self.command_picker
-            .as_ref()
-            .map(|picker| {
-                picker
-                    .matches()
-                    .iter()
-                    .map(|cmd| cmd.name.as_str())
-                    .collect()
-            })
-            .unwrap_or_default()
     }
 
     fn handle_file_picker_outcome(

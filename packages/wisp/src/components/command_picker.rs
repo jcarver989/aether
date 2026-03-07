@@ -44,10 +44,6 @@ impl CommandPicker {
     pub fn query(&self) -> &str {
         self.combobox.query()
     }
-
-    pub fn matches(&self) -> &[CommandEntry] {
-        self.combobox.matches()
-    }
 }
 
 impl Component for CommandPicker {

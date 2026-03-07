@@ -72,7 +72,6 @@ impl FilePicker {
         }
     }
 
-    #[allow(dead_code)]
     pub fn from_matches(files: Vec<FileMatch>) -> Self {
         Self {
             combobox: Combobox::from_matches(files),

@@ -7,7 +7,6 @@ pub(crate) use state::UiState;
 
 use crate::components::container::Container;
 use crate::components::conversation_window::ConversationWindow;
-use crate::components::file_picker::FileMatch;
 use crate::components::plan_view::PlanView;
 use crate::components::status_line::StatusLine;
 use crate::tui::{Cursor, CursorComponent, Line, RenderContext, RenderOutput};
@@ -90,79 +89,17 @@ impl App {
                 self.state.on_authenticate_failed(&method_id);
                 vec![AppEffect::Render]
             }
+            AppAction::SetFilePickerMatches(matches) => {
+                self.state
+                    .prompt_composer
+                    .open_file_picker_with_matches(matches);
+                vec![AppEffect::Render]
+            }
         }
     }
 
     pub(crate) fn on_authenticate_started(&mut self, method_id: &str) {
         self.state.on_authenticate_started(method_id);
-    }
-
-    #[allow(dead_code)]
-    pub fn has_file_picker(&self) -> bool {
-        self.state.prompt_composer.has_file_picker()
-    }
-
-    #[allow(dead_code)]
-    pub fn has_command_picker(&self) -> bool {
-        self.state.prompt_composer.has_command_picker()
-    }
-
-    #[allow(dead_code)]
-    pub fn has_config_overlay(&self) -> bool {
-        self.state.config_overlay.is_some()
-    }
-
-    #[allow(dead_code)]
-    pub fn has_config_menu(&self) -> bool {
-        self.state.config_overlay.is_some()
-    }
-
-    #[allow(dead_code)]
-    pub fn has_config_picker(&self) -> bool {
-        self.state
-            .config_overlay
-            .as_ref()
-            .is_some_and(crate::components::config_overlay::ConfigOverlay::has_picker)
-    }
-
-    #[allow(dead_code)]
-    pub fn config_menu_selected_index(&self) -> Option<usize> {
-        self.state
-            .config_overlay
-            .as_ref()
-            .map(crate::components::config_overlay::ConfigOverlay::menu_selected_index)
-    }
-
-    #[allow(dead_code)]
-    pub fn config_picker_config_id(&self) -> Option<&str> {
-        self.state
-            .config_overlay
-            .as_ref()
-            .and_then(|overlay| overlay.picker_config_id())
-    }
-
-    #[allow(dead_code)]
-    pub fn file_picker_selected_display_name(&self) -> Option<String> {
-        self.state
-            .prompt_composer
-            .file_picker_selected_display_name()
-    }
-
-    #[allow(dead_code)]
-    pub fn command_picker_match_names(&self) -> Vec<&str> {
-        self.state.prompt_composer.command_picker_match_names()
-    }
-
-    #[allow(dead_code)]
-    pub fn open_file_picker_with_matches(&mut self, matches: Vec<FileMatch>) {
-        self.state
-            .prompt_composer
-            .open_file_picker_with_matches(matches);
-    }
-
-    #[allow(dead_code)]
-    pub fn available_commands(&self) -> &[crate::components::command_picker::CommandEntry] {
-        self.state.available_commands()
     }
 }
 

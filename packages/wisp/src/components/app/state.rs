@@ -1,5 +1,4 @@
 use super::{AppEffect, theme_file_from_picker_value};
-use crate::components::command_picker::CommandEntry;
 use crate::components::config_menu::ConfigMenu;
 use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayAction};
 use crate::components::conversation_window::ConversationBuffer;
@@ -45,6 +44,10 @@ pub enum AppAction {
         method_id: String,
         error: String,
     },
+    /// Test-only: inject file picker matches via dispatch instead of reaching into internal state.
+    #[doc(hidden)]
+    #[allow(dead_code)]
+    SetFilePickerMatches(Vec<crate::components::file_picker::FileMatch>),
 }
 
 pub struct UiState {
@@ -333,7 +336,8 @@ impl UiState {
         menu
     }
 
-    pub(crate) fn available_commands(&self) -> &[CommandEntry] {
+    #[cfg(test)]
+    pub(crate) fn available_commands(&self) -> &[crate::components::command_picker::CommandEntry] {
         self.prompt_composer.available_commands()
     }
 
