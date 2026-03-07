@@ -4,7 +4,9 @@
 //! ACP connection.
 
 use agent_client_protocol::ExtNotification;
-pub use mcp_utils::display_meta::{DiffPreview, ToolDisplayMeta, ToolResultMeta};
+pub use mcp_utils::display_meta::{
+    DiffLine, DiffPreview, DiffTag, ToolDisplayMeta, ToolResultMeta,
+};
 use rmcp::model::ElicitationSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::value::to_raw_value;

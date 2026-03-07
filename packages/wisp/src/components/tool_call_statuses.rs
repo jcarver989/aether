@@ -468,7 +468,7 @@ impl Component for ToolCallStatuses {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_utils::notifications::ToolDisplayMeta;
+    use acp_utils::notifications::{DiffLine, DiffTag, ToolDisplayMeta};
 
     fn ctx() -> RenderContext {
         RenderContext::new((80, 24))
@@ -1196,8 +1196,16 @@ mod tests {
             arguments: "{}".to_string(),
             display_value: Some("main.rs".to_string()),
             diff_preview: Some(DiffPreview {
-                removed: vec!["old line".to_string()],
-                added: vec!["new line".to_string()],
+                lines: vec![
+                    DiffLine {
+                        tag: DiffTag::Removed,
+                        content: "old line".to_string(),
+                    },
+                    DiffLine {
+                        tag: DiffTag::Added,
+                        content: "new line".to_string(),
+                    },
+                ],
                 lang_hint: String::new(),
                 start_line: None,
             }),
@@ -1219,8 +1227,16 @@ mod tests {
             arguments: "{}".to_string(),
             display_value: Some("main.rs".to_string()),
             diff_preview: Some(DiffPreview {
-                removed: vec!["old".to_string()],
-                added: vec!["new".to_string()],
+                lines: vec![
+                    DiffLine {
+                        tag: DiffTag::Removed,
+                        content: "old".to_string(),
+                    },
+                    DiffLine {
+                        tag: DiffTag::Added,
+                        content: "new".to_string(),
+                    },
+                ],
                 lang_hint: String::new(),
                 start_line: None,
             }),
@@ -1240,8 +1256,16 @@ mod tests {
         let rm = ToolResultMeta::with_diff_preview(
             ToolDisplayMeta::new("Edit file", "main.rs"),
             DiffPreview {
-                removed: vec!["old".to_string()],
-                added: vec!["new".to_string()],
+                lines: vec![
+                    DiffLine {
+                        tag: DiffTag::Removed,
+                        content: "old".to_string(),
+                    },
+                    DiffLine {
+                        tag: DiffTag::Added,
+                        content: "new".to_string(),
+                    },
+                ],
                 lang_hint: String::new(),
                 start_line: None,
             },

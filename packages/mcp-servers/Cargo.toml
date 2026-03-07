@@ -16,6 +16,7 @@ coding = [
     "dep:grep",
     "dep:ignore",
     "dep:regex",
+    "dep:similar",
     "dep:tracing",
     "dep:thiserror",
     "dep:lsp-types",
@@ -63,6 +64,7 @@ globset = { workspace = true, optional = true }
 grep = { workspace = true, optional = true }
 ignore = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
+similar = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 lsp-types = { workspace = true, optional = true }
