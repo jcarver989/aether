@@ -29,7 +29,7 @@ impl CodexProvider {
     pub fn new(token_manager: CodexTokenManager) -> Self {
         Self {
             client: reqwest::Client::new(),
-            model: "gpt-5.2-codex".to_string(),
+            model: "gpt-5.4".to_string(),
             token_manager: Arc::new(token_manager),
         }
     }
@@ -237,7 +237,7 @@ mod tests {
 
     fn create_test_provider() -> CodexProvider {
         let tm = create_test_token_manager();
-        CodexProvider::new(tm).with_model("gpt-5.2-codex")
+        CodexProvider::new(tm).with_model("gpt-5.4")
     }
 
     #[test]
@@ -252,7 +252,7 @@ mod tests {
         );
 
         let request = provider.build_request(&context).unwrap();
-        assert_eq!(request.model.as_deref(), Some("gpt-5.2-codex"));
+        assert_eq!(request.model.as_deref(), Some("gpt-5.4"));
         assert_eq!(request.store, Some(false));
         assert_eq!(request.stream, Some(true));
         assert!(request.tools.is_none());
@@ -351,7 +351,7 @@ mod tests {
         let request = provider.build_request(&context).unwrap();
         let json = serde_json::to_value(&request).unwrap();
 
-        assert_eq!(json["model"], "gpt-5.2-codex");
+        assert_eq!(json["model"], "gpt-5.4");
         assert_eq!(json["store"], false);
         assert_eq!(json["stream"], true);
         assert_eq!(json["reasoning"]["effort"], "medium");

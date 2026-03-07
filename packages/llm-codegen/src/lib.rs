@@ -120,7 +120,7 @@ const PROVIDERS: &[ProviderConfig] = &[
     ProviderConfig {
         dev_id: "codex",
         source_dev_id: Some("openai"),
-        model_filter: Some(|id| id.contains("codex")),
+        model_filter: Some(|id| id.contains("codex") || id.starts_with("gpt-5.4")),
         enum_name: "Codex",
         parser_name: "codex",
         display_name: "Codex",
