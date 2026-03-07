@@ -3,7 +3,9 @@ use crate::tui::{
     Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
     Style, classify_key,
 };
+use acp_utils::config_option_id::ConfigOptionId;
 use crossterm::event::KeyEvent;
+use utils::ReasoningEffort;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
@@ -11,6 +13,7 @@ pub struct ModelEntry {
     pub value: String,
     pub name: String,
     pub is_disabled: bool,
+    pub supports_reasoning: bool,
 }
 
 impl ModelEntry {
@@ -58,15 +61,21 @@ pub struct ModelSelector {
     selected_models: HashSet<String>,
     original_models: HashSet<String>,
     config_id: String,
+    reasoning_effort: Option<ReasoningEffort>,
+    original_reasoning_effort: Option<ReasoningEffort>,
 }
 
 #[derive(Debug)]
 pub enum ModelSelectorAction {
-    Done(Option<ConfigChange>),
+    Done(Vec<ConfigChange>),
 }
 
 impl ModelSelector {
-    pub fn from_model_entry(entry: &ConfigMenuEntry, current_selection: Option<&str>) -> Self {
+    pub fn from_model_entry(
+        entry: &ConfigMenuEntry,
+        current_selection: Option<&str>,
+        current_reasoning_effort: Option<&str>,
+    ) -> Self {
         let items: Vec<ModelEntry> = entry
             .values
             .iter()
@@ -75,12 +84,15 @@ impl ModelSelector {
                 value: v.value.clone(),
                 name: v.name.clone(),
                 is_disabled: v.is_disabled,
+                supports_reasoning: v.meta.supports_reasoning,
             })
             .collect();
 
         let selected_models: HashSet<String> = current_selection
             .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
             .unwrap_or_default();
+
+        let reasoning = current_reasoning_effort.and_then(|s| s.parse().ok());
 
         let original_models = selected_models.clone();
         let all_items = items.clone();
@@ -90,6 +102,8 @@ impl ModelSelector {
             selected_models,
             original_models,
             config_id: entry.config_id.clone(),
+            reasoning_effort: reasoning,
+            original_reasoning_effort: reasoning,
         }
     }
 
@@ -114,20 +128,27 @@ impl ModelSelector {
         }
     }
 
-    fn confirm(&self) -> Option<ConfigChange> {
-        if self.selected_models.is_empty() || self.selected_models == self.original_models {
-            return None;
+    fn confirm(&self) -> Vec<ConfigChange> {
+        let mut changes = Vec::new();
+        if !self.selected_models.is_empty() && self.selected_models != self.original_models {
+            let joined = self
+                .selected_models
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(",");
+            changes.push(ConfigChange {
+                config_id: self.config_id.clone(),
+                new_value: joined,
+            });
         }
-        let joined = self
-            .selected_models
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(",");
-        Some(ConfigChange {
-            config_id: self.config_id.clone(),
-            new_value: joined,
-        })
+        if self.reasoning_effort != self.original_reasoning_effort {
+            changes.push(ConfigChange {
+                config_id: ConfigOptionId::ReasoningEffort.as_str().to_string(),
+                new_value: reasoning_config_value(self.reasoning_effort).to_string(),
+            });
+        }
+        changes
     }
 }
 
@@ -192,11 +213,20 @@ impl Component for ModelSelector {
                 if entry.is_disabled {
                     item_lines.push(Line::styled(label, context.theme.muted()));
                 } else if *is_focused {
-                    item_lines.push(Line::with_style(
+                    let mut line = Line::with_style(
                         label,
                         Style::fg(context.theme.text_primary())
                             .bg_color(context.theme.highlight_bg()),
-                    ));
+                    );
+                    if entry.supports_reasoning {
+                        let bar = reasoning_bar(self.reasoning_effort);
+                        line.push_with_style(
+                            format!("    {bar}"),
+                            Style::fg(context.theme.accent())
+                                .bg_color(context.theme.highlight_bg()),
+                        );
+                    }
+                    item_lines.push(line);
                 } else {
                     item_lines.push(Line::new(label));
                 }
@@ -219,8 +249,8 @@ impl HandlesInput for ModelSelector {
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
             PickerKey::Escape => {
-                let change = self.confirm();
-                InputOutcome::action_and_render(ModelSelectorAction::Done(change))
+                let changes = self.confirm();
+                InputOutcome::action_and_render(ModelSelectorAction::Done(changes))
             }
             PickerKey::MoveUp => {
                 self.combobox.move_up_where(|e| !e.is_disabled);
@@ -228,6 +258,26 @@ impl HandlesInput for ModelSelector {
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down_where(|e| !e.is_disabled);
+                InputOutcome::consumed_and_render()
+            }
+            PickerKey::MoveLeft => {
+                if self
+                    .combobox
+                    .selected()
+                    .is_some_and(|e| e.supports_reasoning)
+                {
+                    self.reasoning_effort = cycle_reasoning_left(self.reasoning_effort);
+                }
+                InputOutcome::consumed_and_render()
+            }
+            PickerKey::MoveRight => {
+                if self
+                    .combobox
+                    .selected()
+                    .is_some_and(|e| e.supports_reasoning)
+                {
+                    self.reasoning_effort = cycle_reasoning_right(self.reasoning_effort);
+                }
                 InputOutcome::consumed_and_render()
             }
             PickerKey::Confirm | PickerKey::Char(' ') => {
@@ -249,11 +299,46 @@ impl HandlesInput for ModelSelector {
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
+fn cycle_reasoning_right(effort: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
+    match effort {
+        None => Some(ReasoningEffort::Low),
+        Some(ReasoningEffort::Low) => Some(ReasoningEffort::Medium),
+        Some(ReasoningEffort::Medium | ReasoningEffort::High) => Some(ReasoningEffort::High),
+    }
+}
+
+fn cycle_reasoning_left(effort: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
+    match effort {
+        None | Some(ReasoningEffort::Low) => None,
+        Some(ReasoningEffort::Medium) => Some(ReasoningEffort::Low),
+        Some(ReasoningEffort::High) => Some(ReasoningEffort::Medium),
+    }
+}
+
+fn reasoning_config_value(effort: Option<ReasoningEffort>) -> &'static str {
+    effort.map_or("none", ReasoningEffort::as_str)
+}
+
+fn reasoning_bar(effort: Option<ReasoningEffort>) -> String {
+    const TOTAL: usize = 3;
+    let filled = match effort {
+        None => 0,
+        Some(ReasoningEffort::Low) => 1,
+        Some(ReasoningEffort::Medium) => 2,
+        Some(ReasoningEffort::High) => 3,
+    };
+    let filled_part: String = "▰".repeat(filled.min(TOTAL));
+    let empty_part: String = "▱".repeat(TOTAL.saturating_sub(filled));
+    format!("{filled_part}{empty_part}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::components::config_menu::{ConfigMenuEntryKind, ConfigMenuValue};
     use crate::tui::test_picker::{rendered_lines, type_query};
+    use acp_utils::config_meta::SelectOptionMeta;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn model_entry() -> ConfigMenuEntry {
@@ -266,18 +351,21 @@ mod tests {
                     name: "Anthropic / Claude Sonnet 4.5".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "deepseek:deepseek-chat".to_string(),
                     name: "DeepSeek / DeepSeek Chat".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "gemini:gemini-2.5-pro".to_string(),
                     name: "Google / Gemini 2.5 Pro".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
             ],
             current_value_index: 0,
@@ -298,24 +386,28 @@ mod tests {
                     name: "OpenRouter / Claude Sonnet 4.5".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "openrouter:google/gemini-2.5-pro".to_string(),
                     name: "OpenRouter / Gemini 2.5 Pro".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "anthropic:claude-sonnet-4-5".to_string(),
                     name: "Anthropic / Claude Sonnet 4.5".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "gemini:gemini-2.5-pro".to_string(),
                     name: "Google / Gemini 2.5 Pro".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
             ],
             current_value_index: 0,
@@ -335,7 +427,7 @@ mod tests {
 
     #[test]
     fn toggle_adds_and_removes_model() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         assert_eq!(builder.selected_count(), 0);
 
         builder.handle_key(space()); // toggle first
@@ -346,28 +438,31 @@ mod tests {
     }
 
     #[test]
-    fn confirm_with_zero_returns_none() {
-        let builder = ModelSelector::from_model_entry(&model_entry(), None);
-        assert!(builder.confirm().is_none());
+    fn confirm_with_zero_returns_empty() {
+        let builder = ModelSelector::from_model_entry(&model_entry(), None, None);
+        assert!(builder.confirm().is_empty());
     }
 
     #[test]
     fn confirm_with_one_returns_single_model() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         builder.handle_key(space()); // select first
-        let change = builder.confirm().expect("should produce a change");
-        assert_eq!(change.config_id, "model");
-        assert_eq!(change.new_value, "anthropic:claude-sonnet-4-5");
+        let changes = builder.confirm();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].config_id, "model");
+        assert_eq!(changes[0].new_value, "anthropic:claude-sonnet-4-5");
     }
 
     #[test]
     fn confirm_with_two_returns_comma_joined() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         builder.handle_key(space()); // select first
         builder.handle_key(key(KeyCode::Down));
         builder.handle_key(space()); // select second
 
-        let change = builder.confirm().expect("should produce a change");
+        let changes = builder.confirm();
+        assert_eq!(changes.len(), 1);
+        let change = &changes[0];
         assert_eq!(change.config_id, "model");
         let parts: HashSet<&str> = change.new_value.split(',').collect();
         assert!(parts.contains("anthropic:claude-sonnet-4-5"));
@@ -379,13 +474,14 @@ mod tests {
         let builder = ModelSelector::from_model_entry(
             &model_entry(),
             Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
+            None,
         );
         assert_eq!(builder.selected_count(), 2);
     }
 
     #[test]
     fn search_filters_entries() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         type_query(&mut builder, "deepseek");
         let lines = rendered_lines(&mut builder);
         assert!(lines.iter().any(|l| l.trim() == "DeepSeek"));
@@ -394,7 +490,7 @@ mod tests {
 
     #[test]
     fn render_groups_models_under_provider_headers() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
         let lines = rendered_lines(&mut builder);
 
         let openrouter_headers = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
@@ -411,7 +507,7 @@ mod tests {
 
     #[test]
     fn search_filters_and_keeps_provider_headers() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
         type_query(&mut builder, "gemini");
         let lines = rendered_lines(&mut builder);
 
@@ -437,24 +533,28 @@ mod tests {
                     name: "Codex / GPT-5".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "openrouter:gpt-5".to_string(),
                     name: "OpenRouter / GPT-5".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "codex:gpt-5-mini".to_string(),
                     name: "Codex / GPT-5 Mini".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "openrouter:gpt-5-mini".to_string(),
                     name: "OpenRouter / GPT-5 Mini".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
             ],
             current_value_index: 0,
@@ -463,7 +563,7 @@ mod tests {
             multi_select: true,
             display_name: None,
         };
-        let mut selector = ModelSelector::from_model_entry(&entry, None);
+        let mut selector = ModelSelector::from_model_entry(&entry, None, None);
         type_query(&mut selector, "gpt");
         let lines = rendered_lines(&mut selector);
 
@@ -481,7 +581,7 @@ mod tests {
 
     #[test]
     fn grouped_render_respects_small_height() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
         let context = RenderContext::new((120, 40)).with_max_height(6);
         let lines: Vec<String> = builder
             .render(&context)
@@ -503,17 +603,17 @@ mod tests {
 
     #[test]
     fn escape_returns_done_action() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         let outcome = builder.handle_key(key(KeyCode::Esc));
-        assert!(matches!(
-            outcome.action,
-            Some(ModelSelectorAction::Done(None))
-        ));
+        match outcome.action {
+            Some(ModelSelectorAction::Done(changes)) => assert!(changes.is_empty()),
+            other => panic!("expected Done([]), got: {other:?}"),
+        }
     }
 
     #[test]
     fn enter_toggles_focused_model() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         assert_eq!(builder.selected_count(), 0);
 
         builder.handle_key(key(KeyCode::Enter)); // toggle first
@@ -525,20 +625,22 @@ mod tests {
 
     #[test]
     fn escape_with_selections_returns_done_with_change() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         builder.handle_key(space()); // select first
         builder.handle_key(key(KeyCode::Down));
         builder.handle_key(space()); // select second
 
         let outcome = builder.handle_key(key(KeyCode::Esc));
         match outcome.action {
-            Some(ModelSelectorAction::Done(Some(change))) => {
+            Some(ModelSelectorAction::Done(changes)) => {
+                assert_eq!(changes.len(), 1);
+                let change = &changes[0];
                 assert_eq!(change.config_id, "model");
                 let parts: HashSet<&str> = change.new_value.split(',').collect();
                 assert!(parts.contains("anthropic:claude-sonnet-4-5"));
                 assert!(parts.contains("deepseek:deepseek-chat"));
             }
-            other => panic!("expected Done(Some(change)), got: {other:?}"),
+            other => panic!("expected Done with model change, got: {other:?}"),
         }
     }
 
@@ -547,6 +649,7 @@ mod tests {
         let mut builder = ModelSelector::from_model_entry(
             &model_entry(),
             Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
+            None,
         );
         let lines = rendered_lines(&mut builder);
         // Second line after header should be a spacer, then selected models line
@@ -569,7 +672,7 @@ mod tests {
 
     #[test]
     fn render_hides_selected_line_when_none_selected() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None);
+        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         let lines = rendered_lines(&mut builder);
         assert!(
             !lines.iter().any(|l| l.contains("Selected:")),
@@ -586,19 +689,25 @@ mod tests {
         let builder = ModelSelector::from_model_entry(
             &model_entry(),
             Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
+            None,
         );
-        // No toggling — confirm should return None since selection == original
-        assert!(builder.confirm().is_none());
+        // No toggling — confirm should return empty since selection == original
+        assert!(builder.confirm().is_empty());
     }
 
     #[test]
     fn escape_after_toggle_returns_change() {
-        let mut builder =
-            ModelSelector::from_model_entry(&model_entry(), Some("anthropic:claude-sonnet-4-5"));
+        let mut builder = ModelSelector::from_model_entry(
+            &model_entry(),
+            Some("anthropic:claude-sonnet-4-5"),
+            None,
+        );
         // Toggle a second model on
         builder.handle_key(key(KeyCode::Down));
         builder.handle_key(space());
-        let change = builder.confirm().expect("should produce a change");
+        let changes = builder.confirm();
+        assert_eq!(changes.len(), 1);
+        let change = &changes[0];
         assert_eq!(change.config_id, "model");
         let parts: HashSet<&str> = change.new_value.split(',').collect();
         assert!(parts.contains("anthropic:claude-sonnet-4-5"));
@@ -611,8 +720,163 @@ mod tests {
         entry.values[1].is_disabled = true;
         entry.values[1].description = Some("Unavailable: set DEEPSEEK_API_KEY".to_string());
 
-        let builder = ModelSelector::from_model_entry(&entry, None);
+        let builder = ModelSelector::from_model_entry(&entry, None, None);
         // Should only have 2 entries (disabled one filtered)
         assert_eq!(builder.combobox.matches().len(), 2);
+    }
+
+    fn reasoning_meta() -> SelectOptionMeta {
+        SelectOptionMeta {
+            supports_reasoning: true,
+        }
+    }
+
+    fn model_entry_with_reasoning() -> ConfigMenuEntry {
+        ConfigMenuEntry {
+            config_id: "model".to_string(),
+            title: "Model".to_string(),
+            values: vec![
+                ConfigMenuValue {
+                    value: "anthropic:claude-opus-4-6".to_string(),
+                    name: "Anthropic / Claude Opus 4.6".to_string(),
+                    description: None,
+                    is_disabled: false,
+                    meta: reasoning_meta(),
+                },
+                ConfigMenuValue {
+                    value: "deepseek:deepseek-chat".to_string(),
+                    name: "DeepSeek / DeepSeek Chat".to_string(),
+                    description: None,
+                    is_disabled: false,
+                    meta: SelectOptionMeta::default(),
+                },
+            ],
+            current_value_index: 0,
+            current_raw_value: "anthropic:claude-opus-4-6".to_string(),
+            entry_kind: ConfigMenuEntryKind::Select,
+            multi_select: true,
+            display_name: None,
+        }
+    }
+
+    #[test]
+    fn reasoning_cycle_right_clamps_at_high() {
+        use ReasoningEffort::*;
+        assert_eq!(cycle_reasoning_right(None), Some(Low));
+        assert_eq!(cycle_reasoning_right(Some(Low)), Some(Medium));
+        assert_eq!(cycle_reasoning_right(Some(Medium)), Some(High));
+        assert_eq!(cycle_reasoning_right(Some(High)), Some(High));
+    }
+
+    #[test]
+    fn reasoning_cycle_left_clamps_at_none() {
+        use ReasoningEffort::*;
+        assert_eq!(cycle_reasoning_left(Some(High)), Some(Medium));
+        assert_eq!(cycle_reasoning_left(Some(Medium)), Some(Low));
+        assert_eq!(cycle_reasoning_left(Some(Low)), None);
+        assert_eq!(cycle_reasoning_left(None), None);
+    }
+
+    #[test]
+    fn right_on_reasoning_model_cycles_level() {
+        let mut selector =
+            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
+        assert_eq!(selector.reasoning_effort, None);
+
+        selector.handle_key(key(KeyCode::Right));
+        assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Low));
+
+        selector.handle_key(key(KeyCode::Right));
+        assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Medium));
+    }
+
+    #[test]
+    fn left_right_on_non_reasoning_model_is_noop() {
+        let mut selector =
+            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
+        // Move to non-reasoning model (DeepSeek)
+        selector.handle_key(key(KeyCode::Down));
+        assert!(!selector.combobox.selected().unwrap().supports_reasoning);
+
+        selector.handle_key(key(KeyCode::Right));
+        assert_eq!(selector.reasoning_effort, None);
+    }
+
+    #[test]
+    fn render_shows_bar_on_focused_reasoning_row() {
+        use crate::tui::test_picker::rendered_raw_lines;
+        let mut selector =
+            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
+        let lines = rendered_raw_lines(&mut selector);
+        let focused_line = lines
+            .iter()
+            .find(|l| l.plain_text().contains("▶"))
+            .expect("should have focused line");
+        let text = focused_line.plain_text();
+        // Medium = 2 filled, 1 empty
+        assert!(text.contains("▰▰▱"), "expected reasoning bar, got: {text}");
+    }
+
+    #[test]
+    fn render_no_bar_on_non_reasoning_focused_row() {
+        let mut selector =
+            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
+        // Move to non-reasoning model
+        selector.handle_key(key(KeyCode::Down));
+        let lines = rendered_lines(&mut selector);
+        let focused_line = lines
+            .iter()
+            .find(|l| l.contains("▶"))
+            .expect("should have focused line");
+        assert!(
+            !focused_line.contains('▰'),
+            "should not show bar on non-reasoning model"
+        );
+    }
+
+    #[test]
+    fn confirm_returns_both_model_and_reasoning_changes() {
+        let mut selector =
+            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
+        // Toggle a model on
+        selector.handle_key(space());
+        // Change reasoning
+        selector.handle_key(key(KeyCode::Right));
+
+        let changes = selector.confirm();
+        assert_eq!(changes.len(), 2, "expected model + reasoning changes");
+        assert!(changes.iter().any(|c| c.config_id == "model"));
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.config_id == "reasoning_effort" && c.new_value == "low")
+        );
+    }
+
+    #[test]
+    fn confirm_returns_only_reasoning_when_only_reasoning_changed() {
+        let mut selector = ModelSelector::from_model_entry(
+            &model_entry_with_reasoning(),
+            Some("anthropic:claude-opus-4-6"),
+            None,
+        );
+        // Don't change models, just reasoning
+        selector.handle_key(key(KeyCode::Right));
+        selector.handle_key(key(KeyCode::Right));
+
+        let changes = selector.confirm();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].config_id, "reasoning_effort");
+        assert_eq!(changes[0].new_value, "medium");
+    }
+
+    #[test]
+    fn confirm_returns_empty_when_nothing_changed() {
+        let selector = ModelSelector::from_model_entry(
+            &model_entry_with_reasoning(),
+            Some("anthropic:claude-opus-4-6"),
+            Some("high"),
+        );
+        assert!(selector.confirm().is_empty());
     }
 }

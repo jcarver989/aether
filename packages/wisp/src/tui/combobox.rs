@@ -14,6 +14,8 @@ pub enum PickerKey {
     Escape,
     MoveUp,
     MoveDown,
+    MoveLeft,
+    MoveRight,
     Confirm,
     Char(char),
     Backspace,
@@ -242,6 +244,8 @@ pub fn classify_key(key: KeyEvent, query_is_empty: bool) -> PickerKey {
         KeyCode::Esc => PickerKey::Escape,
         KeyCode::Up => PickerKey::MoveUp,
         KeyCode::Down => PickerKey::MoveDown,
+        KeyCode::Left => PickerKey::MoveLeft,
+        KeyCode::Right => PickerKey::MoveRight,
         KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => PickerKey::MoveUp,
         KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => PickerKey::MoveDown,
         KeyCode::Enter => PickerKey::Confirm,
@@ -555,6 +559,18 @@ mod tests {
         assert!(matches!(
             classify_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE), false),
             PickerKey::Backspace
+        ));
+    }
+
+    #[test]
+    fn classify_key_left_right() {
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), true),
+            PickerKey::MoveLeft
+        ));
+        assert!(matches!(
+            classify_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), true),
+            PickerKey::MoveRight
         ));
     }
 

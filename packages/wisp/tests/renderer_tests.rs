@@ -162,6 +162,9 @@ impl Renderer {
                     };
                     let _ = prompt_handle.authenticate(session_id, &method_id);
                 }
+                AppEvent::SetTheme { .. } => {
+                    // Theme apply side effects are handled in terminal_ui; renderer tests ignore.
+                }
             }
         }
 
@@ -185,6 +188,7 @@ impl Renderer {
                 }
                 AppEvent::PromptSubmit { .. }
                 | AppEvent::SetConfigOption { .. }
+                | AppEvent::SetTheme { .. }
                 | AppEvent::Cancel
                 | AppEvent::AuthenticateMcpServer { .. }
                 | AppEvent::AuthenticateProvider { .. } => {
@@ -1798,12 +1802,12 @@ async fn test_config_menu_arrow_navigation_single_entry() {
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
 
-    // With single config option + MCP servers, menu has 2 entries at index 0
+    // With single config option + Theme + MCP servers, menu has 3 entries at index 0
     assert!(renderer.screen().has_config_menu());
     assert!(!renderer.screen().has_config_picker());
     assert_eq!(renderer.screen().config_menu_selected_index(), Some(0));
 
-    // Down goes to MCP Servers entry (index 1)
+    // Down goes to model entry (index 1)
     send_key(
         &mut renderer,
         KeyCode::Down,
@@ -1813,6 +1817,17 @@ async fn test_config_menu_arrow_navigation_single_entry() {
     )
     .await;
     assert_eq!(renderer.screen().config_menu_selected_index(), Some(1));
+
+    // Down again goes to MCP servers (index 2)
+    send_key(
+        &mut renderer,
+        KeyCode::Down,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    )
+    .await;
+    assert_eq!(renderer.screen().config_menu_selected_index(), Some(2));
 
     // Down again wraps back to index 0
     send_key(

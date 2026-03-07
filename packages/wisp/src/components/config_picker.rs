@@ -168,9 +168,11 @@ impl HandlesInput for ConfigPicker {
                 self.pop_query_char();
                 InputOutcome::consumed_and_render()
             }
-            PickerKey::BackspaceOnEmpty | PickerKey::ControlChar | PickerKey::Other => {
-                InputOutcome::consumed()
-            }
+            PickerKey::MoveLeft
+            | PickerKey::MoveRight
+            | PickerKey::BackspaceOnEmpty
+            | PickerKey::ControlChar
+            | PickerKey::Other => InputOutcome::consumed(),
         }
     }
 }
@@ -179,6 +181,7 @@ impl HandlesInput for ConfigPicker {
 mod tests {
     use super::*;
     use crate::tui::test_picker::{rendered_lines, selected_text, type_query};
+    use acp_utils::config_meta::SelectOptionMeta;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn entry() -> ConfigMenuEntry {
@@ -193,18 +196,21 @@ mod tests {
                     name: "GPT-4o".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "openrouter:anthropic/claude-3.5-sonnet".to_string(),
                     name: "Claude Sonnet".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
                 ConfigMenuValue {
                     value: "openrouter:google/gemini-2.5-pro".to_string(),
                     name: "Gemini 2.5 Pro".to_string(),
                     description: None,
                     is_disabled: false,
+                    meta: SelectOptionMeta::default(),
                 },
             ],
             current_value_index: 0,

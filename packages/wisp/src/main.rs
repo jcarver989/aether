@@ -3,6 +3,8 @@ mod cli;
 mod components;
 mod error;
 mod settings;
+#[cfg(test)]
+mod test_helpers;
 mod terminal_ui;
 mod tui;
 

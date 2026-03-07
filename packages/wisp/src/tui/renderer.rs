@@ -175,6 +175,10 @@ impl<T: Write> Renderer<T> {
         &self.context
     }
 
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.context.theme = theme;
+    }
+
     #[allow(dead_code)]
     pub fn writer(&self) -> &T {
         &self.writer
@@ -186,5 +190,83 @@ impl<T: Write> Renderer<T> {
             self.cursor_row_offset = 0;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::WISP_HOME_ENV_MUTEX;
+    use crossterm::style::Color;
+
+    #[test]
+    fn set_theme_replaces_render_context_theme() {
+        let mut renderer = Renderer::new(Vec::new(), Theme::default());
+        let new_theme = Theme::default();
+        let expected = new_theme.text_primary();
+
+        renderer.set_theme(new_theme);
+
+        assert_eq!(renderer.context().theme.text_primary(), expected);
+    }
+
+    #[test]
+    fn set_theme_replaces_render_context_theme_from_non_default_file() {
+        let mut renderer = Renderer::new(Vec::new(), Theme::default());
+
+        let custom_tmtheme = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>Custom</string>
+    <key>settings</key>
+    <array>
+        <dict>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#112233</string>
+                <key>background</key>
+                <string>#000000</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>"#;
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let themes_dir = temp_dir.path().join("themes");
+        std::fs::create_dir_all(&themes_dir).unwrap();
+        std::fs::write(themes_dir.join("custom.tmTheme"), custom_tmtheme).unwrap();
+
+        let _guard = WISP_HOME_ENV_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var_os("WISP_HOME");
+        unsafe { std::env::set_var("WISP_HOME", temp_dir.path()) };
+
+        let settings = crate::settings::WispSettings {
+            theme: crate::settings::ThemeSettings {
+                file: Some("custom.tmTheme".to_string()),
+            },
+        };
+        let loaded = Theme::load(&settings);
+        renderer.set_theme(loaded);
+
+        if let Some(value) = old {
+            unsafe { std::env::set_var("WISP_HOME", value) };
+        } else {
+            unsafe { std::env::remove_var("WISP_HOME") };
+        }
+
+        assert_eq!(
+            renderer.context().theme.text_primary(),
+            Color::Rgb {
+                r: 0x11,
+                g: 0x22,
+                b: 0x33
+            }
+        );
     }
 }

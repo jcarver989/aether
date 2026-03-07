@@ -1,6 +1,7 @@
 use crate::app_state::AppState;
 use crate::components::app::{App, AppEvent, build_attachment_blocks};
-use crate::tui::{Line, Renderer, spawn_terminal_event_task};
+use crate::settings::{load_or_create_settings, save_settings};
+use crate::tui::{Line, Renderer, spawn_terminal_event_task, theme::Theme};
 use acp_utils::client::AcpEvent;
 use agent_client_protocol as acp;
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind};
@@ -181,6 +182,18 @@ fn should_handle_key_event(kind: KeyEventKind) -> bool {
     matches!(kind, KeyEventKind::Press | KeyEventKind::Repeat)
 }
 
+fn apply_theme_selection<T: Write>(renderer: &mut Renderer<T>, file: Option<String>) {
+    let mut settings = load_or_create_settings();
+    settings.theme.file = file;
+
+    if let Err(err) = save_settings(&settings) {
+        tracing::warn!("Failed to persist theme setting: {err}");
+    }
+
+    let theme = Theme::load(&settings);
+    renderer.set_theme(theme);
+}
+
 async fn apply_screen_effects<T: Write>(
     renderer: &mut Renderer<T>,
     screen: &mut App,
@@ -221,6 +234,10 @@ async fn apply_screen_effects<T: Write>(
                 new_value,
             } => {
                 let _ = prompt_handle.set_config_option(session_id, &config_id, &new_value);
+            }
+            AppEvent::SetTheme { file } => {
+                apply_theme_selection(renderer, file);
+                should_render = true;
             }
             AppEvent::Cancel => {
                 prompt_handle.cancel(session_id)?;
@@ -285,13 +302,62 @@ async fn submit_prompt_with_attachments<T: Write>(
 
 #[cfg(test)]
 mod tests {
-    use super::should_handle_key_event;
+    use super::{Theme, apply_theme_selection, should_handle_key_event};
+    use crate::settings::{ThemeSettings, WispSettings, load_or_create_settings, save_settings};
+    use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
+    use crate::tui::Renderer;
     use crossterm::event::KeyEventKind;
+    use crossterm::style::Color;
 
     #[test]
     fn handles_press_and_repeat_key_events() {
         assert!(should_handle_key_event(KeyEventKind::Press));
         assert!(should_handle_key_event(KeyEventKind::Repeat));
         assert!(!should_handle_key_event(KeyEventKind::Release));
+    }
+
+    #[test]
+    fn apply_theme_selection_persists_and_applies_theme_file() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let themes_dir = temp_dir.path().join("themes");
+        std::fs::create_dir_all(&themes_dir).unwrap();
+        std::fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            let mut renderer = Renderer::new(Vec::new(), Theme::default());
+            apply_theme_selection(&mut renderer, Some("custom.tmTheme".to_string()));
+
+            assert_eq!(
+                renderer.context().theme.text_primary(),
+                Color::Rgb {
+                    r: 0x11,
+                    g: 0x22,
+                    b: 0x33
+                }
+            );
+
+            let loaded = load_or_create_settings();
+            assert_eq!(loaded.theme.file.as_deref(), Some("custom.tmTheme"));
+        });
+    }
+
+    #[test]
+    fn apply_theme_selection_default_clears_persisted_theme() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            save_settings(&WispSettings {
+                theme: ThemeSettings {
+                    file: Some("custom.tmTheme".to_string()),
+                },
+            })
+            .unwrap();
+
+            let mut renderer = Renderer::new(Vec::new(), Theme::default());
+            apply_theme_selection(&mut renderer, None);
+
+            let loaded = load_or_create_settings();
+            assert_eq!(loaded.theme.file, None);
+        });
     }
 }

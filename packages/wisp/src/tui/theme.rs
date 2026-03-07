@@ -137,11 +137,8 @@ impl Theme {
     /// Returns the background color for a mode badge, cycling through a
     /// fixed palette based on the mode's index in the options list.
     pub fn mode_badge_bg(&self, index: usize) -> Color {
-        const PALETTE_FIELDS: [fn(&Theme) -> Color; 3] = [
-            |t| t.info,
-            |t| t.secondary,
-            |t| t.warning,
-        ];
+        const PALETTE_FIELDS: [fn(&Theme) -> Color; 3] =
+            [|t| t.info, |t| t.secondary, |t| t.warning];
         PALETTE_FIELDS[index % PALETTE_FIELDS.len()](self)
     }
 
@@ -363,7 +360,6 @@ mod tests {
     use super::*;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings};
     use std::fs;
-    use std::path::Path;
     use syntect::highlighting::ThemeSettings;
     use tempfile::TempDir;
 
@@ -503,21 +499,7 @@ mod tests {
 </dict>
 </plist>"#;
 
-    /// Mutex that serializes all tests which mutate the `WISP_HOME` env var.
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn with_wisp_home(path: &Path, f: impl FnOnce()) {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let old = std::env::var_os("WISP_HOME");
-        // SAFETY: test-only; serialized by ENV_MUTEX above.
-        unsafe { std::env::set_var("WISP_HOME", path) };
-        f();
-        if let Some(value) = old {
-            unsafe { std::env::set_var("WISP_HOME", value) };
-        } else {
-            unsafe { std::env::remove_var("WISP_HOME") };
-        }
-    }
+    use crate::test_helpers::with_wisp_home;
 
     #[test]
     fn default_theme_uses_embedded_catppuccin() {
