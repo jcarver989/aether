@@ -8,6 +8,8 @@ use std::collections::HashSet;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
+
 use crate::lsp::common::{LocationResult, enrich_locations};
 use crate::lsp::registry::LspRegistry;
 use aether_lspd::symbol_kind_to_string;
@@ -54,6 +56,10 @@ pub struct LspWorkspaceSearchOutput {
     /// Whether results were truncated due to `limit`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
+    /// Display metadata for human-friendly rendering
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 /// Execute the `lsp_workspace_search` operation
@@ -111,10 +117,16 @@ pub async fn execute_lsp_workspace_search(
         }
     }
 
+    let display_meta = ToolDisplayMeta::new(
+        "LSP search",
+        format!("'{}' ({total_count} results)", input.query),
+    );
+
     Ok(LspWorkspaceSearchOutput {
         query: input.query,
         results: all_results,
         total_count,
         truncated: if truncated { Some(true) } else { None },
+        _meta: Some(display_meta.into()),
     })
 }

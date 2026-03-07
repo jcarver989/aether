@@ -8,6 +8,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename};
+
 use crate::lsp::common::{LocationResult, path_to_uri};
 use crate::lsp::registry::LspRegistry;
 use aether_lspd::symbol_kind_to_string;
@@ -49,6 +51,10 @@ pub struct LspDocumentOutput {
     pub symbols: Option<Vec<DocumentSymbolResult>>,
     /// Total count of top-level symbols
     pub total_count: usize,
+    /// Display metadata for human-friendly rendering
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub _meta: Option<ToolResultMeta>,
 }
 
 /// Execute the `lsp_document` operation
@@ -69,9 +75,15 @@ pub async fn execute_lsp_document(
     let symbols = convert_document_symbols(&input.file_path, response);
     let total_count = symbols.len();
 
+    let display_meta = ToolDisplayMeta::new(
+        "LSP document",
+        format!("{}, {total_count} symbols", basename(&input.file_path)),
+    );
+
     Ok(LspDocumentOutput {
         symbols: Some(symbols),
         total_count,
+        _meta: Some(display_meta.into()),
     })
 }
 
