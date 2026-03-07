@@ -5,8 +5,8 @@ use crate::tui::{
 };
 use acp_utils::config_option_id::ConfigOptionId;
 use crossterm::event::KeyEvent;
-use utils::ReasoningEffort;
 use std::collections::HashSet;
+use utils::ReasoningEffort;
 
 #[derive(Debug, Clone)]
 pub struct ModelEntry {
