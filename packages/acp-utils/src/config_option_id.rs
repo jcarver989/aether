@@ -1,6 +1,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+pub const THEME_CONFIG_ID: &str = "__theme";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConfigOptionId {
     Mode,

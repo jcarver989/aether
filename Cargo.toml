@@ -12,6 +12,7 @@ members = [
     "packages/llm-codegen",
     "packages/mcp-utils",
     "packages/mcp-servers",
+    "packages/utils",
 ]
 
 [workspace.lints.clippy]
