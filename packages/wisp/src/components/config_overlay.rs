@@ -23,8 +23,28 @@ const MIN_WIDTH: usize = 6;
 const TOP_CHROME: usize = 2;
 /// Container left border width: "│ " = 2 chars.
 const BORDER_LEFT_WIDTH: usize = 2;
-/// Gap between menu and picker children inside the container.
+/// Gap between children inside the container.
 const GAP: usize = 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ActiveConfigOverlayView {
+    Menu,
+    ServerOverlay,
+    ProviderLoginOverlay,
+    ModelSelector,
+    Picker,
+}
+
+struct MaxHeightComponent<'a> {
+    inner: &'a mut dyn Component,
+    max_height: usize,
+}
+
+impl Component for MaxHeightComponent<'_> {
+    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+        self.inner.render(&context.with_max_height(self.max_height))
+    }
+}
 
 pub struct ConfigOverlay {
     menu: ConfigMenu,
@@ -166,13 +186,11 @@ impl ConfigOverlay {
     }
 
     /// Returns the row offset of the cursor within the overlay (0-indexed from top of overlay).
-    /// Only meaningful when a picker is open (cursor sits on the search line).
+    /// Only meaningful when a search-based submenu is open (picker or model selector).
     pub fn cursor_row_offset(&self) -> usize {
-        if self.picker.is_some() || self.model_selector.is_some() {
-            let menu_lines = self.menu.options.len().max(1);
-            TOP_CHROME + menu_lines + GAP
-        } else {
-            0
+        match self.active_view() {
+            ActiveConfigOverlayView::Picker | ActiveConfigOverlayView::ModelSelector => TOP_CHROME,
+            _ => 0,
         }
     }
 
@@ -188,15 +206,29 @@ impl ConfigOverlay {
         self.picker.is_some()
     }
 
-    fn footer_text(&self) -> &'static str {
-        if self.model_selector.is_some() {
-            "[Space/Enter] Toggle  [\u{2190}/\u{2192}] Reasoning  [Esc] Done"
+    fn active_view(&self) -> ActiveConfigOverlayView {
+        if self.server_overlay.is_some() {
+            ActiveConfigOverlayView::ServerOverlay
+        } else if self.provider_login_overlay.is_some() {
+            ActiveConfigOverlayView::ProviderLoginOverlay
+        } else if self.model_selector.is_some() {
+            ActiveConfigOverlayView::ModelSelector
         } else if self.picker.is_some() {
-            "[Enter] Confirm  [Esc] Back"
-        } else if self.server_overlay.is_some() || self.provider_login_overlay.is_some() {
-            "[Enter] Authenticate  [Esc] Back"
+            ActiveConfigOverlayView::Picker
         } else {
-            "[Enter] Select  [Esc] Close"
+            ActiveConfigOverlayView::Menu
+        }
+    }
+
+    fn footer_text(&self) -> &'static str {
+        match self.active_view() {
+            ActiveConfigOverlayView::ModelSelector => {
+                "[Space/Enter] Toggle  [\u{2190}/\u{2192}] Reasoning  [Esc] Done"
+            }
+            ActiveConfigOverlayView::Picker => "[Enter] Confirm  [Esc] Back",
+            ActiveConfigOverlayView::ServerOverlay
+            | ActiveConfigOverlayView::ProviderLoginOverlay => "[Enter] Authenticate  [Esc] Back",
+            ActiveConfigOverlayView::Menu => "[Enter] Select  [Esc] Close",
         }
     }
 }
@@ -210,25 +242,72 @@ impl Component for ConfigOverlay {
         }
 
         let footer = self.footer_text();
+        let child_max_height = height.saturating_sub(4);
 
-        let mut children: Vec<&mut dyn Component> = vec![&mut self.menu];
-        if let Some(ref mut selector) = self.model_selector {
-            children.push(selector);
-        } else if let Some(ref mut picker) = self.picker {
-            children.push(picker);
-        } else if let Some(ref mut server_overlay) = self.server_overlay {
-            children.push(server_overlay);
-        } else if let Some(ref mut provider_login_overlay) = self.provider_login_overlay {
-            children.push(provider_login_overlay);
+        match self.active_view() {
+            ActiveConfigOverlayView::ServerOverlay => {
+                let mut child = MaxHeightComponent {
+                    inner: self.server_overlay.as_mut().expect("active server overlay"),
+                    max_height: child_max_height,
+                };
+                Container::new(vec![&mut child])
+                    .title(" Configuration ")
+                    .footer(footer)
+                    .border_color(context.theme.muted())
+                    .fill_height(height)
+                    .gap(GAP)
+                    .render(context)
+            }
+            ActiveConfigOverlayView::ProviderLoginOverlay => {
+                let mut child = MaxHeightComponent {
+                    inner: self
+                        .provider_login_overlay
+                        .as_mut()
+                        .expect("active provider login overlay"),
+                    max_height: child_max_height,
+                };
+                Container::new(vec![&mut child])
+                    .title(" Configuration ")
+                    .footer(footer)
+                    .border_color(context.theme.muted())
+                    .fill_height(height)
+                    .gap(GAP)
+                    .render(context)
+            }
+            ActiveConfigOverlayView::ModelSelector => {
+                let mut child = MaxHeightComponent {
+                    inner: self.model_selector.as_mut().expect("active model selector"),
+                    max_height: child_max_height,
+                };
+                Container::new(vec![&mut child])
+                    .title(" Configuration ")
+                    .footer(footer)
+                    .border_color(context.theme.muted())
+                    .fill_height(height)
+                    .gap(GAP)
+                    .render(context)
+            }
+            ActiveConfigOverlayView::Picker => {
+                let mut child = MaxHeightComponent {
+                    inner: self.picker.as_mut().expect("active picker"),
+                    max_height: child_max_height,
+                };
+                Container::new(vec![&mut child])
+                    .title(" Configuration ")
+                    .footer(footer)
+                    .border_color(context.theme.muted())
+                    .fill_height(height)
+                    .gap(GAP)
+                    .render(context)
+            }
+            ActiveConfigOverlayView::Menu => Container::new(vec![&mut self.menu])
+                .title(" Configuration ")
+                .footer(footer)
+                .border_color(context.theme.muted())
+                .fill_height(height)
+                .gap(GAP)
+                .render(context),
         }
-
-        Container::new(children)
-            .title(" Configuration ")
-            .footer(footer)
-            .border_color(context.theme.muted())
-            .fill_height(height)
-            .gap(GAP)
-            .render(context)
     }
 }
 
@@ -462,6 +541,22 @@ mod tests {
         lines[lines.len() - 2].plain_text()
     }
 
+    fn render_plain_text(overlay: &mut ConfigOverlay) -> Vec<String> {
+        let context = RenderContext::new((80, 24));
+        overlay
+            .render(&context)
+            .into_iter()
+            .map(|line| line.plain_text())
+            .collect()
+    }
+
+    fn make_auth_methods() -> Vec<acp::AuthMethod> {
+        vec![
+            acp::AuthMethod::new("anthropic", "Anthropic"),
+            acp::AuthMethod::new("openrouter", "OpenRouter"),
+        ]
+    }
+
     #[test]
     fn bordered_box_fills_terminal_height_minus_one() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
@@ -518,13 +613,115 @@ mod tests {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
-        // The first menu entry (Provider) should be selected with highlight_bg
-        let selected_line = &lines[2]; // title + blank + first entry
+        let selected_line = lines
+            .iter()
+            .find(|line| line.plain_text().contains("Provider: OpenRouter"))
+            .expect("expected provider row to be rendered");
         let has_bg = selected_line
             .spans()
             .iter()
             .any(|s| s.style().bg == Some(context.theme.highlight_bg()));
         assert!(has_bg, "selected entry should have highlight_bg");
+    }
+
+    #[test]
+    fn render_root_menu_shows_top_level_rows() {
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+
+        let lines = render_plain_text(&mut overlay);
+        let text = lines.join("\n");
+
+        assert!(text.contains("Provider: OpenRouter"), "rendered:\n{text}");
+        assert!(text.contains("Model: GPT-4o"), "rendered:\n{text}");
+        assert!(text.contains("[Enter] Select"), "rendered:\n{text}");
+        assert!(text.contains("[Esc] Close"), "rendered:\n{text}");
+    }
+
+    #[test]
+    fn render_picker_hides_top_level_rows() {
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        overlay.handle_key(key(KeyCode::Enter));
+
+        let lines = render_plain_text(&mut overlay);
+        let text = lines.join("\n");
+
+        assert!(text.contains("Provider search:"), "rendered:\n{text}");
+        assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
+        assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
+        assert!(text.contains("[Enter] Confirm"), "rendered:\n{text}");
+        assert!(text.contains("[Esc] Back"), "rendered:\n{text}");
+    }
+
+    #[test]
+    fn render_model_selector_hides_top_level_rows() {
+        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
+        overlay.handle_key(key(KeyCode::Down));
+        overlay.handle_key(key(KeyCode::Enter));
+
+        let lines = render_plain_text(&mut overlay);
+        let text = lines.join("\n");
+
+        assert!(text.contains("Model search:"), "rendered:\n{text}");
+        assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
+        assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
+        assert!(text.contains("Toggle"), "rendered:\n{text}");
+        assert!(text.contains("Reasoning"), "rendered:\n{text}");
+        assert!(text.contains("[Esc] Done"), "rendered:\n{text}");
+    }
+
+    #[test]
+    fn render_server_overlay_hides_top_level_rows() {
+        let menu = make_menu();
+        let statuses = make_server_statuses();
+        let mut overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
+
+        let lines = render_plain_text(&mut overlay);
+        let text = lines.join("\n");
+
+        assert!(text.contains("github  ✓ 5 tools"), "rendered:\n{text}");
+        assert!(
+            text.contains("linear  ⚡ needs authentication"),
+            "rendered:\n{text}"
+        );
+        assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
+        assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
+        assert!(text.contains("[Enter] Authenticate"), "rendered:\n{text}");
+        assert!(text.contains("[Esc] Back"), "rendered:\n{text}");
+    }
+
+    #[test]
+    fn render_provider_login_overlay_hides_top_level_rows() {
+        let mut menu = make_menu();
+        menu.add_provider_logins_entry("2 needs login");
+        let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
+        overlay.handle_key(key(KeyCode::Down));
+        overlay.handle_key(key(KeyCode::Down));
+        let outcome = overlay.handle_key(key(KeyCode::Enter));
+        assert!(outcome.consumed);
+
+        let lines = render_plain_text(&mut overlay);
+        let text = lines.join("\n");
+
+        assert!(
+            text.contains("Anthropic  ⚡ needs login"),
+            "rendered:\n{text}"
+        );
+        assert!(
+            text.contains("OpenRouter  ⚡ needs login"),
+            "rendered:\n{text}"
+        );
+        assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
+        assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
+        assert!(text.contains("[Enter] Authenticate"), "rendered:\n{text}");
+        assert!(text.contains("[Esc] Back"), "rendered:\n{text}");
+    }
+
+    #[test]
+    fn picker_cursor_row_offset_matches_submenu_only_layout() {
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        overlay.handle_key(key(KeyCode::Enter));
+
+        assert_eq!(overlay.cursor_row_offset(), TOP_CHROME);
     }
 
     #[test]
