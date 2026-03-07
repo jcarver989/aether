@@ -4,7 +4,6 @@ use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol as acp;
 use test_terminal::{TestTerminal, assert_buffer_eq};
 use wisp::components::app::{App, AppAction, AppEffect, build_attachment_blocks};
-use wisp::components::command_picker::CommandEntry;
 use wisp::tui::{Line, Renderer as FrameRenderer, theme::Theme};
 
 const TEST_AGENT: &str = "test-agent";
@@ -94,16 +93,15 @@ impl Renderer {
         self.apply_effects_no_prompt(effects).await
     }
 
-    fn screen(&self) -> &App {
-        &self.screen
-    }
-
-    fn screen_mut(&mut self) -> &mut App {
-        &mut self.screen
-    }
-
-    fn available_commands(&self) -> &[CommandEntry] {
-        self.screen.available_commands()
+    async fn set_file_picker_matches(
+        &mut self,
+        matches: Vec<wisp::components::file_picker::FileMatch>,
+    ) -> std::io::Result<()> {
+        let effects = self.screen.dispatch(
+            AppAction::SetFilePickerMatches(matches),
+            self.renderer.context(),
+        );
+        self.apply_effects_no_prompt(effects).await
     }
 
     async fn apply_effects(
@@ -250,6 +248,64 @@ fn expected_with_prompt(
     lines
 }
 
+fn has_file_picker(terminal: &TestTerminal) -> bool {
+    let lines = terminal.get_lines();
+    lines
+        .iter()
+        .any(|l| l.contains("▶ ") || l.contains("(no matches found)"))
+}
+
+fn has_command_picker(terminal: &TestTerminal) -> bool {
+    let lines = terminal.get_lines();
+    lines
+        .iter()
+        .any(|l| l.contains("Open configuration settings"))
+}
+
+fn has_config_menu(terminal: &TestTerminal) -> bool {
+    let lines = terminal.get_lines();
+    lines.iter().any(|l| l.contains("Configuration"))
+}
+
+fn has_config_picker(terminal: &TestTerminal) -> bool {
+    let lines = terminal.get_lines();
+    lines.iter().any(|l| l.contains("search:"))
+}
+
+fn config_menu_selected_label(terminal: &TestTerminal) -> Option<String> {
+    let lines = terminal.get_lines();
+    for line in &lines {
+        if let Some(pos) = line.find("▶ ") {
+            let rest = &line[pos + "▶ ".len()..];
+            let label = rest.trim().to_string();
+            if !label.is_empty() {
+                return Some(label);
+            }
+        }
+    }
+    None
+}
+
+fn command_picker_visible_names(terminal: &TestTerminal) -> Vec<String> {
+    let lines = terminal.get_lines();
+    let mut names = Vec::new();
+    for line in &lines {
+        // Match lines like "▶ /name  description" or "  /name  description"
+        let trimmed = line.trim();
+        let content = if let Some(rest) = trimmed.strip_prefix("▶ ") {
+            rest
+        } else {
+            trimmed
+        };
+        if let Some(rest) = content.strip_prefix('/') {
+            if let Some(name) = rest.split_whitespace().next() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
+}
+
 #[tokio::test]
 async fn test_agent_message_text_chunks() {
     let renderer = render(vec![
@@ -394,7 +450,7 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
         &[
             "│ Thinking",
             "",
-            r#"⠋ search {"q":"rust"}"#,
+            "⠋ search",
             "",
             "Done",
             "⠋ Working... (0/1 tools complete)",
@@ -411,10 +467,7 @@ async fn test_agent_message_tool_call() {
     let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]).await;
 
     let expected = expected_with_prompt(
-        &[
-            r#"⠋ test_tool {"arg1":"value1"}"#,
-            "⠋ Working... (0/1 tools complete)",
-        ],
+        &["⠋ test_tool", "⠋ Working... (0/1 tools complete)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -494,10 +547,7 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
     .await;
 
     let expected = expected_with_prompt(
-        &[
-            r#"⠋ Read {"file":"test.rs"}"#,
-            "⠋ Working... (0/1 tools complete)",
-        ],
+        &["⠋ Read", "⠋ Working... (0/1 tools complete)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -515,10 +565,7 @@ async fn test_tool_progress_renders_running_tool() {
     .await;
 
     let expected = expected_with_prompt(
-        &[
-            r#"⠋ Read {"file":"test.rs"}"#,
-            "⠋ Working... (0/1 tools complete)",
-        ],
+        &["⠋ Read", "⠋ Working... (0/1 tools complete)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -571,7 +618,7 @@ async fn test_text_complete_preserves_running_tool_calls() {
             r#"✓ Read {"file":"a.rs"}"#,
             "",
             "Done reading",
-            r#"⠋ Write {"file":"b.rs"}"#,
+            "⠋ Write",
             "⠋ Working... (0/1 tools complete)",
         ],
         TEST_WIDTH,
@@ -773,10 +820,7 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
         .unwrap();
 
     let expected = expected_with_prompt(
-        &[
-            r#"⠋ Read {"file":"test.rs"}"#,
-            "⠋ Working... (0/1 tools complete)",
-        ],
+        &["⠋ Read", "⠋ Working... (0/1 tools complete)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -803,10 +847,7 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
     renderer.on_resize(100, 30).await.unwrap();
 
     let expected = expected_with_prompt(
-        &[
-            r#"⠋ Read {"file":"test.rs"}"#,
-            "⠋ Working... (0/1 tools complete)",
-        ],
+        &["⠋ Read", "⠋ Working... (0/1 tools complete)"],
         100,
         "",
         TEST_AGENT,
@@ -1043,7 +1084,10 @@ async fn test_ctrl_c_exits_while_file_picker_is_open() {
         )
         .await
         .unwrap();
-    assert!(renderer.screen().has_file_picker());
+    assert!(
+        has_file_picker(renderer.writer()),
+        "File picker should be open after typing @"
+    );
 
     let action = renderer
         .on_key_event(
@@ -1087,7 +1131,10 @@ async fn test_space_closes_file_picker_without_selection() {
         )
         .await
         .unwrap();
-    assert!(renderer.screen().has_file_picker());
+    assert!(
+        has_file_picker(renderer.writer()),
+        "File picker should be open"
+    );
 
     renderer
         .on_key_event(
@@ -1103,7 +1150,10 @@ async fn test_space_closes_file_picker_without_selection() {
         .await
         .unwrap();
 
-    assert!(!renderer.screen().has_file_picker());
+    assert!(
+        !has_file_picker(renderer.writer()),
+        "File picker should be closed"
+    );
 }
 
 #[tokio::test]
@@ -1415,12 +1465,18 @@ async fn test_paste_closes_file_picker() {
         )
         .await
         .unwrap();
-    assert!(renderer.screen().has_file_picker());
+    assert!(
+        has_file_picker(renderer.writer()),
+        "File picker should be open"
+    );
 
     // Paste should close the picker and append text
     renderer.on_paste("pasted text").await.unwrap();
 
-    assert!(!renderer.screen().has_file_picker());
+    assert!(
+        !has_file_picker(renderer.writer()),
+        "File picker should be closed"
+    );
     let expected = expected_prompt(80, "@pasted text", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
@@ -1465,7 +1521,7 @@ async fn open_picker_with_files(
     )
     .await;
 
-    // Replace the picker with known entries
+    // Replace the picker with known entries via dispatch
     let matches: Vec<FileMatch> = files
         .into_iter()
         .map(|name| FileMatch {
@@ -1473,14 +1529,7 @@ async fn open_picker_with_files(
             display_name: name.to_string(),
         })
         .collect();
-    renderer.screen_mut().open_file_picker_with_matches(matches);
-
-    // Trigger re-render with the injected picker
-    renderer.on_resize(80, 24).await.unwrap();
-}
-
-fn picker_selected_display_name(renderer: &Renderer) -> Option<String> {
-    renderer.screen().file_picker_selected_display_name()
+    renderer.set_file_picker_matches(matches).await.unwrap();
 }
 
 fn assert_picker_renders_selected(terminal: &TestTerminal, expected_file: &str) {
@@ -1515,10 +1564,6 @@ async fn test_file_picker_down_arrow_moves_selection() {
     .await;
 
     // Initially selected_index=0
-    assert_eq!(
-        picker_selected_display_name(&renderer).as_deref(),
-        Some("alpha.rs")
-    );
     assert_picker_renders_selected(renderer.writer(), "alpha.rs");
 
     // Down arrow → beta.rs
@@ -1530,10 +1575,6 @@ async fn test_file_picker_down_arrow_moves_selection() {
         &session_id,
     )
     .await;
-    assert_eq!(
-        picker_selected_display_name(&renderer).as_deref(),
-        Some("beta.rs")
-    );
     assert_picker_renders_selected(renderer.writer(), "beta.rs");
 
     // Down arrow → gamma.rs
@@ -1545,10 +1586,6 @@ async fn test_file_picker_down_arrow_moves_selection() {
         &session_id,
     )
     .await;
-    assert_eq!(
-        picker_selected_display_name(&renderer).as_deref(),
-        Some("gamma.rs")
-    );
     assert_picker_renders_selected(renderer.writer(), "gamma.rs");
 
     // Down arrow wraps → alpha.rs
@@ -1560,10 +1597,6 @@ async fn test_file_picker_down_arrow_moves_selection() {
         &session_id,
     )
     .await;
-    assert_eq!(
-        picker_selected_display_name(&renderer).as_deref(),
-        Some("alpha.rs")
-    );
     assert_picker_renders_selected(renderer.writer(), "alpha.rs");
 }
 
@@ -1596,10 +1629,6 @@ async fn test_file_picker_up_arrow_moves_selection() {
         &session_id,
     )
     .await;
-    assert_eq!(
-        picker_selected_display_name(&renderer).as_deref(),
-        Some("gamma.rs")
-    );
     assert_picker_renders_selected(renderer.writer(), "gamma.rs");
 
     // Up again → beta.rs
@@ -1611,10 +1640,6 @@ async fn test_file_picker_up_arrow_moves_selection() {
         &session_id,
     )
     .await;
-    assert_eq!(
-        picker_selected_display_name(&renderer).as_deref(),
-        Some("beta.rs")
-    );
     assert_picker_renders_selected(renderer.writer(), "beta.rs");
 }
 
@@ -1647,10 +1672,6 @@ async fn test_file_picker_ctrl_n_moves_down() {
         &session_id,
     )
     .await;
-    assert_eq!(
-        picker_selected_display_name(&renderer).as_deref(),
-        Some("beta.rs")
-    );
     assert_picker_renders_selected(renderer.writer(), "beta.rs");
 }
 
@@ -1683,10 +1704,6 @@ async fn test_file_picker_ctrl_p_moves_up() {
         &session_id,
     )
     .await;
-    assert_eq!(
-        picker_selected_display_name(&renderer).as_deref(),
-        Some("beta.rs")
-    );
     assert_picker_renders_selected(renderer.writer(), "beta.rs");
 }
 
@@ -1747,8 +1764,14 @@ async fn test_config_command_opens_menu_for_single_option() {
     press_enter(&mut renderer, &handle, &session_id).await;
 
     // Config menu should open; picker requires explicit Enter
-    assert!(renderer.screen().has_config_menu());
-    assert!(!renderer.screen().has_config_picker());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
+    assert!(
+        !has_config_picker(renderer.writer()),
+        "Config picker should not be visible"
+    );
 }
 
 #[tokio::test]
@@ -1766,13 +1789,25 @@ async fn test_config_menu_esc_closes() {
 
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
-    assert!(renderer.screen().has_config_menu());
-    assert!(!renderer.screen().has_config_picker());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
+    assert!(
+        !has_config_picker(renderer.writer()),
+        "Config picker should not be visible"
+    );
 
     // Open the picker by pressing Enter on the selected menu entry
     press_enter(&mut renderer, &handle, &session_id).await;
-    assert!(renderer.screen().has_config_menu());
-    assert!(renderer.screen().has_config_picker());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
+    assert!(
+        has_config_picker(renderer.writer()),
+        "Config picker should be visible"
+    );
 
     // First ESC closes the picker
     send_key(
@@ -1783,8 +1818,14 @@ async fn test_config_menu_esc_closes() {
         &session_id,
     )
     .await;
-    assert!(renderer.screen().has_config_menu());
-    assert!(!renderer.screen().has_config_picker());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
+    assert!(
+        !has_config_picker(renderer.writer()),
+        "Config picker should not be visible"
+    );
 
     // Second ESC closes the menu
     send_key(
@@ -1795,7 +1836,10 @@ async fn test_config_menu_esc_closes() {
         &session_id,
     )
     .await;
-    assert!(!renderer.screen().has_config_menu());
+    assert!(
+        !has_config_menu(renderer.writer()),
+        "Config menu should not be visible"
+    );
 }
 
 #[tokio::test]
@@ -1814,12 +1858,22 @@ async fn test_config_menu_arrow_navigation_single_entry() {
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
 
-    // With single config option + Theme + MCP servers, menu has 3 entries at index 0
-    assert!(renderer.screen().has_config_menu());
-    assert!(!renderer.screen().has_config_picker());
-    assert_eq!(renderer.screen().config_menu_selected_index(), Some(0));
+    // With single config option + Theme + MCP servers, menu has 3 entries: Model, Theme, MCP Servers
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
+    assert!(
+        !has_config_picker(renderer.writer()),
+        "Config picker should not be visible"
+    );
+    let label = config_menu_selected_label(renderer.writer());
+    assert!(
+        label.as_deref().is_some_and(|l| l.contains("Model")),
+        "Initial selection should be Model, got: {label:?}"
+    );
 
-    // Down goes to model entry (index 1)
+    // Down goes to Theme (index 1)
     send_key(
         &mut renderer,
         KeyCode::Down,
@@ -1828,9 +1882,13 @@ async fn test_config_menu_arrow_navigation_single_entry() {
         &session_id,
     )
     .await;
-    assert_eq!(renderer.screen().config_menu_selected_index(), Some(1));
+    let label = config_menu_selected_label(renderer.writer());
+    assert!(
+        label.as_deref().is_some_and(|l| l.contains("Theme")),
+        "Second selection should be Theme, got: {label:?}"
+    );
 
-    // Down again goes to MCP servers (index 2)
+    // Down again goes to MCP Servers (index 2)
     send_key(
         &mut renderer,
         KeyCode::Down,
@@ -1839,9 +1897,13 @@ async fn test_config_menu_arrow_navigation_single_entry() {
         &session_id,
     )
     .await;
-    assert_eq!(renderer.screen().config_menu_selected_index(), Some(2));
+    let label = config_menu_selected_label(renderer.writer());
+    assert!(
+        label.as_deref().is_some_and(|l| l.contains("MCP Servers")),
+        "Third selection should be MCP Servers, got: {label:?}"
+    );
 
-    // Down again wraps back to index 0
+    // Down again wraps back to Model (index 0)
     send_key(
         &mut renderer,
         KeyCode::Down,
@@ -1850,7 +1912,11 @@ async fn test_config_menu_arrow_navigation_single_entry() {
         &session_id,
     )
     .await;
-    assert_eq!(renderer.screen().config_menu_selected_index(), Some(0));
+    let label = config_menu_selected_label(renderer.writer());
+    assert!(
+        label.as_deref().is_some_and(|l| l.contains("Model")),
+        "Wrapped selection should be Model, got: {label:?}"
+    );
 }
 
 #[tokio::test]
@@ -1868,10 +1934,16 @@ async fn test_config_single_option_shows_model_picker() {
     press_enter(&mut renderer, &handle, &session_id).await;
 
     // Menu opens; press Enter to open the model picker
-    assert!(renderer.screen().has_config_menu());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
     press_enter(&mut renderer, &handle, &session_id).await;
 
-    assert!(renderer.screen().has_config_picker());
+    assert!(
+        has_config_picker(renderer.writer()),
+        "Config picker should be visible"
+    );
     let lines = renderer.writer().get_lines();
     assert!(
         lines.iter().any(|l| l.contains("Model search")),
@@ -1969,7 +2041,10 @@ async fn test_config_menu_swallows_other_keys() {
 
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
-    assert!(renderer.screen().has_config_menu());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
 
     // Typing a character should not modify input buffer
     send_key(
@@ -1982,7 +2057,10 @@ async fn test_config_menu_swallows_other_keys() {
     .await;
 
     // Menu should still be open
-    assert!(renderer.screen().has_config_menu());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
     // Input prompt is not rendered while overlay is open, so 'x' shouldn't appear anywhere
     let lines = renderer.writer().get_lines();
     assert!(
@@ -2007,7 +2085,10 @@ async fn test_config_menu_ctrl_c_exits() {
 
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
-    assert!(renderer.screen().has_config_menu());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
 
     // Ctrl+C should still exit even with menu open
     let action = renderer
@@ -2040,7 +2121,10 @@ async fn test_config_menu_updates_on_config_option_event() {
 
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
-    assert!(renderer.screen().has_config_menu());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
 
     // Simulate the agent responding with updated config
     let new_config = vec![
@@ -2114,7 +2198,10 @@ async fn test_config_with_no_options_shows_placeholder() {
     type_string(&mut renderer, "/config", &handle, &session_id).await;
     press_enter(&mut renderer, &handle, &session_id).await;
 
-    assert!(renderer.screen().has_config_menu());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
     let lines = renderer.writer().get_lines();
     // Even with no config options, the MCP Servers entry is always present
     assert!(
@@ -2148,7 +2235,7 @@ async fn test_slash_opens_command_picker() {
     .await;
 
     assert!(
-        renderer.screen().has_command_picker(),
+        has_command_picker(renderer.writer()),
         "Typing / on empty buffer should open command picker"
     );
 }
@@ -2166,7 +2253,7 @@ async fn test_slash_mid_input_no_picker() {
     type_string(&mut renderer, "hello/", &handle, &session_id).await;
 
     assert!(
-        !renderer.screen().has_command_picker(),
+        !has_command_picker(renderer.writer()),
         "Typing / mid-input should not open command picker"
     );
 }
@@ -2191,7 +2278,10 @@ async fn test_command_picker_esc_clears() {
         &session_id,
     )
     .await;
-    assert!(renderer.screen().has_command_picker());
+    assert!(
+        has_command_picker(renderer.writer()),
+        "Command picker should be open"
+    );
 
     send_key(
         &mut renderer,
@@ -2203,7 +2293,7 @@ async fn test_command_picker_esc_clears() {
     .await;
 
     assert!(
-        !renderer.screen().has_command_picker(),
+        !has_command_picker(renderer.writer()),
         "Esc should close command picker"
     );
     let lines = renderer.writer().get_lines();
@@ -2234,7 +2324,10 @@ async fn test_command_picker_backspace_empty_closes() {
         &session_id,
     )
     .await;
-    assert!(renderer.screen().has_command_picker());
+    assert!(
+        has_command_picker(renderer.writer()),
+        "Command picker should be open"
+    );
 
     send_key(
         &mut renderer,
@@ -2246,17 +2339,22 @@ async fn test_command_picker_backspace_empty_closes() {
     .await;
 
     assert!(
-        !renderer.screen().has_command_picker(),
+        !has_command_picker(renderer.writer()),
         "Backspace on empty query should close command picker"
     );
 }
 
 #[tokio::test]
 async fn test_available_commands_update_stored() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with((80, 24));
     renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
 
     renderer
         .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
@@ -2268,17 +2366,38 @@ async fn test_available_commands_update_stored() {
         .await
         .unwrap();
 
-    assert_eq!(renderer.available_commands().len(), 2);
-    assert_eq!(renderer.available_commands()[0].name, "search");
-    assert_eq!(renderer.available_commands()[1].name, "web");
+    // Open command picker and verify commands appear in rendered output
+    send_key(
+        &mut renderer,
+        KeyCode::Char('/'),
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    )
+    .await;
+
+    let names = command_picker_visible_names(renderer.writer());
+    assert!(
+        names.iter().any(|n| n == "search"),
+        "Picker should show 'search' command. Got: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "web"),
+        "Picker should show 'web' command. Got: {names:?}"
+    );
 }
 
 #[tokio::test]
 async fn test_available_commands_update_extracts_hint() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
     renderer.update_render_context_with((80, 24));
     renderer.initial_render().unwrap();
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
 
     renderer
         .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
@@ -2294,16 +2413,21 @@ async fn test_available_commands_update_extracts_hint() {
         .await
         .unwrap();
 
-    assert_eq!(renderer.available_commands().len(), 2);
-    assert_eq!(
-        renderer.available_commands()[0].hint.as_deref(),
-        Some("query pattern"),
-        "Command with Unstructured input should have hint"
-    );
-    assert_eq!(
-        renderer.available_commands()[1].hint,
-        None,
-        "Command without input should have no hint"
+    // Open command picker and verify the hint appears in rendered output
+    send_key(
+        &mut renderer,
+        KeyCode::Char('/'),
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    )
+    .await;
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("query pattern")),
+        "Hint text should appear in command picker.\nBuffer:\n{}",
+        lines.join("\n")
     );
 }
 
@@ -2340,13 +2464,13 @@ async fn test_command_picker_shows_mcp_commands() {
     )
     .await;
 
-    let names = renderer.screen().command_picker_match_names();
+    let names = command_picker_visible_names(renderer.writer());
     assert!(
-        names.contains(&"config"),
+        names.iter().any(|n| n == "config"),
         "Picker should include built-in config command. Got: {names:?}",
     );
     assert!(
-        names.contains(&"search"),
+        names.iter().any(|n| n == "search"),
         "Picker should include MCP search command. Got: {names:?}",
     );
 }
@@ -2371,7 +2495,10 @@ async fn test_command_picker_ctrl_c_exits() {
         &session_id,
     )
     .await;
-    assert!(renderer.screen().has_command_picker());
+    assert!(
+        has_command_picker(renderer.writer()),
+        "Command picker should be open"
+    );
 
     let action = renderer
         .on_key_event(
@@ -2438,7 +2565,7 @@ async fn test_tool_complete_without_display_meta_shows_raw_args() {
 }
 
 #[tokio::test]
-async fn test_running_tool_shows_raw_args_not_display_value() {
+async fn test_running_tool_hides_raw_args() {
     let renderer = render(vec![tool_call_with_id(
         "read_file",
         "call_1",
@@ -2449,12 +2576,13 @@ async fn test_running_tool_shows_raw_args_not_display_value() {
     let lines = renderer.writer().get_lines();
     let tool_line = lines.iter().find(|l| l.contains("read_file")).unwrap();
     assert!(
-        !tool_line.contains('('),
-        "Running tool should show raw args, not display value in parens: {tool_line}"
+        !tool_line.contains("filePath"),
+        "Running tool should hide raw args: {tool_line}"
     );
-    assert!(
-        tool_line.contains("filePath"),
-        "Running tool should show raw args: {tool_line}"
+    assert_eq!(
+        tool_line.trim(),
+        "⠋ read_file",
+        "Running tool should show only name: {tool_line}"
     );
 }
 
@@ -2567,7 +2695,7 @@ async fn test_config_overlay_renders_after_large_overflow_scrollback() {
 
     // Assert overlay state is correct
     assert!(
-        renderer.screen().has_config_menu(),
+        has_config_menu(renderer.writer()),
         "Config menu should be open"
     );
 
@@ -2614,7 +2742,10 @@ async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_v
     press_enter(&mut renderer, &handle, &session_id).await;
 
     // Verify overlay rendered correctly
-    assert!(renderer.screen().has_config_menu());
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config menu should be visible"
+    );
     let lines_before = renderer.writer().get_lines();
     assert!(
         lines_before.iter().any(|l| l.contains("Configuration")),
@@ -2633,7 +2764,10 @@ async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_v
     .await;
 
     // Verify normal prompt rendering resumes
-    assert!(!renderer.screen().has_config_menu());
+    assert!(
+        !has_config_menu(renderer.writer()),
+        "Config menu should not be visible"
+    );
     let lines_after = renderer.writer().get_lines();
 
     // Prompt border/status line should be visible

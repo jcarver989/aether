@@ -195,14 +195,6 @@ impl ConfigOverlay {
         }
     }
 
-    pub fn menu_selected_index(&self) -> usize {
-        self.menu.selected_index
-    }
-
-    pub fn picker_config_id(&self) -> Option<&str> {
-        self.picker.as_ref().map(|p| p.config_id.as_str())
-    }
-
     pub fn has_picker(&self) -> bool {
         self.picker.is_some()
     }

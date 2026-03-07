@@ -449,8 +449,8 @@ mod tests {
         );
 
         assert!(effects.is_empty());
-        assert_eq!(app.available_commands().len(), 1);
-        assert_eq!(app.available_commands()[0].name, "search");
+        assert_eq!(app.state.available_commands().len(), 1);
+        assert_eq!(app.state.available_commands()[0].name, "search");
     }
 
     #[test]
