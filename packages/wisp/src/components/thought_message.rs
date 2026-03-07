@@ -10,7 +10,7 @@ impl ThoughtMessage<'_> {
     fn format_line(text: &str, theme: &Theme) -> Line {
         let mut line = Line::default();
         line.push_styled("│ ", theme.muted());
-        line.push_with_style(text, Style::fg(theme.muted()).dim());
+        line.push_with_style(text, Style::fg(theme.muted()));
         line
     }
 
