@@ -74,7 +74,13 @@ impl Component for ToolCallStatusView {
 impl ToolCallStatusView {
     fn format_arguments(arguments: &str) -> String {
         let mut formatted = format!(" {arguments}");
-        formatted.truncate(MAX_TOOL_ARG_LENGTH);
+        if formatted.len() > MAX_TOOL_ARG_LENGTH {
+            let mut new_len = MAX_TOOL_ARG_LENGTH;
+            while !formatted.is_char_boundary(new_len) {
+                new_len -= 1;
+            }
+            formatted.truncate(new_len);
+        }
         formatted
     }
 }
@@ -709,6 +715,26 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().contains("✗"));
         assert!(lines[0].plain_text().contains("boom"));
+    }
+
+    #[test]
+    fn view_truncates_utf8_arguments_without_panicking() {
+        let arguments = format!("{}界", "a".repeat(MAX_TOOL_ARG_LENGTH - 2));
+        let mut view = ToolCallStatusView {
+            name: "TestTool".to_string(),
+            arguments,
+            display_value: None,
+            diff_preview: None,
+            status: ToolCallStatus::Running,
+            tick: 0,
+        };
+
+        let lines = view.render(&ctx());
+        assert_eq!(lines.len(), 1);
+        assert_eq!(
+            lines[0].plain_text(),
+            format!("⠋ TestTool {}", "a".repeat(MAX_TOOL_ARG_LENGTH - 2))
+        );
     }
 
     // -- Sub-agent deserialization tests --
