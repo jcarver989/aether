@@ -9,7 +9,9 @@ use crate::components::provider_login::{
 use crate::components::server_status::{
     ServerStatusAction, ServerStatusOverlay, server_status_summary,
 };
+use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigOption};
 use crossterm::event::KeyEvent;
@@ -37,7 +39,7 @@ pub struct ConfigOverlay {
 #[derive(Debug)]
 pub enum ConfigOverlayAction {
     Close,
-    ApplyConfigChange(ConfigChange),
+    ApplyConfigChanges(Vec<ConfigChange>),
     AuthenticateServer(String),
     AuthenticateProvider(String),
 }
@@ -66,6 +68,12 @@ impl ConfigOverlay {
 
     pub fn update_config_options(&mut self, options: &[SessionConfigOption]) {
         self.menu.update_options(options);
+
+        let settings = load_or_create_settings();
+        let theme_files = list_theme_files();
+        self.menu
+            .add_theme_entry(settings.theme.file.as_deref(), &theme_files);
+
         let summary = server_status_summary(&self.server_statuses);
         self.menu.add_mcp_servers_entry(&summary);
         if !self.auth_methods.is_empty() {
@@ -160,7 +168,7 @@ impl ConfigOverlay {
 
     fn footer_text(&self) -> &'static str {
         if self.model_selector.is_some() {
-            "[Space/Enter] Toggle  [Esc] Done"
+            "[Space/Enter] Toggle  [\u{2190}/\u{2192}] Reasoning  [Esc] Done"
         } else if self.picker.is_some() {
             "[Enter] Confirm  [Esc] Back"
         } else if self.server_overlay.is_some() || self.provider_login_overlay.is_some() {
@@ -254,13 +262,14 @@ impl HandlesInput for ConfigOverlay {
         if let Some(ref mut selector) = self.model_selector {
             let outcome = selector.handle_key(key_event);
             return match outcome.action {
-                Some(ModelSelectorAction::Done(change)) => {
+                Some(ModelSelectorAction::Done(changes)) => {
                     self.model_selector = None;
-                    match change {
-                        Some(change) => InputOutcome::action_and_render(
-                            ConfigOverlayAction::ApplyConfigChange(change),
-                        ),
-                        None => InputOutcome::consumed_and_render(),
+                    if changes.is_empty() {
+                        InputOutcome::consumed_and_render()
+                    } else {
+                        InputOutcome::action_and_render(ConfigOverlayAction::ApplyConfigChanges(
+                            changes,
+                        ))
                     }
                 }
                 None => {
@@ -284,9 +293,12 @@ impl HandlesInput for ConfigOverlay {
                 Some(ConfigPickerAction::ApplySelection(change)) => {
                     self.picker = None;
                     match change {
-                        Some(change) => InputOutcome::action_and_render(
-                            ConfigOverlayAction::ApplyConfigChange(change),
-                        ),
+                        Some(change) => {
+                            self.menu.apply_change(&change);
+                            InputOutcome::action_and_render(
+                                ConfigOverlayAction::ApplyConfigChanges(vec![change]),
+                            )
+                        }
                         None => InputOutcome::consumed_and_render(),
                     }
                 }
@@ -316,7 +328,14 @@ impl HandlesInput for ConfigOverlay {
             Some(ConfigMenuAction::OpenModelSelector) => {
                 if let Some(entry) = self.menu.selected_entry() {
                     let current = Some(entry.current_raw_value.as_str()).filter(|v| !v.is_empty());
-                    self.model_selector = Some(ModelSelector::from_model_entry(entry, current));
+                    let reasoning = self
+                        .menu
+                        .options
+                        .iter()
+                        .find(|e| e.config_id == ConfigOptionId::ReasoningEffort.as_str())
+                        .map(|e| e.current_raw_value.as_str());
+                    self.model_selector =
+                        Some(ModelSelector::from_model_entry(entry, current, reasoning));
                 }
                 InputOutcome::consumed_and_render()
             }
@@ -343,6 +362,7 @@ impl HandlesInput for ConfigOverlay {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acp_utils::config_option_id::THEME_CONFIG_ID;
     use acp_utils::notifications::McpServerStatus;
     use agent_client_protocol::SessionConfigSelectOption;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -495,6 +515,21 @@ mod tests {
     }
 
     #[test]
+    fn config_overlay_picker_confirm_updates_menu_row_immediately() {
+        let mut menu = ConfigMenu::from_config_options(&[]);
+        menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
+        let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
+
+        overlay.handle_key(key(KeyCode::Enter)); // open picker on Theme
+        let _ = overlay.handle_key(key(KeyCode::Down)); // select nord.tmTheme
+        let _ = overlay.handle_key(key(KeyCode::Enter)); // confirm
+
+        assert_eq!(overlay.menu.options[0].config_id, THEME_CONFIG_ID);
+        assert_eq!(overlay.menu.options[0].current_raw_value, "nord.tmTheme");
+        assert_eq!(overlay.menu.options[0].current_value_index, 1);
+    }
+
+    #[test]
     fn enter_opens_picker() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let outcome = overlay.handle_key(key(KeyCode::Enter));
@@ -523,11 +558,12 @@ mod tests {
         let outcome = overlay.handle_key(key(KeyCode::Enter)); // confirm
 
         match outcome.action {
-            Some(ConfigOverlayAction::ApplyConfigChange(change)) => {
-                assert_eq!(change.config_id, "provider");
-                assert_eq!(change.new_value, "ollama");
+            Some(ConfigOverlayAction::ApplyConfigChanges(changes)) => {
+                assert_eq!(changes.len(), 1);
+                assert_eq!(changes[0].config_id, "provider");
+                assert_eq!(changes[0].new_value, "ollama");
             }
-            other => panic!("expected ApplyConfigChange, got: {other:?}"),
+            other => panic!("expected ApplyConfigChanges, got: {other:?}"),
         }
     }
 
@@ -579,51 +615,67 @@ mod tests {
     #[test]
     fn update_config_options_preserves_mcp_servers_entry() {
         use crate::components::config_menu::ConfigMenuEntryKind;
+        use crate::test_helpers::with_wisp_home;
 
-        let mut menu = make_menu();
-        menu.add_mcp_servers_entry("1 connected, 1 needs auth");
-        let statuses = make_server_statuses();
-        let mut overlay = ConfigOverlay::new(menu, statuses, vec![]);
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let themes_dir = temp_dir.path().join("themes");
+        std::fs::create_dir_all(&themes_dir).unwrap();
+        std::fs::write(themes_dir.join("custom.tmTheme"), "x").unwrap();
 
-        // Verify MCP servers entry exists initially
-        assert!(
-            overlay
-                .menu
-                .options
-                .iter()
-                .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
-            "MCP servers entry should exist before update"
-        );
+        with_wisp_home(temp_dir.path(), || {
+            let mut menu = make_menu();
+            menu.add_mcp_servers_entry("1 connected, 1 needs auth");
+            let statuses = make_server_statuses();
+            let mut overlay = ConfigOverlay::new(menu, statuses, vec![]);
 
-        // Simulate config update (e.g. after model selection)
-        let new_options = vec![
-            agent_client_protocol::SessionConfigOption::select(
-                "provider",
-                "Provider",
-                "ollama",
-                vec![
-                    SessionConfigSelectOption::new("openrouter", "OpenRouter"),
-                    SessionConfigSelectOption::new("ollama", "Ollama"),
-                ],
-            ),
-            agent_client_protocol::SessionConfigOption::select(
-                "model",
-                "Model",
-                "llama",
-                vec![SessionConfigSelectOption::new("llama", "Llama")],
-            ),
-        ];
-        overlay.update_config_options(&new_options);
+            // Verify MCP servers entry exists initially
+            assert!(
+                overlay
+                    .menu
+                    .options
+                    .iter()
+                    .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
+                "MCP servers entry should exist before update"
+            );
 
-        // MCP servers entry should still be present after update
-        assert!(
-            overlay
-                .menu
-                .options
-                .iter()
-                .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
-            "MCP servers entry should survive update_config_options"
-        );
+            // Simulate config update (e.g. after model selection)
+            let new_options = vec![
+                agent_client_protocol::SessionConfigOption::select(
+                    "provider",
+                    "Provider",
+                    "ollama",
+                    vec![
+                        SessionConfigSelectOption::new("openrouter", "OpenRouter"),
+                        SessionConfigSelectOption::new("ollama", "Ollama"),
+                    ],
+                ),
+                agent_client_protocol::SessionConfigOption::select(
+                    "model",
+                    "Model",
+                    "llama",
+                    vec![SessionConfigSelectOption::new("llama", "Llama")],
+                ),
+            ];
+            overlay.update_config_options(&new_options);
+
+            // Theme and MCP entries should still be present after update
+            assert!(
+                overlay
+                    .menu
+                    .options
+                    .iter()
+                    .any(|e| e.config_id == THEME_CONFIG_ID),
+                "Theme entry should survive update_config_options"
+            );
+            assert!(
+                overlay
+                    .menu
+                    .options
+                    .iter()
+                    .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
+                "MCP servers entry should survive update_config_options"
+            );
+        });
     }
 
     #[test]

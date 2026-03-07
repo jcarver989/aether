@@ -14,12 +14,13 @@ use crate::components::server_status::server_status_summary;
 use crate::components::status_line::StatusLine;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputAction};
 use crate::components::tool_call_statuses::ToolCallStatuses;
+use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::spinner::Spinner;
 use crate::tui::{
     Cursor, CursorComponent, FormAction, HandlesInput, InputOutcome, Line, RenderContext,
     RenderOutput,
 };
-use acp_utils::config_option_id::ConfigOptionId;
+use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::{
     CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
     ElicitationResponse, McpNotification, McpServerStatus, McpServerStatusEntry,
@@ -51,6 +52,9 @@ pub enum AppEvent {
     SetConfigOption {
         config_id: String,
         new_value: String,
+    },
+    SetTheme {
+        file: Option<String>,
     },
     Cancel,
     AuthenticateMcpServer {
@@ -602,14 +606,22 @@ impl App {
                 self.config_overlay = None;
                 vec![AppEvent::Render]
             }
-            Some(ConfigOverlayAction::ApplyConfigChange(change)) => {
-                vec![
-                    AppEvent::SetConfigOption {
-                        config_id: change.config_id,
-                        new_value: change.new_value,
-                    },
-                    AppEvent::Render,
-                ]
+            Some(ConfigOverlayAction::ApplyConfigChanges(changes)) => {
+                let mut events = Vec::new();
+                for c in changes {
+                    if c.config_id == THEME_CONFIG_ID {
+                        events.push(AppEvent::SetTheme {
+                            file: theme_file_from_picker_value(&c.new_value),
+                        });
+                    } else {
+                        events.push(AppEvent::SetConfigOption {
+                            config_id: c.config_id,
+                            new_value: c.new_value,
+                        });
+                    }
+                }
+                events.push(AppEvent::Render);
+                events
             }
             Some(ConfigOverlayAction::AuthenticateServer(name)) => {
                 vec![
@@ -734,6 +746,10 @@ impl App {
     }
 
     fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {
+        let settings = load_or_create_settings();
+        let theme_files = list_theme_files();
+        menu.add_theme_entry(settings.theme.file.as_deref(), &theme_files);
+
         let server_summary = server_status_summary(&self.server_statuses);
         menu.add_mcp_servers_entry(&server_summary);
         if !self.auth_methods.is_empty() {
@@ -1026,6 +1042,15 @@ fn extract_mode_display(config_options: &[SessionConfigOption]) -> Option<String
     extract_select_display(config_options, ConfigOptionId::Mode)
 }
 
+fn theme_file_from_picker_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 fn extract_mode_index(config_options: &[SessionConfigOption]) -> Option<usize> {
     let option = config_options
         .iter()
@@ -1036,9 +1061,9 @@ fn extract_mode_index(config_options: &[SessionConfigOption]) -> Option<usize> {
     };
 
     match &select.options {
-        SessionConfigSelectOptions::Ungrouped(options) => options
-            .iter()
-            .position(|o| o.value == select.current_value),
+        SessionConfigSelectOptions::Ungrouped(options) => {
+            options.iter().position(|o| o.value == select.current_value)
+        }
         SessionConfigSelectOptions::Grouped(groups) => groups
             .iter()
             .flat_map(|group| group.options.iter())
@@ -1090,46 +1115,14 @@ fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings};
+    use crate::components::config_menu::ConfigChange;
+    use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
+    use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
     use crate::tui::Component;
     use crossterm::event::KeyModifiers;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use tempfile::TempDir;
-
-    const CUSTOM_TMTHEME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>name</key>
-    <string>Custom</string>
-    <key>settings</key>
-    <array>
-        <dict>
-            <key>settings</key>
-            <dict>
-                <key>foreground</key>
-                <string>#112233</string>
-                <key>background</key>
-                <string>#000000</string>
-                <key>selection</key>
-                <string>#334455</string>
-            </dict>
-        </dict>
-    </array>
-</dict>
-</plist>"#;
-
-    fn with_wisp_home(path: &Path, f: impl FnOnce()) {
-        let old = std::env::var_os("WISP_HOME");
-        unsafe { std::env::set_var("WISP_HOME", path) };
-        f();
-        if let Some(value) = old {
-            unsafe { std::env::set_var("WISP_HOME", value) };
-        } else {
-            unsafe { std::env::remove_var("WISP_HOME") };
-        }
-    }
 
     fn custom_theme() -> crate::tui::theme::Theme {
         let temp_dir = TempDir::new().expect("temp dir");
@@ -1148,6 +1141,126 @@ mod tests {
             theme = crate::tui::theme::Theme::load(&settings);
         });
         theme
+    }
+
+    #[test]
+    fn decorate_config_menu_adds_theme_entry() {
+        let temp_dir = TempDir::new().unwrap();
+        let themes_dir = temp_dir.path().join("themes");
+        fs::create_dir_all(&themes_dir).unwrap();
+        fs::write(themes_dir.join("catppuccin.tmTheme"), "x").unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            let app = App::new("test-agent".to_string(), &[], vec![]);
+            let menu = app.decorate_config_menu(ConfigMenu::from_config_options(&[]));
+
+            assert_eq!(menu.options[0].config_id, THEME_CONFIG_ID);
+            assert_eq!(menu.options[0].title, "Theme");
+            assert_eq!(menu.options[0].values[0].name, "Default");
+            assert!(
+                menu.options[0]
+                    .values
+                    .iter()
+                    .any(|v| v.value == "catppuccin.tmTheme")
+            );
+        });
+    }
+
+    #[test]
+    fn theme_entry_uses_current_theme_from_settings() {
+        let temp_dir = TempDir::new().unwrap();
+        let themes_dir = temp_dir.path().join("themes");
+        fs::create_dir_all(&themes_dir).unwrap();
+        fs::write(themes_dir.join("catppuccin.tmTheme"), "x").unwrap();
+        fs::write(themes_dir.join("nord.tmTheme"), "x").unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            let settings = WispSettings {
+                theme: WispThemeSettings {
+                    file: Some("nord.tmTheme".to_string()),
+                },
+            };
+            save_settings(&settings).unwrap();
+
+            let app = App::new("test-agent".to_string(), &[], vec![]);
+            let menu = app.decorate_config_menu(ConfigMenu::from_config_options(&[]));
+
+            let theme = &menu.options[0];
+            assert_eq!(theme.config_id, THEME_CONFIG_ID);
+            assert_eq!(theme.current_raw_value, "nord.tmTheme");
+            assert_eq!(
+                theme.values[theme.current_value_index].value,
+                "nord.tmTheme"
+            );
+        });
+    }
+
+    #[test]
+    fn theme_config_change_emits_set_theme_event() {
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
+        let outcome =
+            InputOutcome::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
+                ConfigChange {
+                    config_id: THEME_CONFIG_ID.to_string(),
+                    new_value: "catppuccin.tmTheme".to_string(),
+                },
+            ]));
+
+        let effects = app.handle_config_overlay_outcome(outcome);
+
+        assert!(matches!(
+            effects.as_slice(),
+            [
+                AppEvent::SetTheme {
+                    file: Some(file)
+                },
+                AppEvent::Render
+            ] if file == "catppuccin.tmTheme"
+        ));
+    }
+
+    #[test]
+    fn theme_default_value_maps_to_none() {
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
+        let outcome =
+            InputOutcome::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
+                ConfigChange {
+                    config_id: THEME_CONFIG_ID.to_string(),
+                    new_value: "   ".to_string(),
+                },
+            ]));
+
+        let effects = app.handle_config_overlay_outcome(outcome);
+
+        assert!(matches!(
+            effects.as_slice(),
+            [AppEvent::SetTheme { file: None }, AppEvent::Render]
+        ));
+    }
+
+    #[test]
+    fn non_theme_config_change_still_emits_set_config_option() {
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
+        let outcome =
+            InputOutcome::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
+                ConfigChange {
+                    config_id: "model".to_string(),
+                    new_value: "gpt-5".to_string(),
+                },
+            ]));
+
+        let effects = app.handle_config_overlay_outcome(outcome);
+
+        assert!(matches!(
+            effects.as_slice(),
+            [
+                AppEvent::SetConfigOption {
+                    config_id,
+                    new_value
+                },
+                AppEvent::Render
+            ] if config_id == "model" && new_value == "gpt-5"
+        ));
     }
 
     #[test]

@@ -1,5 +1,7 @@
 use crate::components::wrap_selection;
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext, Style};
+use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
+use acp_utils::config_option_id::THEME_CONFIG_ID;
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -32,6 +34,7 @@ pub struct ConfigMenuValue {
     pub name: String,
     pub description: Option<String>,
     pub is_disabled: bool,
+    pub meta: SelectOptionMeta,
 }
 
 #[derive(Debug)]
@@ -160,15 +163,11 @@ impl ConfigMenu {
                             .as_deref()
                             .is_some_and(|d| d.starts_with("Unavailable:")),
                         description: o.description,
+                        meta: SelectOptionMeta::from_meta(o.meta.as_ref()),
                     })
                     .collect();
 
-                let multi_select = opt
-                    .meta
-                    .as_ref()
-                    .and_then(|m| m.get("multi_select"))
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false);
+                let multi_select = ConfigOptionMeta::from_meta(opt.meta.as_ref()).multi_select;
 
                 let display_name = if multi_select && select.current_value.0.contains(',') {
                     let parts: Vec<&str> =
@@ -212,6 +211,44 @@ impl ConfigMenu {
         }
     }
 
+    pub fn add_theme_entry(&mut self, current_theme_file: Option<&str>, theme_files: &[String]) {
+        let mut values = Vec::with_capacity(theme_files.len() + 1);
+        values.push(ConfigMenuValue {
+            value: String::new(),
+            name: "Default".to_string(),
+            description: None,
+            is_disabled: false,
+            meta: SelectOptionMeta::default(),
+        });
+
+        values.extend(theme_files.iter().map(|file| ConfigMenuValue {
+            value: file.clone(),
+            name: file.clone(),
+            description: None,
+            is_disabled: false,
+            meta: SelectOptionMeta::default(),
+        }));
+
+        let current_value_index = current_theme_file
+            .and_then(|file| values.iter().position(|v| v.value == file))
+            .unwrap_or(0);
+        let current_raw_value = values
+            .get(current_value_index)
+            .map(|v| v.value.clone())
+            .unwrap_or_default();
+
+        self.options.push(ConfigMenuEntry {
+            config_id: THEME_CONFIG_ID.to_string(),
+            title: "Theme".to_string(),
+            values,
+            current_value_index,
+            current_raw_value,
+            entry_kind: ConfigMenuEntryKind::Select,
+            multi_select: false,
+            display_name: None,
+        });
+    }
+
     pub fn add_mcp_servers_entry(&mut self, summary: &str) {
         self.options.push(ConfigMenuEntry {
             config_id: "__mcp_servers".to_string(),
@@ -221,6 +258,7 @@ impl ConfigMenu {
                 name: summary.to_string(),
                 description: None,
                 is_disabled: false,
+                meta: SelectOptionMeta::default(),
             }],
             current_value_index: 0,
             current_raw_value: String::new(),
@@ -239,6 +277,7 @@ impl ConfigMenu {
                 name: summary.to_string(),
                 description: None,
                 is_disabled: false,
+                meta: SelectOptionMeta::default(),
             }],
             current_value_index: 0,
             current_raw_value: String::new(),
@@ -264,6 +303,25 @@ impl ConfigMenu {
 
     pub fn selected_entry(&self) -> Option<&ConfigMenuEntry> {
         self.options.get(self.selected_index)
+    }
+
+    pub fn apply_change(&mut self, change: &ConfigChange) {
+        let Some(entry) = self
+            .options
+            .iter_mut()
+            .find(|entry| entry.config_id == change.config_id)
+        else {
+            return;
+        };
+
+        entry.current_raw_value = change.new_value.clone();
+        if let Some(index) = entry
+            .values
+            .iter()
+            .position(|value| value.value == change.new_value)
+        {
+            entry.current_value_index = index;
+        }
     }
 }
 
@@ -480,9 +538,9 @@ mod tests {
 
     #[test]
     fn multi_select_detected_from_meta() {
-        let mut meta = serde_json::Map::new();
-        meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
-        let opt = make_select_option("model", "Model", "a", &[("a", "A"), ("b", "B")]).meta(meta);
+        let meta = ConfigOptionMeta { multi_select: true };
+        let opt = make_select_option("model", "Model", "a", &[("a", "A"), ("b", "B")])
+            .meta(meta.into_meta());
         let menu = ConfigMenu::from_config_options(&[opt]);
         assert!(menu.options[0].multi_select);
     }
@@ -496,9 +554,9 @@ mod tests {
 
     #[test]
     fn multi_select_entry_opens_model_selector() {
-        let mut meta = serde_json::Map::new();
-        meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
-        let opt = make_select_option("model", "Model", "a", &[("a", "A"), ("b", "B")]).meta(meta);
+        let meta = ConfigOptionMeta { multi_select: true };
+        let opt = make_select_option("model", "Model", "a", &[("a", "A"), ("b", "B")])
+            .meta(meta.into_meta());
         let mut menu = ConfigMenu::from_config_options(&[opt]);
 
         let outcome = menu.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -510,10 +568,9 @@ mod tests {
 
     #[test]
     fn multi_select_with_comma_value_shows_model_names() {
-        let mut meta = serde_json::Map::new();
-        meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
+        let meta = ConfigOptionMeta { multi_select: true };
         let opt = make_select_option("model", "Model", "a,b", &[("a", "Alpha"), ("b", "Beta")])
-            .meta(meta);
+            .meta(meta.into_meta());
         let menu = ConfigMenu::from_config_options(&[opt]);
         let display = menu.options[0].display_name.as_deref().unwrap();
         assert!(display.contains("Alpha"), "display: {display}");
@@ -532,12 +589,14 @@ mod tests {
                         name: "Alpha".to_string(),
                         description: Some("Unavailable: no key".to_string()),
                         is_disabled: true,
+                        meta: SelectOptionMeta::default(),
                     },
                     ConfigMenuValue {
                         value: "b".to_string(),
                         name: "Beta".to_string(),
                         description: None,
                         is_disabled: false,
+                        meta: SelectOptionMeta::default(),
                     },
                 ],
                 current_value_index: 0, // falls back to 0 since comma value doesn't match
@@ -560,6 +619,78 @@ mod tests {
             has_highlight,
             "multi-select with display_name should get highlight_bg, not muted"
         );
+    }
+
+    #[test]
+    fn apply_change_updates_matching_entry_value_and_index() {
+        let mut menu = ConfigMenu::from_config_options(&[]);
+        let files = vec!["catppuccin.tmTheme".to_string(), "nord.tmTheme".to_string()];
+        menu.add_theme_entry(None, &files);
+
+        menu.apply_change(&ConfigChange {
+            config_id: THEME_CONFIG_ID.to_string(),
+            new_value: "nord.tmTheme".to_string(),
+        });
+
+        let theme = &menu.options[0];
+        assert_eq!(theme.current_raw_value, "nord.tmTheme");
+        assert_eq!(theme.current_value_index, 2);
+    }
+
+    #[test]
+    fn add_theme_entry_inserts_theme_row() {
+        let mut menu = ConfigMenu::from_config_options(&[]);
+        let files = vec!["catppuccin.tmTheme".to_string(), "nord.tmTheme".to_string()];
+
+        menu.add_theme_entry(None, &files);
+
+        assert_eq!(menu.options.len(), 1);
+        let theme = &menu.options[0];
+        assert_eq!(theme.config_id, THEME_CONFIG_ID);
+        assert_eq!(theme.title, "Theme");
+        assert_eq!(theme.entry_kind, ConfigMenuEntryKind::Select);
+        assert!(!theme.multi_select);
+        assert_eq!(theme.values.len(), 3);
+        assert_eq!(theme.values[0].name, "Default");
+        assert_eq!(theme.values[0].value, "");
+        assert_eq!(theme.values[1].value, "catppuccin.tmTheme");
+        assert_eq!(theme.values[2].value, "nord.tmTheme");
+    }
+
+    #[test]
+    fn add_theme_entry_selects_default_when_current_none() {
+        let mut menu = ConfigMenu::from_config_options(&[]);
+        let files = vec!["catppuccin.tmTheme".to_string()];
+
+        menu.add_theme_entry(None, &files);
+
+        let theme = &menu.options[0];
+        assert_eq!(theme.current_value_index, 0);
+        assert_eq!(theme.current_raw_value, "");
+    }
+
+    #[test]
+    fn add_theme_entry_selects_matching_theme_file() {
+        let mut menu = ConfigMenu::from_config_options(&[]);
+        let files = vec!["catppuccin.tmTheme".to_string(), "nord.tmTheme".to_string()];
+
+        menu.add_theme_entry(Some("nord.tmTheme"), &files);
+
+        let theme = &menu.options[0];
+        assert_eq!(theme.current_value_index, 2);
+        assert_eq!(theme.current_raw_value, "nord.tmTheme");
+    }
+
+    #[test]
+    fn add_theme_entry_falls_back_to_default_when_current_missing() {
+        let mut menu = ConfigMenu::from_config_options(&[]);
+        let files = vec!["catppuccin.tmTheme".to_string()];
+
+        menu.add_theme_entry(Some("missing.tmTheme"), &files);
+
+        let theme = &menu.options[0];
+        assert_eq!(theme.current_value_index, 0);
+        assert_eq!(theme.current_raw_value, "");
     }
 
     #[test]

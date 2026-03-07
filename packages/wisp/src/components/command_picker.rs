@@ -124,7 +124,10 @@ impl HandlesInput for CommandPicker {
                 self.combobox.pop_query_char();
                 InputOutcome::consumed_and_render()
             }
-            PickerKey::ControlChar | PickerKey::Other => InputOutcome::consumed(),
+            PickerKey::MoveLeft
+            | PickerKey::MoveRight
+            | PickerKey::ControlChar
+            | PickerKey::Other => InputOutcome::consumed(),
         }
     }
 }

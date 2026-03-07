@@ -414,5 +414,4 @@ mod tests {
             "different mode indices should have different text colors"
         );
     }
-
 }

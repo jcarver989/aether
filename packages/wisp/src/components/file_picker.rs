@@ -165,7 +165,10 @@ impl HandlesInput for FilePicker {
             PickerKey::BackspaceOnEmpty => {
                 InputOutcome::action_and_render(FilePickerAction::CloseAndPopChar)
             }
-            PickerKey::ControlChar | PickerKey::Other => InputOutcome::ignored(),
+            PickerKey::MoveLeft
+            | PickerKey::MoveRight
+            | PickerKey::ControlChar
+            | PickerKey::Other => InputOutcome::ignored(),
         }
     }
 }

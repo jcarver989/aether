@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
+#[cfg(test)]
+pub(crate) static WISP_HOME_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WispSettings {
@@ -57,10 +60,55 @@ pub fn resolve_theme_file_path(file_name: &str) -> Option<PathBuf> {
     Some(themes_dir_path()?.join(base_name))
 }
 
+pub fn list_theme_files() -> Vec<String> {
+    let Some(themes_dir) = themes_dir_path() else {
+        return Vec::new();
+    };
+
+    let Ok(entries) = std::fs::read_dir(themes_dir) else {
+        return Vec::new();
+    };
+
+    let mut files = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let Ok(file_type) = entry.file_type() else {
+                return None;
+            };
+
+            if !file_type.is_file() {
+                return None;
+            }
+
+            let name = entry.file_name().into_string().ok()?;
+            if !name.ends_with(".tmTheme") {
+                return None;
+            }
+            Some(name)
+        })
+        .collect::<Vec<_>>();
+
+    files.sort_unstable();
+    files
+}
+
+pub fn save_settings(settings: &WispSettings) -> std::io::Result<()> {
+    let store = SettingsStore::new("WISP_HOME", ".wisp").ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Unable to resolve Wisp settings path",
+        )
+    })?;
+
+    store.save(settings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::with_wisp_home;
     use acp_utils::settings::SettingsStore;
+    use std::fs;
     use tempfile::TempDir;
 
     #[test]
@@ -86,5 +134,58 @@ mod tests {
         assert!(resolve_theme_file_path("subdir/theme.json").is_none());
         #[cfg(windows)]
         assert!(resolve_theme_file_path("..\\escape.json").is_none());
+    }
+
+    #[test]
+    fn list_theme_files_returns_sorted_file_names() {
+        let temp_dir = TempDir::new().unwrap();
+        let themes = temp_dir.path().join("themes");
+        fs::create_dir_all(&themes).unwrap();
+        fs::write(themes.join("zeta.tmTheme"), "z").unwrap();
+        fs::write(themes.join("alpha.tmTheme"), "a").unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            let files = list_theme_files();
+            assert_eq!(files, vec!["alpha.tmTheme", "zeta.tmTheme"]);
+        });
+    }
+
+    #[test]
+    fn list_theme_files_ignores_directories() {
+        let temp_dir = TempDir::new().unwrap();
+        let themes = temp_dir.path().join("themes");
+        fs::create_dir_all(themes.join("nested")).unwrap();
+        fs::write(themes.join("theme.tmTheme"), "ok").unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            let files = list_theme_files();
+            assert_eq!(files, vec!["theme.tmTheme"]);
+        });
+    }
+
+    #[test]
+    fn list_theme_files_returns_empty_when_themes_dir_missing() {
+        let temp_dir = TempDir::new().unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            let files = list_theme_files();
+            assert!(files.is_empty());
+        });
+    }
+
+    #[test]
+    fn save_settings_persists_theme_file_round_trip() {
+        let temp_dir = TempDir::new().unwrap();
+        let settings = WispSettings {
+            theme: ThemeSettings {
+                file: Some("saved.tmTheme".to_string()),
+            },
+        };
+
+        with_wisp_home(temp_dir.path(), || {
+            save_settings(&settings).unwrap();
+            let loaded = load_or_create_settings();
+            assert_eq!(loaded.theme.file.as_deref(), Some("saved.tmTheme"));
+        });
     }
 }

@@ -1,4 +1,5 @@
 use super::settings::{AetherCliSettings, Mode};
+use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
 use llm::ReasoningEffort;
@@ -93,7 +94,13 @@ pub(crate) fn build_model_config_option(
                 } else {
                     format!("{display} / {} (unavailable)", m.display_name())
                 };
-                let option = acp::SessionConfigSelectOption::new(value, name);
+                let mut option = acp::SessionConfigSelectOption::new(value, name);
+                if m.supports_reasoning() {
+                    let meta = SelectOptionMeta {
+                        supports_reasoning: true,
+                    };
+                    option = option.meta(meta.into_meta());
+                }
                 if is_available && !needs_login {
                     options.push(option);
                 } else {
@@ -103,8 +110,7 @@ pub(crate) fn build_model_config_option(
         }
     }
 
-    let mut meta = serde_json::Map::new();
-    meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
+    let meta = ConfigOptionMeta { multi_select: true };
 
     SessionConfigOption::select(
         ConfigOptionId::Model.as_str(),
@@ -113,7 +119,7 @@ pub(crate) fn build_model_config_option(
         options,
     )
     .category(SessionConfigOptionCategory::Model)
-    .meta(meta)
+    .meta(meta.into_meta())
 }
 
 fn build_reasoning_effort_config_option(
@@ -586,11 +592,8 @@ mod tests {
     fn build_model_config_option_includes_multi_select_meta() {
         let models = test_models();
         let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
-        let meta = opt.meta.expect("meta should be set");
-        assert_eq!(
-            meta.get("multi_select"),
-            Some(&serde_json::Value::Bool(true))
-        );
+        let meta = ConfigOptionMeta::from_meta(opt.meta.as_ref());
+        assert!(meta.multi_select);
     }
 
     #[test]
