@@ -3,9 +3,9 @@ mod cli;
 mod components;
 mod error;
 mod settings;
+mod terminal_ui;
 #[cfg(test)]
 mod test_helpers;
-mod terminal_ui;
 mod tui;
 
 use crate::app_state::AppState;

@@ -1,7 +1,7 @@
 use crate::components::wrap_selection;
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext, Style};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
-use acp_utils::config_option_id::THEME_CONFIG_ID;
+use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -131,6 +131,7 @@ impl ConfigMenu {
     pub fn from_config_options(options: &[SessionConfigOption]) -> Self {
         let entries: Vec<ConfigMenuEntry> = options
             .iter()
+            .filter(|opt| opt.id.0.as_ref() != ConfigOptionId::ReasoningEffort.as_str())
             .filter_map(|opt| {
                 let SessionConfigKind::Select(ref select) = opt.kind else {
                     return None;
@@ -698,5 +699,42 @@ mod tests {
         let opt = make_select_option("model", "Model", "a", &[("a", "A")]);
         let menu = ConfigMenu::from_config_options(&[opt]);
         assert!(menu.options[0].display_name.is_none());
+    }
+
+    #[test]
+    fn from_config_options_excludes_reasoning_effort_entry() {
+        let opts = vec![
+            make_select_option(
+                "model",
+                "Model",
+                "gpt-4o",
+                &[("gpt-4o", "GPT-4o"), ("claude", "Claude")],
+            ),
+            make_select_option(
+                "reasoning_effort",
+                "Reasoning Effort",
+                "high",
+                &[
+                    ("none", "None"),
+                    ("low", "Low"),
+                    ("medium", "Medium"),
+                    ("high", "High"),
+                ],
+            ),
+        ];
+        let menu = ConfigMenu::from_config_options(&opts);
+
+        assert!(
+            menu.options.iter().any(|e| e.config_id == "model"),
+            "menu should contain model entry"
+        );
+
+        assert!(
+            !menu
+                .options
+                .iter()
+                .any(|e| e.config_id == "reasoning_effort"),
+            "menu should NOT contain reasoning_effort entry"
+        );
     }
 }

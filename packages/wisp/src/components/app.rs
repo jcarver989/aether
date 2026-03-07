@@ -725,11 +725,14 @@ impl App {
     fn open_config_overlay(&mut self) {
         let menu = ConfigMenu::from_config_options(&self.config_options);
         let menu = self.decorate_config_menu(menu);
-        self.config_overlay = Some(ConfigOverlay::new(
-            menu,
-            self.server_statuses.clone(),
-            self.auth_methods.clone(),
-        ));
+        self.config_overlay = Some(
+            ConfigOverlay::new(
+                menu,
+                self.server_statuses.clone(),
+                self.auth_methods.clone(),
+            )
+            .with_reasoning_effort_from_options(&self.config_options),
+        );
     }
 
     fn open_config_overlay_with_servers(&mut self) {
@@ -741,7 +744,8 @@ impl App {
                 self.server_statuses.clone(),
                 self.auth_methods.clone(),
             )
-            .with_server_overlay(),
+            .with_server_overlay()
+            .with_reasoning_effort_from_options(&self.config_options),
         );
     }
 

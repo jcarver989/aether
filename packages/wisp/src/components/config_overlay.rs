@@ -13,7 +13,7 @@ use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
-use agent_client_protocol::{self as acp, SessionConfigOption};
+use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
 use crossterm::event::KeyEvent;
 use unicode_width::UnicodeWidthStr;
 
@@ -34,6 +34,7 @@ pub struct ConfigOverlay {
     provider_login_overlay: Option<ProviderLoginOverlay>,
     server_statuses: Vec<McpServerStatusEntry>,
     auth_methods: Vec<acp::AuthMethod>,
+    current_reasoning_effort: Option<String>,
 }
 
 #[derive(Debug)]
@@ -58,6 +59,7 @@ impl ConfigOverlay {
             provider_login_overlay: None,
             server_statuses,
             auth_methods,
+            current_reasoning_effort: None,
         }
     }
 
@@ -66,7 +68,27 @@ impl ConfigOverlay {
         self
     }
 
+    pub fn with_reasoning_effort_from_options(mut self, options: &[SessionConfigOption]) -> Self {
+        self.current_reasoning_effort = Self::extract_reasoning_effort(options);
+        self
+    }
+
+    fn extract_reasoning_effort(options: &[SessionConfigOption]) -> Option<String> {
+        options
+            .iter()
+            .find(|opt| opt.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())
+            .and_then(|opt| match &opt.kind {
+                SessionConfigKind::Select(select) => {
+                    let value = select.current_value.0.trim();
+                    (!value.is_empty() && value != "none").then(|| value.to_string())
+                }
+                _ => None,
+            })
+    }
+
     pub fn update_config_options(&mut self, options: &[SessionConfigOption]) {
+        self.current_reasoning_effort = Self::extract_reasoning_effort(options);
+
         self.menu.update_options(options);
 
         let settings = load_or_create_settings();
@@ -328,14 +350,11 @@ impl HandlesInput for ConfigOverlay {
             Some(ConfigMenuAction::OpenModelSelector) => {
                 if let Some(entry) = self.menu.selected_entry() {
                     let current = Some(entry.current_raw_value.as_str()).filter(|v| !v.is_empty());
-                    let reasoning = self
-                        .menu
-                        .options
-                        .iter()
-                        .find(|e| e.config_id == ConfigOptionId::ReasoningEffort.as_str())
-                        .map(|e| e.current_raw_value.as_str());
-                    self.model_selector =
-                        Some(ModelSelector::from_model_entry(entry, current, reasoning));
+                    self.model_selector = Some(ModelSelector::from_model_entry(
+                        entry,
+                        current,
+                        self.current_reasoning_effort.as_deref(),
+                    ));
                 }
                 InputOutcome::consumed_and_render()
             }
@@ -782,8 +801,8 @@ mod tests {
     }
 
     #[test]
-    fn update_config_options_removes_reasoning_when_model_lacks_support() {
-        // Start with model + reasoning_effort options (reasoning model selected)
+    fn update_config_options_never_renders_reasoning_row() {
+        // Initial options include model + reasoning_effort
         let initial_options = vec![
             agent_client_protocol::SessionConfigOption::select(
                 "model",
@@ -809,17 +828,17 @@ mod tests {
         let menu = ConfigMenu::from_config_options(&initial_options);
         let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
 
-        // Verify reasoning_effort is rendered initially
+        // Rendered lines do not contain Reasoning Effort
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
         assert!(
-            text.iter().any(|l| l.contains("Reasoning Effort")),
-            "Reasoning Effort should appear initially; got:\n{}",
+            !text.iter().any(|l| l.contains("Reasoning Effort")),
+            "Reasoning Effort should NOT appear initially; got:\n{}",
             text.join("\n")
         );
 
-        // Simulate switching to a non-reasoning model: server returns only model option
+        // After update to model-only options, still no Reasoning Effort
         let updated_options = vec![agent_client_protocol::SessionConfigOption::select(
             "model",
             "Model",
@@ -831,12 +850,11 @@ mod tests {
         )];
         overlay.update_config_options(&updated_options);
 
-        // Verify reasoning_effort is gone from the rendered output
         let lines = overlay.render(&context);
         let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
         assert!(
             !text.iter().any(|l| l.contains("Reasoning Effort")),
-            "Reasoning Effort should NOT appear after switching to non-reasoning model; got:\n{}",
+            "Reasoning Effort should NOT appear after update; got:\n{}",
             text.join("\n")
         );
     }
@@ -853,5 +871,95 @@ mod tests {
         let footer = lines[lines.len() - 2].plain_text();
         assert!(footer.contains("Toggle"), "footer: {footer}");
         assert!(footer.contains("[Esc] Done"), "footer: {footer}");
+    }
+
+    #[test]
+    fn model_selector_uses_overlay_reasoning_prefill_after_menu_removal() {
+        use crate::components::config_menu::{
+            ConfigMenuEntry, ConfigMenuEntryKind, ConfigMenuValue,
+        };
+        use acp_utils::config_meta::SelectOptionMeta;
+
+        let menu = ConfigMenu {
+            options: vec![ConfigMenuEntry {
+                config_id: "model".to_string(),
+                title: "Model".to_string(),
+                values: vec![
+                    ConfigMenuValue {
+                        value: "claude-opus".to_string(),
+                        name: "Claude Opus".to_string(),
+                        description: None,
+                        is_disabled: false,
+                        meta: SelectOptionMeta {
+                            supports_reasoning: true,
+                        },
+                    },
+                    ConfigMenuValue {
+                        value: "gpt-4o".to_string(),
+                        name: "GPT-4o".to_string(),
+                        description: None,
+                        is_disabled: false,
+                        meta: SelectOptionMeta::default(),
+                    },
+                ],
+                current_value_index: 0,
+                current_raw_value: "claude-opus".to_string(),
+                entry_kind: ConfigMenuEntryKind::Select,
+                multi_select: true,
+                display_name: None,
+            }],
+            selected_index: 0,
+        };
+
+        let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
+        let options_with_reasoning = vec![
+            agent_client_protocol::SessionConfigOption::select(
+                "model",
+                "Model",
+                "claude-opus",
+                vec![
+                    SessionConfigSelectOption::new("claude-opus", "Claude Opus"),
+                    SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
+                ],
+            ),
+            agent_client_protocol::SessionConfigOption::select(
+                "reasoning_effort",
+                "Reasoning Effort",
+                "medium",
+                vec![
+                    SessionConfigSelectOption::new("none", "None"),
+                    SessionConfigSelectOption::new("low", "Low"),
+                    SessionConfigSelectOption::new("medium", "Medium"),
+                    SessionConfigSelectOption::new("high", "High"),
+                ],
+            ),
+        ];
+        overlay = overlay.with_reasoning_effort_from_options(&options_with_reasoning);
+
+        overlay.handle_key(key(KeyCode::Enter));
+        assert!(
+            render_footer(&mut overlay).contains("Toggle"),
+            "model selector should be open"
+        );
+
+        overlay.handle_key(key(KeyCode::Right));
+
+        let outcome = overlay.handle_key(key(KeyCode::Esc));
+
+        match outcome.action {
+            Some(ConfigOverlayAction::ApplyConfigChanges(changes)) => {
+                let reasoning_change = changes.iter().find(|c| c.config_id == "reasoning_effort");
+                assert!(
+                    reasoning_change.is_some(),
+                    "should have reasoning_effort change; got: {changes:?}"
+                );
+                assert_eq!(
+                    reasoning_change.unwrap().new_value,
+                    "high",
+                    "reasoning should be high after one right from medium"
+                );
+            }
+            other => panic!("expected ApplyConfigChanges, got: {other:?}"),
+        }
     }
 }
