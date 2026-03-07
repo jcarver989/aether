@@ -678,11 +678,6 @@ impl App {
             self.close_all_pickers();
             self.open_config_overlay();
             vec![AppEvent::Render]
-        } else if cmd.builtin && cmd.name == "servers" {
-            self.text_input.clear();
-            self.close_all_pickers();
-            self.open_config_overlay_with_servers();
-            vec![AppEvent::Render]
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
             vec![AppEvent::Render]
@@ -758,20 +753,6 @@ impl App {
                 self.server_statuses.clone(),
                 self.auth_methods.clone(),
             )
-            .with_reasoning_effort_from_options(&self.config_options),
-        );
-    }
-
-    fn open_config_overlay_with_servers(&mut self) {
-        let menu = ConfigMenu::from_config_options(&self.config_options);
-        let menu = self.decorate_config_menu(menu);
-        self.config_overlay = Some(
-            ConfigOverlay::new(
-                menu,
-                self.server_statuses.clone(),
-                self.auth_methods.clone(),
-            )
-            .with_server_overlay()
             .with_reasoning_effort_from_options(&self.config_options),
         );
     }
@@ -1018,22 +999,13 @@ fn is_cycleable_mode_option(option: &SessionConfigOption) -> bool {
 }
 
 fn builtin_commands() -> Vec<CommandEntry> {
-    vec![
-        CommandEntry {
-            name: "config".into(),
-            description: "Open configuration settings".into(),
-            has_input: false,
-            hint: None,
-            builtin: true,
-        },
-        CommandEntry {
-            name: "servers".into(),
-            description: "View MCP server connection status".into(),
-            has_input: false,
-            hint: None,
-            builtin: true,
-        },
-    ]
+    vec![CommandEntry {
+        name: "config".into(),
+        description: "Open configuration settings".into(),
+        has_input: false,
+        hint: None,
+        builtin: true,
+    }]
 }
 
 fn option_display_name(

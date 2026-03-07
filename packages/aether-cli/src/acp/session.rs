@@ -127,10 +127,10 @@ fn merge_builtin_commands(commands: Vec<acp::AvailableCommand>) -> Vec<acp::Avai
 }
 
 fn builtin_commands() -> Vec<acp::AvailableCommand> {
-    vec![
-        acp::AvailableCommand::new("clear", "Clear agent context and reset to a blank slate"),
-        acp::AvailableCommand::new("servers", "View MCP server connection status"),
-    ]
+    vec![acp::AvailableCommand::new(
+        "clear",
+        "Clear agent context and reset to a blank slate",
+    )]
 }
 
 #[cfg(test)]
