@@ -1,5 +1,5 @@
 use crate::provider::get_context_window;
-use crate::providers::openai_compatible::{build_chat_request, create_custom_stream};
+use crate::providers::openai_compatible::{build_chat_request, create_custom_stream_generic};
 use crate::{
     Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider,
 };
@@ -87,7 +87,7 @@ impl StreamingModelProvider for GeminiProvider {
                 }
             };
             let mut inner_stream =
-                create_custom_stream(&client, request);
+                create_custom_stream_generic(&client, request);
 
             while let Some(result) = inner_stream.next().await {
                 yield result;

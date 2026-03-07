@@ -181,21 +181,15 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
 /// Test that the `OpenRouterChatRequest` serializes the usage parameter correctly
 #[test]
 fn test_openrouter_request_serialization() {
-    use async_openai::types::chat::{
-        ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
-        ChatCompletionRequestUserMessageContent,
-    };
+    use llm::providers::openai_compatible::types::CompatibleChatMessage;
     use llm::providers::openrouter::{OpenRouterChatRequest, OpenRouterUsage};
     use serde_json;
 
     let request = OpenRouterChatRequest {
         model: "openai/gpt-3.5-turbo".to_string(),
-        messages: vec![ChatCompletionRequestMessage::User(
-            ChatCompletionRequestUserMessage {
-                content: ChatCompletionRequestUserMessageContent::Text("Hello".to_string()),
-                name: None,
-            },
-        )],
+        messages: vec![CompatibleChatMessage::User {
+            content: "Hello".to_string(),
+        }],
         stream: Some(true),
         tools: None,
         tool_choice: None,
