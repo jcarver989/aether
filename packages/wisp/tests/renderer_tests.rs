@@ -2522,3 +2522,122 @@ async fn test_command_display_meta_shows_exit_code() {
     );
     assert_buffer_eq(renderer.writer(), &expected);
 }
+
+#[tokio::test]
+async fn test_config_overlay_renders_after_large_overflow_scrollback() {
+    let config_options = make_config_options();
+    // Small viewport to force overflow quickly
+    let terminal = TestTerminal::new(40, 8);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((40, 8));
+    renderer.initial_render().unwrap();
+
+    // Feed a LOT of content in a single streaming response (no prompt_done)
+    // This causes progressive flush to build up flushed_visual_count
+    for i in 0..50 {
+        let chunk = format!("Line {i:02} with enough content to wrap in 40 cols");
+        renderer
+            .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+                acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(&chunk))),
+            ))
+            .await
+            .unwrap();
+    }
+
+    // Now open config overlay WHILE still in the streaming context
+    // This is where the bug manifests - flushed_visual_count is high
+    // but the overlay produces fewer lines
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
+
+    // Assert overlay state is correct
+    assert!(
+        renderer.screen().has_config_menu(),
+        "Config menu should be open"
+    );
+
+    // Assert overlay content is actually visible
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("Configuration")),
+        "Configuration header should be visible in overlay.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("Model")),
+        "Model config option should be visible in overlay.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let config_options = make_config_options();
+    let terminal = TestTerminal::new(40, 8);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
+    renderer.update_render_context_with((40, 8));
+    renderer.initial_render().unwrap();
+
+    // Create overflow history within a single streaming response
+    for i in 0..50 {
+        let chunk = format!("Line {i:02} with enough content to wrap in 40 cols");
+        renderer
+            .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+                acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(&chunk))),
+            ))
+            .await
+            .unwrap();
+    }
+
+    let handle = AcpPromptHandle::noop();
+    let session_id = acp::SessionId::new("test-session");
+
+    // Open config overlay while flushed_visual_count is high
+    type_string(&mut renderer, "/config", &handle, &session_id).await;
+    press_enter(&mut renderer, &handle, &session_id).await;
+
+    // Verify overlay rendered correctly
+    assert!(renderer.screen().has_config_menu());
+    let lines_before = renderer.writer().get_lines();
+    assert!(
+        lines_before.iter().any(|l| l.contains("Configuration")),
+        "Configuration should be visible before closing.\nBuffer:\n{}",
+        lines_before.join("\n")
+    );
+
+    // Close overlay with Esc
+    send_key(
+        &mut renderer,
+        KeyCode::Esc,
+        KeyModifiers::empty(),
+        &handle,
+        &session_id,
+    )
+    .await;
+
+    // Verify normal prompt rendering resumes
+    assert!(!renderer.screen().has_config_menu());
+    let lines_after = renderer.writer().get_lines();
+
+    // Prompt border/status line should be visible
+    assert!(
+        lines_after
+            .iter()
+            .any(|l| l.contains('╭') || l.contains('╰')),
+        "Prompt border should be visible after closing overlay.\nBuffer:\n{}",
+        lines_after.join("\n")
+    );
+
+    // Should not have an empty managed frame (at least some content should render)
+    let has_content = lines_after.iter().any(|l| !l.trim().is_empty());
+    assert!(
+        has_content,
+        "Frame should not be empty after closing overlay.\nBuffer:\n{}",
+        lines_after.join("\n")
+    );
+}

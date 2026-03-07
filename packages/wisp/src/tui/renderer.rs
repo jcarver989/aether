@@ -85,8 +85,7 @@ impl<T: Write> Renderer<T> {
             self.flushed_visual_count = overflow;
         }
 
-        // Content may have shrunk — clamp flush count
-        let effective_flush = self.flushed_visual_count.min(full_visual_lines.len());
+        let effective_flush = self.flushed_visual_count.min(overflow);
         let visual_lines = &full_visual_lines[effective_flush..];
         cursor_row = cursor_row.saturating_sub(effective_flush);
         if cursor_row >= visual_lines.len() {
