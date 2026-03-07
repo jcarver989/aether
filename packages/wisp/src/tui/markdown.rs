@@ -364,8 +364,7 @@ impl<'a> MarkdownRenderer<'a> {
             Tag::BlockQuote(_) => {
                 self.finish_current_line();
                 self.blockquote_depth += 1;
-                self.style_stack
-                    .push(Style::fg(self.theme.blockquote()));
+                self.style_stack.push(Style::fg(self.theme.blockquote()));
             }
             Tag::CodeBlock(kind) => {
                 self.finish_current_line();
