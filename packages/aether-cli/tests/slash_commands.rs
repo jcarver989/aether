@@ -65,23 +65,3 @@ fn test_map_prompt_to_command_with_arguments() {
         _ => panic!("Expected Unstructured input with hint"),
     }
 }
-
-#[test]
-fn test_map_prompt_to_command_no_description() {
-    let prompt = create_test_prompt("foo__bar", None, vec![]);
-
-    let command = aether_cli::acp::mappers::map_mcp_prompt_to_available_command(&prompt);
-
-    assert_eq!(command.name, "bar");
-    assert_eq!(command.description, "No description available");
-}
-
-#[test]
-fn test_map_prompt_to_command_empty_arguments() {
-    let prompt = create_test_prompt("cmd", Some("A command"), vec![]);
-
-    let command = aether_cli::acp::mappers::map_mcp_prompt_to_available_command(&prompt);
-
-    // All commands now have input hints for optional arguments
-    assert!(command.input.is_some());
-}

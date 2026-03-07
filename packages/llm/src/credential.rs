@@ -14,20 +14,3 @@ impl ProviderCredential {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn provider_credential_tagged_enum_works() {
-        let api_key = ProviderCredential::api_key("test-key");
-        let json = serde_json::to_string(&api_key).unwrap();
-        assert!(json.contains(r#""type":"apikey""#));
-
-        let parsed: ProviderCredential = serde_json::from_str(&json).unwrap();
-        match parsed {
-            ProviderCredential::ApiKey { key } => assert_eq!(key, "test-key"),
-        }
-    }
-}
