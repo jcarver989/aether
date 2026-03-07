@@ -12,7 +12,7 @@ const MAX_DIFF_LINES: usize = 20;
 struct DiffStyle<'a> {
     prefix: &'a str,
     fg: Color,
-    bg: Color,
+    bg: Option<Color>,
 }
 
 /// Render a diff preview with syntax-highlighted context/removed/added lines.
@@ -35,17 +35,17 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
     let context_style = DiffStyle {
         prefix: "    ",
         fg: theme.code_fg(),
-        bg: theme.code_bg(),
+        bg: None,
     };
     let removed_style = DiffStyle {
         prefix: "  - ",
         fg: theme.diff_removed_fg(),
-        bg: theme.diff_removed_bg(),
+        bg: Some(theme.diff_removed_bg()),
     };
     let added_style = DiffStyle {
         prefix: "  + ",
         fg: theme.diff_added_fg(),
-        bg: theme.diff_added_bg(),
+        bg: Some(theme.diff_added_bg()),
     };
 
     let mut old_line = preview.start_line.unwrap_or(0);
@@ -71,10 +71,11 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
             }
         }
 
-        line.push_span(Span::with_style(
-            style.prefix,
-            Style::fg(style.fg).bg_color(style.bg),
-        ));
+        let mut prefix_style = Style::fg(style.fg);
+        if let Some(bg) = style.bg {
+            prefix_style = prefix_style.bg_color(bg);
+        }
+        line.push_span(Span::with_style(style.prefix, prefix_style));
         push_highlighted_spans(
             &mut line,
             &diff_line.content,
@@ -103,7 +104,7 @@ fn push_highlighted_spans(
     line: &mut Line,
     src: &str,
     highlighter: &mut Option<HighlightLines<'_>>,
-    bg: Color,
+    bg: Option<Color>,
     theme: &Theme,
 ) {
     if let Some(h) = highlighter
@@ -111,17 +112,20 @@ fn push_highlighted_spans(
     {
         for (syntect_style, text) in ranges {
             let mut style = syntect_to_wisp_style(syntect_style);
-            style.bg = Some(bg);
+            if let Some(bg) = bg {
+                style.bg = Some(bg);
+            }
             line.push_span(Span::with_style(text, style));
         }
         return;
     }
 
     // Fallback: plain text with bg tint
-    line.push_span(Span::with_style(
-        src,
-        Style::fg(theme.code_fg()).bg_color(bg),
-    ));
+    let mut style = Style::fg(theme.code_fg());
+    if let Some(bg) = bg {
+        style = style.bg_color(bg);
+    }
+    line.push_span(Span::with_style(src, style));
 }
 
 #[cfg(test)]
@@ -328,7 +332,7 @@ mod tests {
         let theme = test_theme();
         let lines = highlight_diff(&preview, &theme);
         let prefix_span = &lines[0].spans()[0];
-        assert_eq!(prefix_span.style().bg, Some(theme.code_bg()));
+        assert_eq!(prefix_span.style().bg, None);
     }
 
     #[test]
