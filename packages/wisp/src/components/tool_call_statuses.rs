@@ -1119,8 +1119,7 @@ mod tests {
         ));
 
         // Send an update with display_value but keep running (preview meta)
-        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml"))
-            .into_map();
+        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml")).into_map();
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
             acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::InProgress),
@@ -1147,8 +1146,8 @@ mod tests {
         ));
 
         // Send preview meta while running
-        let preview_meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml"))
-            .into_map();
+        let preview_meta =
+            ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml")).into_map();
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
             acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::InProgress),

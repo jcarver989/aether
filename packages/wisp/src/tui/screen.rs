@@ -57,6 +57,7 @@ impl Style {
         self
     }
 
+    #[allow(dead_code)]
     pub fn dim(mut self) -> Self {
         self.dim = true;
         self

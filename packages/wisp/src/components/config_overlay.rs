@@ -83,6 +83,7 @@ impl ConfigOverlay {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_server_overlay(mut self) -> Self {
         self.server_overlay = Some(ServerStatusOverlay::new(self.server_statuses.clone()));
         self

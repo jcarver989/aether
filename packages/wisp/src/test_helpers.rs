@@ -15,6 +15,7 @@ pub fn with_wisp_home(path: &Path, f: impl FnOnce()) {
     }
 }
 
+#[allow(dead_code)]
 pub const CUSTOM_TMTHEME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

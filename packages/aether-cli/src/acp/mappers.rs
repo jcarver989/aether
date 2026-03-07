@@ -744,27 +744,19 @@ mod tests {
             arguments: "{}".to_string(),
         };
 
-        let notification = map_tool_progress_to_notification(
-            session_id,
-            &request,
-            0.0,
-            None,
-            Some(&serialized),
-        )
-        .expect("should produce notification");
+        let notification =
+            map_tool_progress_to_notification(session_id, &request, 0.0, None, Some(&serialized))
+                .expect("should produce notification");
 
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 assert_eq!(&*update.tool_call_id.0, "call_789");
                 let meta_map = update.meta.expect("meta should be present");
-                let parsed = ToolResultMeta::from_map(&meta_map)
-                    .expect("should parse as ToolResultMeta");
+                let parsed =
+                    ToolResultMeta::from_map(&meta_map).expect("should parse as ToolResultMeta");
                 assert_eq!(parsed.display.title, "Read file");
                 assert_eq!(parsed.display.value, "main.rs");
-                assert_eq!(
-                    update.fields.status,
-                    Some(acp::ToolCallStatus::InProgress)
-                );
+                assert_eq!(update.fields.status, Some(acp::ToolCallStatus::InProgress));
                 // Should NOT have content (no text progress fallback)
                 assert!(update.fields.content.is_none());
             }
