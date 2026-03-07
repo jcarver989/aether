@@ -47,7 +47,7 @@ impl Component for ToolCallStatusView {
         let display_text = self
             .display_value
             .as_ref()
-            .filter(|v| !v.is_empty() && !matches!(self.status, ToolCallStatus::Running))
+            .filter(|v| !v.is_empty())
             .map_or_else(
                 || Self::format_arguments(&self.arguments),
                 |v| format!(" ({v})"),
@@ -1110,7 +1110,7 @@ mod tests {
     }
 
     #[test]
-    fn test_display_value_not_shown_while_running() {
+    fn test_display_value_shown_while_running() {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call(
             "tool-1",
@@ -1118,8 +1118,8 @@ mod tests {
             Some(r#"{"filePath":"Cargo.toml"}"#),
         ));
 
-        // Send an update with display_value but keep running
-        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"))
+        // Send an update with display_value but keep running (preview meta)
+        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml"))
             .into_map();
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
@@ -1131,10 +1131,48 @@ mod tests {
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
         let text = lines[0].plain_text();
-        // While running, should show raw args, not display_value
         assert!(
-            !text.contains("(Cargo.toml, 156 lines)"),
-            "display_value should not appear while running: {text}"
+            text.contains("(Cargo.toml)"),
+            "Preview display_value should appear while running: {text}"
+        );
+    }
+
+    #[test]
+    fn test_result_meta_overrides_preview() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call(
+            "tool-1",
+            "Read file",
+            Some(r#"{"filePath":"Cargo.toml"}"#),
+        ));
+
+        // Send preview meta while running
+        let preview_meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml"))
+            .into_map();
+        let update = acp::ToolCallUpdate::new(
+            "tool-1".to_string(),
+            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::InProgress),
+        )
+        .meta(preview_meta);
+        statuses.on_tool_call_update(&update);
+
+        // Complete with richer meta
+        let result_meta =
+            ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"))
+                .into_map();
+        let update = acp::ToolCallUpdate::new(
+            "tool-1".to_string(),
+            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
+        )
+        .meta(result_meta);
+        statuses.on_tool_call_update(&update);
+
+        let lines = statuses.render(&ctx());
+        assert_eq!(lines.len(), 1);
+        let text = lines[0].plain_text();
+        assert!(
+            text.contains("(Cargo.toml, 156 lines)"),
+            "Completion meta should override preview: {text}"
         );
     }
 

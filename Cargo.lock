@@ -2463,6 +2463,7 @@ dependencies = [
  "ignore",
  "llm",
  "lsp-types",
+ "mcp-servers",
  "mcp_utils",
  "regex",
  "reqwest",
