@@ -370,7 +370,7 @@ mod tests {
                 SystemContent::Text(text) => {
                     assert_eq!(text, "You are helpful");
                 }
-                _ => panic!("Expected text system content"),
+                SystemContent::Blocks(_) => panic!("Expected text system content"),
             }
         } else {
             panic!("Expected system prompt");
@@ -418,7 +418,7 @@ mod tests {
                     assert_eq!(text, "Hello");
                     assert!(cache_control.is_some());
                 }
-                _ => panic!("Expected blocks system content for caching"),
+                SystemContent::Text(_) => panic!("Expected blocks system content for caching"),
             }
         } else {
             panic!("Expected system prompt");
@@ -458,7 +458,9 @@ mod tests {
                 SystemContent::Text(text) => {
                     assert_eq!(text, "Hello");
                 }
-                _ => panic!("Expected text system content when caching disabled"),
+                SystemContent::Blocks(_) => {
+                    panic!("Expected text system content when caching disabled")
+                }
             }
         } else {
             panic!("Expected system prompt");

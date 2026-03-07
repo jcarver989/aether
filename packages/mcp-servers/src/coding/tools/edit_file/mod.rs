@@ -123,6 +123,7 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     })
 }
 
+#[allow(clippy::used_underscore_binding)]
 #[cfg(test)]
 mod tests {
     use super::*;

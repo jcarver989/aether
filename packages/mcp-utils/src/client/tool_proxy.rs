@@ -331,7 +331,10 @@ mod tests {
     }
 
     fn make_proxy(members: &[&str]) -> ToolProxy {
-        let members: HashSet<String> = members.iter().map(|s| s.to_string()).collect();
+        let members: HashSet<String> = members
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         ToolProxy::new(
             "myproxy".to_string(),
             members,

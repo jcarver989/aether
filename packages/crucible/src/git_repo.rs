@@ -448,7 +448,7 @@ mod tests {
         // Verify working directory is empty (no files checked out)
         let entries: Vec<_> = fs::read_dir(clone_dir.path())
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.file_name() != ".git")
             .collect();
         assert_eq!(

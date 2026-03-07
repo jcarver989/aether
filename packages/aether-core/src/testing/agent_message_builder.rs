@@ -1,4 +1,5 @@
 use crate::events::AgentMessage;
+use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use serde::Serialize;
 
 pub fn agent_message(message_id: &str) -> AgentMessageBuilder {
@@ -47,8 +48,6 @@ impl AgentMessageBuilder {
         let result_value = serde_json::to_value(result).expect("Failed to serialize result");
         let result_yaml =
             serde_yml::to_string(&result_value).unwrap_or_else(|_| result_value.to_string());
-
-        use llm::{ToolCallRequest, ToolCallResult};
 
         // Tool call start
         self.chunks.push(AgentMessage::ToolCall {
@@ -107,8 +106,6 @@ impl AgentMessageBuilder {
         let error_result = format!(
             "Tool execution error: Annotated {{ raw: Text(RawTextContent {{ text: \"{error_message}\", meta: None }}), annotations: None }}"
         );
-
-        use llm::{ToolCallError, ToolCallRequest};
 
         // Tool call start
         self.chunks.push(AgentMessage::ToolCall {

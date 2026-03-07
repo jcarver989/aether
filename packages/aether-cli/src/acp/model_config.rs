@@ -234,12 +234,11 @@ fn mode_to_effective_config(
         return None;
     }
 
-    let reasoning_effort = parse_mode_reasoning_effort(mode.reasoning_effort.as_deref())?;
+    let reasoning_effort = match mode.reasoning_effort.as_deref() {
+        None => None,
+        Some(value) => ReasoningEffort::parse(value).ok()?,
+    };
     Some((mode.model.clone(), reasoning_effort))
-}
-
-fn parse_mode_reasoning_effort(reasoning_effort: Option<&str>) -> Option<Option<ReasoningEffort>> {
-    reasoning_effort.map_or(Some(None), |value| ReasoningEffort::parse(value).ok())
 }
 
 /// Build config options for the given state

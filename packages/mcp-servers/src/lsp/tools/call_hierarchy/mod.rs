@@ -114,7 +114,7 @@ mod tests {
                 start: lsp_types::Position { line, character: 3 },
                 end: lsp_types::Position {
                     line,
-                    character: 3 + name.len() as u32,
+                    character: 3 + u32::try_from(name.len()).expect("symbol name too long"),
                 },
             },
             data: None,

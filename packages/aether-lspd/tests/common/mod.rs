@@ -12,7 +12,8 @@ use lsp_types::{
 /// Default timeout for rust-analyzer initialization
 pub const RA_INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
-/// Helper to create DidOpenTextDocumentParams
+/// Helper to create `DidOpenTextDocumentParams`
+#[allow(dead_code)]
 pub fn did_open_params(uri: lsp_types::Uri, content: &str) -> DidOpenTextDocumentParams {
     DidOpenTextDocumentParams {
         text_document: TextDocumentItem {
@@ -24,7 +25,8 @@ pub fn did_open_params(uri: lsp_types::Uri, content: &str) -> DidOpenTextDocumen
     }
 }
 
-/// Helper to create DidChangeTextDocumentParams
+/// Helper to create `DidChangeTextDocumentParams`
+#[allow(dead_code)]
 pub fn did_change_params(
     uri: lsp_types::Uri,
     version: i32,

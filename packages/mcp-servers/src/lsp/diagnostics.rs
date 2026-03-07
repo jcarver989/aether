@@ -202,7 +202,7 @@ mod tests {
     }
 
     fn make_uri(path: &str) -> Uri {
-        format!("file://{}", path).parse().unwrap()
+        format!("file://{path}").parse().unwrap()
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn test_count_by_severity() {
         let uri = make_uri("/path/to/file.rs");
-        let diagnostics = vec![
+        let diagnostics = [
             make_diagnostic(DiagnosticSeverity::ERROR, "error 1", 0),
             make_diagnostic(DiagnosticSeverity::ERROR, "error 2", 1),
             make_diagnostic(DiagnosticSeverity::WARNING, "warning 1", 2),

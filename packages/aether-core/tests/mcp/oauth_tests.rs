@@ -39,7 +39,7 @@ impl OAuthHandler for FakeOAuthHandler {
 struct CancellingOAuthHandler;
 
 impl OAuthHandler for CancellingOAuthHandler {
-    fn redirect_uri(&self) -> &str {
+    fn redirect_uri(&self) -> &'static str {
         "http://127.0.0.1:0/oauth2callback"
     }
 

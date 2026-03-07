@@ -169,6 +169,13 @@ pub struct FakeSearchClient {
 }
 
 #[cfg(test)]
+impl Default for FakeSearchClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
 impl FakeSearchClient {
     pub fn new() -> Self {
         Self {

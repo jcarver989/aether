@@ -168,7 +168,11 @@ mod tests {
 
         // Should find all .rs files including nested ones
         assert!(result.count >= 4); // test.rs, main.rs, lib.rs, nested.rs
-        assert!(result.matches.iter().all(|p| p.ends_with(".rs")));
+        assert!(result.matches.iter().all(|p| {
+            std::path::Path::new(p)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+        }));
     }
 
     #[tokio::test]

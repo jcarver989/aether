@@ -27,7 +27,7 @@ async fn test_openrouter_negative_token_handling() {
                 finish_reason: Some(openai_compatible::types::FinishReason::Stop),
                 logprobs: None,
             }],
-            created: 1234567890,
+            created: 1_234_567_890,
             model: "openai/gpt-3.5-turbo".to_string(),
             system_fingerprint: None,
             object: "chat.completion.chunk".to_string(),
@@ -42,7 +42,7 @@ async fn test_openrouter_negative_token_handling() {
     let stream = tokio_stream::iter(
         stream_items
             .into_iter()
-            .map(|r| r.map(|response| response.into())),
+            .map(|r| r.map(std::convert::Into::into)),
     );
     let mut processed_stream = Box::pin(process_completion_stream(stream));
 
@@ -71,9 +71,9 @@ async fn test_openrouter_negative_token_handling() {
     assert_eq!(*usage_events[0].1, 10, "Output tokens should be 10");
 }
 
-/// Test that usage data is captured when sent in a separate chunk after finish_reason
-/// This matches OpenRouter's actual behavior where usage comes in the "last SSE message"
-/// See: https://openrouter.ai/docs/guides/usage-accounting
+/// Test that usage data is captured when sent in a separate chunk after `finish_reason`
+/// This matches `OpenRouter`'s actual behavior where usage comes in the "last SSE message"
+/// See: <https://openrouter.ai/docs/guides/usage-accounting>
 #[tokio::test]
 async fn test_openrouter_usage_in_separate_final_chunk() {
     let stream_items: Vec<Result<ChatCompletionStreamResponse, std::io::Error>> = vec![
@@ -91,7 +91,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
                 finish_reason: None,
                 logprobs: None,
             }],
-            created: 1234567890,
+            created: 1_234_567_890,
             model: "openai/gpt-3.5-turbo".to_string(),
             system_fingerprint: None,
             object: "chat.completion.chunk".to_string(),
@@ -111,7 +111,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
                 finish_reason: Some(openai_compatible::types::FinishReason::Stop),
                 logprobs: None,
             }],
-            created: 1234567890,
+            created: 1_234_567_890,
             model: "openai/gpt-3.5-turbo".to_string(),
             system_fingerprint: None,
             object: "chat.completion.chunk".to_string(),
@@ -121,7 +121,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
         Ok(ChatCompletionStreamResponse {
             id: "gen-123".to_string(),
             choices: vec![], // Empty choices array
-            created: 1234567890,
+            created: 1_234_567_890,
             model: "openai/gpt-3.5-turbo".to_string(),
             system_fingerprint: None,
             object: "chat.completion.chunk".to_string(),
@@ -137,7 +137,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
     let stream = tokio_stream::iter(
         stream_items
             .into_iter()
-            .map(|r| r.map(|response| response.into())),
+            .map(|r| r.map(std::convert::Into::into)),
     );
     let mut processed_stream = Box::pin(process_completion_stream(stream));
 
@@ -178,7 +178,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
     assert_eq!(text_events[0], "Hello world");
 }
 
-/// Test that the OpenRouterChatRequest serializes the usage parameter correctly
+/// Test that the `OpenRouterChatRequest` serializes the usage parameter correctly
 #[test]
 fn test_openrouter_request_serialization() {
     use async_openai::types::chat::{

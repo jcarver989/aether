@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn test_plan_meta_status_serde_snake_case() {
-        let json = serde_json::to_value(&PlanMetaStatus::InProgress).unwrap();
+        let json = serde_json::to_value(PlanMetaStatus::InProgress).unwrap();
         assert_eq!(json, serde_json::Value::String("in_progress".to_string()));
     }
 

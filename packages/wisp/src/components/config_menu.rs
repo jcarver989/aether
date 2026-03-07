@@ -315,7 +315,7 @@ impl ConfigMenu {
             return;
         };
 
-        entry.current_raw_value = change.new_value.clone();
+        entry.current_raw_value.clone_from(&change.new_value);
         if let Some(index) = entry
             .values
             .iter()

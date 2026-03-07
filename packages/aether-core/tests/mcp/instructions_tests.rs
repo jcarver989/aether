@@ -195,7 +195,7 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
             assert!(content.contains("<mcp-server-instructions name=\"test-server\">"));
             assert!(content.contains("Test instructions"));
         } else {
-            panic!("Expected system message, got: {:?}", first_msg);
+            panic!("Expected system message, got: {first_msg:?}");
         }
     } else {
         panic!("Expected at least one message");

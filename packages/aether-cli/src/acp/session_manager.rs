@@ -163,8 +163,9 @@ fn select_initial_mode(
     validated_modes(settings, available)
         .into_iter()
         .next()
-        .map(|mode| (Some(mode.name), Some((mode.model, mode.reasoning_effort))))
-        .unwrap_or((None, None))
+        .map_or((None, None), |mode| {
+            (Some(mode.name), Some((mode.model, mode.reasoning_effort)))
+        })
 }
 
 #[cfg(test)]
@@ -388,7 +389,7 @@ impl Agent for SessionManager {
 
         let mut config = SessionConfigState::new(model_str.clone());
         config.reasoning_effort = initial_reasoning_effort;
-        config.selected_mode = initial_selected_mode.clone();
+        config.selected_mode.clone_from(&initial_selected_mode);
 
         let state = SessionState {
             relay_tx: cmd_tx,

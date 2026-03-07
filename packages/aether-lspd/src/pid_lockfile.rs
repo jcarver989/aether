@@ -75,7 +75,7 @@ fn read_pid(path: &Path) -> Option<u32> {
 fn is_process_running(pid: u32) -> bool {
     #[cfg(unix)]
     {
-        unsafe { libc::kill(pid as i32, 0) == 0 }
+        unsafe { libc::kill(pid.cast_signed(), 0) == 0 }
     }
     #[cfg(not(unix))]
     {

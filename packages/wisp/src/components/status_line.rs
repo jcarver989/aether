@@ -317,13 +317,13 @@ mod tests {
         // Verify order: agent name should appear before mode, mode before model
         let agent_index = text.find("wisp").expect("agent position");
         let mode_index = text.find("Planner").expect("mode position");
-        let model_index = text.find("gpt-4o").expect("model position");
+        let llm_index = text.find("gpt-4o").expect("model position");
         assert!(
             agent_index < mode_index,
             "agent should come before mode in status line"
         );
         assert!(
-            mode_index < model_index,
+            mode_index < llm_index,
             "mode should come before model in status line"
         );
     }
@@ -432,7 +432,7 @@ mod tests {
             .iter()
             .find(|s| s.text().contains("Planner"))
             .map(|s| s.style().fg);
-        let model_fg = spans
+        let llm_fg = spans
             .iter()
             .find(|s| s.text().contains("gpt-4o"))
             .map(|s| s.style().fg);
@@ -442,11 +442,11 @@ mod tests {
             "agent and mode should have different colors"
         );
         assert_ne!(
-            mode_fg, model_fg,
+            mode_fg, llm_fg,
             "mode and model should have different colors"
         );
         assert_ne!(
-            agent_fg, model_fg,
+            agent_fg, llm_fg,
             "agent and model should have different colors"
         );
     }

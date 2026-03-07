@@ -43,15 +43,20 @@ pub fn create_test_rmcp_tool(name: &str, description: &str) -> RmcpTool {
 pub fn create_test_rmcp_tool_with_params(
     name: &str,
     description: &str,
-    properties: Map<String, Value>,
-    required: Vec<&str>,
+    properties: &Map<String, Value>,
+    required: &[&str],
 ) -> RmcpTool {
     let mut schema = Map::new();
     schema.insert("type".to_string(), json!("object"));
     schema.insert("properties".to_string(), json!(properties));
     schema.insert(
         "required".to_string(),
-        json!(required.iter().map(|s| s.to_string()).collect::<Vec<_>>()),
+        json!(
+            required
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
+        ),
     );
 
     RmcpTool::new(name.to_string(), description.to_string(), Arc::new(schema))
@@ -159,7 +164,7 @@ pub fn create_test_tool_definition(name: &str, description: &str) -> ToolDefinit
     }
 }
 
-pub fn create_test_tool_call(id: &str, name: &str, arguments: Value) -> ToolCallRequest {
+pub fn create_test_tool_call(id: &str, name: &str, arguments: &Value) -> ToolCallRequest {
     ToolCallRequest {
         id: id.to_string(),
         name: name.to_string(),
@@ -217,7 +222,7 @@ pub fn create_test_json_object(pairs: Vec<(&str, Value)>) -> Value {
 
 /// Fix malformed JSON string arguments from LLM models.
 /// Some models incorrectly return argument values as JSON strings instead of their actual types.
-/// For example: {"query": "[\"value\"]"} instead of {"query": ["value"]}
+/// For example: `{"query": "[\"value\"]"}` instead of `{"query": ["value"]}`
 pub fn fix_json_string_arguments(mut arguments: Value) -> Value {
     if let Some(obj) = arguments.as_object_mut() {
         for (_key, value) in obj.iter_mut() {
@@ -233,7 +238,7 @@ pub fn fix_json_string_arguments(mut arguments: Value) -> Value {
                         | Value::Null => {
                             *value = parsed_val;
                         }
-                        _ => {
+                        Value::String(_) => {
                             // If it's still a string, don't replace
                         }
                     }
@@ -249,7 +254,7 @@ pub fn fix_json_string_arguments(mut arguments: Value) -> Value {
 pub fn assert_stream_event_matches(actual: &LlmResponse, expected: &LlmResponse) {
     match (actual, expected) {
         (LlmResponse::Text { chunk: a }, LlmResponse::Text { chunk: b }) => {
-            assert_eq!(a, b)
+            assert_eq!(a, b);
         }
         (
             LlmResponse::ToolRequestStart {

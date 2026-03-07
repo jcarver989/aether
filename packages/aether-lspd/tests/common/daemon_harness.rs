@@ -15,10 +15,10 @@ pub enum HarnessError {
 impl std::fmt::Display for HarnessError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HarnessError::SpawnFailed(e) => write!(f, "Failed to spawn daemon: {}", e),
-            HarnessError::ClientError(e) => write!(f, "Client error: {}", e),
+            HarnessError::SpawnFailed(e) => write!(f, "Failed to spawn daemon: {e}"),
+            HarnessError::ClientError(e) => write!(f, "Client error: {e}"),
             HarnessError::DaemonNotReady => write!(f, "Daemon not ready after retries"),
-            HarnessError::KillFailed(e) => write!(f, "Failed to kill daemon: {}", e),
+            HarnessError::KillFailed(e) => write!(f, "Failed to kill daemon: {e}"),
         }
     }
 }
@@ -40,7 +40,7 @@ pub struct DaemonHarness {
 }
 
 impl DaemonHarness {
-    /// Spawn a daemon for testing using connect_or_spawn
+    /// Spawn a daemon for testing using `connect_or_spawn`
     pub async fn spawn(workspace_root: &Path, language: LanguageId) -> Result<Self, HarnessError> {
         let sock_path = socket_path(workspace_root, language);
         let lock_path = lockfile_path(&sock_path);
@@ -95,12 +95,12 @@ impl DaemonHarness {
     /// Kill the daemon by reading PID from lockfile and sending SIGTERM
     pub async fn kill(&self) -> Result<(), HarnessError> {
         let pid_str = fs::read_to_string(&self.lockfile_path)
-            .map_err(|e| HarnessError::KillFailed(format!("Failed to read lockfile: {}", e)))?;
+            .map_err(|e| HarnessError::KillFailed(format!("Failed to read lockfile: {e}")))?;
 
         let pid: i32 = pid_str
             .trim()
             .parse()
-            .map_err(|e| HarnessError::KillFailed(format!("Failed to parse PID: {}", e)))?;
+            .map_err(|e| HarnessError::KillFailed(format!("Failed to parse PID: {e}")))?;
 
         #[cfg(unix)]
         {
@@ -110,8 +110,7 @@ impl DaemonHarness {
 
                 if err.raw_os_error() != Some(libc::ESRCH) {
                     return Err(HarnessError::KillFailed(format!(
-                        "kill({}, SIGTERM) failed: {}",
-                        pid, err
+                        "kill({pid}, SIGTERM) failed: {err}"
                     )));
                 }
             }

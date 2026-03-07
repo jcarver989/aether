@@ -217,9 +217,8 @@ async fn test_simple_message_content() -> Result<(), Box<dyn Error>> {
         .find(|m| matches!(m, ChatMessage::User { .. }))
         .expect("Expected a user message");
 
-    let content = match user_message {
-        ChatMessage::User { content, .. } => content,
-        _ => panic!("Expected User message"),
+    let ChatMessage::User { content, .. } = user_message else {
+        panic!("Expected User message");
     };
 
     // Content should be exactly the user's message
@@ -324,8 +323,7 @@ async fn test_auto_continue_triggers_on_length_stop_reason() -> Result<(), Box<d
         .count();
     assert_eq!(
         auto_continue_count, 2,
-        "Expected 2 AutoContinue messages after length stop reasons, got {}",
-        auto_continue_count
+        "Expected 2 AutoContinue messages after length stop reasons, got {auto_continue_count}"
     );
 
     let auto_continues: Vec<_> = messages
@@ -381,8 +379,7 @@ async fn test_auto_continue_respects_max_limit() -> Result<(), Box<dyn Error>> {
         .count();
     assert_eq!(
         auto_continue_count, 2,
-        "Expected 2 AutoContinue messages (max limit), got {}",
-        auto_continue_count
+        "Expected 2 AutoContinue messages (max limit), got {auto_continue_count}"
     );
 
     assert!(

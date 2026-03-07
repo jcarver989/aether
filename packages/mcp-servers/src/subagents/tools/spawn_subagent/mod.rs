@@ -553,8 +553,8 @@ More text"#;
 
     #[test]
     fn test_extract_json_from_markdown_empty_block() {
-        let markdown = r#"```json
-```"#;
+        let markdown = r"```json
+```";
 
         let result = extract_json_from_markdown(markdown);
 

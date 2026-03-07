@@ -283,7 +283,7 @@ mod tests {
         let params = ContextUsageParams {
             usage_ratio: Some(0.75),
             tokens_used: 75000,
-            context_limit: Some(100000),
+            context_limit: Some(100_000),
         };
 
         let notification: ExtNotification = params.clone().into();
@@ -406,7 +406,7 @@ mod tests {
             &ContextUsageParams {
                 usage_ratio: Some(0.5),
                 tokens_used: 50000,
-                context_limit: Some(100000),
+                context_limit: Some(100_000),
             },
         );
 

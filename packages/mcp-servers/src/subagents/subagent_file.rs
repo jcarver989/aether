@@ -148,10 +148,8 @@ mod tests {
     fn create_agent_file(temp_dir: &TempDir, name: &str, description: &str, model: &str) {
         let agent_dir = temp_dir.path().join(name);
         std::fs::create_dir_all(&agent_dir).unwrap();
-        let content = format!(
-            "---\ndescription: {} \nmodel: {} \n---\n# Agent Content\n",
-            description, model
-        );
+        let content =
+            format!("---\ndescription: {description} \nmodel: {model} \n---\n# Agent Content\n");
         std::fs::write(agent_dir.join("AGENTS.md"), content).unwrap();
     }
 }

@@ -120,17 +120,18 @@ fn archive_pruned_skill(
 mod tests {
     use super::*;
     use crate::skills::skill_file::SKILL_FILENAME;
+    use std::fmt::Write;
     use tempfile::TempDir;
 
     fn create_agent_skill(skills_dir: &Path, name: &str, helpful: u32, harmful: u32) {
         let dir = skills_dir.join(name);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut content = format!("---\ndescription: Test skill\nagent_authored: true\n");
+        let mut content = "---\ndescription: Test skill\nagent_authored: true\n".to_string();
         if helpful > 0 {
-            content.push_str(&format!("helpful: {helpful}\n"));
+            writeln!(content, "helpful: {helpful}").expect("write to String should not fail");
         }
         if harmful > 0 {
-            content.push_str(&format!("harmful: {harmful}\n"));
+            writeln!(content, "harmful: {harmful}").expect("write to String should not fail");
         }
         content.push_str("---\nSome content.\n");
         std::fs::write(dir.join(SKILL_FILENAME), content).unwrap();
@@ -169,7 +170,7 @@ mod tests {
 
         let output = rate_skill(&input, skills_dir).unwrap();
         assert_eq!(output.status, RateSkillStatus::Scored);
-        assert_eq!(output.confidence, 0.0);
+        assert!(output.confidence.abs() < f64::EPSILON);
 
         let (fm, _) = read_and_parse(&skills_dir.join("tips")).unwrap();
         assert_eq!(fm.helpful, 0);

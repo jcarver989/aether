@@ -1,6 +1,6 @@
 use clap::Parser;
 use futures::StreamExt;
-use llm::providers::anthropic::*;
+use llm::providers::anthropic::AnthropicProvider;
 use llm::types::IsoString;
 use llm::{
     ChatMessage, Context, LlmResponse, ProviderFactory, StreamingModelProvider, ToolDefinition,
@@ -37,6 +37,7 @@ struct Args {
     temperature: f32,
 }
 
+#[allow(clippy::too_many_lines)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
@@ -140,12 +141,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 current_tool_call = Some((id.clone(), name, String::new()));
             }
             LlmResponse::ToolRequestArg { id, chunk } => {
-                if let Some((ref call_id, _, ref mut args)) = current_tool_call {
-                    if call_id == &id {
-                        args.push_str(&chunk);
-                        print!(".");
-                        io::stdout().flush().unwrap();
-                    }
+                if let Some((ref call_id, _, ref mut args)) = current_tool_call
+                    && call_id == &id
+                {
+                    args.push_str(&chunk);
+                    print!(".");
+                    io::stdout().flush().unwrap();
                 }
             }
             LlmResponse::ToolRequestComplete { tool_call } => {
@@ -182,10 +183,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 input_tokens,
                 output_tokens,
             } => {
-                println!(
-                    "\n📊 Token usage - input: {}, output: {}",
-                    input_tokens, output_tokens
-                );
+                println!("\n📊 Token usage - input: {input_tokens}, output: {output_tokens}");
             }
         }
     }
