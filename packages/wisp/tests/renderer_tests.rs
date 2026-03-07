@@ -3,7 +3,7 @@ mod test_terminal;
 use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol as acp;
 use test_terminal::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::{App, AppEvent, build_attachment_blocks};
+use wisp::components::app::{App, AppAction, AppEffect, build_attachment_blocks};
 use wisp::components::command_picker::CommandEntry;
 use wisp::tui::{Line, Renderer as FrameRenderer, theme::Theme};
 
@@ -51,34 +51,46 @@ impl Renderer {
         prompt_handle: &AcpPromptHandle,
         session_id: &acp::SessionId,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let effects = self.screen.on_key_event(key_event);
+        let effects = self
+            .screen
+            .dispatch(AppAction::Key(key_event), self.renderer.context());
         self.apply_effects(effects, Some((prompt_handle, session_id)))
             .await
     }
 
     async fn on_session_update(&mut self, update: acp::SessionUpdate) -> std::io::Result<()> {
-        let effects = self.screen.on_session_update(update);
+        let effects = self
+            .screen
+            .dispatch(AppAction::SessionUpdate(update), self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
     async fn on_prompt_done(&mut self) -> std::io::Result<()> {
-        let effects = self.screen.on_prompt_done(self.renderer.context());
+        let effects = self
+            .screen
+            .dispatch(AppAction::PromptDone, self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
     async fn on_tick(&mut self) -> std::io::Result<()> {
-        let effects = self.screen.on_tick();
+        let effects = self
+            .screen
+            .dispatch(AppAction::Tick, self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
     async fn on_paste(&mut self, text: &str) -> std::io::Result<()> {
-        let effects = self.screen.on_paste(text);
+        let effects = self
+            .screen
+            .dispatch(AppAction::Paste(text.to_string()), self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
     async fn on_resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
         self.renderer.update_render_context_with((cols, rows));
-        let effects = App::on_resize(cols, rows);
+        let effects = self
+            .screen
+            .dispatch(AppAction::Resize { cols, rows }, self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
@@ -96,7 +108,7 @@ impl Renderer {
 
     async fn apply_effects(
         &mut self,
-        effects: Vec<AppEvent>,
+        effects: Vec<AppEffect>,
         prompt: Option<(&AcpPromptHandle, &acp::SessionId)>,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let mut should_render = false;
@@ -104,12 +116,12 @@ impl Renderer {
 
         for effect in effects {
             match effect {
-                AppEvent::Exit => action = LoopAction::Exit,
-                AppEvent::Render => should_render = true,
-                AppEvent::PushScrollback(lines) => {
+                AppEffect::Exit => action = LoopAction::Exit,
+                AppEffect::Render => should_render = true,
+                AppEffect::PushScrollback(lines) => {
                     self.renderer.push_to_scrollback(&lines)?;
                 }
-                AppEvent::PromptSubmit {
+                AppEffect::PromptSubmit {
                     user_input,
                     attachments,
                 } => {
@@ -135,7 +147,7 @@ impl Renderer {
                         },
                     )?;
                 }
-                AppEvent::SetConfigOption {
+                AppEffect::SetConfigOption {
                     config_id,
                     new_value,
                 } => {
@@ -144,25 +156,25 @@ impl Renderer {
                     };
                     let _ = prompt_handle.set_config_option(session_id, &config_id, &new_value);
                 }
-                AppEvent::Cancel => {
+                AppEffect::Cancel => {
                     let Some((prompt_handle, session_id)) = prompt else {
                         return Err(std::io::Error::other("missing prompt context").into());
                     };
                     prompt_handle.cancel(session_id)?;
                 }
-                AppEvent::AuthenticateMcpServer { server_name } => {
+                AppEffect::AuthenticateMcpServer { server_name } => {
                     let Some((prompt_handle, session_id)) = prompt else {
                         return Err(std::io::Error::other("missing prompt context").into());
                     };
                     let _ = prompt_handle.authenticate_mcp_server(session_id, &server_name);
                 }
-                AppEvent::AuthenticateProvider { method_id } => {
+                AppEffect::AuthenticateProvider { method_id } => {
                     let Some((prompt_handle, session_id)) = prompt else {
                         return Err(std::io::Error::other("missing prompt context").into());
                     };
                     let _ = prompt_handle.authenticate(session_id, &method_id);
                 }
-                AppEvent::SetTheme { .. } => {
+                AppEffect::SetTheme { .. } => {
                     // Theme apply side effects are handled in terminal_ui; renderer tests ignore.
                 }
             }
@@ -176,22 +188,22 @@ impl Renderer {
     }
 
     #[allow(clippy::unused_async)]
-    async fn apply_effects_no_prompt(&mut self, effects: Vec<AppEvent>) -> std::io::Result<()> {
+    async fn apply_effects_no_prompt(&mut self, effects: Vec<AppEffect>) -> std::io::Result<()> {
         let mut should_render = false;
 
         for effect in effects {
             match effect {
-                AppEvent::Exit => {}
-                AppEvent::Render => should_render = true,
-                AppEvent::PushScrollback(lines) => {
+                AppEffect::Exit => {}
+                AppEffect::Render => should_render = true,
+                AppEffect::PushScrollback(lines) => {
                     self.renderer.push_to_scrollback(&lines)?;
                 }
-                AppEvent::PromptSubmit { .. }
-                | AppEvent::SetConfigOption { .. }
-                | AppEvent::SetTheme { .. }
-                | AppEvent::Cancel
-                | AppEvent::AuthenticateMcpServer { .. }
-                | AppEvent::AuthenticateProvider { .. } => {
+                AppEffect::PromptSubmit { .. }
+                | AppEffect::SetConfigOption { .. }
+                | AppEffect::SetTheme { .. }
+                | AppEffect::Cancel
+                | AppEffect::AuthenticateMcpServer { .. }
+                | AppEffect::AuthenticateProvider { .. } => {
                     panic!("unexpected prompt/config/cancel effect without prompt context");
                 }
             }

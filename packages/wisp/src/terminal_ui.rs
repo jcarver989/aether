@@ -1,5 +1,5 @@
-use crate::app_state::AppState;
-use crate::components::app::{App, AppEvent, build_attachment_blocks};
+use crate::components::app::{App, AppAction, AppEffect, build_attachment_blocks};
+use crate::runtime_state::RuntimeState;
 use crate::settings::{load_or_create_settings, save_settings};
 use crate::tui::{Line, Renderer, spawn_terminal_event_task, theme::Theme};
 use acp_utils::client::AcpEvent;
@@ -10,8 +10,8 @@ use std::io::{self, Write};
 use std::time::Duration;
 use tokio::{select, time};
 
-pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::error::Error>> {
-    let AppState {
+pub(crate) async fn run_terminal_ui(state: RuntimeState) -> Result<(), Box<dyn std::error::Error>> {
+    let RuntimeState {
         session_id,
         agent_name,
         config_options,
@@ -81,36 +81,37 @@ pub(crate) async fn run_terminal_ui(state: AppState) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-/// Extract effects from an ACP event without rendering. Multiple events can be
+/// Map an ACP event to an action and dispatch it. Multiple events can be
 /// batched and their effects applied together in a single render pass.
 fn collect_acp_events<T: Write>(
     screen: &mut App,
     renderer: &Renderer<T>,
     event: AcpEvent,
-) -> Vec<AppEvent> {
-    match event {
-        AcpEvent::SessionUpdate(update) => screen.on_session_update(*update),
-        AcpEvent::ExtNotification(notification) => screen.on_ext_notification(&notification),
-        AcpEvent::PromptDone(_) => screen.on_prompt_done(renderer.context()),
+) -> Vec<AppEffect> {
+    let action = match event {
+        AcpEvent::SessionUpdate(update) => AppAction::SessionUpdate(*update),
+        AcpEvent::ExtNotification(notification) => AppAction::ExtNotification(notification),
+        AcpEvent::PromptDone(_) => AppAction::PromptDone,
         AcpEvent::PromptError(e) => {
             eprintln!("Prompt error: {e}");
-            screen.on_prompt_error()
+            AppAction::PromptError
         }
         AcpEvent::ElicitationRequest {
             params,
             response_tx,
-        } => screen.on_elicitation_request(params, response_tx),
+        } => AppAction::ElicitationRequest {
+            params,
+            response_tx,
+        },
         AcpEvent::AuthenticateComplete { method_id } => {
-            screen.on_authenticate_complete(&method_id);
-            vec![AppEvent::Render]
+            AppAction::AuthenticateComplete { method_id }
         }
         AcpEvent::AuthenticateFailed { method_id, error } => {
-            tracing::warn!("Provider auth failed for {method_id}: {error}");
-            screen.on_authenticate_failed(&method_id);
-            vec![AppEvent::Render]
+            AppAction::AuthenticateFailed { method_id, error }
         }
-        AcpEvent::ConnectionClosed => vec![AppEvent::Exit],
-    }
+        AcpEvent::ConnectionClosed => return vec![AppEffect::Exit],
+    };
+    screen.dispatch(action, renderer.context())
 }
 
 async fn on_terminal_event<T: Write>(
@@ -120,48 +121,25 @@ async fn on_terminal_event<T: Write>(
     session_id: &acp::SessionId,
     terminal_event: Event,
 ) -> bool {
-    match terminal_event {
-        Event::Key(key_event) => {
-            if should_handle_key_event(key_event.kind) {
-                let effects = screen.on_key_event(key_event);
-                match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects)
-                    .await
-                {
-                    Ok(true) => true,
-                    Ok(false) => false,
-                    Err(err) => {
-                        eprintln!("Error handling key event: {err}");
-                        false
-                    }
-                }
-            } else {
-                false
-            }
+    let effects = match terminal_event {
+        Event::Key(key_event) if should_handle_key_event(key_event.kind) => {
+            screen.dispatch(AppAction::Key(key_event), renderer.context())
         }
-        Event::Paste(text) => {
-            let effects = screen.on_paste(&text);
-            match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects).await {
-                Ok(true) => true,
-                Ok(false) => false,
-                Err(e) => {
-                    eprintln!("Error handling paste: {e}");
-                    false
-                }
-            }
-        }
+        Event::Paste(text) => screen.dispatch(AppAction::Paste(text), renderer.context()),
         Event::Resize(cols, rows) => {
             renderer.update_render_context_with((cols, rows));
-            let effects = App::on_resize(cols, rows);
-            match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects).await {
-                Ok(true) => true,
-                Ok(false) => false,
-                Err(e) => {
-                    eprintln!("Error handling resize: {e}");
-                    false
-                }
-            }
+            screen.dispatch(AppAction::Resize { cols, rows }, renderer.context())
         }
-        _ => false,
+        _ => return false,
+    };
+
+    match apply_screen_effects(renderer, screen, prompt_handle, session_id, effects).await {
+        Ok(true) => true,
+        Ok(false) => false,
+        Err(e) => {
+            eprintln!("Error handling terminal event: {e}");
+            false
+        }
     }
 }
 
@@ -171,7 +149,7 @@ async fn on_tick<T: Write>(
     prompt_handle: &acp_utils::client::AcpPromptHandle,
     session_id: &acp::SessionId,
 ) {
-    let effects = screen.on_tick();
+    let effects = screen.dispatch(AppAction::Tick, renderer.context());
     if let Err(e) = apply_screen_effects(renderer, screen, prompt_handle, session_id, effects).await
     {
         eprintln!("Error on tick: {e}");
@@ -199,22 +177,22 @@ async fn apply_screen_effects<T: Write>(
     screen: &mut App,
     prompt_handle: &acp_utils::client::AcpPromptHandle,
     session_id: &acp::SessionId,
-    effects: Vec<AppEvent>,
+    effects: Vec<AppEffect>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut should_render = false;
 
     for effect in effects {
         match effect {
-            AppEvent::Exit => return Ok(true),
-            AppEvent::Render => should_render = true,
-            AppEvent::PushScrollback(lines) => {
+            AppEffect::Exit => return Ok(true),
+            AppEffect::Render => should_render = true,
+            AppEffect::PushScrollback(lines) => {
                 if should_render {
                     renderer.render(screen)?;
                     should_render = false;
                 }
                 renderer.push_to_scrollback(&lines)?;
             }
-            AppEvent::PromptSubmit {
+            AppEffect::PromptSubmit {
                 user_input,
                 attachments,
             } => {
@@ -229,25 +207,25 @@ async fn apply_screen_effects<T: Write>(
                 )
                 .await?;
             }
-            AppEvent::SetConfigOption {
+            AppEffect::SetConfigOption {
                 config_id,
                 new_value,
             } => {
                 let _ = prompt_handle.set_config_option(session_id, &config_id, &new_value);
             }
-            AppEvent::SetTheme { file } => {
+            AppEffect::SetTheme { file } => {
                 apply_theme_selection(renderer, file);
                 should_render = true;
             }
-            AppEvent::Cancel => {
+            AppEffect::Cancel => {
                 prompt_handle.cancel(session_id)?;
                 should_render = true;
             }
-            AppEvent::AuthenticateMcpServer { server_name } => {
+            AppEffect::AuthenticateMcpServer { server_name } => {
                 let _ = prompt_handle.authenticate_mcp_server(session_id, &server_name);
                 should_render = true;
             }
-            AppEvent::AuthenticateProvider { method_id } => {
+            AppEffect::AuthenticateProvider { method_id } => {
                 let _ = prompt_handle.authenticate(session_id, &method_id);
                 screen.on_authenticate_started(&method_id);
                 should_render = true;
