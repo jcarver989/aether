@@ -101,6 +101,7 @@ pulldown-cmark = "0.13"
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
 nucleo = "0.5.0"
 mime_guess = "2"
+similar = "2.7.0"
 unicode-width = "0.2.2"
 
 # Testing

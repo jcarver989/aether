@@ -26,11 +26,26 @@ impl ToolDisplayMeta {
     }
 }
 
-/// A preview of removed/added lines for an edit operation.
+/// Tag indicating the kind of change a diff line represents.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffTag {
+    Context,
+    Removed,
+    Added,
+}
+
+/// A single line in a diff, tagged with its change type.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiffLine {
+    pub tag: DiffTag,
+    pub content: String,
+}
+
+/// A preview of changed lines for an edit operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DiffPreview {
-    pub removed: Vec<String>,
-    pub added: Vec<String>,
+    pub lines: Vec<DiffLine>,
     pub lang_hint: String,
     /// 1-indexed line number where the edit begins in the original file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -232,8 +247,16 @@ mod tests {
     #[test]
     fn test_diff_preview_serde_roundtrip() {
         let preview = DiffPreview {
-            removed: vec!["old line".to_string()],
-            added: vec!["new line".to_string()],
+            lines: vec![
+                DiffLine {
+                    tag: DiffTag::Removed,
+                    content: "old line".to_string(),
+                },
+                DiffLine {
+                    tag: DiffTag::Added,
+                    content: "new line".to_string(),
+                },
+            ],
             lang_hint: "rs".to_string(),
             start_line: None,
         };
@@ -247,8 +270,16 @@ mod tests {
         let meta = ToolResultMeta::with_diff_preview(
             ToolDisplayMeta::new("Edit file", "main.rs"),
             DiffPreview {
-                removed: vec!["old".to_string()],
-                added: vec!["new".to_string()],
+                lines: vec![
+                    DiffLine {
+                        tag: DiffTag::Removed,
+                        content: "old".to_string(),
+                    },
+                    DiffLine {
+                        tag: DiffTag::Added,
+                        content: "new".to_string(),
+                    },
+                ],
                 lang_hint: "rs".to_string(),
                 start_line: None,
             },
@@ -256,6 +287,33 @@ mod tests {
         let map = meta.clone().into_map();
         let parsed = ToolResultMeta::from_map(&map).expect("should deserialize");
         assert_eq!(parsed, meta);
+    }
+
+    #[test]
+    fn diff_line_serde_roundtrip() {
+        let line = DiffLine {
+            tag: DiffTag::Context,
+            content: "unchanged".to_string(),
+        };
+        let json = serde_json::to_string(&line).unwrap();
+        let parsed: DiffLine = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, line);
+    }
+
+    #[test]
+    fn diff_tag_serde_snake_case() {
+        assert_eq!(
+            serde_json::to_value(DiffTag::Context).unwrap(),
+            serde_json::Value::String("context".to_string()),
+        );
+        assert_eq!(
+            serde_json::to_value(DiffTag::Removed).unwrap(),
+            serde_json::Value::String("removed".to_string()),
+        );
+        assert_eq!(
+            serde_json::to_value(DiffTag::Added).unwrap(),
+            serde_json::Value::String("added".to_string()),
+        );
     }
 
     #[test]
@@ -373,8 +431,16 @@ mod tests {
     #[test]
     fn test_diff_preview_start_line_roundtrip() {
         let preview = DiffPreview {
-            removed: vec!["old".to_string()],
-            added: vec!["new".to_string()],
+            lines: vec![
+                DiffLine {
+                    tag: DiffTag::Removed,
+                    content: "old".to_string(),
+                },
+                DiffLine {
+                    tag: DiffTag::Added,
+                    content: "new".to_string(),
+                },
+            ],
             lang_hint: "rs".to_string(),
             start_line: Some(42),
         };
@@ -386,8 +452,7 @@ mod tests {
     #[test]
     fn test_diff_preview_start_line_omitted_when_none() {
         let preview = DiffPreview {
-            removed: vec![],
-            added: vec![],
+            lines: vec![],
             lang_hint: String::new(),
             start_line: None,
         };
@@ -397,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_diff_preview_missing_start_line_defaults_to_none() {
-        let json = r#"{"removed":["x"],"added":["y"],"lang_hint":"rs"}"#;
+        let json = r#"{"lines":[],"lang_hint":"rs"}"#;
         let parsed: DiffPreview = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.start_line, None);
     }
