@@ -134,14 +134,6 @@ impl Theme {
         self.diff_removed_fg
     }
 
-    /// Returns the background color for a mode badge, cycling through a
-    /// fixed palette based on the mode's index in the options list.
-    pub fn mode_badge_bg(&self, index: usize) -> Color {
-        const PALETTE_FIELDS: [fn(&Theme) -> Color; 3] =
-            [|t| t.info, |t| t.secondary, |t| t.warning];
-        PALETTE_FIELDS[index % PALETTE_FIELDS.len()](self)
-    }
-
     pub fn syntect_theme(&self) -> &SyntectTheme {
         &self.syntect
     }
@@ -675,26 +667,6 @@ mod tests {
         let loaded = Theme::load(&settings);
         let default = Theme::default();
         assert_eq!(loaded.primary(), default.primary());
-    }
-
-    #[test]
-    fn mode_badge_bg_cycles_through_palette() {
-        let theme = Theme::default();
-        assert_eq!(theme.mode_badge_bg(0), CATPPUCCIN_INFO);
-        assert_eq!(theme.mode_badge_bg(1), CATPPUCCIN_SECONDARY);
-        assert_eq!(theme.mode_badge_bg(2), CATPPUCCIN_WARNING);
-        // Wraps around
-        assert_eq!(theme.mode_badge_bg(3), CATPPUCCIN_INFO);
-    }
-
-    #[test]
-    fn mode_badge_bg_distinct_for_adjacent_indices() {
-        let theme = Theme::default();
-        assert_ne!(
-            theme.mode_badge_bg(0),
-            theme.mode_badge_bg(1),
-            "adjacent indices should have distinct badge colors"
-        );
     }
 
     #[test]
