@@ -26,6 +26,7 @@ tokio = { workspace = true }
 rmcp = { workspace = true }
 tracing = { workspace = true }
 serde_yml = { workspace = true }
+utils = { path = "../utils" }
 
 # client-only deps
 llm = { path = "../llm", optional = true }

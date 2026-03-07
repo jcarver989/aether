@@ -27,13 +27,5 @@ use std::path::PathBuf;
 /// Returns `$AETHER_HOME` if set, otherwise `$HOME/.aether` (or `$USERPROFILE/.aether`
 /// on Windows). Returns `None` if no home directory environment variable is set.
 pub(crate) fn aether_home() -> Option<PathBuf> {
-    match std::env::var("AETHER_HOME") {
-        Ok(value) if !value.trim().is_empty() => Some(PathBuf::from(value)),
-        _ => {
-            let home = std::env::var("HOME")
-                .or_else(|_| std::env::var("USERPROFILE"))
-                .ok()?;
-            Some(PathBuf::from(home).join(".aether"))
-        }
-    }
+    utils::SettingsStore::new("AETHER_HOME", ".aether").map(|s| s.home().to_path_buf())
 }
