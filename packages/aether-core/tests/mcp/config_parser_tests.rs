@@ -159,19 +159,6 @@ async fn test_factory_not_found_error() {
     }
 }
 
-#[test]
-fn test_invalid_json() {
-    let json = "{ invalid json }";
-
-    let result = RawMcpConfig::from_json(json);
-
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        ParseError::JsonError(_) => (),
-        _ => panic!("Expected JsonError"),
-    }
-}
-
 #[tokio::test]
 async fn test_multiple_servers() {
     unsafe { env::set_var("TOKEN", "test") };

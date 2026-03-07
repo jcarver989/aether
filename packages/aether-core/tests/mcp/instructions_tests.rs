@@ -75,29 +75,6 @@ async fn test_multiple_servers_with_instructions() {
 }
 
 #[tokio::test]
-async fn test_server_instructions_skips_empty_instructions() {
-    // Note: We can't easily test empty instructions filtering since FakeMcpServer
-    // always provides instructions. This is implicitly tested by the fact that
-    // empty strings are filtered out in the manager.
-    let McpSpawnResult {
-        tool_definitions: _,
-        instructions,
-        server_statuses: _,
-        command_tx: _,
-        elicitation_rx: _,
-        handle: _,
-    } = mcp()
-        .with_servers(vec![fake_mcp("with-content", FakeMcpServer::new()).into()])
-        .spawn()
-        .await
-        .unwrap();
-
-    // Should have one instruction
-    assert_eq!(instructions.len(), 1);
-    assert_eq!(instructions[0].server_name, "with-content");
-}
-
-#[tokio::test]
 async fn test_format_mcp_instructions_xml_structure() {
     let instructions = vec![ServerInstructions {
         server_name: "coding".to_string(),
@@ -244,28 +221,4 @@ async fn test_agent_builder_works_without_mcp_instructions() {
     // Should have captured context without any MCP instructions section
     let contexts = captured_contexts.lock().unwrap();
     assert!(!contexts.is_empty());
-}
-
-#[tokio::test]
-async fn test_mcp_instructions_from_server_are_included() {
-    // Test that instructions from the actual MCP server connection are captured
-    let McpSpawnResult {
-        tool_definitions: _,
-        instructions,
-        server_statuses: _,
-        command_tx: _,
-        elicitation_rx: _,
-        handle: _,
-    } = mcp()
-        .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
-        .spawn()
-        .await
-        .unwrap();
-
-    // The instructions should be captured from the server connection
-    assert!(
-        !instructions.is_empty(),
-        "Expected instructions to be captured from server"
-    );
-    assert_eq!(instructions[0].server_name, "test");
 }

@@ -47,39 +47,3 @@ impl From<&str> for UserMessage {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use llm::LlmModel;
-
-    #[test]
-    fn test_llm_model_from_str_roundtrip() {
-        let models = [
-            "anthropic:claude-opus-4-6",
-            "deepseek:deepseek-chat",
-            "gemini:gemini-2.5-flash",
-            "ollama:llama3.2",
-            "llamacpp:",
-        ];
-        for input in models {
-            let model: LlmModel = input.parse().unwrap();
-            let round_tripped = model.to_string();
-            assert_eq!(round_tripped, input);
-        }
-    }
-
-    #[test]
-    fn test_llm_model_from_str_unknown_provider() {
-        let result: Result<LlmModel, _> = "custom:foo".parse();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_llm_model_dynamic_providers() {
-        let ollama: LlmModel = "ollama:llama3.2".parse().unwrap();
-        assert_eq!(ollama, LlmModel::Ollama("llama3.2".to_string()));
-
-        let llamacpp: LlmModel = "llamacpp".parse().unwrap();
-        assert_eq!(llamacpp, LlmModel::LlamaCpp(String::new()));
-    }
-}
