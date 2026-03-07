@@ -22,7 +22,7 @@ pub mod theme;
 
 pub use checkbox::Checkbox;
 pub use combobox::{Combobox, PickerKey, Searchable, classify_key};
-pub use component::{Component, HandlesInput, InputOutcome, RenderContext};
+pub use component::{Component, HandlesInput, InputOutcome, RenderContext, Tickable};
 pub use form::{Form, FormAction, FormField, FormFieldKind};
 pub use multi_select::MultiSelect;
 pub use number_field::NumberField;

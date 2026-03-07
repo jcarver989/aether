@@ -1,6 +1,7 @@
 use super::screen::Line;
 use super::theme::Theme;
 use crossterm::event::KeyEvent;
+use std::time::Instant;
 
 #[derive(Clone)]
 pub struct RenderContext {
@@ -126,4 +127,9 @@ pub trait HandlesInput {
     type Action;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action>;
+}
+
+pub trait Tickable {
+    /// Advance animation state by one tick.
+    fn on_tick(&mut self, now: Instant);
 }

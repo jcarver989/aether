@@ -1,13 +1,25 @@
+use crate::tui::Tickable;
+
 use agent_client_protocol::{self as acp};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 type PlanEntryKey = String;
 
-#[derive(Default)]
 pub struct PlanTracker {
     entries: Vec<acp::PlanEntry>,
     completed_at: HashMap<PlanEntryKey, Instant>,
+    pub grace_period: Duration,
+}
+
+impl Default for PlanTracker {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            completed_at: HashMap::new(),
+            grace_period: Duration::from_secs(3),
+        }
+    }
 }
 
 impl PlanTracker {
@@ -38,14 +50,6 @@ impl PlanTracker {
             .collect()
     }
 
-    pub fn needs_tick(&self, now: Instant, grace_period: Duration) -> bool {
-        self.entries.iter().any(|entry| {
-            entry.status == acp::PlanEntryStatus::InProgress
-                || matches!(entry.status, acp::PlanEntryStatus::Completed)
-                    && self.is_visible(entry, now, grace_period)
-        })
-    }
-
     pub fn clear(&mut self) {
         self.entries.clear();
         self.completed_at.clear();
@@ -70,6 +74,10 @@ impl PlanTracker {
     fn completed_at_for(&self, entry: &acp::PlanEntry) -> Option<Instant> {
         self.completed_at.get(&Self::entry_key(entry)).copied()
     }
+}
+
+impl Tickable for PlanTracker {
+    fn on_tick(&mut self, _now: Instant) {}
 }
 
 #[cfg(test)]

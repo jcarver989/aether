@@ -1,11 +1,12 @@
 use super::component::RenderContext;
 use super::screen::Line;
-use crate::tui::Component;
+use crate::tui::{Component, Tickable};
+use std::time::Instant;
 
 pub const BRAILLE_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 pub struct Spinner {
-    pub tick: u16,
+    tick: u16,
     pub visible: bool,
     frames: &'static [char],
 }
@@ -26,11 +27,29 @@ impl Spinner {
     pub fn current_frame(&self) -> char {
         self.frames[self.tick as usize % self.frames.len()]
     }
+
+    pub fn reset(&mut self) {
+        self.tick = 0;
+        self.visible = true;
+    }
+
+    #[allow(dead_code)]
+    pub fn set_tick(&mut self, tick: u16) {
+        self.tick = tick;
+    }
 }
 
 impl Default for Spinner {
     fn default() -> Self {
         Self::braille()
+    }
+}
+
+impl Tickable for Spinner {
+    fn on_tick(&mut self, _now: Instant) {
+        if self.visible {
+            self.tick = self.tick.wrapping_add(1);
+        }
     }
 }
 
@@ -53,11 +72,7 @@ mod tests {
 
     #[test]
     fn invisible_renders_empty() {
-        let mut spinner = Spinner {
-            tick: 0,
-            visible: false,
-            ..Spinner::default()
-        };
+        let mut spinner = Spinner::default();
         let ctx = RenderContext::new((80, 24));
         let lines = spinner.render(&ctx);
         assert!(lines.is_empty());
@@ -65,11 +80,8 @@ mod tests {
 
     #[test]
     fn visible_renders_one_line() {
-        let mut spinner = Spinner {
-            tick: 0,
-            visible: true,
-            ..Spinner::default()
-        };
+        let mut spinner = Spinner::default();
+        spinner.visible = true;
         let ctx = RenderContext::new((80, 24));
         let lines = spinner.render(&ctx);
         assert_eq!(lines.len(), 1);
@@ -79,16 +91,12 @@ mod tests {
     fn different_ticks_produce_different_output() {
         let ctx = RenderContext::new((80, 24));
 
-        let mut spinner_a = Spinner {
-            tick: 0,
-            visible: true,
-            ..Spinner::default()
-        };
-        let mut spinner_b = Spinner {
-            tick: 1,
-            visible: true,
-            ..Spinner::default()
-        };
+        let mut spinner_a = Spinner::default();
+        spinner_a.visible = true;
+
+        let mut spinner_b = Spinner::default();
+        spinner_b.visible = true;
+        spinner_b.set_tick(1);
 
         let a = spinner_a.render(&ctx)[0].plain_text();
         let b = spinner_b.render(&ctx)[0].plain_text();
@@ -100,17 +108,13 @@ mod tests {
     fn cycles_after_full_rotation() {
         let ctx = RenderContext::new((80, 24));
 
-        let mut spinner_a = Spinner {
-            tick: 0,
-            visible: true,
-            ..Spinner::default()
-        };
-        let mut spinner_b = Spinner {
-            #[allow(clippy::cast_possible_truncation)]
-            tick: BRAILLE_FRAMES.len() as u16,
-            visible: true,
-            ..Spinner::default()
-        };
+        let mut spinner_a = Spinner::default();
+        spinner_a.visible = true;
+
+        let mut spinner_b = Spinner::default();
+        spinner_b.visible = true;
+        #[allow(clippy::cast_possible_truncation)]
+        spinner_b.set_tick(BRAILLE_FRAMES.len() as u16);
 
         let a = spinner_a.render(&ctx)[0].plain_text();
         let b = spinner_b.render(&ctx)[0].plain_text();
@@ -120,22 +124,43 @@ mod tests {
 
     #[test]
     fn current_frame_returns_correct_char() {
-        let spinner = Spinner {
-            tick: 2,
-            visible: true,
-            ..Spinner::default()
-        };
+        let mut spinner = Spinner::default();
+        spinner.set_tick(2);
+        spinner.visible = true;
         assert_eq!(spinner.current_frame(), '⠹');
     }
 
     #[test]
     fn custom_frames() {
         static CUSTOM: &[char] = &['|', '/', '-', '\\'];
-        let spinner = Spinner {
-            tick: 1,
-            visible: true,
-            frames: CUSTOM,
-        };
+        let mut spinner = Spinner::new(CUSTOM);
+        spinner.set_tick(1);
+        spinner.visible = true;
         assert_eq!(spinner.current_frame(), '/');
+    }
+
+    #[test]
+    fn on_tick_advances_when_visible() {
+        let mut spinner = Spinner::default();
+        spinner.visible = true;
+        spinner.on_tick(Instant::now());
+        assert_eq!(spinner.current_frame(), BRAILLE_FRAMES[1]);
+    }
+
+    #[test]
+    fn on_tick_noop_when_invisible() {
+        let mut spinner = Spinner::default();
+        spinner.on_tick(Instant::now());
+        assert_eq!(spinner.current_frame(), BRAILLE_FRAMES[0]);
+    }
+
+    #[test]
+    fn reset_sets_tick_zero_and_visible() {
+        let mut spinner = Spinner::default();
+        spinner.set_tick(5);
+        spinner.visible = false;
+        spinner.reset();
+        assert!(spinner.visible);
+        assert_eq!(spinner.current_frame(), BRAILLE_FRAMES[0]);
     }
 }
