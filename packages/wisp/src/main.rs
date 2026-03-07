@@ -1,15 +1,15 @@
-mod app_state;
 mod cli;
 mod components;
 mod error;
+mod runtime_state;
 mod settings;
 mod terminal_ui;
 #[cfg(test)]
 mod test_helpers;
 mod tui;
 
-use crate::app_state::AppState;
 use crate::cli::Cli;
+use crate::runtime_state::RuntimeState;
 use crate::terminal_ui::run_terminal_ui;
 use clap::Parser;
 use std::fs::create_dir_all;
@@ -22,7 +22,7 @@ async fn main() -> ExitCode {
     let cli = Cli::parse();
     setup_logging(&cli);
 
-    let state = match AppState::from_cli(&cli).await {
+    let state = match RuntimeState::from_cli(&cli).await {
         Ok(state) => state,
         Err(e) => {
             eprintln!("Failed to initialize: {e}");

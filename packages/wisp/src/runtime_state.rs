@@ -9,7 +9,7 @@ use agent_client_protocol::{
 use std::env::current_dir;
 use tokio::sync::mpsc;
 
-pub struct AppState {
+pub struct RuntimeState {
     pub session_id: acp::SessionId,
     pub agent_name: String,
     pub config_options: Vec<acp::SessionConfigOption>,
@@ -19,7 +19,7 @@ pub struct AppState {
     pub prompt_handle: AcpPromptHandle,
 }
 
-impl AppState {
+impl RuntimeState {
     pub async fn from_cli(cli: &Cli) -> Result<Self, WispError> {
         let cwd = current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let new_session_request = NewSessionRequest::new(cwd);
