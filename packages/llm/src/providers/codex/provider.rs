@@ -44,7 +44,7 @@ impl CodexProvider {
 
         let codex_effort = context
             .reasoning_effort()
-            .map_or(ReasoningEffort::Medium, Into::into);
+            .map_or(ReasoningEffort::Medium, to_codex_effort);
 
         Ok(CreateResponse {
             model: Some(self.model.clone()),
@@ -212,13 +212,11 @@ impl StreamingModelProvider for CodexProvider {
     }
 }
 
-impl From<crate::ReasoningEffort> for ReasoningEffort {
-    fn from(effort: crate::ReasoningEffort) -> Self {
-        match effort {
-            crate::ReasoningEffort::Low => Self::Low,
-            crate::ReasoningEffort::Medium => Self::Medium,
-            crate::ReasoningEffort::High => Self::High,
-        }
+fn to_codex_effort(effort: crate::ReasoningEffort) -> ReasoningEffort {
+    match effort {
+        crate::ReasoningEffort::Low => ReasoningEffort::Low,
+        crate::ReasoningEffort::Medium => ReasoningEffort::Medium,
+        crate::ReasoningEffort::High => ReasoningEffort::High,
     }
 }
 

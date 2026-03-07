@@ -224,15 +224,7 @@ fn build_token_response(
 
 /// Resolve the Aether home directory.
 fn aether_home() -> Option<PathBuf> {
-    match std::env::var("AETHER_HOME") {
-        Ok(value) if !value.trim().is_empty() => Some(PathBuf::from(value)),
-        _ => {
-            let home = std::env::var("HOME")
-                .or_else(|_| std::env::var("USERPROFILE"))
-                .ok()?;
-            Some(PathBuf::from(home).join(".aether"))
-        }
-    }
+    utils::SettingsStore::new("AETHER_HOME", ".aether").map(|s| s.home().to_path_buf())
 }
 
 /// Synchronously load and parse the credentials file.
