@@ -198,22 +198,11 @@ impl Component for Container<'_> {
 /// Wrap a content line with `│ ... │` borders, extending any bg color through
 /// the padding so the highlight fills the full row width.
 fn wrap_in_border(content: &Line, inner_width: usize) -> Line {
-    let text_width = UnicodeWidthStr::width(content.plain_text().as_str());
-    let pad = inner_width.saturating_sub(text_width);
+    let mut padded_content = content.clone();
+    padded_content.extend_bg_to_width(inner_width);
+
     let mut line = Line::new("│ ".to_string());
-    line.append_line(content);
-
-    // If the content has a bg color, extend it through the padding.
-    let bg = content.spans().iter().find_map(|s| s.style().bg);
-    if let Some(bg) = bg {
-        line.push_with_style(
-            format!("{:pad$}", "", pad = pad),
-            Style::default().bg_color(bg),
-        );
-    } else {
-        line.push_text(format!("{:pad$}", "", pad = pad));
-    }
-
+    line.append_line(&padded_content);
     line.push_text(" │".to_string());
     line
 }

@@ -123,7 +123,9 @@ impl Component for FilePicker {
                 let prefix = if is_selected { "▶ " } else { "  " };
                 let line_text = format!("{}{}", prefix, file.display_name);
                 if is_selected {
-                    Line::styled(line_text, ctx.theme.primary())
+                    let mut line = Line::with_style(line_text, ctx.theme.selected_row_style());
+                    line.extend_bg_to_width(ctx.size.0 as usize);
+                    line
                 } else {
                     Line::new(line_text)
                 }
@@ -176,7 +178,11 @@ impl HandlesInput for FilePicker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::test_picker::{rendered_lines, selected_text, type_query};
+    use crate::tui::RenderContext;
+    use crate::tui::soft_wrap::display_width_line;
+    use crate::tui::test_picker::{
+        rendered_lines, rendered_raw_lines, rendered_raw_lines_with_size, selected_text, type_query,
+    };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn file_match(path: &str) -> FileMatch {
@@ -229,6 +235,61 @@ mod tests {
         picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         let back_to_first = selected_text(&mut picker).unwrap();
         assert_eq!(first, back_to_first);
+    }
+
+    #[test]
+    fn selected_entry_has_highlight_background() {
+        let mut picker = FilePicker::new_with_entries(vec![
+            file_match("a.rs"),
+            file_match("b.rs"),
+            file_match("c.rs"),
+        ]);
+        let context = RenderContext::new((80, 24));
+        let lines = picker.render(&context);
+        let selected_line = lines
+            .iter()
+            .find(|line| line.plain_text().starts_with("▶ "))
+            .expect("should render a selected line");
+
+        let has_bg = selected_line
+            .spans()
+            .iter()
+            .any(|span| span.style().bg == Some(context.theme.highlight_bg()));
+        assert!(has_bg, "selected entry should have highlight background");
+    }
+
+    #[test]
+    fn selected_entry_has_text_primary_foreground() {
+        let mut picker = FilePicker::new_with_entries(vec![file_match("a.rs")]);
+        let context = RenderContext::new((80, 24));
+        let lines = rendered_raw_lines(&mut picker);
+        let selected_line = lines
+            .iter()
+            .find(|line| line.plain_text().starts_with("▶ "))
+            .expect("should render a selected line");
+
+        let has_fg = selected_line
+            .spans()
+            .iter()
+            .any(|span| span.style().fg == Some(context.theme.text_primary()));
+        assert!(has_fg, "selected entry should have text_primary foreground");
+    }
+
+    #[test]
+    fn selected_entry_highlight_fills_full_line_width() {
+        let mut picker = FilePicker::new_with_entries(vec![file_match("a.rs")]);
+        let context = RenderContext::new((20, 24));
+        let lines = rendered_raw_lines_with_size(&mut picker, context.size);
+        let selected_line = lines
+            .iter()
+            .find(|line| line.plain_text().starts_with("▶ "))
+            .expect("should render a selected line");
+
+        assert_eq!(
+            display_width_line(selected_line),
+            context.size.0 as usize,
+            "selected row should fill the full visible width",
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
     Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
-    Style, classify_key,
+    classify_key,
 };
 use crossterm::event::KeyEvent;
 
@@ -128,10 +128,7 @@ impl Component for ConfigPicker {
                 if option.is_disabled {
                     Line::styled(line_text, ctx.theme.muted())
                 } else if is_selected {
-                    Line::with_style(
-                        line_text,
-                        Style::fg(ctx.theme.text_primary()).bg_color(ctx.theme.highlight_bg()),
-                    )
+                    Line::with_style(line_text, ctx.theme.selected_row_style())
                 } else {
                     Line::new(line_text)
                 }
