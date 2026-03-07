@@ -362,6 +362,19 @@ fn map_tool_progress_to_notification(
         return None;
     }
 
+    if let Some(result_meta) = message.and_then(|m| try_parse_display_meta(m)) {
+        return Some(SessionNotification::new(
+            session_id,
+            SessionUpdate::ToolCallUpdate(
+                ToolCallUpdate::new(
+                    ToolCallId::new(request.id.clone()),
+                    ToolCallUpdateFields::new().status(ToolCallStatus::InProgress),
+                )
+                .meta(result_meta.into_map()),
+            ),
+        ));
+    }
+
     let total_str = total.map_or_else(|| "?".to_string(), |t| t.to_string());
     let progress_text = message.map_or_else(
         || format!("Progress: {progress}/{total_str}"),
@@ -379,6 +392,10 @@ fn map_tool_progress_to_notification(
                 ))]),
         )),
     ))
+}
+
+fn try_parse_display_meta(message: &str) -> Option<ToolResultMeta> {
+    serde_json::from_str::<ToolResultMeta>(message).ok()
 }
 
 /// Attempt to parse a tool progress message as sub-agent progress.
@@ -711,5 +728,47 @@ mod tests {
     fn test_plan_notification_none_when_no_meta() {
         let session_id = acp::SessionId::new("test-session");
         assert!(try_extract_plan_notification(session_id, None).is_none());
+    }
+
+    #[test]
+    fn test_tool_progress_with_display_meta_emits_meta_update() {
+        use mcp_utils::display_meta::ToolDisplayMeta;
+
+        let session_id = acp::SessionId::new("test-session");
+        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "main.rs"));
+        let serialized = serde_json::to_string(&meta).unwrap();
+
+        let request = ToolCallRequest {
+            id: "call_789".to_string(),
+            name: "coding__read_file".to_string(),
+            arguments: "{}".to_string(),
+        };
+
+        let notification = map_tool_progress_to_notification(
+            session_id,
+            &request,
+            0.0,
+            None,
+            Some(&serialized),
+        )
+        .expect("should produce notification");
+
+        match notification.update {
+            acp::SessionUpdate::ToolCallUpdate(update) => {
+                assert_eq!(&*update.tool_call_id.0, "call_789");
+                let meta_map = update.meta.expect("meta should be present");
+                let parsed = ToolResultMeta::from_map(&meta_map)
+                    .expect("should parse as ToolResultMeta");
+                assert_eq!(parsed.display.title, "Read file");
+                assert_eq!(parsed.display.value, "main.rs");
+                assert_eq!(
+                    update.fields.status,
+                    Some(acp::ToolCallStatus::InProgress)
+                );
+                // Should NOT have content (no text progress fallback)
+                assert!(update.fields.content.is_none());
+            }
+            other => panic!("Expected ToolCallUpdate, got {other:?}"),
+        }
     }
 }

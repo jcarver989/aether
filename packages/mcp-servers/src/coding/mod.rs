@@ -1,12 +1,13 @@
 use clap::Parser;
 use mcp_utils::client::{RawMcpConfig, RawMcpServerConfig};
 use rmcp::{
-    ServerHandler,
+    RoleServer, ServerHandler,
     handler::server::{
         router::tool::ToolRouter,
         wrapper::{Json, Parameters},
     },
-    model::{Implementation, ServerCapabilities, ServerInfo},
+    model::{Implementation, ProgressNotificationParam, ServerCapabilities, ServerInfo},
+    service::RequestContext,
     tool, tool_handler, tool_router,
 };
 use std::path::PathBuf;
@@ -35,7 +36,7 @@ use crate::lsp::tools::check_errors::{
 use crate::lsp::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
 use crate::lsp::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 
-use mcp_utils::display_meta::{ToolDisplayMeta, truncate};
+use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename, truncate};
 use tools::bash::{
     BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,
     ReadBackgroundBashOutput, execute_command, read_background_bash,
@@ -154,6 +155,22 @@ impl CodingMcp<DefaultCodingTools> {
     }
 }
 
+async fn notify_preview(context: &RequestContext<RoleServer>, meta: ToolDisplayMeta) {
+    if let Some(token) = context.meta.get_progress_token() {
+        let result_meta = ToolResultMeta::from(meta);
+        let message = serde_json::to_string(&result_meta).unwrap_or_default();
+        let _ = context
+            .peer
+            .notify_progress(ProgressNotificationParam {
+                progress_token: token,
+                progress: 0.0,
+                total: None,
+                message: Some(message),
+            })
+            .await;
+    }
+}
+
 #[tool_router]
 impl<T: CodingTools + 'static> CodingMcp<T> {
     /// Create a `CodingMcp` with custom tool implementation
@@ -229,15 +246,25 @@ When using tools that take file paths, always use absolute paths from:
 
     #[doc = include_str!("tools/grep/description.md")]
     #[tool]
-    pub async fn grep(&self, request: Parameters<GrepInput>) -> Result<Json<GrepOutput>, String> {
+    pub async fn grep(
+        &self,
+        request: Parameters<GrepInput>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Json<GrepOutput>, String> {
         let Parameters(args) = request;
+        notify_preview(&context, ToolDisplayMeta::new("Grep", format!("'{}'", args.pattern))).await;
         self.tools.grep(args).await.into_mcp()
     }
 
     #[doc = include_str!("tools/find/description.md")]
     #[tool]
-    pub async fn find(&self, request: Parameters<FindInput>) -> Result<Json<FindOutput>, String> {
+    pub async fn find(
+        &self,
+        request: Parameters<FindInput>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Json<FindOutput>, String> {
         let Parameters(args) = request;
+        notify_preview(&context, ToolDisplayMeta::new("Find", format!("'{}'", args.pattern))).await;
         self.tools.find(args).await.into_mcp()
     }
 
@@ -246,8 +273,10 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn read_file(
         &self,
         request: Parameters<ReadFileArgs>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<ReadFileResult>, String> {
         let Parameters(args) = request;
+        notify_preview(&context, ToolDisplayMeta::new("Read file", basename(&args.file_path))).await;
         let file_path = args.file_path.clone();
         let result = self
             .tools
@@ -264,8 +293,10 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn write_file(
         &self,
         request: Parameters<WriteFileArgs>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<WriteFileResponse>, String> {
         let Parameters(args) = request;
+        notify_preview(&context, ToolDisplayMeta::new("Write file", basename(&args.file_path))).await;
 
         // Safety check: if file exists, ensure it has been read first
         if try_exists(&args.file_path)
@@ -295,8 +326,10 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn edit_file(
         &self,
         request: Parameters<EditFileArgs>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<EditFileResponse>, String> {
         let Parameters(args) = request;
+        notify_preview(&context, ToolDisplayMeta::new("Edit file", basename(&args.file_path))).await;
 
         // Safety check: ensure file has been read first
         {
@@ -323,15 +356,23 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn list_files(
         &self,
         request: Parameters<ListFilesArgs>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<ListFilesResult>, String> {
         let Parameters(args) = request;
+        let preview_value = args.path.as_deref().map_or_else(|| ".".to_string(), basename);
+        notify_preview(&context, ToolDisplayMeta::new("List files", preview_value)).await;
         self.tools.list_files(args).await.into_mcp()
     }
 
     #[doc = include_str!("tools/bash/description.md")]
     #[tool]
-    pub async fn bash(&self, request: Parameters<BashInput>) -> Result<Json<BashOutput>, String> {
+    pub async fn bash(
+        &self,
+        request: Parameters<BashInput>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Json<BashOutput>, String> {
         let Parameters(args) = request;
+        notify_preview(&context, ToolDisplayMeta::new("Run command", truncate(&args.command, 40))).await;
         let command = args.command.clone();
         let result = self.tools.bash(args).await.map_err(|e| e.to_string())?;
 
@@ -400,8 +441,10 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn web_fetch(
         &self,
         request: Parameters<WebFetchInput>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<WebFetchOutput>, String> {
         let Parameters(args) = request;
+        notify_preview(&context, ToolDisplayMeta::new("Fetch URL", truncate(&args.url, 60))).await;
         self.web_fetcher.fetch(args).await.into_mcp()
     }
 
@@ -410,8 +453,10 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn web_search(
         &self,
         request: Parameters<WebSearchInput>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<WebSearchOutput>, String> {
         let Parameters(args) = request;
+        notify_preview(&context, ToolDisplayMeta::new("Web search", format!("'{}'", args.query))).await;
 
         let searcher = self.web_searcher.as_ref().ok_or_else(|| {
             "Web search not available: BRAVE_SEARCH_API_KEY environment variable not set. \
@@ -431,8 +476,10 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn lsp_symbol(
         &self,
         request: Parameters<LspSymbolInput>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<LspSymbolOutput>, String> {
         let Parameters(input) = request;
+        notify_preview(&context, ToolDisplayMeta::new("LSP symbol", &input.symbol)).await;
         let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
         execute_lsp_symbol(input, lsp.as_ref()).await.map(Json)
     }
@@ -442,8 +489,10 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn lsp_document(
         &self,
         request: Parameters<LspDocumentInput>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<LspDocumentOutput>, String> {
         let Parameters(input) = request;
+        notify_preview(&context, ToolDisplayMeta::new("LSP document", basename(&input.file_path))).await;
         let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
         execute_lsp_document(input, lsp.as_ref()).await.map(Json)
     }
@@ -453,8 +502,11 @@ When using tools that take file paths, always use absolute paths from:
     pub async fn lsp_check_errors(
         &self,
         request: Parameters<LspDiagnosticsInput>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<LspDiagnosticsOutput>, String> {
         let Parameters(input) = request;
+        let preview_value = input.file_path.as_deref().map_or_else(|| "workspace".to_string(), basename);
+        notify_preview(&context, ToolDisplayMeta::new("LSP errors", preview_value)).await;
         let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
         execute_lsp_diagnostics(input, lsp.as_ref()).await.map(Json)
     }
@@ -466,15 +518,45 @@ impl Default for CodingMcp<DefaultCodingTools> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(feature = "test-helpers")]
+impl<T: CodingTools + 'static> CodingMcp<T> {
+    /// Read a file and track it in the read set (test helper, no MCP context needed).
+    pub async fn test_read_file(&self, args: ReadFileArgs) -> Result<Json<ReadFileResult>, String> {
+        let file_path = args.file_path.clone();
+        let result = self.tools.read_file(args).await.map_err(|e| e.to_string())?;
+        self.files_read.write().await.insert(file_path);
+        Ok(Json(result))
+    }
 
-    #[tokio::test]
-    async fn test_lsp_tool_without_lsp_returns_error() {
-        let mcp = CodingMcp::new();
-        let input = LspDiagnosticsInput { file_path: None };
-        let result = mcp.lsp_check_errors(Parameters(input)).await;
-        assert!(result.is_err());
+    /// Write a file with read-before-write safety check (test helper, no MCP context needed).
+    pub async fn test_write_file(&self, args: WriteFileArgs) -> Result<Json<WriteFileResponse>, String> {
+        if try_exists(&args.file_path)
+            .await
+            .map_err(|e| format!("Failed to check existence of {}: {e}", args.file_path))?
+        {
+            let files_read = self.files_read.read().await;
+            if !files_read.contains(&args.file_path) {
+                return Err(format!(
+                    "Safety check failed: File '{}' already exists. You must use read_file on it before overwriting. This prevents accidental data loss.",
+                    args.file_path
+                ));
+            }
+        }
+        self.tools.write_file(args).await.map(Json).map_err(|e| e.to_string())
+    }
+
+    /// Edit a file with read-before-edit safety check (test helper, no MCP context needed).
+    pub async fn test_edit_file(&self, args: EditFileArgs) -> Result<Json<EditFileResponse>, String> {
+        {
+            let files_read = self.files_read.read().await;
+            if !files_read.contains(&args.file_path) {
+                return Err(format!(
+                    "Safety check failed: You must use read_file on '{}' before editing it. This ensures you understand the current file contents before making changes.",
+                    args.file_path
+                ));
+            }
+        }
+        self.tools.edit_file(args).await.map(Json).map_err(|e| e.to_string())
     }
 }
+

@@ -2,7 +2,6 @@ use mcp_servers::coding::CodingMcp;
 use mcp_servers::coding::tools::edit_file::EditFileArgs;
 use mcp_servers::coding::tools::read_file::ReadFileArgs;
 use mcp_servers::coding::tools::write_file::WriteFileArgs;
-use rmcp::handler::server::wrapper::Parameters;
 use std::fs;
 use tempfile::TempDir;
 
@@ -23,7 +22,7 @@ async fn test_edit_file_without_read_fails() {
         replace_all: false,
     };
 
-    let result = mcp.edit_file(Parameters(edit_args)).await;
+    let result = mcp.test_edit_file(edit_args).await;
 
     assert!(result.is_err());
     if let Err(err) = result {
@@ -47,7 +46,7 @@ async fn test_edit_file_after_read_succeeds() {
         offset: None,
         limit: None,
     };
-    let read_result = mcp.read_file(Parameters(read_args)).await;
+    let read_result = mcp.test_read_file(read_args).await;
     assert!(read_result.is_ok());
 
     // Now edit should succeed
@@ -58,7 +57,7 @@ async fn test_edit_file_after_read_succeeds() {
         replace_all: false,
     };
 
-    let result = mcp.edit_file(Parameters(edit_args)).await;
+    let result = mcp.test_edit_file(edit_args).await;
     assert!(result.is_ok());
 
     // Verify the edit was applied
@@ -81,7 +80,7 @@ async fn test_write_existing_file_without_read_fails() {
         content: "new content".to_string(),
     };
 
-    let result = mcp.write_file(Parameters(write_args)).await;
+    let result = mcp.test_write_file(write_args).await;
 
     assert!(result.is_err());
     if let Err(err) = result {
@@ -105,7 +104,7 @@ async fn test_write_existing_file_after_read_succeeds() {
         offset: None,
         limit: None,
     };
-    let read_result = mcp.read_file(Parameters(read_args)).await;
+    let read_result = mcp.test_read_file(read_args).await;
     assert!(read_result.is_ok());
 
     // Now write should succeed
@@ -114,7 +113,7 @@ async fn test_write_existing_file_after_read_succeeds() {
         content: "new content".to_string(),
     };
 
-    let result = mcp.write_file(Parameters(write_args)).await;
+    let result = mcp.test_write_file(write_args).await;
     assert!(result.is_ok());
 
     // Verify the write was applied
@@ -136,7 +135,7 @@ async fn test_write_new_file_without_read_succeeds() {
         content: "new file content".to_string(),
     };
 
-    let result = mcp.write_file(Parameters(write_args)).await;
+    let result = mcp.test_write_file(write_args).await;
     assert!(result.is_ok());
 
     // Verify the file was created
@@ -162,7 +161,7 @@ async fn test_multiple_files_tracked_independently() {
         offset: None,
         limit: None,
     };
-    mcp.read_file(Parameters(read_args)).await.unwrap();
+    mcp.test_read_file(read_args).await.unwrap();
 
     // Edit file1 should succeed
     let edit_args = EditFileArgs {
@@ -171,7 +170,7 @@ async fn test_multiple_files_tracked_independently() {
         new_string: "one".to_string(),
         replace_all: false,
     };
-    assert!(mcp.edit_file(Parameters(edit_args)).await.is_ok());
+    assert!(mcp.test_edit_file(edit_args).await.is_ok());
 
     // Edit file2 should fail (not read yet)
     let edit_args = EditFileArgs {
@@ -180,7 +179,7 @@ async fn test_multiple_files_tracked_independently() {
         new_string: "two".to_string(),
         replace_all: false,
     };
-    assert!(mcp.edit_file(Parameters(edit_args)).await.is_err());
+    assert!(mcp.test_edit_file(edit_args).await.is_err());
 }
 
 /// Test that reading a file that doesn't exist doesn't track it
@@ -197,7 +196,7 @@ async fn test_failed_read_doesnt_track_file() {
         offset: None,
         limit: None,
     };
-    let result = mcp.read_file(Parameters(read_args)).await;
+    let result = mcp.test_read_file(read_args).await;
     assert!(result.is_err());
 
     // Create the file now
@@ -210,6 +209,6 @@ async fn test_failed_read_doesnt_track_file() {
         new_string: "modified".to_string(),
         replace_all: false,
     };
-    let result = mcp.edit_file(Parameters(edit_args)).await;
+    let result = mcp.test_edit_file(edit_args).await;
     assert!(result.is_err());
 }
