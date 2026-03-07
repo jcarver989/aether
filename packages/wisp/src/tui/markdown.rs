@@ -517,7 +517,7 @@ impl<'a> MarkdownRenderer<'a> {
             if i > 0 {
                 self.flush_line();
             }
-            if i > 0 && !prefix.is_empty() {
+            if self.current_line.is_empty() && !prefix.is_empty() {
                 self.current_line
                     .push_with_style(&*prefix, Style::fg(self.theme.blockquote()));
             }
@@ -763,12 +763,18 @@ mod tests {
         let lines = render_with_theme(md, &theme);
         let texts: Vec<String> = lines.iter().map(Line::plain_text).collect();
         assert!(texts.iter().any(|t| t.contains("quoted text")));
-        // Should have some indentation from blockquote prefix
         let quoted_line = lines
             .iter()
             .find(|l| l.plain_text().contains("quoted"))
             .unwrap();
-        assert!(quoted_line.spans().iter().any(|s| s.style().dim));
+        assert!(quoted_line.plain_text().starts_with("  quoted text"));
+        assert!(
+            quoted_line
+                .spans()
+                .iter()
+                .any(|s| s.style().fg == Some(theme.blockquote()))
+        );
+        assert!(!quoted_line.spans().iter().any(|s| s.style().dim));
     }
 
     #[test]
