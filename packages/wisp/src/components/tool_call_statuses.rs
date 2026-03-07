@@ -50,7 +50,10 @@ impl Component for ToolCallStatusView {
             .as_ref()
             .filter(|v| !v.is_empty())
             .map_or_else(
-                || Self::format_arguments(&self.arguments),
+                || match self.status {
+                    ToolCallStatus::Running => String::new(),
+                    _ => Self::format_arguments(&self.arguments),
+                },
                 |v| format!(" ({v})"),
             );
         line.push_styled(display_text, context.theme.muted());
@@ -668,7 +671,7 @@ mod tests {
         assert_eq!(lines.len(), 1);
         let text = lines[0].plain_text();
         assert!(text.contains("TestTool"));
-        assert!(text.contains("test args"));
+        assert!(!text.contains("test args"));
         assert!(text.contains('⠋'));
     }
 
@@ -734,7 +737,7 @@ mod tests {
             arguments,
             display_value: None,
             diff_preview: None,
-            status: ToolCallStatus::Running,
+            status: ToolCallStatus::Success,
             tick: 0,
         };
 
@@ -742,8 +745,30 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert_eq!(
             lines[0].plain_text(),
-            format!("⠋ TestTool {}", "a".repeat(MAX_TOOL_ARG_LENGTH - 2))
+            format!("✓ TestTool {}", "a".repeat(MAX_TOOL_ARG_LENGTH - 2))
         );
+    }
+
+    #[test]
+    fn view_running_hides_raw_args_then_shows_display_value() {
+        let mut view = ToolCallStatusView {
+            name: "Read".to_string(),
+            arguments: r#"{"file_path":"/path/to/main.rs"}"#.to_string(),
+            display_value: None,
+            diff_preview: None,
+            status: ToolCallStatus::Running,
+            tick: 0,
+        };
+
+        // While running with no display_value, raw args are hidden
+        let text = view.render(&ctx())[0].plain_text();
+        assert!(!text.contains("file_path"));
+        assert_eq!(text, "⠋ Read");
+
+        // After display_value arrives, it is shown
+        view.display_value = Some("main.rs".to_string());
+        let text = view.render(&ctx())[0].plain_text();
+        assert_eq!(text, "⠋ Read (main.rs)");
     }
 
     // -- Sub-agent deserialization tests --
