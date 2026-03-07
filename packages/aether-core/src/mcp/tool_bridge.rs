@@ -210,8 +210,10 @@ mod tests {
                     "value": "main.rs"
                 },
                 "diff_preview": {
-                    "removed": ["old line"],
-                    "added": ["new line"],
+                    "lines": [
+                        { "tag": "removed", "content": "old line" },
+                        { "tag": "added", "content": "new line" }
+                    ],
                     "lang_hint": "rs"
                 }
             }
@@ -230,8 +232,11 @@ mod tests {
         let rm = result_meta.expect("result_meta should be present");
         assert_eq!(rm.display.title, "Edit file");
         let dp = rm.diff_preview.expect("diff_preview should be present");
-        assert_eq!(dp.removed, vec!["old line"]);
-        assert_eq!(dp.added, vec!["new line"]);
+        assert_eq!(dp.lines.len(), 2);
+        assert_eq!(dp.lines[0].tag, mcp_utils::display_meta::DiffTag::Removed);
+        assert_eq!(dp.lines[0].content, "old line");
+        assert_eq!(dp.lines[1].tag, mcp_utils::display_meta::DiffTag::Added);
+        assert_eq!(dp.lines[1].content, "new line");
         assert_eq!(dp.lang_hint, "rs");
     }
 
@@ -247,8 +252,10 @@ mod tests {
                     "value": "main.rs"
                 },
                 "diff_preview": {
-                    "removed": ["old line"],
-                    "added": ["new line"],
+                    "lines": [
+                        { "tag": "removed", "content": "old line" },
+                        { "tag": "added", "content": "new line" }
+                    ],
                     "lang_hint": "rs"
                 },
                 "trace_id": "trace-123",

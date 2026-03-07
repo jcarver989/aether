@@ -43,8 +43,8 @@ fn is_goto_empty(r: &GotoDefinitionResponse) -> bool {
     }
 }
 
-fn extract_hover_text(hover: &Option<lsp_types::Hover>) -> Option<String> {
-    let hover = hover.as_ref()?;
+fn extract_hover_text(hover: Option<&lsp_types::Hover>) -> Option<String> {
+    let hover = hover?;
     let text = match &hover.contents {
         lsp_types::HoverContents::Scalar(t) => match t {
             lsp_types::MarkedString::String(s) => s.clone(),
@@ -63,7 +63,7 @@ fn extract_hover_text(hover: &Option<lsp_types::Hover>) -> Option<String> {
     Some(text)
 }
 
-/// Test: GotoDefinition resolves function definitions
+/// Test: `GotoDefinition` resolves function definitions
 #[tokio::test]
 async fn test_goto_definition() {
     let project = CargoProject::new("goto_def_test").expect("Failed to create project");
@@ -117,7 +117,7 @@ fn main() {
                 "Expected definition at line 0"
             );
         }
-        _ => panic!("Expected definition location, got: {:?}", result),
+        _ => panic!("Expected definition location, got: {result:?}"),
     }
 
     harness.kill().await.expect("Failed to kill daemon");
@@ -157,27 +157,22 @@ async fn test_hover() {
     let hover = retry_lsp(
         RA_INIT_TIMEOUT,
         || client.hover(uri.clone(), 1, 10),
-        |h| {
-            extract_hover_text(h)
-                .map(|t| !t.contains("Vec") && !t.contains("i32"))
-                .unwrap_or(true)
-        },
+        |h| extract_hover_text(h.as_ref()).is_none_or(|t| !t.contains("Vec") && !t.contains("i32")),
     )
     .await
     .expect("Hover failed");
 
-    let content_str = extract_hover_text(&hover).expect("Expected hover information");
+    let content_str = extract_hover_text(hover.as_ref()).expect("Expected hover information");
 
     assert!(
         content_str.contains("Vec") || content_str.contains("i32"),
-        "Hover should mention Vec or i32, got: {}",
-        content_str
+        "Hover should mention Vec or i32, got: {content_str}"
     );
 
     harness.kill().await.expect("Failed to kill daemon");
 }
 
-/// Test: FindReferences locates all usages
+/// Test: `FindReferences` locates all usages
 #[tokio::test]
 async fn test_find_references() {
     let project = CargoProject::new("refs_test").expect("Failed to create project");
@@ -229,12 +224,12 @@ fn main() {
     harness.kill().await.expect("Failed to kill daemon");
 }
 
-/// Test: DocumentSymbol returns symbols
+/// Test: `DocumentSymbol` returns symbols
 #[tokio::test]
 async fn test_document_symbol() {
     let project = CargoProject::new("symbol_test").expect("Failed to create project");
 
-    let content = r#"struct Point {
+    let content = r"struct Point {
     x: i32,
     y: i32,
 }
@@ -246,7 +241,7 @@ fn distance(p1: &Point, p2: &Point) -> f64 {
 fn main() {
     let p = Point { x: 0, y: 0 };
 }
-"#;
+";
     project
         .add_file("src/main.rs", content)
         .expect("Failed to add file");
@@ -289,24 +284,21 @@ fn main() {
 
     assert!(
         symbol_names.iter().any(|n| n == "Point"),
-        "Should find Point struct, got: {:?}",
-        symbol_names
+        "Should find Point struct, got: {symbol_names:?}"
     );
     assert!(
         symbol_names.iter().any(|n| n == "distance"),
-        "Should find distance function, got: {:?}",
-        symbol_names
+        "Should find distance function, got: {symbol_names:?}"
     );
     assert!(
         symbol_names.iter().any(|n| n == "main"),
-        "Should find main function, got: {:?}",
-        symbol_names
+        "Should find main function, got: {symbol_names:?}"
     );
 
     harness.kill().await.expect("Failed to kill daemon");
 }
 
-/// Test: WorkspaceSymbol searches across files
+/// Test: `WorkspaceSymbol` searches across files
 #[tokio::test]
 async fn test_workspace_symbol() {
     let project = CargoProject::new("ws_symbol_test").expect("Failed to create project");
@@ -314,17 +306,17 @@ async fn test_workspace_symbol() {
     project
         .add_file(
             "src/main.rs",
-            r#"mod utils;
+            r"mod utils;
 fn main() { utils::special_helper(); }
-"#,
+",
         )
         .expect("Failed to add main.rs");
 
     project
         .add_file(
             "src/utils.rs",
-            r#"pub fn special_helper() {}
-"#,
+            r"pub fn special_helper() {}
+",
         )
         .expect("Failed to add utils.rs");
 
@@ -342,7 +334,7 @@ fn main() { utils::special_helper(); }
     let symbols = retry_lsp(
         RA_INIT_TIMEOUT,
         || client.workspace_symbol("special_helper".to_string()),
-        |s| s.is_empty(),
+        std::vec::Vec::is_empty,
     )
     .await
     .expect("WorkspaceSymbol failed");
@@ -350,8 +342,7 @@ fn main() { utils::special_helper(); }
     assert!(!symbols.is_empty(), "Should find special_helper symbol");
     assert!(
         symbols.iter().any(|s| s.name == "special_helper"),
-        "Should find special_helper in results: {:?}",
-        symbols
+        "Should find special_helper in results: {symbols:?}"
     );
 
     harness.kill().await.expect("Failed to kill daemon");

@@ -354,7 +354,7 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
             out,
             models,
             |m| m.supports_reasoning.to_string(),
-            |val| val.to_string(),
+            std::string::ToString::to_string,
         );
         pushln(out, "        }");
         pushln(out, "    }");
@@ -892,7 +892,7 @@ mod tests {
             }),
         );
 
-        let source = generate_from_value(data);
+        let source = generate_from_value(&data);
         // Provider-level FromStr: sorted model IDs
         let a_model = "\"a-model\" => Ok(Self::AModel),";
         let b_model = "\"b-model\" => Ok(Self::BModel),";
@@ -906,7 +906,7 @@ mod tests {
 
     #[test]
     fn generate_contains_core_sections() {
-        let source = generate_from_value(minimal_models_dev_json());
+        let source = generate_from_value(&minimal_models_dev_json());
         assert!(source.contains("pub enum LlmModel {"));
         assert!(source.contains("impl std::str::FromStr for LlmModel {"));
         assert!(source.contains("impl std::fmt::Display for LlmModel {"));
@@ -915,7 +915,7 @@ mod tests {
 
     #[test]
     fn generate_contains_dynamic_provider_arms() {
-        let source = generate_from_value(minimal_models_dev_json());
+        let source = generate_from_value(&minimal_models_dev_json());
         assert!(source.contains("\"ollama\" => Ok(Self::Ollama(model_str.to_string())),"));
         assert!(source.contains("\"llamacpp\" => Ok(Self::LlamaCpp(model_str.to_string())),"));
         // Dynamic providers are combined with | for None-returning arms
@@ -924,7 +924,7 @@ mod tests {
 
     #[test]
     fn generate_codex_is_catalog_provider() {
-        let source = generate_from_value(minimal_models_dev_json());
+        let source = generate_from_value(&minimal_models_dev_json());
         // Codex is a catalog provider, not dynamic
         assert!(source.contains("pub enum CodexModel {"));
         assert!(source.contains("\"codex\" => model_str.parse::<CodexModel>().map(Self::Codex),"));
@@ -933,7 +933,7 @@ mod tests {
 
     #[test]
     fn generate_oauth_provider_id_for_codex() {
-        let source = generate_from_value(minimal_models_dev_json());
+        let source = generate_from_value(&minimal_models_dev_json());
         // Codex models return Some("codex") for oauth_provider_id
         assert!(source.contains("Self::Codex(_) => Some(\"codex\"),"));
         // Non-OAuth providers return None
@@ -942,7 +942,7 @@ mod tests {
 
     #[test]
     fn generate_delegates_to_provider_impls() {
-        let source = generate_from_value(minimal_models_dev_json());
+        let source = generate_from_value(&minimal_models_dev_json());
         // LlmModel delegates to per-provider methods
         assert!(source.contains("Self::Anthropic(m) => Cow::Borrowed(m.model_id()),"));
         assert!(source.contains("Self::Anthropic(m) => Some(m.context_window()),"));
@@ -968,12 +968,12 @@ mod tests {
                     "id": "big-model",
                     "name": "Big Model",
                     "tool_call": true,
-                    "limit": {"context": 200000, "output": 0}
+                    "limit": {"context": 200_000, "output": 0}
                 }
             }),
         );
 
-        let source = generate_from_value(data);
+        let source = generate_from_value(&data);
         assert!(source.contains("200_000"));
         assert!(!source.contains("200000"));
     }
@@ -994,18 +994,18 @@ mod tests {
                     "id": "model-a",
                     "name": "Same Name",
                     "tool_call": true,
-                    "limit": {"context": 100000, "output": 0}
+                    "limit": {"context": 100_000, "output": 0}
                 },
                 "model-b": {
                     "id": "model-b",
                     "name": "Same Name",
                     "tool_call": true,
-                    "limit": {"context": 100000, "output": 0}
+                    "limit": {"context": 100_000, "output": 0}
                 }
             }),
         );
 
-        let source = generate_from_value(data);
+        let source = generate_from_value(&data);
         // Both context_window and display_name should combine arms
         assert!(source.contains("Self::ModelA | Self::ModelB => 100_000,"));
         assert!(source.contains("Self::ModelA | Self::ModelB => \"Same Name\","));
@@ -1074,7 +1074,7 @@ mod tests {
             }),
         );
 
-        let source = generate_from_value(data);
+        let source = generate_from_value(&data);
         // Provider enum should have supports_reasoning method
         assert!(source.contains("pub fn supports_reasoning(self) -> bool {"));
         // LlmModel should delegate to provider
@@ -1085,9 +1085,9 @@ mod tests {
         assert!(source.contains("Self::Ollama(_) | Self::LlamaCpp(_) => false,"));
     }
 
-    fn generate_from_value(data: Value) -> String {
+    fn generate_from_value(data: &Value) -> String {
         let tmp = NamedTempFile::new().expect("temp file");
-        let json = serde_json::to_string(&data).expect("serialize fixture");
+        let json = serde_json::to_string(data).expect("serialize fixture");
         std::fs::write(tmp.path(), json).expect("write fixture");
         generate(tmp.path()).expect("codegen succeeds")
     }

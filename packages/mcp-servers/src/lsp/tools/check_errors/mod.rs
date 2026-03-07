@@ -72,7 +72,7 @@ mod tests {
     use lsp_types::{DiagnosticSeverity, Position, Range};
 
     fn make_uri_string(path: &str) -> String {
-        format!("file://{}", path)
+        format!("file://{path}")
     }
 
     fn make_diagnostic(severity: DiagnosticSeverity, message: &str, line: u32) -> Diagnostic {

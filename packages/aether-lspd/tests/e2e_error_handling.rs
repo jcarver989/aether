@@ -47,7 +47,7 @@ async fn test_connection_to_stopped_daemon() {
     );
     match result {
         Err(ClientError::ConnectionFailed(_)) => {}
-        Err(e) => panic!("Unexpected error type: {:?}", e),
+        Err(e) => panic!("Unexpected error type: {e:?}"),
         Ok(_) => panic!("Should have failed to connect"),
     }
 }
@@ -73,13 +73,9 @@ async fn test_invalid_position() {
         .await
         .expect("rust-analyzer not ready");
 
-    let result = client.hover(uri.clone(), 999999, 999999).await;
+    let result = client.hover(uri.clone(), 999_999, 999_999).await;
 
-    match result {
-        Ok(None) => {}
-        Ok(Some(_)) => {}
-        Err(_) => {}
-    }
+    let _ = result;
 
     harness.kill().await.expect("Failed to kill daemon");
 }

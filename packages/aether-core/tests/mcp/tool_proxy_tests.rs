@@ -2,7 +2,7 @@ use aether_core::mcp::{McpSpawnResult, mcp};
 use aether_core::testing::{FakeMcpServer, fake_mcp};
 use mcp_utils::client::{McpServerConfig, ServerConfig};
 
-/// Build a ToolProxy config wrapping one or more fake in-memory servers.
+/// Build a `ToolProxy` config wrapping one or more fake in-memory servers.
 fn tool_proxy_with_fakes(proxy_name: &str, servers: Vec<(&str, FakeMcpServer)>) -> McpServerConfig {
     let nested: Vec<ServerConfig> = servers
         .into_iter()
@@ -234,21 +234,18 @@ async fn test_tool_proxy_call_tool_routes_to_nested_server() {
     // Collect events until we get Complete
     let mut result_text = String::new();
     while let Some(event) = event_rx.recv().await {
-        match event {
-            ToolExecutionEvent::Complete { result, .. } => {
-                match result {
-                    Ok(tool_result) => result_text = tool_result.result,
-                    Err(e) => panic!("Tool execution failed: {}", e.error),
-                }
-                break;
+        if let ToolExecutionEvent::Complete { result, .. } = event {
+            match result {
+                Ok(tool_result) => result_text = tool_result.result,
+                Err(e) => panic!("Tool execution failed: {}", e.error),
             }
-            _ => {}
+            break;
         }
     }
 
     // The result should contain the sum (7)
     assert!(
-        result_text.contains("7"),
+        result_text.contains('7'),
         "Expected result to contain sum of 3+4=7, got: {result_text}"
     );
 
@@ -404,9 +401,9 @@ fn extract_tool_dir(instructions: &str) -> Option<String> {
 }
 
 fn cleanup_tool_dir(instructions: &[mcp_utils::client::ServerInstructions], proxy_name: &str) {
-    if let Some(instr) = instructions.iter().find(|i| i.server_name == proxy_name) {
-        if let Some(tool_dir) = extract_tool_dir(&instr.instructions) {
-            let _ = std::fs::remove_dir_all(tool_dir);
-        }
+    if let Some(instr) = instructions.iter().find(|i| i.server_name == proxy_name)
+        && let Some(tool_dir) = extract_tool_dir(&instr.instructions)
+    {
+        let _ = std::fs::remove_dir_all(tool_dir);
     }
 }

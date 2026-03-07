@@ -114,8 +114,8 @@ mod tests {
         ResponseTextDeltaEvent, ResponseUsage,
     };
     /// Build a minimal `Response` with given status and optional usage via JSON deserialization.
-    fn make_response(status: Status, usage: Option<ResponseUsage>) -> Response {
-        let status_str = serde_json::to_value(&status).unwrap();
+    fn make_response(status: &Status, usage: Option<ResponseUsage>) -> Response {
+        let status_str = serde_json::to_value(status).unwrap();
         let mut json = serde_json::json!({
             "id": "resp_1",
             "object": "response",
@@ -168,7 +168,7 @@ mod tests {
             }),
             ResponseStreamEvent::ResponseCompleted(ResponseCompletedEvent {
                 sequence_number: 3,
-                response: make_response(Status::Completed, Some(make_usage(10, 5))),
+                response: make_response(&Status::Completed, Some(make_usage(10, 5))),
             }),
         ];
 
@@ -239,7 +239,7 @@ mod tests {
             ),
             ResponseStreamEvent::ResponseCompleted(ResponseCompletedEvent {
                 sequence_number: 5,
-                response: make_response(Status::Completed, Some(make_usage(20, 10))),
+                response: make_response(&Status::Completed, Some(make_usage(20, 10))),
             }),
         ];
 
@@ -313,7 +313,7 @@ mod tests {
             ),
             ResponseStreamEvent::ResponseCompleted(ResponseCompletedEvent {
                 sequence_number: 3,
-                response: make_response(Status::Completed, None),
+                response: make_response(&Status::Completed, None),
             }),
         ];
 
@@ -338,7 +338,7 @@ mod tests {
         let events = vec![ResponseStreamEvent::ResponseCompleted(
             ResponseCompletedEvent {
                 sequence_number: 1,
-                response: make_response(Status::Incomplete, None),
+                response: make_response(&Status::Incomplete, None),
             },
         )];
 

@@ -132,6 +132,13 @@ pub struct FakeHttpClient {
 }
 
 #[cfg(test)]
+impl Default for FakeHttpClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
 impl FakeHttpClient {
     pub fn new() -> Self {
         Self {

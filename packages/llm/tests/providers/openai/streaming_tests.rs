@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use async_openai::types::chat::{
     ChatChoiceStream, ChatCompletionMessageToolCallChunk, ChatCompletionStreamResponseDelta,
     CreateChatCompletionStreamResponse, FinishReason, FunctionCallStream,
@@ -7,6 +9,7 @@ use tokio_stream::StreamExt;
 use llm::providers::openai::streaming::process_completion_stream;
 use llm::{LlmResponse, StopReason};
 
+#[allow(clippy::too_many_lines)]
 #[tokio::test]
 async fn test_parallel_tool_calls() {
     // Create a stream with parallel tool calls at different indices
@@ -291,6 +294,7 @@ async fn test_parallel_tool_calls() {
     ));
 }
 
+#[allow(clippy::too_many_lines)]
 #[tokio::test]
 async fn test_tool_call_followed_by_content() {
     // Test that when tool call is followed by content, the tool call is completed first

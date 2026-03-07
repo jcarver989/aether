@@ -281,7 +281,9 @@ async fn test_parse_tool_proxy_config() {
             assert!(has_stdio, "Expected a Stdio nested server");
             assert!(has_http, "Expected an Http nested server");
         }
-        other => panic!("Expected ToolProxy config, got {:?}", other),
+        McpServerConfig::Server(_) => {
+            panic!("Expected ToolProxy config");
+        }
     }
 }
 
@@ -313,7 +315,7 @@ async fn test_tool_proxy_rejects_nested_in_memory() {
             assert!(msg.contains("in-memory"));
             assert!(msg.contains("bad"));
         }
-        other => panic!("Expected InvalidNestedConfig, got {:?}", other),
+        other => panic!("Expected InvalidNestedConfig, got {other:?}"),
     }
 }
 
@@ -348,6 +350,6 @@ async fn test_tool_proxy_rejects_nested_tool_proxy() {
             assert!(msg.contains("in-memory"));
             assert!(msg.contains("inner"));
         }
-        other => panic!("Expected InvalidNestedConfig, got {:?}", other),
+        other => panic!("Expected InvalidNestedConfig, got {other:?}"),
     }
 }

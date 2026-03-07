@@ -1337,7 +1337,10 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        let all_text: String = lines.iter().map(|l| l.plain_text()).collect();
+        let all_text: String = lines
+            .iter()
+            .map(crate::tui::screen::Line::plain_text)
+            .collect();
         assert!(
             !all_text.contains("spawn_subagent"),
             "Parent tool line should be hidden when sub-agents exist: {all_text}"

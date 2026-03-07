@@ -115,7 +115,11 @@ mod tests {
         let path = socket_path(workspace, LanguageId::Rust);
         let filename = path.file_name().unwrap().to_str().unwrap();
         assert!(filename.contains("rust"));
-        assert!(filename.ends_with(".sock"));
+        assert!(
+            std::path::Path::new(filename)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("sock"))
+        );
     }
 
     #[test]

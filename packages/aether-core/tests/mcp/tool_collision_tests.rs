@@ -33,15 +33,15 @@ async fn test_tool_namespacing_desired_behavior() {
     // Since we can't directly call discover_tools without actual servers,
     // we test the namespacing logic by verifying the format
     let server_a_name = "server_a";
-    let server_b_name = "server_b";
+    let second_server_name = "server_b";
     let tool_name = "list_files";
 
     // Verify that the namespacing format is correct
     let expected_tool_a_name = format!("{server_a_name}::{tool_name}");
-    let expected_tool_b_name = format!("{server_b_name}::{tool_name}");
+    let expected_second_tool_name = format!("{second_server_name}::{tool_name}");
 
     assert_eq!(expected_tool_a_name, "server_a::list_files");
-    assert_eq!(expected_tool_b_name, "server_b::list_files");
+    assert_eq!(expected_second_tool_name, "server_b::list_files");
 
     // Test that we can extract the original tool name correctly
     let extracted_tool_name = expected_tool_a_name.split("::").nth(1).unwrap();

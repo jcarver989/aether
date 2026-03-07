@@ -326,7 +326,7 @@ mod tests {
             non_selected
                 .spans()
                 .iter()
-                .map(|s| s.text())
+                .map(crate::tui::screen::Span::text)
                 .collect::<Vec<_>>(),
         );
 
@@ -344,7 +344,7 @@ mod tests {
         let lines = rendered_lines(&mut picker);
 
         // Skip header line, collect command lines
-        let command_lines: Vec<&str> = lines[1..].iter().map(|s| s.as_str()).collect();
+        let command_lines: Vec<&str> = lines[1..].iter().map(std::string::String::as_str).collect();
         assert_eq!(command_lines.len(), 3);
 
         // All descriptions should start at the same display column.

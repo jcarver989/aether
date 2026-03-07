@@ -182,7 +182,7 @@ mod tests {
 
     fn assistant_with_tool_call(reasoning_content: Option<&str>) -> ChatMessage {
         ChatMessage::Assistant {
-            content: "".to_string(),
+            content: String::new(),
             reasoning_content: reasoning_content.map(ToString::to_string),
             timestamp: IsoString::now(),
             tool_calls: vec![ToolCallRequest {

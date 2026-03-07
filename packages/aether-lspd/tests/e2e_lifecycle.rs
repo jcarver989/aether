@@ -82,8 +82,8 @@ async fn test_multiple_clients() {
     let hover1 = client1.hover(uri.clone(), 0, 0).await;
     let hover2 = client2.hover(uri.clone(), 0, 0).await;
 
-    assert!(hover1.is_ok(), "Client 1 hover failed: {:?}", hover1);
-    assert!(hover2.is_ok(), "Client 2 hover failed: {:?}", hover2);
+    assert!(hover1.is_ok(), "Client 1 hover failed: {hover1:?}");
+    assert!(hover2.is_ok(), "Client 2 hover failed: {hover2:?}");
 
     harness.kill().await.expect("Failed to kill daemon");
 }
@@ -127,7 +127,7 @@ async fn test_did_change_notification() {
 
     assert!(has_errors, "Expected errors in invalid code");
 
-    let valid_content = r#"fn main() { let x: i32 = 42; }"#;
+    let valid_content = r"fn main() { let x: i32 = 42; }";
     client
         .notify_changed(did_change_params(uri.clone(), 2, valid_content))
         .await
@@ -138,8 +138,7 @@ async fn test_did_change_notification() {
     let hover = client.hover(uri.clone(), 0, 3).await;
     assert!(
         hover.is_ok(),
-        "Hover should work after didChange: {:?}",
-        hover
+        "Hover should work after didChange: {hover:?}"
     );
 
     harness.kill().await.expect("Failed to kill daemon");
@@ -311,8 +310,7 @@ async fn test_did_close_notification() {
     // Hover may return None for closed file, but shouldn't error
     assert!(
         hover.is_ok(),
-        "Hover should not error after didClose: {:?}",
-        hover
+        "Hover should not error after didClose: {hover:?}"
     );
 
     harness.kill().await.expect("Failed to kill daemon");

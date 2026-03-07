@@ -32,7 +32,7 @@ fn test_deserialize_zai_response_missing_object_field() {
     let response = result.unwrap();
     assert_eq!(response.id, "202510181239034578873d49744455");
     assert_eq!(response.model, "glm-4.6");
-    assert_eq!(response.created, 1760762344);
+    assert_eq!(response.created, 1_760_762_344);
     // Should have default object value
     assert_eq!(response.object, "chat.completion.chunk");
     assert_eq!(response.choices.len(), 1);
@@ -96,7 +96,7 @@ fn test_convert_to_openai_type() {
 
     assert_eq!(openai_response.id, "test123");
     assert_eq!(openai_response.model, "glm-4.6");
-    assert_eq!(openai_response.created, 1760762344);
+    assert_eq!(openai_response.created, 1_760_762_344);
     assert_eq!(openai_response.object, "chat.completion.chunk");
 }
 

@@ -68,6 +68,7 @@ fn find_in_nested(symbols: &[DocumentSymbol], target: &str) -> Option<u32> {
     None
 }
 
+#[allow(deprecated)]
 #[cfg(test)]
 mod tests {
     use super::*;

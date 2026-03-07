@@ -7,6 +7,7 @@ use llm::providers::openrouter::OpenRouterProvider;
 
 use std::io::{self, Write};
 
+#[allow(clippy::too_many_lines)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
@@ -39,16 +40,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
 
     loop {
-        use AgentMessage::*;
+        use AgentMessage::{
+            AutoContinue, Cancelled, ContextCleared, ContextCompactionResult,
+            ContextCompactionStarted, ContextUsageUpdate, Done, Error, ModelSwitched, Text,
+            Thought, ToolCall, ToolError, ToolProgress, ToolResult,
+        };
         match rx.recv().await {
             Some(Text {
                 chunk, is_complete, ..
             }) => {
-                if !is_complete {
+                if is_complete {
+                    println!();
+                } else {
                     print!("{chunk}");
                     io::stdout().flush().unwrap();
-                } else {
-                    println!();
                 }
             }
             Some(ToolCall { request, .. }) => {
@@ -89,12 +94,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
             Some(ContextCompactionStarted { message_count }) => {
-                println!("Context compaction started: {} messages", message_count);
+                println!("Context compaction started: {message_count} messages");
             }
             Some(ContextCompactionResult {
                 messages_removed, ..
             }) => {
-                println!("Context compacted: {} messages removed", messages_removed);
+                println!("Context compacted: {messages_removed} messages removed");
             }
             Some(ContextUsageUpdate {
                 usage_ratio,
@@ -118,12 +123,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 max_attempts,
             }) => {
                 println!(
-                    "Auto-continuing: attempt {}/{} (LLM stopped due to length)",
-                    attempt, max_attempts
+                    "Auto-continuing: attempt {attempt}/{max_attempts} (LLM stopped due to length)"
                 );
             }
             Some(ModelSwitched { previous, new }) => {
-                println!("Model switched: {} -> {}", previous, new);
+                println!("Model switched: {previous} -> {new}");
             }
             Some(ContextCleared) => {
                 println!("Context cleared");

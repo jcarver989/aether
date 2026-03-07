@@ -51,9 +51,9 @@ impl From<std::io::Error> for TestProjectError {
 impl std::fmt::Display for TestProjectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TestProjectError::Io(e) => write!(f, "IO error: {}", e),
+            TestProjectError::Io(e) => write!(f, "IO error: {e}"),
             TestProjectError::CommandFailed { command, stderr } => {
-                write!(f, "Command '{}' failed:\n{}", command, stderr)
+                write!(f, "Command '{command}' failed:\n{stderr}")
             }
         }
     }
@@ -85,11 +85,10 @@ impl CargoProject {
     fn init_cargo_toml(&self, name: &str) -> Result<(), TestProjectError> {
         let content = format!(
             r#"[package]
-name = "{}"
+name = "{name}"
 version = "0.1.0"
 edition = "2021"
-"#,
-            name
+"#
         );
         fs::write(self.root().join("Cargo.toml"), content)?;
         Ok(())
@@ -136,10 +135,9 @@ impl NodeProject {
     fn init_package_json(&self, name: &str) -> Result<(), TestProjectError> {
         let content = format!(
             r#"{{
-  "name": "{}",
+  "name": "{name}",
   "version": "0.1.0"
-}}"#,
-            name
+}}"#
         );
         fs::write(self.root().join("package.json"), content)?;
         Ok(())

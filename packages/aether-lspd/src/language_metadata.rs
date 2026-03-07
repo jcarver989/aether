@@ -303,8 +303,7 @@ mod tests {
         for variant in variants {
             assert!(
                 metadata_for(variant).is_some(),
-                "Missing metadata for {:?}",
-                variant
+                "Missing metadata for {variant:?}"
             );
         }
     }

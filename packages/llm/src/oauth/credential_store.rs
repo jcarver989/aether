@@ -339,7 +339,7 @@ mod tests {
             client_id: "my-client".to_string(),
             access_token: "my-access-token".to_string(),
             refresh_token: Some("my-refresh-token".to_string()),
-            expires_at: Some(9999999999999),
+            expires_at: Some(9_999_999_999_999),
         };
 
         store.save_credential(credential).await.unwrap();

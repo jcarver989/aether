@@ -235,6 +235,7 @@ impl Component for ConfigOverlay {
 impl HandlesInput for ConfigOverlay {
     type Action = ConfigOverlayAction;
 
+    #[allow(clippy::too_many_lines)]
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         // Server overlay has highest priority
         if let Some(ref mut overlay) = self.server_overlay {
@@ -831,7 +832,10 @@ mod tests {
         // Rendered lines do not contain Reasoning Effort
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
-        let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let text: Vec<String> = lines
+            .iter()
+            .map(crate::tui::screen::Line::plain_text)
+            .collect();
         assert!(
             !text.iter().any(|l| l.contains("Reasoning Effort")),
             "Reasoning Effort should NOT appear initially; got:\n{}",
@@ -851,7 +855,10 @@ mod tests {
         overlay.update_config_options(&updated_options);
 
         let lines = overlay.render(&context);
-        let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let text: Vec<String> = lines
+            .iter()
+            .map(crate::tui::screen::Line::plain_text)
+            .collect();
         assert!(
             !text.iter().any(|l| l.contains("Reasoning Effort")),
             "Reasoning Effort should NOT appear after update; got:\n{}",
