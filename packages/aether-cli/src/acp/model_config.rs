@@ -38,7 +38,7 @@ pub(crate) fn effective_model<'a>(
 }
 
 /// Build the "Model" select config option with all models from all providers.
-/// Display names use "Provider / `ModelName`" format.
+/// Display names use "Provider: ModelName" format.
 /// Fully-unavailable providers are collapsed into a single summary line.
 struct ProviderGroup<'a> {
     models: Vec<&'a LlmModel>,
@@ -88,11 +88,11 @@ pub(crate) fn build_model_config_option(
                 let is_available = available_models.contains(&value);
                 let needs_login = needs_oauth_login(m, &credential_ids);
                 let name = if is_available && !needs_login {
-                    format!("{display} / {}", m.display_name())
+                    format!("{display}: {}", m.display_name())
                 } else if needs_login {
-                    format!("{display} / {} (needs login)", m.display_name(),)
+                    format!("{display}: {} (needs login)", m.display_name(),)
                 } else {
-                    format!("{display} / {} (unavailable)", m.display_name())
+                    format!("{display}: {} (unavailable)", m.display_name())
                 };
                 let mut option = acp::SessionConfigSelectOption::new(value, name);
                 if m.supports_reasoning() {
@@ -365,14 +365,14 @@ mod tests {
             panic!("Expected Ungrouped options");
         };
 
-        // Available models should have "Provider / Model" format
+        // Available models should have "Provider: Model" format
         let sonnet = options
             .iter()
             .find(|o| o.value.0.as_ref() == "anthropic:claude-sonnet-4-5")
             .expect("expected anthropic sonnet option");
         assert!(
-            sonnet.name.starts_with("Anthropic / "),
-            "Expected 'Anthropic / ...' display name, got: {}",
+            sonnet.name.starts_with("Anthropic: "),
+            "Expected 'Anthropic: ...' display name, got: {}",
             sonnet.name
         );
     }
@@ -393,7 +393,7 @@ mod tests {
             .iter()
             .find(|o| o.name.contains("unavailable"))
             .expect("expected at least one unavailable model option");
-        assert!(unavailable.name.contains(" / "));
+        assert!(unavailable.name.contains(": "));
         assert!(
             unavailable
                 .description
