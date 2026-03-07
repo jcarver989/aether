@@ -4,8 +4,8 @@ use async_openai::types::chat::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::providers::openai_compatible::types::CompatibleChatMessage;
 use crate::providers::openai_compatible::CompatibleChatRequest;
+use crate::providers::openai_compatible::types::CompatibleChatMessage;
 
 /// OpenRouter-specific usage configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -12,6 +12,7 @@ pub mod model_selector;
 pub(crate) mod plan_view;
 pub mod progress_indicator;
 pub mod provider_login;
+pub(crate) mod reasoning_bar;
 pub mod server_status;
 pub mod status_line;
 pub mod text_input;

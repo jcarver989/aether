@@ -1,4 +1,5 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
+use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{
     Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
     Style, classify_key,
@@ -317,20 +318,7 @@ fn cycle_reasoning_left(effort: Option<ReasoningEffort>) -> Option<ReasoningEffo
 }
 
 fn reasoning_config_value(effort: Option<ReasoningEffort>) -> &'static str {
-    effort.map_or("none", ReasoningEffort::as_str)
-}
-
-fn reasoning_bar(effort: Option<ReasoningEffort>) -> String {
-    const TOTAL: usize = 3;
-    let filled = match effort {
-        None => 0,
-        Some(ReasoningEffort::Low) => 1,
-        Some(ReasoningEffort::Medium) => 2,
-        Some(ReasoningEffort::High) => 3,
-    };
-    let filled_part: String = "▰".repeat(filled.min(TOTAL));
-    let empty_part: String = "▱".repeat(TOTAL.saturating_sub(filled));
-    format!("{filled_part}{empty_part}")
+    ReasoningEffort::config_str(effort)
 }
 
 #[cfg(test)]
