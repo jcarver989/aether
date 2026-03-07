@@ -291,9 +291,7 @@ mod tests {
         }
     }
 
-    fn context_with_assistant_message(
-        message: ChatMessage,
-    ) -> crate::Context {
+    fn context_with_assistant_message(message: ChatMessage) -> crate::Context {
         crate::Context::new(
             vec![
                 ChatMessage::User {
@@ -313,8 +311,7 @@ mod tests {
 
     #[test]
     fn test_build_request_includes_reasoning_content_on_assistant_tool_message() {
-        let context =
-            context_with_assistant_message(assistant_with_tool_call(Some("trace chunk")));
+        let context = context_with_assistant_message(assistant_with_tool_call(Some("trace chunk")));
         let request =
             crate::providers::openai_compatible::build_chat_request("test-model", &context)
                 .unwrap();

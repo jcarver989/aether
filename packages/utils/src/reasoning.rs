@@ -23,6 +23,21 @@ impl ReasoningEffort {
         &[Self::Low, Self::Medium, Self::High]
     }
 
+    /// Cycles: None → Low → Medium → High → None
+    pub fn cycle_next(current: Option<Self>) -> Option<Self> {
+        match current {
+            None => Some(Self::Low),
+            Some(Self::Low) => Some(Self::Medium),
+            Some(Self::Medium) => Some(Self::High),
+            Some(Self::High) => None,
+        }
+    }
+
+    /// Converts `Option<ReasoningEffort>` to a config string value.
+    pub fn config_str(effort: Option<Self>) -> &'static str {
+        effort.map_or("none", Self::as_str)
+    }
+
     /// Parse a string into an optional effort level.
     /// Accepts "none" / "" as `None`, and "low"/"medium"/"high" as `Some`.
     pub fn parse(s: &str) -> Result<Option<Self>, String> {
@@ -103,6 +118,32 @@ mod tests {
     #[test]
     fn parse_rejects_unknown() {
         assert!(ReasoningEffort::parse("max").is_err());
+    }
+
+    #[test]
+    fn cycle_next_sequence() {
+        let mut current = None;
+        current = ReasoningEffort::cycle_next(current);
+        assert_eq!(current, Some(ReasoningEffort::Low));
+        current = ReasoningEffort::cycle_next(current);
+        assert_eq!(current, Some(ReasoningEffort::Medium));
+        current = ReasoningEffort::cycle_next(current);
+        assert_eq!(current, Some(ReasoningEffort::High));
+        current = ReasoningEffort::cycle_next(current);
+        assert_eq!(current, None);
+    }
+
+    #[test]
+    fn config_str_values() {
+        assert_eq!(ReasoningEffort::config_str(None), "none");
+        assert_eq!(
+            ReasoningEffort::config_str(Some(ReasoningEffort::Low)),
+            "low"
+        );
+        assert_eq!(
+            ReasoningEffort::config_str(Some(ReasoningEffort::High)),
+            "high"
+        );
     }
 
     #[test]

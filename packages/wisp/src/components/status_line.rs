@@ -1,10 +1,13 @@
+use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::soft_wrap::{display_width_line, display_width_text};
 use crate::tui::{Component, Line, RenderContext};
+use utils::ReasoningEffort;
 
 pub struct StatusLine<'a> {
     pub agent_name: &'a str,
     pub mode_display: Option<&'a str>,
     pub model_display: Option<&'a str>,
+    pub reasoning_effort: Option<ReasoningEffort>,
     pub context_pct_left: Option<u8>,
     pub waiting_for_response: bool,
     pub unhealthy_server_count: usize,
@@ -26,6 +29,11 @@ impl Component for StatusLine<'_> {
         if let Some(model) = self.model_display {
             left_line.push_styled(" · ", sep);
             left_line.push_styled(model, context.theme.success());
+            left_line.push_text(" ");
+            left_line.push_styled(
+                reasoning_bar(self.reasoning_effort),
+                context.theme.success(),
+            );
         }
 
         let (right, color) = if self.waiting_for_response {
@@ -74,6 +82,7 @@ mod tests {
             agent_name: "claude-code",
             mode_display: None,
             model_display: None,
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -90,6 +99,7 @@ mod tests {
             agent_name: "test-agent",
             mode_display: None,
             model_display: None,
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -106,6 +116,7 @@ mod tests {
             agent_name: "aether-acp",
             mode_display: None,
             model_display: Some("gpt-4o"),
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -124,6 +135,7 @@ mod tests {
             agent_name: "aether-acp",
             mode_display: None,
             model_display: None,
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -144,6 +156,7 @@ mod tests {
             agent_name: "aether",
             mode_display: None,
             model_display: Some("gpt-4o"),
+            reasoning_effort: None,
             context_pct_left: Some(72),
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -162,6 +175,7 @@ mod tests {
             agent_name: "aether",
             mode_display: None,
             model_display: Some("gpt-4o"),
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -178,6 +192,7 @@ mod tests {
             agent_name: "aether",
             mode_display: None,
             model_display: Some("gpt-4o"),
+            reasoning_effort: None,
             context_pct_left: Some(72),
             waiting_for_response: true,
             unhealthy_server_count: 0,
@@ -202,6 +217,7 @@ mod tests {
             agent_name: "aether",
             mode_display: None,
             model_display: None,
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: true,
             unhealthy_server_count: 0,
@@ -222,6 +238,7 @@ mod tests {
             agent_name: "aether",
             mode_display: None,
             model_display: Some("gpt-4o"),
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 1,
@@ -241,6 +258,7 @@ mod tests {
             agent_name: "aether",
             mode_display: None,
             model_display: None,
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 3,
@@ -260,6 +278,7 @@ mod tests {
             agent_name: "aether",
             mode_display: None,
             model_display: None,
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -279,6 +298,7 @@ mod tests {
             agent_name: "aether",
             model_display: None,
             mode_display: None,
+            reasoning_effort: None,
             context_pct_left: Some(50),
             waiting_for_response: false,
             unhealthy_server_count: 2,
@@ -302,6 +322,7 @@ mod tests {
             agent_name: "wisp",
             mode_display: Some("Planner"),
             model_display: Some("gpt-4o"),
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -334,6 +355,7 @@ mod tests {
             agent_name: "wisp",
             mode_display: Some("Planner"),
             model_display: None,
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -361,6 +383,7 @@ mod tests {
             agent_name: "wisp",
             mode_display: None,
             model_display: None,
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -388,6 +411,7 @@ mod tests {
             agent_name: "wisp",
             mode_display: None,
             model_display: Some("gpt-4o"),
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -415,6 +439,7 @@ mod tests {
             agent_name: "wisp",
             mode_display: Some("Planner"),
             model_display: Some("gpt-4o"),
+            reasoning_effort: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -449,5 +474,105 @@ mod tests {
             agent_fg, llm_fg,
             "agent and model should have different colors"
         );
+    }
+
+    #[test]
+    fn renders_reasoning_bar_next_to_model_when_reasoning_set() {
+        let mut status = StatusLine {
+            agent_name: "wisp",
+            mode_display: None,
+            model_display: Some("gpt-4o"),
+            reasoning_effort: Some(ReasoningEffort::Medium),
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 0,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        let text = lines[0].plain_text();
+        assert!(text.contains("gpt-4o"), "should contain model name");
+        assert!(
+            text.contains("▰▰▱"),
+            "should contain reasoning bar for medium effort"
+        );
+        // Verify order: model should appear before bar
+        let model_index = text.find("gpt-4o").expect("model position");
+        let bar_index = text.find("▰▰▱").expect("bar position");
+        assert!(
+            model_index < bar_index,
+            "model should come before reasoning bar"
+        );
+    }
+
+    #[test]
+    fn does_not_render_reasoning_bar_when_model_absent() {
+        let mut status = StatusLine {
+            agent_name: "wisp",
+            mode_display: None,
+            model_display: None,
+            reasoning_effort: Some(ReasoningEffort::High),
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 0,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        let text = lines[0].plain_text();
+        assert!(!text.contains('▰'), "should not contain filled bar chars");
+        assert!(!text.contains('▱'), "should not contain empty bar chars");
+    }
+
+    #[test]
+    fn renders_empty_reasoning_bar_for_none_effort() {
+        let mut status = StatusLine {
+            agent_name: "wisp",
+            mode_display: None,
+            model_display: Some("gpt-4o"),
+            reasoning_effort: None,
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 0,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        let text = lines[0].plain_text();
+        assert!(text.contains("▱▱▱"), "should contain empty reasoning bar");
+    }
+
+    #[test]
+    fn renders_reasoning_bar_with_model_semantic_color() {
+        let mut status = StatusLine {
+            agent_name: "wisp",
+            mode_display: None,
+            model_display: Some("gpt-4o"),
+            reasoning_effort: Some(ReasoningEffort::Low),
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 0,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+
+        let spans = lines[0].spans();
+        let bar_span = spans
+            .iter()
+            .find(|s| s.text().contains("▰"))
+            .expect("should have a span containing the reasoning bar");
+        let style = bar_span.style();
+        assert_eq!(
+            style.fg,
+            Some(ctx.theme.success()),
+            "reasoning bar should use success color (same as model)"
+        );
+    }
+
+    #[test]
+    fn reasoning_bar_mapping() {
+        use super::reasoning_bar;
+
+        assert_eq!(reasoning_bar(None), "▱▱▱");
+        assert_eq!(reasoning_bar(Some(ReasoningEffort::Low)), "▰▱▱");
+        assert_eq!(reasoning_bar(Some(ReasoningEffort::Medium)), "▰▰▱");
+        assert_eq!(reasoning_bar(Some(ReasoningEffort::High)), "▰▰▰");
     }
 }

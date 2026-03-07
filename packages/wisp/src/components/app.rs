@@ -37,6 +37,7 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
 use unicode_width::UnicodeWidthStr;
 use url::Url;
+use utils::ReasoningEffort;
 
 const MAX_EMBED_TEXT_BYTES: usize = 1024 * 1024;
 
@@ -85,6 +86,7 @@ pub struct App {
     agent_name: String,
     mode_display: Option<String>,
     model_display: Option<String>,
+    reasoning_effort: Option<ReasoningEffort>,
     config_options: Vec<SessionConfigOption>,
     waiting_for_response: bool,
     animation_tick: u16,
@@ -113,6 +115,7 @@ impl App {
             agent_name,
             mode_display: extract_mode_display(config_options),
             model_display: extract_model_display(config_options),
+            reasoning_effort: extract_reasoning_effort(config_options),
             config_options: config_options.to_vec(),
             waiting_for_response: false,
             animation_tick: 0,
@@ -147,6 +150,16 @@ impl App {
             if let Some(cycle_event) = self.cycle_quick_option() {
                 return vec![cycle_event, AppEvent::Render];
             }
+            return vec![];
+        }
+
+        if key_event.code == KeyCode::Char('t')
+            && key_event.modifiers.contains(event::KeyModifiers::ALT)
+        {
+            if let Some(cycle_event) = self.cycle_reasoning_option() {
+                return vec![cycle_event, AppEvent::Render];
+            }
+
             return vec![];
         }
 
@@ -227,6 +240,7 @@ impl App {
                 self.conversation.close_thought_block();
                 self.mode_display = extract_mode_display(&update.config_options);
                 self.model_display = extract_model_display(&update.config_options);
+                self.reasoning_effort = extract_reasoning_effort(&update.config_options);
                 self.config_options.clone_from(&update.config_options);
                 if let Some(ref mut overlay) = self.config_overlay {
                     overlay.update_config_options(&update.config_options);
@@ -528,6 +542,19 @@ impl App {
             config_id: option.id.0.to_string(),
             new_value: next_value,
         })
+    }
+
+    fn cycle_reasoning_option(&self) -> Option<AppEvent> {
+        self.config_options
+            .iter()
+            .any(|o| o.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())
+            .then(|| {
+                let next = ReasoningEffort::cycle_next(self.reasoning_effort);
+                AppEvent::SetConfigOption {
+                    config_id: ConfigOptionId::ReasoningEffort.as_str().to_string(),
+                    new_value: ReasoningEffort::config_str(next).to_string(),
+                }
+            })
     }
 
     fn handle_file_picker_outcome(
@@ -882,6 +909,7 @@ impl CursorComponent for App {
             agent_name: &self.agent_name,
             mode_display: self.mode_display.as_deref(),
             model_display: self.model_display.as_deref(),
+            reasoning_effort: self.reasoning_effort,
             context_pct_left: self.context_usage_pct,
             waiting_for_response: self.waiting_for_response,
             unhealthy_server_count: unhealthy_count,
@@ -1092,6 +1120,18 @@ fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<Strin
     } else {
         extract_select_display(config_options, ConfigOptionId::Model)
     }
+}
+
+fn extract_reasoning_effort(config_options: &[SessionConfigOption]) -> Option<ReasoningEffort> {
+    let option = config_options
+        .iter()
+        .find(|o| o.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())?;
+
+    let SessionConfigKind::Select(ref select) = option.kind else {
+        return None;
+    };
+
+    ReasoningEffort::parse(&select.current_value.0).unwrap_or(None)
 }
 
 #[cfg(test)]
@@ -1959,5 +1999,124 @@ mod tests {
         app.on_session_update(update);
 
         assert_eq!(app.mode_display, Some("Coder".to_string()));
+    }
+
+    fn reasoning_options(current: &'static str) -> Vec<SessionConfigOption> {
+        vec![SessionConfigOption::select(
+            "reasoning_effort",
+            "Reasoning Effort",
+            current,
+            vec![
+                acp::SessionConfigSelectOption::new("none", "None"),
+                acp::SessionConfigSelectOption::new("low", "Low"),
+                acp::SessionConfigSelectOption::new("medium", "Medium"),
+                acp::SessionConfigSelectOption::new("high", "High"),
+            ],
+        )]
+    }
+
+    fn assert_cycles_reasoning(from: &'static str, to: &'static str) {
+        let options = reasoning_options(from);
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        let effects = app.on_key_event(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT));
+
+        assert!(effects.iter().any(|event| {
+            matches!(
+                event,
+                AppEvent::SetConfigOption { config_id, new_value }
+                if config_id == "reasoning_effort" && new_value == to
+            )
+        }));
+    }
+
+    #[test]
+    fn meta_t_cycles_reasoning_none_to_low() {
+        assert_cycles_reasoning("none", "low");
+    }
+
+    #[test]
+    fn meta_t_cycles_reasoning_low_to_medium() {
+        assert_cycles_reasoning("low", "medium");
+    }
+
+    #[test]
+    fn meta_t_cycles_reasoning_medium_to_high() {
+        assert_cycles_reasoning("medium", "high");
+    }
+
+    #[test]
+    fn meta_t_cycles_reasoning_high_to_none() {
+        assert_cycles_reasoning("high", "none");
+    }
+
+    #[test]
+    fn meta_t_emits_render_event() {
+        let options = reasoning_options("none");
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        let effects = app.on_key_event(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT));
+
+        assert!(
+            effects
+                .iter()
+                .any(|event| matches!(event, AppEvent::Render))
+        );
+    }
+
+    #[test]
+    fn meta_t_ignored_when_overlay_consumes_input() {
+        let options = reasoning_options("medium");
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        app.open_config_overlay();
+
+        let effects = app.on_key_event(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT));
+
+        assert!(
+            !effects
+                .iter()
+                .any(|event| matches!(event, AppEvent::SetConfigOption { .. })),
+            "overlay should consume meta+t"
+        );
+    }
+
+    #[test]
+    fn meta_t_noop_when_reasoning_option_absent() {
+        let options = vec![SessionConfigOption::select(
+            "model",
+            "Model",
+            "m1",
+            vec![acp::SessionConfigSelectOption::new("m1", "M1")],
+        )];
+
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        let effects = app.on_key_event(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT));
+
+        assert!(
+            effects.is_empty(),
+            "meta+t should be no-op when reasoning option absent"
+        );
+    }
+
+    #[test]
+    fn extract_reasoning_effort_returns_high() {
+        let opts = reasoning_options("high");
+        assert_eq!(extract_reasoning_effort(&opts), Some(ReasoningEffort::High));
+    }
+
+    #[test]
+    fn extract_reasoning_effort_returns_none_for_none_value() {
+        let opts = reasoning_options("none");
+        assert_eq!(extract_reasoning_effort(&opts), None);
+    }
+
+    #[test]
+    fn extract_reasoning_effort_returns_none_when_missing() {
+        let opts = vec![SessionConfigOption::select(
+            "model",
+            "Model",
+            "m1",
+            vec![acp::SessionConfigSelectOption::new("m1", "M1")],
+        )];
+
+        assert_eq!(extract_reasoning_effort(&opts), None);
     }
 }
