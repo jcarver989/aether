@@ -1,10 +1,9 @@
 use crate::tui::soft_wrap::{display_width_line, display_width_text};
-use crate::tui::{Component, Line, RenderContext, Style};
+use crate::tui::{Component, Line, RenderContext};
 
 pub struct StatusLine<'a> {
     pub agent_name: &'a str,
     pub mode_display: Option<&'a str>,
-    pub mode_index: usize,
     pub model_display: Option<&'a str>,
     pub context_pct_left: Option<u8>,
     pub waiting_for_response: bool,
@@ -14,21 +13,19 @@ pub struct StatusLine<'a> {
 impl Component for StatusLine<'_> {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut left_line = Line::default();
-        let muted = context.theme.muted();
         let sep = context.theme.text_secondary();
 
         left_line.push_text("  ");
-        left_line.push_styled(self.agent_name, muted);
+        left_line.push_styled(self.agent_name, context.theme.info());
 
         if let Some(mode) = self.mode_display {
             left_line.push_styled(" · ", sep);
-            let color = context.theme.mode_badge_bg(self.mode_index);
-            left_line.push_styled(mode, color);
+            left_line.push_styled(mode, context.theme.secondary());
         }
 
         if let Some(model) = self.model_display {
             left_line.push_styled(" · ", sep);
-            left_line.push_styled(model, muted);
+            left_line.push_styled(model, context.theme.success());
         }
 
         let (right, color) = if self.waiting_for_response {
@@ -76,7 +73,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "claude-code",
             mode_display: None,
-            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -93,7 +89,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "test-agent",
             mode_display: None,
-            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -110,7 +105,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether-acp",
             mode_display: None,
-            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
@@ -129,7 +123,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether-acp",
             mode_display: None,
-            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -150,7 +143,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
-            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: Some(72),
             waiting_for_response: false,
@@ -169,7 +161,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
-            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
@@ -186,7 +177,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
-            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: Some(72),
             waiting_for_response: true,
@@ -211,7 +201,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
-            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: true,
@@ -232,7 +221,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
-            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
@@ -252,7 +240,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
-            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -272,7 +259,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "aether",
             mode_display: None,
-            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -293,7 +279,6 @@ mod tests {
             agent_name: "aether",
             model_display: None,
             mode_display: None,
-            mode_index: 0,
             context_pct_left: Some(50),
             waiting_for_response: false,
             unhealthy_server_count: 2,
@@ -316,7 +301,6 @@ mod tests {
         let mut status = StatusLine {
             agent_name: "wisp",
             mode_display: Some("Planner"),
-            mode_index: 0,
             model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
@@ -345,11 +329,10 @@ mod tests {
     }
 
     #[test]
-    fn renders_mode_with_colored_text() {
+    fn renders_mode_with_secondary_color() {
         let mut status = StatusLine {
             agent_name: "wisp",
             mode_display: Some("Planner"),
-            mode_index: 0,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
@@ -367,51 +350,104 @@ mod tests {
         let style = mode_span.style();
         assert_eq!(
             style.fg,
-            Some(ctx.theme.mode_badge_bg(0)),
-            "mode text should be colored by index"
+            Some(ctx.theme.secondary()),
+            "mode text should be colored with secondary theme color"
         );
     }
 
     #[test]
-    fn renders_different_mode_text_colors() {
-        let mut status1 = StatusLine {
+    fn renders_agent_with_info_color() {
+        let mut status = StatusLine {
             agent_name: "wisp",
-            mode_display: Some("Planner"),
-            mode_index: 0,
+            mode_display: None,
             model_display: None,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
         let ctx = RenderContext::new((80, 24));
-        let lines1 = status1.render(&ctx);
-        let spans1 = lines1[0].spans();
-        let mode_span1 = spans1
-            .iter()
-            .find(|s| s.text().contains("Planner"))
-            .expect("planner mode span");
-        let fg1 = mode_span1.style().fg;
+        let lines = status.render(&ctx);
+        assert_eq!(lines.len(), 1);
 
-        let mut status2 = StatusLine {
+        let spans = lines[0].spans();
+        let agent_span = spans
+            .iter()
+            .find(|s| s.text().contains("wisp"))
+            .expect("should have a span containing the agent name");
+        let style = agent_span.style();
+        assert_eq!(
+            style.fg,
+            Some(ctx.theme.info()),
+            "agent name should be colored with info theme color"
+        );
+    }
+
+    #[test]
+    fn renders_model_with_success_color() {
+        let mut status = StatusLine {
             agent_name: "wisp",
-            mode_display: Some("Coder"),
-            mode_index: 1,
-            model_display: None,
+            mode_display: None,
+            model_display: Some("gpt-4o"),
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let lines2 = status2.render(&ctx);
-        let spans2 = lines2[0].spans();
-        let mode_span2 = spans2
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+        assert_eq!(lines.len(), 1);
+
+        let spans = lines[0].spans();
+        let model_span = spans
             .iter()
-            .find(|s| s.text().contains("Coder"))
-            .expect("coder mode span");
-        let fg2 = mode_span2.style().fg;
+            .find(|s| s.text().contains("gpt-4o"))
+            .expect("should have a span containing the model name");
+        let style = model_span.style();
+        assert_eq!(
+            style.fg,
+            Some(ctx.theme.success()),
+            "model name should be colored with success theme color"
+        );
+    }
+
+    #[test]
+    fn renders_each_element_with_distinct_color() {
+        let mut status = StatusLine {
+            agent_name: "wisp",
+            mode_display: Some("Planner"),
+            model_display: Some("gpt-4o"),
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 0,
+        };
+        let ctx = RenderContext::new((80, 24));
+        let lines = status.render(&ctx);
+
+        let spans = lines[0].spans();
+
+        let agent_fg = spans
+            .iter()
+            .find(|s| s.text().contains("wisp"))
+            .map(|s| s.style().fg);
+        let mode_fg = spans
+            .iter()
+            .find(|s| s.text().contains("Planner"))
+            .map(|s| s.style().fg);
+        let model_fg = spans
+            .iter()
+            .find(|s| s.text().contains("gpt-4o"))
+            .map(|s| s.style().fg);
 
         assert_ne!(
-            fg1, fg2,
-            "different mode indices should have different text colors"
+            agent_fg, mode_fg,
+            "agent and mode should have different colors"
+        );
+        assert_ne!(
+            mode_fg, model_fg,
+            "mode and model should have different colors"
+        );
+        assert_ne!(
+            agent_fg, model_fg,
+            "agent and model should have different colors"
         );
     }
 }
