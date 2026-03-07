@@ -5,6 +5,7 @@ use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayAction};
 use crate::components::conversation_window::ConversationBuffer;
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::plan_tracker::PlanTracker;
+use crate::components::progress_indicator::ProgressIndicator;
 use crate::components::prompt_composer::{PromptComposer, PromptComposerAction};
 use crate::components::server_status::server_status_summary;
 use crate::components::tool_call_statuses::ToolCallStatuses;
@@ -57,8 +58,8 @@ pub struct UiState {
     pub(crate) reasoning_effort: Option<ReasoningEffort>,
     pub(crate) config_options: Vec<SessionConfigOption>,
     pub(crate) waiting_for_response: bool,
-    pub(crate) animation_tick: u16,
     pub(crate) context_usage_pct: Option<u8>,
+    pub(crate) progress_indicator: ProgressIndicator,
     pub(crate) config_overlay: Option<ConfigOverlay>,
     pub(crate) elicitation_form: Option<ElicitationForm>,
     pub(crate) server_statuses: Vec<McpServerStatusEntry>,
@@ -83,8 +84,8 @@ impl UiState {
             reasoning_effort: extract_reasoning_effort(config_options),
             config_options: config_options.to_vec(),
             waiting_for_response: false,
-            animation_tick: 0,
             context_usage_pct: None,
+            progress_indicator: ProgressIndicator::default(),
             config_overlay: None,
             elicitation_form: None,
             server_statuses: Vec::new(),
@@ -248,9 +249,7 @@ impl UiState {
                 ];
 
                 self.waiting_for_response = true;
-                self.animation_tick = 0;
-                self.grid_loader.visible = true;
-                self.grid_loader.tick = 0;
+                self.grid_loader.reset();
 
                 effects.push(AppEffect::Render);
                 effects.push(AppEffect::PromptSubmit {
@@ -426,7 +425,9 @@ pub(super) fn extract_model_display(config_options: &[SessionConfigOption]) -> O
     }
 }
 
-pub(super) fn extract_reasoning_effort(config_options: &[SessionConfigOption]) -> Option<ReasoningEffort> {
+pub(super) fn extract_reasoning_effort(
+    config_options: &[SessionConfigOption],
+) -> Option<ReasoningEffort> {
     let option = config_options
         .iter()
         .find(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())?;
@@ -496,7 +497,6 @@ mod tests {
         let state = UiState::new("test-agent".to_string(), &[], vec![]);
 
         assert!(!state.waiting_for_response);
-        assert_eq!(state.animation_tick, 0);
         assert_eq!(state.context_usage_pct, None);
         assert!(state.config_overlay.is_none());
         assert!(state.elicitation_form.is_none());

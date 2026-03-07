@@ -5,8 +5,9 @@ use agent_client_protocol as acp;
 
 use crate::tui::diff::highlight_diff;
 use crate::tui::spinner::BRAILLE_FRAMES as FRAMES;
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Component, Line, RenderContext, Tickable};
 use std::collections::HashMap;
+use std::time::Instant;
 
 const MAX_TOOL_ARG_LENGTH: usize = 200;
 const SUB_AGENT_VISIBLE_TOOL_LIMIT: usize = 3;
@@ -133,9 +134,9 @@ impl ToolCallStatuses {
         }
     }
 
-    /// Update the animation tick for running tool call spinners.
-    pub fn set_tick(&mut self, tick: u16) {
-        self.tick = tick;
+    #[allow(dead_code)]
+    pub fn tick(&self) -> u16 {
+        self.tick
     }
 
     pub fn progress(&self) -> ToolProgress {
@@ -456,6 +457,14 @@ impl ToolCallStatuses {
 impl Default for ToolCallStatuses {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Tickable for ToolCallStatuses {
+    fn on_tick(&mut self, _now: Instant) {
+        if self.progress().running_any {
+            self.tick = self.tick.wrapping_add(1);
+        }
     }
 }
 

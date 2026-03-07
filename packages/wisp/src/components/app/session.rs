@@ -1,7 +1,8 @@
-use super::{AppEffect, COMPLETED_ENTRY_GRACE_PERIOD, UiState};
+use super::{AppEffect, UiState};
 use crate::components::command_picker::CommandEntry;
 use crate::components::elicitation_form::ElicitationForm;
-use crate::tui::RenderContext;
+use crate::components::progress_indicator::ProgressIndicator;
+use crate::tui::{RenderContext, Tickable};
 use acp_utils::notifications::{
     CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
     ElicitationResponse, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
@@ -113,19 +114,12 @@ impl UiState {
     }
 
     pub(crate) fn on_tick(&mut self) -> Vec<AppEffect> {
-        if self.waiting_for_response
-            || self.tool_call_statuses.progress().running_any
-            || self
-                .plan_tracker
-                .needs_tick(Instant::now(), COMPLETED_ENTRY_GRACE_PERIOD)
-        {
-            self.animation_tick = self.animation_tick.wrapping_add(1);
-            self.grid_loader.tick = self.animation_tick;
-            self.tool_call_statuses.set_tick(self.animation_tick);
-            vec![AppEffect::Render]
-        } else {
-            vec![]
-        }
+        let now = Instant::now();
+        self.grid_loader.on_tick(now);
+        self.tool_call_statuses.on_tick(now);
+        self.plan_tracker.on_tick(now);
+        self.progress_indicator.on_tick(now);
+        vec![AppEffect::Render]
     }
 
     pub(crate) fn on_elicitation_request(
@@ -190,9 +184,9 @@ impl UiState {
         self.tool_call_statuses.clear();
         self.grid_loader.visible = false;
         self.waiting_for_response = false;
-        self.animation_tick = 0;
         self.context_usage_pct = None;
         self.plan_tracker.clear();
+        self.progress_indicator = ProgressIndicator::default();
     }
 
     pub(crate) fn on_prompt_error(&mut self) -> Vec<AppEffect> {
@@ -389,21 +383,10 @@ mod tests {
     }
 
     #[test]
-    fn on_tick_stops_rendering_once_completed_entries_expire() {
+    fn on_tick_always_emits_render() {
         let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        app.state.plan_tracker.replace(
-            vec![acp::PlanEntry::new(
-                "1",
-                acp::PlanEntryPriority::Medium,
-                acp::PlanEntryStatus::Completed,
-            )],
-            Instant::now()
-                .checked_sub(COMPLETED_ENTRY_GRACE_PERIOD + std::time::Duration::from_millis(1))
-                .unwrap(),
-        );
-
         let effects = app.dispatch(AppAction::Tick, &RenderContext::new((120, 40)));
-        assert!(effects.is_empty());
+        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
     }
 
     #[test]

@@ -9,18 +9,14 @@ use crate::components::container::Container;
 use crate::components::conversation_window::ConversationWindow;
 use crate::components::file_picker::FileMatch;
 use crate::components::plan_view::PlanView;
-use crate::components::progress_indicator::ProgressIndicator;
 use crate::components::status_line::StatusLine;
 use crate::tui::{Cursor, CursorComponent, Line, RenderContext, RenderOutput};
 use acp_utils::notifications::McpServerStatus;
 use agent_client_protocol::{self as acp, SessionConfigOption};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub use attachments::build_attachment_blocks;
-
-/// Grace period for completed plan entries before they disappear.
-const COMPLETED_ENTRY_GRACE_PERIOD: Duration = Duration::from_secs(3);
 
 /// Runtime-executed side effects emitted by the app state machine.
 #[derive(Debug)]
@@ -204,10 +200,16 @@ impl CursorComponent for App {
             };
         }
 
+        let grace_period = self.state.plan_tracker.grace_period;
         let visible_plan_entries = self
             .state
             .plan_tracker
-            .visible_entries(Instant::now(), COMPLETED_ENTRY_GRACE_PERIOD);
+            .visible_entries(Instant::now(), grace_period);
+
+        let progress = self.state.tool_call_statuses.progress();
+        self.state
+            .progress_indicator
+            .update(progress.completed_top_level, progress.total_top_level);
 
         let mut conversation_window = ConversationWindow {
             loader: &mut self.state.grid_loader,
@@ -217,17 +219,11 @@ impl CursorComponent for App {
         let mut plan_view = PlanView {
             entries: &visible_plan_entries,
         };
-        let progress = self.state.tool_call_statuses.progress();
-        let mut progress_indicator = ProgressIndicator {
-            completed: progress.completed_top_level,
-            total: progress.total_top_level,
-            tick: self.state.animation_tick,
-        };
 
         let mut container: Container<'_> = Container::new(vec![
             &mut conversation_window,
             &mut plan_view,
-            &mut progress_indicator,
+            &mut self.state.progress_indicator,
             &mut self.state.prompt_composer,
         ]);
         let prompt_component_index = container.len() - 1;
@@ -273,6 +269,7 @@ mod tests {
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use std::fs;
+    use std::time::Duration;
     use tempfile::TempDir;
 
     #[allow(dead_code)]
@@ -670,7 +667,7 @@ mod tests {
                 acp::PlanEntryStatus::Completed,
             )],
             Instant::now()
-                .checked_sub(COMPLETED_ENTRY_GRACE_PERIOD + Duration::from_millis(1))
+                .checked_sub(app.state.plan_tracker.grace_period + Duration::from_millis(1))
                 .unwrap(),
         );
 
