@@ -6,6 +6,7 @@ use crate::tui::{
 };
 use acp_utils::config_option_id::ConfigOptionId;
 use crossterm::event::KeyEvent;
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use utils::ReasoningEffort;
 
@@ -56,6 +57,14 @@ impl Searchable for ModelEntry {
     }
 }
 
+fn compare_model_entries(a: &ModelEntry, b: &ModelEntry) -> Ordering {
+    a.provider_key()
+        .cmp(b.provider_key())
+        .then_with(|| a.model_label().cmp(b.model_label()))
+        .then_with(|| a.name.cmp(&b.name))
+        .then_with(|| a.value.cmp(&b.value))
+}
+
 pub struct ModelSelector {
     combobox: Combobox<ModelEntry>,
     all_items: Vec<ModelEntry>,
@@ -97,8 +106,13 @@ impl ModelSelector {
 
         let original_models = selected_models.clone();
         let all_items = items.clone();
+        let mut combobox = Combobox::new(items);
+        combobox.set_match_sort(compare_model_entries);
+        if !selected_models.is_empty() {
+            combobox.select_first_where(|item| selected_models.contains(&item.value));
+        }
         Self {
-            combobox: Combobox::new(items),
+            combobox,
             all_items,
             selected_models,
             original_models,
@@ -187,8 +201,7 @@ impl Component for ModelSelector {
             let selected = &self.selected_models;
             let mut last_provider: Option<&str> = None;
 
-            let mut items = self.combobox.visible_matches_with_selection();
-            items.sort_by(|(a, _), (b, _)| a.provider_key().cmp(b.provider_key()));
+            let items = self.combobox.visible_matches_with_selection();
 
             for (entry, is_focused) in &items {
                 let provider = entry.provider_key();
@@ -567,6 +580,63 @@ mod tests {
         );
     }
 
+    fn focused_provider_and_row(selector: &mut ModelSelector) -> (String, String) {
+        let lines = rendered_lines(selector);
+        let focused_idx = lines
+            .iter()
+            .position(|line| line.starts_with("▶"))
+            .expect("should have focused row");
+        let provider = lines[..focused_idx]
+            .iter()
+            .rev()
+            .map(|line| line.trim())
+            .find(|line| {
+                !line.is_empty()
+                    && !line.contains("Model search:")
+                    && !line.contains("Selected:")
+                    && !line.starts_with('[')
+                    && !line.starts_with('▶')
+            })
+            .expect("should find provider header")
+            .to_string();
+
+        (provider, lines[focused_idx].clone())
+    }
+
+    #[test]
+    fn grouped_navigation_follows_rendered_order() {
+        let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
+
+        let (provider, focused) = focused_provider_and_row(&mut selector);
+        assert_eq!(provider, "Anthropic");
+        assert!(focused.contains("Claude Sonnet 4.5"));
+
+        selector.handle_key(key(KeyCode::Down));
+        let (provider, focused) = focused_provider_and_row(&mut selector);
+        assert_eq!(provider, "Google");
+        assert!(focused.contains("Gemini 2.5 Pro"));
+
+        selector.handle_key(key(KeyCode::Down));
+        let (provider, focused) = focused_provider_and_row(&mut selector);
+        assert_eq!(provider, "OpenRouter");
+        assert!(focused.contains("Claude Sonnet 4.5"));
+    }
+
+    #[test]
+    fn grouped_navigation_after_search_follows_rendered_order() {
+        let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
+        type_query(&mut selector, "2.5");
+
+        let (provider, focused) = focused_provider_and_row(&mut selector);
+        assert_eq!(provider, "Google");
+        assert!(focused.contains("Gemini 2.5 Pro"));
+
+        selector.handle_key(key(KeyCode::Down));
+        let (provider, focused) = focused_provider_and_row(&mut selector);
+        assert_eq!(provider, "OpenRouter");
+        assert!(focused.contains("Gemini 2.5 Pro"));
+    }
+
     #[test]
     fn grouped_render_respects_small_height() {
         let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
@@ -868,3 +938,4 @@ mod tests {
         assert!(selector.confirm().is_empty());
     }
 }
+

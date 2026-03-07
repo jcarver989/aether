@@ -3,6 +3,7 @@ use super::screen::Line;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Nucleo};
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 const DEFAULT_MAX_VISIBLE: usize = 10;
@@ -35,6 +36,7 @@ pub struct Combobox<T: Searchable + Send + Sync + 'static> {
     scroll_offset: usize,
     max_visible: usize,
     matcher: Nucleo<T>,
+    match_sort: Option<fn(&T, &T) -> Ordering>,
 }
 
 impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
@@ -56,6 +58,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             scroll_offset: 0,
             max_visible: DEFAULT_MAX_VISIBLE,
             matcher,
+            match_sort: None,
         };
         combobox.matches = combobox.search(false);
         combobox
@@ -70,6 +73,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             scroll_offset: 0,
             max_visible: DEFAULT_MAX_VISIBLE,
             matcher: nucleo,
+            match_sort: None,
         }
     }
 
@@ -87,6 +91,16 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
 
     pub fn set_max_visible(&mut self, max: usize) {
         self.max_visible = max;
+        self.ensure_visible();
+    }
+
+    pub fn set_match_sort(&mut self, sort: fn(&T, &T) -> Ordering) {
+        self.match_sort = Some(sort);
+        self.matches = self.search(false);
+        self.scroll_offset = 0;
+        if self.selected_index >= self.matches.len() {
+            self.selected_index = 0;
+        }
         self.ensure_visible();
     }
 
@@ -232,10 +246,14 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
 
         let snapshot = self.matcher.snapshot();
         let limit = snapshot.matched_item_count().min(MAX_MATCHES);
-        snapshot
+        let mut matches: Vec<T> = snapshot
             .matched_items(0..limit)
             .map(|item| item.data.clone())
-            .collect()
+            .collect();
+        if let Some(sort) = self.match_sort {
+            matches.sort_by(sort);
+        }
+        matches
     }
 }
 
@@ -669,3 +687,4 @@ mod tests {
         assert_eq!(combobox.selected_index, 0);
     }
 }
+
