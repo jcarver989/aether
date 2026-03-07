@@ -25,8 +25,12 @@ pub struct CommandPicker {
 }
 
 pub enum CommandPickerAction {
-    CloseAndClearInput,
+    Close,
+    CloseAndPopChar,
+    CloseWithChar(char),
     CommandChosen(CommandEntry),
+    CharTyped(char),
+    PopChar,
 }
 
 impl CommandPicker {
@@ -48,8 +52,6 @@ impl CommandPicker {
 impl Component for CommandPicker {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
-        let header = format!("  / search: {}", self.combobox.query());
-        lines.push(Line::styled(header, context.theme.muted()));
 
         if self.combobox.is_empty() {
             lines.push(Line::new("  (no matching commands)".to_string()));
@@ -82,7 +84,9 @@ impl Component for CommandPicker {
                 let truncated = truncate_text(&line_text, max_width);
 
                 if is_selected {
-                    Line::styled(truncated, ctx.theme.primary())
+                    let mut line = Line::with_style(truncated, ctx.theme.selected_row_style());
+                    line.extend_bg_to_width(max_width);
+                    line
                 } else {
                     build_styled_command_line(&truncated, padded_name.len(), ctx.theme.muted())
                 }
@@ -98,8 +102,9 @@ impl HandlesInput for CommandPicker {
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape | PickerKey::BackspaceOnEmpty => {
-                InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
+            PickerKey::Escape => InputOutcome::action_and_render(CommandPickerAction::Close),
+            PickerKey::BackspaceOnEmpty => {
+                InputOutcome::action_and_render(CommandPickerAction::CloseAndPopChar)
             }
             PickerKey::MoveUp => {
                 self.combobox.move_up();
@@ -113,16 +118,19 @@ impl HandlesInput for CommandPicker {
                 if let Some(command) = self.combobox.selected().cloned() {
                     InputOutcome::action(CommandPickerAction::CommandChosen(command))
                 } else {
-                    InputOutcome::action_and_render(CommandPickerAction::CloseAndClearInput)
+                    InputOutcome::action_and_render(CommandPickerAction::Close)
                 }
             }
             PickerKey::Char(c) => {
+                if c.is_whitespace() {
+                    return InputOutcome::action_and_render(CommandPickerAction::CloseWithChar(c));
+                }
                 self.combobox.push_query_char(c);
-                InputOutcome::consumed_and_render()
+                InputOutcome::action_and_render(CommandPickerAction::CharTyped(c))
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                InputOutcome::consumed_and_render()
+                InputOutcome::action_and_render(CommandPickerAction::PopChar)
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
@@ -149,9 +157,11 @@ fn build_styled_command_line(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::soft_wrap::display_width_text;
+    use crate::tui::RenderContext;
+    use crate::tui::soft_wrap::{display_width_line, display_width_text};
     use crate::tui::test_picker::{
-        rendered_lines, rendered_lines_with_size, rendered_raw_lines, selected_text, type_query,
+        rendered_lines, rendered_lines_with_size, rendered_raw_lines, rendered_raw_lines_with_size,
+        selected_text, type_query,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -185,8 +195,7 @@ mod tests {
     fn init_shows_all_commands() {
         let mut picker = CommandPicker::new(sample_commands());
         let lines = rendered_lines(&mut picker);
-        // header + 3 command lines
-        assert_eq!(lines.len(), 4);
+        assert_eq!(lines.len(), 3);
         assert!(lines.iter().any(|l| l.contains("/config")));
         assert!(lines.iter().any(|l| l.contains("/search")));
         assert!(lines.iter().any(|l| l.contains("/web")));
@@ -197,9 +206,8 @@ mod tests {
         let mut picker = CommandPicker::new(sample_commands());
         type_query(&mut picker, "conf");
         let lines = rendered_lines(&mut picker);
-        // header + 1 match
-        assert_eq!(lines.len(), 2);
-        assert!(lines[1].contains("/config"));
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("/config"));
     }
 
     #[test]
@@ -207,8 +215,8 @@ mod tests {
         let mut picker = CommandPicker::new(sample_commands());
         type_query(&mut picker, "browse");
         let lines = rendered_lines(&mut picker);
-        assert_eq!(lines.len(), 2);
-        assert!(lines[1].contains("/web"));
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("/web"));
     }
 
     #[test]
@@ -278,6 +286,57 @@ mod tests {
     }
 
     #[test]
+    fn selected_entry_has_highlight_background() {
+        let mut picker = CommandPicker::new(sample_commands());
+        let context = RenderContext::new((80, 24));
+        let lines = picker.render(&context);
+        let selected_line = lines
+            .iter()
+            .find(|line| line.plain_text().starts_with("▶ "))
+            .expect("should render a selected line");
+
+        let has_bg = selected_line
+            .spans()
+            .iter()
+            .any(|span| span.style().bg == Some(context.theme.highlight_bg()));
+        assert!(has_bg, "selected entry should have highlight background");
+    }
+
+    #[test]
+    fn selected_entry_has_text_primary_foreground() {
+        let mut picker = CommandPicker::new(sample_commands());
+        let context = RenderContext::new((80, 24));
+        let lines = rendered_raw_lines(&mut picker);
+        let selected_line = lines
+            .iter()
+            .find(|line| line.plain_text().starts_with("▶ "))
+            .expect("should render a selected line");
+
+        let has_fg = selected_line
+            .spans()
+            .iter()
+            .any(|span| span.style().fg == Some(context.theme.text_primary()));
+        assert!(has_fg, "selected entry should have text_primary foreground");
+    }
+
+    #[test]
+    fn selected_entry_highlight_fills_full_line_width() {
+        let mut picker = CommandPicker::new(sample_commands());
+        let context = RenderContext::new((30, 24));
+        let lines = rendered_raw_lines_with_size(&mut picker, context.size);
+        let selected_line = lines
+            .iter()
+            .find(|line| line.plain_text().starts_with("▶ "))
+            .expect("should render a selected line");
+
+        assert_eq!(
+            display_width_line(selected_line),
+            context.size.0 as usize,
+            "selected row should fill the full visible width",
+        );
+    }
+
+    #[test]
     fn handle_key_enter_returns_selected_command() {
         let mut picker = CommandPicker::new(sample_commands());
 
@@ -300,7 +359,7 @@ mod tests {
         assert!(outcome.needs_render);
         assert!(matches!(
             outcome.action,
-            Some(CommandPickerAction::CloseAndClearInput)
+            Some(CommandPickerAction::CloseAndPopChar)
         ));
     }
 
@@ -309,10 +368,8 @@ mod tests {
         let mut picker = CommandPicker::new(sample_commands());
         let raw_lines = rendered_raw_lines(&mut picker);
 
-        // Find a non-selected command line (starts with "  /" but not the header)
         let non_selected = raw_lines
             .iter()
-            .skip(1) // skip header
             .find(|l| l.plain_text().starts_with("  /"))
             .expect("should have a non-selected command line");
 
@@ -343,8 +400,7 @@ mod tests {
         let mut picker = CommandPicker::new(sample_commands());
         let lines = rendered_lines(&mut picker);
 
-        // Skip header line, collect command lines
-        let command_lines: Vec<&str> = lines[1..].iter().map(std::string::String::as_str).collect();
+        let command_lines: Vec<&str> = lines.iter().map(std::string::String::as_str).collect();
         assert_eq!(command_lines.len(), 3);
 
         // All descriptions should start at the same display column.
@@ -378,9 +434,9 @@ mod tests {
 
         let mut picker = CommandPicker::new(commands);
         let lines = rendered_lines_with_size(&mut picker, (30, 10));
-        let command_line = &lines[1];
+        let command_line = &lines[0];
 
-        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.len(), 1);
         assert!(
             command_line.ends_with("..."),
             "Expected truncation, got: {command_line}"
@@ -391,5 +447,47 @@ mod tests {
             width <= 30,
             "Line width {width} exceeds terminal width 30: {command_line}"
         );
+    }
+
+    #[test]
+    fn handle_key_char_returns_char_typed() {
+        let mut picker = CommandPicker::new(sample_commands());
+
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(
+            outcome.action,
+            Some(CommandPickerAction::CharTyped('r'))
+        ));
+        assert_eq!(picker.query(), "r");
+    }
+
+    #[test]
+    fn handle_key_whitespace_closes_picker() {
+        let mut picker = CommandPicker::new(sample_commands());
+
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(
+            outcome.action,
+            Some(CommandPickerAction::CloseWithChar(' '))
+        ));
+    }
+
+    #[test]
+    fn handle_key_backspace_with_query_returns_pop_char() {
+        let mut picker = CommandPicker::new(sample_commands());
+        type_query(&mut picker, "co");
+
+        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert!(outcome.consumed);
+        assert!(outcome.needs_render);
+        assert!(matches!(outcome.action, Some(CommandPickerAction::PopChar)));
+        assert_eq!(picker.query(), "c");
     }
 }

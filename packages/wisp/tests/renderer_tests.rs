@@ -2196,8 +2196,8 @@ async fn test_command_picker_esc_clears() {
     );
     let lines = renderer.writer().get_lines();
     assert!(
-        !lines.iter().any(|l| l.contains('/')),
-        "Input buffer should be cleared after Esc.\nBuffer:\n{}",
+        lines.iter().any(|l| l.contains('/')),
+        "Input buffer should retain '/' after Esc (matches file picker behavior).\nBuffer:\n{}",
         lines.join("\n")
     );
 }

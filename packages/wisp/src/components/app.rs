@@ -35,7 +35,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
-use unicode_width::UnicodeWidthStr;
 use url::Url;
 use utils::ReasoningEffort;
 
@@ -601,26 +600,34 @@ impl App {
         outcome: &InputOutcome<CommandPickerAction>,
     ) -> Vec<AppEvent> {
         match outcome.action {
-            Some(CommandPickerAction::CloseAndClearInput) => {
+            Some(CommandPickerAction::Close) => {
                 self.command_picker = None;
-                self.text_input.clear();
-                if outcome.needs_render {
-                    vec![AppEvent::Render]
-                } else {
-                    vec![]
-                }
+            }
+            Some(CommandPickerAction::CloseAndPopChar) => {
+                self.text_input.delete_char_before_cursor();
+                self.command_picker = None;
+            }
+            Some(CommandPickerAction::CloseWithChar(c)) => {
+                self.text_input.insert_char_at_cursor(c);
+                self.command_picker = None;
             }
             Some(CommandPickerAction::CommandChosen(ref cmd)) => {
                 self.command_picker = None;
-                self.apply_command(cmd)
+                return self.apply_command(cmd);
             }
-            None => {
-                if outcome.needs_render {
-                    vec![AppEvent::Render]
-                } else {
-                    vec![]
-                }
+            Some(CommandPickerAction::CharTyped(c)) => {
+                self.text_input.insert_char_at_cursor(c);
             }
+            Some(CommandPickerAction::PopChar) => {
+                self.text_input.delete_char_before_cursor();
+            }
+            None => {}
+        }
+
+        if outcome.needs_render {
+            vec![AppEvent::Render]
+        } else {
+            vec![]
         }
     }
 
@@ -781,11 +788,6 @@ impl App {
         self.file_picker = None;
         self.command_picker = None;
     }
-
-    fn command_picker_cursor_col(picker: &CommandPicker) -> usize {
-        let prefix = "  / search: ";
-        UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(picker.query())
-    }
 }
 
 fn collect_submit_attachments(
@@ -917,10 +919,6 @@ impl CursorComponent for App {
         }
 
         // Normal rendering path
-        let command_picker_col = self
-            .command_picker
-            .as_ref()
-            .map(Self::command_picker_cursor_col);
         let picker_query_len = self.file_picker.as_ref().map(|p| p.query().len());
         let cursor_index = self.text_input.cursor_index(picker_query_len);
 
@@ -958,13 +956,9 @@ impl CursorComponent for App {
             container.push(picker);
         }
 
-        let command_picker_index = if let Some(ref mut picker) = self.command_picker {
-            let idx = container.len();
+        if let Some(ref mut picker) = self.command_picker {
             container.push(picker);
-            Some(idx)
-        } else {
-            None
-        };
+        }
 
         if let Some(ref mut ef) = self.elicitation_form {
             container.push(&mut ef.form);
@@ -973,17 +967,10 @@ impl CursorComponent for App {
         container.push(&mut status_line);
         let (lines, offsets) = container.render_with_offsets(context);
 
-        let mut cursor = Cursor {
+        let cursor = Cursor {
             logical_row: offsets[input_component_index] + input_layout.cursor_row,
             col: input_layout.cursor_col as usize,
         };
-
-        if let Some(idx) = command_picker_index {
-            cursor = Cursor {
-                logical_row: offsets[idx],
-                col: command_picker_col.unwrap_or(0),
-            };
-        }
 
         RenderOutput {
             lines,
@@ -1258,7 +1245,7 @@ mod tests {
     }
 
     #[test]
-    fn command_picker_cursor_targets_picker_header() {
+    fn command_picker_cursor_stays_in_input_prompt() {
         let mut screen = App::new("test-agent".to_string(), &[], vec![]);
         screen.command_picker = Some(CommandPicker::new(vec![CommandEntry {
             name: "config".to_string(),
@@ -1271,12 +1258,12 @@ mod tests {
         let context = RenderContext::new((120, 40));
         let output = screen.render_with_cursor(&context);
 
-        let row = output
+        let input_row = output
             .lines
             .iter()
-            .position(|line| line.plain_text().contains("  / search: "))
-            .expect("command picker header should exist");
-        assert_eq!(output.cursor.logical_row, row);
+            .position(|line| line.plain_text().contains("> "))
+            .expect("input prompt should exist");
+        assert_eq!(output.cursor.logical_row, input_row);
     }
 
     #[test]

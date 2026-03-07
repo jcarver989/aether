@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext, Style};
+use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
@@ -82,11 +82,7 @@ impl Component for ConfigMenu {
                 if current_disabled {
                     Line::styled(text, context.theme.muted())
                 } else if selected {
-                    Line::with_style(
-                        text,
-                        Style::fg(context.theme.text_primary())
-                            .bg_color(context.theme.highlight_bg()),
-                    )
+                    Line::with_style(text, context.theme.selected_row_style())
                 } else {
                     Line::new(text)
                 }

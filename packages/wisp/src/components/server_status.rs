@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext, Style};
+use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -36,11 +36,7 @@ impl Component for ServerStatusOverlay {
                 match &entry.status {
                     McpServerStatus::Connected { .. } => {
                         if selected {
-                            Line::with_style(
-                                text,
-                                Style::fg(context.theme.text_primary())
-                                    .bg_color(context.theme.highlight_bg()),
-                            )
+                            Line::with_style(text, context.theme.selected_row_style())
                         } else {
                             Line::new(text)
                         }
@@ -49,8 +45,9 @@ impl Component for ServerStatusOverlay {
                         if selected {
                             Line::with_style(
                                 text,
-                                Style::fg(context.theme.error())
-                                    .bg_color(context.theme.highlight_bg()),
+                                context
+                                    .theme
+                                    .selected_row_style_with_fg(context.theme.error()),
                             )
                         } else {
                             Line::styled(text, context.theme.error())
@@ -60,8 +57,9 @@ impl Component for ServerStatusOverlay {
                         if selected {
                             Line::with_style(
                                 text,
-                                Style::fg(context.theme.warning())
-                                    .bg_color(context.theme.highlight_bg()),
+                                context
+                                    .theme
+                                    .selected_row_style_with_fg(context.theme.warning()),
                             )
                         } else {
                             Line::styled(text, context.theme.warning())

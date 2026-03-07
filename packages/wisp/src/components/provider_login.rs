@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext, Style};
+use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub struct ProviderLoginOverlay {
@@ -44,7 +44,9 @@ impl Component for ProviderLoginOverlay {
                 if selected {
                     Line::with_style(
                         text,
-                        Style::fg(context.theme.warning()).bg_color(context.theme.highlight_bg()),
+                        context
+                            .theme
+                            .selected_row_style_with_fg(context.theme.warning()),
                     )
                 } else {
                     Line::styled(text, context.theme.warning())

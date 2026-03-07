@@ -6,6 +6,7 @@ use crossterm::{
 };
 use std::fmt::Write as _;
 use std::io::{self, Write};
+use unicode_width::UnicodeWidthStr;
 
 /// A single line of pre-formatted terminal output.
 /// Holds text and style spans. ANSI is emitted only at write-time.
@@ -175,6 +176,24 @@ impl Line {
     pub fn append_line(&mut self, other: &Line) {
         for span in &other.spans {
             self.push_span(span.clone());
+        }
+    }
+
+    pub fn extend_bg_to_width(&mut self, target_width: usize) {
+        let current_width = UnicodeWidthStr::width(self.plain_text().as_str());
+        let pad = target_width.saturating_sub(current_width);
+        if pad == 0 {
+            return;
+        }
+
+        let bg = self.spans.iter().find_map(|span| span.style().bg);
+        if let Some(bg) = bg {
+            self.push_with_style(
+                format!("{:pad$}", "", pad = pad),
+                Style::default().bg_color(bg),
+            );
+        } else {
+            self.push_text(format!("{:pad$}", "", pad = pad));
         }
     }
 

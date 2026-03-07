@@ -2,7 +2,7 @@ use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{
     Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
-    Style, classify_key,
+    classify_key,
 };
 use acp_utils::config_option_id::ConfigOptionId;
 use crossterm::event::KeyEvent;
@@ -227,17 +227,14 @@ impl Component for ModelSelector {
                 if entry.is_disabled {
                     item_lines.push(Line::styled(label, context.theme.muted()));
                 } else if *is_focused {
-                    let mut line = Line::with_style(
-                        label,
-                        Style::fg(context.theme.text_primary())
-                            .bg_color(context.theme.highlight_bg()),
-                    );
+                    let mut line = Line::with_style(label, context.theme.selected_row_style());
                     if entry.supports_reasoning {
                         let bar = reasoning_bar(self.reasoning_effort);
                         line.push_with_style(
                             format!("    {bar}"),
-                            Style::fg(context.theme.accent())
-                                .bg_color(context.theme.highlight_bg()),
+                            context
+                                .theme
+                                .selected_row_style_with_fg(context.theme.accent()),
                         );
                     }
                     item_lines.push(line);

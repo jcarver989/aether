@@ -1,3 +1,4 @@
+use super::screen::Style;
 use crate::settings::{WispSettings, resolve_theme_file_path};
 use crossterm::style::Color;
 use std::sync::{Arc, LazyLock};
@@ -76,6 +77,14 @@ impl Theme {
             .settings
             .selection
             .map_or(DEFAULT_HIGHLIGHT_BG, color_from_syntect)
+    }
+
+    pub fn selected_row_style(&self) -> Style {
+        self.selected_row_style_with_fg(self.text_primary())
+    }
+
+    pub fn selected_row_style_with_fg(&self, fg: Color) -> Style {
+        Style::fg(fg).bg_color(self.highlight_bg())
     }
 
     pub fn secondary(&self) -> Color {
@@ -492,6 +501,22 @@ mod tests {
 </plist>"#;
 
     use crate::test_helpers::with_wisp_home;
+
+    #[test]
+    fn selected_row_style_uses_text_primary_and_highlight_bg() {
+        let theme = Theme::default();
+        let style = theme.selected_row_style();
+        assert_eq!(style.fg, Some(theme.text_primary()));
+        assert_eq!(style.bg, Some(theme.highlight_bg()));
+    }
+
+    #[test]
+    fn selected_row_style_with_fg_preserves_custom_foreground() {
+        let theme = Theme::default();
+        let style = theme.selected_row_style_with_fg(theme.warning());
+        assert_eq!(style.fg, Some(theme.warning()));
+        assert_eq!(style.bg, Some(theme.highlight_bg()));
+    }
 
     #[test]
     fn default_theme_uses_embedded_catppuccin() {
