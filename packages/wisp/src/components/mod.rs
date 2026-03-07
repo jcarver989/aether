@@ -9,6 +9,7 @@ pub mod elicitation_form;
 pub mod file_picker;
 pub mod input_prompt;
 pub mod model_selector;
+pub(crate) mod plan_tracker;
 pub(crate) mod plan_view;
 pub mod progress_indicator;
 pub mod provider_login;

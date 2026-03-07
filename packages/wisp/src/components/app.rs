@@ -8,6 +8,7 @@ use crate::components::conversation_window::{ConversationBuffer, ConversationWin
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
+use crate::components::plan_tracker::PlanTracker;
 use crate::components::plan_view::PlanView;
 use crate::components::progress_indicator::ProgressIndicator;
 use crate::components::server_status::server_status_summary;
@@ -33,12 +34,16 @@ use agent_client_protocol::{
 use crossterm::event::{self, KeyCode, KeyEvent};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
 use url::Url;
 use utils::ReasoningEffort;
 
 const MAX_EMBED_TEXT_BYTES: usize = 1024 * 1024;
+
+/// Grace period for completed plan entries before they disappear.
+const COMPLETED_ENTRY_GRACE_PERIOD: Duration = Duration::from_secs(3);
 
 #[derive(Debug)]
 pub enum AppEvent {
@@ -97,7 +102,7 @@ pub struct App {
     elicitation_form: Option<ElicitationForm>,
     server_statuses: Vec<McpServerStatusEntry>,
     auth_methods: Vec<acp::AuthMethod>,
-    plan_entries: Vec<acp::PlanEntry>,
+    plan_tracker: PlanTracker,
 }
 
 impl App {
@@ -126,7 +131,7 @@ impl App {
             elicitation_form: None,
             server_statuses: Vec::new(),
             auth_methods,
-            plan_entries: Vec::new(),
+            plan_tracker: PlanTracker::default(),
         }
     }
 
@@ -247,7 +252,7 @@ impl App {
                 should_render = true;
             }
             SessionUpdate::Plan(plan) => {
-                self.plan_entries = plan.entries;
+                self.plan_tracker.replace(plan.entries, Instant::now());
                 should_render = true;
             }
             _ => {
@@ -284,13 +289,11 @@ impl App {
     }
 
     pub fn on_tick(&mut self) -> Vec<AppEvent> {
-        let has_in_progress_plan = self
-            .plan_entries
-            .iter()
-            .any(|e| e.status == acp::PlanEntryStatus::InProgress);
         if self.waiting_for_response
             || self.tool_call_statuses.progress().running_any
-            || has_in_progress_plan
+            || self
+                .plan_tracker
+                .needs_tick(Instant::now(), COMPLETED_ENTRY_GRACE_PERIOD)
         {
             self.animation_tick = self.animation_tick.wrapping_add(1);
             self.grid_loader.tick = self.animation_tick;
@@ -361,7 +364,7 @@ impl App {
         self.grid_loader.visible = false;
         self.animation_tick = 0;
         self.context_usage_pct = None;
-        self.plan_entries.clear();
+        self.plan_tracker.clear();
     }
 
     pub fn on_prompt_error(&mut self) -> Vec<AppEvent> {
@@ -921,6 +924,9 @@ impl CursorComponent for App {
         // Normal rendering path
         let picker_query_len = self.file_picker.as_ref().map(|p| p.query().len());
         let cursor_index = self.text_input.cursor_index(picker_query_len);
+        let visible_plan_entries = self
+            .plan_tracker
+            .visible_entries(Instant::now(), COMPLETED_ENTRY_GRACE_PERIOD);
 
         let mut conversation_window = ConversationWindow {
             loader: &mut self.grid_loader,
@@ -934,7 +940,7 @@ impl CursorComponent for App {
         let input_layout = input_prompt.layout(context);
 
         let mut plan_view = PlanView {
-            entries: &self.plan_entries,
+            entries: &visible_plan_entries,
         };
 
         let progress = self.tool_call_statuses.progress();
@@ -2077,5 +2083,57 @@ mod tests {
         )];
 
         assert_eq!(extract_reasoning_effort(&opts), None);
+    }
+
+    #[test]
+    fn on_tick_requests_render_while_completed_entries_waiting_to_expire() {
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
+
+        let update = SessionUpdate::Plan(acp::Plan::new(vec![acp::PlanEntry::new(
+            "Task A".to_string(),
+            acp::PlanEntryPriority::Medium,
+            acp::PlanEntryStatus::Completed,
+        )]));
+        app.on_session_update(update);
+
+        let effects = app.on_tick();
+        assert!(effects.iter().any(|e| matches!(e, AppEvent::Render)));
+    }
+
+    #[test]
+    fn on_tick_stops_rendering_once_completed_entries_expire() {
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
+        let expired_now = Instant::now() - COMPLETED_ENTRY_GRACE_PERIOD - Duration::from_millis(1);
+
+        app.plan_tracker.replace(
+            vec![acp::PlanEntry::new(
+                "Task A".to_string(),
+                acp::PlanEntryPriority::Medium,
+                acp::PlanEntryStatus::Completed,
+            )],
+            expired_now,
+        );
+
+        let effects = app.on_tick();
+        assert!(!effects.iter().any(|e| matches!(e, AppEvent::Render)));
+    }
+
+    #[test]
+    fn render_hides_plan_header_when_no_entries_are_visible() {
+        let mut app = App::new("test-agent".to_string(), &[], vec![]);
+        let expired_now = Instant::now() - COMPLETED_ENTRY_GRACE_PERIOD - Duration::from_millis(1);
+        let context = RenderContext::new((80, 24));
+
+        app.plan_tracker.replace(
+            vec![acp::PlanEntry::new(
+                "Task A".to_string(),
+                acp::PlanEntryPriority::Medium,
+                acp::PlanEntryStatus::Completed,
+            )],
+            expired_now,
+        );
+
+        let output = app.render_with_cursor(&context);
+        assert!(!output.lines.iter().any(|line| line.plain_text() == "Plan"));
     }
 }
