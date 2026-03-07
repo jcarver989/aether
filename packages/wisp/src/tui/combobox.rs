@@ -687,4 +687,3 @@ mod tests {
         assert_eq!(combobox.selected_index, 0);
     }
 }
-

@@ -938,4 +938,3 @@ mod tests {
         assert!(selector.confirm().is_empty());
     }
 }
-
