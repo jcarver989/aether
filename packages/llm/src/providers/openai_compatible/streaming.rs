@@ -2,21 +2,11 @@ use super::types::ChatCompletionStreamResponse;
 use super::types::FinishReason;
 use crate::providers::tool_call_collector::ToolCallCollector;
 use crate::{LlmError, LlmResponse, LlmResponseStream, Result, StopReason};
-use async_openai::{Client, config::OpenAIConfig, types::chat::CreateChatCompletionRequest};
+use async_openai::{Client, config::OpenAIConfig};
 use async_stream;
 use serde::Serialize;
 use tokio_stream::{Stream, StreamExt};
 use tracing::{debug, info, warn};
-
-/// Creates a streaming response for OpenAI-compatible APIs.
-/// This allows providers like `OpenRouter` and Z.ai to reuse the same streaming logic
-/// while handling their API quirks through unified types.
-pub fn create_custom_stream(
-    client: &Client<OpenAIConfig>,
-    request: CreateChatCompletionRequest,
-) -> LlmResponseStream {
-    create_custom_stream_generic(client, request)
-}
 
 /// Generic streaming function that accepts any serializable request type.
 /// This enables providers to use custom request types while reusing the streaming logic.
@@ -33,12 +23,16 @@ pub fn create_custom_stream_generic<R: Serialize + Send + 'static>(
             .await {
             Ok(stream) => stream,
             Err(e) => {
+                warn!("create_stream_byot failed: {e}");
                 yield Err(LlmError::ApiRequest(e.to_string()));
                 return;
             }
         };
 
         let stream = stream.map(|result| {
+            if let Err(ref e) = result {
+                warn!("Stream error from API: {e}");
+            }
             result.map_err(|e| LlmError::ApiError(e.to_string()))
         });
 

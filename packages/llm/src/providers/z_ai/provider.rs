@@ -1,5 +1,5 @@
 use crate::provider::get_context_window;
-use crate::providers::openai_compatible::{build_chat_request, create_custom_stream};
+use crate::providers::openai_compatible::{build_chat_request, create_custom_stream_generic};
 use crate::{
     Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider,
 };
@@ -50,7 +50,7 @@ impl StreamingModelProvider for ZAiProvider {
             Ok(req) => req,
             Err(e) => return Box::pin(async_stream::stream! { yield Err(e); }),
         };
-        create_custom_stream(&self.client, request)
+        create_custom_stream_generic(&self.client, request)
     }
 
     fn display_name(&self) -> String {

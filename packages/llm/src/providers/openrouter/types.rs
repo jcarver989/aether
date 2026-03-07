@@ -1,8 +1,11 @@
 use async_openai::types::chat::{
-    ChatCompletionRequestMessage, ChatCompletionStreamOptions, ChatCompletionToolChoiceOption,
-    ChatCompletionTools, CreateChatCompletionRequest, ResponseFormat, StopConfiguration,
+    ChatCompletionStreamOptions, ChatCompletionToolChoiceOption, ChatCompletionTools,
+    ResponseFormat, StopConfiguration,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::providers::openai_compatible::types::CompatibleChatMessage;
+use crate::providers::openai_compatible::CompatibleChatRequest;
 
 /// OpenRouter-specific usage configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,10 +18,10 @@ pub struct OpenRouterUsage {
 ///
 /// `OpenRouter` requires a specific `usage` parameter in the request body to enable
 /// token usage tracking. See: <https://openrouter.ai/docs/use-cases/usage-accounting>
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OpenRouterChatRequest {
     pub model: String,
-    pub messages: Vec<ChatCompletionRequestMessage>,
+    pub messages: Vec<CompatibleChatMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -47,26 +50,26 @@ pub struct OpenRouterChatRequest {
     pub reasoning_effort: Option<crate::ReasoningEffort>,
 }
 
-impl From<CreateChatCompletionRequest> for OpenRouterChatRequest {
-    fn from(request: CreateChatCompletionRequest) -> Self {
+impl From<CompatibleChatRequest> for OpenRouterChatRequest {
+    fn from(request: CompatibleChatRequest) -> Self {
         Self {
             model: request.model,
             messages: request.messages,
             stream: request.stream,
             tools: request.tools,
-            tool_choice: request.tool_choice,
-            temperature: request.temperature,
-            top_p: request.top_p,
-            max_completion_tokens: request.max_completion_tokens,
+            tool_choice: None,
+            temperature: None,
+            top_p: None,
+            max_completion_tokens: None,
             stream_options: Some(ChatCompletionStreamOptions {
                 include_usage: Some(true),
                 include_obfuscation: None,
             }),
             usage: Some(OpenRouterUsage { include: true }),
-            presence_penalty: request.presence_penalty,
-            frequency_penalty: request.frequency_penalty,
-            stop: request.stop,
-            response_format: request.response_format,
+            presence_penalty: None,
+            frequency_penalty: None,
+            stop: None,
+            response_format: None,
             reasoning_effort: None,
         }
     }
