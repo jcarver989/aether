@@ -5,3 +5,4 @@ dist/
 gen/
 eval-results/
 packages/llm/src/catalog/generated.rs
+.aether-tasks/
