@@ -4,6 +4,8 @@ use crate::theme::Theme;
 use crossterm::event::KeyEvent;
 use std::time::Instant;
 
+/// Environment passed to [`Component::render`]: terminal size, theme, focus state,
+/// and optional height constraint.
 #[derive(Clone)]
 pub struct RenderContext {
     pub size: Size,
@@ -72,10 +74,16 @@ impl RenderContext {
     }
 }
 
+/// A stateful widget that can render itself as styled terminal lines.
 pub trait Component {
     fn render(&self, context: &RenderContext) -> Vec<Line>;
 }
 
+/// Result of handling a key event via [`HandlesInput`].
+///
+/// - `consumed` — whether the key was handled (prevents further propagation).
+/// - `needs_render` — whether the UI should re-render.
+/// - `action` — an optional typed action emitted to the parent.
 pub struct InputOutcome<A> {
     pub consumed: bool,
     pub needs_render: bool,
@@ -83,6 +91,27 @@ pub struct InputOutcome<A> {
 }
 
 impl<A> InputOutcome<A> {
+    /// Transform the action type, preserving `consumed` and `needs_render`.
+    pub fn map<B>(self, f: impl FnOnce(A) -> B) -> InputOutcome<B> {
+        InputOutcome {
+            consumed: self.consumed,
+            needs_render: self.needs_render,
+            action: self.action.map(f),
+        }
+    }
+
+    /// Discard the action, preserving `consumed` and `needs_render`.
+    ///
+    /// The output type is inferred from context, so this can convert between
+    /// `InputOutcome<A>` and `InputOutcome<B>`.
+    pub fn discard_action<B>(self) -> InputOutcome<B> {
+        InputOutcome {
+            consumed: self.consumed,
+            needs_render: self.needs_render,
+            action: None,
+        }
+    }
+
     pub fn ignored() -> Self {
         Self {
             consumed: false,
@@ -124,12 +153,14 @@ impl<A> InputOutcome<A> {
     }
 }
 
+/// A component that can process keyboard input and emit typed actions.
 pub trait HandlesInput {
     type Action;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action>;
 }
 
+/// A component with time-based animation state.
 pub trait Tickable {
     /// Advance animation state by one tick.
     fn on_tick(&mut self, now: Instant);

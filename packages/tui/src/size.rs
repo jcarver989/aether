@@ -1,3 +1,4 @@
+/// Terminal dimensions in columns and rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Size {
     pub width: u16,

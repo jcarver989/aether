@@ -1,3 +1,4 @@
+use crate::focus::{FocusOutcome, FocusRing};
 use crate::screen::{Line, Style};
 use crate::{
     Checkbox, Component, HandlesInput, InputOutcome, MultiSelect, NumberField, RadioSelect,
@@ -5,17 +6,23 @@ use crate::{
 };
 use crossterm::event::{KeyCode, KeyEvent};
 
+/// Actions emitted by [`Form`] input handling.
 pub enum FormAction {
     Close,
     Submit,
 }
 
+/// A multi-field form with Tab/`BackTab` focus navigation.
+///
+/// Renders a bordered form with labeled fields. Supports text, number, boolean,
+/// single-select, and multi-select field types.
 pub struct Form {
     pub message: String,
     pub fields: Vec<FormField>,
-    pub selected_field: usize,
+    focus: FocusRing,
 }
 
+/// A single field within a [`Form`].
 pub struct FormField {
     pub name: String,
     pub label: String,
@@ -24,6 +31,7 @@ pub struct FormField {
     pub kind: FormFieldKind,
 }
 
+/// The widget type backing a [`FormField`].
 pub enum FormFieldKind {
     Text(TextField),
     Number(NumberField),
@@ -34,10 +42,11 @@ pub enum FormFieldKind {
 
 impl Form {
     pub fn new(message: String, fields: Vec<FormField>) -> Self {
+        let len = fields.len();
         Self {
             message,
             fields,
-            selected_field: 0,
+            focus: FocusRing::new(len),
         }
     }
 
@@ -107,7 +116,7 @@ impl Form {
     fn render_fields(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         for (i, field) in self.fields.iter().enumerate() {
-            let is_selected = i == self.selected_field;
+            let is_selected = self.focus.is_focused(i);
             let prefix = if is_selected { "▶ " } else { "  " };
             let required_marker = if field.required { "*" } else { "" };
             let label_style = if is_selected {
@@ -166,28 +175,17 @@ impl HandlesInput for Form {
         match key_event.code {
             KeyCode::Esc => InputOutcome::action_and_render(FormAction::Close),
             KeyCode::Enter => InputOutcome::action_and_render(FormAction::Submit),
-            KeyCode::Tab => {
-                if !self.fields.is_empty() {
-                    self.selected_field = (self.selected_field + 1) % self.fields.len();
+            KeyCode::Tab | KeyCode::BackTab => {
+                match self.focus.handle_key(key_event) {
+                    FocusOutcome::FocusChanged => InputOutcome::consumed_and_render(),
+                    FocusOutcome::Unchanged | FocusOutcome::Ignored => InputOutcome::consumed(),
                 }
-                InputOutcome::consumed_and_render()
-            }
-            KeyCode::BackTab => {
-                if !self.fields.is_empty() {
-                    self.selected_field =
-                        (self.selected_field + self.fields.len() - 1) % self.fields.len();
-                }
-                InputOutcome::consumed_and_render()
             }
             _ => {
-                if let Some(field) = self.fields.get_mut(self.selected_field) {
+                if let Some(field) = self.fields.get_mut(self.focus.focused()) {
                     let outcome = field.kind.handle_key(key_event);
                     if outcome.consumed {
-                        return InputOutcome {
-                            consumed: true,
-                            needs_render: outcome.needs_render,
-                            action: None,
-                        };
+                        return outcome.discard_action();
                     }
                 }
                 InputOutcome::consumed()
