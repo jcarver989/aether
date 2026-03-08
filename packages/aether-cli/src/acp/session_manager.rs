@@ -84,7 +84,7 @@ impl SessionConfigState {
         }
 
         let effective = effective_model(&self.active_model, self.pending_model.as_deref());
-        if setting.config_id() != ConfigOptionId::Mode {
+        if setting.config_id() == ConfigOptionId::Model {
             self.selected_mode =
                 mode_name_for_state(settings, available, effective, self.reasoning_effort);
         }
@@ -243,6 +243,22 @@ mod tests {
         let result = state.apply_config_change(&settings, &available, &setting);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn reasoning_effort_change_preserves_selected_mode() {
+        let settings = settings_with_modes();
+        let available = available_models();
+        let mut state = fake_config_state("anthropic:claude-sonnet-4-5");
+        state.reasoning_effort = Some(ReasoningEffort::High);
+        state.selected_mode = Some("Planner".to_string());
+
+        let setting = ConfigSetting::ReasoningEffort(Some(ReasoningEffort::Low));
+        let result = state.apply_config_change(&settings, &available, &setting);
+
+        assert!(result.is_ok());
+        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Low));
+        assert_eq!(state.selected_mode.as_deref(), Some("Planner"));
     }
 
     #[test]
