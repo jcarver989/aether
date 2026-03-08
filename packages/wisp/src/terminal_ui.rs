@@ -281,10 +281,10 @@ async fn submit_prompt_with_attachments<T: Write>(
 #[cfg(test)]
 mod tests {
     use super::{apply_theme_selection, should_handle_key_event};
-    use crate::tui::theme::Theme;
     use crate::settings::{ThemeSettings, WispSettings, load_or_create_settings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
     use crate::tui::Renderer;
+    use crate::tui::theme::Theme;
     use crossterm::event::KeyEventKind;
     use crossterm::style::Color;
 

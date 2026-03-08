@@ -10,7 +10,7 @@ use crate::components::server_status::{
     ServerStatusAction, ServerStatusOverlay, server_status_summary,
 };
 use crate::settings::{list_theme_files, load_or_create_settings};
-use crate::tui::{Component, InteractiveComponent, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, InputOutcome, InteractiveComponent, Line, RenderContext};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
@@ -1049,10 +1049,7 @@ mod tests {
         // Rendered lines do not contain Reasoning Effort
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
-        let text: Vec<String> = lines
-            .iter()
-            .map(Line::plain_text)
-            .collect();
+        let text: Vec<String> = lines.iter().map(Line::plain_text).collect();
         assert!(
             !text.iter().any(|l| l.contains("Reasoning Effort")),
             "Reasoning Effort should NOT appear initially; got:\n{}",
@@ -1072,10 +1069,7 @@ mod tests {
         overlay.update_config_options(&updated_options);
 
         let lines = overlay.render(&context);
-        let text: Vec<String> = lines
-            .iter()
-            .map(Line::plain_text)
-            .collect();
+        let text: Vec<String> = lines.iter().map(Line::plain_text).collect();
         assert!(
             !text.iter().any(|l| l.contains("Reasoning Effort")),
             "Reasoning Effort should NOT appear after update; got:\n{}",

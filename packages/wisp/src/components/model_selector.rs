@@ -1,8 +1,8 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{
-    Combobox, Component, InteractiveComponent, InputOutcome, Line, PickerKey, RenderContext, Searchable,
-    classify_key,
+    Combobox, Component, InputOutcome, InteractiveComponent, Line, PickerKey, RenderContext,
+    Searchable, classify_key,
 };
 use acp_utils::config_option_id::ConfigOptionId;
 use crossterm::event::KeyEvent;

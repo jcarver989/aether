@@ -1,4 +1,4 @@
-use crate::tui::{InteractiveComponent, InputOutcome};
+use crate::tui::{InputOutcome, InteractiveComponent};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 

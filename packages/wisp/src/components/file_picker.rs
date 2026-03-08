@@ -1,6 +1,6 @@
 use crate::tui::{
-    Combobox, Component, InteractiveComponent, InputOutcome, Line, PickerKey, RenderContext, Searchable,
-    classify_key,
+    Combobox, Component, InputOutcome, InteractiveComponent, Line, PickerKey, RenderContext,
+    Searchable, classify_key,
 };
 use crossterm::event::KeyEvent;
 use ignore::WalkBuilder;

@@ -2,8 +2,8 @@ use std::mem::{Discriminant, discriminant, take};
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::tui::markdown::{HighlightCache, render_markdown};
 use crate::tui::components::spinner::Spinner;
+use crate::tui::markdown::{HighlightCache, render_markdown};
 use crate::tui::{Component, Line, RenderContext};
 
 #[derive(Debug, Clone)]
@@ -188,7 +188,10 @@ impl ConversationBuffer {
         let segment = &self.segments[i];
         (
             discriminant(&segment.content),
-            segment.lines.as_deref().expect("ensure_all_rendered must be called before render"),
+            segment
+                .lines
+                .as_deref()
+                .expect("ensure_all_rendered must be called before render"),
         )
     }
 

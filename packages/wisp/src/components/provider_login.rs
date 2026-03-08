@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, InteractiveComponent, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, InputOutcome, InteractiveComponent, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub struct ProviderLoginOverlay {
