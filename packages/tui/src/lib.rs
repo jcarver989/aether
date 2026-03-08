@@ -86,7 +86,7 @@ pub mod theme;
 
 // Feature-gated modules
 #[cfg(feature = "syntax")]
-mod syntax;
+mod syntax_highlighting;
 
 #[cfg(feature = "markdown")]
 pub mod markdown;
@@ -133,6 +133,9 @@ pub use theme::{ColorPalette, Theme};
 // Feature-gated re-exports
 #[cfg(feature = "diff")]
 pub use diffs::diff::highlight_diff;
+
+#[cfg(feature = "syntax")]
+pub use syntax_highlighting::SyntaxHighlighter;
 
 #[cfg(feature = "picker")]
 pub use combobox::{Combobox, PickerKey, Searchable, classify_key};

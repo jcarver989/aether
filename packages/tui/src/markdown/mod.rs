@@ -1,13 +1,11 @@
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use std::borrow::Cow;
-use std::collections::HashMap;
-use syntect::easy::HighlightLines;
 use unicode_width::UnicodeWidthStr;
 
 use crate::line::Line;
 use crate::span::Span;
 use crate::style::Style;
-use crate::syntax::{find_syntax_by_token, syntax_set, syntect_to_wisp_style};
+use crate::syntax_highlighting::SyntaxHighlighter;
 use crate::theme::Theme;
 
 /// A single rendered cell in a table row.
@@ -236,37 +234,18 @@ fn line_display_width(line: &Line) -> usize {
         .sum()
 }
 
-/// Caches syntax-highlighted output for code blocks by (lang, content).
-///
-/// Survives across re-renders so completed code blocks aren't re-highlighted
-/// on every streaming token.
-#[derive(Default)]
-pub struct HighlightCache {
-    entries: HashMap<String, HashMap<String, Vec<Line>>>,
-}
-
-impl HighlightCache {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn get(&self, lang: &str, code: &str) -> Option<&[Line]> {
-        self.entries.get(lang)?.get(code).map(Vec::as_slice)
-    }
-
-    fn insert(&mut self, lang: String, code: String, lines: Vec<Line>) {
-        self.entries.entry(lang).or_default().insert(code, lines);
-    }
-}
-
-pub fn render_markdown(text: &str, theme: &Theme, cache: &mut HighlightCache) -> Vec<Line> {
-    let renderer = MarkdownRenderer::new(theme, cache);
+pub fn render_markdown(
+    text: &str,
+    theme: &Theme,
+    highlighter: &mut SyntaxHighlighter,
+) -> Vec<Line> {
+    let renderer = MarkdownRenderer::new(theme, highlighter);
     renderer.render(text)
 }
 
 struct MarkdownRenderer<'a> {
     theme: &'a Theme,
-    highlight_cache: &'a mut HighlightCache,
+    highlighter: &'a mut SyntaxHighlighter,
     lines: Vec<Line>,
     current_line: Line,
     style_stack: Vec<Style>,
@@ -287,10 +266,10 @@ struct MarkdownRenderer<'a> {
 }
 
 impl<'a> MarkdownRenderer<'a> {
-    fn new(theme: &'a Theme, highlight_cache: &'a mut HighlightCache) -> Self {
+    fn new(theme: &'a Theme, highlighter: &'a mut SyntaxHighlighter) -> Self {
         Self {
             theme,
-            highlight_cache,
+            highlighter,
             lines: Vec::new(),
             current_line: Line::default(),
             style_stack: Vec::new(),
@@ -448,13 +427,8 @@ impl<'a> MarkdownRenderer<'a> {
                 self.in_code_block = false;
                 let code = std::mem::take(&mut self.code_buffer);
                 let lang = std::mem::take(&mut self.code_lang);
-                if let Some(cached) = self.highlight_cache.get(&lang, &code) {
-                    self.lines.extend_from_slice(cached);
-                } else {
-                    let code_lines = highlight_code(&code, &lang, self.theme);
-                    self.highlight_cache.insert(lang, code, code_lines.clone());
-                    self.lines.extend(code_lines);
-                }
+                let code_lines = self.highlighter.highlight(&code, &lang, self.theme);
+                self.lines.extend(code_lines);
                 self.lines.push(Line::default());
             }
             TagEnd::List(_) => {
@@ -618,40 +592,6 @@ impl<'a> MarkdownRenderer<'a> {
     }
 }
 
-fn highlight_code(code: &str, lang: &str, theme: &Theme) -> Vec<Line> {
-    let syntax = find_syntax_by_token(lang);
-
-    let Some(syntax) = syntax else {
-        return plain_code_lines(code, theme);
-    };
-
-    let syntect_theme = theme.syntect_theme();
-    let mut h = HighlightLines::new(syntax, syntect_theme);
-    let mut lines = Vec::new();
-
-    for source_line in code.lines() {
-        let Ok(ranges) = h.highlight_line(source_line, syntax_set()) else {
-            lines.push(Line::with_style(source_line, Style::fg(theme.code_fg())));
-            continue;
-        };
-
-        let mut line = Line::default();
-        for (syntect_style, text) in ranges {
-            line.push_span(Span::with_style(text, syntect_to_wisp_style(syntect_style)));
-        }
-        lines.push(line);
-    }
-
-    lines
-}
-
-fn plain_code_lines(code: &str, theme: &Theme) -> Vec<Line> {
-    let style = Style::fg(theme.code_fg());
-    code.lines()
-        .map(|line| Line::with_style(line, style))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,13 +602,13 @@ mod tests {
     }
 
     fn render(md: &str) -> Vec<Line> {
-        let mut cache = HighlightCache::new();
-        render_markdown(md, &test_theme(), &mut cache)
+        let mut highlighter = SyntaxHighlighter::new();
+        render_markdown(md, &test_theme(), &mut highlighter)
     }
 
     fn render_with_theme(md: &str, theme: &Theme) -> Vec<Line> {
-        let mut cache = HighlightCache::new();
-        render_markdown(md, theme, &mut cache)
+        let mut highlighter = SyntaxHighlighter::new();
+        render_markdown(md, theme, &mut highlighter)
     }
 
     #[test]
@@ -864,26 +804,21 @@ mod tests {
 
     #[test]
     fn highlight_cache_returns_cached_code_block() {
-        let mut cache = HighlightCache::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let md = "```rust\nfn main() {}\n```";
-        let first = render_markdown(md, &test_theme(), &mut cache);
-        let second = render_markdown(md, &test_theme(), &mut cache);
+        let first = render_markdown(md, &test_theme(), &mut highlighter);
+        let second = render_markdown(md, &test_theme(), &mut highlighter);
         assert_eq!(first, second);
-        // Cache should have an entry now
-        assert!(cache.get("rust", "fn main() {}\n").is_some());
     }
 
     #[test]
     fn highlight_cache_not_affected_by_different_code_block() {
-        let mut cache = HighlightCache::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let md1 = "```rust\nfn a() {}\n```";
         let md2 = "```rust\nfn b() {}\n```";
-        let lines1 = render_markdown(md1, &test_theme(), &mut cache);
-        let lines2 = render_markdown(md2, &test_theme(), &mut cache);
-        // Both should be cached independently
-        assert!(cache.get("rust", "fn a() {}\n").is_some());
-        assert!(cache.get("rust", "fn b() {}\n").is_some());
-        // And produce different output
+        let lines1 = render_markdown(md1, &test_theme(), &mut highlighter);
+        let lines2 = render_markdown(md2, &test_theme(), &mut highlighter);
+        // Produce different output
         assert_ne!(
             lines1.iter().map(Line::plain_text).collect::<String>(),
             lines2.iter().map(Line::plain_text).collect::<String>(),
