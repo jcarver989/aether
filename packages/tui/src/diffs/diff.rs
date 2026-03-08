@@ -32,7 +32,7 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
     let mut lines = Vec::with_capacity(budget + usize::from(truncated));
 
     let syntect_theme = theme.syntect_theme();
-    let mut highlighter = syntax.map(|s| HighlightLines::new(s, &syntect_theme));
+    let mut highlighter = syntax.map(|s| HighlightLines::new(s, syntect_theme));
 
     let context_style = DiffStyle {
         prefix: "    ",

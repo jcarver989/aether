@@ -1,5 +1,16 @@
 use super::*;
 use std::path::Path;
+use std::sync::Arc;
+
+/// Parse the embedded Catppuccin Mocha `.tmTheme` into a syntect theme.
+///
+/// Called once at `Theme` construction time; the result is cached in
+/// `Theme::syntect_theme`.
+pub(super) fn parse_default_syntect_theme() -> syntect::highlighting::Theme {
+    let cursor = std::io::Cursor::new(include_bytes!("../../assets/catppuccin-mocha.tmTheme"));
+    syntect::highlighting::ThemeSet::load_from_reader(&mut std::io::BufReader::new(cursor))
+        .expect("embedded catppuccin-mocha.tmTheme is valid")
+}
 
 const DEFAULT_FG: Color = Color::Rgb {
     r: 0xBF,
@@ -28,13 +39,9 @@ const DEFAULT_HIGHLIGHT_BG: Color = Color::Rgb {
 };
 
 impl Theme {
-    /// Load the embedded Catppuccin Mocha syntect theme for syntax highlighting.
-    ///
-    /// This is used by the markdown and diff modules for syntax highlighting.
-    pub fn syntect_theme(&self) -> syntect::highlighting::Theme {
-        let cursor = std::io::Cursor::new(include_bytes!("../../assets/catppuccin-mocha.tmTheme"));
-        syntect::highlighting::ThemeSet::load_from_reader(&mut std::io::BufReader::new(cursor))
-            .expect("embedded catppuccin-mocha.tmTheme is valid")
+    /// Return the cached syntect theme for syntax highlighting.
+    pub fn syntect_theme(&self) -> &syntect::highlighting::Theme {
+        &self.syntect_theme
     }
 
     /// Load theme from a `.tmTheme` file.
@@ -155,6 +162,7 @@ impl From<&syntect::highlighting::Theme> for Theme {
             diff_removed_fg,
             diff_added_bg,
             diff_removed_bg,
+            syntect_theme: Arc::new(syntect.clone()),
         }
     }
 }
@@ -308,6 +316,36 @@ mod tests {
                 g: 0x22,
                 b: 0x33
             }
+        );
+    }
+
+    #[test]
+    fn loaded_theme_preserves_syntect_theme_when_cloned() {
+        let temp_dir = TempDir::new().unwrap();
+        let theme_path = temp_dir.path().join("custom.tmTheme");
+        fs::write(&theme_path, LOADABLE_TMTHEME).unwrap();
+
+        let loaded = Theme::load_from_path(&theme_path);
+        let cloned = loaded.clone();
+        let syntect = cloned.syntect_theme();
+
+        assert_eq!(
+            syntect.settings.foreground,
+            Some(syntect::highlighting::Color {
+                r: 0x11,
+                g: 0x22,
+                b: 0x33,
+                a: 0xFF,
+            })
+        );
+        assert_eq!(
+            syntect.settings.selection,
+            Some(syntect::highlighting::Color {
+                r: 0x33,
+                g: 0x44,
+                b: 0x55,
+                a: 0xFF,
+            })
         );
     }
 
