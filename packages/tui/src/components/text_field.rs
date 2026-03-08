@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
+use crate::component::{Component, InteractiveComponent, InputOutcome, RenderContext};
 use crate::line::Line;
 
 /// Single-line text input with cursor indicator.
@@ -29,7 +29,7 @@ impl Component for TextField {
     }
 }
 
-impl HandlesInput for TextField {
+impl InteractiveComponent for TextField {
     type Action = ();
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {

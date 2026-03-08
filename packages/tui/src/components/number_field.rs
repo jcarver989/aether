@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
+use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
 use crate::line::Line;
 
 /// Numeric input field supporting integers or floats.
@@ -43,7 +43,7 @@ impl Component for NumberField {
     }
 }
 
-impl HandlesInput for NumberField {
+impl InteractiveComponent for NumberField {
     type Action = ();
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {

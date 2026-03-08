@@ -1,5 +1,5 @@
 use crate::tui::components::spinner::BRAILLE_FRAMES as FRAMES;
-use crate::tui::{Component, Line, RenderContext, Tickable};
+use crate::tui::{Component, Line, RenderContext, TickableComponent};
 use std::time::Instant;
 
 /// Renders a single progress line when tools are actively running.
@@ -23,7 +23,7 @@ impl ProgressIndicator {
     }
 }
 
-impl Tickable for ProgressIndicator {
+impl TickableComponent for ProgressIndicator {
     fn on_tick(&mut self, _now: Instant) {
         if self.total > 0 && self.completed < self.total {
             self.tick = self.tick.wrapping_add(1);

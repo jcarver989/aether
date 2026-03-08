@@ -1,4 +1,4 @@
-use crate::tui::{HandlesInput, InputOutcome};
+use crate::tui::{InteractiveComponent, InputOutcome};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 
@@ -128,7 +128,7 @@ impl TextInput {
     }
 }
 
-impl HandlesInput for TextInput {
+impl InteractiveComponent for TextInput {
     type Action = TextInputAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {

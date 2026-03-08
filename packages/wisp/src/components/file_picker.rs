@@ -1,5 +1,5 @@
 use crate::tui::{
-    Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
+    Combobox, Component, InteractiveComponent, InputOutcome, Line, PickerKey, RenderContext, Searchable,
     classify_key,
 };
 use crossterm::event::KeyEvent;
@@ -135,7 +135,7 @@ impl Component for FilePicker {
     }
 }
 
-impl HandlesInput for FilePicker {
+impl InteractiveComponent for FilePicker {
     type Action = FilePickerAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {

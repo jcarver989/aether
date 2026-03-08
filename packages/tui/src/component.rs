@@ -8,6 +8,38 @@ pub trait Component {
     fn render(&self, context: &RenderContext) -> Vec<Line>;
 }
 
+/// A component that can process keyboard input and emit typed actions.
+pub trait InteractiveComponent {
+    type Action;
+
+    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action>;
+}
+
+/// A component with time-based animation state.
+pub trait TickableComponent {
+    /// Advance animation state by one tick.
+    fn on_tick(&mut self, now: Instant);
+}
+
+/// Logical cursor position within a component's rendered output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cursor {
+    pub logical_row: usize,
+    pub col: usize,
+}
+
+/// The output of [`CursorComponent::render`]: rendered lines plus cursor state.
+pub struct RenderOutput {
+    pub lines: Vec<Line>,
+    pub cursor: Cursor,
+    pub cursor_visible: bool,
+}
+
+/// A component that renders with cursor position information for the [`Renderer`](crate::Renderer).
+pub trait CursorComponent {
+    fn render(&mut self, context: &RenderContext) -> RenderOutput;
+}
+
 /// Result of handling a key event via [`HandlesInput`].
 ///
 /// - `consumed` — whether the key was handled (prevents further propagation).
@@ -80,36 +112,4 @@ impl<A> InputOutcome<A> {
             action: Some(action),
         }
     }
-}
-
-/// A component that can process keyboard input and emit typed actions.
-pub trait HandlesInput {
-    type Action;
-
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action>;
-}
-
-/// A component with time-based animation state.
-pub trait Tickable {
-    /// Advance animation state by one tick.
-    fn on_tick(&mut self, now: Instant);
-}
-
-/// Logical cursor position within a component's rendered output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Cursor {
-    pub logical_row: usize,
-    pub col: usize,
-}
-
-/// The output of [`CursorComponent::render`]: rendered lines plus cursor state.
-pub struct RenderOutput {
-    pub lines: Vec<Line>,
-    pub cursor: Cursor,
-    pub cursor_visible: bool,
-}
-
-/// A component that renders with cursor position information for the [`Renderer`](crate::Renderer).
-pub trait CursorComponent {
-    fn render(&mut self, context: &RenderContext) -> RenderOutput;
 }

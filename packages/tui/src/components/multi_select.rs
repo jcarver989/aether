@@ -1,9 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
+use super::select_option::SelectOption;
+use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
 use crate::line::Line;
 use crate::style::Style;
-use super::select_option::SelectOption;
 
 /// Multi-select from a list of options, rendered as checkboxes with a cursor.
 pub struct MultiSelect {
@@ -81,7 +81,7 @@ impl MultiSelect {
     }
 }
 
-impl HandlesInput for MultiSelect {
+impl InteractiveComponent for MultiSelect {
     type Action = ();
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {

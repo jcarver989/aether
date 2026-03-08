@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, InteractiveComponent, InputOutcome, Line, RenderContext};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -71,7 +71,7 @@ impl Component for ServerStatusOverlay {
     }
 }
 
-impl HandlesInput for ServerStatusOverlay {
+impl InteractiveComponent for ServerStatusOverlay {
     type Action = ServerStatusAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {

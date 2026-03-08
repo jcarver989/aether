@@ -1,4 +1,4 @@
-use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
+use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
 use crate::focus::{FocusOutcome, FocusRing};
 use crate::line::Line;
 use crate::style::Style;
@@ -172,19 +172,17 @@ impl Form {
     }
 }
 
-impl HandlesInput for Form {
+impl InteractiveComponent for Form {
     type Action = FormAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Esc => InputOutcome::action_and_render(FormAction::Close),
             KeyCode::Enter => InputOutcome::action_and_render(FormAction::Submit),
-            KeyCode::Tab | KeyCode::BackTab => {
-                match self.focus.handle_key(key_event) {
-                    FocusOutcome::FocusChanged => InputOutcome::consumed_and_render(),
-                    FocusOutcome::Unchanged | FocusOutcome::Ignored => InputOutcome::consumed(),
-                }
-            }
+            KeyCode::Tab | KeyCode::BackTab => match self.focus.handle_key(key_event) {
+                FocusOutcome::FocusChanged => InputOutcome::consumed_and_render(),
+                FocusOutcome::Unchanged | FocusOutcome::Ignored => InputOutcome::consumed(),
+            },
             _ => {
                 if let Some(field) = self.fields.get_mut(self.focus.focused()) {
                     let outcome = field.kind.handle_key(key_event);

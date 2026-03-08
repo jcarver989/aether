@@ -1,7 +1,7 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{
-    Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
+    Combobox, Component, InteractiveComponent, InputOutcome, Line, PickerKey, RenderContext, Searchable,
     classify_key,
 };
 use acp_utils::config_option_id::ConfigOptionId;
@@ -257,7 +257,7 @@ impl Component for ModelSelector {
     }
 }
 
-impl HandlesInput for ModelSelector {
+impl InteractiveComponent for ModelSelector {
     type Action = ModelSelectorAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
