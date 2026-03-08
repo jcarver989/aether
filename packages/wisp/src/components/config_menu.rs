@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, InteractiveComponent, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, InputOutcome, InteractiveComponent, Line, RenderContext};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};

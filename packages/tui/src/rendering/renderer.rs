@@ -1,9 +1,9 @@
-use crate::component::CursorComponent;
-use super::render_context::RenderContext;
 use super::line::Line;
+use super::render_context::RenderContext;
 use super::screen::Screen;
 use super::size::Size;
 use super::soft_wrap::{soft_wrap_line, soft_wrap_lines_with_map};
+use crate::component::CursorComponent;
 use crate::theme::Theme;
 use crossterm::QueueableCommand;
 use crossterm::cursor::{Hide, MoveDown, Show};

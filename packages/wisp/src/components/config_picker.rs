@@ -1,7 +1,7 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
-    Combobox, Component, InteractiveComponent, InputOutcome, Line, PickerKey, RenderContext, Searchable,
-    classify_key,
+    Combobox, Component, InputOutcome, InteractiveComponent, Line, PickerKey, RenderContext,
+    Searchable, classify_key,
 };
 use crossterm::event::KeyEvent;
 

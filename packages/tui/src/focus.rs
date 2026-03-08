@@ -271,7 +271,10 @@ mod tests {
     #[test]
     fn handle_key_tab_cycles_forward() {
         let mut ring = FocusRing::new(3);
-        assert_eq!(ring.handle_key(key(KeyCode::Tab)), FocusOutcome::FocusChanged);
+        assert_eq!(
+            ring.handle_key(key(KeyCode::Tab)),
+            FocusOutcome::FocusChanged
+        );
         assert_eq!(ring.focused(), 1);
     }
 
@@ -290,7 +293,10 @@ mod tests {
     fn handle_key_other_keys_ignored() {
         let mut ring = FocusRing::new(3);
         assert_eq!(ring.handle_key(key(KeyCode::Enter)), FocusOutcome::Ignored);
-        assert_eq!(ring.handle_key(key(KeyCode::Char('a'))), FocusOutcome::Ignored);
+        assert_eq!(
+            ring.handle_key(key(KeyCode::Char('a'))),
+            FocusOutcome::Ignored
+        );
         assert_eq!(ring.focused(), 0); // unchanged
     }
 

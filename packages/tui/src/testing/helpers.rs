@@ -30,11 +30,7 @@ pub fn render_component_with_screen(
     terminal.flush().unwrap();
 }
 
-pub fn render_lines(
-    lines: &[crate::line::Line],
-    width: u16,
-    rows: u16,
-) -> TestTerminal {
+pub fn render_lines(lines: &[crate::line::Line], width: u16, rows: u16) -> TestTerminal {
     let mut terminal = TestTerminal::new(width, rows);
     let mut screen = Screen::new();
     screen.render(lines, width, &mut terminal).unwrap();

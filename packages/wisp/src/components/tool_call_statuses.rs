@@ -3,9 +3,11 @@ use acp_utils::notifications::{
 };
 use agent_client_protocol as acp;
 
-use crate::tui::diff::highlight_diff;
 use crate::tui::components::spinner::BRAILLE_FRAMES as FRAMES;
-use crate::tui::{Component, DiffLine, DiffPreview, DiffTag, Line, RenderContext, TickableComponent};
+use crate::tui::diff::highlight_diff;
+use crate::tui::{
+    Component, DiffLine, DiffPreview, DiffTag, Line, RenderContext, TickableComponent,
+};
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -1456,10 +1458,7 @@ mod tests {
         ));
 
         let lines = statuses.render_tool("parent-1", &ctx());
-        let all_text: String = lines
-            .iter()
-            .map(Line::plain_text)
-            .collect();
+        let all_text: String = lines.iter().map(Line::plain_text).collect();
         assert!(
             !all_text.contains("spawn_subagent"),
             "Parent tool line should be hidden when sub-agents exist: {all_text}"

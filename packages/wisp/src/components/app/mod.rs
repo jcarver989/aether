@@ -149,10 +149,9 @@ impl CursorComponent for App {
             .progress_indicator
             .update(progress.completed_top_level, progress.total_top_level);
 
-        self.state.conversation.ensure_all_rendered(
-            &self.state.tool_call_statuses,
-            context,
-        );
+        self.state
+            .conversation
+            .ensure_all_rendered(&self.state.tool_call_statuses, context);
 
         let conversation_window = ConversationWindow {
             loader: &self.state.grid_loader,

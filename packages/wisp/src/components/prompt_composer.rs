@@ -2,7 +2,7 @@ use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPick
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputAction};
-use crate::tui::{Component, Cursor, InteractiveComponent, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, Cursor, InputOutcome, InteractiveComponent, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::collections::HashSet;
 
