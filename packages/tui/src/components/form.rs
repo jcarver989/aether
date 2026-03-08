@@ -1,9 +1,12 @@
+use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
 use crate::focus::{FocusOutcome, FocusRing};
 use crate::screen::{Line, Style};
-use crate::{
-    Checkbox, Component, HandlesInput, InputOutcome, MultiSelect, NumberField, RadioSelect,
-    RenderContext, TextField,
-};
+
+use super::checkbox::Checkbox;
+use super::multi_select::MultiSelect;
+use super::number_field::NumberField;
+use super::radio_select::RadioSelect;
+use super::text_field::TextField;
 use crossterm::event::{KeyCode, KeyEvent};
 
 /// Actions emitted by [`Form`] input handling.

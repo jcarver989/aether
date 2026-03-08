@@ -9,7 +9,7 @@ use crate::components::prompt_composer::{PromptComposer, PromptComposerAction};
 use crate::components::server_status::server_status_summary;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::settings::{list_theme_files, load_or_create_settings};
-use crate::tui::spinner::Spinner;
+use crate::tui::components::spinner::Spinner;
 use crate::tui::{FormAction, HandlesInput, InputOutcome, Line};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::{ElicitationParams, ElicitationResponse, McpServerStatusEntry};

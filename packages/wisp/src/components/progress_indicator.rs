@@ -1,4 +1,4 @@
-use crate::tui::spinner::BRAILLE_FRAMES as FRAMES;
+use crate::tui::components::spinner::BRAILLE_FRAMES as FRAMES;
 use crate::tui::{Component, Line, RenderContext, Tickable};
 use std::time::Instant;
 

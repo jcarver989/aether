@@ -1,7 +1,7 @@
 use crate::component::RenderContext;
-use crate::screen::{Line, Screen};
-use crate::size::Size;
-use crate::soft_wrap::{soft_wrap_line, soft_wrap_lines_with_map};
+use super::screen::{Line, Screen};
+use super::size::Size;
+use super::soft_wrap::{soft_wrap_line, soft_wrap_lines_with_map};
 use crate::theme::Theme;
 use crossterm::QueueableCommand;
 use crossterm::cursor::{Hide, MoveDown, Show};
@@ -212,6 +212,7 @@ mod tests {
         assert_eq!(renderer.context().theme.text_primary(), expected);
     }
 
+    #[cfg(feature = "syntax")]
     #[test]
     fn set_theme_replaces_render_context_theme_from_file() {
         let mut renderer = Renderer::new(Vec::new(), Theme::default());

@@ -3,7 +3,7 @@ use std::mem::{Discriminant, discriminant, take};
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::tui::markdown::{HighlightCache, render_markdown};
-use crate::tui::spinner::Spinner;
+use crate::tui::components::spinner::Spinner;
 use crate::tui::{Component, Line, RenderContext};
 
 #[derive(Debug, Clone)]
@@ -286,7 +286,7 @@ fn extend_with_vertical_margin(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::spinner::BRAILLE_FRAMES;
+    use crate::tui::components::spinner::BRAILLE_FRAMES;
 
     #[test]
     fn renders_empty_when_loader_and_segments_are_empty() {

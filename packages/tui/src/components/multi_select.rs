@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
 use crate::screen::{Line, Style};
-use crate::select_option::SelectOption;
+use super::select_option::SelectOption;
 
 /// Multi-select from a list of options, rendered as checkboxes with a cursor.
 pub struct MultiSelect {
