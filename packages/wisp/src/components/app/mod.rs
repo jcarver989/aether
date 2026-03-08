@@ -202,7 +202,7 @@ fn theme_file_from_picker_value(value: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::components::command_picker::CommandEntry;
-    use crate::components::config_menu::ConfigMenu;
+    use crate::components::config_menu::{ConfigChange, ConfigMenu};
     use crate::components::config_overlay::ConfigOverlayAction;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
@@ -291,13 +291,12 @@ mod tests {
     #[test]
     fn theme_config_change_emits_set_theme_event() {
         let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        let outcome =
-            KeyEventResponse::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
-                crate::components::config_menu::ConfigChange {
-                    config_id: THEME_CONFIG_ID.to_string(),
-                    new_value: "catppuccin.tmTheme".to_string(),
-                },
-            ]));
+        let outcome = KeyEventResponse::action(ConfigOverlayAction::ApplyConfigChanges(vec![
+            ConfigChange {
+                config_id: THEME_CONFIG_ID.to_string(),
+                new_value: "catppuccin.tmTheme".to_string(),
+            },
+        ]));
 
         let effects = app.state.handle_config_overlay_outcome(outcome);
 
@@ -315,13 +314,12 @@ mod tests {
     #[test]
     fn theme_default_value_maps_to_none() {
         let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        let outcome =
-            KeyEventResponse::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
-                crate::components::config_menu::ConfigChange {
-                    config_id: THEME_CONFIG_ID.to_string(),
-                    new_value: "   ".to_string(),
-                },
-            ]));
+        let outcome = KeyEventResponse::action(ConfigOverlayAction::ApplyConfigChanges(vec![
+            ConfigChange {
+                config_id: THEME_CONFIG_ID.to_string(),
+                new_value: "   ".to_string(),
+            },
+        ]));
 
         let effects = app.state.handle_config_overlay_outcome(outcome);
 
@@ -334,13 +332,12 @@ mod tests {
     #[test]
     fn non_theme_config_change_still_emits_set_config_option() {
         let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        let outcome =
-            KeyEventResponse::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
-                crate::components::config_menu::ConfigChange {
-                    config_id: "model".to_string(),
-                    new_value: "gpt-5".to_string(),
-                },
-            ]));
+        let outcome = KeyEventResponse::action(ConfigOverlayAction::ApplyConfigChanges(vec![
+            ConfigChange {
+                config_id: "model".to_string(),
+                new_value: "gpt-5".to_string(),
+            },
+        ]));
 
         let effects = app.state.handle_config_overlay_outcome(outcome);
 

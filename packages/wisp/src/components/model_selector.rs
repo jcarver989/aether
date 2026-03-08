@@ -264,15 +264,15 @@ impl InteractiveComponent for ModelSelector {
         match classify_key(key_event, self.combobox.query().is_empty()) {
             PickerKey::Escape => {
                 let changes = self.confirm();
-                KeyEventResponse::action_and_render(ModelSelectorAction::Done(changes))
+                KeyEventResponse::action(ModelSelectorAction::Done(changes))
             }
             PickerKey::MoveUp => {
                 self.combobox.move_up_where(|e| !e.is_disabled);
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down_where(|e| !e.is_disabled);
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::MoveLeft => {
                 if self
@@ -282,7 +282,7 @@ impl InteractiveComponent for ModelSelector {
                 {
                     self.reasoning_effort = cycle_reasoning_left(self.reasoning_effort);
                 }
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::MoveRight => {
                 if self
@@ -292,19 +292,19 @@ impl InteractiveComponent for ModelSelector {
                 {
                     self.reasoning_effort = cycle_reasoning_right(self.reasoning_effort);
                 }
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::Confirm | PickerKey::Char(' ') => {
                 self.toggle_focused();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::Char(c) => {
                 self.combobox.push_query_char(c);
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::BackspaceOnEmpty | PickerKey::ControlChar | PickerKey::Other => {
                 KeyEventResponse::consumed()

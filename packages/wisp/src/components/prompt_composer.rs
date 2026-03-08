@@ -156,7 +156,6 @@ impl PromptComposer {
 
         KeyEventResponse {
             consumed: outcome.consumed,
-            needs_render: outcome.needs_render,
             action: None,
         }
     }
@@ -192,7 +191,6 @@ impl PromptComposer {
 
         KeyEventResponse {
             consumed: outcome.consumed,
-            needs_render: outcome.needs_render,
             action: None,
         }
     }
@@ -207,15 +205,14 @@ impl PromptComposer {
                 let mut commands = builtin_commands();
                 commands.extend(self.available_commands.clone());
                 self.command_picker = Some(CommandPicker::new(commands));
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             Some(TextInputAction::OpenFilePicker) => {
                 self.file_picker = Some(FilePicker::new());
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             None => KeyEventResponse {
                 consumed: outcome.consumed,
-                needs_render: outcome.needs_render,
                 action: None,
             },
         }
@@ -225,10 +222,10 @@ impl PromptComposer {
         if cmd.builtin && cmd.name == "config" {
             self.text_input.clear();
             self.close_all();
-            KeyEventResponse::action_and_render(PromptComposerAction::OpenConfig)
+            KeyEventResponse::action(PromptComposerAction::OpenConfig)
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
-            KeyEventResponse::consumed_and_render()
+            KeyEventResponse::consumed()
         } else {
             self.text_input.set_input(format!("/{}", cmd.name));
             self.prepare_submit()
@@ -237,7 +234,7 @@ impl PromptComposer {
 
     fn prepare_submit(&mut self) -> KeyEventResponse<PromptComposerAction> {
         if self.text_input.buffer().trim().is_empty() {
-            return KeyEventResponse::consumed_and_render();
+            return KeyEventResponse::consumed();
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
@@ -245,7 +242,7 @@ impl PromptComposer {
         self.text_input.clear();
         self.close_all();
 
-        KeyEventResponse::action_and_render(PromptComposerAction::SubmitRequested {
+        KeyEventResponse::action(PromptComposerAction::SubmitRequested {
             user_input,
             attachments,
         })
@@ -341,8 +338,8 @@ mod tests {
     fn builtin_config_command_emits_open_config() {
         let mut composer = PromptComposer::new();
 
-        let outcome = composer.on_key_event(key(KeyCode::Char('/')));
-        assert!(outcome.needs_render);
+        composer.on_key_event(key(KeyCode::Char('/')));
+
         assert!(composer.has_command_picker());
 
         let outcome = composer.on_key_event(key(KeyCode::Enter));
@@ -366,8 +363,7 @@ mod tests {
         }]);
 
         composer.on_key_event(key(KeyCode::Char('/')));
-        let outcome = composer.on_key_event(key(KeyCode::Char('s')));
-        assert!(outcome.needs_render);
+        composer.on_key_event(key(KeyCode::Char('s')));
 
         let outcome = composer.on_key_event(key(KeyCode::Enter));
         assert!(matches!(
@@ -394,7 +390,7 @@ mod tests {
         let outcome = composer.on_key_event(key(KeyCode::Enter));
 
         assert!(outcome.action.is_none());
-        assert!(outcome.needs_render);
+
         assert_eq!(composer.buffer(), "/search ");
         assert!(!composer.has_active_picker());
     }

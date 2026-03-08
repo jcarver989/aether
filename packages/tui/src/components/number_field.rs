@@ -54,14 +54,14 @@ impl InteractiveComponent for NumberField {
                     || (c == '.' && !self.integer_only && !self.value.contains('.'));
                 if accept {
                     self.value.push(c);
-                    KeyEventResponse::consumed_and_render()
+                    KeyEventResponse::consumed()
                 } else {
                     KeyEventResponse::consumed()
                 }
             }
             KeyCode::Backspace => {
                 self.value.pop();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             _ => KeyEventResponse::ignored(),
         }

@@ -20,12 +20,6 @@ pub struct Screen {
     last_width: u16,
 }
 
-impl Default for Screen {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Screen {
     pub fn new() -> Self {
         Self {
@@ -147,6 +141,12 @@ impl Screen {
 
         self.prev_frame.clear();
         Ok(())
+    }
+}
+
+impl Default for Screen {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -36,11 +36,11 @@ impl InteractiveComponent for TextField {
         match key_event.code {
             KeyCode::Char(c) => {
                 self.value.push(c);
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Backspace => {
                 self.value.pop();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             _ => KeyEventResponse::ignored(),
         }

@@ -96,14 +96,14 @@ impl InteractiveComponent for ConfigMenu {
 
     fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match key_event.code {
-            KeyCode::Esc => KeyEventResponse::action_and_render(ConfigMenuAction::CloseAll),
+            KeyCode::Esc => KeyEventResponse::action(ConfigMenuAction::CloseAll),
             KeyCode::Up => {
                 self.move_selection_up();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Enter => {
                 let action = match self.selected_entry() {
@@ -116,7 +116,7 @@ impl InteractiveComponent for ConfigMenu {
                     Some(e) if e.multi_select => ConfigMenuAction::OpenModelSelector,
                     _ => ConfigMenuAction::OpenSelectedPicker,
                 };
-                KeyEventResponse::action_and_render(action)
+                KeyEventResponse::action(action)
             }
             _ => KeyEventResponse::consumed(),
         }
@@ -514,7 +514,7 @@ mod tests {
         let outcome = menu.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(
             outcome.action,
             Some(ConfigMenuAction::OpenSelectedPicker)
@@ -529,7 +529,7 @@ mod tests {
         let outcome = menu.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(outcome.action, Some(ConfigMenuAction::CloseAll)));
     }
 

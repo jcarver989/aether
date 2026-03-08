@@ -140,31 +140,29 @@ impl InteractiveComponent for FilePicker {
 
     fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => KeyEventResponse::action_and_render(FilePickerAction::Close),
+            PickerKey::Escape => KeyEventResponse::action(FilePickerAction::Close),
             PickerKey::MoveUp => {
                 self.combobox.move_up();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
-            PickerKey::Confirm => {
-                KeyEventResponse::action_and_render(FilePickerAction::ConfirmSelection)
-            }
+            PickerKey::Confirm => KeyEventResponse::action(FilePickerAction::ConfirmSelection),
             PickerKey::Char(c) => {
                 if c.is_whitespace() {
-                    return KeyEventResponse::action_and_render(FilePickerAction::CloseWithChar(c));
+                    return KeyEventResponse::action(FilePickerAction::CloseWithChar(c));
                 }
                 self.combobox.push_query_char(c);
-                KeyEventResponse::action_and_render(FilePickerAction::CharTyped(c))
+                KeyEventResponse::action(FilePickerAction::CharTyped(c))
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                KeyEventResponse::action_and_render(FilePickerAction::PopChar)
+                KeyEventResponse::action(FilePickerAction::PopChar)
             }
             PickerKey::BackspaceOnEmpty => {
-                KeyEventResponse::action_and_render(FilePickerAction::CloseAndPopChar)
+                KeyEventResponse::action(FilePickerAction::CloseAndPopChar)
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
@@ -298,7 +296,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(
             outcome.action,
             Some(FilePickerAction::CharTyped('r'))
@@ -313,7 +311,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(
             outcome.action,
             Some(FilePickerAction::CloseWithChar(' '))
@@ -327,7 +325,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(
             outcome.action,
             Some(FilePickerAction::ConfirmSelection)
@@ -341,7 +339,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(
             outcome.action,
             Some(FilePickerAction::CloseAndPopChar)
@@ -356,7 +354,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(outcome.action, Some(FilePickerAction::PopChar)));
         assert_eq!(picker.query(), "m");
     }

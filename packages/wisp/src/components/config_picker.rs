@@ -147,26 +147,26 @@ impl InteractiveComponent for ConfigPicker {
 
     fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => KeyEventResponse::action_and_render(ConfigPickerAction::Close),
+            PickerKey::Escape => KeyEventResponse::action(ConfigPickerAction::Close),
             PickerKey::MoveUp => {
                 self.move_selection_up();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::MoveDown => {
                 self.move_selection_down();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::Confirm => {
                 let change = self.confirm_selection();
-                KeyEventResponse::action_and_render(ConfigPickerAction::ApplySelection(change))
+                KeyEventResponse::action(ConfigPickerAction::ApplySelection(change))
             }
             PickerKey::Char(c) => {
                 self.push_query_char(c);
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::Backspace => {
                 self.pop_query_char();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
@@ -284,7 +284,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         match outcome.action {
             Some(ConfigPickerAction::ApplySelection(Some(change))) => {
                 assert_eq!(change.config_id, "model");
@@ -300,7 +300,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(outcome.action, Some(ConfigPickerAction::Close)));
     }
 }

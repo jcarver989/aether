@@ -38,7 +38,7 @@ impl InteractiveComponent for Checkbox {
         match key_event.code {
             KeyCode::Char(' ') => {
                 self.checked = !self.checked;
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             _ => KeyEventResponse::ignored(),
         }
