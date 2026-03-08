@@ -43,32 +43,28 @@ pub trait InteractiveComponent {
 /// Result of handling a key event via [`HandlesInput`].
 ///
 /// - `consumed` — whether the key was handled (prevents further propagation).
-/// - `needs_render` — whether the UI should re-render.
 /// - `action` — an optional typed action emitted to the parent.
 pub struct KeyEventResponse<A> {
     pub consumed: bool,
-    pub needs_render: bool,
     pub action: Option<A>,
 }
 
 impl<A> KeyEventResponse<A> {
-    /// Transform the action type, preserving `consumed` and `needs_render`.
+    /// Transform the action type, preserving `consumed`.
     pub fn map<B>(self, f: impl FnOnce(A) -> B) -> KeyEventResponse<B> {
         KeyEventResponse {
             consumed: self.consumed,
-            needs_render: self.needs_render,
             action: self.action.map(f),
         }
     }
 
-    /// Discard the action, preserving `consumed` and `needs_render`.
+    /// Discard the action, preserving `consumed`.
     ///
     /// The output type is inferred from context, so this can convert between
     /// `InputOutcome<A>` and `InputOutcome<B>`.
     pub fn discard_action<B>(self) -> KeyEventResponse<B> {
         KeyEventResponse {
             consumed: self.consumed,
-            needs_render: self.needs_render,
             action: None,
         }
     }
@@ -76,7 +72,6 @@ impl<A> KeyEventResponse<A> {
     pub fn ignored() -> Self {
         Self {
             consumed: false,
-            needs_render: false,
             action: None,
         }
     }
@@ -84,15 +79,6 @@ impl<A> KeyEventResponse<A> {
     pub fn consumed() -> Self {
         Self {
             consumed: true,
-            needs_render: false,
-            action: None,
-        }
-    }
-
-    pub fn consumed_and_render() -> Self {
-        Self {
-            consumed: true,
-            needs_render: true,
             action: None,
         }
     }
@@ -100,15 +86,6 @@ impl<A> KeyEventResponse<A> {
     pub fn action(action: A) -> Self {
         Self {
             consumed: true,
-            needs_render: false,
-            action: Some(action),
-        }
-    }
-
-    pub fn action_and_render(action: A) -> Self {
-        Self {
-            consumed: true,
-            needs_render: true,
             action: Some(action),
         }
     }

@@ -99,37 +99,35 @@ impl InteractiveComponent for CommandPicker {
 
     fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => KeyEventResponse::action_and_render(CommandPickerAction::Close),
+            PickerKey::Escape => KeyEventResponse::action(CommandPickerAction::Close),
             PickerKey::BackspaceOnEmpty => {
-                KeyEventResponse::action_and_render(CommandPickerAction::CloseAndPopChar)
+                KeyEventResponse::action(CommandPickerAction::CloseAndPopChar)
             }
             PickerKey::MoveUp => {
                 self.combobox.move_up();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             PickerKey::Confirm => {
                 if let Some(command) = self.combobox.selected().cloned() {
                     KeyEventResponse::action(CommandPickerAction::CommandChosen(command))
                 } else {
-                    KeyEventResponse::action_and_render(CommandPickerAction::Close)
+                    KeyEventResponse::action(CommandPickerAction::Close)
                 }
             }
             PickerKey::Char(c) => {
                 if c.is_whitespace() {
-                    return KeyEventResponse::action_and_render(
-                        CommandPickerAction::CloseWithChar(c),
-                    );
+                    return KeyEventResponse::action(CommandPickerAction::CloseWithChar(c));
                 }
                 self.combobox.push_query_char(c);
-                KeyEventResponse::action_and_render(CommandPickerAction::CharTyped(c))
+                KeyEventResponse::action(CommandPickerAction::CharTyped(c))
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                KeyEventResponse::action_and_render(CommandPickerAction::PopChar)
+                KeyEventResponse::action(CommandPickerAction::PopChar)
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
@@ -356,7 +354,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(
             outcome.action,
             Some(CommandPickerAction::CloseAndPopChar)
@@ -456,7 +454,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(
             outcome.action,
             Some(CommandPickerAction::CharTyped('r'))
@@ -471,7 +469,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(
             outcome.action,
             Some(CommandPickerAction::CloseWithChar(' '))
@@ -486,7 +484,7 @@ mod tests {
         let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
-        assert!(outcome.needs_render);
+
         assert!(matches!(outcome.action, Some(CommandPickerAction::PopChar)));
         assert_eq!(picker.query(), "c");
     }

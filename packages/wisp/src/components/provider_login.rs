@@ -61,14 +61,14 @@ impl InteractiveComponent for ProviderLoginOverlay {
 
     fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match key_event.code {
-            KeyCode::Esc => KeyEventResponse::action_and_render(ProviderLoginAction::Close),
+            KeyCode::Esc => KeyEventResponse::action(ProviderLoginAction::Close),
             KeyCode::Up => {
                 self.move_selection_up();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Enter => {
                 if let Some(entry) = self
@@ -76,7 +76,7 @@ impl InteractiveComponent for ProviderLoginOverlay {
                     .get(self.selected_index)
                     .filter(|e| e.status == ProviderLoginStatus::NeedsLogin)
                 {
-                    return KeyEventResponse::action_and_render(ProviderLoginAction::Authenticate(
+                    return KeyEventResponse::action(ProviderLoginAction::Authenticate(
                         entry.method_id.clone(),
                     ));
                 }

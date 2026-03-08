@@ -135,40 +135,37 @@ impl InteractiveComponent for TextInput {
         match key_event.code {
             KeyCode::Left => {
                 self.move_cursor_left();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Right => {
                 self.move_cursor_right();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Home => {
                 self.move_cursor_home();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::End => {
                 self.move_cursor_end();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Char('/') if self.buffer.is_empty() => {
                 self.insert_char_at_cursor('/');
-                KeyEventResponse::action_and_render(TextInputAction::OpenCommandPicker)
+                KeyEventResponse::action(TextInputAction::OpenCommandPicker)
             }
             KeyCode::Char('@') => {
                 self.insert_char_at_cursor('@');
-                KeyEventResponse::action_and_render(TextInputAction::OpenFilePicker)
+                KeyEventResponse::action(TextInputAction::OpenFilePicker)
             }
             KeyCode::Char(c) => {
                 self.insert_char_at_cursor(c);
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Backspace => {
-                if self.delete_char_before_cursor() {
-                    KeyEventResponse::consumed_and_render()
-                } else {
-                    KeyEventResponse::consumed()
-                }
+                self.delete_char_before_cursor();
+                KeyEventResponse::consumed()
             }
-            KeyCode::Enter => KeyEventResponse::action_and_render(TextInputAction::Submit),
+            KeyCode::Enter => KeyEventResponse::action(TextInputAction::Submit),
             _ => KeyEventResponse::ignored(),
         }
     }
@@ -290,7 +287,6 @@ mod tests {
         let outcome = input.on_key_event(key(KeyCode::Backspace));
 
         assert!(outcome.consumed);
-        assert!(!outcome.needs_render);
         assert_eq!(input.buffer, "hello");
         assert_eq!(input.cursor_index(None), 0);
     }

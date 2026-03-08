@@ -76,14 +76,14 @@ impl InteractiveComponent for ServerStatusOverlay {
 
     fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match key_event.code {
-            KeyCode::Esc => KeyEventResponse::action_and_render(ServerStatusAction::Close),
+            KeyCode::Esc => KeyEventResponse::action(ServerStatusAction::Close),
             KeyCode::Up => {
                 self.move_selection_up();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                KeyEventResponse::consumed_and_render()
+                KeyEventResponse::consumed()
             }
             KeyCode::Enter => {
                 if let Some(entry) = self
@@ -91,7 +91,7 @@ impl InteractiveComponent for ServerStatusOverlay {
                     .get(self.selected_index)
                     .filter(|e| matches!(e.status, McpServerStatus::NeedsOAuth))
                 {
-                    return KeyEventResponse::action_and_render(ServerStatusAction::Authenticate(
+                    return KeyEventResponse::action(ServerStatusAction::Authenticate(
                         entry.name.clone(),
                     ));
                 }

@@ -226,7 +226,7 @@ impl UiState {
             None => {}
         }
 
-        if outcome.needs_render {
+        if outcome.consumed {
             Some(vec![AppEffect::Render])
         } else {
             Some(vec![])
@@ -261,8 +261,7 @@ impl UiState {
                 });
                 effects
             }
-            None if outcome.needs_render => vec![AppEffect::Render],
-            None => vec![],
+            None => vec![AppEffect::Render],
         }
     }
 
@@ -304,8 +303,7 @@ impl UiState {
                     AppEffect::Render,
                 ]
             }
-            None if outcome.needs_render => vec![AppEffect::Render],
-            None => vec![],
+            None => vec![AppEffect::Render],
         }
     }
 
