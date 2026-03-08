@@ -8,19 +8,38 @@ repository = "https://github.com/contextbridge/aether"
 keywords = ["tui", "terminal", "cli", "ui", "component"]
 categories = ["command-line-interface"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lints]
 workspace = true
 
 [features]
-default = ["markdown", "serde", "runtime", "picker"]
-markdown = ["dep:pulldown-cmark"]
+default = ["syntax", "markdown", "serde", "runtime", "picker", "diff"]
+
+## Enable syntax highlighting via syntect.
+## Required for: markdown code blocks, diff highlighting, loading .tmTheme files.
+syntax = ["dep:syntect"]
+
+## Enable markdown rendering (implies syntax).
+markdown = ["syntax", "dep:pulldown-cmark"]
+
+## Enable diff preview rendering with syntax highlighting (implies syntax).
+diff = ["syntax"]
+
+## Enable `to_json()` methods for form widgets.
 serde = ["dep:serde_json"]
+
+## Enable async terminal event handling via tokio.
 runtime = ["dep:tokio"]
+
+## Enable fuzzy search/picker in combobox.
 picker = ["dep:nucleo"]
 
 [dependencies]
 crossterm = { workspace = true }
-syntect = { workspace = true }
+syntect = { workspace = true, optional = true }
 pulldown-cmark = { workspace = true, optional = true }
 nucleo = { workspace = true, optional = true }
 unicode-width = { workspace = true }

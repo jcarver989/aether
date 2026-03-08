@@ -1,6 +1,6 @@
 use super::*;
 use wisp::tui::screen::Screen;
-use wisp::tui::spinner::{BRAILLE_FRAMES, Spinner};
+use wisp::tui::components::spinner::{BRAILLE_FRAMES, Spinner};
 
 #[test]
 fn invisible_renders_empty() {
