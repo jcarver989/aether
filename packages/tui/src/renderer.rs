@@ -1,7 +1,8 @@
-use super::component::RenderContext;
-use super::screen::{Line, Screen};
-use super::soft_wrap::{soft_wrap_line, soft_wrap_lines_with_map};
-use super::theme::Theme;
+use crate::component::RenderContext;
+use crate::screen::{Line, Screen};
+use crate::size::Size;
+use crate::soft_wrap::{soft_wrap_line, soft_wrap_lines_with_map};
+use crate::theme::Theme;
 use crossterm::QueueableCommand;
 use crossterm::cursor::{Hide, MoveDown, Show};
 use std::io::{self, Write};
@@ -52,14 +53,14 @@ impl<T: Write> Renderer<T> {
     pub fn render<C: CursorComponent + ?Sized>(&mut self, root: &mut C) -> io::Result<()> {
         let output = root.render_with_cursor(&self.context);
         let (full_visual_lines, logical_to_visual) =
-            soft_wrap_lines_with_map(&output.lines, self.context.size.0);
+            soft_wrap_lines_with_map(&output.lines, self.context.size.width);
 
         let mut cursor_row = logical_to_visual
             .get(output.cursor.logical_row)
             .copied()
             .unwrap_or_else(|| full_visual_lines.len().saturating_sub(1));
 
-        let width = usize::from(self.context.size.0);
+        let width = usize::from(self.context.size.width);
         let mut cursor_col = output.cursor.col;
         if width > 0 {
             cursor_row += cursor_col / width;
@@ -74,7 +75,7 @@ impl<T: Write> Renderer<T> {
 
         // Progressively flush overflow lines to terminal scrollback so the
         // user can scroll up to see the full response.
-        let viewport_rows = usize::from(self.context.size.1.max(1));
+        let viewport_rows = usize::from(self.context.size.height.max(1));
         let overflow = full_visual_lines.len().saturating_sub(viewport_rows);
 
         if overflow > self.flushed_visual_count {
@@ -94,7 +95,7 @@ impl<T: Write> Renderer<T> {
 
         self.restore_cursor_position()?;
         self.screen
-            .render(visual_lines, self.context.size.0, &mut self.writer)?;
+            .render(visual_lines, self.context.size.width, &mut self.writer)?;
 
         // Show or hide the cursor based on the component's request.
         if output.cursor_visible != self.cursor_visible {
@@ -124,7 +125,7 @@ impl<T: Write> Renderer<T> {
     pub fn push_to_scrollback(&mut self, lines: &[Line]) -> io::Result<()> {
         self.restore_cursor_position()?;
 
-        let width = self.context.size.0;
+        let width = self.context.size.width;
         let visual: Vec<Line> = lines
             .iter()
             .flat_map(|l| soft_wrap_line(l, width))
@@ -163,11 +164,11 @@ impl<T: Write> Renderer<T> {
                 (80, 24)
             }
         };
-        self.context.size = size;
+        self.context.size = size.into();
     }
 
-    pub fn update_render_context_with(&mut self, size: (u16, u16)) {
-        self.context.size = size;
+    pub fn update_render_context_with(&mut self, size: impl Into<Size>) {
+        self.context.size = size.into();
     }
 
     pub fn context(&self) -> &RenderContext {
@@ -195,7 +196,6 @@ impl<T: Write> Renderer<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::WISP_HOME_ENV_MUTEX;
     use crossterm::style::Color;
 
     #[test]
@@ -210,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn set_theme_replaces_render_context_theme_from_non_default_file() {
+    fn set_theme_replaces_render_context_theme_from_file() {
         let mut renderer = Renderer::new(Vec::new(), Theme::default());
 
         let custom_tmtheme = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -235,29 +235,11 @@ mod tests {
 </plist>"#;
 
         let temp_dir = tempfile::TempDir::new().unwrap();
-        let themes_dir = temp_dir.path().join("themes");
-        std::fs::create_dir_all(&themes_dir).unwrap();
-        std::fs::write(themes_dir.join("custom.tmTheme"), custom_tmtheme).unwrap();
+        let theme_path = temp_dir.path().join("custom.tmTheme");
+        std::fs::write(&theme_path, custom_tmtheme).unwrap();
 
-        let _guard = WISP_HOME_ENV_MUTEX
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let old = std::env::var_os("WISP_HOME");
-        unsafe { std::env::set_var("WISP_HOME", temp_dir.path()) };
-
-        let settings = crate::settings::WispSettings {
-            theme: crate::settings::ThemeSettings {
-                file: Some("custom.tmTheme".to_string()),
-            },
-        };
-        let loaded = Theme::load(&settings);
+        let loaded = Theme::load_from_path(&theme_path);
         renderer.set_theme(loaded);
-
-        if let Some(value) = old {
-            unsafe { std::env::set_var("WISP_HOME", value) };
-        } else {
-            unsafe { std::env::remove_var("WISP_HOME") };
-        }
 
         assert_eq!(
             renderer.context().theme.text_primary(),

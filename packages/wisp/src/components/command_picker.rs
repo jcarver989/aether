@@ -77,7 +77,7 @@ impl Component for CommandPicker {
                 let padded_name = pad_text_to_width(&name_part, max_name_width);
                 let line_text = format!("{padded_name}  {}{}", command.description, hint_suffix);
 
-                let max_width = ctx.size.0 as usize;
+                let max_width = ctx.size.width as usize;
                 let truncated = truncate_text(&line_text, max_width);
 
                 if is_selected {
@@ -328,7 +328,7 @@ mod tests {
 
         assert_eq!(
             display_width_line(selected_line),
-            context.size.0 as usize,
+            context.size.width as usize,
             "selected row should fill the full visible width",
         );
     }

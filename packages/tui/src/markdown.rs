@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use syntect::easy::HighlightLines;
 use unicode_width::UnicodeWidthStr;
 
-use super::screen::{Line, Span, Style};
-use super::syntax::{find_syntax_by_token, syntax_set, syntect_to_wisp_style};
-use super::theme::Theme;
+use crate::screen::{Line, Span, Style};
+use crate::syntax::{find_syntax_by_token, syntax_set, syntect_to_wisp_style};
+use crate::theme::Theme;
 
 /// A single rendered cell in a table row.
 #[derive(Clone, Debug)]

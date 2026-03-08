@@ -1,5 +1,5 @@
-use super::component::RenderContext;
-use super::screen::Line;
+use crate::component::RenderContext;
+use crate::screen::Line;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Nucleo};

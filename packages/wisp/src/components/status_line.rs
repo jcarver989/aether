@@ -61,7 +61,7 @@ impl Component for StatusLine<'_> {
             return vec![left_line];
         };
 
-        let width = context.size.0 as usize;
+        let width = context.size.width as usize;
         let right_len = display_width_text(&right);
         let left_len = display_width_line(&left_line);
 

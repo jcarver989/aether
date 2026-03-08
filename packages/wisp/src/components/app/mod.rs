@@ -224,7 +224,7 @@ mod tests {
 
         let mut theme = crate::tui::theme::Theme::default();
         with_wisp_home(temp_dir.path(), || {
-            theme = crate::tui::theme::Theme::load(&settings);
+            theme = crate::settings::load_theme(&settings);
         });
         theme
     }

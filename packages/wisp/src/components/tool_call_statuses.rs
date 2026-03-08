@@ -1,11 +1,11 @@
 use acp_utils::notifications::{
-    DiffPreview, SubAgentEvent, SubAgentProgressParams, ToolResultMeta,
+    DiffPreview as AcpDiffPreview, SubAgentEvent, SubAgentProgressParams, ToolResultMeta,
 };
 use agent_client_protocol as acp;
 
 use crate::tui::diff::highlight_diff;
 use crate::tui::spinner::BRAILLE_FRAMES as FRAMES;
-use crate::tui::{Component, Line, RenderContext, Tickable};
+use crate::tui::{Component, DiffLine, DiffPreview, DiffTag, Line, RenderContext, Tickable};
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -444,7 +444,7 @@ impl ToolCallStatuses {
             diff_preview: tc
                 .result_meta
                 .as_ref()
-                .and_then(|rm| rm.diff_preview.clone()),
+                .and_then(|rm| rm.diff_preview.as_ref().map(convert_diff_preview)),
             status: tc.status.clone(),
             tick,
         }
@@ -483,10 +483,31 @@ impl Component for ToolCallStatuses {
     }
 }
 
+fn convert_diff_preview(acp: &AcpDiffPreview) -> DiffPreview {
+    DiffPreview {
+        lines: acp
+            .lines
+            .iter()
+            .map(|l| DiffLine {
+                tag: match l.tag {
+                    acp_utils::notifications::DiffTag::Context => DiffTag::Context,
+                    acp_utils::notifications::DiffTag::Removed => DiffTag::Removed,
+                    acp_utils::notifications::DiffTag::Added => DiffTag::Added,
+                },
+                content: l.content.clone(),
+            })
+            .collect(),
+        lang_hint: acp.lang_hint.clone(),
+        start_line: acp.start_line,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_utils::notifications::{DiffLine, DiffTag, ToolDisplayMeta};
+    use acp_utils::notifications::{
+        DiffLine as AcpDiffLine, DiffTag as AcpDiffTag, ToolDisplayMeta,
+    };
 
     fn ctx() -> RenderContext {
         RenderContext::new((80, 24))
@@ -1352,14 +1373,14 @@ mod tests {
         // Complete with diff_preview in meta
         let rm = ToolResultMeta::with_diff_preview(
             ToolDisplayMeta::new("Edit file", "main.rs"),
-            DiffPreview {
+            AcpDiffPreview {
                 lines: vec![
-                    DiffLine {
-                        tag: DiffTag::Removed,
+                    AcpDiffLine {
+                        tag: AcpDiffTag::Removed,
                         content: "old".to_string(),
                     },
-                    DiffLine {
-                        tag: DiffTag::Added,
+                    AcpDiffLine {
+                        tag: AcpDiffTag::Added,
                         content: "new".to_string(),
                     },
                 ],

@@ -1,8 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::component::{Component, HandlesInput, InputOutcome, RenderContext};
-use super::screen::{Line, Style};
-use super::select_option::SelectOption;
+use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
+use crate::screen::{Line, Style};
+use crate::select_option::SelectOption;
 
 /// Single-select from a list of options, rendered as radio buttons.
 pub struct RadioSelect {

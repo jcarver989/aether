@@ -1,6 +1,6 @@
-use super::screen::Style;
-use crate::settings::{WispSettings, resolve_theme_file_path};
+use crate::screen::Style;
 use crossterm::style::Color;
+use std::path::Path;
 use std::sync::{Arc, LazyLock};
 use syntect::highlighting::{Highlighter, Theme as SyntectTheme, ThemeSet};
 use syntect::parsing::Scope;
@@ -32,7 +32,7 @@ pub struct Theme {
 }
 
 static DEFAULT_THEME: LazyLock<Arc<SyntectTheme>> = LazyLock::new(|| {
-    let cursor = std::io::Cursor::new(include_bytes!("../../assets/catppuccin-mocha.tmTheme"));
+    let cursor = std::io::Cursor::new(include_bytes!("../assets/catppuccin-mocha.tmTheme"));
     let theme = ThemeSet::load_from_reader(&mut std::io::BufReader::new(cursor))
         .expect("embedded catppuccin-mocha.tmTheme is valid");
     Arc::new(theme)
@@ -147,17 +147,8 @@ impl Theme {
         &self.syntect
     }
 
-    pub fn load(settings: &WispSettings) -> Self {
-        let Some(theme_file) = settings.theme.file.as_deref() else {
-            return Self::default();
-        };
-
-        let Some(path) = resolve_theme_file_path(theme_file) else {
-            warn!("Rejected unsafe theme filename: {}", theme_file);
-            return Self::default();
-        };
-
-        match ThemeSet::get_theme(&path) {
+    pub fn load_from_path(path: &Path) -> Self {
+        match ThemeSet::get_theme(path) {
             Ok(syntect_theme) => Self::from_syntect(Arc::new(syntect_theme)),
             Err(e) => {
                 warn!(
@@ -359,7 +350,6 @@ fn color_from_syntect(color: syntect::highlighting::Color) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings};
     use std::fs;
     use syntect::highlighting::ThemeSettings;
     use tempfile::TempDir;
@@ -422,7 +412,6 @@ mod tests {
     }; // rosewater (caret)
 
     /// Build a bare `SyntectTheme` with only global settings, no scope rules.
-    /// Used to test that all colors fall back to accent.
     fn bare_syntect_theme() -> Arc<SyntectTheme> {
         Arc::new(SyntectTheme {
             name: Some("Bare".into()),
@@ -476,7 +465,7 @@ mod tests {
         })
     }
 
-    /// Inline XML theme for file-loading tests only (`Theme::load` needs a file).
+    /// Inline XML theme for file-loading tests.
     const LOADABLE_TMTHEME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -499,8 +488,6 @@ mod tests {
     </array>
 </dict>
 </plist>"#;
-
-    use crate::test_helpers::with_wisp_home;
 
     #[test]
     fn selected_row_style_uses_text_primary_and_highlight_bg() {
@@ -550,10 +537,8 @@ mod tests {
     #[test]
     fn catppuccin_resolves_diff_colors() {
         let theme = Theme::default();
-        // diff fg comes from markup.inserted.diff / markup.deleted.diff
         assert_eq!(theme.diff_added_fg(), CATPPUCCIN_SUCCESS);
         assert_eq!(theme.diff_removed_fg(), CATPPUCCIN_ERROR);
-        // diff bg is darkened to ~20%
         assert_eq!(theme.diff_added_bg(), darken_color(CATPPUCCIN_SUCCESS));
         assert_eq!(theme.diff_removed_bg(), darken_color(CATPPUCCIN_ERROR));
     }
@@ -626,25 +611,12 @@ mod tests {
     }
 
     #[test]
-    fn valid_theme_file_loads_from_wisp_themes_dir() {
+    fn valid_theme_file_loads_from_path() {
         let temp_dir = TempDir::new().unwrap();
-        let themes_dir = temp_dir.path().join("themes");
-        fs::create_dir_all(&themes_dir).unwrap();
-        fs::write(themes_dir.join("custom.tmTheme"), LOADABLE_TMTHEME).unwrap();
+        let theme_path = temp_dir.path().join("custom.tmTheme");
+        fs::write(&theme_path, LOADABLE_TMTHEME).unwrap();
 
-        let settings = WispSettings {
-            theme: WispThemeSettings {
-                file: Some("custom.tmTheme".to_string()),
-            },
-        };
-
-        let loaded = {
-            let mut result = Theme::default();
-            with_wisp_home(temp_dir.path(), || {
-                result = Theme::load(&settings);
-            });
-            result
-        };
+        let loaded = Theme::load_from_path(&theme_path);
 
         assert_eq!(
             loaded.text_primary(),
@@ -659,39 +631,14 @@ mod tests {
     #[test]
     fn malformed_theme_falls_back_to_default() {
         let temp_dir = TempDir::new().unwrap();
-        let themes_dir = temp_dir.path().join("themes");
-        fs::create_dir_all(&themes_dir).unwrap();
-        fs::write(themes_dir.join("broken.tmTheme"), "not valid xml").unwrap();
+        let theme_path = temp_dir.path().join("broken.tmTheme");
+        fs::write(&theme_path, "not valid xml").unwrap();
 
-        let settings = WispSettings {
-            theme: WispThemeSettings {
-                file: Some("broken.tmTheme".to_string()),
-            },
-        };
-
-        let loaded = {
-            let mut result = Theme::default();
-            with_wisp_home(temp_dir.path(), || {
-                result = Theme::load(&settings);
-            });
-            result
-        };
+        let loaded = Theme::load_from_path(&theme_path);
 
         let default = Theme::default();
         assert_eq!(loaded.primary(), default.primary());
         assert_eq!(loaded.code_bg(), default.code_bg());
-    }
-
-    #[test]
-    fn path_traversal_rejected() {
-        let settings = WispSettings {
-            theme: WispThemeSettings {
-                file: Some("../evil.tmTheme".to_string()),
-            },
-        };
-        let loaded = Theme::load(&settings);
-        let default = Theme::default();
-        assert_eq!(loaded.primary(), default.primary());
     }
 
     #[test]

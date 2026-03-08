@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::component::{Component, HandlesInput, InputOutcome, RenderContext};
-use super::screen::Line;
+use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
+use crate::screen::Line;
 
 /// Single-line text input with cursor indicator.
 pub struct TextField {

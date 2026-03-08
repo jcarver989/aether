@@ -1,10 +1,10 @@
-#[cfg(test)]
 pub mod test_picker;
 
 pub mod checkbox;
 pub mod combobox;
 pub mod component;
 pub mod diff;
+pub mod diff_types;
 pub mod form;
 pub mod markdown;
 pub mod multi_select;
@@ -14,6 +14,7 @@ pub mod renderer;
 pub mod runtime;
 pub mod screen;
 pub mod select_option;
+pub mod size;
 pub mod soft_wrap;
 pub mod spinner;
 mod syntax;
@@ -23,6 +24,7 @@ pub mod theme;
 pub use checkbox::Checkbox;
 pub use combobox::{Combobox, PickerKey, Searchable, classify_key};
 pub use component::{Component, HandlesInput, InputOutcome, RenderContext, Tickable};
+pub use diff_types::{DiffLine, DiffPreview, DiffTag};
 pub use form::{Form, FormAction, FormField, FormFieldKind};
 pub use multi_select::MultiSelect;
 pub use number_field::NumberField;
@@ -31,4 +33,5 @@ pub use renderer::{Cursor, CursorComponent, RenderOutput, Renderer};
 pub use runtime::spawn_terminal_event_task;
 pub use screen::{Line, Style};
 pub use select_option::SelectOption;
+pub use size::Size;
 pub use text_field::TextField;

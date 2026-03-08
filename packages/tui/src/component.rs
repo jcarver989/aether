@@ -1,33 +1,34 @@
-use super::screen::Line;
-use super::theme::Theme;
+use crate::screen::Line;
+use crate::size::Size;
+use crate::theme::Theme;
 use crossterm::event::KeyEvent;
 use std::time::Instant;
 
 #[derive(Clone)]
 pub struct RenderContext {
-    pub size: (u16, u16),
+    pub size: Size,
     pub theme: Theme,
     pub focused: bool,
     pub max_height: Option<usize>,
 }
 
 impl RenderContext {
-    pub fn new(size: (u16, u16)) -> Self {
+    pub fn new(size: impl Into<Size>) -> Self {
         Self::new_with_theme(size, Theme::default())
     }
 
-    pub fn new_with_theme(size: (u16, u16), theme: Theme) -> Self {
+    pub fn new_with_theme(size: impl Into<Size>, theme: Theme) -> Self {
         Self {
-            size,
+            size: size.into(),
             theme,
             focused: true,
             max_height: None,
         }
     }
 
-    pub fn with_size(&self, size: (u16, u16)) -> Self {
+    pub fn with_size(&self, size: impl Into<Size>) -> Self {
         Self {
-            size,
+            size: size.into(),
             theme: self.theme.clone(),
             focused: self.focused,
             max_height: self.max_height,

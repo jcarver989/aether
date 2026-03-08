@@ -123,7 +123,7 @@ impl Component for FilePicker {
                 let line_text = format!("{}{}", prefix, file.display_name);
                 if is_selected {
                     let mut line = Line::with_style(line_text, ctx.theme.selected_row_style());
-                    line.extend_bg_to_width(ctx.size.0 as usize);
+                    line.extend_bg_to_width(ctx.size.width as usize);
                     line
                 } else {
                     Line::new(line_text)
@@ -286,7 +286,7 @@ mod tests {
 
         assert_eq!(
             display_width_line(selected_line),
-            context.size.0 as usize,
+            context.size.width as usize,
             "selected row should fill the full visible width",
         );
     }

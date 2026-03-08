@@ -121,7 +121,7 @@ impl Line {
         }
 
         Self {
-            spans: vec![Span::new(text.clone())],
+            spans: vec![Span::new(text)],
         }
     }
 
