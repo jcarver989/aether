@@ -237,7 +237,13 @@ impl Component for ModelSelector {
                             format!("    {bar}"),
                             context
                                 .theme
-                                .selected_row_style_with_fg(context.theme.accent()),
+                                .selected_row_style_with_fg(context.theme.success()),
+                        );
+                        line.push_with_style(
+                            " reasoning",
+                            context
+                                .theme
+                                .selected_row_style_with_fg(context.theme.text_secondary()),
                         );
                     }
                     item_lines.push(line);
