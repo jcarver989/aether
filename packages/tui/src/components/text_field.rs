@@ -32,7 +32,7 @@ impl Component for TextField {
 impl InteractiveComponent for TextField {
     type Action = ();
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
         match key_event.code {
             KeyCode::Char(c) => {
                 self.value.push(c);
@@ -59,22 +59,22 @@ mod tests {
     #[test]
     fn typing_appends_characters() {
         let mut field = TextField::new(String::new());
-        field.handle_key(key(KeyCode::Char('h')));
-        field.handle_key(key(KeyCode::Char('i')));
+        field.on_key_event(key(KeyCode::Char('h')));
+        field.on_key_event(key(KeyCode::Char('i')));
         assert_eq!(field.value, "hi");
     }
 
     #[test]
     fn backspace_removes_last_character() {
         let mut field = TextField::new("abc".to_string());
-        field.handle_key(key(KeyCode::Backspace));
+        field.on_key_event(key(KeyCode::Backspace));
         assert_eq!(field.value, "ab");
     }
 
     #[test]
     fn backspace_on_empty_is_no_op() {
         let mut field = TextField::new(String::new());
-        field.handle_key(key(KeyCode::Backspace));
+        field.on_key_event(key(KeyCode::Backspace));
         assert_eq!(field.value, "");
     }
 
@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn unhandled_keys_are_ignored() {
         let mut field = TextField::new(String::new());
-        let outcome = field.handle_key(key(KeyCode::Up));
+        let outcome = field.on_key_event(key(KeyCode::Up));
         assert!(!outcome.consumed);
     }
 }

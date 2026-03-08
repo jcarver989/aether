@@ -46,7 +46,7 @@ impl Component for NumberField {
 impl InteractiveComponent for NumberField {
     type Action = ();
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
         match key_event.code {
             KeyCode::Char(c) => {
                 let accept = c.is_ascii_digit()
@@ -80,39 +80,39 @@ mod tests {
     #[test]
     fn integer_accepts_digits_and_leading_minus() {
         let mut field = NumberField::new(String::new(), true);
-        field.handle_key(key(KeyCode::Char('-')));
-        field.handle_key(key(KeyCode::Char('4')));
-        field.handle_key(key(KeyCode::Char('2')));
+        field.on_key_event(key(KeyCode::Char('-')));
+        field.on_key_event(key(KeyCode::Char('4')));
+        field.on_key_event(key(KeyCode::Char('2')));
         assert_eq!(field.value, "-42");
     }
 
     #[test]
     fn integer_rejects_dot() {
         let mut field = NumberField::new("1".to_string(), true);
-        field.handle_key(key(KeyCode::Char('.')));
+        field.on_key_event(key(KeyCode::Char('.')));
         assert_eq!(field.value, "1");
     }
 
     #[test]
     fn float_accepts_single_dot() {
         let mut field = NumberField::new(String::new(), false);
-        field.handle_key(key(KeyCode::Char('3')));
-        field.handle_key(key(KeyCode::Char('.')));
-        field.handle_key(key(KeyCode::Char('5')));
+        field.on_key_event(key(KeyCode::Char('3')));
+        field.on_key_event(key(KeyCode::Char('.')));
+        field.on_key_event(key(KeyCode::Char('5')));
         assert_eq!(field.value, "3.5");
     }
 
     #[test]
     fn float_rejects_second_dot() {
         let mut field = NumberField::new("1.2".to_string(), false);
-        field.handle_key(key(KeyCode::Char('.')));
+        field.on_key_event(key(KeyCode::Char('.')));
         assert_eq!(field.value, "1.2");
     }
 
     #[test]
     fn minus_rejected_when_not_first() {
         let mut field = NumberField::new("5".to_string(), true);
-        field.handle_key(key(KeyCode::Char('-')));
+        field.on_key_event(key(KeyCode::Char('-')));
         assert_eq!(field.value, "5");
     }
 
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn backspace_removes_last() {
         let mut field = NumberField::new("12".to_string(), true);
-        field.handle_key(key(KeyCode::Backspace));
+        field.on_key_event(key(KeyCode::Backspace));
         assert_eq!(field.value, "1");
     }
 }

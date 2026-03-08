@@ -59,7 +59,7 @@ impl Component for ProviderLoginOverlay {
 impl InteractiveComponent for ProviderLoginOverlay {
     type Action = ProviderLoginAction;
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Esc => InputOutcome::action_and_render(ProviderLoginAction::Close),
             KeyCode::Up => {
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn enter_on_needs_login_emits_authenticate() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
-        let outcome = overlay.handle_key(key(KeyCode::Enter));
+        let outcome = overlay.on_key_event(key(KeyCode::Enter));
         match outcome.action {
             Some(ProviderLoginAction::Authenticate(id)) => assert_eq!(id, "codex"),
             _ => panic!("Expected Authenticate action"),
@@ -184,14 +184,14 @@ mod tests {
         let mut entries = sample_entries();
         entries[0].status = ProviderLoginStatus::Authenticating;
         let mut overlay = ProviderLoginOverlay::new(entries);
-        let outcome = overlay.handle_key(key(KeyCode::Enter));
+        let outcome = overlay.on_key_event(key(KeyCode::Enter));
         assert!(outcome.action.is_none());
     }
 
     #[test]
     fn esc_closes_overlay() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
-        let outcome = overlay.handle_key(key(KeyCode::Esc));
+        let outcome = overlay.on_key_event(key(KeyCode::Esc));
         assert!(matches!(outcome.action, Some(ProviderLoginAction::Close)));
     }
 

@@ -138,7 +138,7 @@ impl Component for FilePicker {
 impl InteractiveComponent for FilePicker {
     type Action = FilePickerAction;
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
             PickerKey::Escape => InputOutcome::action_and_render(FilePickerAction::Close),
             PickerKey::MoveUp => {
@@ -227,11 +227,11 @@ mod tests {
 
         let first = selected_text(&mut picker).unwrap();
 
-        picker.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        picker.on_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
         let last = selected_text(&mut picker).unwrap();
         assert_ne!(first, last);
 
-        picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        picker.on_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         let back_to_first = selected_text(&mut picker).unwrap();
         assert_eq!(first, back_to_first);
     }
@@ -295,7 +295,7 @@ mod tests {
     fn handle_key_char_updates_query_and_returns_char_typed() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/renderer.rs")]);
 
-        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+        let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -310,7 +310,7 @@ mod tests {
     fn handle_key_whitespace_closes_picker() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
 
-        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+        let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -324,7 +324,7 @@ mod tests {
     fn handle_key_enter_requests_confirmation() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
 
-        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -338,7 +338,7 @@ mod tests {
     fn backspace_with_empty_query_closes_and_pops() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
 
-        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -353,7 +353,7 @@ mod tests {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
         type_query(&mut picker, "ma");
 
-        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);

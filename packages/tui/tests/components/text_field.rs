@@ -20,9 +20,9 @@ fn with_value_renders_text_and_cursor() {
 #[test]
 fn typing_appends_to_render() {
     let mut tf = TextField::new(String::new());
-    tf.handle_key(key(KeyCode::Char('a')));
-    tf.handle_key(key(KeyCode::Char('b')));
-    tf.handle_key(key(KeyCode::Char('c')));
+    tf.on_key_event(key(KeyCode::Char('a')));
+    tf.on_key_event(key(KeyCode::Char('b')));
+    tf.on_key_event(key(KeyCode::Char('c')));
     let term = render_component(&tf, 80, 24);
     assert_buffer_eq(&term, &["abc▏"]);
 }
@@ -30,7 +30,7 @@ fn typing_appends_to_render() {
 #[test]
 fn backspace_removes_from_render() {
     let mut tf = TextField::new("hi".to_string());
-    tf.handle_key(key(KeyCode::Backspace));
+    tf.on_key_event(key(KeyCode::Backspace));
     let term = render_component(&tf, 80, 24);
     assert_buffer_eq(&term, &["h▏"]);
 }
@@ -38,7 +38,7 @@ fn backspace_removes_from_render() {
 #[test]
 fn backspace_on_empty_renders_cursor() {
     let mut tf = TextField::new(String::new());
-    tf.handle_key(key(KeyCode::Backspace));
+    tf.on_key_event(key(KeyCode::Backspace));
     let term = render_component(&tf, 80, 24);
     assert_buffer_eq(&term, &["▏"]);
 }
@@ -54,7 +54,7 @@ fn screen_diff_after_mutation() {
     assert_buffer_eq(&terminal, &["ab▏"]);
 
     // Mutate and re-render through same Screen (exercises diff path)
-    tf.handle_key(key(KeyCode::Char('c')));
+    tf.on_key_event(key(KeyCode::Char('c')));
     render_component_with_screen(&tf, &mut screen, &mut terminal, 80, 24);
     assert_buffer_eq(&terminal, &["abc▏"]);
 }

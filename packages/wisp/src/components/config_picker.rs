@@ -145,7 +145,7 @@ impl Component for ConfigPicker {
 impl InteractiveComponent for ConfigPicker {
     type Action = ConfigPickerAction;
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
             PickerKey::Escape => InputOutcome::action_and_render(ConfigPickerAction::Close),
             PickerKey::MoveUp => {
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn confirm_selection_returns_change_for_new_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        picker.on_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         let change = picker.confirm_selection().expect("config change");
         assert_eq!(change.config_id, "model");
         assert_eq!(
@@ -279,9 +279,9 @@ mod tests {
     #[test]
     fn handle_key_enter_returns_apply_selection_action() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        picker.on_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
 
-        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -297,7 +297,7 @@ mod tests {
     fn handle_key_escape_returns_close_action() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
 
-        let outcome = picker.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);

@@ -330,10 +330,10 @@ impl InteractiveComponent for ConfigOverlay {
     type Action = ConfigOverlayAction;
 
     #[allow(clippy::too_many_lines)]
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         // Server overlay has highest priority
         if let Some(ref mut overlay) = self.server_overlay {
-            let outcome = overlay.handle_key(key_event);
+            let outcome = overlay.on_key_event(key_event);
             return match outcome.action {
                 Some(ServerStatusAction::Close) => {
                     self.server_overlay = None;
@@ -354,7 +354,7 @@ impl InteractiveComponent for ConfigOverlay {
 
         // Provider login overlay has second priority
         if let Some(ref mut overlay) = self.provider_login_overlay {
-            let outcome = overlay.handle_key(key_event);
+            let outcome = overlay.on_key_event(key_event);
             return match outcome.action {
                 Some(ProviderLoginAction::Close) => {
                     self.provider_login_overlay = None;
@@ -377,7 +377,7 @@ impl InteractiveComponent for ConfigOverlay {
 
         // Model selector has third priority
         if let Some(ref mut selector) = self.model_selector {
-            let outcome = selector.handle_key(key_event);
+            let outcome = selector.on_key_event(key_event);
             return match outcome.action {
                 Some(ModelSelectorAction::Done(changes)) => {
                     self.model_selector = None;
@@ -401,7 +401,7 @@ impl InteractiveComponent for ConfigOverlay {
 
         // Picker has third priority
         if let Some(ref mut picker) = self.picker {
-            let outcome = picker.handle_key(key_event);
+            let outcome = picker.on_key_event(key_event);
             return match outcome.action {
                 Some(ConfigPickerAction::Close) => {
                     self.picker = None;
@@ -430,7 +430,7 @@ impl InteractiveComponent for ConfigOverlay {
         }
 
         // Menu handles remaining input
-        let outcome = self.menu.handle_key(key_event);
+        let outcome = self.menu.on_key_event(key_event);
         match outcome.action {
             Some(ConfigMenuAction::CloseAll) => {
                 InputOutcome::action_and_render(ConfigOverlayAction::Close)
@@ -606,7 +606,7 @@ mod tests {
     fn footer_shows_confirm_and_back_for_picker() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         // Open picker
-        overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Enter));
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         let footer = lines[lines.len() - 2].plain_text();
@@ -658,7 +658,7 @@ mod tests {
     #[test]
     fn render_picker_hides_top_level_rows() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Enter));
 
         let lines = render_plain_text(&mut overlay);
         let text = lines.join("\n");
@@ -673,8 +673,8 @@ mod tests {
     #[test]
     fn render_model_selector_hides_top_level_rows() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
-        overlay.handle_key(key(KeyCode::Down));
-        overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Down));
+        overlay.on_key_event(key(KeyCode::Enter));
 
         let lines = render_plain_text(&mut overlay);
         let text = lines.join("\n");
@@ -712,9 +712,9 @@ mod tests {
         let mut menu = make_menu();
         menu.add_provider_logins_entry("2 needs login");
         let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
-        overlay.handle_key(key(KeyCode::Down));
-        overlay.handle_key(key(KeyCode::Down));
-        let outcome = overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Down));
+        overlay.on_key_event(key(KeyCode::Down));
+        let outcome = overlay.on_key_event(key(KeyCode::Enter));
         assert!(outcome.consumed);
 
         let lines = render_plain_text(&mut overlay);
@@ -737,7 +737,7 @@ mod tests {
     #[test]
     fn picker_cursor_row_offset_matches_submenu_only_layout() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Enter));
 
         assert_eq!(overlay.cursor_row_offset(), TOP_CHROME);
     }
@@ -745,7 +745,7 @@ mod tests {
     #[test]
     fn esc_closes_overlay() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let outcome = overlay.handle_key(key(KeyCode::Esc));
+        let outcome = overlay.on_key_event(key(KeyCode::Esc));
         assert!(matches!(outcome.action, Some(ConfigOverlayAction::Close)));
     }
 
@@ -755,9 +755,9 @@ mod tests {
         menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
         let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
 
-        overlay.handle_key(key(KeyCode::Enter)); // open picker on Theme
-        let _ = overlay.handle_key(key(KeyCode::Down)); // select nord.tmTheme
-        let _ = overlay.handle_key(key(KeyCode::Enter)); // confirm
+        overlay.on_key_event(key(KeyCode::Enter)); // open picker on Theme
+        let _ = overlay.on_key_event(key(KeyCode::Down)); // select nord.tmTheme
+        let _ = overlay.on_key_event(key(KeyCode::Enter)); // confirm
 
         assert_eq!(overlay.menu.options[0].config_id, THEME_CONFIG_ID);
         assert_eq!(overlay.menu.options[0].current_raw_value, "nord.tmTheme");
@@ -767,7 +767,7 @@ mod tests {
     #[test]
     fn enter_opens_picker() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let outcome = overlay.handle_key(key(KeyCode::Enter));
+        let outcome = overlay.on_key_event(key(KeyCode::Enter));
         assert!(outcome.consumed);
         assert!(overlay.has_picker());
     }
@@ -775,10 +775,10 @@ mod tests {
     #[test]
     fn picker_esc_closes_picker_not_overlay() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.handle_key(key(KeyCode::Enter)); // open picker
+        overlay.on_key_event(key(KeyCode::Enter)); // open picker
         assert!(overlay.has_picker());
 
-        let outcome = overlay.handle_key(key(KeyCode::Esc));
+        let outcome = overlay.on_key_event(key(KeyCode::Esc));
         assert!(outcome.consumed);
         assert!(!overlay.has_picker());
         // No Close action — overlay remains open
@@ -788,9 +788,9 @@ mod tests {
     #[test]
     fn picker_confirm_returns_config_change_action() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.handle_key(key(KeyCode::Enter)); // open picker
-        overlay.handle_key(key(KeyCode::Down)); // move to second option
-        let outcome = overlay.handle_key(key(KeyCode::Enter)); // confirm
+        overlay.on_key_event(key(KeyCode::Enter)); // open picker
+        overlay.on_key_event(key(KeyCode::Down)); // move to second option
+        let outcome = overlay.on_key_event(key(KeyCode::Enter)); // confirm
 
         match outcome.action {
             Some(ConfigOverlayAction::ApplyConfigChanges(changes)) => {
@@ -809,7 +809,7 @@ mod tests {
         let mut overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
         assert!(render_footer(&mut overlay).contains("Authenticate"));
 
-        let outcome = overlay.handle_key(key(KeyCode::Esc));
+        let outcome = overlay.on_key_event(key(KeyCode::Esc));
         assert!(outcome.consumed);
         assert!(render_footer(&mut overlay).contains("[Enter] Select"));
         assert!(outcome.action.is_none());
@@ -824,7 +824,7 @@ mod tests {
     #[test]
     fn cursor_col_with_picker_includes_border_and_prefix() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.handle_key(key(KeyCode::Enter)); // open picker for Provider
+        overlay.on_key_event(key(KeyCode::Enter)); // open picker for Provider
         let col = overlay.cursor_col();
         // "│ " (2) + "  Provider search: " (19) + query (0) = should be > 0
         assert!(col > 0);
@@ -918,8 +918,8 @@ mod tests {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         // Navigate to the model entry (index 1: provider=0, model=1)
-        overlay.handle_key(key(KeyCode::Down));
-        overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Down));
+        overlay.on_key_event(key(KeyCode::Enter));
 
         let footer = render_footer(&mut overlay);
         assert!(
@@ -933,12 +933,12 @@ mod tests {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         // Navigate to model and open model selector
-        overlay.handle_key(key(KeyCode::Down));
-        overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Down));
+        overlay.on_key_event(key(KeyCode::Enter));
         assert!(render_footer(&mut overlay).contains("Toggle"));
 
         // Selector pre-selects current model (gpt-4o); Esc without toggling returns no change
-        let outcome = overlay.handle_key(key(KeyCode::Esc));
+        let outcome = overlay.on_key_event(key(KeyCode::Esc));
         assert!(outcome.consumed);
         assert!(render_footer(&mut overlay).contains("[Enter] Select"));
         assert!(
@@ -951,12 +951,12 @@ mod tests {
     fn model_selector_esc_after_deselecting_all_returns_no_change() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
-        overlay.handle_key(key(KeyCode::Down));
-        overlay.handle_key(key(KeyCode::Enter)); // open model selector
+        overlay.on_key_event(key(KeyCode::Down));
+        overlay.on_key_event(key(KeyCode::Enter)); // open model selector
         // Deselect the pre-selected model
-        overlay.handle_key(key(KeyCode::Char(' ')));
+        overlay.on_key_event(key(KeyCode::Char(' ')));
 
-        let outcome = overlay.handle_key(key(KeyCode::Esc));
+        let outcome = overlay.on_key_event(key(KeyCode::Esc));
         assert!(render_footer(&mut overlay).contains("[Enter] Select"));
         assert!(outcome.action.is_none()); // No selections => no change
     }
@@ -965,12 +965,12 @@ mod tests {
     fn model_selector_enter_toggles_not_confirms() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
-        overlay.handle_key(key(KeyCode::Down));
-        overlay.handle_key(key(KeyCode::Enter)); // open model selector
+        overlay.on_key_event(key(KeyCode::Down));
+        overlay.on_key_event(key(KeyCode::Enter)); // open model selector
         assert!(render_footer(&mut overlay).contains("Toggle"));
 
         // Enter should toggle, not close the selector
-        overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Enter));
         let footer = render_footer(&mut overlay);
         assert!(
             footer.contains("Toggle"),
@@ -992,7 +992,7 @@ mod tests {
         )];
         let menu = ConfigMenu::from_config_options(&options);
         let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
-        overlay.handle_key(key(KeyCode::Enter)); // open picker
+        overlay.on_key_event(key(KeyCode::Enter)); // open picker
 
         // Render at a tall terminal (60 rows)
         let context_tall = RenderContext::new((80, 60));
@@ -1081,8 +1081,8 @@ mod tests {
     fn footer_shows_toggle_when_model_selector_open() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
-        overlay.handle_key(key(KeyCode::Down));
-        overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Down));
+        overlay.on_key_event(key(KeyCode::Enter));
 
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
@@ -1154,15 +1154,15 @@ mod tests {
         ];
         overlay = overlay.with_reasoning_effort_from_options(&options_with_reasoning);
 
-        overlay.handle_key(key(KeyCode::Enter));
+        overlay.on_key_event(key(KeyCode::Enter));
         assert!(
             render_footer(&mut overlay).contains("Toggle"),
             "model selector should be open"
         );
 
-        overlay.handle_key(key(KeyCode::Right));
+        overlay.on_key_event(key(KeyCode::Right));
 
-        let outcome = overlay.handle_key(key(KeyCode::Esc));
+        let outcome = overlay.on_key_event(key(KeyCode::Esc));
 
         match outcome.action {
             Some(ConfigOverlayAction::ApplyConfigChanges(changes)) => {

@@ -74,7 +74,7 @@ impl Component for ServerStatusOverlay {
 impl InteractiveComponent for ServerStatusOverlay {
     type Action = ServerStatusAction;
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Esc => InputOutcome::action_and_render(ServerStatusAction::Close),
             KeyCode::Up => {
@@ -216,7 +216,7 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         overlay.selected_index = 1; // linear - NeedsOAuth
 
-        let outcome = overlay.handle_key(KeyEvent::new(
+        let outcome = overlay.on_key_event(KeyEvent::new(
             KeyCode::Enter,
             crossterm::event::KeyModifiers::NONE,
         ));
@@ -231,7 +231,7 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         overlay.selected_index = 0; // github - Connected
 
-        let outcome = overlay.handle_key(KeyEvent::new(
+        let outcome = overlay.on_key_event(KeyEvent::new(
             KeyCode::Enter,
             crossterm::event::KeyModifiers::NONE,
         ));
@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn esc_closes_overlay() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
-        let outcome = overlay.handle_key(KeyEvent::new(
+        let outcome = overlay.on_key_event(KeyEvent::new(
             KeyCode::Esc,
             crossterm::event::KeyModifiers::NONE,
         ));

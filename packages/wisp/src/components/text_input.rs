@@ -131,7 +131,7 @@ impl TextInput {
 impl InteractiveComponent for TextInput {
     type Action = TextInputAction;
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Left => {
                 self.move_cursor_left();
@@ -198,7 +198,7 @@ mod tests {
         let mut input = TextInput::new();
         input.set_input("hello".to_string());
 
-        input.handle_key(key(KeyCode::Left));
+        input.on_key_event(key(KeyCode::Left));
 
         assert_eq!(input.cursor_index(None), 4);
     }
@@ -209,7 +209,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 2;
 
-        input.handle_key(key(KeyCode::Right));
+        input.on_key_event(key(KeyCode::Right));
 
         assert_eq!(input.cursor_index(None), 3);
     }
@@ -220,7 +220,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 0;
 
-        input.handle_key(key(KeyCode::Left));
+        input.on_key_event(key(KeyCode::Left));
 
         assert_eq!(input.cursor_index(None), 0);
     }
@@ -230,7 +230,7 @@ mod tests {
         let mut input = TextInput::new();
         input.set_input("hello".to_string());
 
-        input.handle_key(key(KeyCode::Right));
+        input.on_key_event(key(KeyCode::Right));
 
         assert_eq!(input.cursor_index(None), 5);
     }
@@ -241,7 +241,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 3;
 
-        input.handle_key(key(KeyCode::Home));
+        input.on_key_event(key(KeyCode::Home));
 
         assert_eq!(input.cursor_index(None), 0);
     }
@@ -252,7 +252,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 1;
 
-        input.handle_key(key(KeyCode::End));
+        input.on_key_event(key(KeyCode::End));
 
         assert_eq!(input.cursor_index(None), 5);
     }
@@ -263,7 +263,7 @@ mod tests {
         input.buffer = "hllo".to_string();
         input.cursor_pos = 1;
 
-        input.handle_key(key(KeyCode::Char('e')));
+        input.on_key_event(key(KeyCode::Char('e')));
 
         assert_eq!(input.buffer, "hello");
         assert_eq!(input.cursor_index(None), 2);
@@ -275,7 +275,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 3;
 
-        input.handle_key(key(KeyCode::Backspace));
+        input.on_key_event(key(KeyCode::Backspace));
 
         assert_eq!(input.buffer, "helo");
         assert_eq!(input.cursor_index(None), 2);
@@ -287,7 +287,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 0;
 
-        let outcome = input.handle_key(key(KeyCode::Backspace));
+        let outcome = input.on_key_event(key(KeyCode::Backspace));
 
         assert!(outcome.consumed);
         assert!(!outcome.needs_render);
@@ -301,19 +301,19 @@ mod tests {
         // "a中b" — 'a' is 1 byte, '中' is 3 bytes, 'b' is 1 byte = 5 bytes total
         input.set_input("a中b".to_string());
 
-        input.handle_key(key(KeyCode::Left));
+        input.on_key_event(key(KeyCode::Left));
         assert_eq!(input.cursor_index(None), 4); // before 'b'
 
-        input.handle_key(key(KeyCode::Left));
+        input.on_key_event(key(KeyCode::Left));
         assert_eq!(input.cursor_index(None), 1); // before '中'
 
-        input.handle_key(key(KeyCode::Left));
+        input.on_key_event(key(KeyCode::Left));
         assert_eq!(input.cursor_index(None), 0); // before 'a'
 
-        input.handle_key(key(KeyCode::Right));
+        input.on_key_event(key(KeyCode::Right));
         assert_eq!(input.cursor_index(None), 1); // after 'a'
 
-        input.handle_key(key(KeyCode::Right));
+        input.on_key_event(key(KeyCode::Right));
         assert_eq!(input.cursor_index(None), 4); // after '中'
     }
 
@@ -333,7 +333,7 @@ mod tests {
     fn slash_on_empty_returns_open_command_picker() {
         let mut input = TextInput::new();
 
-        let outcome = input.handle_key(key(KeyCode::Char('/')));
+        let outcome = input.on_key_event(key(KeyCode::Char('/')));
 
         assert!(outcome.consumed);
         assert!(matches!(
@@ -347,7 +347,7 @@ mod tests {
     fn at_sign_returns_open_file_picker() {
         let mut input = TextInput::new();
 
-        let outcome = input.handle_key(key(KeyCode::Char('@')));
+        let outcome = input.on_key_event(key(KeyCode::Char('@')));
 
         assert!(outcome.consumed);
         assert!(matches!(
@@ -362,7 +362,7 @@ mod tests {
         let mut input = TextInput::new();
         input.set_input("hello".to_string());
 
-        let outcome = input.handle_key(key(KeyCode::Enter));
+        let outcome = input.on_key_event(key(KeyCode::Enter));
 
         assert!(outcome.consumed);
         assert!(matches!(outcome.action, Some(TextInputAction::Submit)));

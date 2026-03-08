@@ -109,11 +109,11 @@ impl UiState {
         }
 
         if let Some(ref mut overlay) = self.config_overlay {
-            let outcome = overlay.handle_key(key_event);
+            let outcome = overlay.on_key_event(key_event);
             return self.handle_config_overlay_outcome(outcome);
         }
 
-        let composer_outcome = self.prompt_composer.handle_key(key_event);
+        let composer_outcome = self.prompt_composer.on_key_event(key_event);
         if composer_outcome.consumed {
             return self.handle_prompt_composer_outcome(composer_outcome);
         }
@@ -207,7 +207,7 @@ impl UiState {
 
     pub(crate) fn handle_elicitation_key(&mut self, key_event: KeyEvent) -> Option<Vec<AppEffect>> {
         let elicitation_form = self.elicitation_form.as_mut()?;
-        let outcome = elicitation_form.form.handle_key(key_event);
+        let outcome = elicitation_form.form.on_key_event(key_event);
 
         match outcome.action {
             Some(FormAction::Close) => {
