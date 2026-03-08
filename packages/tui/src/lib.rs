@@ -124,7 +124,7 @@ pub use rendering::renderer::Renderer;
 pub use rendering::size::Size;
 pub use rendering::style::Style;
 pub use rendering::terminal_screen::TerminalScreen;
-pub use theme::Theme;
+pub use theme::{ColorPalette, Theme};
 
 // Feature-gated re-exports
 #[cfg(feature = "diff")]
