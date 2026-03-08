@@ -104,7 +104,7 @@ impl App {
 }
 
 impl CursorComponent for App {
-    fn render_with_cursor(&mut self, context: &RenderContext) -> RenderOutput {
+    fn render(&mut self, context: &RenderContext) -> RenderOutput {
         let unhealthy_count = self
             .state
             .server_statuses
@@ -372,7 +372,7 @@ mod tests {
             }]);
 
         let context = RenderContext::new((120, 40));
-        let output = screen.render_with_cursor(&context);
+        let output = screen.render(&context);
         let input_row = output
             .lines
             .iter()
@@ -393,7 +393,7 @@ mod tests {
         screen.state.open_config_overlay();
 
         let context = RenderContext::new((120, 40));
-        let output = screen.render_with_cursor(&context);
+        let output = screen.render(&context);
         assert!(
             output
                 .lines
@@ -402,7 +402,7 @@ mod tests {
         );
 
         screen.state.config_overlay = None;
-        let output = screen.render_with_cursor(&context);
+        let output = screen.render(&context);
         assert!(
             !output
                 .lines
@@ -613,7 +613,7 @@ mod tests {
                 .unwrap(),
         );
 
-        let output = app.render_with_cursor(&RenderContext::new((120, 40)));
+        let output = app.render(&RenderContext::new((120, 40)));
         assert!(
             !output
                 .lines

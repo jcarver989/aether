@@ -69,6 +69,7 @@ pub use diffs::diff_types;
 pub mod focus;
 pub mod rendering;
 pub use rendering::line;
+pub use rendering::render_context;
 pub use rendering::renderer;
 pub use rendering::screen;
 pub use rendering::size;
@@ -100,7 +101,7 @@ pub mod runtime;
 pub mod testing;
 
 // Core re-exports - always available
-pub use component::{Component, HandlesInput, InputOutcome, RenderContext, Tickable};
+pub use component::{Component, Cursor, CursorComponent, HandlesInput, InputOutcome, RenderContext, RenderOutput, Tickable};
 pub use components::checkbox::Checkbox;
 pub use components::form::{Form, FormAction, FormField, FormFieldKind};
 pub use components::multi_select::MultiSelect;
@@ -110,7 +111,7 @@ pub use components::spinner::{Spinner, BRAILLE_FRAMES};
 pub use components::text_field::TextField;
 pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag};
 pub use focus::{FocusOutcome, FocusRing};
-pub use rendering::renderer::{Cursor, CursorComponent, RenderOutput, Renderer};
+pub use rendering::renderer::Renderer;
 pub use rendering::line::Line;
 pub use rendering::style::Style;
 pub use components::select_option::SelectOption;

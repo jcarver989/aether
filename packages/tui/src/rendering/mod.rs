@@ -1,4 +1,5 @@
 pub mod line;
+pub mod render_context;
 pub mod renderer;
 pub mod screen;
 pub mod size;

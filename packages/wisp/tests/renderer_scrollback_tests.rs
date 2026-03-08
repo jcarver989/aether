@@ -9,7 +9,7 @@ struct StubRoot {
 }
 
 impl CursorComponent for StubRoot {
-    fn render_with_cursor(&mut self, _context: &RenderContext) -> RenderOutput {
+    fn render(&mut self, _context: &RenderContext) -> RenderOutput {
         RenderOutput {
             lines: self.lines.clone(),
             cursor: self.cursor,

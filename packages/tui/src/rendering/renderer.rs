@@ -1,4 +1,5 @@
-use crate::component::RenderContext;
+use crate::component::CursorComponent;
+use super::render_context::RenderContext;
 use super::line::Line;
 use super::screen::Screen;
 use super::size::Size;
@@ -7,25 +8,6 @@ use crate::theme::Theme;
 use crossterm::QueueableCommand;
 use crossterm::cursor::{Hide, MoveDown, Show};
 use std::io::{self, Write};
-
-/// Logical cursor position within a component's rendered output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Cursor {
-    pub logical_row: usize,
-    pub col: usize,
-}
-
-/// The output of [`CursorComponent::render_with_cursor`]: rendered lines plus cursor state.
-pub struct RenderOutput {
-    pub lines: Vec<Line>,
-    pub cursor: Cursor,
-    pub cursor_visible: bool,
-}
-
-/// A component that renders with cursor position information for the [`Renderer`].
-pub trait CursorComponent {
-    fn render_with_cursor(&mut self, context: &RenderContext) -> RenderOutput;
-}
 
 /// Pure TUI renderer that owns terminal output, frame diffing, and cursor state.
 pub struct Renderer<T: Write> {
@@ -55,7 +37,7 @@ impl<T: Write> Renderer<T> {
     }
 
     pub fn render<C: CursorComponent + ?Sized>(&mut self, root: &mut C) -> io::Result<()> {
-        let output = root.render_with_cursor(&self.context);
+        let output = root.render(&self.context);
         let (full_visual_lines, logical_to_visual) =
             soft_wrap_lines_with_map(&output.lines, self.context.size.width);
 

@@ -1,78 +1,7 @@
 use crate::line::Line;
-use crate::size::Size;
-use crate::theme::Theme;
+pub use crate::rendering::render_context::RenderContext;
 use crossterm::event::KeyEvent;
 use std::time::Instant;
-
-/// Environment passed to [`Component::render`]: terminal size, theme, focus state,
-/// and optional height constraint.
-#[derive(Clone)]
-pub struct RenderContext {
-    pub size: Size,
-    pub theme: Theme,
-    pub focused: bool,
-    pub max_height: Option<usize>,
-}
-
-impl RenderContext {
-    pub fn new(size: impl Into<Size>) -> Self {
-        Self::new_with_theme(size, Theme::default())
-    }
-
-    pub fn new_with_theme(size: impl Into<Size>, theme: Theme) -> Self {
-        Self {
-            size: size.into(),
-            theme,
-            focused: true,
-            max_height: None,
-        }
-    }
-
-    pub fn with_size(&self, size: impl Into<Size>) -> Self {
-        Self {
-            size: size.into(),
-            theme: self.theme.clone(),
-            focused: self.focused,
-            max_height: self.max_height,
-        }
-    }
-
-    pub fn with_theme(&self, theme: Theme) -> Self {
-        Self {
-            size: self.size,
-            theme,
-            focused: self.focused,
-            max_height: self.max_height,
-        }
-    }
-
-    pub fn with_focused(&self, focused: bool) -> Self {
-        Self {
-            size: self.size,
-            theme: self.theme.clone(),
-            focused,
-            max_height: self.max_height,
-        }
-    }
-
-    pub fn with_max_height(&self, max_height: usize) -> Self {
-        Self {
-            size: self.size,
-            theme: self.theme.clone(),
-            focused: self.focused,
-            max_height: Some(max_height),
-        }
-    }
-
-    pub fn without_max_height(&self) -> Self {
-        Self {
-            size: self.size,
-            theme: self.theme.clone(),
-            focused: self.focused,
-            max_height: None,
-        }
-    }
-}
 
 /// A stateful widget that can render itself as styled terminal lines.
 pub trait Component {
@@ -164,4 +93,23 @@ pub trait HandlesInput {
 pub trait Tickable {
     /// Advance animation state by one tick.
     fn on_tick(&mut self, now: Instant);
+}
+
+/// Logical cursor position within a component's rendered output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cursor {
+    pub logical_row: usize,
+    pub col: usize,
+}
+
+/// The output of [`CursorComponent::render`]: rendered lines plus cursor state.
+pub struct RenderOutput {
+    pub lines: Vec<Line>,
+    pub cursor: Cursor,
+    pub cursor_visible: bool,
+}
+
+/// A component that renders with cursor position information for the [`Renderer`](crate::Renderer).
+pub trait CursorComponent {
+    fn render(&mut self, context: &RenderContext) -> RenderOutput;
 }
