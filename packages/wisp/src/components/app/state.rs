@@ -11,6 +11,7 @@ use crate::components::progress_indicator::ProgressIndicator;
 use crate::components::prompt_composer::{PromptComposer, PromptComposerAction};
 use crate::components::server_status::server_status_summary;
 use crate::components::tool_call_statuses::ToolCallStatuses;
+use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::components::spinner::Spinner;
 use crate::tui::{FormAction, InteractiveComponent, KeyEventResponse, Line};
@@ -20,7 +21,6 @@ use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
     SessionConfigOptionCategory, SessionConfigSelectOptions, SessionUpdate,
 };
-use crate::keybindings::Keybindings;
 use crossterm::event::KeyEvent;
 use tokio::sync::oneshot;
 use utils::ReasoningEffort;
@@ -525,9 +525,7 @@ mod tests {
         let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         let effects = state.on_key_event(default_exit);
         assert!(
-            !effects
-                .iter()
-                .any(|e| matches!(e, RuntimeAction::Exit)),
+            !effects.iter().any(|e| matches!(e, RuntimeAction::Exit)),
             "default Ctrl+C should no longer exit"
         );
 

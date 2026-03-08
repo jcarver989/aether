@@ -1,12 +1,11 @@
 use crossterm::style::Color;
-use syntect::easy::HighlightLines;
 
 use crate::{DiffPreview, DiffTag};
 
 use crate::line::Line;
 use crate::span::Span;
 use crate::style::Style;
-use crate::syntax::{find_syntax_for_hint, syntax_set, syntect_to_wisp_style};
+use crate::syntax_highlighting::SyntaxHighlighter;
 use crate::theme::Theme;
 
 const MAX_DIFF_LINES: usize = 20;
@@ -23,16 +22,13 @@ struct DiffStyle<'a> {
 /// Removed lines are shown with a `"  - "` prefix and red-tinted background.
 /// Added lines are shown with a `"  + "` prefix and green-tinted background.
 pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
-    let syntax = find_syntax_for_hint(&preview.lang_hint);
-
     let total = preview.lines.len();
     let truncated = total > MAX_DIFF_LINES;
     let budget = if truncated { MAX_DIFF_LINES } else { total };
 
     let mut lines = Vec::with_capacity(budget + usize::from(truncated));
 
-    let syntect_theme = theme.syntect_theme();
-    let mut highlighter = syntax.map(|s| HighlightLines::new(s, syntect_theme));
+    let mut highlighter = SyntaxHighlighter::new();
 
     let context_style = DiffStyle {
         prefix: "    ",
@@ -78,13 +74,17 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
             prefix_style = prefix_style.bg_color(bg);
         }
         line.push_span(Span::with_style(style.prefix, prefix_style));
-        push_highlighted_spans(
-            &mut line,
-            &diff_line.content,
-            &mut highlighter,
-            style.bg,
-            theme,
-        );
+
+        let spans = highlighter.highlight(&diff_line.content, &preview.lang_hint, theme);
+        if let Some(content) = spans.first() {
+            for span in content.spans() {
+                let mut span_style = span.style();
+                if let Some(bg) = style.bg {
+                    span_style.bg = Some(bg);
+                }
+                line.push_span(Span::with_style(span.text(), span_style));
+            }
+        }
         lines.push(line);
 
         if matches!(diff_line.tag, DiffTag::Context | DiffTag::Removed) {
@@ -100,34 +100,6 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
     }
 
     lines
-}
-
-fn push_highlighted_spans(
-    line: &mut Line,
-    src: &str,
-    highlighter: &mut Option<HighlightLines<'_>>,
-    bg: Option<Color>,
-    theme: &Theme,
-) {
-    if let Some(h) = highlighter
-        && let Ok(ranges) = h.highlight_line(src, syntax_set())
-    {
-        for (syntect_style, text) in ranges {
-            let mut style = syntect_to_wisp_style(syntect_style);
-            if let Some(bg) = bg {
-                style.bg = Some(bg);
-            }
-            line.push_span(Span::with_style(text, style));
-        }
-        return;
-    }
-
-    // Fallback: plain text with bg tint
-    let mut style = Style::fg(theme.code_fg());
-    if let Some(bg) = bg {
-        style = style.bg_color(bg);
-    }
-    line.push_span(Span::with_style(src, style));
 }
 
 #[cfg(test)]
