@@ -255,9 +255,9 @@ impl PromptComposer {
 impl InteractiveComponent for PromptComposer {
     type Action = PromptComposerAction;
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         if let Some(ref mut picker) = self.file_picker {
-            let outcome = picker.handle_key(key_event);
+            let outcome = picker.on_key_event(key_event);
             if outcome.consumed {
                 return self.handle_file_picker_outcome(&outcome);
             }
@@ -271,11 +271,11 @@ impl InteractiveComponent for PromptComposer {
         }
 
         if let Some(ref mut picker) = self.command_picker {
-            let outcome = picker.handle_key(key_event);
+            let outcome = picker.on_key_event(key_event);
             return self.handle_command_picker_outcome(&outcome);
         }
 
-        let outcome = self.text_input.handle_key(key_event);
+        let outcome = self.text_input.on_key_event(key_event);
         self.handle_text_input_outcome(&outcome)
     }
 }
@@ -341,11 +341,11 @@ mod tests {
     fn builtin_config_command_emits_open_config() {
         let mut composer = PromptComposer::new();
 
-        let outcome = composer.handle_key(key(KeyCode::Char('/')));
+        let outcome = composer.on_key_event(key(KeyCode::Char('/')));
         assert!(outcome.needs_render);
         assert!(composer.has_command_picker());
 
-        let outcome = composer.handle_key(key(KeyCode::Enter));
+        let outcome = composer.on_key_event(key(KeyCode::Enter));
         assert!(matches!(
             outcome.action,
             Some(PromptComposerAction::OpenConfig)
@@ -365,11 +365,11 @@ mod tests {
             builtin: false,
         }]);
 
-        composer.handle_key(key(KeyCode::Char('/')));
-        let outcome = composer.handle_key(key(KeyCode::Char('s')));
+        composer.on_key_event(key(KeyCode::Char('/')));
+        let outcome = composer.on_key_event(key(KeyCode::Char('s')));
         assert!(outcome.needs_render);
 
-        let outcome = composer.handle_key(key(KeyCode::Enter));
+        let outcome = composer.on_key_event(key(KeyCode::Enter));
         assert!(matches!(
             outcome.action,
             Some(PromptComposerAction::SubmitRequested { ref user_input, .. })
@@ -389,9 +389,9 @@ mod tests {
             builtin: false,
         }]);
 
-        composer.handle_key(key(KeyCode::Char('/')));
-        composer.handle_key(key(KeyCode::Char('s')));
-        let outcome = composer.handle_key(key(KeyCode::Enter));
+        composer.on_key_event(key(KeyCode::Char('/')));
+        composer.on_key_event(key(KeyCode::Char('s')));
+        let outcome = composer.on_key_event(key(KeyCode::Enter));
 
         assert!(outcome.action.is_none());
         assert!(outcome.needs_render);
@@ -421,7 +421,7 @@ mod tests {
     #[test]
     fn on_paste_closes_picker_and_inserts_text() {
         let mut composer = PromptComposer::new();
-        composer.handle_key(key(KeyCode::Char('@')));
+        composer.on_key_event(key(KeyCode::Char('@')));
         assert!(composer.has_file_picker());
 
         assert!(composer.on_paste("pasted text"));
@@ -432,9 +432,9 @@ mod tests {
     #[test]
     fn file_picker_cursor_tracks_query_length() {
         let mut composer = PromptComposer::new();
-        composer.handle_key(key(KeyCode::Char('@')));
-        composer.handle_key(key(KeyCode::Char('f')));
-        composer.handle_key(key(KeyCode::Char('o')));
+        composer.on_key_event(key(KeyCode::Char('@')));
+        composer.on_key_event(key(KeyCode::Char('f')));
+        composer.on_key_event(key(KeyCode::Char('o')));
 
         assert_eq!(composer.cursor_index(), 3);
     }

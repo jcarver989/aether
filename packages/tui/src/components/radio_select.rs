@@ -65,7 +65,7 @@ impl RadioSelect {
 impl InteractiveComponent for RadioSelect {
     type Action = ();
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
         if self.options.is_empty() {
             return InputOutcome::ignored();
         }
@@ -113,18 +113,18 @@ mod tests {
     #[test]
     fn right_cycles_forward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.handle_key(key(KeyCode::Right));
+        rs.on_key_event(key(KeyCode::Right));
         assert_eq!(rs.selected, 1);
-        rs.handle_key(key(KeyCode::Right));
+        rs.on_key_event(key(KeyCode::Right));
         assert_eq!(rs.selected, 2);
-        rs.handle_key(key(KeyCode::Right));
+        rs.on_key_event(key(KeyCode::Right));
         assert_eq!(rs.selected, 0); // wraps
     }
 
     #[test]
     fn left_cycles_backward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.handle_key(key(KeyCode::Left));
+        rs.on_key_event(key(KeyCode::Left));
         assert_eq!(rs.selected, 2); // wraps to end
     }
 
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn empty_options_ignores_keys() {
         let mut rs = RadioSelect::new(vec![], 0);
-        let outcome = rs.handle_key(key(KeyCode::Right));
+        let outcome = rs.on_key_event(key(KeyCode::Right));
         assert!(!outcome.consumed);
     }
 }

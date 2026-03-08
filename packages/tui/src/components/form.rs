@@ -88,11 +88,11 @@ impl FormFieldKind {
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
         match self {
-            FormFieldKind::Text(w) => w.handle_key(key_event),
-            FormFieldKind::Number(w) => w.handle_key(key_event),
-            FormFieldKind::Boolean(w) => w.handle_key(key_event),
-            FormFieldKind::SingleSelect(w) => w.handle_key(key_event),
-            FormFieldKind::MultiSelect(w) => w.handle_key(key_event),
+            FormFieldKind::Text(w) => w.on_key_event(key_event),
+            FormFieldKind::Number(w) => w.on_key_event(key_event),
+            FormFieldKind::Boolean(w) => w.on_key_event(key_event),
+            FormFieldKind::SingleSelect(w) => w.on_key_event(key_event),
+            FormFieldKind::MultiSelect(w) => w.on_key_event(key_event),
         }
     }
 }
@@ -175,7 +175,7 @@ impl Form {
 impl InteractiveComponent for Form {
     type Action = FormAction;
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Esc => InputOutcome::action_and_render(FormAction::Close),
             KeyCode::Enter => InputOutcome::action_and_render(FormAction::Submit),

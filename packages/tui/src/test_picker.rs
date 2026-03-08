@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn type_query<P: InteractiveComponent>(picker: &mut P, text: &str) {
     for c in text.chars() {
-        picker.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        picker.on_key_event(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
     }
 }
 

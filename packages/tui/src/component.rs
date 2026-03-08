@@ -12,7 +12,7 @@ pub trait Component {
 pub trait InteractiveComponent {
     type Action;
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action>;
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action>;
 }
 
 /// A component with time-based animation state.

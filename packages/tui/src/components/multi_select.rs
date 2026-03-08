@@ -84,7 +84,7 @@ impl MultiSelect {
 impl InteractiveComponent for MultiSelect {
     type Action = ();
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
         if self.options.is_empty() {
             return InputOutcome::ignored();
         }
@@ -139,18 +139,18 @@ mod tests {
     #[test]
     fn space_toggles_at_cursor() {
         let mut ms = sample();
-        ms.handle_key(key(KeyCode::Char(' ')));
+        ms.on_key_event(key(KeyCode::Char(' ')));
         assert!(ms.selected[0]);
-        ms.handle_key(key(KeyCode::Char(' ')));
+        ms.on_key_event(key(KeyCode::Char(' ')));
         assert!(!ms.selected[0]);
     }
 
     #[test]
     fn cursor_moves_with_arrows() {
         let mut ms = sample();
-        ms.handle_key(key(KeyCode::Down));
+        ms.on_key_event(key(KeyCode::Down));
         assert_eq!(ms.cursor, 1);
-        ms.handle_key(key(KeyCode::Char(' ')));
+        ms.on_key_event(key(KeyCode::Char(' ')));
         assert!(ms.selected[1]);
     }
 
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn cursor_wraps() {
         let mut ms = sample();
-        ms.handle_key(key(KeyCode::Up));
+        ms.on_key_event(key(KeyCode::Up));
         assert_eq!(ms.cursor, 2); // wraps to end
     }
 }

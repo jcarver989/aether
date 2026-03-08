@@ -94,7 +94,7 @@ impl Component for ConfigMenu {
 impl InteractiveComponent for ConfigMenu {
     type Action = ConfigMenuAction;
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
         match key_event.code {
             KeyCode::Esc => InputOutcome::action_and_render(ConfigMenuAction::CloseAll),
             KeyCode::Up => {
@@ -511,7 +511,7 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let outcome = menu.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -526,7 +526,7 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let outcome = menu.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
         assert!(outcome.consumed);
         assert!(outcome.needs_render);
@@ -556,7 +556,7 @@ mod tests {
             .meta(meta.into_meta());
         let mut menu = ConfigMenu::from_config_options(&[opt]);
 
-        let outcome = menu.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let outcome = menu.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(matches!(
             outcome.action,
             Some(ConfigMenuAction::OpenModelSelector)

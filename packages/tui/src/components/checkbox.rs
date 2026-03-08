@@ -34,7 +34,7 @@ impl Component for Checkbox {
 impl InteractiveComponent for Checkbox {
     type Action = ();
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
         match key_event.code {
             KeyCode::Char(' ') => {
                 self.checked = !self.checked;
@@ -57,9 +57,9 @@ mod tests {
     #[test]
     fn space_toggles() {
         let mut cb = Checkbox::new(false);
-        cb.handle_key(key(KeyCode::Char(' ')));
+        cb.on_key_event(key(KeyCode::Char(' ')));
         assert!(cb.checked);
-        cb.handle_key(key(KeyCode::Char(' ')));
+        cb.on_key_event(key(KeyCode::Char(' ')));
         assert!(!cb.checked);
     }
 
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn other_keys_are_ignored() {
         let mut cb = Checkbox::new(false);
-        let outcome = cb.handle_key(key(KeyCode::Char('a')));
+        let outcome = cb.on_key_event(key(KeyCode::Char('a')));
         assert!(!outcome.consumed);
         assert!(!cb.checked);
     }
