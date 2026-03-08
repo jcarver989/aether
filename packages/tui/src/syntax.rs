@@ -12,6 +12,7 @@ pub(crate) fn syntax_set() -> &'static SyntaxSet {
     &SYNTAX_SET
 }
 
+#[cfg(feature = "markdown")]
 pub(crate) fn find_syntax_by_token(token: &str) -> Option<&'static SyntaxReference> {
     if token.is_empty() {
         return None;

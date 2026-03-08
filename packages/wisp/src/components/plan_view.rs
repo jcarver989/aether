@@ -18,7 +18,7 @@ pub struct PlanView<'a> {
 }
 
 impl Component for PlanView<'_> {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         if self.entries.is_empty() {
             return vec![];
         }
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn empty_entries_render_nothing() {
-        let mut view = PlanView { entries: &[] };
+        let view = PlanView { entries: &[] };
         assert!(view.render(&ctx()).is_empty());
     }
 
@@ -80,7 +80,7 @@ mod tests {
             entry("Implement", PlanEntryStatus::InProgress),
             entry("Test", PlanEntryStatus::Pending),
         ];
-        let mut view = PlanView { entries: &entries };
+        let view = PlanView { entries: &entries };
         let lines = view.render(&ctx());
         assert_eq!(lines.len(), 5);
         assert_eq!(lines[0].plain_text(), "");
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn completed_entry_has_filled_checkbox() {
         let entries = vec![entry("Done task", PlanEntryStatus::Completed)];
-        let mut view = PlanView { entries: &entries };
+        let view = PlanView { entries: &entries };
         let lines = view.render(&ctx());
         let text = lines[2].plain_text();
         assert!(text.contains(CHECKBOX_FILLED));
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn completed_entry_has_strikethrough() {
         let entries = vec![entry("Done task", PlanEntryStatus::Completed)];
-        let mut view = PlanView { entries: &entries };
+        let view = PlanView { entries: &entries };
         let lines = view.render(&ctx());
         let spans = lines[2].spans();
         let text_span = &spans[1];
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn in_progress_entry_has_filled_checkbox() {
         let entries = vec![entry("Working", PlanEntryStatus::InProgress)];
-        let mut view = PlanView { entries: &entries };
+        let view = PlanView { entries: &entries };
         let lines = view.render(&ctx());
         let text = lines[2].plain_text();
         assert!(text.contains(CHECKBOX_FILLED));
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn pending_entry_has_empty_checkbox() {
         let entries = vec![entry("Todo", PlanEntryStatus::Pending)];
-        let mut view = PlanView { entries: &entries };
+        let view = PlanView { entries: &entries };
         let lines = view.render(&ctx());
         let text = lines[2].plain_text();
         assert!(text.contains(CHECKBOX_EMPTY));

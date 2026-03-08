@@ -41,6 +41,7 @@ impl Form {
         }
     }
 
+    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         let mut map = serde_json::Map::new();
         for field in &self.fields {
@@ -51,6 +52,7 @@ impl Form {
 }
 
 impl FormFieldKind {
+    #[cfg(feature = "serde")]
     fn to_json(&self) -> serde_json::Value {
         match self {
             FormFieldKind::Text(w) => w.to_json(),
@@ -61,7 +63,7 @@ impl FormFieldKind {
         }
     }
 
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         match self {
             FormFieldKind::Text(w) => w.render(context),
             FormFieldKind::Number(w) => w.render(context),
@@ -83,7 +85,7 @@ impl FormFieldKind {
 }
 
 impl Component for Form {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = vec![self.render_title(context)];
         lines.extend(self.render_fields(context));
         lines.extend(Self::render_footer(context));
@@ -102,9 +104,9 @@ impl Form {
         )
     }
 
-    fn render_fields(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render_fields(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
-        for (i, field) in self.fields.iter_mut().enumerate() {
+        for (i, field) in self.fields.iter().enumerate() {
             let is_selected = i == self.selected_field;
             let prefix = if is_selected { "▶ " } else { "  " };
             let required_marker = if field.required { "*" } else { "" };
@@ -200,7 +202,7 @@ mod tests {
 
     #[test]
     fn render_does_not_panic_when_title_wider_than_terminal() {
-        let mut form = Form::new(
+        let form = Form::new(
             "This is a very long message that exceeds the terminal width".to_string(),
             vec![FormField {
                 name: "name".to_string(),

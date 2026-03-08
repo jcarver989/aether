@@ -36,12 +36,12 @@ enum ActiveConfigOverlayView {
 }
 
 struct MaxHeightComponent<'a> {
-    inner: &'a mut dyn Component,
+    inner: &'a dyn Component,
     max_height: usize,
 }
 
 impl Component for MaxHeightComponent<'_> {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         self.inner.render(&context.with_max_height(self.max_height))
     }
 }
@@ -105,6 +105,28 @@ impl ConfigOverlay {
                 }
                 _ => None,
             })
+    }
+
+    pub(crate) fn prepare_render(&mut self, context: &RenderContext) {
+        let height = (context.size.height.saturating_sub(1)) as usize;
+        if height < MIN_HEIGHT {
+            return;
+        }
+        let child_max_height = height.saturating_sub(4);
+        let ctx = context.with_max_height(child_max_height);
+        match self.active_view() {
+            ActiveConfigOverlayView::ModelSelector => {
+                if let Some(ref mut ms) = self.model_selector {
+                    ms.prepare_render(&ctx);
+                }
+            }
+            ActiveConfigOverlayView::Picker => {
+                if let Some(ref mut p) = self.picker {
+                    p.prepare_render(&ctx);
+                }
+            }
+            _ => {}
+        }
     }
 
     pub fn update_config_options(&mut self, options: &[SessionConfigOption]) {
@@ -227,7 +249,7 @@ impl ConfigOverlay {
 }
 
 impl Component for ConfigOverlay {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let height = (context.size.height.saturating_sub(1)) as usize;
         let width = context.size.width as usize;
         if height < MIN_HEIGHT || width < MIN_WIDTH {
@@ -239,11 +261,11 @@ impl Component for ConfigOverlay {
 
         match self.active_view() {
             ActiveConfigOverlayView::ServerOverlay => {
-                let mut child = MaxHeightComponent {
-                    inner: self.server_overlay.as_mut().expect("active server overlay"),
+                let child = MaxHeightComponent {
+                    inner: self.server_overlay.as_ref().expect("active server overlay"),
                     max_height: child_max_height,
                 };
-                Container::new(vec![&mut child])
+                Container::new(vec![&child])
                     .title(" Configuration ")
                     .footer(footer)
                     .border_color(context.theme.muted())
@@ -252,14 +274,14 @@ impl Component for ConfigOverlay {
                     .render(context)
             }
             ActiveConfigOverlayView::ProviderLoginOverlay => {
-                let mut child = MaxHeightComponent {
+                let child = MaxHeightComponent {
                     inner: self
                         .provider_login_overlay
-                        .as_mut()
+                        .as_ref()
                         .expect("active provider login overlay"),
                     max_height: child_max_height,
                 };
-                Container::new(vec![&mut child])
+                Container::new(vec![&child])
                     .title(" Configuration ")
                     .footer(footer)
                     .border_color(context.theme.muted())
@@ -268,11 +290,11 @@ impl Component for ConfigOverlay {
                     .render(context)
             }
             ActiveConfigOverlayView::ModelSelector => {
-                let mut child = MaxHeightComponent {
-                    inner: self.model_selector.as_mut().expect("active model selector"),
+                let child = MaxHeightComponent {
+                    inner: self.model_selector.as_ref().expect("active model selector"),
                     max_height: child_max_height,
                 };
-                Container::new(vec![&mut child])
+                Container::new(vec![&child])
                     .title(" Configuration ")
                     .footer(footer)
                     .border_color(context.theme.muted())
@@ -281,11 +303,11 @@ impl Component for ConfigOverlay {
                     .render(context)
             }
             ActiveConfigOverlayView::Picker => {
-                let mut child = MaxHeightComponent {
-                    inner: self.picker.as_mut().expect("active picker"),
+                let child = MaxHeightComponent {
+                    inner: self.picker.as_ref().expect("active picker"),
                     max_height: child_max_height,
                 };
-                Container::new(vec![&mut child])
+                Container::new(vec![&child])
                     .title(" Configuration ")
                     .footer(footer)
                     .border_color(context.theme.muted())
@@ -293,7 +315,7 @@ impl Component for ConfigOverlay {
                     .gap(GAP)
                     .render(context)
             }
-            ActiveConfigOverlayView::Menu => Container::new(vec![&mut self.menu])
+            ActiveConfigOverlayView::Menu => Container::new(vec![&self.menu])
                 .title(" Configuration ")
                 .footer(footer)
                 .border_color(context.theme.muted())
@@ -530,12 +552,14 @@ mod tests {
     /// Render the overlay and return the footer line text.
     fn render_footer(overlay: &mut ConfigOverlay) -> String {
         let context = RenderContext::new((80, 24));
+        overlay.prepare_render(&context);
         let lines = overlay.render(&context);
         lines[lines.len() - 2].plain_text()
     }
 
     fn render_plain_text(overlay: &mut ConfigOverlay) -> Vec<String> {
         let context = RenderContext::new((80, 24));
+        overlay.prepare_render(&context);
         overlay
             .render(&context)
             .into_iter()
@@ -552,7 +576,7 @@ mod tests {
 
     #[test]
     fn bordered_box_fills_terminal_height_minus_one() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         // Should fill exactly height - 1 = 23 lines
@@ -561,7 +585,7 @@ mod tests {
 
     #[test]
     fn title_contains_configuration() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         assert!(lines[0].plain_text().contains("Configuration"));
@@ -569,7 +593,7 @@ mod tests {
 
     #[test]
     fn footer_shows_select_and_close_for_menu() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         let footer = lines[lines.len() - 2].plain_text(); // second to last (last is bottom border)
@@ -593,7 +617,7 @@ mod tests {
     fn footer_shows_authenticate_and_back_for_servers() {
         let menu = make_menu();
         let statuses = make_server_statuses();
-        let mut overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
+        let overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         let footer = lines[lines.len() - 2].plain_text();
@@ -603,7 +627,7 @@ mod tests {
 
     #[test]
     fn selected_entry_has_bg_color() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((80, 24));
         let lines = overlay.render(&context);
         let selected_line = lines
@@ -807,7 +831,7 @@ mod tests {
 
     #[test]
     fn narrow_terminal_does_not_panic() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((4, 3));
         let lines = overlay.render(&context);
         assert!(!lines.is_empty());
@@ -815,7 +839,7 @@ mod tests {
 
     #[test]
     fn very_small_terminal_shows_fallback() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = RenderContext::new((3, 2));
         let lines = overlay.render(&context);
         assert_eq!(lines.len(), 1);
@@ -971,6 +995,7 @@ mod tests {
 
         // Render at a tall terminal (60 rows)
         let context_tall = RenderContext::new((80, 60));
+        overlay.prepare_render(&context_tall);
         let lines_tall = overlay.render(&context_tall);
         let tall_model_lines = lines_tall
             .iter()
@@ -979,6 +1004,7 @@ mod tests {
 
         // Render at a short terminal (15 rows)
         let context_short = RenderContext::new((80, 15));
+        overlay.prepare_render(&context_short);
         let lines_short = overlay.render(&context_short);
         let short_model_lines = lines_short
             .iter()

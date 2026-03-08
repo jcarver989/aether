@@ -2,18 +2,30 @@
 name = "tui"
 version = "0.1.0"
 edition = "2024"
+description = "A lightweight, composable terminal UI framework for building rich CLI applications"
+license = "MIT"
+repository = "https://github.com/contextbridge/aether"
+keywords = ["tui", "terminal", "cli", "ui", "component"]
+categories = ["command-line-interface"]
 
 [lints]
 workspace = true
 
+[features]
+default = ["markdown", "serde", "runtime", "picker"]
+markdown = ["dep:pulldown-cmark"]
+serde = ["dep:serde_json"]
+runtime = ["dep:tokio"]
+picker = ["dep:nucleo"]
+
 [dependencies]
 crossterm = { workspace = true }
 syntect = { workspace = true }
-pulldown-cmark = { workspace = true }
-nucleo = { workspace = true }
+pulldown-cmark = { workspace = true, optional = true }
+nucleo = { workspace = true, optional = true }
 unicode-width = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

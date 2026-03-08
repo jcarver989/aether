@@ -88,13 +88,16 @@ impl ConfigPicker {
     }
 }
 
-impl Component for ConfigPicker {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+impl ConfigPicker {
+    pub(crate) fn prepare_render(&mut self, context: &RenderContext) {
         if let Some(h) = context.max_height {
-            // 1 line for search header
             self.combobox.set_max_visible(h.saturating_sub(1).max(1));
         }
+    }
+}
 
+impl Component for ConfigPicker {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let header = format!("  {} search: {}", self.title, self.combobox.query());
         lines.push(Line::styled(header, context.theme.muted()));

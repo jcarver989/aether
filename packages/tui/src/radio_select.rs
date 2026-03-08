@@ -15,6 +15,7 @@ impl RadioSelect {
         Self { options, selected }
     }
 
+    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         self.options
             .get(self.selected)
@@ -25,7 +26,7 @@ impl RadioSelect {
 }
 
 impl Component for RadioSelect {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         if context.focused {
             self.render_options(context)
         } else {
@@ -126,12 +127,14 @@ mod tests {
         assert_eq!(rs.selected, 2); // wraps to end
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn to_json_returns_selected_value() {
         let rs = RadioSelect::new(sample_options(), 1);
         assert_eq!(rs.to_json(), serde_json::json!("b"));
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn to_json_empty_options_returns_null() {
         let rs = RadioSelect::new(vec![], 0);

@@ -13,13 +13,14 @@ impl TextField {
         Self { value }
     }
 
+    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::Value::String(self.value.clone())
     }
 }
 
 impl Component for TextField {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut line = Line::new(&self.value);
         if context.focused {
             line.push_styled("▏", context.theme.primary());
@@ -77,6 +78,7 @@ mod tests {
         assert_eq!(field.value, "");
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn to_json_returns_string_value() {
         let field = TextField::new("hello".to_string());

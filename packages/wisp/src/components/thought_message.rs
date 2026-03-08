@@ -22,7 +22,7 @@ impl ThoughtMessage<'_> {
 }
 
 impl Component for ThoughtMessage<'_> {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         if self.text.is_empty() {
             return vec![];
         }
@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn renders_border_prefixed_thought_line() {
-        let mut component = ThoughtMessage { text: "check plan" };
+        let component = ThoughtMessage { text: "check plan" };
         let context = RenderContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 1);
@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn prefixes_all_lines_with_border() {
-        let mut component = ThoughtMessage {
+        let component = ThoughtMessage {
             text: "line one\nline two",
         };
         let context = RenderContext::new((80, 24));
@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn wrapped_continuation_rows_remain_muted() {
-        let mut component = ThoughtMessage {
+        let component = ThoughtMessage {
             text: "abcdefghijklmnopqrstuvwxyz",
         };
         let context = RenderContext::new((80, 24));

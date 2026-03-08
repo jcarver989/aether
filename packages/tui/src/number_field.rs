@@ -17,6 +17,7 @@ impl NumberField {
         }
     }
 
+    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         if self.integer_only {
             self.value
@@ -33,7 +34,7 @@ impl NumberField {
 }
 
 impl Component for NumberField {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut line = Line::new(&self.value);
         if context.focused {
             line.push_styled("▏", context.theme.primary());
@@ -115,12 +116,14 @@ mod tests {
         assert_eq!(field.value, "5");
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn to_json_integer() {
         let field = NumberField::new("42".to_string(), true);
         assert_eq!(field.to_json(), serde_json::json!(42));
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn to_json_float() {
         let field = NumberField::new("3.14".to_string(), false);
@@ -129,6 +132,7 @@ mod tests {
         assert_eq!(field.to_json(), expected);
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn to_json_empty_returns_null() {
         let field = NumberField::new(String::new(), true);

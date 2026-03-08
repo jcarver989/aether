@@ -42,7 +42,7 @@ fn non_space_key_does_not_change_render() {
 
 #[test]
 fn unfocused_renders_without_highlight() {
-    let mut cb = Checkbox::new(true);
+    let cb = Checkbox::new(true);
     let ctx = RenderContext::new((80, 24)).with_focused(false);
     let lines = cb.render(&ctx);
     let term = render_lines(&lines, 80, 24);

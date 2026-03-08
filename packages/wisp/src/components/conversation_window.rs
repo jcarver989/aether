@@ -169,6 +169,29 @@ impl ConversationBuffer {
         self.segments.len()
     }
 
+    /// Pre-renders all segments so that `get_cached` can serve them
+    /// from an immutable reference during `Component::render`.
+    pub(crate) fn ensure_all_rendered(
+        &mut self,
+        tool_call_statuses: &ToolCallStatuses,
+        context: &RenderContext,
+    ) {
+        self.invalidate_tool_lines();
+        for i in 0..self.segments.len() {
+            self.get_or_render(i, tool_call_statuses, context);
+        }
+    }
+
+    /// Returns cached rendered lines for segment `i`.
+    /// Panics if `ensure_all_rendered` was not called first.
+    fn get_cached(&self, i: usize) -> (Discriminant<SegmentContent>, &[Line]) {
+        let segment = &self.segments[i];
+        (
+            discriminant(&segment.content),
+            segment.lines.as_deref().expect("ensure_all_rendered must be called before render"),
+        )
+    }
+
     /// Clears cached lines for all `ToolCall` segments so running spinners
     /// re-render each frame while completed tools and thoughts stay cached.
     fn invalidate_tool_lines(&mut self) {
@@ -209,22 +232,17 @@ impl ConversationBuffer {
 }
 
 pub(crate) struct ConversationWindow<'a> {
-    pub loader: &'a mut Spinner,
-    pub conversation: &'a mut ConversationBuffer,
-    pub tool_call_statuses: &'a ToolCallStatuses,
+    pub loader: &'a Spinner,
+    pub conversation: &'a ConversationBuffer,
 }
 
 impl Component for ConversationWindow<'_> {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = self.loader.render(context);
         let mut last_segment_kind = None;
 
-        self.conversation.invalidate_tool_lines();
-
         for i in 0..self.conversation.segments_len() {
-            let (kind, cached) =
-                self.conversation
-                    .get_or_render(i, self.tool_call_statuses, context);
+            let (kind, cached) = self.conversation.get_cached(i);
             extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, cached);
         }
 
@@ -272,15 +290,15 @@ mod tests {
 
     #[test]
     fn renders_empty_when_loader_and_segments_are_empty() {
-        let mut loader = Spinner::default();
+        let loader = Spinner::default();
         let mut conversation = ConversationBuffer::new();
         let statuses = ToolCallStatuses::new();
-        let mut view = ConversationWindow {
-            loader: &mut loader,
-            conversation: &mut conversation,
-            tool_call_statuses: &statuses,
-        };
         let context = RenderContext::new((80, 24));
+        conversation.ensure_all_rendered(&statuses, &context);
+        let view = ConversationWindow {
+            loader: &loader,
+            conversation: &conversation,
+        };
 
         let lines = view.render(&context);
         assert!(lines.is_empty());
@@ -288,7 +306,7 @@ mod tests {
 
     #[test]
     fn inserts_vertical_margin_between_different_segment_kinds() {
-        let mut loader = Spinner::default();
+        let loader = Spinner::default();
         let mut conversation = ConversationBuffer::new();
         conversation.set_segments(vec![
             SegmentContent::Text("one".to_string()),
@@ -296,12 +314,12 @@ mod tests {
             SegmentContent::Text("three".to_string()),
         ]);
         let statuses = ToolCallStatuses::new();
-        let mut view = ConversationWindow {
-            loader: &mut loader,
-            conversation: &mut conversation,
-            tool_call_statuses: &statuses,
-        };
         let context = RenderContext::new((80, 24));
+        conversation.ensure_all_rendered(&statuses, &context);
+        let view = ConversationWindow {
+            loader: &loader,
+            conversation: &conversation,
+        };
 
         let lines = view.render(&context);
         assert_eq!(lines.len(), 5);
@@ -315,19 +333,19 @@ mod tests {
 
     #[test]
     fn does_not_insert_vertical_margin_for_same_kind_segments() {
-        let mut loader = Spinner::default();
+        let loader = Spinner::default();
         let mut conversation = ConversationBuffer::new();
         conversation.set_segments(vec![
             SegmentContent::Text("first".to_string()),
             SegmentContent::Text("second".to_string()),
         ]);
         let statuses = ToolCallStatuses::new();
-        let mut view = ConversationWindow {
-            loader: &mut loader,
-            conversation: &mut conversation,
-            tool_call_statuses: &statuses,
-        };
         let context = RenderContext::new((80, 24));
+        conversation.ensure_all_rendered(&statuses, &context);
+        let view = ConversationWindow {
+            loader: &loader,
+            conversation: &conversation,
+        };
 
         let lines = view.render(&context);
         assert_eq!(lines.len(), 2);
@@ -342,12 +360,12 @@ mod tests {
         let mut conversation = ConversationBuffer::new();
         conversation.append_text_chunk("hello");
         let statuses = ToolCallStatuses::new();
-        let mut view = ConversationWindow {
-            loader: &mut loader,
-            conversation: &mut conversation,
-            tool_call_statuses: &statuses,
-        };
         let context = RenderContext::new((80, 24));
+        conversation.ensure_all_rendered(&statuses, &context);
+        let view = ConversationWindow {
+            loader: &loader,
+            conversation: &conversation,
+        };
 
         let lines = view.render(&context);
         assert_eq!(lines.len(), 2);
@@ -462,16 +480,16 @@ mod tests {
 
     #[test]
     fn render_uses_cached_lines() {
-        let mut loader = Spinner::default();
+        let loader = Spinner::default();
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("cached text");
         let statuses = ToolCallStatuses::new();
         let context = RenderContext::new((80, 24));
         buffer.get_or_render(0, &statuses, &context);
-        let mut view = ConversationWindow {
-            loader: &mut loader,
-            conversation: &mut buffer,
-            tool_call_statuses: &statuses,
+        buffer.ensure_all_rendered(&statuses, &context);
+        let view = ConversationWindow {
+            loader: &loader,
+            conversation: &buffer,
         };
 
         let lines = view.render(&context);

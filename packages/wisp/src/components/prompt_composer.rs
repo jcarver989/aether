@@ -281,7 +281,7 @@ impl HandlesInput for PromptComposer {
 }
 
 impl Component for PromptComposer {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let picker_query_len = self.file_picker.as_ref().map(|picker| picker.query().len());
         let mut lines = InputPrompt {
             input: self.text_input.buffer(),
@@ -290,11 +290,11 @@ impl Component for PromptComposer {
         .layout(context)
         .lines;
 
-        if let Some(ref mut picker) = self.file_picker {
+        if let Some(ref picker) = self.file_picker {
             lines.extend(picker.render(context));
         }
 
-        if let Some(ref mut picker) = self.command_picker {
+        if let Some(ref picker) = self.command_picker {
             lines.extend(picker.render(context));
         }
 

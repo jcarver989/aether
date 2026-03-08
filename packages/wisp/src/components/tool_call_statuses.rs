@@ -30,7 +30,7 @@ pub enum ToolCallStatus {
 }
 
 impl Component for ToolCallStatusView {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let (indicator, indicator_color) = match &self.status {
             ToolCallStatus::Running => {
                 let frame = FRAMES[self.tick as usize % FRAMES.len()];
@@ -328,7 +328,7 @@ impl ToolCallStatuses {
             Vec::new()
         } else {
             self.view_for(id, self.tick)
-                .map(|mut view| view.render(context))
+                .map(|view| view.render(context))
                 .unwrap_or_default()
         };
 
@@ -368,7 +368,7 @@ impl ToolCallStatuses {
                         "  └─ "
                     };
 
-                    let mut view = Self::tool_call_view(tc, self.tick);
+                    let view = Self::tool_call_view(tc, self.tick);
                     for tool_line in view.render(context) {
                         let mut indented = Line::default();
                         indented.push_styled(connector, context.theme.muted());
@@ -403,7 +403,7 @@ impl ToolCallStatuses {
             if let Some(tc) = self.tool_calls.get(id)
                 && !matches!(tc.status, ToolCallStatus::Running)
             {
-                let mut view = Self::tool_call_view(tc, 0);
+                let view = Self::tool_call_view(tc, 0);
                 lines.extend(view.render(context));
                 completed_ids.push(id.clone());
             }
@@ -472,10 +472,10 @@ impl Tickable for ToolCallStatuses {
 }
 
 impl Component for ToolCallStatuses {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         for id in &self.tool_order {
-            if let Some(mut view) = self.view_for(id, self.tick) {
+            if let Some(view) = self.view_for(id, self.tick) {
                 lines.extend(view.render(context));
             }
         }
@@ -680,7 +680,7 @@ mod tests {
 
     #[test]
     fn view_renders_running_with_spinner() {
-        let mut view = ToolCallStatusView {
+        let view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             display_value: None,
@@ -698,7 +698,7 @@ mod tests {
 
     #[test]
     fn view_running_spinner_changes_with_tick() {
-        let mut view_a = ToolCallStatusView {
+        let view_a = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: String::new(),
             display_value: None,
@@ -706,7 +706,7 @@ mod tests {
             status: ToolCallStatus::Running,
             tick: 0,
         };
-        let mut view_b = ToolCallStatusView {
+        let view_b = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: String::new(),
             display_value: None,
@@ -721,7 +721,7 @@ mod tests {
 
     #[test]
     fn view_renders_success() {
-        let mut view = ToolCallStatusView {
+        let view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             display_value: None,
@@ -736,7 +736,7 @@ mod tests {
 
     #[test]
     fn view_renders_error() {
-        let mut view = ToolCallStatusView {
+        let view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments: "test args".to_string(),
             display_value: None,
@@ -753,7 +753,7 @@ mod tests {
     #[test]
     fn view_truncates_utf8_arguments_without_panicking() {
         let arguments = format!("{}界", "a".repeat(MAX_TOOL_ARG_LENGTH - 2));
-        let mut view = ToolCallStatusView {
+        let view = ToolCallStatusView {
             name: "TestTool".to_string(),
             arguments,
             display_value: None,
@@ -1309,7 +1309,7 @@ mod tests {
 
     #[test]
     fn view_renders_diff_preview_on_success() {
-        let mut view = ToolCallStatusView {
+        let view = ToolCallStatusView {
             name: "Edit file".to_string(),
             arguments: "{}".to_string(),
             display_value: Some("main.rs".to_string()),
@@ -1340,7 +1340,7 @@ mod tests {
 
     #[test]
     fn view_hides_diff_preview_while_running() {
-        let mut view = ToolCallStatusView {
+        let view = ToolCallStatusView {
             name: "Edit file".to_string(),
             arguments: "{}".to_string(),
             display_value: Some("main.rs".to_string()),

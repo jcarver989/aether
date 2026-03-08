@@ -54,7 +54,7 @@ impl Tickable for Spinner {
 }
 
 impl Component for Spinner {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         if !self.visible {
             return vec![];
         }
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn invisible_renders_empty() {
-        let mut spinner = Spinner::default();
+        let spinner = Spinner::default();
         let ctx = RenderContext::new((80, 24));
         let lines = spinner.render(&ctx);
         assert!(lines.is_empty());

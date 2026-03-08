@@ -14,7 +14,7 @@ pub struct StatusLine<'a> {
 }
 
 impl Component for StatusLine<'_> {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut left_line = Line::default();
         let sep = context.theme.text_secondary();
 
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn renders_agent_name() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "claude-code",
             mode_display: None,
             model_display: None,
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn renders_with_indentation() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "test-agent",
             mode_display: None,
             model_display: None,
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn renders_model_display() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether-acp",
             mode_display: None,
             model_display: Some("gpt-4o"),
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn renders_without_model_when_none() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether-acp",
             mode_display: None,
             model_display: None,
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn renders_context_usage_right_aligned() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether",
             mode_display: None,
             model_display: Some("gpt-4o"),
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn does_not_render_context_when_none() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether",
             mode_display: None,
             model_display: Some("gpt-4o"),
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn renders_interrupt_message_when_waiting() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether",
             mode_display: None,
             model_display: Some("gpt-4o"),
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn renders_interrupt_message_without_model_when_waiting() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether",
             mode_display: None,
             model_display: None,
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn renders_unhealthy_server_singular() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether",
             mode_display: None,
             model_display: Some("gpt-4o"),
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn renders_unhealthy_servers_plural() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether",
             mode_display: None,
             model_display: None,
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn zero_unhealthy_servers_shows_nothing() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether",
             mode_display: None,
             model_display: None,
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn context_usage_takes_precedence_over_unhealthy() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "aether",
             model_display: None,
             mode_display: None,
@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn renders_agent_mode_model_in_order() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "wisp",
             mode_display: Some("Planner"),
             model_display: Some("gpt-4o"),
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn renders_mode_with_secondary_color() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "wisp",
             mode_display: Some("Planner"),
             model_display: None,
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn renders_agent_with_info_color() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "wisp",
             mode_display: None,
             model_display: None,
@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn renders_model_with_success_color() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "wisp",
             mode_display: None,
             model_display: Some("gpt-4o"),
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn renders_each_element_with_distinct_color() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "wisp",
             mode_display: Some("Planner"),
             model_display: Some("gpt-4o"),
@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn renders_reasoning_bar_next_to_model_when_reasoning_set() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "wisp",
             mode_display: None,
             model_display: Some("gpt-4o"),
@@ -506,7 +506,7 @@ mod tests {
 
     #[test]
     fn does_not_render_reasoning_bar_when_model_absent() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "wisp",
             mode_display: None,
             model_display: None,
@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn renders_empty_reasoning_bar_for_none_effort() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "wisp",
             mode_display: None,
             model_display: Some("gpt-4o"),
@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     fn renders_reasoning_bar_with_model_semantic_color() {
-        let mut status = StatusLine {
+        let status = StatusLine {
             agent_name: "wisp",
             mode_display: None,
             model_display: Some("gpt-4o"),
