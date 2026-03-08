@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, InputOutcome, InteractiveComponent, Line, RenderContext};
+use crate::tui::{Component, InteractiveComponent, KeyEventResponse, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub struct ProviderLoginOverlay {
@@ -59,16 +59,16 @@ impl Component for ProviderLoginOverlay {
 impl InteractiveComponent for ProviderLoginOverlay {
     type Action = ProviderLoginAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match key_event.code {
-            KeyCode::Esc => InputOutcome::action_and_render(ProviderLoginAction::Close),
+            KeyCode::Esc => KeyEventResponse::action_and_render(ProviderLoginAction::Close),
             KeyCode::Up => {
                 self.move_selection_up();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Enter => {
                 if let Some(entry) = self
@@ -76,13 +76,13 @@ impl InteractiveComponent for ProviderLoginOverlay {
                     .get(self.selected_index)
                     .filter(|e| e.status == ProviderLoginStatus::NeedsLogin)
                 {
-                    return InputOutcome::action_and_render(ProviderLoginAction::Authenticate(
+                    return KeyEventResponse::action_and_render(ProviderLoginAction::Authenticate(
                         entry.method_id.clone(),
                     ));
                 }
-                InputOutcome::consumed()
+                KeyEventResponse::consumed()
             }
-            _ => InputOutcome::consumed(),
+            _ => KeyEventResponse::consumed(),
         }
     }
 }

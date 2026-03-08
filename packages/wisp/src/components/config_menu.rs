@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, InputOutcome, InteractiveComponent, Line, RenderContext};
+use crate::tui::{Component, InteractiveComponent, KeyEventResponse, Line, RenderContext};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
@@ -94,16 +94,16 @@ impl Component for ConfigMenu {
 impl InteractiveComponent for ConfigMenu {
     type Action = ConfigMenuAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match key_event.code {
-            KeyCode::Esc => InputOutcome::action_and_render(ConfigMenuAction::CloseAll),
+            KeyCode::Esc => KeyEventResponse::action_and_render(ConfigMenuAction::CloseAll),
             KeyCode::Up => {
                 self.move_selection_up();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Enter => {
                 let action = match self.selected_entry() {
@@ -116,9 +116,9 @@ impl InteractiveComponent for ConfigMenu {
                     Some(e) if e.multi_select => ConfigMenuAction::OpenModelSelector,
                     _ => ConfigMenuAction::OpenSelectedPicker,
                 };
-                InputOutcome::action_and_render(action)
+                KeyEventResponse::action_and_render(action)
             }
-            _ => InputOutcome::consumed(),
+            _ => KeyEventResponse::consumed(),
         }
     }
 }

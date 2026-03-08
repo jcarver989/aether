@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
+use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
 use crate::line::Line;
 
 /// Single-line text input with cursor indicator.
@@ -32,17 +32,17 @@ impl Component for TextField {
 impl InteractiveComponent for TextField {
     type Action = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
         match key_event.code {
             KeyCode::Char(c) => {
                 self.value.push(c);
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Backspace => {
                 self.value.pop();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
-            _ => InputOutcome::ignored(),
+            _ => KeyEventResponse::ignored(),
         }
     }
 }

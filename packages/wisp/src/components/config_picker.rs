@@ -1,6 +1,6 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
-    Combobox, Component, InputOutcome, InteractiveComponent, Line, PickerKey, RenderContext,
+    Combobox, Component, InteractiveComponent, KeyEventResponse, Line, PickerKey, RenderContext,
     Searchable, classify_key,
 };
 use crossterm::event::KeyEvent;
@@ -145,34 +145,34 @@ impl Component for ConfigPicker {
 impl InteractiveComponent for ConfigPicker {
     type Action = ConfigPickerAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => InputOutcome::action_and_render(ConfigPickerAction::Close),
+            PickerKey::Escape => KeyEventResponse::action_and_render(ConfigPickerAction::Close),
             PickerKey::MoveUp => {
                 self.move_selection_up();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::MoveDown => {
                 self.move_selection_down();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::Confirm => {
                 let change = self.confirm_selection();
-                InputOutcome::action_and_render(ConfigPickerAction::ApplySelection(change))
+                KeyEventResponse::action_and_render(ConfigPickerAction::ApplySelection(change))
             }
             PickerKey::Char(c) => {
                 self.push_query_char(c);
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::Backspace => {
                 self.pop_query_char();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::BackspaceOnEmpty
             | PickerKey::ControlChar
-            | PickerKey::Other => InputOutcome::consumed(),
+            | PickerKey::Other => KeyEventResponse::consumed(),
         }
     }
 }

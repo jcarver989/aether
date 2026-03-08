@@ -10,7 +10,7 @@ use crate::components::server_status::{
     ServerStatusAction, ServerStatusOverlay, server_status_summary,
 };
 use crate::settings::{list_theme_files, load_or_create_settings};
-use crate::tui::{Component, InputOutcome, InteractiveComponent, Line, RenderContext};
+use crate::tui::{Component, InteractiveComponent, KeyEventResponse, Line, RenderContext};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
@@ -330,23 +330,25 @@ impl InteractiveComponent for ConfigOverlay {
     type Action = ConfigOverlayAction;
 
     #[allow(clippy::too_many_lines)]
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         // Server overlay has highest priority
         if let Some(ref mut overlay) = self.server_overlay {
             let outcome = overlay.on_key_event(key_event);
             return match outcome.action {
                 Some(ServerStatusAction::Close) => {
                     self.server_overlay = None;
-                    InputOutcome::consumed_and_render()
+                    KeyEventResponse::consumed_and_render()
                 }
                 Some(ServerStatusAction::Authenticate(name)) => {
-                    InputOutcome::action_and_render(ConfigOverlayAction::AuthenticateServer(name))
+                    KeyEventResponse::action_and_render(ConfigOverlayAction::AuthenticateServer(
+                        name,
+                    ))
                 }
                 None => {
                     if outcome.needs_render {
-                        InputOutcome::consumed_and_render()
+                        KeyEventResponse::consumed_and_render()
                     } else {
-                        InputOutcome::consumed()
+                        KeyEventResponse::consumed()
                     }
                 }
             };
@@ -358,18 +360,18 @@ impl InteractiveComponent for ConfigOverlay {
             return match outcome.action {
                 Some(ProviderLoginAction::Close) => {
                     self.provider_login_overlay = None;
-                    InputOutcome::consumed_and_render()
+                    KeyEventResponse::consumed_and_render()
                 }
                 Some(ProviderLoginAction::Authenticate(method_id)) => {
-                    InputOutcome::action_and_render(ConfigOverlayAction::AuthenticateProvider(
+                    KeyEventResponse::action_and_render(ConfigOverlayAction::AuthenticateProvider(
                         method_id,
                     ))
                 }
                 None => {
                     if outcome.needs_render {
-                        InputOutcome::consumed_and_render()
+                        KeyEventResponse::consumed_and_render()
                     } else {
-                        InputOutcome::consumed()
+                        KeyEventResponse::consumed()
                     }
                 }
             };
@@ -382,18 +384,18 @@ impl InteractiveComponent for ConfigOverlay {
                 Some(ModelSelectorAction::Done(changes)) => {
                     self.model_selector = None;
                     if changes.is_empty() {
-                        InputOutcome::consumed_and_render()
+                        KeyEventResponse::consumed_and_render()
                     } else {
-                        InputOutcome::action_and_render(ConfigOverlayAction::ApplyConfigChanges(
-                            changes,
-                        ))
+                        KeyEventResponse::action_and_render(
+                            ConfigOverlayAction::ApplyConfigChanges(changes),
+                        )
                     }
                 }
                 None => {
                     if outcome.needs_render {
-                        InputOutcome::consumed_and_render()
+                        KeyEventResponse::consumed_and_render()
                     } else {
-                        InputOutcome::consumed()
+                        KeyEventResponse::consumed()
                     }
                 }
             };
@@ -405,25 +407,25 @@ impl InteractiveComponent for ConfigOverlay {
             return match outcome.action {
                 Some(ConfigPickerAction::Close) => {
                     self.picker = None;
-                    InputOutcome::consumed_and_render()
+                    KeyEventResponse::consumed_and_render()
                 }
                 Some(ConfigPickerAction::ApplySelection(change)) => {
                     self.picker = None;
                     match change {
                         Some(change) => {
                             self.menu.apply_change(&change);
-                            InputOutcome::action_and_render(
+                            KeyEventResponse::action_and_render(
                                 ConfigOverlayAction::ApplyConfigChanges(vec![change]),
                             )
                         }
-                        None => InputOutcome::consumed_and_render(),
+                        None => KeyEventResponse::consumed_and_render(),
                     }
                 }
                 None => {
                     if outcome.needs_render {
-                        InputOutcome::consumed_and_render()
+                        KeyEventResponse::consumed_and_render()
                     } else {
-                        InputOutcome::consumed()
+                        KeyEventResponse::consumed()
                     }
                 }
             };
@@ -433,14 +435,14 @@ impl InteractiveComponent for ConfigOverlay {
         let outcome = self.menu.on_key_event(key_event);
         match outcome.action {
             Some(ConfigMenuAction::CloseAll) => {
-                InputOutcome::action_and_render(ConfigOverlayAction::Close)
+                KeyEventResponse::action_and_render(ConfigOverlayAction::Close)
             }
             Some(ConfigMenuAction::OpenSelectedPicker) => {
                 self.picker = self
                     .menu
                     .selected_entry()
                     .and_then(ConfigPicker::from_entry);
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             Some(ConfigMenuAction::OpenModelSelector) => {
                 if let Some(entry) = self.menu.selected_entry() {
@@ -451,22 +453,22 @@ impl InteractiveComponent for ConfigOverlay {
                         self.current_reasoning_effort.as_deref(),
                     ));
                 }
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             Some(ConfigMenuAction::OpenMcpServers) => {
                 self.server_overlay = Some(ServerStatusOverlay::new(self.server_statuses.clone()));
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             Some(ConfigMenuAction::OpenProviderLogins) => {
                 let entries = self.build_login_entries();
                 self.provider_login_overlay = Some(ProviderLoginOverlay::new(entries));
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             None => {
                 if outcome.needs_render {
-                    InputOutcome::consumed_and_render()
+                    KeyEventResponse::consumed_and_render()
                 } else {
-                    InputOutcome::consumed()
+                    KeyEventResponse::consumed()
                 }
             }
         }

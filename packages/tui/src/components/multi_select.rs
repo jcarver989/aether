@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::select_option::SelectOption;
-use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
+use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -84,25 +84,25 @@ impl MultiSelect {
 impl InteractiveComponent for MultiSelect {
     type Action = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
         if self.options.is_empty() {
-            return InputOutcome::ignored();
+            return KeyEventResponse::ignored();
         }
 
         match key_event.code {
             KeyCode::Char(' ') => {
                 self.selected[self.cursor] = !self.selected[self.cursor];
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Up | KeyCode::Left => {
                 self.cursor = (self.cursor + self.options.len() - 1) % self.options.len();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Down | KeyCode::Right => {
                 self.cursor = (self.cursor + 1) % self.options.len();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
-            _ => InputOutcome::ignored(),
+            _ => KeyEventResponse::ignored(),
         }
     }
 }

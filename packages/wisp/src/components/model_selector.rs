@@ -1,7 +1,7 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{
-    Combobox, Component, InputOutcome, InteractiveComponent, Line, PickerKey, RenderContext,
+    Combobox, Component, InteractiveComponent, KeyEventResponse, Line, PickerKey, RenderContext,
     Searchable, classify_key,
 };
 use acp_utils::config_option_id::ConfigOptionId;
@@ -260,19 +260,19 @@ impl Component for ModelSelector {
 impl InteractiveComponent for ModelSelector {
     type Action = ModelSelectorAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
             PickerKey::Escape => {
                 let changes = self.confirm();
-                InputOutcome::action_and_render(ModelSelectorAction::Done(changes))
+                KeyEventResponse::action_and_render(ModelSelectorAction::Done(changes))
             }
             PickerKey::MoveUp => {
                 self.combobox.move_up_where(|e| !e.is_disabled);
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down_where(|e| !e.is_disabled);
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::MoveLeft => {
                 if self
@@ -282,7 +282,7 @@ impl InteractiveComponent for ModelSelector {
                 {
                     self.reasoning_effort = cycle_reasoning_left(self.reasoning_effort);
                 }
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::MoveRight => {
                 if self
@@ -292,22 +292,22 @@ impl InteractiveComponent for ModelSelector {
                 {
                     self.reasoning_effort = cycle_reasoning_right(self.reasoning_effort);
                 }
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::Confirm | PickerKey::Char(' ') => {
                 self.toggle_focused();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::Char(c) => {
                 self.combobox.push_query_char(c);
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::BackspaceOnEmpty | PickerKey::ControlChar | PickerKey::Other => {
-                InputOutcome::consumed()
+                KeyEventResponse::consumed()
             }
         }
     }

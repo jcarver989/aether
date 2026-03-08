@@ -1,5 +1,5 @@
 use crate::tui::{
-    Combobox, Component, InputOutcome, InteractiveComponent, Line, PickerKey, RenderContext,
+    Combobox, Component, InteractiveComponent, KeyEventResponse, Line, PickerKey, RenderContext,
     Searchable, Style, classify_key,
     soft_wrap::{display_width_text, pad_text_to_width, truncate_text},
 };
@@ -97,42 +97,44 @@ impl Component for CommandPicker {
 impl InteractiveComponent for CommandPicker {
     type Action = CommandPickerAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => InputOutcome::action_and_render(CommandPickerAction::Close),
+            PickerKey::Escape => KeyEventResponse::action_and_render(CommandPickerAction::Close),
             PickerKey::BackspaceOnEmpty => {
-                InputOutcome::action_and_render(CommandPickerAction::CloseAndPopChar)
+                KeyEventResponse::action_and_render(CommandPickerAction::CloseAndPopChar)
             }
             PickerKey::MoveUp => {
                 self.combobox.move_up();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::Confirm => {
                 if let Some(command) = self.combobox.selected().cloned() {
-                    InputOutcome::action(CommandPickerAction::CommandChosen(command))
+                    KeyEventResponse::action(CommandPickerAction::CommandChosen(command))
                 } else {
-                    InputOutcome::action_and_render(CommandPickerAction::Close)
+                    KeyEventResponse::action_and_render(CommandPickerAction::Close)
                 }
             }
             PickerKey::Char(c) => {
                 if c.is_whitespace() {
-                    return InputOutcome::action_and_render(CommandPickerAction::CloseWithChar(c));
+                    return KeyEventResponse::action_and_render(
+                        CommandPickerAction::CloseWithChar(c),
+                    );
                 }
                 self.combobox.push_query_char(c);
-                InputOutcome::action_and_render(CommandPickerAction::CharTyped(c))
+                KeyEventResponse::action_and_render(CommandPickerAction::CharTyped(c))
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                InputOutcome::action_and_render(CommandPickerAction::PopChar)
+                KeyEventResponse::action_and_render(CommandPickerAction::PopChar)
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::ControlChar
-            | PickerKey::Other => InputOutcome::consumed(),
+            | PickerKey::Other => KeyEventResponse::consumed(),
         }
     }
 }

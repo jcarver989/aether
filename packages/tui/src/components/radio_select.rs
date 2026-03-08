@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::select_option::SelectOption;
-use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
+use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -65,21 +65,21 @@ impl RadioSelect {
 impl InteractiveComponent for RadioSelect {
     type Action = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
         if self.options.is_empty() {
-            return InputOutcome::ignored();
+            return KeyEventResponse::ignored();
         }
 
         match key_event.code {
             KeyCode::Left | KeyCode::Up => {
                 self.selected = (self.selected + self.options.len() - 1) % self.options.len();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Right | KeyCode::Down => {
                 self.selected = (self.selected + 1) % self.options.len();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
-            _ => InputOutcome::ignored(),
+            _ => KeyEventResponse::ignored(),
         }
     }
 }

@@ -10,7 +10,7 @@ use crate::components::server_status::server_status_summary;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::components::spinner::Spinner;
-use crate::tui::{FormAction, InputOutcome, InteractiveComponent, Line};
+use crate::tui::{FormAction, InteractiveComponent, KeyEventResponse, Line};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::{ElicitationParams, ElicitationResponse, McpServerStatusEntry};
 use agent_client_protocol::{
@@ -235,7 +235,7 @@ impl UiState {
 
     pub(crate) fn handle_prompt_composer_outcome(
         &mut self,
-        outcome: InputOutcome<PromptComposerAction>,
+        outcome: KeyEventResponse<PromptComposerAction>,
     ) -> Vec<AppEffect> {
         match outcome.action {
             Some(PromptComposerAction::OpenConfig) => {
@@ -268,7 +268,7 @@ impl UiState {
 
     pub(crate) fn handle_config_overlay_outcome(
         &mut self,
-        outcome: InputOutcome<ConfigOverlayAction>,
+        outcome: KeyEventResponse<ConfigOverlayAction>,
     ) -> Vec<AppEffect> {
         match outcome.action {
             Some(ConfigOverlayAction::Close) => {

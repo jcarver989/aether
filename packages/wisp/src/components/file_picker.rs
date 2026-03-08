@@ -1,5 +1,5 @@
 use crate::tui::{
-    Combobox, Component, InputOutcome, InteractiveComponent, Line, PickerKey, RenderContext,
+    Combobox, Component, InteractiveComponent, KeyEventResponse, Line, PickerKey, RenderContext,
     Searchable, classify_key,
 };
 use crossterm::event::KeyEvent;
@@ -138,38 +138,38 @@ impl Component for FilePicker {
 impl InteractiveComponent for FilePicker {
     type Action = FilePickerAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => InputOutcome::action_and_render(FilePickerAction::Close),
+            PickerKey::Escape => KeyEventResponse::action_and_render(FilePickerAction::Close),
             PickerKey::MoveUp => {
                 self.combobox.move_up();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             PickerKey::Confirm => {
-                InputOutcome::action_and_render(FilePickerAction::ConfirmSelection)
+                KeyEventResponse::action_and_render(FilePickerAction::ConfirmSelection)
             }
             PickerKey::Char(c) => {
                 if c.is_whitespace() {
-                    return InputOutcome::action_and_render(FilePickerAction::CloseWithChar(c));
+                    return KeyEventResponse::action_and_render(FilePickerAction::CloseWithChar(c));
                 }
                 self.combobox.push_query_char(c);
-                InputOutcome::action_and_render(FilePickerAction::CharTyped(c))
+                KeyEventResponse::action_and_render(FilePickerAction::CharTyped(c))
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                InputOutcome::action_and_render(FilePickerAction::PopChar)
+                KeyEventResponse::action_and_render(FilePickerAction::PopChar)
             }
             PickerKey::BackspaceOnEmpty => {
-                InputOutcome::action_and_render(FilePickerAction::CloseAndPopChar)
+                KeyEventResponse::action_and_render(FilePickerAction::CloseAndPopChar)
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::ControlChar
-            | PickerKey::Other => InputOutcome::ignored(),
+            | PickerKey::Other => KeyEventResponse::ignored(),
         }
     }
 }
