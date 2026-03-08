@@ -118,16 +118,14 @@ impl UiState {
             return self.handle_prompt_composer_outcome(composer_outcome);
         }
 
-        if key_event.code == KeyCode::BackTab {
+        if key_event.code == KeyCode::Tab {
             if let Some(effect) = self.cycle_quick_option() {
                 return vec![effect, AppEffect::Render];
             }
             return vec![];
         }
 
-        if key_event.code == KeyCode::Char('t')
-            && key_event.modifiers.contains(event::KeyModifiers::ALT)
-        {
+        if key_event.code == KeyCode::BackTab {
             if let Some(effect) = self.cycle_reasoning_option() {
                 return vec![effect, AppEffect::Render];
             }
