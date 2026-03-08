@@ -84,7 +84,8 @@ pub fn execute_task_create(
     };
 
     let is_subtask = normalized_parent_id.is_some();
-    let needs_update = input.assignee.is_some() || input.deps.is_some() || (is_subtask && description.is_some());
+    let needs_update =
+        input.assignee.is_some() || input.deps.is_some() || (is_subtask && description.is_some());
 
     let task = if needs_update {
         let update = TaskUpdate {
