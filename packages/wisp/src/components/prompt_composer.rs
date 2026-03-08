@@ -2,6 +2,7 @@ use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPick
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputAction};
+use crate::keybindings::Keybindings;
 use crate::tui::{Component, Cursor, InteractiveComponent, KeyEventResponse, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::collections::HashSet;
@@ -26,14 +27,14 @@ pub struct PromptComposer {
 
 impl Default for PromptComposer {
     fn default() -> Self {
-        Self::new()
+        Self::new(Keybindings::default())
     }
 }
 
 impl PromptComposer {
-    pub fn new() -> Self {
+    pub fn new(keybindings: Keybindings) -> Self {
         Self {
-            text_input: TextInput::new(),
+            text_input: TextInput::new(keybindings),
             available_commands: Vec::new(),
             file_picker: None,
             command_picker: None,
@@ -337,7 +338,7 @@ mod tests {
 
     #[test]
     fn builtin_config_command_emits_open_config() {
-        let mut composer = PromptComposer::new();
+        let mut composer = PromptComposer::default();
 
         composer.on_key_event(key(KeyCode::Char('/')));
 
@@ -354,7 +355,7 @@ mod tests {
 
     #[test]
     fn command_without_input_requests_submit_immediately() {
-        let mut composer = PromptComposer::new();
+        let mut composer = PromptComposer::default();
         composer.set_available_commands(vec![CommandEntry {
             name: "status".into(),
             description: "status".into(),
@@ -377,7 +378,7 @@ mod tests {
 
     #[test]
     fn command_with_input_populates_prompt_without_submit() {
-        let mut composer = PromptComposer::new();
+        let mut composer = PromptComposer::default();
         composer.set_available_commands(vec![CommandEntry {
             name: "search".into(),
             description: "Search code".into(),
@@ -398,7 +399,7 @@ mod tests {
 
     #[test]
     fn submit_filters_unmentioned_attachments() {
-        let mut composer = PromptComposer::new();
+        let mut composer = PromptComposer::default();
         composer.set_input("inspect @keep.rs now".to_string());
         composer.apply_file_selection(PathBuf::from("/tmp/keep.rs"), "keep.rs".to_string());
         composer.set_input("inspect @keep.rs now @skip.rs".to_string());
@@ -417,7 +418,7 @@ mod tests {
 
     #[test]
     fn on_paste_closes_picker_and_inserts_text() {
-        let mut composer = PromptComposer::new();
+        let mut composer = PromptComposer::default();
         composer.on_key_event(key(KeyCode::Char('@')));
         assert!(composer.has_file_picker());
 
@@ -428,7 +429,7 @@ mod tests {
 
     #[test]
     fn file_picker_cursor_tracks_query_length() {
-        let mut composer = PromptComposer::new();
+        let mut composer = PromptComposer::default();
         composer.on_key_event(key(KeyCode::Char('@')));
         composer.on_key_event(key(KeyCode::Char('f')));
         composer.on_key_event(key(KeyCode::Char('o')));
@@ -438,7 +439,7 @@ mod tests {
 
     #[test]
     fn command_picker_cursor_stays_in_prompt_row() {
-        let mut composer = PromptComposer::new();
+        let mut composer = PromptComposer::default();
         composer.open_command_picker_with_entries(vec![CommandEntry {
             name: "config".into(),
             description: "Open config".into(),

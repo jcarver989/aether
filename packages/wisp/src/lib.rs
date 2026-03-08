@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod components;
 pub mod error;
+pub mod keybindings;
 pub mod runtime_state;
 pub mod settings;
 #[cfg(test)]
