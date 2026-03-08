@@ -118,6 +118,14 @@ impl ConversationBuffer {
         }
     }
 
+    pub(crate) fn invalidate_tool_segment(&mut self, tool_id: &str) {
+        for segment in &mut self.segments {
+            if matches!(&segment.content, SegmentContent::ToolCall(id) if id == tool_id) {
+                segment.lines = None;
+            }
+        }
+    }
+
     fn drain_segments_except(
         &mut self,
         mut keep: impl FnMut(&SegmentContent) -> bool,
@@ -176,7 +184,7 @@ impl ConversationBuffer {
         tool_call_statuses: &ToolCallStatuses,
         context: &RenderContext,
     ) {
-        self.invalidate_tool_lines();
+        self.invalidate_active_tool_lines(tool_call_statuses);
         for i in 0..self.segments.len() {
             self.get_or_render(i, tool_call_statuses, context);
         }
@@ -195,11 +203,13 @@ impl ConversationBuffer {
         )
     }
 
-    /// Clears cached lines for all `ToolCall` segments so running spinners
-    /// re-render each frame while completed tools and thoughts stay cached.
-    fn invalidate_tool_lines(&mut self) {
+    /// Clears cached lines for active `ToolCall` segments so spinners keep
+    /// animating while completed tool output stays cached.
+    fn invalidate_active_tool_lines(&mut self, tool_call_statuses: &ToolCallStatuses) {
         for segment in &mut self.segments {
-            if matches!(segment.content, SegmentContent::ToolCall(_)) {
+            if let SegmentContent::ToolCall(ref id) = segment.content
+                && tool_call_statuses.is_tool_active_for_render(id)
+            {
                 segment.lines = None;
             }
         }
@@ -501,22 +511,32 @@ mod tests {
     }
 
     #[test]
-    fn invalidate_tool_lines_clears_only_tool_segments() {
+    fn invalidate_active_tool_lines_clears_only_running_tool_segments() {
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("text");
         buffer.append_thought_chunk("thought");
         buffer.ensure_tool_segment("tool-1");
+        buffer.ensure_tool_segment("tool-2");
 
-        let statuses = ToolCallStatuses::new();
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-1", "Read file"));
+        statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-2", "Read file"));
+        statuses.on_tool_call_update(&agent_client_protocol::ToolCallUpdate::new(
+            "tool-2",
+            agent_client_protocol::ToolCallUpdateFields::new()
+                .status(agent_client_protocol::ToolCallStatus::Completed),
+        ));
         let context = RenderContext::new((80, 24));
         buffer.get_or_render(0, &statuses, &context);
         buffer.get_or_render(1, &statuses, &context);
         buffer.get_or_render(2, &statuses, &context);
+        buffer.get_or_render(3, &statuses, &context);
         assert!(buffer.cached_lines(0).is_some());
         assert!(buffer.cached_lines(1).is_some());
         assert!(buffer.cached_lines(2).is_some());
+        assert!(buffer.cached_lines(3).is_some());
 
-        buffer.invalidate_tool_lines();
+        buffer.invalidate_active_tool_lines(&statuses);
 
         assert!(
             buffer.cached_lines(0).is_some(),
@@ -528,7 +548,57 @@ mod tests {
         );
         assert!(
             buffer.cached_lines(2).is_none(),
-            "tool cache should be cleared"
+            "running tool cache should be cleared"
+        );
+        assert!(
+            buffer.cached_lines(3).is_some(),
+            "completed tool cache should survive"
+        );
+    }
+
+    #[test]
+    fn invalidate_active_tool_lines_keeps_completed_sub_agent_segments_cached() {
+        let mut buffer = ConversationBuffer::new();
+        buffer.ensure_tool_segment("parent-1");
+
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&agent_client_protocol::ToolCall::new(
+            "parent-1",
+            "spawn_subagent",
+        ));
+        statuses.on_tool_call_update(&agent_client_protocol::ToolCallUpdate::new(
+            "parent-1",
+            agent_client_protocol::ToolCallUpdateFields::new()
+                .status(agent_client_protocol::ToolCallStatus::Completed),
+        ));
+        statuses.on_sub_agent_progress(
+            &serde_json::from_str(
+                r#"{"parent_tool_id":"parent-1","task_id":"task-1","agent_name":"explorer","event":{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}}"#,
+            )
+            .unwrap(),
+        );
+        statuses.on_sub_agent_progress(
+            &serde_json::from_str(
+                r#"{"parent_tool_id":"parent-1","task_id":"task-1","agent_name":"explorer","event":{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}}"#,
+            )
+            .unwrap(),
+        );
+        statuses.on_sub_agent_progress(
+            &serde_json::from_str(
+                r#"{"parent_tool_id":"parent-1","task_id":"task-1","agent_name":"explorer","event":"Done"}"#,
+            )
+            .unwrap(),
+        );
+
+        let context = RenderContext::new((80, 24));
+        buffer.get_or_render(0, &statuses, &context);
+        assert!(buffer.cached_lines(0).is_some());
+
+        buffer.invalidate_active_tool_lines(&statuses);
+
+        assert!(
+            buffer.cached_lines(0).is_some(),
+            "completed sub-agent segment should stay cached"
         );
     }
 
@@ -547,6 +617,28 @@ mod tests {
             buffer.cached_lines(0).is_none(),
             "cache should be cleared on append"
         );
+    }
+
+    #[test]
+    fn invalidate_tool_segment_clears_only_matching_tool_cache() {
+        let mut buffer = ConversationBuffer::new();
+        buffer.ensure_tool_segment("tool-1");
+        buffer.ensure_tool_segment("tool-2");
+
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-1", "Read file"));
+        statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-2", "Read file"));
+        let context = RenderContext::new((80, 24));
+
+        buffer.get_or_render(0, &statuses, &context);
+        buffer.get_or_render(1, &statuses, &context);
+        assert!(buffer.cached_lines(0).is_some());
+        assert!(buffer.cached_lines(1).is_some());
+
+        buffer.invalidate_tool_segment("tool-2");
+
+        assert!(buffer.cached_lines(0).is_some());
+        assert!(buffer.cached_lines(1).is_none());
     }
 
     #[test]

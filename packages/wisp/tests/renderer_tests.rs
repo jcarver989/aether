@@ -1,8 +1,10 @@
 use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol as acp;
+use tui::RuntimeAction;
 use tui::testing::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::{App, AppAction, AppEffect, build_attachment_blocks};
-use wisp::tui::{Line, Renderer as FrameRenderer, theme::Theme};
+use wisp::components::app::runtime::{PromptContext, apply_app_effect};
+use wisp::components::app::{App, AppAction, AppEffect};
+use wisp::tui::{Renderer as FrameRenderer, theme::Theme};
 
 const TEST_AGENT: &str = "test-agent";
 const TEST_WIDTH: u16 = 200;
@@ -104,7 +106,7 @@ impl Renderer {
 
     async fn apply_effects(
         &mut self,
-        effects: Vec<AppEffect>,
+        effects: Vec<RuntimeAction<AppEffect>>,
         prompt: Option<(&AcpPromptHandle, &acp::SessionId)>,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let mut should_render = false;
@@ -112,66 +114,31 @@ impl Renderer {
 
         for effect in effects {
             match effect {
-                AppEffect::Exit => action = LoopAction::Exit,
-                AppEffect::Render => should_render = true,
-                AppEffect::PushScrollback(lines) => {
-                    self.renderer.push_to_scrollback(&lines)?;
-                }
-                AppEffect::PromptSubmit {
-                    user_input,
-                    attachments,
-                } => {
-                    let Some((prompt_handle, session_id)) = prompt else {
-                        return Err(std::io::Error::other("missing prompt context").into());
-                    };
-                    let outcome = build_attachment_blocks(&attachments).await;
-                    if !outcome.warnings.is_empty() {
-                        let warning_lines: Vec<Line> = outcome
-                            .warnings
-                            .into_iter()
-                            .map(|warning| Line::new(format!("[wisp] {warning}")))
-                            .collect();
-                        self.renderer.push_to_scrollback(&warning_lines)?;
+                RuntimeAction::Exit => action = LoopAction::Exit,
+                RuntimeAction::Render => should_render = true,
+                RuntimeAction::Effect(effect) => {
+                    let actions = apply_app_effect(
+                        &mut self.screen,
+                        &mut self.renderer,
+                        effect,
+                        prompt.map(|(prompt_handle, session_id)| {
+                            PromptContext::new(prompt_handle, session_id)
+                        }),
+                    )
+                    .await?;
+
+                    if actions
+                        .iter()
+                        .any(|action| matches!(action, RuntimeAction::Render))
+                    {
+                        should_render = true;
                     }
-                    prompt_handle.prompt(
-                        session_id,
-                        &user_input,
-                        if outcome.blocks.is_empty() {
-                            None
-                        } else {
-                            Some(outcome.blocks)
-                        },
-                    )?;
-                }
-                AppEffect::SetConfigOption {
-                    config_id,
-                    new_value,
-                } => {
-                    let Some((prompt_handle, session_id)) = prompt else {
-                        return Err(std::io::Error::other("missing prompt context").into());
-                    };
-                    let _ = prompt_handle.set_config_option(session_id, &config_id, &new_value);
-                }
-                AppEffect::Cancel => {
-                    let Some((prompt_handle, session_id)) = prompt else {
-                        return Err(std::io::Error::other("missing prompt context").into());
-                    };
-                    prompt_handle.cancel(session_id)?;
-                }
-                AppEffect::AuthenticateMcpServer { server_name } => {
-                    let Some((prompt_handle, session_id)) = prompt else {
-                        return Err(std::io::Error::other("missing prompt context").into());
-                    };
-                    let _ = prompt_handle.authenticate_mcp_server(session_id, &server_name);
-                }
-                AppEffect::AuthenticateProvider { method_id } => {
-                    let Some((prompt_handle, session_id)) = prompt else {
-                        return Err(std::io::Error::other("missing prompt context").into());
-                    };
-                    let _ = prompt_handle.authenticate(session_id, &method_id);
-                }
-                AppEffect::SetTheme { .. } => {
-                    // Theme apply side effects are handled in terminal_ui; renderer tests ignore.
+                    if actions
+                        .iter()
+                        .any(|action| matches!(action, RuntimeAction::Exit))
+                    {
+                        action = LoopAction::Exit;
+                    }
                 }
             }
         }
@@ -184,22 +151,27 @@ impl Renderer {
     }
 
     #[allow(clippy::unused_async)]
-    async fn apply_effects_no_prompt(&mut self, effects: Vec<AppEffect>) -> std::io::Result<()> {
+    async fn apply_effects_no_prompt(
+        &mut self,
+        effects: Vec<RuntimeAction<AppEffect>>,
+    ) -> std::io::Result<()> {
         let mut should_render = false;
 
         for effect in effects {
             match effect {
-                AppEffect::Exit => {}
-                AppEffect::Render => should_render = true,
-                AppEffect::PushScrollback(lines) => {
+                RuntimeAction::Exit => {}
+                RuntimeAction::Render => should_render = true,
+                RuntimeAction::Effect(AppEffect::PushScrollback(lines)) => {
                     self.renderer.push_to_scrollback(&lines)?;
                 }
-                AppEffect::PromptSubmit { .. }
-                | AppEffect::SetConfigOption { .. }
-                | AppEffect::SetTheme { .. }
-                | AppEffect::Cancel
-                | AppEffect::AuthenticateMcpServer { .. }
-                | AppEffect::AuthenticateProvider { .. } => {
+                RuntimeAction::Effect(
+                    AppEffect::PromptSubmit { .. }
+                    | AppEffect::SetConfigOption { .. }
+                    | AppEffect::SetTheme { .. }
+                    | AppEffect::Cancel
+                    | AppEffect::AuthenticateMcpServer { .. }
+                    | AppEffect::AuthenticateProvider { .. },
+                ) => {
                     panic!("unexpected prompt/config/cancel effect without prompt context");
                 }
             }

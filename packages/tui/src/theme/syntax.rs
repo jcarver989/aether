@@ -1,4 +1,4 @@
-use super::*;
+use super::{Color, ColorPalette, Theme, darken_color};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -90,7 +90,7 @@ impl From<&syntect::highlighting::Theme> for Theme {
             .foreground
             .map_or(DEFAULT_FG, color_from_syntect);
 
-        let code_fg = resolve_scope_fg(syntect, "markup.inline.raw.string.markdown")
+        let inline_code_fg = resolve_scope_fg(syntect, "markup.inline.raw.string.markdown")
             .or_else(|| resolve_scope_fg(syntect, "markup.raw"))
             .unwrap_or(fg);
 
@@ -133,13 +133,13 @@ impl From<&syntect::highlighting::Theme> for Theme {
             .background
             .map_or(DEFAULT_BG, color_from_syntect);
 
-        let code_bg = syntect
+        let inline_code_bg = syntect
             .settings
             .background
             .map_or(DEFAULT_CODE_BG, color_from_syntect);
 
-        let diff_added_bg = darken_color(diff_added_fg);
-        let diff_removed_bg = darken_color(diff_removed_fg);
+        let added_bg = darken_color(diff_added_fg);
+        let removed_bg = darken_color(diff_removed_fg);
 
         Self {
             palette: ColorPalette::builder()
@@ -148,8 +148,8 @@ impl From<&syntect::highlighting::Theme> for Theme {
                 .accent(accent)
                 .highlight_bg(highlight_bg)
                 .text_secondary(text_secondary)
-                .code_fg(code_fg)
-                .code_bg(code_bg)
+                .code_fg(inline_code_fg)
+                .code_bg(inline_code_bg)
                 .heading(heading)
                 .link(link)
                 .blockquote(blockquote)
@@ -161,8 +161,8 @@ impl From<&syntect::highlighting::Theme> for Theme {
                 .secondary(secondary)
                 .diff_added_fg(diff_added_fg)
                 .diff_removed_fg(diff_removed_fg)
-                .diff_added_bg(diff_added_bg)
-                .diff_removed_bg(diff_removed_bg)
+                .diff_added_bg(added_bg)
+                .diff_removed_bg(removed_bg)
                 .build(),
             syntect_theme: Arc::new(syntect.clone()),
         }

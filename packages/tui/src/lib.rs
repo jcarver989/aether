@@ -1,18 +1,20 @@
 //! A lightweight, composable terminal UI framework.
 //!
-//! `tui` provides a set of building blocks for rich CLI applications:
+//! `tui` provides both low-level rendering primitives and a higher-level runtime
+//! entrypoint for rich CLI applications:
 //!
 //! - **[`Component`]** — Stateful widgets that render to `Vec<Line>`.
 //! - **[`InteractiveComponent`]** — Keyboard input handling with typed actions via [`KeyEventResponse`].
 //! - **[`FocusRing`]** — Reusable focus tracking with Tab/`BackTab` cycling.
 //! - **[`TerminalScreen`]** / **[`Renderer`]** — Frame-diffing terminal output with cursor management.
+//! - **[`runtime::run_app`]** — Terminal lifecycle, event loop, ticks, external events, effects, and cleanup.
 //! - **[`Line`]**, **[`Span`](span::Span)**, **[`Style`]** — Styled text primitives.
 //! - **[`Theme`](theme::Theme)** — Semantic color palettes.
 //!
 //! # Quick start
 //!
 //! ```rust
-//! use tui::{Component, RenderContext, Line};
+//! use tui::{Component, Line, RenderContext};
 //!
 //! struct Greeting { name: String }
 //!
@@ -22,6 +24,8 @@
 //!     }
 //! }
 //! ```
+//!
+//! For a higher-level application bootstrap path, see [`runtime::run_app`].
 //!
 //! # Feature Flags
 //!
@@ -134,4 +138,6 @@ pub use diffs::diff::highlight_diff;
 pub use combobox::{Combobox, PickerKey, Searchable, classify_key};
 
 #[cfg(feature = "runtime")]
-pub use runtime::spawn_terminal_event_task;
+pub use runtime::{
+    RuntimeAction, RuntimeApp, RuntimeEvent, RuntimeOptions, run_app, spawn_terminal_event_task,
+};

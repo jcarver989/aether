@@ -76,8 +76,8 @@ Invalid or missing theme files fall back to the built-in defaults.
 
 ### Keyboard Shortcuts
 
-- **Tab** — Cycle the first ACP config option that is a select option in the `SessionConfigOptionCategory::Mode` category (e.g. mode profiles from `aether-acp`).
-- **Shift+Tab** — Cycle reasoning effort level (none → low → medium → high).
+- **Tab** — Cycle reasoning effort level (none → low → medium → high).
+- **Shift+Tab** — Cycle the first ACP config option that is a select option in the `SessionConfigOptionCategory::Mode` category (e.g. mode profiles from `aether-acp`).
 
 ## Requirements
 

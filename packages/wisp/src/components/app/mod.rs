@@ -1,4 +1,5 @@
 mod attachments;
+pub mod runtime;
 mod session;
 mod state;
 
@@ -9,7 +10,7 @@ use crate::components::container::Container;
 use crate::components::conversation_window::ConversationWindow;
 use crate::components::plan_view::PlanView;
 use crate::components::status_line::StatusLine;
-use crate::tui::{Component, Cursor, Frame, Line, RenderContext, RootComponent};
+use crate::tui::{Component, Cursor, Frame, Line, RenderContext, RootComponent, RuntimeAction};
 use acp_utils::notifications::McpServerStatus;
 use agent_client_protocol::{self as acp, SessionConfigOption};
 use std::path::PathBuf;
@@ -20,8 +21,6 @@ pub use attachments::build_attachment_blocks;
 /// Runtime-executed side effects emitted by the app state machine.
 #[derive(Debug)]
 pub enum AppEffect {
-    Exit,
-    Render,
     PushScrollback(Vec<Line>),
     PromptSubmit {
         user_input: String,
@@ -41,6 +40,20 @@ pub enum AppEffect {
     AuthenticateProvider {
         method_id: String,
     },
+}
+
+pub type AppRuntimeAction = RuntimeAction<AppEffect>;
+
+pub(crate) fn render_action() -> AppRuntimeAction {
+    RuntimeAction::Render
+}
+
+pub(crate) fn exit_action() -> AppRuntimeAction {
+    RuntimeAction::Exit
+}
+
+pub(crate) fn effect_action(effect: AppEffect) -> AppRuntimeAction {
+    RuntimeAction::Effect(effect)
 }
 
 #[derive(Debug, Clone)]
@@ -64,7 +77,11 @@ impl App {
         }
     }
 
-    pub fn dispatch(&mut self, action: AppAction, context: &RenderContext) -> Vec<AppEffect> {
+    pub fn dispatch(
+        &mut self,
+        action: AppAction,
+        context: &RenderContext,
+    ) -> Vec<AppRuntimeAction> {
         match action {
             AppAction::Key(key_event) => self.state.on_key_event(key_event),
             AppAction::Paste(text) => self.state.on_paste(text),
@@ -82,18 +99,18 @@ impl App {
             } => self.state.on_elicitation_request(params, response_tx),
             AppAction::AuthenticateComplete { method_id } => {
                 self.state.on_authenticate_complete(&method_id);
-                vec![AppEffect::Render]
+                vec![render_action()]
             }
             AppAction::AuthenticateFailed { method_id, error } => {
                 tracing::warn!("Provider auth failed for {method_id}: {error}");
                 self.state.on_authenticate_failed(&method_id);
-                vec![AppEffect::Render]
+                vec![render_action()]
             }
             AppAction::SetFilePickerMatches(matches) => {
                 self.state
                     .prompt_composer
                     .open_file_picker_with_matches(matches);
-                vec![AppEffect::Render]
+                vec![render_action()]
             }
         }
     }
@@ -297,10 +314,10 @@ mod tests {
         assert!(matches!(
             effects.as_slice(),
             [
-                AppEffect::SetTheme {
+                RuntimeAction::Effect(AppEffect::SetTheme {
                     file: Some(file)
-                },
-                AppEffect::Render
+                }),
+                RuntimeAction::Render
             ] if file == "catppuccin.tmTheme"
         ));
     }
@@ -319,7 +336,10 @@ mod tests {
 
         assert!(matches!(
             effects.as_slice(),
-            [AppEffect::SetTheme { file: None }, AppEffect::Render]
+            [
+                RuntimeAction::Effect(AppEffect::SetTheme { file: None }),
+                RuntimeAction::Render
+            ]
         ));
     }
 
@@ -338,11 +358,11 @@ mod tests {
         assert!(matches!(
             effects.as_slice(),
             [
-                AppEffect::SetConfigOption {
+                RuntimeAction::Effect(AppEffect::SetConfigOption {
                     config_id,
                     new_value
-                },
-                AppEffect::Render
+                }),
+                RuntimeAction::Render
             ] if config_id == "model" && new_value == "gpt-5"
         ));
     }
@@ -402,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_cycles_mode_option() {
+    fn shift_tab_cycles_mode_option() {
         use agent_client_protocol::SessionConfigOptionCategory;
 
         let options = vec![
@@ -420,21 +440,24 @@ mod tests {
 
         let mut app = App::new("test-agent".to_string(), &options, vec![]);
         let effects = app.dispatch(
-            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
             &RenderContext::new((120, 40)),
         );
 
         assert!(effects.iter().any(|event| {
             matches!(
                 event,
-                AppEffect::SetConfigOption { config_id, new_value }
+                RuntimeAction::Effect(AppEffect::SetConfigOption {
+                    config_id,
+                    new_value,
+                })
                 if config_id == "mode" && new_value == "Coder"
             )
         }));
     }
 
     #[test]
-    fn tab_wraps_mode_option() {
+    fn shift_tab_wraps_mode_option() {
         use agent_client_protocol::SessionConfigOptionCategory;
 
         let options = vec![
@@ -452,21 +475,24 @@ mod tests {
 
         let mut app = App::new("test-agent".to_string(), &options, vec![]);
         let effects = app.dispatch(
-            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
             &RenderContext::new((120, 40)),
         );
 
         assert!(effects.iter().any(|event| {
             matches!(
                 event,
-                AppEffect::SetConfigOption { config_id, new_value }
+                RuntimeAction::Effect(AppEffect::SetConfigOption {
+                    config_id,
+                    new_value,
+                })
                 if config_id == "mode" && new_value == "Planner"
             )
         }));
     }
 
     #[test]
-    fn tab_ignored_when_overlay_consumes_input() {
+    fn shift_tab_ignored_when_overlay_consumes_input() {
         use agent_client_protocol::SessionConfigOptionCategory;
 
         let options = vec![
@@ -483,18 +509,17 @@ mod tests {
         app.state.open_config_overlay();
 
         let effects = app.dispatch(
-            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
             &RenderContext::new((120, 40)),
         );
-        assert!(
-            !effects
-                .iter()
-                .any(|event| matches!(event, AppEffect::SetConfigOption { .. }))
-        );
+        assert!(!effects.iter().any(|event| matches!(
+            event,
+            RuntimeAction::Effect(AppEffect::SetConfigOption { .. })
+        )));
     }
 
     #[test]
-    fn tab_noop_when_no_cycleable_option_exists() {
+    fn shift_tab_noop_when_no_cycleable_option_exists() {
         use agent_client_protocol::SessionConfigOptionCategory;
 
         let options = vec![
@@ -512,14 +537,14 @@ mod tests {
 
         let mut app = App::new("test-agent".to_string(), &options, vec![]);
         let effects = app.dispatch(
-            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
             &RenderContext::new((120, 40)),
         );
         assert!(effects.is_empty());
     }
 
     #[test]
-    fn shift_tab_cycles_reasoning_option() {
+    fn tab_cycles_reasoning_option() {
         use acp_utils::config_option_id::ConfigOptionId;
 
         let options = vec![SessionConfigOption::select(
@@ -535,26 +560,29 @@ mod tests {
 
         let mut app = App::new("test-agent".to_string(), &options, vec![]);
         let effects = app.dispatch(
-            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
+            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
             &RenderContext::new((120, 40)),
         );
 
         assert!(effects.iter().any(|event| {
             matches!(
                 event,
-                AppEffect::SetConfigOption { config_id, new_value }
+                RuntimeAction::Effect(AppEffect::SetConfigOption {
+                    config_id,
+                    new_value,
+                })
                 if config_id == ConfigOptionId::ReasoningEffort.as_str() && new_value == "low"
             )
         }));
     }
 
     #[test]
-    fn shift_tab_noop_when_no_reasoning_option() {
+    fn tab_noop_when_no_reasoning_option() {
         let options = vec![];
 
         let mut app = App::new("test-agent".to_string(), &options, vec![]);
         let effects = app.dispatch(
-            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
+            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
             &RenderContext::new((120, 40)),
         );
         assert!(effects.is_empty());
@@ -567,7 +595,7 @@ mod tests {
             AppAction::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
             &RenderContext::new((120, 40)),
         );
-        assert!(matches!(effects.as_slice(), [AppEffect::Exit]));
+        assert!(matches!(effects.as_slice(), [RuntimeAction::Exit]));
     }
 
     #[test]
@@ -579,7 +607,10 @@ mod tests {
             AppAction::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
             &RenderContext::new((120, 40)),
         );
-        assert!(matches!(effects.as_slice(), [AppEffect::Cancel]));
+        assert!(matches!(
+            effects.as_slice(),
+            [RuntimeAction::Effect(AppEffect::Cancel)]
+        ));
     }
 
     #[test]

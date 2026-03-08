@@ -1,4 +1,4 @@
-use super::{AppEffect, UiState};
+use super::{AppEffect, AppRuntimeAction, UiState, effect_action, render_action};
 use crate::components::command_picker::CommandEntry;
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::progress_indicator::ProgressIndicator;
@@ -12,7 +12,7 @@ use std::time::Instant;
 use tokio::sync::oneshot;
 
 impl UiState {
-    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Vec<AppEffect> {
+    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Vec<AppRuntimeAction> {
         let was_loading = self.grid_loader.visible;
         let mut should_render = was_loading;
         self.grid_loader.visible = false;
@@ -35,6 +35,8 @@ impl UiState {
                 self.tool_call_statuses.on_tool_call(&tool_call);
                 self.conversation
                     .ensure_tool_segment(&tool_call.tool_call_id.0);
+                self.conversation
+                    .invalidate_tool_segment(&tool_call.tool_call_id.0);
                 should_render = true;
             }
             SessionUpdate::ToolCallUpdate(update) => {
@@ -43,6 +45,8 @@ impl UiState {
                 if self.tool_call_statuses.has_tool(&update.tool_call_id.0) {
                     self.conversation
                         .ensure_tool_segment(&update.tool_call_id.0);
+                    self.conversation
+                        .invalidate_tool_segment(&update.tool_call_id.0);
                 }
                 should_render = true;
             }
@@ -86,13 +90,13 @@ impl UiState {
         }
 
         if should_render {
-            vec![AppEffect::Render]
+            vec![render_action()]
         } else {
             vec![]
         }
     }
 
-    pub(crate) fn on_prompt_done(&mut self, context: &RenderContext) -> Vec<AppEffect> {
+    pub(crate) fn on_prompt_done(&mut self, context: &RenderContext) -> Vec<AppRuntimeAction> {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
         self.conversation.close_thought_block();
@@ -107,36 +111,58 @@ impl UiState {
 
         let mut effects = Vec::new();
         if !scrollback_lines.is_empty() {
-            effects.push(AppEffect::PushScrollback(scrollback_lines));
+            effects.push(effect_action(AppEffect::PushScrollback(scrollback_lines)));
         }
-        effects.push(AppEffect::Render);
+        effects.push(render_action());
         effects
     }
 
-    pub(crate) fn on_tick(&mut self) -> Vec<AppEffect> {
+    pub(crate) fn on_tick(&mut self) -> Vec<AppRuntimeAction> {
         let now = Instant::now();
+        let mut should_render = false;
+
         self.grid_loader.on_tick(now);
+        should_render |= self.grid_loader.visible;
+
         self.tool_call_statuses.on_tick(now);
+        should_render |= self.tool_call_statuses.progress().running_any;
+
         self.plan_tracker.on_tick(now);
+        should_render |= self
+            .plan_tracker
+            .visible_entries(now, self.plan_tracker.grace_period)
+            .iter()
+            .any(|entry| matches!(entry.status, acp::PlanEntryStatus::Completed));
+
         self.progress_indicator.on_tick(now);
-        vec![AppEffect::Render]
+        should_render |= self.progress_indicator.total > 0
+            && self.progress_indicator.completed < self.progress_indicator.total;
+
+        if should_render {
+            vec![render_action()]
+        } else {
+            vec![]
+        }
     }
 
     pub(crate) fn on_elicitation_request(
         &mut self,
         params: ElicitationParams,
         response_tx: oneshot::Sender<ElicitationResponse>,
-    ) -> Vec<AppEffect> {
+    ) -> Vec<AppRuntimeAction> {
         self.config_overlay = None;
         self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
-        vec![AppEffect::Render]
+        vec![render_action()]
     }
 
-    pub(crate) fn on_ext_notification(&mut self, notification: ExtNotification) -> Vec<AppEffect> {
+    pub(crate) fn on_ext_notification(
+        &mut self,
+        notification: ExtNotification,
+    ) -> Vec<AppRuntimeAction> {
         match notification.method.as_ref() {
             CONTEXT_CLEARED_METHOD => {
                 self.reset_after_context_cleared();
-                vec![AppEffect::Render]
+                vec![render_action()]
             }
             CONTEXT_USAGE_METHOD => {
                 if let Ok(params) =
@@ -148,7 +174,7 @@ impl UiState {
                             ((1.0 - usage_ratio) * 100.0).clamp(0.0, 100.0).round() as u8
                         });
                     }
-                    vec![AppEffect::Render]
+                    vec![render_action()]
                 } else {
                     vec![]
                 }
@@ -158,7 +184,9 @@ impl UiState {
                     serde_json::from_str::<SubAgentProgressParams>(notification.params.get())
                 {
                     self.tool_call_statuses.on_sub_agent_progress(&progress);
-                    vec![AppEffect::Render]
+                    self.conversation
+                        .invalidate_tool_segment(&progress.parent_tool_id);
+                    vec![render_action()]
                 } else {
                     vec![]
                 }
@@ -171,7 +199,7 @@ impl UiState {
                     if let Some(ref mut overlay) = self.config_overlay {
                         overlay.update_server_statuses(servers);
                     }
-                    vec![AppEffect::Render]
+                    vec![render_action()]
                 } else {
                     vec![]
                 }
@@ -189,10 +217,10 @@ impl UiState {
         self.progress_indicator = ProgressIndicator::default();
     }
 
-    pub(crate) fn on_prompt_error(&mut self) -> Vec<AppEffect> {
+    pub(crate) fn on_prompt_error(&mut self) -> Vec<AppRuntimeAction> {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
-        vec![AppEffect::Render]
+        vec![render_action()]
     }
 
     pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) {
@@ -215,7 +243,7 @@ mod tests {
     use super::*;
     use crate::components::app::{App, AppAction};
     use crate::components::conversation_window::SegmentContent;
-    use crate::tui::RootComponent;
+    use crate::tui::{RootComponent, RuntimeAction};
     use acp_utils::notifications::{CONTEXT_USAGE_METHOD, McpServerStatus, McpServerStatusEntry};
     use agent_client_protocol::SessionConfigOptionCategory;
     use std::sync::Arc;
@@ -230,7 +258,7 @@ mod tests {
 
         let effects = screen.dispatch(AppAction::PromptDone, &RenderContext::new((120, 40)));
 
-        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
+        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
         let segments: Vec<_> = screen.state.conversation.segments().collect();
         assert!(matches!(segments[..], [SegmentContent::ToolCall(id)] if id == "tool-1"));
     }
@@ -245,7 +273,7 @@ mod tests {
 
         let context = RenderContext::new((120, 40));
         let effects = screen.dispatch(AppAction::PromptDone, &context);
-        assert!(matches!(effects.last(), Some(AppEffect::Render)));
+        assert!(matches!(effects.last(), Some(RuntimeAction::Render)));
     }
 
     #[test]
@@ -278,7 +306,7 @@ mod tests {
             AppAction::ExtNotification(notification),
             &RenderContext::new((120, 40)),
         );
-        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
+        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
     }
 
     #[test]
@@ -311,7 +339,7 @@ mod tests {
             &RenderContext::new((120, 40)),
         );
 
-        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
+        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
         assert_eq!(app.state.context_usage_pct, Some(25));
     }
 
@@ -333,7 +361,7 @@ mod tests {
             &RenderContext::new((120, 40)),
         );
 
-        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
+        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
         assert_eq!(app.state.context_usage_pct, None);
     }
 
@@ -358,7 +386,7 @@ mod tests {
             &RenderContext::new((120, 40)),
         );
 
-        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
+        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
         assert!(!app.state.waiting_for_response);
         assert!(!app.state.grid_loader.visible);
         assert_eq!(app.state.context_usage_pct, None);
@@ -379,14 +407,14 @@ mod tests {
         );
 
         let effects = app.dispatch(AppAction::Tick, &RenderContext::new((120, 40)));
-        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
+        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
     }
 
     #[test]
-    fn on_tick_always_emits_render() {
+    fn on_tick_without_active_state_emits_no_actions() {
         let mut app = App::new("test-agent".to_string(), &[], vec![]);
         let effects = app.dispatch(AppAction::Tick, &RenderContext::new((120, 40)));
-        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
+        assert!(effects.is_empty());
     }
 
     #[test]
@@ -424,7 +452,7 @@ mod tests {
             &RenderContext::new((120, 40)),
         );
 
-        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
+        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
         let output = app.render(&RenderContext::new((120, 40)));
         assert!(
             output
@@ -470,7 +498,7 @@ mod tests {
             &RenderContext::new((120, 40)),
         );
 
-        assert!(matches!(effects.as_slice(), [AppEffect::Render]));
+        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
         assert_eq!(app.state.server_statuses.len(), 1);
         assert!(matches!(
             app.state.server_statuses[0],

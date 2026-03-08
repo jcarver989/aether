@@ -1,4 +1,4 @@
-use super::*;
+use super::{Color, ColorPalette, Theme, darken_color, lighten_color};
 
 impl Theme {
     /// Catppuccin Mocha theme (dark, high contrast).

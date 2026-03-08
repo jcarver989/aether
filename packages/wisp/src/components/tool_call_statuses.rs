@@ -174,13 +174,10 @@ impl ToolCallStatuses {
         self.tool_calls
             .values()
             .any(|tc| matches!(tc.status, ToolCallStatus::Running))
-            || self.sub_agents.values().any(|agents| {
-                agents.iter().any(|a| {
-                    a.tool_calls
-                        .values()
-                        .any(|tc| matches!(tc.status, ToolCallStatus::Running))
-                })
-            })
+            || self
+                .sub_agents
+                .values()
+                .any(|agents| agents.iter().any(SubAgentState::is_active_for_render))
     }
 
     /// Handle a new tool call from ACP `SessionUpdate::ToolCall`.
@@ -252,6 +249,14 @@ impl ToolCallStatuses {
         self.tool_calls
             .get(id)
             .is_some_and(|tc| matches!(tc.status, ToolCallStatus::Running))
+    }
+
+    pub fn is_tool_active_for_render(&self, id: &str) -> bool {
+        self.is_tool_running(id)
+            || self
+                .sub_agents
+                .get(id)
+                .is_some_and(|agents| agents.iter().any(SubAgentState::is_active_for_render))
     }
 
     /// Handle a sub-agent progress notification.
@@ -462,6 +467,16 @@ impl ToolCallStatuses {
 impl Default for ToolCallStatuses {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl SubAgentState {
+    fn is_active_for_render(&self) -> bool {
+        !self.done
+            || self
+                .tool_calls
+                .values()
+                .any(|tc| matches!(tc.status, ToolCallStatus::Running))
     }
 }
 
@@ -1492,5 +1507,97 @@ mod tests {
             progress.total_top_level, 0,
             "Sub-agent parent should be excluded from top-level count"
         );
+    }
+
+    #[test]
+    fn completed_tool_is_not_active_for_render() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "tool-1",
+            acp::ToolCallStatus::Completed,
+        ));
+
+        assert!(!statuses.is_tool_active_for_render("tool-1"));
+    }
+
+    #[test]
+    fn completed_parent_with_running_sub_agent_stays_active_for_render() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "parent-1",
+            acp::ToolCallStatus::Completed,
+        ));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        assert!(statuses.is_tool_active_for_render("parent-1"));
+    }
+
+    #[test]
+    fn completed_parent_with_done_sub_agent_is_not_active_for_render() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "parent-1",
+            acp::ToolCallStatus::Completed,
+        ));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#""Done""#,
+        ));
+
+        assert!(!statuses.is_tool_active_for_render("parent-1"));
+    }
+
+    #[test]
+    fn progress_stays_running_until_sub_agent_done() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+        statuses.on_tool_call_update(&make_tool_call_update(
+            "parent-1",
+            acp::ToolCallStatus::Completed,
+        ));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
+        ));
+
+        assert!(
+            statuses.progress().running_any,
+            "undone sub-agent should keep ticks alive for spinner animation"
+        );
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#""Done""#,
+        ));
+
+        assert!(!statuses.progress().running_any);
     }
 }

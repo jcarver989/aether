@@ -1,4 +1,7 @@
-use super::{AppEffect, theme_file_from_picker_value};
+use super::{
+    AppEffect, AppRuntimeAction, effect_action, exit_action, render_action,
+    theme_file_from_picker_value,
+};
 use crate::components::config_menu::ConfigMenu;
 use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayAction};
 use crate::components::conversation_window::ConversationBuffer;
@@ -97,11 +100,11 @@ impl UiState {
         }
     }
 
-    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Vec<AppEffect> {
+    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Vec<AppRuntimeAction> {
         if key_event.code == KeyCode::Char('c')
             && key_event.modifiers.contains(event::KeyModifiers::CONTROL)
         {
-            return vec![AppEffect::Exit];
+            return vec![exit_action()];
         }
 
         if let Some(effects) = self.handle_elicitation_key(key_event) {
@@ -119,37 +122,37 @@ impl UiState {
         }
 
         if key_event.code == KeyCode::Tab {
-            if let Some(effect) = self.cycle_quick_option() {
-                return vec![effect, AppEffect::Render];
+            if let Some(effect) = self.cycle_reasoning_option() {
+                return vec![effect_action(effect), render_action()];
             }
             return vec![];
         }
 
         if key_event.code == KeyCode::BackTab {
-            if let Some(effect) = self.cycle_reasoning_option() {
-                return vec![effect, AppEffect::Render];
+            if let Some(effect) = self.cycle_quick_option() {
+                return vec![effect_action(effect), render_action()];
             }
             return vec![];
         }
 
         if key_event.code == KeyCode::Esc && self.waiting_for_response {
-            return vec![AppEffect::Cancel];
+            return vec![effect_action(AppEffect::Cancel)];
         }
 
         vec![]
     }
 
-    pub(crate) fn on_paste(&mut self, text: String) -> Vec<AppEffect> {
+    pub(crate) fn on_paste(&mut self, text: String) -> Vec<AppRuntimeAction> {
         self.config_overlay = None;
         if self.prompt_composer.on_paste(&text) {
-            vec![AppEffect::Render]
+            vec![render_action()]
         } else {
             vec![]
         }
     }
 
-    pub(crate) fn on_resize(&mut self, _cols: u16, _rows: u16) -> Vec<AppEffect> {
-        vec![AppEffect::Render]
+    pub(crate) fn on_resize(&mut self, _cols: u16, _rows: u16) -> Vec<AppRuntimeAction> {
+        vec![render_action()]
     }
 
     pub(crate) fn update_config_options(&mut self, config_options: &[SessionConfigOption]) {
@@ -203,7 +206,10 @@ impl UiState {
             })
     }
 
-    pub(crate) fn handle_elicitation_key(&mut self, key_event: KeyEvent) -> Option<Vec<AppEffect>> {
+    pub(crate) fn handle_elicitation_key(
+        &mut self,
+        key_event: KeyEvent,
+    ) -> Option<Vec<AppRuntimeAction>> {
         let elicitation_form = self.elicitation_form.as_mut()?;
         let outcome = elicitation_form.form.on_key_event(key_event);
 
@@ -225,7 +231,7 @@ impl UiState {
         }
 
         if outcome.consumed {
-            Some(vec![AppEffect::Render])
+            Some(vec![render_action()])
         } else {
             Some(vec![])
         }
@@ -234,74 +240,76 @@ impl UiState {
     pub(crate) fn handle_prompt_composer_outcome(
         &mut self,
         outcome: KeyEventResponse<PromptComposerAction>,
-    ) -> Vec<AppEffect> {
+    ) -> Vec<AppRuntimeAction> {
         match outcome.action {
             Some(PromptComposerAction::OpenConfig) => {
                 self.open_config_overlay();
-                vec![AppEffect::Render]
+                vec![render_action()]
             }
             Some(PromptComposerAction::SubmitRequested {
                 user_input,
                 attachments,
             }) => {
                 let mut effects = vec![
-                    AppEffect::PushScrollback(vec![Line::new(String::new())]),
-                    AppEffect::PushScrollback(vec![Line::new(user_input.clone())]),
+                    effect_action(AppEffect::PushScrollback(vec![Line::new(String::new())])),
+                    effect_action(AppEffect::PushScrollback(vec![Line::new(
+                        user_input.clone(),
+                    )])),
                 ];
 
                 self.waiting_for_response = true;
                 self.grid_loader.reset();
 
-                effects.push(AppEffect::Render);
-                effects.push(AppEffect::PromptSubmit {
+                effects.push(render_action());
+                effects.push(effect_action(AppEffect::PromptSubmit {
                     user_input,
                     attachments,
-                });
+                }));
                 effects
             }
-            None => vec![AppEffect::Render],
+            None => vec![render_action()],
         }
     }
 
     pub(crate) fn handle_config_overlay_outcome(
         &mut self,
         outcome: KeyEventResponse<ConfigOverlayAction>,
-    ) -> Vec<AppEffect> {
+    ) -> Vec<AppRuntimeAction> {
         match outcome.action {
             Some(ConfigOverlayAction::Close) => {
                 self.config_overlay = None;
-                vec![AppEffect::Render]
+                vec![render_action()]
             }
             Some(ConfigOverlayAction::ApplyConfigChanges(changes)) => {
                 let mut effects = Vec::new();
                 for change in changes {
                     if change.config_id == THEME_CONFIG_ID {
-                        effects.push(AppEffect::SetTheme {
+                        effects.push(effect_action(AppEffect::SetTheme {
                             file: theme_file_from_picker_value(&change.new_value),
-                        });
+                        }));
                     } else {
-                        effects.push(AppEffect::SetConfigOption {
+                        effects.push(effect_action(AppEffect::SetConfigOption {
                             config_id: change.config_id,
                             new_value: change.new_value,
-                        });
+                        }));
                     }
                 }
-                effects.push(AppEffect::Render);
+                effects.push(render_action());
                 effects
             }
             Some(ConfigOverlayAction::AuthenticateServer(name)) => {
                 vec![
-                    AppEffect::AuthenticateMcpServer { server_name: name },
-                    AppEffect::Render,
+                    effect_action(AppEffect::AuthenticateMcpServer { server_name: name }),
+                    render_action(),
                 ]
             }
             Some(ConfigOverlayAction::AuthenticateProvider(method_id)) => {
                 vec![
-                    AppEffect::AuthenticateProvider { method_id },
-                    AppEffect::Render,
+                    effect_action(AppEffect::AuthenticateProvider { method_id }),
+                    render_action(),
                 ]
             }
-            None => vec![AppEffect::Render],
+            None => vec![render_action()],
         }
     }
 
@@ -337,6 +345,7 @@ impl UiState {
         self.prompt_composer.available_commands()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn on_authenticate_started(&mut self, method_id: &str) {
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.on_authenticate_started(method_id);
