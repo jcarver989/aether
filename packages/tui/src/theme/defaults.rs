@@ -62,11 +62,6 @@ impl Theme {
             g: 0xA6,
             b: 0xF7,
         };
-        const SURFACE0: Color = Color::Rgb {
-            r: 0x31,
-            g: 0x31,
-            b: 0x44,
-        };
         const SURFACE1: Color = Color::Rgb {
             r: 0x45,
             g: 0x45,
@@ -78,39 +73,34 @@ impl Theme {
             b: 0x85,
         };
 
-        Self {
-            fg: TEXT,
-            bg: BASE,
-            accent: ROSEWATER,
-            highlight_bg: Color::Rgb {
-                r: 0x31,
-                g: 0x4A,
-                b: 0x56,
-            },
-
-            text_secondary: OVERLAY0,
-            code_fg: GREEN,
-            code_bg: SURFACE1,
-
-            heading: YELLOW,
-            link: BLUE,
-            blockquote: PINK,
-            muted: TEAL,
-
-            success: GREEN,
-            warning: PEACH,
-            error: RED,
-            info: BLUE,
-            secondary: MAUVE,
-
-            diff_added_fg: GREEN,
-            diff_removed_fg: RED,
-            diff_added_bg: darken_color(GREEN),
-            diff_removed_bg: darken_color(RED),
-
-            #[cfg(feature = "syntax")]
-            syntect_theme: std::sync::Arc::new(super::syntax::parse_default_syntect_theme()),
-        }
+        Self::from_palette(
+            ColorPalette::builder()
+                .fg(TEXT)
+                .bg(BASE)
+                .accent(ROSEWATER)
+                .highlight_bg(Color::Rgb {
+                    r: 0x31,
+                    g: 0x4A,
+                    b: 0x56,
+                })
+                .text_secondary(OVERLAY0)
+                .code_fg(GREEN)
+                .code_bg(SURFACE1)
+                .heading(YELLOW)
+                .link(BLUE)
+                .blockquote(PINK)
+                .muted(TEAL)
+                .success(GREEN)
+                .warning(PEACH)
+                .error(RED)
+                .info(BLUE)
+                .secondary(MAUVE)
+                .diff_added_fg(GREEN)
+                .diff_removed_fg(RED)
+                .diff_added_bg(darken_color(GREEN))
+                .diff_removed_bg(darken_color(RED))
+                .build(),
+        )
     }
 
     /// A minimal light theme.
@@ -147,67 +137,62 @@ impl Theme {
             b: 0x00,
         };
 
-        Self {
-            fg: FG,
-            bg: BG,
-            accent: ACCENT,
-            highlight_bg: Color::Rgb {
-                r: 0xDD,
-                g: 0xDD,
-                b: 0xDD,
-            },
-
-            text_secondary: Color::Rgb {
-                r: 0x66,
-                g: 0x66,
-                b: 0x66,
-            },
-            code_fg: Color::Rgb {
-                r: 0x33,
-                g: 0x66,
-                b: 0x33,
-            },
-            code_bg: Color::Rgb {
-                r: 0xF0,
-                g: 0xF0,
-                b: 0xF0,
-            },
-
-            heading: ACCENT,
-            link: Color::Rgb {
-                r: 0x00,
-                g: 0x44,
-                b: 0xAA,
-            },
-            blockquote: Color::Rgb {
-                r: 0x66,
-                g: 0x44,
-                b: 0x88,
-            },
-            muted: Color::Rgb {
-                r: 0x88,
-                g: 0x88,
-                b: 0x88,
-            },
-
-            success: GREEN,
-            warning: ORANGE,
-            error: RED,
-            info: ACCENT,
-            secondary: Color::Rgb {
-                r: 0x66,
-                g: 0x33,
-                b: 0x99,
-            },
-
-            diff_added_fg: GREEN,
-            diff_removed_fg: RED,
-            diff_added_bg: lighten_color(GREEN),
-            diff_removed_bg: lighten_color(RED),
-
-            #[cfg(feature = "syntax")]
-            syntect_theme: std::sync::Arc::new(super::syntax::parse_default_syntect_theme()),
-        }
+        Self::from_palette(
+            ColorPalette::builder()
+                .fg(FG)
+                .bg(BG)
+                .accent(ACCENT)
+                .highlight_bg(Color::Rgb {
+                    r: 0xDD,
+                    g: 0xDD,
+                    b: 0xDD,
+                })
+                .text_secondary(Color::Rgb {
+                    r: 0x66,
+                    g: 0x66,
+                    b: 0x66,
+                })
+                .code_fg(Color::Rgb {
+                    r: 0x33,
+                    g: 0x66,
+                    b: 0x33,
+                })
+                .code_bg(Color::Rgb {
+                    r: 0xF0,
+                    g: 0xF0,
+                    b: 0xF0,
+                })
+                .heading(ACCENT)
+                .link(Color::Rgb {
+                    r: 0x00,
+                    g: 0x44,
+                    b: 0xAA,
+                })
+                .blockquote(Color::Rgb {
+                    r: 0x66,
+                    g: 0x44,
+                    b: 0x88,
+                })
+                .muted(Color::Rgb {
+                    r: 0x88,
+                    g: 0x88,
+                    b: 0x88,
+                })
+                .success(GREEN)
+                .warning(ORANGE)
+                .error(RED)
+                .info(ACCENT)
+                .secondary(Color::Rgb {
+                    r: 0x66,
+                    g: 0x33,
+                    b: 0x99,
+                })
+                .diff_added_fg(GREEN)
+                .diff_removed_fg(RED)
+                .diff_added_bg(lighten_color(GREEN))
+                .diff_removed_bg(lighten_color(RED))
+                .build(),
+        )
     }
 }
 

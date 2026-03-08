@@ -142,26 +142,28 @@ impl From<&syntect::highlighting::Theme> for Theme {
         let diff_removed_bg = darken_color(diff_removed_fg);
 
         Self {
-            fg,
-            bg,
-            accent,
-            highlight_bg,
-            text_secondary,
-            code_fg,
-            code_bg,
-            heading,
-            link,
-            blockquote,
-            muted,
-            success,
-            warning,
-            error,
-            info,
-            secondary,
-            diff_added_fg,
-            diff_removed_fg,
-            diff_added_bg,
-            diff_removed_bg,
+            palette: ColorPalette::builder()
+                .fg(fg)
+                .bg(bg)
+                .accent(accent)
+                .highlight_bg(highlight_bg)
+                .text_secondary(text_secondary)
+                .code_fg(code_fg)
+                .code_bg(code_bg)
+                .heading(heading)
+                .link(link)
+                .blockquote(blockquote)
+                .muted(muted)
+                .success(success)
+                .warning(warning)
+                .error(error)
+                .info(info)
+                .secondary(secondary)
+                .diff_added_fg(diff_added_fg)
+                .diff_removed_fg(diff_removed_fg)
+                .diff_added_bg(diff_added_bg)
+                .diff_removed_bg(diff_removed_bg)
+                .build(),
             syntect_theme: Arc::new(syntect.clone()),
         }
     }
