@@ -425,7 +425,7 @@ mod tests {
         );
 
         assert!(matches!(effects.as_slice(), [AppEffect::Render]));
-        let output = app.render_with_cursor(&RenderContext::new((120, 40)));
+        let output = app.render(&RenderContext::new((120, 40)));
         assert!(
             output
                 .lines

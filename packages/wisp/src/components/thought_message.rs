@@ -1,4 +1,4 @@
-use crate::tui::screen::Style;
+use crate::tui::Style;
 use crate::tui::theme::Theme;
 use crate::tui::{Component, Line, RenderContext};
 
