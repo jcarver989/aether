@@ -1,5 +1,6 @@
 use crate::component::RenderContext;
-use super::screen::{Line, Screen};
+use super::line::Line;
+use super::screen::Screen;
 use super::size::Size;
 use super::soft_wrap::{soft_wrap_line, soft_wrap_lines_with_map};
 use crate::theme::Theme;

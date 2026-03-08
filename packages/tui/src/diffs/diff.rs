@@ -3,7 +3,9 @@ use syntect::easy::HighlightLines;
 
 use crate::{DiffPreview, DiffTag};
 
-use crate::screen::{Line, Span, Style};
+use crate::line::Line;
+use crate::span::Span;
+use crate::style::Style;
 use crate::syntax::{find_syntax_for_hint, syntax_set, syntect_to_wisp_style};
 use crate::theme::Theme;
 

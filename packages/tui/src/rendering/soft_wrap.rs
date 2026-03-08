@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::screen::Line;
+use super::line::Line;
 use unicode_width::UnicodeWidthChar;
 
 /// Truncates text to fit within `max_width` display columns, appending "..." if truncated.

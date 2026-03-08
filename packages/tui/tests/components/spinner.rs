@@ -1,6 +1,6 @@
 use super::*;
 use tui::components::spinner::{Spinner, BRAILLE_FRAMES};
-use tui::screen::Screen;
+use tui::rendering::screen::Screen;
 
 #[test]
 fn invisible_renders_empty() {

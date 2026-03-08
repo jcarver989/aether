@@ -6,7 +6,7 @@
 //! - **[`HandlesInput`]** — Keyboard input handling with typed actions via [`InputOutcome`].
 //! - **[`FocusRing`]** — Reusable focus tracking with Tab/`BackTab` cycling.
 //! - **[`Screen`]** / **[`Renderer`]** — Frame-diffing terminal output with cursor management.
-//! - **[`Line`]**, **[`Span`](screen::Span)**, **[`Style`]** — Styled text primitives.
+//! - **[`Line`]**, **[`Span`](span::Span)**, **[`Style`]** — Styled text primitives.
 //! - **[`Theme`](theme::Theme)** — Semantic color palettes.
 //!
 //! # Quick start
@@ -68,10 +68,13 @@ pub mod diffs;
 pub use diffs::diff_types;
 pub mod focus;
 pub mod rendering;
+pub use rendering::line;
 pub use rendering::renderer;
 pub use rendering::screen;
 pub use rendering::size;
 pub use rendering::soft_wrap;
+pub use rendering::span;
+pub use rendering::style;
 pub mod theme;
 
 // Feature-gated modules
@@ -108,7 +111,8 @@ pub use components::text_field::TextField;
 pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag};
 pub use focus::{FocusOutcome, FocusRing};
 pub use rendering::renderer::{Cursor, CursorComponent, RenderOutput, Renderer};
-pub use rendering::screen::{Line, Style};
+pub use rendering::line::Line;
+pub use rendering::style::Style;
 pub use components::select_option::SelectOption;
 pub use rendering::size::Size;
 pub use theme::Theme;

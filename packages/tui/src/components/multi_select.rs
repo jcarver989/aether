@@ -1,7 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
-use crate::screen::{Line, Style};
+use crate::line::Line;
+use crate::style::Style;
 use super::select_option::SelectOption;
 
 /// Multi-select from a list of options, rendered as checkboxes with a cursor.

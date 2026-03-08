@@ -1,6 +1,7 @@
 use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
 use crate::focus::{FocusOutcome, FocusRing};
-use crate::screen::{Line, Style};
+use crate::line::Line;
+use crate::style::Style;
 
 use super::checkbox::Checkbox;
 use super::multi_select::MultiSelect;

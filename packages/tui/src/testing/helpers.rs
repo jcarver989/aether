@@ -2,7 +2,7 @@ use std::io::Write;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::screen::Screen;
+use crate::rendering::screen::Screen;
 use crate::{Component, RenderContext, SelectOption};
 
 use super::TestTerminal;
@@ -31,7 +31,7 @@ pub fn render_component_with_screen(
 }
 
 pub fn render_lines(
-    lines: &[crate::rendering::screen::Line],
+    lines: &[crate::line::Line],
     width: u16,
     rows: u16,
 ) -> TestTerminal {

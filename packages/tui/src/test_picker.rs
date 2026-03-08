@@ -1,5 +1,5 @@
 use crate::component::RenderContext;
-use crate::screen::Line;
+use crate::line::Line;
 use crate::size::Size;
 use crate::{Component, HandlesInput};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
