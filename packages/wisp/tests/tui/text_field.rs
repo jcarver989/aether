@@ -60,7 +60,7 @@ fn screen_diff_after_mutation() {
 
 #[test]
 fn unfocused_renders_without_cursor() {
-    let mut tf = TextField::new("hello".to_string());
+    let tf = TextField::new("hello".to_string());
     let ctx = RenderContext::new((80, 24)).with_focused(false);
     let lines = tf.render(&ctx);
     let term = render_lines(&lines, 80, 24);
@@ -69,7 +69,7 @@ fn unfocused_renders_without_cursor() {
 
 #[test]
 fn unfocused_empty_renders_empty() {
-    let mut tf = TextField::new(String::new());
+    let tf = TextField::new(String::new());
     let ctx = RenderContext::new((80, 24)).with_focused(false);
     let lines = tf.render(&ctx);
     let term = render_lines(&lines, 80, 24);

@@ -9,7 +9,7 @@ use crate::components::container::Container;
 use crate::components::conversation_window::ConversationWindow;
 use crate::components::plan_view::PlanView;
 use crate::components::status_line::StatusLine;
-use crate::tui::{Cursor, CursorComponent, Line, RenderContext, RenderOutput};
+use crate::tui::{Component, Cursor, CursorComponent, Line, RenderContext, RenderOutput};
 use acp_utils::notifications::McpServerStatus;
 use agent_client_protocol::{self as acp, SessionConfigOption};
 use std::path::PathBuf;
@@ -111,7 +111,7 @@ impl CursorComponent for App {
             .iter()
             .filter(|status| !matches!(status.status, McpServerStatus::Connected { .. }))
             .count();
-        let mut status_line = StatusLine {
+        let status_line = StatusLine {
             agent_name: &self.state.agent_name,
             mode_display: self.state.mode_display.as_deref(),
             model_display: self.state.model_display.as_deref(),
@@ -122,12 +122,13 @@ impl CursorComponent for App {
         };
 
         if let Some(ref mut overlay) = self.state.config_overlay {
+            overlay.prepare_render(context);
             let cursor = Cursor {
                 logical_row: overlay.cursor_row_offset(),
                 col: overlay.cursor_col(),
             };
 
-            let mut container = Container::new(vec![overlay, &mut status_line]);
+            let container = Container::new(vec![overlay as &dyn Component, &status_line]);
             let (lines, _) = container.render_with_offsets(context);
 
             return RenderOutput {
@@ -148,28 +149,32 @@ impl CursorComponent for App {
             .progress_indicator
             .update(progress.completed_top_level, progress.total_top_level);
 
-        let mut conversation_window = ConversationWindow {
-            loader: &mut self.state.grid_loader,
-            conversation: &mut self.state.conversation,
-            tool_call_statuses: &self.state.tool_call_statuses,
+        self.state.conversation.ensure_all_rendered(
+            &self.state.tool_call_statuses,
+            context,
+        );
+
+        let conversation_window = ConversationWindow {
+            loader: &self.state.grid_loader,
+            conversation: &self.state.conversation,
         };
-        let mut plan_view = PlanView {
+        let plan_view = PlanView {
             entries: &visible_plan_entries,
         };
 
         let mut container: Container<'_> = Container::new(vec![
-            &mut conversation_window,
-            &mut plan_view,
-            &mut self.state.progress_indicator,
-            &mut self.state.prompt_composer,
+            &conversation_window,
+            &plan_view,
+            &self.state.progress_indicator,
+            &self.state.prompt_composer,
         ]);
         let prompt_component_index = container.len() - 1;
 
-        if let Some(ref mut elicitation_form) = self.state.elicitation_form {
-            container.push(&mut elicitation_form.form);
+        if let Some(ref elicitation_form) = self.state.elicitation_form {
+            container.push(&elicitation_form.form);
         }
 
-        container.push(&mut status_line);
+        container.push(&status_line);
         let (lines, offsets) = container.render_with_offsets(context);
         let prompt_cursor = self.state.prompt_composer.cursor(context);
         let cursor = Cursor {

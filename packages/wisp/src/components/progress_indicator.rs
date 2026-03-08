@@ -32,7 +32,7 @@ impl Tickable for ProgressIndicator {
 }
 
 impl Component for ProgressIndicator {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         if self.total == 0 || self.completed == self.total {
             return vec![];
         }
@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn renders_nothing_when_no_tools() {
-        let mut indicator = ProgressIndicator::default();
+        let indicator = ProgressIndicator::default();
         assert!(indicator.render(&ctx()).is_empty());
     }
 

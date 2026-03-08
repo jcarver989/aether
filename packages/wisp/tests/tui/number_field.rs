@@ -73,7 +73,7 @@ fn backspace_renders() {
 
 #[test]
 fn unfocused_renders_without_cursor() {
-    let mut nf = NumberField::new("42".to_string(), true);
+    let nf = NumberField::new("42".to_string(), true);
     let ctx = RenderContext::new((80, 24)).with_focused(false);
     let lines = nf.render(&ctx);
     let term = render_lines(&lines, 80, 24);

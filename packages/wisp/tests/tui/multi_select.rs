@@ -51,7 +51,7 @@ fn cursor_wraps_up_from_first() {
 
 #[test]
 fn unfocused_none_selected_shows_none() {
-    let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
+    let ms = MultiSelect::new(sample_options(), vec![false, false, false]);
     let ctx = RenderContext::new((80, 24)).with_focused(false);
     let rendered = ms.render(&ctx);
     assert_eq!(
@@ -70,7 +70,7 @@ fn unfocused_none_selected_shows_none() {
 
 #[test]
 fn unfocused_with_selections_shows_summary() {
-    let mut ms = MultiSelect::new(sample_options(), vec![true, false, true]);
+    let ms = MultiSelect::new(sample_options(), vec![true, false, true]);
     let ctx = RenderContext::new((80, 24)).with_focused(false);
     let rendered = ms.render(&ctx);
     assert_eq!(

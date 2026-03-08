@@ -108,7 +108,7 @@ fn should_exclude_path(path: &Path) -> bool {
 }
 
 impl Component for FilePicker {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
 
         if self.combobox.is_empty() {
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn selected_entry_has_highlight_background() {
-        let mut picker = FilePicker::new_with_entries(vec![
+        let picker = FilePicker::new_with_entries(vec![
             file_match("a.rs"),
             file_match("b.rs"),
             file_match("c.rs"),

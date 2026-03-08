@@ -13,13 +13,14 @@ impl Checkbox {
         Self { checked }
     }
 
+    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::Value::Bool(self.checked)
     }
 }
 
 impl Component for Checkbox {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let display = if self.checked { "[x]" } else { "[ ]" };
         let style = if context.focused {
             context.theme.primary()
@@ -62,6 +63,7 @@ mod tests {
         assert!(!cb.checked);
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn to_json_returns_bool() {
         assert_eq!(Checkbox::new(true).to_json(), serde_json::json!(true));

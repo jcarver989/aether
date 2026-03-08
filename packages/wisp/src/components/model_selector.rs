@@ -167,22 +167,25 @@ impl ModelSelector {
     }
 }
 
-impl Component for ModelSelector {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+impl ModelSelector {
+    pub(crate) fn prepare_render(&mut self, context: &RenderContext) {
         let has_selected_line = !self.selected_models.is_empty();
         if let Some(h) = context.max_height {
-            // Overhead: header (1) + spacer (1) + optional "Selected:" line (0-1) + optional selected spacer (0-1)
             let overhead = if has_selected_line { 4 } else { 2 };
             self.combobox
                 .set_max_visible(h.saturating_sub(overhead).max(1));
         }
+    }
+}
 
+impl Component for ModelSelector {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let header = format!("  Model search: {}", self.combobox.query());
         lines.push(Line::new(header));
         lines.push(Line::new(String::new()));
 
-        if has_selected_line {
+        if !self.selected_models.is_empty() {
             let names: Vec<&str> = self
                 .all_items
                 .iter()
@@ -638,6 +641,7 @@ mod tests {
     fn grouped_render_respects_small_height() {
         let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
         let context = RenderContext::new((120, 40)).with_max_height(6);
+        builder.prepare_render(&context);
         let lines: Vec<String> = builder
             .render(&context)
             .iter()

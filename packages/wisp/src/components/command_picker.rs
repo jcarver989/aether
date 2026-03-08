@@ -47,7 +47,7 @@ impl CommandPicker {
 }
 
 impl Component for CommandPicker {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let mut lines = Vec::new();
 
         if self.combobox.is_empty() {
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn selected_entry_has_highlight_background() {
-        let mut picker = CommandPicker::new(sample_commands());
+        let picker = CommandPicker::new(sample_commands());
         let context = RenderContext::new((80, 24));
         let lines = picker.render(&context);
         let selected_line = lines

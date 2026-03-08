@@ -20,6 +20,7 @@ impl MultiSelect {
         }
     }
 
+    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         let values: Vec<serde_json::Value> = self
             .options
@@ -33,7 +34,7 @@ impl MultiSelect {
 }
 
 impl Component for MultiSelect {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         if context.focused {
             self.render_options(context)
         } else {
@@ -152,6 +153,7 @@ mod tests {
         assert!(ms.selected[1]);
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn to_json_returns_selected_values() {
         let mut ms = sample();
@@ -160,6 +162,7 @@ mod tests {
         assert_eq!(ms.to_json(), serde_json::json!(["a", "c"]));
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn to_json_empty_selection() {
         let ms = sample();

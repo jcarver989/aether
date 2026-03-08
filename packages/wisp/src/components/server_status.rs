@@ -14,7 +14,7 @@ pub enum ServerStatusAction {
 }
 
 impl Component for ServerStatusOverlay {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         if self.entries.is_empty() {
             return vec![Line::new("  (no MCP servers configured)".to_string())];
         }
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn renders_all_entries_with_status_indicators() {
-        let mut overlay = ServerStatusOverlay::new(sample_entries());
+        let overlay = ServerStatusOverlay::new(sample_entries());
         let ctx = RenderContext::new((80, 24));
         let lines = overlay.render(&ctx);
 
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn selected_entry_has_pointer() {
-        let mut overlay = ServerStatusOverlay::new(sample_entries());
+        let overlay = ServerStatusOverlay::new(sample_entries());
         let ctx = RenderContext::new((80, 24));
         let lines = overlay.render(&ctx);
 
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn empty_entries_shows_placeholder() {
-        let mut overlay = ServerStatusOverlay::new(vec![]);
+        let overlay = ServerStatusOverlay::new(vec![]);
         let ctx = RenderContext::new((80, 24));
         let lines = overlay.render(&ctx);
         assert_eq!(lines.len(), 1);

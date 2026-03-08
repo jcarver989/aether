@@ -6,7 +6,7 @@ use unicode_width::UnicodeWidthStr;
 const BORDER_H_PAD: usize = 4;
 
 pub struct Container<'a> {
-    children: Vec<&'a mut dyn Component>,
+    children: Vec<&'a dyn Component>,
     title: Option<String>,
     footer: Option<String>,
     border_color: Option<Color>,
@@ -15,7 +15,7 @@ pub struct Container<'a> {
 }
 
 impl<'a> Container<'a> {
-    pub fn new(children: Vec<&'a mut dyn Component>) -> Self {
+    pub fn new(children: Vec<&'a dyn Component>) -> Self {
         Self {
             children,
             title: None,
@@ -51,7 +51,7 @@ impl<'a> Container<'a> {
         self
     }
 
-    pub fn push(&mut self, child: &'a mut dyn Component) {
+    pub fn push(&mut self, child: &'a dyn Component) {
         self.children.push(child);
     }
 
@@ -64,11 +64,11 @@ impl<'a> Container<'a> {
         self.children.is_empty()
     }
 
-    pub fn render_with_offsets(&mut self, context: &RenderContext) -> (Vec<Line>, Vec<usize>) {
+    pub fn render_with_offsets(&self, context: &RenderContext) -> (Vec<Line>, Vec<usize>) {
         let mut lines = Vec::new();
         let mut offsets = Vec::with_capacity(self.children.len());
 
-        for (i, child) in self.children.iter_mut().enumerate() {
+        for (i, child) in self.children.iter().enumerate() {
             if i > 0 {
                 for _ in 0..self.gap {
                     lines.push(Line::default());
@@ -83,7 +83,7 @@ impl<'a> Container<'a> {
 }
 
 impl Component for Container<'_> {
-    fn render(&mut self, context: &RenderContext) -> Vec<Line> {
+    fn render(&self, context: &RenderContext) -> Vec<Line> {
         let has_border =
             self.border_color.is_some() || self.title.is_some() || self.footer.is_some();
 
@@ -133,7 +133,7 @@ impl Component for Container<'_> {
         // later children receive a `max_height` reflecting remaining space.
         let mut content_rows_used: usize = 0;
 
-        for (i, child) in self.children.iter_mut().enumerate() {
+        for (i, child) in self.children.iter().enumerate() {
             if i > 0 {
                 for _ in 0..self.gap {
                     lines.push(empty_border_line(inner_width));
@@ -224,14 +224,14 @@ mod tests {
     }
 
     impl Component for StubComponent {
-        fn render(&mut self, _context: &RenderContext) -> Vec<Line> {
+        fn render(&self, _context: &RenderContext) -> Vec<Line> {
             self.lines.clone()
         }
     }
 
     #[test]
     fn renders_empty_container() {
-        let mut container = Container::new(Vec::new());
+        let container = Container::new(Vec::new());
         let context = RenderContext::new((80, 24));
         let lines = container.render(&context);
         assert!(lines.is_empty());
@@ -239,13 +239,13 @@ mod tests {
 
     #[test]
     fn preserves_child_order() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("a")],
         };
-        let mut b = StubComponent {
+        let b = StubComponent {
             lines: vec![Line::new("b")],
         };
-        let mut container = Container::new(vec![&mut a, &mut b]);
+        let container = Container::new(vec![&a, &b]);
         let context = RenderContext::new((80, 24));
         let lines = container.render(&context);
         assert_eq!(lines, vec![Line::new("a"), Line::new("b")]);
@@ -253,13 +253,13 @@ mod tests {
 
     #[test]
     fn computes_offsets_per_child() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("a1"), Line::new("a2")],
         };
-        let mut b = StubComponent {
+        let b = StubComponent {
             lines: vec![Line::new("b1")],
         };
-        let mut container = Container::new(vec![&mut a, &mut b]);
+        let container = Container::new(vec![&a, &b]);
         let context = RenderContext::new((80, 24));
         let (_lines, offsets) = container.render_with_offsets(&context);
         assert_eq!(offsets, vec![0, 2]);
@@ -267,13 +267,13 @@ mod tests {
 
     #[test]
     fn gap_inserts_blank_lines_between_children() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("a")],
         };
-        let mut b = StubComponent {
+        let b = StubComponent {
             lines: vec![Line::new("b")],
         };
-        let mut container = Container::new(vec![&mut a, &mut b]).gap(1);
+        let container = Container::new(vec![&a, &b]).gap(1);
         let context = RenderContext::new((80, 24));
         let lines = container.render(&context);
         assert_eq!(lines.len(), 3);
@@ -284,10 +284,10 @@ mod tests {
 
     #[test]
     fn gap_no_blank_line_before_first_child() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("a")],
         };
-        let mut container = Container::new(vec![&mut a]).gap(2);
+        let container = Container::new(vec![&a]).gap(2);
         let context = RenderContext::new((80, 24));
         let lines = container.render(&context);
         // Single child: no gap lines
@@ -297,10 +297,10 @@ mod tests {
 
     #[test]
     fn title_renders_top_border_with_title_text() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("x")],
         };
-        let mut container = Container::new(vec![&mut a])
+        let container = Container::new(vec![&a])
             .title(" Config ")
             .border_color(Color::Grey);
         let context = RenderContext::new((30, 10));
@@ -312,10 +312,10 @@ mod tests {
 
     #[test]
     fn footer_renders_footer_and_bottom_border() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("x")],
         };
-        let mut container = Container::new(vec![&mut a])
+        let container = Container::new(vec![&a])
             .footer("[Esc] Close")
             .border_color(Color::Grey);
         let context = RenderContext::new((30, 10));
@@ -329,10 +329,10 @@ mod tests {
 
     #[test]
     fn fill_height_pads_with_empty_bordered_rows() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("x")],
         };
-        let mut container = Container::new(vec![&mut a])
+        let container = Container::new(vec![&a])
             .title(" T ")
             .footer("F")
             .border_color(Color::Grey)
@@ -344,10 +344,10 @@ mod tests {
 
     #[test]
     fn border_color_styles_border_lines() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("x")],
         };
-        let mut container = Container::new(vec![&mut a])
+        let container = Container::new(vec![&a])
             .title(" T ")
             .border_color(Color::Cyan);
         let context = RenderContext::new((30, 10));
@@ -363,10 +363,10 @@ mod tests {
     #[test]
     fn bg_color_extends_through_padding() {
         let bg = Color::DarkBlue;
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::with_style("hi", Style::default().bg_color(bg))],
         };
-        let mut container = Container::new(vec![&mut a]).border_color(Color::Grey);
+        let container = Container::new(vec![&a]).border_color(Color::Grey);
         let context = RenderContext::new((20, 10));
         let lines = container.render(&context);
         // Content row (top border + blank + first content = index 2)
@@ -388,13 +388,13 @@ mod tests {
 
     #[test]
     fn bordered_gap_inserts_empty_bordered_lines_between_children() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("a")],
         };
-        let mut b = StubComponent {
+        let b = StubComponent {
             lines: vec![Line::new("b")],
         };
-        let mut container = Container::new(vec![&mut a, &mut b])
+        let container = Container::new(vec![&a, &b])
             .border_color(Color::Grey)
             .gap(1);
         let context = RenderContext::new((20, 10));
@@ -409,10 +409,10 @@ mod tests {
 
     #[test]
     fn top_and_bottom_border_have_equal_visual_width() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("x")],
         };
-        let mut container = Container::new(vec![&mut a])
+        let container = Container::new(vec![&a])
             .title(" Config ")
             .border_color(Color::Grey);
         let context = RenderContext::new((40, 10));
@@ -428,13 +428,13 @@ mod tests {
 
     #[test]
     fn no_border_options_renders_like_before() {
-        let mut a = StubComponent {
+        let a = StubComponent {
             lines: vec![Line::new("a")],
         };
-        let mut b = StubComponent {
+        let b = StubComponent {
             lines: vec![Line::new("b")],
         };
-        let mut container = Container::new(vec![&mut a, &mut b]);
+        let container = Container::new(vec![&a, &b]);
         let context = RenderContext::new((80, 24));
         let lines = container.render(&context);
         assert_eq!(lines, vec![Line::new("a"), Line::new("b")]);
