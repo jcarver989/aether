@@ -402,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn shift_tab_cycles_mode_option() {
+    fn tab_cycles_mode_option() {
         use agent_client_protocol::SessionConfigOptionCategory;
 
         let options = vec![
@@ -420,7 +420,7 @@ mod tests {
 
         let mut app = App::new("test-agent".to_string(), &options, vec![]);
         let effects = app.dispatch(
-            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
+            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
             &RenderContext::new((120, 40)),
         );
 
@@ -434,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn shift_tab_wraps_mode_option() {
+    fn tab_wraps_mode_option() {
         use agent_client_protocol::SessionConfigOptionCategory;
 
         let options = vec![
@@ -452,7 +452,7 @@ mod tests {
 
         let mut app = App::new("test-agent".to_string(), &options, vec![]);
         let effects = app.dispatch(
-            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
+            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
             &RenderContext::new((120, 40)),
         );
 
@@ -466,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn shift_tab_ignored_when_overlay_consumes_input() {
+    fn tab_ignored_when_overlay_consumes_input() {
         use agent_client_protocol::SessionConfigOptionCategory;
 
         let options = vec![
@@ -483,7 +483,7 @@ mod tests {
         app.state.open_config_overlay();
 
         let effects = app.dispatch(
-            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
+            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
             &RenderContext::new((120, 40)),
         );
         assert!(
@@ -494,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn shift_tab_noop_when_no_cycleable_option_exists() {
+    fn tab_noop_when_no_cycleable_option_exists() {
         use agent_client_protocol::SessionConfigOptionCategory;
 
         let options = vec![
@@ -509,6 +509,48 @@ mod tests {
             )
             .category(SessionConfigOptionCategory::Model),
         ];
+
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        let effects = app.dispatch(
+            AppAction::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            &RenderContext::new((120, 40)),
+        );
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn shift_tab_cycles_reasoning_option() {
+        use acp_utils::config_option_id::ConfigOptionId;
+
+        let options = vec![SessionConfigOption::select(
+            ConfigOptionId::ReasoningEffort.as_str(),
+            "Reasoning",
+            "none",
+            vec![
+                acp::SessionConfigSelectOption::new("none", "None"),
+                acp::SessionConfigSelectOption::new("low", "Low"),
+                acp::SessionConfigSelectOption::new("medium", "Medium"),
+            ],
+        )];
+
+        let mut app = App::new("test-agent".to_string(), &options, vec![]);
+        let effects = app.dispatch(
+            AppAction::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
+            &RenderContext::new((120, 40)),
+        );
+
+        assert!(effects.iter().any(|event| {
+            matches!(
+                event,
+                AppEffect::SetConfigOption { config_id, new_value }
+                if config_id == ConfigOptionId::ReasoningEffort.as_str() && new_value == "low"
+            )
+        }));
+    }
+
+    #[test]
+    fn shift_tab_noop_when_no_reasoning_option() {
+        let options = vec![];
 
         let mut app = App::new("test-agent".to_string(), &options, vec![]);
         let effects = app.dispatch(
