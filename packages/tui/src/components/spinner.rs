@@ -1,5 +1,5 @@
 use crate::component::RenderContext;
-use crate::screen::Line;
+use crate::line::Line;
 use crate::{Component, Tickable};
 use std::time::Instant;
 

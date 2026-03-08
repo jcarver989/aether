@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use syntect::easy::HighlightLines;
 use unicode_width::UnicodeWidthStr;
 
-use crate::screen::{Line, Span, Style};
+use crate::line::Line;
+use crate::span::Span;
+use crate::style::Style;
 use crate::syntax::{find_syntax_by_token, syntax_set, syntect_to_wisp_style};
 use crate::theme::Theme;
 

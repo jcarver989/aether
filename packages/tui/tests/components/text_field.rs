@@ -1,6 +1,6 @@
 use super::*;
 use crossterm::event::KeyCode;
-use tui::screen::Screen;
+use tui::rendering::screen::Screen;
 use tui::TextField;
 
 #[test]

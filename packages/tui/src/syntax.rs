@@ -4,7 +4,7 @@ use crossterm::style::Color;
 use syntect::highlighting::FontStyle;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
-use crate::screen::Style;
+use crate::style::Style;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 

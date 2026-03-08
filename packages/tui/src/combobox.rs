@@ -1,5 +1,5 @@
 use crate::component::RenderContext;
-use crate::screen::Line;
+use crate::line::Line;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Nucleo};

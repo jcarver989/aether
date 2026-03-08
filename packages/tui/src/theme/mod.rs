@@ -1,4 +1,4 @@
-use crate::screen::Style;
+use crate::style::Style;
 use crossterm::style::Color;
 
 /// Semantic color palette for TUI rendering.

@@ -1,4 +1,4 @@
-use crate::screen::Line;
+use crate::line::Line;
 use crate::size::Size;
 use crate::theme::Theme;
 use crossterm::event::KeyEvent;
