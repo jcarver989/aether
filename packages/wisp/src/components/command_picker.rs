@@ -154,6 +154,7 @@ fn build_styled_command_line(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::span::Span;
     use crate::tui::RenderContext;
     use crate::tui::soft_wrap::{display_width_line, display_width_text};
     use crate::tui::test_picker::{
@@ -380,7 +381,7 @@ mod tests {
             non_selected
                 .spans()
                 .iter()
-                .map(crate::tui::screen::Span::text)
+                .map(Span::text)
                 .collect::<Vec<_>>(),
         );
 
