@@ -505,6 +505,7 @@ fn convert_diff_preview(acp: &AcpDiffPreview) -> DiffPreview {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::Line;
     use acp_utils::notifications::{
         DiffLine as AcpDiffLine, DiffTag as AcpDiffTag, ToolDisplayMeta,
     };
@@ -1457,7 +1458,7 @@ mod tests {
         let lines = statuses.render_tool("parent-1", &ctx());
         let all_text: String = lines
             .iter()
-            .map(crate::tui::screen::Line::plain_text)
+            .map(Line::plain_text)
             .collect();
         assert!(
             !all_text.contains("spawn_subagent"),

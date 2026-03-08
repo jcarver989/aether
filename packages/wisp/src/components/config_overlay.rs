@@ -476,6 +476,7 @@ impl InteractiveComponent for ConfigOverlay {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::Line;
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use acp_utils::notifications::McpServerStatus;
     use agent_client_protocol::SessionConfigSelectOption;
@@ -1050,7 +1051,7 @@ mod tests {
         let lines = overlay.render(&context);
         let text: Vec<String> = lines
             .iter()
-            .map(crate::tui::screen::Line::plain_text)
+            .map(Line::plain_text)
             .collect();
         assert!(
             !text.iter().any(|l| l.contains("Reasoning Effort")),
@@ -1073,7 +1074,7 @@ mod tests {
         let lines = overlay.render(&context);
         let text: Vec<String> = lines
             .iter()
-            .map(crate::tui::screen::Line::plain_text)
+            .map(Line::plain_text)
             .collect();
         assert!(
             !text.iter().any(|l| l.contains("Reasoning Effort")),
