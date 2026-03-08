@@ -4237,6 +4237,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
+name = "tui"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "nucleo",
+ "pulldown-cmark",
+ "serde_json",
+ "syntect",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "unicode-width",
+]
+
+[[package]]
 name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4852,16 +4867,14 @@ dependencies = [
  "crossterm",
  "ignore",
  "mime_guess",
- "nucleo",
- "pulldown-cmark",
  "serde",
  "serde_json",
- "syntect",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "tui",
  "unicode-width",
  "url",
  "utils",

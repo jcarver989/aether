@@ -1,6 +1,7 @@
-use super::component::RenderContext;
-use super::screen::Line;
-use super::{Component, HandlesInput};
+use crate::component::RenderContext;
+use crate::screen::Line;
+use crate::size::Size;
+use crate::{Component, HandlesInput};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn type_query<P: HandlesInput>(picker: &mut P, text: &str) {
@@ -13,7 +14,10 @@ pub fn rendered_lines<P: Component>(picker: &mut P) -> Vec<String> {
     rendered_lines_with_size(picker, (120, 40))
 }
 
-pub fn rendered_lines_with_size<P: Component>(picker: &mut P, size: (u16, u16)) -> Vec<String> {
+pub fn rendered_lines_with_size<P: Component>(
+    picker: &mut P,
+    size: impl Into<Size>,
+) -> Vec<String> {
     let context = RenderContext::new(size);
     picker
         .render(&context)
@@ -26,7 +30,10 @@ pub fn rendered_raw_lines<P: Component>(picker: &mut P) -> Vec<Line> {
     rendered_raw_lines_with_size(picker, (120, 40))
 }
 
-pub fn rendered_raw_lines_with_size<P: Component>(picker: &mut P, size: (u16, u16)) -> Vec<Line> {
+pub fn rendered_raw_lines_with_size<P: Component>(
+    picker: &mut P,
+    size: impl Into<Size>,
+) -> Vec<Line> {
     let context = RenderContext::new(size);
     picker.render(&context)
 }

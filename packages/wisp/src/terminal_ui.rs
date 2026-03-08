@@ -1,7 +1,7 @@
 use crate::components::app::{App, AppAction, AppEffect, build_attachment_blocks};
 use crate::runtime_state::RuntimeState;
 use crate::settings::{load_or_create_settings, save_settings};
-use crate::tui::{Line, Renderer, spawn_terminal_event_task, theme::Theme};
+use crate::tui::{Line, Renderer, spawn_terminal_event_task};
 use acp_utils::client::AcpEvent;
 use agent_client_protocol as acp;
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind};
@@ -168,7 +168,7 @@ fn apply_theme_selection<T: Write>(renderer: &mut Renderer<T>, file: Option<Stri
         tracing::warn!("Failed to persist theme setting: {err}");
     }
 
-    let theme = Theme::load(&settings);
+    let theme = crate::settings::load_theme(&settings);
     renderer.set_theme(theme);
 }
 
@@ -280,7 +280,8 @@ async fn submit_prompt_with_attachments<T: Write>(
 
 #[cfg(test)]
 mod tests {
-    use super::{Theme, apply_theme_selection, should_handle_key_event};
+    use super::{apply_theme_selection, should_handle_key_event};
+    use crate::tui::theme::Theme;
     use crate::settings::{ThemeSettings, WispSettings, load_or_create_settings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
     use crate::tui::Renderer;

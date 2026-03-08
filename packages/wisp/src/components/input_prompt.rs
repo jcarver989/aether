@@ -17,7 +17,7 @@ pub struct InputPromptLayout {
 
 impl InputPrompt<'_> {
     pub fn layout(&self, context: &RenderContext) -> InputPromptLayout {
-        let width = usize::from(context.size.0);
+        let width = usize::from(context.size.width);
         let cursor_index = clamp_to_char_boundary(self.input, self.cursor_index);
         let cursor_display_width = plain_display_width(&self.input[..cursor_index]);
         let styled_input = style_input(self.input, context);

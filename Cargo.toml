@@ -13,6 +13,7 @@ members = [
     "packages/mcp-utils",
     "packages/mcp-servers",
     "packages/utils",
+    "packages/tui",
 ]
 
 [workspace.lints.clippy]

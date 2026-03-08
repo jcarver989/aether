@@ -228,8 +228,8 @@ impl ConfigOverlay {
 
 impl Component for ConfigOverlay {
     fn render(&mut self, context: &RenderContext) -> Vec<Line> {
-        let height = (context.size.1.saturating_sub(1)) as usize;
-        let width = context.size.0 as usize;
+        let height = (context.size.height.saturating_sub(1)) as usize;
+        let width = context.size.width as usize;
         if height < MIN_HEIGHT || width < MIN_WIDTH {
             return vec![Line::new("(terminal too small)")];
         }

@@ -1,6 +1,6 @@
-use super::component::RenderContext;
-use super::screen::Line;
-use crate::tui::{Component, Tickable};
+use crate::component::RenderContext;
+use crate::screen::Line;
+use crate::{Component, Tickable};
 use std::time::Instant;
 
 pub const BRAILLE_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

@@ -42,7 +42,7 @@ impl RuntimeState {
             agent_name: session.agent_name,
             config_options: session.config_options,
             auth_methods: session.auth_methods,
-            theme: Theme::load(&settings),
+            theme: crate::settings::load_theme(&settings),
             event_rx: session.event_rx,
             prompt_handle: session.prompt_handle,
         })

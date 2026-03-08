@@ -1,11 +1,11 @@
 use crossterm::style::Color;
 use syntect::easy::HighlightLines;
 
-use acp_utils::notifications::{DiffPreview, DiffTag};
+use crate::{DiffPreview, DiffTag};
 
-use super::screen::{Line, Span, Style};
-use super::syntax::{find_syntax_for_hint, syntax_set, syntect_to_wisp_style};
-use super::theme::Theme;
+use crate::screen::{Line, Span, Style};
+use crate::syntax::{find_syntax_for_hint, syntax_set, syntect_to_wisp_style};
+use crate::theme::Theme;
 
 const MAX_DIFF_LINES: usize = 20;
 
@@ -131,7 +131,7 @@ fn push_highlighted_spans(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_utils::notifications::DiffLine;
+    use crate::DiffLine;
 
     fn test_theme() -> Theme {
         Theme::default()

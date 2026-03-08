@@ -1,5 +1,5 @@
-use crate::tui::screen::{Line, Style};
-use crate::tui::{
+use crate::screen::{Line, Style};
+use crate::{
     Checkbox, Component, HandlesInput, InputOutcome, MultiSelect, NumberField, RadioSelect,
     RenderContext, TextField,
 };
@@ -94,7 +94,7 @@ impl Component for Form {
 impl Form {
     fn render_title(&self, context: &RenderContext) -> Line {
         let title = format!("  {} ", self.message);
-        let width = context.size.0 as usize;
+        let width = context.size.width as usize;
         let border_len = width.saturating_sub(title.len() + 4);
         Line::styled(
             format!("┌─{title}{}┐", "─".repeat(border_len)),
@@ -143,7 +143,7 @@ impl Form {
     }
 
     fn render_footer(context: &RenderContext) -> Vec<Line> {
-        let border_width = context.size.0.saturating_sub(2) as usize;
+        let border_width = context.size.width.saturating_sub(2) as usize;
         vec![
             Line::styled(
                 format!("│ {}", "[Enter] Submit  [Esc] Cancel"),

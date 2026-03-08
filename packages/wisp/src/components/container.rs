@@ -91,7 +91,7 @@ impl Component for Container<'_> {
             return self.render_with_offsets(context).0;
         }
 
-        let width = context.size.0 as usize;
+        let width = context.size.width as usize;
         let inner_width = width.saturating_sub(BORDER_H_PAD);
         let border_style = self.border_color.map(Style::fg).unwrap_or_default();
 
@@ -107,8 +107,8 @@ impl Component for Container<'_> {
             .fill_height
             .map(|fh| fh.saturating_sub(chrome_lines + gap_lines));
 
-        #[allow(clippy::cast_possible_truncation)] // inner_width ≤ context.size.0 (u16)
-        let inner_context = context.with_size((inner_width as u16, context.size.1));
+        #[allow(clippy::cast_possible_truncation)] // inner_width ≤ context.size.width (u16)
+        let inner_context = context.with_size((inner_width as u16, context.size.height));
 
         let mut lines = Vec::new();
 
