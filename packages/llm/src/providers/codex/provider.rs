@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn display_name_includes_model() {
         let provider = create_test_provider();
-        assert_eq!(provider.display_name(), "Codex (gpt-5.2-codex)");
+        assert_eq!(provider.display_name(), "Codex (gpt-5.4)");
     }
 
     #[test]
