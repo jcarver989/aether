@@ -37,6 +37,9 @@ runtime = ["dep:tokio"]
 ## Enable fuzzy search/picker in combobox.
 picker = ["dep:nucleo"]
 
+## Enable test utilities (TestTerminal, assert_buffer_eq, render helpers).
+testing = []
+
 [dependencies]
 crossterm = { workspace = true }
 syntect = { workspace = true, optional = true }
@@ -48,4 +51,6 @@ tokio = { workspace = true, optional = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+tui = { path = ".", features = ["testing"] }
 tempfile = { workspace = true }
+crossterm = { workspace = true }

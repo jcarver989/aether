@@ -1,18 +1,13 @@
-mod checkbox;
-mod multi_select;
-mod number_field;
-mod radio_select;
-mod spinner;
-mod text_field;
-
 use std::io::Write;
 
-use super::test_terminal::{TestTerminal, assert_buffer_eq};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use wisp::tui::screen::Screen;
-use wisp::tui::{Component, HandlesInput, RenderContext, SelectOption};
 
-fn render_component(component: &mut impl Component, width: u16, rows: u16) -> TestTerminal {
+use crate::screen::Screen;
+use crate::{Component, RenderContext, SelectOption};
+
+use super::TestTerminal;
+
+pub fn render_component(component: &impl Component, width: u16, rows: u16) -> TestTerminal {
     let ctx = RenderContext::new((width, rows));
     let lines = component.render(&ctx);
     let mut terminal = TestTerminal::new(width, rows);
@@ -22,8 +17,8 @@ fn render_component(component: &mut impl Component, width: u16, rows: u16) -> Te
     terminal
 }
 
-fn render_component_with_screen(
-    component: &mut impl Component,
+pub fn render_component_with_screen(
+    component: &impl Component,
     screen: &mut Screen,
     terminal: &mut TestTerminal,
     width: u16,
@@ -35,7 +30,11 @@ fn render_component_with_screen(
     terminal.flush().unwrap();
 }
 
-fn render_lines(lines: &[wisp::tui::screen::Line], width: u16, rows: u16) -> TestTerminal {
+pub fn render_lines(
+    lines: &[crate::rendering::screen::Line],
+    width: u16,
+    rows: u16,
+) -> TestTerminal {
     let mut terminal = TestTerminal::new(width, rows);
     let mut screen = Screen::new();
     screen.render(lines, width, &mut terminal).unwrap();
@@ -43,11 +42,11 @@ fn render_lines(lines: &[wisp::tui::screen::Line], width: u16, rows: u16) -> Tes
     terminal
 }
 
-fn key(code: KeyCode) -> KeyEvent {
+pub fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
-fn sample_options() -> Vec<SelectOption> {
+pub fn sample_options() -> Vec<SelectOption> {
     vec![
         SelectOption {
             value: "a".into(),

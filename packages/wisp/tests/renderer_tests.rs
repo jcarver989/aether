@@ -1,8 +1,6 @@
-mod test_terminal;
-
 use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol as acp;
-use test_terminal::{TestTerminal, assert_buffer_eq};
+use tui::testing::{TestTerminal, assert_buffer_eq};
 use wisp::components::app::{App, AppAction, AppEffect, build_attachment_blocks};
 use wisp::tui::{Line, Renderer as FrameRenderer, theme::Theme};
 

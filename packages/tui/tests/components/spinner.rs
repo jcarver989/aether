@@ -1,6 +1,6 @@
 use super::*;
-use wisp::tui::screen::Screen;
-use wisp::tui::components::spinner::{BRAILLE_FRAMES, Spinner};
+use tui::components::spinner::{Spinner, BRAILLE_FRAMES};
+use tui::screen::Screen;
 
 #[test]
 fn invisible_renders_empty() {
@@ -19,7 +19,7 @@ fn visible_tick_0_renders_first_frame() {
     let mut spinner = Spinner::default();
     spinner.visible = true;
     spinner.set_tick(0);
-    let term = render_component(&mut spinner, 80, 24);
+    let term = render_component(&spinner, 80, 24);
     let lines = term.get_lines();
     let expected = BRAILLE_FRAMES[0].to_string();
     assert!(
@@ -35,7 +35,7 @@ fn tick_1_renders_second_frame() {
     let mut spinner = Spinner::default();
     spinner.visible = true;
     spinner.set_tick(1);
-    let term = render_component(&mut spinner, 80, 24);
+    let term = render_component(&spinner, 80, 24);
     let lines = term.get_lines();
     let expected = BRAILLE_FRAMES[1].to_string();
     assert!(
@@ -56,13 +56,13 @@ fn rerender_updates_frame_in_place() {
     let mut terminal = TestTerminal::new(80, 24);
 
     // Initial render
-    render_component_with_screen(&mut spinner, &mut screen, &mut terminal, 80, 24);
+    render_component_with_screen(&spinner, &mut screen, &mut terminal, 80, 24);
     let first_frame = BRAILLE_FRAMES[0].to_string();
     assert!(terminal.get_lines()[0].contains(&first_frame));
 
     // Advance tick and re-render through the same Screen
     spinner.set_tick(1);
-    render_component_with_screen(&mut spinner, &mut screen, &mut terminal, 80, 24);
+    render_component_with_screen(&spinner, &mut screen, &mut terminal, 80, 24);
     let second_frame = BRAILLE_FRAMES[1].to_string();
     assert!(
         terminal.get_lines()[0].contains(&second_frame),

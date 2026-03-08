@@ -1,18 +1,19 @@
 use super::*;
-use wisp::tui::screen::Screen;
-use wisp::tui::{Component, TextField};
+use crossterm::event::KeyCode;
+use tui::screen::Screen;
+use tui::TextField;
 
 #[test]
 fn empty_renders_cursor() {
-    let mut tf = TextField::new(String::new());
-    let term = render_component(&mut tf, 80, 24);
+    let tf = TextField::new(String::new());
+    let term = render_component(&tf, 80, 24);
     assert_buffer_eq(&term, &["▏"]);
 }
 
 #[test]
 fn with_value_renders_text_and_cursor() {
-    let mut tf = TextField::new("hello".to_string());
-    let term = render_component(&mut tf, 80, 24);
+    let tf = TextField::new("hello".to_string());
+    let term = render_component(&tf, 80, 24);
     assert_buffer_eq(&term, &["hello▏"]);
 }
 
@@ -22,7 +23,7 @@ fn typing_appends_to_render() {
     tf.handle_key(key(KeyCode::Char('a')));
     tf.handle_key(key(KeyCode::Char('b')));
     tf.handle_key(key(KeyCode::Char('c')));
-    let term = render_component(&mut tf, 80, 24);
+    let term = render_component(&tf, 80, 24);
     assert_buffer_eq(&term, &["abc▏"]);
 }
 
@@ -30,7 +31,7 @@ fn typing_appends_to_render() {
 fn backspace_removes_from_render() {
     let mut tf = TextField::new("hi".to_string());
     tf.handle_key(key(KeyCode::Backspace));
-    let term = render_component(&mut tf, 80, 24);
+    let term = render_component(&tf, 80, 24);
     assert_buffer_eq(&term, &["h▏"]);
 }
 
@@ -38,7 +39,7 @@ fn backspace_removes_from_render() {
 fn backspace_on_empty_renders_cursor() {
     let mut tf = TextField::new(String::new());
     tf.handle_key(key(KeyCode::Backspace));
-    let term = render_component(&mut tf, 80, 24);
+    let term = render_component(&tf, 80, 24);
     assert_buffer_eq(&term, &["▏"]);
 }
 
@@ -49,12 +50,12 @@ fn screen_diff_after_mutation() {
     let mut terminal = TestTerminal::new(80, 24);
 
     // Initial render
-    render_component_with_screen(&mut tf, &mut screen, &mut terminal, 80, 24);
+    render_component_with_screen(&tf, &mut screen, &mut terminal, 80, 24);
     assert_buffer_eq(&terminal, &["ab▏"]);
 
     // Mutate and re-render through same Screen (exercises diff path)
     tf.handle_key(key(KeyCode::Char('c')));
-    render_component_with_screen(&mut tf, &mut screen, &mut terminal, 80, 24);
+    render_component_with_screen(&tf, &mut screen, &mut terminal, 80, 24);
     assert_buffer_eq(&terminal, &["abc▏"]);
 }
 

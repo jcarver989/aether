@@ -93,6 +93,9 @@ pub mod combobox;
 #[cfg(feature = "runtime")]
 pub mod runtime;
 
+#[cfg(feature = "testing")]
+pub mod testing;
+
 // Core re-exports - always available
 pub use component::{Component, HandlesInput, InputOutcome, RenderContext, Tickable};
 pub use components::checkbox::Checkbox;

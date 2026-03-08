@@ -25,4 +25,5 @@ unicode-width = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
+tui = { path = "../tui", features = ["testing"] }
 tempfile = { workspace = true }
