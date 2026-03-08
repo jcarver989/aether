@@ -1,6 +1,7 @@
 mod cli;
 mod components;
 mod error;
+mod keybindings;
 mod runtime_state;
 mod settings;
 mod terminal_ui;

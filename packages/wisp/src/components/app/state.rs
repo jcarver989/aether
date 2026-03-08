@@ -20,7 +20,8 @@ use agent_client_protocol::{
     self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
     SessionConfigOptionCategory, SessionConfigSelectOptions, SessionUpdate,
 };
-use crossterm::event::{self, KeyCode, KeyEvent};
+use crate::keybindings::Keybindings;
+use crossterm::event::KeyEvent;
 use tokio::sync::oneshot;
 use utils::ReasoningEffort;
 
@@ -71,6 +72,7 @@ pub struct UiState {
     pub(crate) server_statuses: Vec<McpServerStatusEntry>,
     pub(crate) auth_methods: Vec<acp::AuthMethod>,
     pub(crate) plan_tracker: PlanTracker,
+    pub(crate) keybindings: Keybindings,
 }
 
 impl UiState {
@@ -79,11 +81,12 @@ impl UiState {
         config_options: &[SessionConfigOption],
         auth_methods: Vec<acp::AuthMethod>,
     ) -> Self {
+        let keybindings = Keybindings::default();
         Self {
             tool_call_statuses: ToolCallStatuses::new(),
             grid_loader: Spinner::default(),
             conversation: ConversationBuffer::new(),
-            prompt_composer: PromptComposer::new(),
+            prompt_composer: PromptComposer::new(keybindings.clone()),
             agent_name,
             mode_display: extract_mode_display(config_options),
             model_display: extract_model_display(config_options),
@@ -97,13 +100,12 @@ impl UiState {
             server_statuses: Vec::new(),
             auth_methods,
             plan_tracker: PlanTracker::default(),
+            keybindings,
         }
     }
 
     pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Vec<AppRuntimeAction> {
-        if key_event.code == KeyCode::Char('c')
-            && key_event.modifiers.contains(event::KeyModifiers::CONTROL)
-        {
+        if self.keybindings.exit.matches(key_event) {
             return vec![exit_action()];
         }
 
@@ -121,21 +123,21 @@ impl UiState {
             return self.handle_prompt_composer_outcome(composer_outcome);
         }
 
-        if key_event.code == KeyCode::Tab {
+        if self.keybindings.cycle_reasoning.matches(key_event) {
             if let Some(effect) = self.cycle_reasoning_option() {
                 return vec![effect_action(effect), render_action()];
             }
             return vec![];
         }
 
-        if key_event.code == KeyCode::BackTab {
+        if self.keybindings.cycle_mode.matches(key_event) {
             if let Some(effect) = self.cycle_quick_option() {
                 return vec![effect_action(effect), render_action()];
             }
             return vec![];
         }
 
-        if key_event.code == KeyCode::Esc && self.waiting_for_response {
+        if self.keybindings.cancel.matches(key_event) && self.waiting_for_response {
             return vec![effect_action(AppEffect::Cancel)];
         }
 
@@ -451,7 +453,10 @@ pub(super) fn extract_reasoning_effort(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keybindings::KeyBinding;
+    use crate::tui::RuntimeAction;
     use agent_client_protocol::SessionConfigOptionCategory;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn ui_state_new_initializes_derived_displays() {
@@ -510,5 +515,27 @@ mod tests {
         assert!(state.config_overlay.is_none());
         assert!(state.elicitation_form.is_none());
         assert!(state.server_statuses.is_empty());
+    }
+
+    #[test]
+    fn custom_exit_keybinding_triggers_exit() {
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+        state.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+
+        let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let effects = state.on_key_event(default_exit);
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, RuntimeAction::Exit)),
+            "default Ctrl+C should no longer exit"
+        );
+
+        let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+        let effects = state.on_key_event(custom_exit);
+        assert!(
+            matches!(effects.as_slice(), [RuntimeAction::Exit]),
+            "custom Ctrl+Q should exit"
+        );
     }
 }
