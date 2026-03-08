@@ -1,16 +1,18 @@
+use std::io::{self, Write};
+use std::sync::Arc;
+
 use super::line::Line;
 use super::render_context::RenderContext;
 use super::size::Size;
 use super::terminal_screen::TerminalScreen;
 use crate::component::RootComponent;
 use crate::theme::Theme;
-use std::io::{self, Write};
 
 /// Pure TUI renderer that owns current render configuration.
 pub struct Renderer<T: Write> {
     terminal: TerminalScreen<T>,
     size: Size,
-    theme: Theme,
+    theme: Arc<Theme>,
     focused: bool,
     max_height: Option<usize>,
 }
@@ -20,7 +22,7 @@ impl<T: Write> Renderer<T> {
         Self {
             terminal: TerminalScreen::new(writer),
             size: (0, 0).into(),
-            theme,
+            theme: Arc::new(theme),
             focused: true,
             max_height: None,
         }
@@ -65,7 +67,7 @@ impl<T: Write> Renderer<T> {
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
-        self.theme = theme;
+        self.theme = Arc::new(theme);
     }
 
     #[allow(dead_code)]

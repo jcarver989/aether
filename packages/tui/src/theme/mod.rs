@@ -1,3 +1,6 @@
+#[cfg(feature = "syntax")]
+use std::sync::Arc;
+
 use crate::style::Style;
 use crossterm::style::Color;
 mod defaults;
@@ -7,8 +10,7 @@ mod syntax;
 
 /// Semantic color palette for TUI rendering.
 ///
-/// Cheap to clone (all fields are Copy). Provides semantic color accessors
-/// for consistent theming across components.
+/// Provides semantic color accessors for consistent theming across components.
 #[derive(Clone, Debug)]
 pub struct Theme {
     // Base colors
@@ -40,6 +42,11 @@ pub struct Theme {
     diff_removed_fg: Color,
     diff_added_bg: Color,
     diff_removed_bg: Color,
+
+    // Cached syntect theme for syntax highlighting (parsed once at construction)
+    #[cfg(feature = "syntax")]
+    #[allow(clippy::struct_field_names)]
+    syntect_theme: Arc<syntect::highlighting::Theme>,
 }
 
 #[allow(dead_code, clippy::unused_self)]
@@ -177,6 +184,8 @@ impl Theme {
             diff_removed_fg,
             diff_added_bg,
             diff_removed_bg,
+            #[cfg(feature = "syntax")]
+            syntect_theme: Arc::new(syntax::parse_default_syntect_theme()),
         }
     }
 }

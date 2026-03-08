@@ -107,6 +107,9 @@ impl Theme {
             diff_removed_fg: RED,
             diff_added_bg: darken_color(GREEN),
             diff_removed_bg: darken_color(RED),
+
+            #[cfg(feature = "syntax")]
+            syntect_theme: std::sync::Arc::new(super::syntax::parse_default_syntect_theme()),
         }
     }
 
@@ -201,6 +204,9 @@ impl Theme {
             diff_removed_fg: RED,
             diff_added_bg: lighten_color(GREEN),
             diff_removed_bg: lighten_color(RED),
+
+            #[cfg(feature = "syntax")]
+            syntect_theme: std::sync::Arc::new(super::syntax::parse_default_syntect_theme()),
         }
     }
 }

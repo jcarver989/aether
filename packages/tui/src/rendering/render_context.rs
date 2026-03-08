@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::size::Size;
 use crate::theme::Theme;
 
@@ -6,7 +8,7 @@ use crate::theme::Theme;
 #[derive(Clone)]
 pub struct RenderContext {
     pub size: Size,
-    pub theme: Theme,
+    pub theme: Arc<Theme>,
     pub focused: bool,
     pub max_height: Option<usize>,
 }
@@ -19,7 +21,7 @@ impl RenderContext {
     pub fn new_with_theme(size: impl Into<Size>, theme: Theme) -> Self {
         Self {
             size: size.into(),
-            theme,
+            theme: Arc::new(theme),
             focused: true,
             max_height: None,
         }
@@ -37,7 +39,7 @@ impl RenderContext {
     pub fn with_theme(&self, theme: Theme) -> Self {
         Self {
             size: self.size,
-            theme,
+            theme: Arc::new(theme),
             focused: self.focused,
             max_height: self.max_height,
         }
