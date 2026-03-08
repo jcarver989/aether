@@ -50,7 +50,7 @@ impl Renderer {
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let effects = self
             .screen
-            .dispatch(AppAction::Key(key_event), self.renderer.context());
+            .dispatch(AppAction::Key(key_event), &self.renderer.context());
         self.apply_effects(effects, Some((prompt_handle, session_id)))
             .await
     }
@@ -58,28 +58,28 @@ impl Renderer {
     async fn on_session_update(&mut self, update: acp::SessionUpdate) -> std::io::Result<()> {
         let effects = self
             .screen
-            .dispatch(AppAction::SessionUpdate(update), self.renderer.context());
+            .dispatch(AppAction::SessionUpdate(update), &self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
     async fn on_prompt_done(&mut self) -> std::io::Result<()> {
         let effects = self
             .screen
-            .dispatch(AppAction::PromptDone, self.renderer.context());
+            .dispatch(AppAction::PromptDone, &self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
     async fn on_tick(&mut self) -> std::io::Result<()> {
         let effects = self
             .screen
-            .dispatch(AppAction::Tick, self.renderer.context());
+            .dispatch(AppAction::Tick, &self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
     async fn on_paste(&mut self, text: &str) -> std::io::Result<()> {
         let effects = self
             .screen
-            .dispatch(AppAction::Paste(text.to_string()), self.renderer.context());
+            .dispatch(AppAction::Paste(text.to_string()), &self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
@@ -87,7 +87,7 @@ impl Renderer {
         self.renderer.update_render_context_with((cols, rows));
         let effects = self
             .screen
-            .dispatch(AppAction::Resize { cols, rows }, self.renderer.context());
+            .dispatch(AppAction::Resize { cols, rows }, &self.renderer.context());
         self.apply_effects_no_prompt(effects).await
     }
 
@@ -97,7 +97,7 @@ impl Renderer {
     ) -> std::io::Result<()> {
         let effects = self.screen.dispatch(
             AppAction::SetFilePickerMatches(matches),
-            self.renderer.context(),
+            &self.renderer.context(),
         );
         self.apply_effects_no_prompt(effects).await
     }

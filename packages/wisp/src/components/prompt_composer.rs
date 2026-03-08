@@ -95,8 +95,9 @@ impl PromptComposer {
         .layout(context);
 
         Cursor {
-            logical_row: layout.cursor_row,
+            row: layout.cursor_row,
             col: layout.cursor_col as usize,
+            is_visible: true,
         }
     }
 
@@ -454,6 +455,6 @@ mod tests {
             .position(|line| line.plain_text().contains("> "))
             .expect("input prompt should exist");
 
-        assert_eq!(cursor.logical_row, input_row);
+        assert_eq!(cursor.row, input_row);
     }
 }

@@ -3,9 +3,9 @@
 //! `tui` provides a set of building blocks for rich CLI applications:
 //!
 //! - **[`Component`]** — Stateful widgets that render to `Vec<Line>`.
-//! - **[`HandlesInput`]** — Keyboard input handling with typed actions via [`InputOutcome`].
+//! - **[`InteractiveComponent`]** — Keyboard input handling with typed actions via [`KeyEventResponse`].
 //! - **[`FocusRing`]** — Reusable focus tracking with Tab/`BackTab` cycling.
-//! - **[`Screen`]** / **[`Renderer`]** — Frame-diffing terminal output with cursor management.
+//! - **[`TerminalScreen`]** / **[`Renderer`]** — Frame-diffing terminal output with cursor management.
 //! - **[`Line`]**, **[`Span`](span::Span)**, **[`Style`]** — Styled text primitives.
 //! - **[`Theme`](theme::Theme)** — Semantic color palettes.
 //!
@@ -46,7 +46,7 @@
 //! ```
 //!
 //! This gives you:
-//! - Core components (`Component`, `HandlesInput`, `RenderContext`)
+//! - Core components (`Component`, `InteractiveComponent`, `RenderContext`)
 //! - Form widgets (`TextField`, `Checkbox`, `NumberField`, etc.)
 //! - Focus management (`FocusRing`)
 //! - Rendering primitives (`Line`, `Span`, `Style`, `Theme`)
@@ -68,14 +68,16 @@ pub mod diffs;
 pub use diffs::diff_types;
 pub mod focus;
 pub mod rendering;
+pub use rendering::frame;
 pub use rendering::line;
+pub use rendering::prepared_frame;
 pub use rendering::render_context;
 pub use rendering::renderer;
-pub use rendering::screen;
 pub use rendering::size;
 pub use rendering::soft_wrap;
 pub use rendering::span;
 pub use rendering::style;
+pub use rendering::terminal_screen;
 pub mod theme;
 
 // Feature-gated modules
@@ -102,8 +104,8 @@ pub mod testing;
 
 // Core re-exports - always available
 pub use component::{
-    Component, Cursor, CursorComponent, InteractiveComponent, KeyEventResponse, RenderContext,
-    RenderOutput, TickableComponent,
+    Component, Cursor, InteractiveComponent, KeyEventResponse, RenderContext, RootComponent,
+    TickableComponent,
 };
 pub use components::checkbox::Checkbox;
 pub use components::form::{Form, FormAction, FormField, FormFieldKind};
@@ -115,10 +117,13 @@ pub use components::spinner::{BRAILLE_FRAMES, Spinner};
 pub use components::text_field::TextField;
 pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag};
 pub use focus::{FocusOutcome, FocusRing};
+pub use rendering::frame::Frame;
 pub use rendering::line::Line;
+pub use rendering::prepared_frame::PreparedFrame;
 pub use rendering::renderer::Renderer;
 pub use rendering::size::Size;
 pub use rendering::style::Style;
+pub use rendering::terminal_screen::TerminalScreen;
 pub use theme::Theme;
 
 // Feature-gated re-exports

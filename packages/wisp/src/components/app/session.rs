@@ -215,7 +215,7 @@ mod tests {
     use super::*;
     use crate::components::app::{App, AppAction};
     use crate::components::conversation_window::SegmentContent;
-    use crate::tui::CursorComponent;
+    use crate::tui::RootComponent;
     use acp_utils::notifications::{CONTEXT_USAGE_METHOD, McpServerStatus, McpServerStatusEntry};
     use agent_client_protocol::SessionConfigOptionCategory;
     use std::sync::Arc;
@@ -428,7 +428,7 @@ mod tests {
         let output = app.render(&RenderContext::new((120, 40)));
         assert!(
             output
-                .lines
+                .lines()
                 .iter()
                 .any(|line| line.plain_text().contains("Coder"))
         );

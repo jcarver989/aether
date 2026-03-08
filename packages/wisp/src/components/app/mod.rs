@@ -9,7 +9,7 @@ use crate::components::container::Container;
 use crate::components::conversation_window::ConversationWindow;
 use crate::components::plan_view::PlanView;
 use crate::components::status_line::StatusLine;
-use crate::tui::{Component, Cursor, CursorComponent, Line, RenderContext, RenderOutput};
+use crate::tui::{Component, Cursor, Frame, Line, RenderContext, RootComponent};
 use acp_utils::notifications::McpServerStatus;
 use agent_client_protocol::{self as acp, SessionConfigOption};
 use std::path::PathBuf;
@@ -103,8 +103,8 @@ impl App {
     }
 }
 
-impl CursorComponent for App {
-    fn render(&mut self, context: &RenderContext) -> RenderOutput {
+impl RootComponent for App {
+    fn render(&mut self, context: &RenderContext) -> Frame {
         let unhealthy_count = self
             .state
             .server_statuses
@@ -124,18 +124,15 @@ impl CursorComponent for App {
         if let Some(ref mut overlay) = self.state.config_overlay {
             overlay.prepare_render(context);
             let cursor = Cursor {
-                logical_row: overlay.cursor_row_offset(),
+                row: overlay.cursor_row_offset(),
                 col: overlay.cursor_col(),
+                is_visible: overlay.has_picker(),
             };
 
             let container = Container::new(vec![overlay as &dyn Component, &status_line]);
             let (lines, _) = container.render_with_offsets(context);
 
-            return RenderOutput {
-                lines,
-                cursor,
-                cursor_visible: overlay.has_picker(),
-            };
+            return Frame::new(lines, cursor);
         }
 
         let grace_period = self.state.plan_tracker.grace_period;
@@ -177,15 +174,12 @@ impl CursorComponent for App {
         let (lines, offsets) = container.render_with_offsets(context);
         let prompt_cursor = self.state.prompt_composer.cursor(context);
         let cursor = Cursor {
-            logical_row: offsets[prompt_component_index] + prompt_cursor.logical_row,
+            row: offsets[prompt_component_index] + prompt_cursor.row,
             col: prompt_cursor.col,
+            is_visible: true,
         };
 
-        RenderOutput {
-            lines,
-            cursor,
-            cursor_visible: true,
-        }
+        Frame::new(lines, cursor)
     }
 }
 
@@ -370,11 +364,11 @@ mod tests {
         let context = RenderContext::new((120, 40));
         let output = screen.render(&context);
         let input_row = output
-            .lines
+            .lines()
             .iter()
             .position(|line| line.plain_text().contains("> "))
             .expect("input prompt should exist");
-        assert_eq!(output.cursor.logical_row, input_row);
+        assert_eq!(output.cursor().row, input_row);
     }
 
     #[test]
@@ -392,7 +386,7 @@ mod tests {
         let output = screen.render(&context);
         assert!(
             output
-                .lines
+                .lines()
                 .iter()
                 .any(|line| line.plain_text().contains("Configuration"))
         );
@@ -401,7 +395,7 @@ mod tests {
         let output = screen.render(&context);
         assert!(
             !output
-                .lines
+                .lines()
                 .iter()
                 .any(|line| line.plain_text().contains("Configuration"))
         );
@@ -612,7 +606,7 @@ mod tests {
         let output = app.render(&RenderContext::new((120, 40)));
         assert!(
             !output
-                .lines
+                .lines()
                 .iter()
                 .any(|line| line.plain_text().contains("Plan"))
         );

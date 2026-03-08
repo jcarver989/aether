@@ -626,7 +626,7 @@ fn highlight_code(code: &str, lang: &str, theme: &Theme) -> Vec<Line> {
     };
 
     let syntect_theme = theme.syntect_theme();
-    let mut h = HighlightLines::new(syntax, syntect_theme);
+    let mut h = HighlightLines::new(syntax, &syntect_theme);
     let mut lines = Vec::new();
 
     for source_line in code.lines() {
