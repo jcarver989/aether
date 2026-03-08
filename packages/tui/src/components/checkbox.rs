@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::component::{Component, HandlesInput, InputOutcome, RenderContext};
+use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
 use crate::line::Line;
 
 /// Boolean toggle rendered as `[x]` / `[ ]`.
@@ -31,7 +31,7 @@ impl Component for Checkbox {
     }
 }
 
-impl HandlesInput for Checkbox {
+impl InteractiveComponent for Checkbox {
     type Action = ();
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {

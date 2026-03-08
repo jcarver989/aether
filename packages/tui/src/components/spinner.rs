@@ -1,6 +1,6 @@
 use crate::component::RenderContext;
 use crate::line::Line;
-use crate::{Component, Tickable};
+use crate::{Component, TickableComponent};
 use std::time::Instant;
 
 pub const BRAILLE_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -45,7 +45,7 @@ impl Default for Spinner {
     }
 }
 
-impl Tickable for Spinner {
+impl TickableComponent for Spinner {
     fn on_tick(&mut self, _now: Instant) {
         if self.visible {
             self.tick = self.tick.wrapping_add(1);

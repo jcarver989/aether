@@ -1,4 +1,4 @@
-use crate::tui::Tickable;
+use crate::tui::TickableComponent;
 
 use agent_client_protocol::{self as acp};
 use std::collections::{HashMap, HashSet};
@@ -76,7 +76,7 @@ impl PlanTracker {
     }
 }
 
-impl Tickable for PlanTracker {
+impl TickableComponent for PlanTracker {
     fn on_tick(&mut self, _now: Instant) {}
 }
 

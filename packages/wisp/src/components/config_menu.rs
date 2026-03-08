@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, InteractiveComponent, InputOutcome, Line, RenderContext};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
@@ -91,7 +91,7 @@ impl Component for ConfigMenu {
     }
 }
 
-impl HandlesInput for ConfigMenu {
+impl InteractiveComponent for ConfigMenu {
     type Action = ConfigMenuAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {

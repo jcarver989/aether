@@ -101,21 +101,24 @@ pub mod runtime;
 pub mod testing;
 
 // Core re-exports - always available
-pub use component::{Component, Cursor, CursorComponent, HandlesInput, InputOutcome, RenderContext, RenderOutput, Tickable};
+pub use component::{
+    Component, Cursor, CursorComponent, InputOutcome, InteractiveComponent, RenderContext,
+    RenderOutput, TickableComponent,
+};
 pub use components::checkbox::Checkbox;
 pub use components::form::{Form, FormAction, FormField, FormFieldKind};
 pub use components::multi_select::MultiSelect;
 pub use components::number_field::NumberField;
 pub use components::radio_select::RadioSelect;
-pub use components::spinner::{Spinner, BRAILLE_FRAMES};
+pub use components::select_option::SelectOption;
+pub use components::spinner::{BRAILLE_FRAMES, Spinner};
 pub use components::text_field::TextField;
 pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag};
 pub use focus::{FocusOutcome, FocusRing};
-pub use rendering::renderer::Renderer;
 pub use rendering::line::Line;
-pub use rendering::style::Style;
-pub use components::select_option::SelectOption;
+pub use rendering::renderer::Renderer;
 pub use rendering::size::Size;
+pub use rendering::style::Style;
 pub use theme::Theme;
 
 // Feature-gated re-exports

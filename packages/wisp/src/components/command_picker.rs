@@ -1,5 +1,5 @@
 use crate::tui::{
-    Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
+    Combobox, Component, InteractiveComponent, InputOutcome, Line, PickerKey, RenderContext, Searchable,
     Style, classify_key,
     soft_wrap::{display_width_text, pad_text_to_width, truncate_text},
 };
@@ -94,7 +94,7 @@ impl Component for CommandPicker {
     }
 }
 
-impl HandlesInput for CommandPicker {
+impl InteractiveComponent for CommandPicker {
     type Action = CommandPickerAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {

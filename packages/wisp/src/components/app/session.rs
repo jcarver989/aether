@@ -2,7 +2,7 @@ use super::{AppEffect, UiState};
 use crate::components::command_picker::CommandEntry;
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::progress_indicator::ProgressIndicator;
-use crate::tui::{RenderContext, Tickable};
+use crate::tui::{RenderContext, TickableComponent};
 use acp_utils::notifications::{
     CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
     ElicitationResponse, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,

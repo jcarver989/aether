@@ -10,7 +10,7 @@ use crate::components::server_status::{
     ServerStatusAction, ServerStatusOverlay, server_status_summary,
 };
 use crate::settings::{list_theme_files, load_or_create_settings};
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, InteractiveComponent, InputOutcome, Line, RenderContext};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
@@ -326,7 +326,7 @@ impl Component for ConfigOverlay {
     }
 }
 
-impl HandlesInput for ConfigOverlay {
+impl InteractiveComponent for ConfigOverlay {
     type Action = ConfigOverlayAction;
 
     #[allow(clippy::too_many_lines)]

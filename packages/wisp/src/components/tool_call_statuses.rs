@@ -5,7 +5,7 @@ use agent_client_protocol as acp;
 
 use crate::tui::diff::highlight_diff;
 use crate::tui::components::spinner::BRAILLE_FRAMES as FRAMES;
-use crate::tui::{Component, DiffLine, DiffPreview, DiffTag, Line, RenderContext, Tickable};
+use crate::tui::{Component, DiffLine, DiffPreview, DiffTag, Line, RenderContext, TickableComponent};
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -463,7 +463,7 @@ impl Default for ToolCallStatuses {
     }
 }
 
-impl Tickable for ToolCallStatuses {
+impl TickableComponent for ToolCallStatuses {
     fn on_tick(&mut self, _now: Instant) {
         if self.progress().running_any {
             self.tick = self.tick.wrapping_add(1);

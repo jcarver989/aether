@@ -1,6 +1,6 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
-    Combobox, Component, HandlesInput, InputOutcome, Line, PickerKey, RenderContext, Searchable,
+    Combobox, Component, InteractiveComponent, InputOutcome, Line, PickerKey, RenderContext, Searchable,
     classify_key,
 };
 use crossterm::event::KeyEvent;
@@ -142,7 +142,7 @@ impl Component for ConfigPicker {
     }
 }
 
-impl HandlesInput for ConfigPicker {
+impl InteractiveComponent for ConfigPicker {
     type Action = ConfigPickerAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {

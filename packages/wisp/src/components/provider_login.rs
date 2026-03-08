@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, HandlesInput, InputOutcome, Line, RenderContext};
+use crate::tui::{Component, InteractiveComponent, InputOutcome, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub struct ProviderLoginOverlay {
@@ -56,7 +56,7 @@ impl Component for ProviderLoginOverlay {
     }
 }
 
-impl HandlesInput for ProviderLoginOverlay {
+impl InteractiveComponent for ProviderLoginOverlay {
     type Action = ProviderLoginAction;
 
     fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
