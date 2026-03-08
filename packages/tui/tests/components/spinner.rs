@@ -1,6 +1,6 @@
 use super::*;
 use tui::components::spinner::{BRAILLE_FRAMES, Spinner};
-use tui::rendering::screen::Screen;
+use tui::rendering::terminal_screen::TerminalScreen;
 
 #[test]
 fn invisible_renders_empty() {
@@ -52,22 +52,22 @@ fn rerender_updates_frame_in_place() {
     spinner.visible = true;
     spinner.set_tick(0);
 
-    let mut screen = Screen::new();
-    let mut terminal = TestTerminal::new(80, 24);
+    let terminal = TestTerminal::new(80, 24);
+    let mut terminal_state = TerminalScreen::new(terminal);
 
     // Initial render
-    render_component_with_screen(&spinner, &mut screen, &mut terminal, 80, 24);
+    render_component_with_terminal_state(&spinner, &mut terminal_state, 80, 24);
     let first_frame = BRAILLE_FRAMES[0].to_string();
-    assert!(terminal.get_lines()[0].contains(&first_frame));
+    assert!(terminal_state.writer().get_lines()[0].contains(&first_frame));
 
-    // Advance tick and re-render through the same Screen
+    // Advance tick and re-render through the same TerminalState
     spinner.set_tick(1);
-    render_component_with_screen(&spinner, &mut screen, &mut terminal, 80, 24);
+    render_component_with_terminal_state(&spinner, &mut terminal_state, 80, 24);
     let second_frame = BRAILLE_FRAMES[1].to_string();
     assert!(
-        terminal.get_lines()[0].contains(&second_frame),
+        terminal_state.writer().get_lines()[0].contains(&second_frame),
         "Expected '{}' after re-render, got: '{}'",
         second_frame,
-        terminal.get_lines()[0]
+        terminal_state.writer().get_lines()[0]
     );
 }

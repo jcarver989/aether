@@ -1,7 +1,7 @@
 use super::*;
 use crossterm::event::KeyCode;
 use tui::TextField;
-use tui::rendering::screen::Screen;
+use tui::rendering::terminal_screen::TerminalScreen;
 
 #[test]
 fn empty_renders_cursor() {
@@ -44,19 +44,19 @@ fn backspace_on_empty_renders_cursor() {
 }
 
 #[test]
-fn screen_diff_after_mutation() {
+fn terminal_state_diff_after_mutation() {
     let mut tf = TextField::new("ab".to_string());
-    let mut screen = Screen::new();
-    let mut terminal = TestTerminal::new(80, 24);
+    let terminal = TestTerminal::new(80, 24);
+    let mut terminal_state = TerminalScreen::new(terminal);
 
     // Initial render
-    render_component_with_screen(&tf, &mut screen, &mut terminal, 80, 24);
-    assert_buffer_eq(&terminal, &["ab▏"]);
+    render_component_with_terminal_state(&tf, &mut terminal_state, 80, 24);
+    assert_buffer_eq(terminal_state.writer(), &["ab▏"]);
 
-    // Mutate and re-render through same Screen (exercises diff path)
+    // Mutate and re-render through same TerminalState (exercises diff path)
     tf.on_key_event(key(KeyCode::Char('c')));
-    render_component_with_screen(&tf, &mut screen, &mut terminal, 80, 24);
-    assert_buffer_eq(&terminal, &["abc▏"]);
+    render_component_with_terminal_state(&tf, &mut terminal_state, 80, 24);
+    assert_buffer_eq(terminal_state.writer(), &["abc▏"]);
 }
 
 #[test]

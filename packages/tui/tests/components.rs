@@ -12,7 +12,7 @@ mod spinner;
 mod text_field;
 
 use tui::testing::{
-    TestTerminal, assert_buffer_eq, key, render_component, render_component_with_screen,
+    TestTerminal, assert_buffer_eq, key, render_component, render_component_with_terminal_state,
     render_lines, sample_options,
 };
 use tui::{Component, InteractiveComponent, RenderContext};

@@ -111,7 +111,7 @@ fn collect_acp_events<T: Write>(
         }
         AcpEvent::ConnectionClosed => return vec![AppEffect::Exit],
     };
-    screen.dispatch(action, renderer.context())
+    screen.dispatch(action, &renderer.context())
 }
 
 async fn on_terminal_event<T: Write>(
@@ -123,12 +123,12 @@ async fn on_terminal_event<T: Write>(
 ) -> bool {
     let effects = match terminal_event {
         Event::Key(key_event) if should_handle_key_event(key_event.kind) => {
-            screen.dispatch(AppAction::Key(key_event), renderer.context())
+            screen.dispatch(AppAction::Key(key_event), &renderer.context())
         }
-        Event::Paste(text) => screen.dispatch(AppAction::Paste(text), renderer.context()),
+        Event::Paste(text) => screen.dispatch(AppAction::Paste(text), &renderer.context()),
         Event::Resize(cols, rows) => {
             renderer.update_render_context_with((cols, rows));
-            screen.dispatch(AppAction::Resize { cols, rows }, renderer.context())
+            screen.dispatch(AppAction::Resize { cols, rows }, &renderer.context())
         }
         _ => return false,
     };
@@ -149,7 +149,7 @@ async fn on_tick<T: Write>(
     prompt_handle: &acp_utils::client::AcpPromptHandle,
     session_id: &acp::SessionId,
 ) {
-    let effects = screen.dispatch(AppAction::Tick, renderer.context());
+    let effects = screen.dispatch(AppAction::Tick, &renderer.context());
     if let Err(e) = apply_screen_effects(renderer, screen, prompt_handle, session_id, effects).await
     {
         eprintln!("Error on tick: {e}");

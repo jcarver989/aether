@@ -1,20 +1,14 @@
 use tui::testing::TestTerminal;
-use wisp::tui::{
-    Cursor, CursorComponent, Line, RenderContext, RenderOutput, Renderer, theme::Theme,
-};
+use wisp::tui::{Cursor, Frame, Line, RenderContext, Renderer, RootComponent, theme::Theme};
 
 struct StubRoot {
     lines: Vec<Line>,
     cursor: Cursor,
 }
 
-impl CursorComponent for StubRoot {
-    fn render(&mut self, _context: &RenderContext) -> RenderOutput {
-        RenderOutput {
-            lines: self.lines.clone(),
-            cursor: self.cursor,
-            cursor_visible: true,
-        }
+impl RootComponent for StubRoot {
+    fn render(&mut self, _context: &RenderContext) -> Frame {
+        Frame::new(self.lines.clone(), self.cursor)
     }
 }
 
@@ -25,8 +19,9 @@ fn render_soft_wraps_before_diffing() {
     let mut root = StubRoot {
         lines: vec![Line::new("abcdef")],
         cursor: Cursor {
-            logical_row: 0,
+            row: 0,
             col: 5,
+            is_visible: true,
         },
     };
 
@@ -41,12 +36,13 @@ fn render_soft_wraps_before_diffing() {
 fn push_to_scrollback_soft_wraps_long_lines() {
     let mut renderer = create_renderer(5, 20);
 
-    // Render a short line first so the screen has content
+    // Render a short line first so the managed region has content
     let mut root = StubRoot {
         lines: vec![Line::new("abcde")],
         cursor: Cursor {
-            logical_row: 0,
+            row: 0,
             col: 0,
+            is_visible: true,
         },
     };
     renderer.render(&mut root).unwrap();
@@ -79,8 +75,9 @@ fn out_of_bounds_cursor_clamps_without_panicking() {
     let mut root = StubRoot {
         lines: vec![Line::new("a")],
         cursor: Cursor {
-            logical_row: 10,
+            row: 10,
             col: 100,
+            is_visible: true,
         },
     };
 
@@ -102,8 +99,9 @@ fn render_flushes_overflow_to_scrollback() {
             Line::new("L5"),
         ],
         cursor: Cursor {
-            logical_row: 4,
+            row: 4,
             col: 0,
+            is_visible: true,
         },
     };
 
@@ -140,8 +138,9 @@ fn render_progressively_flushes_overflow() {
             Line::new("L4"),
         ],
         cursor: Cursor {
-            logical_row: 3,
+            row: 3,
             col: 0,
+            is_visible: true,
         },
     };
     renderer.render(&mut root).unwrap();
@@ -161,7 +160,7 @@ fn render_progressively_flushes_overflow() {
         Line::new("L5"),
         Line::new("L6"),
     ];
-    root.cursor.logical_row = 5;
+    root.cursor.row = 5;
     renderer.render(&mut root).unwrap();
 
     let transcript_after_second = renderer.writer().get_transcript_lines();
@@ -195,8 +194,9 @@ fn push_to_scrollback_resets_flushed_count() {
             Line::new("L5"),
         ],
         cursor: Cursor {
-            logical_row: 4,
+            row: 4,
             col: 0,
+            is_visible: true,
         },
     };
     renderer.render(&mut root).unwrap();
