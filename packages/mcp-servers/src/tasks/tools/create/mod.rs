@@ -24,8 +24,9 @@ pub struct TaskCreateInput {
     /// Short descriptive title for the task
     pub title: String,
 
-    /// Detailed description (markdown)
-    pub description: String,
+    /// Optional detailed description (markdown)
+    #[serde(default)]
+    pub description: Option<String>,
 
     /// Parent task ID - if provided, creates a subtask
     #[serde(default, deserialize_with = "empty_string_as_none")]
@@ -69,21 +70,26 @@ pub fn execute_task_create(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
+    let description = input
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
     let task = if let Some(parent_id) = normalized_parent_id {
         let parent = TaskId::from(parent_id);
         store.add_subtask(&parent, &input.title)?
     } else {
-        store.create_tree(&input.title, Some(&input.description))?
+        store.create_tree(&input.title, description)?
     };
 
     let is_subtask = normalized_parent_id.is_some();
-    let needs_update = input.assignee.is_some() || input.deps.is_some() || is_subtask;
+    let needs_update = input.assignee.is_some() || input.deps.is_some() || (is_subtask && description.is_some());
 
     let task = if needs_update {
         let update = TaskUpdate {
             description: if is_subtask {
-                Some(input.description.clone())
+                description.map(str::to_owned)
             } else {
                 None // Already set during create_tree
             },
@@ -129,7 +135,7 @@ mod tests {
 
         let input = TaskCreateInput {
             title: "Research AI agents".to_string(),
-            description: "Investigate multi-agent patterns".to_string(),
+            description: Some("Investigate multi-agent patterns".to_string()),
             parent_id: None,
             assignee: Some("orchestrator".to_string()),
             deps: None,
@@ -149,7 +155,7 @@ mod tests {
 
         let root_input = TaskCreateInput {
             title: "Root task".to_string(),
-            description: "Root task description".to_string(),
+            description: Some("Root task description".to_string()),
             parent_id: None,
             assignee: None,
             deps: None,
@@ -158,7 +164,7 @@ mod tests {
 
         let sub_input = TaskCreateInput {
             title: "Subtask 1".to_string(),
-            description: "Do something specific".to_string(),
+            description: Some("Do something specific".to_string()),
             parent_id: Some(root.task.id.clone()),
             assignee: Some("worker-1".to_string()),
             deps: None,
@@ -181,7 +187,7 @@ mod tests {
 
         let input = TaskCreateInput {
             title: "Subtask 2".to_string(),
-            description: "Subtask with dependency".to_string(),
+            description: Some("Subtask with dependency".to_string()),
             parent_id: Some(root.id.to_string()),
             assignee: None,
             deps: Some(vec![sub1.id.to_string()]),
@@ -214,6 +220,43 @@ mod tests {
         .unwrap();
 
         assert_eq!(input.parent_id, None);
+    }
+
+    #[test]
+    fn test_description_can_be_omitted_for_root_task() {
+        let (_temp, mut store) = setup();
+
+        let input: TaskCreateInput = serde_json::from_value(json!({
+            "title": "Root without description"
+        }))
+        .unwrap();
+
+        let output = execute_task_create(&input, &mut store).unwrap();
+        let created = store.get(&TaskId::from(output.task.id.as_str())).unwrap();
+
+        assert_eq!(output.task.title, "Root without description");
+        assert_eq!(output.task.parent, None);
+        assert_eq!(created.description, None);
+    }
+
+    #[test]
+    fn test_description_can_be_omitted_for_subtask() {
+        let (_temp, mut store) = setup();
+
+        let root = store.create_tree("Root", None).unwrap();
+
+        let input: TaskCreateInput = serde_json::from_value(json!({
+            "title": "Subtask without description",
+            "parent_id": root.id
+        }))
+        .unwrap();
+
+        let output = execute_task_create(&input, &mut store).unwrap();
+        let created = store.get(&TaskId::from(output.task.id.as_str())).unwrap();
+
+        assert_eq!(output.task.title, "Subtask without description");
+        assert_eq!(output.task.parent, Some(root.id.to_string()));
+        assert_eq!(created.description, None);
     }
 
     #[test]
@@ -256,7 +299,7 @@ mod tests {
 
         let input = TaskCreateInput {
             title: "Orphan".to_string(),
-            description: "Orphan task".to_string(),
+            description: Some("Orphan task".to_string()),
             parent_id: Some("at-nonexistent".to_string()),
             assignee: None,
             deps: None,
