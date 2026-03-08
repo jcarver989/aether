@@ -1,10 +1,11 @@
 use super::*;
-use wisp::tui::{Component, NumberField};
+use crossterm::event::KeyCode;
+use tui::NumberField;
 
 #[test]
 fn empty_renders_cursor() {
-    let mut nf = NumberField::new(String::new(), false);
-    let term = render_component(&mut nf, 80, 24);
+    let nf = NumberField::new(String::new(), false);
+    let term = render_component(&nf, 80, 24);
     assert_buffer_eq(&term, &["▏"]);
 }
 
@@ -14,7 +15,7 @@ fn integer_input_renders() {
     nf.handle_key(key(KeyCode::Char('-')));
     nf.handle_key(key(KeyCode::Char('4')));
     nf.handle_key(key(KeyCode::Char('2')));
-    let term = render_component(&mut nf, 80, 24);
+    let term = render_component(&nf, 80, 24);
     assert_buffer_eq(&term, &["-42▏"]);
 }
 
@@ -25,7 +26,7 @@ fn float_input_renders() {
     nf.handle_key(key(KeyCode::Char('.')));
     nf.handle_key(key(KeyCode::Char('1')));
     nf.handle_key(key(KeyCode::Char('4')));
-    let term = render_component(&mut nf, 80, 24);
+    let term = render_component(&nf, 80, 24);
     assert_buffer_eq(&term, &["3.14▏"]);
 }
 
@@ -35,7 +36,7 @@ fn integer_rejects_dot() {
     nf.handle_key(key(KeyCode::Char('1')));
     nf.handle_key(key(KeyCode::Char('.')));
     nf.handle_key(key(KeyCode::Char('2')));
-    let term = render_component(&mut nf, 80, 24);
+    let term = render_component(&nf, 80, 24);
     assert_buffer_eq(&term, &["12▏"]);
 }
 
@@ -45,7 +46,7 @@ fn rejects_alpha() {
     nf.handle_key(key(KeyCode::Char('1')));
     nf.handle_key(key(KeyCode::Char('a')));
     nf.handle_key(key(KeyCode::Char('2')));
-    let term = render_component(&mut nf, 80, 24);
+    let term = render_component(&nf, 80, 24);
     assert_buffer_eq(&term, &["12▏"]);
 }
 
@@ -57,7 +58,7 @@ fn rejects_second_dot() {
     nf.handle_key(key(KeyCode::Char('2')));
     nf.handle_key(key(KeyCode::Char('.')));
     nf.handle_key(key(KeyCode::Char('3')));
-    let term = render_component(&mut nf, 80, 24);
+    let term = render_component(&nf, 80, 24);
     assert_buffer_eq(&term, &["1.23▏"]);
 }
 
@@ -67,7 +68,7 @@ fn backspace_renders() {
     nf.handle_key(key(KeyCode::Char('9')));
     nf.handle_key(key(KeyCode::Char('9')));
     nf.handle_key(key(KeyCode::Backspace));
-    let term = render_component(&mut nf, 80, 24);
+    let term = render_component(&nf, 80, 24);
     assert_buffer_eq(&term, &["9▏"]);
 }
 

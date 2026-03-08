@@ -4248,6 +4248,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "tui",
  "unicode-width",
 ]
 

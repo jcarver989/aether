@@ -1,17 +1,18 @@
 use super::*;
-use wisp::tui::MultiSelect;
+use crossterm::event::KeyCode;
+use tui::MultiSelect;
 
 #[test]
 fn renders_all_unchecked() {
-    let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
-    let term = render_component(&mut ms, 80, 24);
+    let ms = MultiSelect::new(sample_options(), vec![false, false, false]);
+    let term = render_component(&ms, 80, 24);
     assert_buffer_eq(&term, &["[ ] Alpha", "[ ] Beta", "[ ] Gamma"]);
 }
 
 #[test]
 fn renders_some_checked() {
-    let mut ms = MultiSelect::new(sample_options(), vec![true, false, true]);
-    let term = render_component(&mut ms, 80, 24);
+    let ms = MultiSelect::new(sample_options(), vec![true, false, true]);
+    let term = render_component(&ms, 80, 24);
     assert_buffer_eq(&term, &["[x] Alpha", "[ ] Beta", "[x] Gamma"]);
 }
 
@@ -19,7 +20,7 @@ fn renders_some_checked() {
 fn space_toggles_at_cursor() {
     let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
     ms.handle_key(key(KeyCode::Char(' ')));
-    let term = render_component(&mut ms, 80, 24);
+    let term = render_component(&ms, 80, 24);
     assert_buffer_eq(&term, &["[x] Alpha", "[ ] Beta", "[ ] Gamma"]);
 }
 
@@ -33,7 +34,7 @@ fn navigate_and_toggle_multiple() {
     ms.handle_key(key(KeyCode::Down));
     // Toggle Gamma (cursor=2)
     ms.handle_key(key(KeyCode::Char(' ')));
-    let term = render_component(&mut ms, 80, 24);
+    let term = render_component(&ms, 80, 24);
     assert_buffer_eq(&term, &["[x] Alpha", "[ ] Beta", "[x] Gamma"]);
 }
 
@@ -45,7 +46,7 @@ fn cursor_wraps_up_from_first() {
     assert_eq!(ms.cursor, 2);
     // Toggle at the new cursor position to verify it's on Gamma
     ms.handle_key(key(KeyCode::Char(' ')));
-    let term = render_component(&mut ms, 80, 24);
+    let term = render_component(&ms, 80, 24);
     assert_buffer_eq(&term, &["[ ] Alpha", "[ ] Beta", "[x] Gamma"]);
 }
 

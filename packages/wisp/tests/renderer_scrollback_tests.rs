@@ -1,6 +1,4 @@
-mod test_terminal;
-
-use test_terminal::TestTerminal;
+use tui::testing::TestTerminal;
 use wisp::tui::{
     Cursor, CursorComponent, Line, RenderContext, RenderOutput, Renderer, theme::Theme,
 };
