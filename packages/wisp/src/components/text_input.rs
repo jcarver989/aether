@@ -1,4 +1,4 @@
-use crate::tui::{InputOutcome, InteractiveComponent};
+use crate::tui::{InteractiveComponent, KeyEventResponse};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 
@@ -131,45 +131,45 @@ impl TextInput {
 impl InteractiveComponent for TextInput {
     type Action = TextInputAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match key_event.code {
             KeyCode::Left => {
                 self.move_cursor_left();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Right => {
                 self.move_cursor_right();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Home => {
                 self.move_cursor_home();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::End => {
                 self.move_cursor_end();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Char('/') if self.buffer.is_empty() => {
                 self.insert_char_at_cursor('/');
-                InputOutcome::action_and_render(TextInputAction::OpenCommandPicker)
+                KeyEventResponse::action_and_render(TextInputAction::OpenCommandPicker)
             }
             KeyCode::Char('@') => {
                 self.insert_char_at_cursor('@');
-                InputOutcome::action_and_render(TextInputAction::OpenFilePicker)
+                KeyEventResponse::action_and_render(TextInputAction::OpenFilePicker)
             }
             KeyCode::Char(c) => {
                 self.insert_char_at_cursor(c);
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Backspace => {
                 if self.delete_char_before_cursor() {
-                    InputOutcome::consumed_and_render()
+                    KeyEventResponse::consumed_and_render()
                 } else {
-                    InputOutcome::consumed()
+                    KeyEventResponse::consumed()
                 }
             }
-            KeyCode::Enter => InputOutcome::action_and_render(TextInputAction::Submit),
-            _ => InputOutcome::ignored(),
+            KeyCode::Enter => KeyEventResponse::action_and_render(TextInputAction::Submit),
+            _ => KeyEventResponse::ignored(),
         }
     }
 }

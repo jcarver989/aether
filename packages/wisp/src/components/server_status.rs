@@ -1,5 +1,5 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, InputOutcome, InteractiveComponent, Line, RenderContext};
+use crate::tui::{Component, InteractiveComponent, KeyEventResponse, Line, RenderContext};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -74,16 +74,16 @@ impl Component for ServerStatusOverlay {
 impl InteractiveComponent for ServerStatusOverlay {
     type Action = ServerStatusAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match key_event.code {
-            KeyCode::Esc => InputOutcome::action_and_render(ServerStatusAction::Close),
+            KeyCode::Esc => KeyEventResponse::action_and_render(ServerStatusAction::Close),
             KeyCode::Up => {
                 self.move_selection_up();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             KeyCode::Enter => {
                 if let Some(entry) = self
@@ -91,13 +91,13 @@ impl InteractiveComponent for ServerStatusOverlay {
                     .get(self.selected_index)
                     .filter(|e| matches!(e.status, McpServerStatus::NeedsOAuth))
                 {
-                    return InputOutcome::action_and_render(ServerStatusAction::Authenticate(
+                    return KeyEventResponse::action_and_render(ServerStatusAction::Authenticate(
                         entry.name.clone(),
                     ));
                 }
-                InputOutcome::consumed()
+                KeyEventResponse::consumed()
             }
-            _ => InputOutcome::consumed(),
+            _ => KeyEventResponse::consumed(),
         }
     }
 }

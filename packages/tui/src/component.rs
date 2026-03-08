@@ -8,13 +8,6 @@ pub trait Component {
     fn render(&self, context: &RenderContext) -> Vec<Line>;
 }
 
-/// A component that can process keyboard input and emit typed actions.
-pub trait InteractiveComponent {
-    type Action;
-
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action>;
-}
-
 /// A component with time-based animation state.
 pub trait TickableComponent {
     /// Advance animation state by one tick.
@@ -40,21 +33,28 @@ pub trait CursorComponent {
     fn render(&mut self, context: &RenderContext) -> RenderOutput;
 }
 
+/// A component that can process keyboard input and emit typed actions.
+pub trait InteractiveComponent {
+    type Action;
+
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action>;
+}
+
 /// Result of handling a key event via [`HandlesInput`].
 ///
 /// - `consumed` — whether the key was handled (prevents further propagation).
 /// - `needs_render` — whether the UI should re-render.
 /// - `action` — an optional typed action emitted to the parent.
-pub struct InputOutcome<A> {
+pub struct KeyEventResponse<A> {
     pub consumed: bool,
     pub needs_render: bool,
     pub action: Option<A>,
 }
 
-impl<A> InputOutcome<A> {
+impl<A> KeyEventResponse<A> {
     /// Transform the action type, preserving `consumed` and `needs_render`.
-    pub fn map<B>(self, f: impl FnOnce(A) -> B) -> InputOutcome<B> {
-        InputOutcome {
+    pub fn map<B>(self, f: impl FnOnce(A) -> B) -> KeyEventResponse<B> {
+        KeyEventResponse {
             consumed: self.consumed,
             needs_render: self.needs_render,
             action: self.action.map(f),
@@ -65,8 +65,8 @@ impl<A> InputOutcome<A> {
     ///
     /// The output type is inferred from context, so this can convert between
     /// `InputOutcome<A>` and `InputOutcome<B>`.
-    pub fn discard_action<B>(self) -> InputOutcome<B> {
-        InputOutcome {
+    pub fn discard_action<B>(self) -> KeyEventResponse<B> {
+        KeyEventResponse {
             consumed: self.consumed,
             needs_render: self.needs_render,
             action: None,

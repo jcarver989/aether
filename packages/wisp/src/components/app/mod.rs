@@ -206,7 +206,7 @@ mod tests {
     use crate::components::config_overlay::ConfigOverlayAction;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
-    use crate::tui::InputOutcome;
+    use crate::tui::KeyEventResponse;
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use std::fs;
@@ -292,7 +292,7 @@ mod tests {
     fn theme_config_change_emits_set_theme_event() {
         let mut app = App::new("test-agent".to_string(), &[], vec![]);
         let outcome =
-            InputOutcome::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
+            KeyEventResponse::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
                 crate::components::config_menu::ConfigChange {
                     config_id: THEME_CONFIG_ID.to_string(),
                     new_value: "catppuccin.tmTheme".to_string(),
@@ -316,7 +316,7 @@ mod tests {
     fn theme_default_value_maps_to_none() {
         let mut app = App::new("test-agent".to_string(), &[], vec![]);
         let outcome =
-            InputOutcome::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
+            KeyEventResponse::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
                 crate::components::config_menu::ConfigChange {
                     config_id: THEME_CONFIG_ID.to_string(),
                     new_value: "   ".to_string(),
@@ -335,7 +335,7 @@ mod tests {
     fn non_theme_config_change_still_emits_set_config_option() {
         let mut app = App::new("test-agent".to_string(), &[], vec![]);
         let outcome =
-            InputOutcome::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
+            KeyEventResponse::action_and_render(ConfigOverlayAction::ApplyConfigChanges(vec![
                 crate::components::config_menu::ConfigChange {
                     config_id: "model".to_string(),
                     new_value: "gpt-5".to_string(),

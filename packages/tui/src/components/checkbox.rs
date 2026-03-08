@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
+use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
 use crate::line::Line;
 
 /// Boolean toggle rendered as `[x]` / `[ ]`.
@@ -34,13 +34,13 @@ impl Component for Checkbox {
 impl InteractiveComponent for Checkbox {
     type Action = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
         match key_event.code {
             KeyCode::Char(' ') => {
                 self.checked = !self.checked;
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
-            _ => InputOutcome::ignored(),
+            _ => KeyEventResponse::ignored(),
         }
     }
 }

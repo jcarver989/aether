@@ -102,7 +102,7 @@ pub mod testing;
 
 // Core re-exports - always available
 pub use component::{
-    Component, Cursor, CursorComponent, InputOutcome, InteractiveComponent, RenderContext,
+    Component, Cursor, CursorComponent, InteractiveComponent, KeyEventResponse, RenderContext,
     RenderOutput, TickableComponent,
 };
 pub use components::checkbox::Checkbox;

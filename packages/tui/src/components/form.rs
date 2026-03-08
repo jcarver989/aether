@@ -1,4 +1,4 @@
-use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
+use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
 use crate::focus::{FocusOutcome, FocusRing};
 use crate::line::Line;
 use crate::style::Style;
@@ -86,7 +86,7 @@ impl FormFieldKind {
         }
     }
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn handle_key(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
         match self {
             FormFieldKind::Text(w) => w.on_key_event(key_event),
             FormFieldKind::Number(w) => w.on_key_event(key_event),
@@ -175,13 +175,13 @@ impl Form {
 impl InteractiveComponent for Form {
     type Action = FormAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         match key_event.code {
-            KeyCode::Esc => InputOutcome::action_and_render(FormAction::Close),
-            KeyCode::Enter => InputOutcome::action_and_render(FormAction::Submit),
+            KeyCode::Esc => KeyEventResponse::action_and_render(FormAction::Close),
+            KeyCode::Enter => KeyEventResponse::action_and_render(FormAction::Submit),
             KeyCode::Tab | KeyCode::BackTab => match self.focus.handle_key(key_event) {
-                FocusOutcome::FocusChanged => InputOutcome::consumed_and_render(),
-                FocusOutcome::Unchanged | FocusOutcome::Ignored => InputOutcome::consumed(),
+                FocusOutcome::FocusChanged => KeyEventResponse::consumed_and_render(),
+                FocusOutcome::Unchanged | FocusOutcome::Ignored => KeyEventResponse::consumed(),
             },
             _ => {
                 if let Some(field) = self.fields.get_mut(self.focus.focused()) {
@@ -190,7 +190,7 @@ impl InteractiveComponent for Form {
                         return outcome.discard_action();
                     }
                 }
-                InputOutcome::consumed()
+                KeyEventResponse::consumed()
             }
         }
     }

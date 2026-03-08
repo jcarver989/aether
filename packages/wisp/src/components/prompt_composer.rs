@@ -2,7 +2,7 @@ use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPick
 use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
 use crate::components::input_prompt::InputPrompt;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputAction};
-use crate::tui::{Component, Cursor, InputOutcome, InteractiveComponent, Line, RenderContext};
+use crate::tui::{Component, Cursor, InteractiveComponent, KeyEventResponse, Line, RenderContext};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::collections::HashSet;
 
@@ -121,8 +121,8 @@ impl PromptComposer {
 
     fn handle_file_picker_outcome(
         &mut self,
-        outcome: &InputOutcome<FilePickerAction>,
-    ) -> InputOutcome<PromptComposerAction> {
+        outcome: &KeyEventResponse<FilePickerAction>,
+    ) -> KeyEventResponse<PromptComposerAction> {
         match outcome.action {
             Some(FilePickerAction::Close) => {
                 self.file_picker = None;
@@ -154,7 +154,7 @@ impl PromptComposer {
             None => {}
         }
 
-        InputOutcome {
+        KeyEventResponse {
             consumed: outcome.consumed,
             needs_render: outcome.needs_render,
             action: None,
@@ -163,8 +163,8 @@ impl PromptComposer {
 
     fn handle_command_picker_outcome(
         &mut self,
-        outcome: &InputOutcome<CommandPickerAction>,
-    ) -> InputOutcome<PromptComposerAction> {
+        outcome: &KeyEventResponse<CommandPickerAction>,
+    ) -> KeyEventResponse<PromptComposerAction> {
         match outcome.action {
             Some(CommandPickerAction::Close) => {
                 self.command_picker = None;
@@ -190,7 +190,7 @@ impl PromptComposer {
             None => {}
         }
 
-        InputOutcome {
+        KeyEventResponse {
             consumed: outcome.consumed,
             needs_render: outcome.needs_render,
             action: None,
@@ -199,21 +199,21 @@ impl PromptComposer {
 
     fn handle_text_input_outcome(
         &mut self,
-        outcome: &InputOutcome<TextInputAction>,
-    ) -> InputOutcome<PromptComposerAction> {
+        outcome: &KeyEventResponse<TextInputAction>,
+    ) -> KeyEventResponse<PromptComposerAction> {
         match outcome.action {
             Some(TextInputAction::Submit) => self.prepare_submit(),
             Some(TextInputAction::OpenCommandPicker) => {
                 let mut commands = builtin_commands();
                 commands.extend(self.available_commands.clone());
                 self.command_picker = Some(CommandPicker::new(commands));
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
             Some(TextInputAction::OpenFilePicker) => {
                 self.file_picker = Some(FilePicker::new());
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
-            None => InputOutcome {
+            None => KeyEventResponse {
                 consumed: outcome.consumed,
                 needs_render: outcome.needs_render,
                 action: None,
@@ -221,23 +221,23 @@ impl PromptComposer {
         }
     }
 
-    fn apply_command(&mut self, cmd: &CommandEntry) -> InputOutcome<PromptComposerAction> {
+    fn apply_command(&mut self, cmd: &CommandEntry) -> KeyEventResponse<PromptComposerAction> {
         if cmd.builtin && cmd.name == "config" {
             self.text_input.clear();
             self.close_all();
-            InputOutcome::action_and_render(PromptComposerAction::OpenConfig)
+            KeyEventResponse::action_and_render(PromptComposerAction::OpenConfig)
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
-            InputOutcome::consumed_and_render()
+            KeyEventResponse::consumed_and_render()
         } else {
             self.text_input.set_input(format!("/{}", cmd.name));
             self.prepare_submit()
         }
     }
 
-    fn prepare_submit(&mut self) -> InputOutcome<PromptComposerAction> {
+    fn prepare_submit(&mut self) -> KeyEventResponse<PromptComposerAction> {
         if self.text_input.buffer().trim().is_empty() {
-            return InputOutcome::consumed_and_render();
+            return KeyEventResponse::consumed_and_render();
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
@@ -245,7 +245,7 @@ impl PromptComposer {
         self.text_input.clear();
         self.close_all();
 
-        InputOutcome::action_and_render(PromptComposerAction::SubmitRequested {
+        KeyEventResponse::action_and_render(PromptComposerAction::SubmitRequested {
             user_input,
             attachments,
         })
@@ -255,7 +255,7 @@ impl PromptComposer {
 impl InteractiveComponent for PromptComposer {
     type Action = PromptComposerAction;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<Self::Action> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
         if let Some(ref mut picker) = self.file_picker {
             let outcome = picker.on_key_event(key_event);
             if outcome.consumed {
@@ -266,7 +266,7 @@ impl InteractiveComponent for PromptComposer {
                 key_event.code,
                 KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
             ) {
-                return InputOutcome::consumed();
+                return KeyEventResponse::consumed();
             }
         }
 

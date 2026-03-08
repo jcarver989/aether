@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::component::{Component, InputOutcome, InteractiveComponent, RenderContext};
+use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
 use crate::line::Line;
 
 /// Numeric input field supporting integers or floats.
@@ -46,7 +46,7 @@ impl Component for NumberField {
 impl InteractiveComponent for NumberField {
     type Action = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> InputOutcome<()> {
+    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
         match key_event.code {
             KeyCode::Char(c) => {
                 let accept = c.is_ascii_digit()
@@ -54,16 +54,16 @@ impl InteractiveComponent for NumberField {
                     || (c == '.' && !self.integer_only && !self.value.contains('.'));
                 if accept {
                     self.value.push(c);
-                    InputOutcome::consumed_and_render()
+                    KeyEventResponse::consumed_and_render()
                 } else {
-                    InputOutcome::consumed()
+                    KeyEventResponse::consumed()
                 }
             }
             KeyCode::Backspace => {
                 self.value.pop();
-                InputOutcome::consumed_and_render()
+                KeyEventResponse::consumed_and_render()
             }
-            _ => InputOutcome::ignored(),
+            _ => KeyEventResponse::ignored(),
         }
     }
 }
