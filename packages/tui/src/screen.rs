@@ -8,13 +8,16 @@ use std::fmt::Write as _;
 use std::io::{self, Write};
 use unicode_width::UnicodeWidthStr;
 
-/// A single line of pre-formatted terminal output.
-/// Holds text and style spans. ANSI is emitted only at write-time.
+/// A single line of styled terminal output, composed of [`Span`]s.
+///
+/// ANSI escape codes are emitted only when [`to_ansi_string`](Line::to_ansi_string)
+/// is called, keeping the data model free of formatting concerns.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Line {
     spans: Vec<Span>,
 }
 
+/// Text styling: foreground/background colors and attributes (bold, italic, etc.).
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Style {
@@ -83,6 +86,7 @@ impl Style {
     }
 }
 
+/// A contiguous run of text sharing a single [`Style`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
     text: String,

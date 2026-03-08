@@ -7,18 +7,21 @@ use crossterm::QueueableCommand;
 use crossterm::cursor::{Hide, MoveDown, Show};
 use std::io::{self, Write};
 
+/// Logical cursor position within a component's rendered output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cursor {
     pub logical_row: usize,
     pub col: usize,
 }
 
+/// The output of [`CursorComponent::render_with_cursor`]: rendered lines plus cursor state.
 pub struct RenderOutput {
     pub lines: Vec<Line>,
     pub cursor: Cursor,
     pub cursor_visible: bool,
 }
 
+/// A component that renders with cursor position information for the [`Renderer`].
 pub trait CursorComponent {
     fn render_with_cursor(&mut self, context: &RenderContext) -> RenderOutput;
 }
