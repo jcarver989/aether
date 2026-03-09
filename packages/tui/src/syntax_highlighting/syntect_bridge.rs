@@ -1,25 +1,20 @@
-use std::sync::LazyLock;
-
 use crossterm::style::Color;
 use syntect::highlighting::FontStyle;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::style::Style;
 
-static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
-
-pub(crate) fn syntax_set() -> &'static SyntaxSet {
-    &SYNTAX_SET
-}
-
-pub(crate) fn find_syntax_for_hint(hint: &str) -> Option<&'static SyntaxReference> {
+pub(crate) fn find_syntax_for_hint<'a>(
+    syntax_set: &'a SyntaxSet,
+    hint: &str,
+) -> Option<&'a SyntaxReference> {
     if hint.is_empty() {
         return None;
     }
 
-    syntax_set()
+    syntax_set
         .find_syntax_by_extension(hint)
-        .or_else(|| syntax_set().find_syntax_by_token(hint))
+        .or_else(|| syntax_set.find_syntax_by_token(hint))
 }
 
 pub(crate) fn syntect_to_wisp_style(s: syntect::highlighting::Style) -> Style {

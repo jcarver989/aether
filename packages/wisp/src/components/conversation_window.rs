@@ -2,7 +2,6 @@ use std::mem::{Discriminant, discriminant, take};
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::tui::SyntaxHighlighter;
 use crate::tui::components::spinner::Spinner;
 use crate::tui::markdown::render_markdown;
 use crate::tui::{Component, Line, RenderContext};
@@ -23,9 +22,6 @@ struct Segment {
 pub(crate) struct ConversationBuffer {
     segments: Vec<Segment>,
     thought_block_open: bool,
-    /// Cached syntax-highlighted code blocks. Survives segment cache invalidation
-    /// so completed code blocks aren't re-highlighted on every streaming token.
-    highlighter: SyntaxHighlighter,
 }
 
 impl ConversationBuffer {
@@ -33,7 +29,6 @@ impl ConversationBuffer {
         Self {
             segments: Vec::new(),
             thought_block_open: false,
-            highlighter: SyntaxHighlighter::new(),
         }
     }
 
@@ -44,7 +39,6 @@ impl ConversationBuffer {
 
     #[cfg(test)]
     pub(crate) fn set_segments(&mut self, segments: Vec<SegmentContent>) {
-        self.highlighter = SyntaxHighlighter::new();
         self.segments = segments
             .into_iter()
             .map(|content| Segment {
@@ -102,7 +96,6 @@ impl ConversationBuffer {
     pub(crate) fn clear(&mut self) {
         self.segments.clear();
         self.thought_block_open = false;
-        self.highlighter = SyntaxHighlighter::new();
     }
 
     pub(crate) fn ensure_tool_segment(&mut self, tool_id: &str) {
@@ -153,12 +146,7 @@ impl ConversationBuffer {
         for segment in drained {
             let kind = discriminant(&segment.content);
             let lines = segment.lines.unwrap_or_else(|| {
-                render_stream_segment(
-                    &segment.content,
-                    tool_call_statuses,
-                    context,
-                    &mut self.highlighter,
-                )
+                render_stream_segment(&segment.content, tool_call_statuses, context)
             });
             extend_with_vertical_margin(
                 &mut scrollback_lines,
@@ -225,12 +213,8 @@ impl ConversationBuffer {
         context: &RenderContext,
     ) -> (Discriminant<SegmentContent>, &[Line]) {
         if self.segments[i].lines.is_none() {
-            let rendered = render_stream_segment(
-                &self.segments[i].content,
-                tool_call_statuses,
-                context,
-                &mut self.highlighter,
-            );
+            let rendered =
+                render_stream_segment(&self.segments[i].content, tool_call_statuses, context);
             self.segments[i].lines = Some(rendered);
         }
         (
@@ -268,11 +252,10 @@ fn render_stream_segment(
     segment: &SegmentContent,
     tool_call_statuses: &ToolCallStatuses,
     context: &RenderContext,
-    highlighter: &mut SyntaxHighlighter,
 ) -> Vec<Line> {
     match segment {
         SegmentContent::Thought(text) => ThoughtMessage { text }.render(context),
-        SegmentContent::Text(text) => render_markdown(text, &context.theme, highlighter),
+        SegmentContent::Text(text) => render_markdown(text, context),
         SegmentContent::ToolCall(id) => tool_call_statuses.render_tool(id, context),
     }
 }

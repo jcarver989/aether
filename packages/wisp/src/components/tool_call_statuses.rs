@@ -68,7 +68,7 @@ impl Component for ToolCallStatusView {
         if matches!(self.status, ToolCallStatus::Success)
             && let Some(ref preview) = self.diff_preview
         {
-            lines.extend(highlight_diff(preview, &context.theme));
+            lines.extend(highlight_diff(preview, context));
         }
 
         lines
