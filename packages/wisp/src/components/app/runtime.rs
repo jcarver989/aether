@@ -62,6 +62,8 @@ impl App {
             AppAction::ClearScreen => {
                 self.state.reset_after_context_cleared();
                 renderer.clear_screen()?;
+                self.prompt_handle
+                    .prompt(&self.session_id, "/clear", None)?;
                 Ok(vec![])
             }
             AppAction::OpenGitDiffViewer => {
@@ -195,6 +197,30 @@ mod tests {
             let loaded = load_or_create_settings();
             assert_eq!(loaded.theme.file, None);
         });
+    }
+
+    #[tokio::test]
+    async fn clear_screen_sends_clear_prompt_to_agent() {
+        use crate::components::app::App;
+        use std::path::PathBuf;
+
+        let mut renderer = Renderer::new(Vec::new(), Theme::default());
+        let prompt_handle = AcpPromptHandle::noop();
+        let session_id = acp::SessionId::new("test");
+        let mut app = App::new(
+            "test-agent".to_string(),
+            &[],
+            vec![],
+            prompt_handle,
+            session_id,
+            PathBuf::from("."),
+        );
+
+        let actions = app
+            .apply_effect(&mut renderer, crate::components::app::AppAction::ClearScreen)
+            .await
+            .unwrap();
+        assert!(actions.is_empty());
     }
 
     #[tokio::test]
