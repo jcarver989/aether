@@ -26,6 +26,7 @@ pub enum FinishReason {
     ContentFilter,
     FunctionCall,
     Error,
+    ModelContextWindowExceeded,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,7 +204,9 @@ impl From<FinishReason> for OpenAiFinishReason {
     fn from(reason: FinishReason) -> Self {
         match reason {
             FinishReason::Stop | FinishReason::Error => OpenAiFinishReason::Stop,
-            FinishReason::Length => OpenAiFinishReason::Length,
+            FinishReason::Length | FinishReason::ModelContextWindowExceeded => {
+                OpenAiFinishReason::Length
+            }
             FinishReason::ToolCalls => OpenAiFinishReason::ToolCalls,
             FinishReason::ContentFilter => OpenAiFinishReason::ContentFilter,
             FinishReason::FunctionCall => OpenAiFinishReason::FunctionCall,
