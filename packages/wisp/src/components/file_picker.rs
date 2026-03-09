@@ -138,11 +138,11 @@ impl InteractiveComponent for FilePicker {
                     PickerKey::Escape => MessageResult::message(FilePickerMessage::Close),
                     PickerKey::MoveUp => {
                         self.combobox.move_up();
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     }
                     PickerKey::MoveDown => {
                         self.combobox.move_down();
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     }
                     PickerKey::Confirm => {
                         MessageResult::message(FilePickerMessage::ConfirmSelection)
@@ -152,11 +152,11 @@ impl InteractiveComponent for FilePicker {
                             return MessageResult::message(FilePickerMessage::CloseWithChar(c));
                         }
                         self.combobox.push_query_char(c);
-                        MessageResult::message(FilePickerMessage::CharTyped(c)).with_render()
+                        MessageResult::message(FilePickerMessage::CharTyped(c))
                     }
                     PickerKey::Backspace => {
                         self.combobox.pop_query_char();
-                        MessageResult::message(FilePickerMessage::PopChar).with_render()
+                        MessageResult::message(FilePickerMessage::PopChar)
                     }
                     PickerKey::BackspaceOnEmpty => {
                         MessageResult::message(FilePickerMessage::CloseAndPopChar)

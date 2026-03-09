@@ -18,6 +18,7 @@ pub enum PromptComposerMessage {
         attachments: Vec<PromptAttachment>,
     },
     OpenConfig,
+    ClearScreen,
 }
 
 pub struct PromptComposer {
@@ -50,7 +51,7 @@ impl PromptComposer {
     pub fn on_paste(&mut self, text: &str) -> MessageResult<PromptComposerMessage> {
         self.close_all();
         self.text_input.insert_paste(text);
-        MessageResult::render()
+        MessageResult::consumed()
     }
 
     #[allow(dead_code)]
@@ -114,11 +115,6 @@ impl PromptComposer {
         self.command_picker.is_some()
     }
 
-    #[cfg(test)]
-    pub(crate) fn available_commands(&self) -> &[CommandEntry] {
-        &self.available_commands
-    }
-
     fn handle_file_picker_outcome(
         &mut self,
         outcome: MessageResult<FilePickerMessage>,
@@ -155,7 +151,7 @@ impl PromptComposer {
             }
         }
 
-        MessageResult::consumed().with_render()
+        MessageResult::consumed()
     }
 
     fn handle_command_picker_outcome(
@@ -188,7 +184,7 @@ impl PromptComposer {
             }
         }
 
-        MessageResult::consumed().with_render()
+        MessageResult::consumed()
     }
 
     fn handle_text_input_outcome(
@@ -202,30 +198,34 @@ impl PromptComposer {
                     let mut commands = builtin_commands();
                     commands.extend(self.available_commands.clone());
                     self.command_picker = Some(CommandPicker::new(commands));
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 TextInputMessage::OpenFilePicker => {
                     self.file_picker = Some(FilePicker::new());
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
             };
         }
 
         if outcome.handled {
-            return MessageResult::consumed().with_render();
+            return MessageResult::consumed();
         }
 
         MessageResult::ignored()
     }
 
     fn apply_command(&mut self, cmd: &CommandEntry) -> MessageResult<PromptComposerMessage> {
-        if cmd.builtin && cmd.name == "config" {
+        if cmd.builtin && cmd.name == "clear" {
+            self.text_input.clear();
+            self.close_all();
+            MessageResult::message(PromptComposerMessage::ClearScreen)
+        } else if cmd.builtin && cmd.name == "config" {
             self.text_input.clear();
             self.close_all();
             MessageResult::message(PromptComposerMessage::OpenConfig)
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
-            MessageResult::consumed().with_render()
+            MessageResult::consumed()
         } else {
             self.text_input.set_input(format!("/{}", cmd.name));
             self.prepare_submit()
@@ -321,13 +321,22 @@ fn collect_submit_attachments(
 }
 
 fn builtin_commands() -> Vec<CommandEntry> {
-    vec![CommandEntry {
-        name: "config".into(),
-        description: "Open configuration settings".into(),
-        has_input: false,
-        hint: None,
-        builtin: true,
-    }]
+    vec![
+        CommandEntry {
+            name: "clear".into(),
+            description: "Clear the screen".into(),
+            has_input: false,
+            hint: None,
+            builtin: true,
+        },
+        CommandEntry {
+            name: "config".into(),
+            description: "Open configuration settings".into(),
+            has_input: false,
+            hint: None,
+            builtin: true,
+        },
+    ]
 }
 
 #[cfg(test)]
@@ -347,6 +356,9 @@ mod tests {
         composer.on_event(UiEvent::Key(key(KeyCode::Char('/'))));
 
         assert!(composer.has_command_picker());
+
+        // Navigate past "clear" to "config"
+        composer.on_event(UiEvent::Key(key(KeyCode::Down)));
 
         let outcome = composer.on_event(UiEvent::Key(key(KeyCode::Enter)));
         assert!(matches!(
@@ -430,7 +442,7 @@ mod tests {
 
         let outcome = composer.on_event(UiEvent::Paste("pasted text".to_string()));
         assert!(outcome.handled);
-        assert!(outcome.render);
+        assert!(outcome.messages.is_empty());
         assert!(!composer.has_active_picker());
         assert_eq!(composer.buffer(), "@pasted text");
     }
@@ -442,7 +454,6 @@ mod tests {
         let outcome = composer.on_event(UiEvent::Tick(std::time::Instant::now()));
 
         assert!(!outcome.handled);
-        assert!(!outcome.render);
         assert!(outcome.messages.is_empty());
     }
 

@@ -93,15 +93,15 @@ impl InteractiveComponent for MultiSelect {
             UiEvent::Key(key_event) => match key_event.code {
                 KeyCode::Char(' ') => {
                     self.selected[self.cursor] = !self.selected[self.cursor];
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 KeyCode::Up | KeyCode::Left => {
                     self.cursor = (self.cursor + self.options.len() - 1) % self.options.len();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 KeyCode::Down | KeyCode::Right => {
                     self.cursor = (self.cursor + 1) % self.options.len();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 _ => MessageResult::ignored(),
             },

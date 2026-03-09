@@ -708,7 +708,7 @@ mod tests {
         let text = lines[0].plain_text();
         assert!(text.contains("TestTool"));
         assert!(!text.contains("test args"));
-        assert!(text.contains('⠋'));
+        assert!(text.contains(FRAMES[0]));
     }
 
     #[test]
@@ -799,12 +799,12 @@ mod tests {
         // While running with no display_value, raw args are hidden
         let text = view.render(&ctx())[0].plain_text();
         assert!(!text.contains("file_path"));
-        assert_eq!(text, "⠋ Read");
+        assert_eq!(text, format!("{} Read", FRAMES[0]));
 
         // After display_value arrives, it is shown
         view.display_value = Some("main.rs".to_string());
         let text = view.render(&ctx())[0].plain_text();
-        assert_eq!(text, "⠋ Read (main.rs)");
+        assert_eq!(text, format!("{} Read (main.rs)", FRAMES[0]));
     }
 
     // -- Sub-agent deserialization tests --

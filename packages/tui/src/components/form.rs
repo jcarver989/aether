@@ -182,7 +182,7 @@ impl InteractiveComponent for Form {
                 KeyCode::Enter => return MessageResult::message(FormMessage::Submit),
                 KeyCode::Tab | KeyCode::BackTab => {
                     self.focus.handle_key(*key_event);
-                    return MessageResult::consumed().with_render();
+                    return MessageResult::consumed();
                 }
                 _ => {}
             },

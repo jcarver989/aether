@@ -12,6 +12,7 @@ use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::Action;
 use crate::tui::KeyEvent;
+use crate::tui::RenderContext;
 use crate::tui::components::spinner::Spinner;
 use crate::tui::{FormMessage, InteractiveComponent, Line, MessageResult, UiEvent};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
@@ -41,6 +42,7 @@ pub struct UiState {
     pub(crate) auth_methods: Vec<acp::AuthMethod>,
     pub(crate) plan_tracker: PlanTracker,
     pub(crate) keybindings: Keybindings,
+    render_version: u64,
 }
 
 impl UiState {
@@ -69,7 +71,30 @@ impl UiState {
             auth_methods,
             plan_tracker: PlanTracker::default(),
             keybindings,
+            render_version: 0,
         }
+    }
+
+    pub(crate) fn render_version(&self) -> u64 {
+        self.render_version
+    }
+
+    pub(crate) fn bump_render_version(&mut self) {
+        self.render_version = self.render_version.wrapping_add(1);
+    }
+
+    pub(crate) fn wants_tick(&self) -> bool {
+        self.grid_loader.visible
+            || self.tool_call_statuses.progress().running_any
+            || self.plan_tracker_has_tick_driven_visibility()
+    }
+
+    fn plan_tracker_has_tick_driven_visibility(&self) -> bool {
+        let now = std::time::Instant::now();
+        self.plan_tracker
+            .visible_entries(now, self.plan_tracker.grace_period)
+            .iter()
+            .any(|entry| matches!(entry.status, acp::PlanEntryStatus::Completed))
     }
 
     pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Vec<Action<AppAction>> {
@@ -93,14 +118,14 @@ impl UiState {
 
         if self.keybindings.cycle_reasoning.matches(key_event) {
             if let Some(effect) = self.cycle_reasoning_option() {
-                return vec![Action::Custom(effect), Action::Render];
+                return vec![Action::Custom(effect)];
             }
             return vec![];
         }
 
         if self.keybindings.cycle_mode.matches(key_event) {
             if let Some(effect) = self.cycle_quick_option() {
-                return vec![Action::Custom(effect), Action::Render];
+                return vec![Action::Custom(effect)];
             }
             return vec![];
         }
@@ -176,8 +201,7 @@ impl UiState {
         let elicitation_form = self.elicitation_form.as_mut()?;
         let outcome = elicitation_form.form.on_event(UiEvent::Key(key_event));
 
-        let handled = outcome.handled;
-        let render = outcome.render;
+        let mut changed = outcome.handled;
         for message in outcome.messages {
             match message {
                 FormMessage::Close => {
@@ -186,38 +210,38 @@ impl UiState {
                             .response_tx
                             .send(ElicitationForm::decline());
                     }
+                    changed = true;
                 }
                 FormMessage::Submit => {
                     if let Some(elicitation_form) = self.elicitation_form.take() {
                         let response = elicitation_form.confirm();
                         let _ = elicitation_form.response_tx.send(response);
                     }
+                    changed = true;
                 }
             }
         }
 
-        if handled || render {
-            Some(vec![Action::Render])
-        } else {
-            Some(vec![])
+        if changed {
+            self.bump_render_version();
         }
+        Some(vec![])
     }
 
     pub(crate) fn handle_prompt_composer_messages(
         &mut self,
         outcome: MessageResult<PromptComposerMessage>,
     ) -> Vec<Action<AppAction>> {
+        let mut changed = outcome.handled;
         let mut actions = Vec::new();
-
-        if outcome.render {
-            actions.push(Action::Render);
-        }
 
         for msg in outcome.messages {
             match msg {
+                PromptComposerMessage::ClearScreen => {
+                    actions.push(Action::Custom(AppAction::ClearScreen));
+                }
                 PromptComposerMessage::OpenConfig => {
                     self.open_config_overlay();
-                    actions.push(Action::Render);
                 }
                 PromptComposerMessage::SubmitRequested {
                     user_input,
@@ -232,14 +256,18 @@ impl UiState {
 
                     self.waiting_for_response = true;
                     self.grid_loader.reset();
+                    changed = true;
 
-                    actions.push(Action::Render);
                     actions.push(Action::Custom(AppAction::PromptSubmit {
                         user_input,
                         attachments,
                     }));
                 }
             }
+        }
+
+        if changed {
+            self.bump_render_version();
         }
 
         actions
@@ -249,17 +277,14 @@ impl UiState {
         &mut self,
         outcome: MessageResult<ConfigOverlayMessage>,
     ) -> Vec<Action<AppAction>> {
+        let mut changed = outcome.handled;
         let mut actions = Vec::new();
-
-        if outcome.render {
-            actions.push(Action::Render);
-        }
 
         for message in outcome.messages {
             match message {
                 ConfigOverlayMessage::Close => {
                     self.config_overlay = None;
-                    actions.push(Action::Render);
+                    changed = true;
                 }
                 ConfigOverlayMessage::ApplyConfigChanges(changes) => {
                     for change in changes {
@@ -274,21 +299,22 @@ impl UiState {
                             }));
                         }
                     }
-                    actions.push(Action::Render);
                 }
                 ConfigOverlayMessage::AuthenticateServer(name) => {
                     actions.push(Action::Custom(AppAction::AuthenticateMcpServer {
                         server_name: name,
                     }));
-                    actions.push(Action::Render);
                 }
                 ConfigOverlayMessage::AuthenticateProvider(method_id) => {
                     actions.push(Action::Custom(AppAction::AuthenticateProvider {
                         method_id,
                     }));
-                    actions.push(Action::Render);
                 }
             }
+        }
+
+        if changed {
+            self.bump_render_version();
         }
 
         actions
@@ -305,6 +331,7 @@ impl UiState {
             )
             .with_reasoning_effort_from_options(&self.config_options),
         );
+        self.bump_render_version();
     }
 
     pub(crate) fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {
@@ -321,15 +348,19 @@ impl UiState {
         menu
     }
 
-    #[cfg(test)]
-    pub(crate) fn available_commands(&self) -> &[crate::components::command_picker::CommandEntry] {
-        self.prompt_composer.available_commands()
+    pub(crate) fn prepare_render(&mut self, context: &RenderContext) {
+        let progress = self.tool_call_statuses.progress();
+        self.progress_indicator
+            .update(progress.completed_top_level, progress.total_top_level);
+        self.conversation
+            .ensure_all_rendered(&self.tool_call_statuses, context);
     }
 
     #[allow(dead_code)]
     pub(crate) fn on_authenticate_started(&mut self, method_id: &str) {
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.on_authenticate_started(method_id);
+            self.bump_render_version();
         }
     }
 }
@@ -550,12 +581,14 @@ mod tests {
     }
 
     #[test]
-    fn render_only_prompt_composer_result_enqueues_one_render() {
+    fn handled_prompt_composer_result_marks_dirty_without_actions() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+        let before = state.render_version();
 
-        let actions = state.handle_prompt_composer_messages(MessageResult::render());
+        let actions = state.handle_prompt_composer_messages(MessageResult::consumed());
 
-        assert!(matches!(actions.as_slice(), [Action::Render]));
+        assert!(actions.is_empty());
+        assert!(state.render_version() > before);
     }
 
     #[test]

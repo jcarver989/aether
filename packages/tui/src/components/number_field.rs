@@ -56,11 +56,11 @@ impl InteractiveComponent for NumberField {
                     if accept {
                         self.value.push(c);
                     }
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 KeyCode::Backspace => {
                     self.value.pop();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 _ => MessageResult::ignored(),
             },

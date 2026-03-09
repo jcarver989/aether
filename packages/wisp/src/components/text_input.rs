@@ -147,19 +147,19 @@ impl InteractiveComponent for TextInput {
         match key_event.code {
             KeyCode::Left => {
                 self.move_cursor_left();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             KeyCode::Right => {
                 self.move_cursor_right();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             KeyCode::Home => {
                 self.move_cursor_home();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             KeyCode::End => {
                 self.move_cursor_end();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             _ if self.keybindings.submit.matches(key_event) => {
                 MessageResult::message(TextInputMessage::Submit)
@@ -180,11 +180,11 @@ impl InteractiveComponent for TextInput {
             }
             KeyCode::Char(c) => {
                 self.insert_char_at_cursor(c);
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             KeyCode::Backspace => {
                 self.delete_char_before_cursor();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             _ => MessageResult::ignored(),
         }

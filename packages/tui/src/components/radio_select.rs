@@ -74,11 +74,11 @@ impl InteractiveComponent for RadioSelect {
             UiEvent::Key(key_event) => match key_event.code {
                 KeyCode::Left | KeyCode::Up => {
                     self.selected = (self.selected + self.options.len() - 1) % self.options.len();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 KeyCode::Right | KeyCode::Down => {
                     self.selected = (self.selected + 1) % self.options.len();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 _ => MessageResult::ignored(),
             },

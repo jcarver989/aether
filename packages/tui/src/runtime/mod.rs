@@ -22,7 +22,6 @@ pub enum TerminalEvent {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action<T> {
-    Render,
     Exit,
     Custom(T),
 }
@@ -70,6 +69,12 @@ pub trait App: RootComponent {
         renderer: &mut Renderer<T>,
         action: Self::Action,
     ) -> Result<Vec<Action<Self::Action>>, Self::Error>;
+
+    fn render_version(&self) -> u64;
+
+    fn wants_tick(&self) -> bool {
+        false
+    }
 }
 
 pub fn spawn_terminal_event_task() -> mpsc::UnboundedReceiver<CrosstermEvent> {
@@ -107,15 +112,21 @@ where
 
     loop {
         let tick_fut = async {
+            if !app.wants_tick() {
+                std::future::pending::<()>().await;
+            }
+
             match tick.as_mut() {
-                Some(t) => t.tick().await,
-                None => std::future::pending().await,
+                Some(t) => {
+                    t.tick().await;
+                }
+                None => std::future::pending::<()>().await,
             }
         };
         let external_fut = async {
             match app_event_rx.as_mut() {
                 Some(rx) => rx.recv().await,
-                None => std::future::pending().await,
+                None => std::future::pending::<Option<T::Event>>().await,
             }
         };
 
@@ -133,14 +144,18 @@ where
                     CrosstermEvent::Key(key)
                         if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
                     {
+                        let before = app.render_version();
                         let actions = app.on_terminal_event(TerminalEvent::Key(key), &renderer.context());
-                        if process_actions(app, renderer, actions).await? {
+                        let pending_render = app.render_version() != before;
+                        if process_actions(app, renderer, actions, pending_render).await? {
                             return Ok(());
                         }
                     }
                     CrosstermEvent::Paste(text) => {
+                        let before = app.render_version();
                         let actions = app.on_terminal_event(TerminalEvent::Paste(text), &renderer.context());
-                        if process_actions(app, renderer, actions).await? {
+                        let pending_render = app.render_version() != before;
+                        if process_actions(app, renderer, actions, pending_render).await? {
                             return Ok(());
                         }
                     }
@@ -151,8 +166,10 @@ where
             app_event = external_fut => {
                 match app_event {
                     Some(event) => {
+                        let before = app.render_version();
                         let actions = app.on_event(event, &renderer.context());
-                        if process_actions(app, renderer, actions).await? {
+                        let pending_render = app.render_version() != before;
+                        if process_actions(app, renderer, actions, pending_render).await? {
                             return Ok(());
                         }
                     }
@@ -163,8 +180,10 @@ where
             }
 
             _ = tick_fut => {
+                let before = app.render_version();
                 let actions = app.on_tick(&renderer.context());
-                if process_actions(app, renderer, actions).await? {
+                let pending_render = app.render_version() != before;
+                if process_actions(app, renderer, actions, pending_render).await? {
                     return Ok(());
                 }
             }
@@ -178,37 +197,58 @@ fn new_tick_interval(tick_rate: Duration) -> Interval {
     interval
 }
 
-async fn process_actions<T, U>(
+pub async fn process_action_queue<T, U>(
     app: &mut T,
     renderer: &mut Renderer<U>,
     actions: Vec<Action<T::Action>>,
+    pending_render: bool,
 ) -> Result<bool, T::Error>
 where
     T: App + ?Sized,
     U: Write,
 {
     let mut queue: VecDeque<_> = actions.into();
-    let mut render_requested = false;
+    let mut pending_render = pending_render;
 
     while let Some(action) = queue.pop_front() {
         match action {
-            Action::Render => render_requested = true,
             Action::Exit => return Ok(true),
             Action::Custom(effect) => {
-                if render_requested {
+                if pending_render {
                     renderer.render(app).map_err(T::Error::from)?;
-                    render_requested = false;
+                    pending_render = false;
                 }
 
+                let app_version_before = app.render_version();
+                let renderer_version_before = renderer.render_epoch();
+
                 let follow_up = app.on_action(renderer, effect).await?;
+
+                let app_changed = app.render_version() != app_version_before;
+                let renderer_changed = renderer.render_epoch() != renderer_version_before;
+
+                pending_render |= app_changed || renderer_changed;
                 queue.extend(follow_up);
             }
         }
     }
 
-    if render_requested {
+    if pending_render {
         renderer.render(app).map_err(T::Error::from)?;
     }
 
     Ok(false)
+}
+
+async fn process_actions<T, U>(
+    app: &mut T,
+    renderer: &mut Renderer<U>,
+    actions: Vec<Action<T::Action>>,
+    pending_render: bool,
+) -> Result<bool, T::Error>
+where
+    T: App + ?Sized,
+    U: Write,
+{
+    process_action_queue(app, renderer, actions, pending_render).await
 }

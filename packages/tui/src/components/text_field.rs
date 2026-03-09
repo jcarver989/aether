@@ -37,17 +37,17 @@ impl InteractiveComponent for TextField {
             UiEvent::Key(key_event) => match key_event.code {
                 KeyCode::Char(c) => {
                     self.value.push(c);
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 KeyCode::Backspace => {
                     self.value.pop();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 _ => MessageResult::ignored(),
             },
             UiEvent::Paste(text) => {
                 self.value.push_str(&text);
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             UiEvent::Tick(_) => MessageResult::ignored(),
         }
@@ -104,7 +104,6 @@ mod tests {
         let mut field = TextField::new(String::new());
         let outcome = field.on_event(UiEvent::Paste("hello".to_string()));
         assert!(outcome.handled);
-        assert!(outcome.render);
         assert_eq!(field.value, "hello");
     }
 }

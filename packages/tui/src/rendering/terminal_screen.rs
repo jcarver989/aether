@@ -43,6 +43,16 @@ impl<W: Write> TerminalScreen<W> {
         }
     }
 
+    pub fn clear_screen(&mut self) -> io::Result<()> {
+        self.writer.queue(Clear(ClearType::Purge))?;
+        write!(self.writer, "\x1b[H")?;
+        self.writer.flush()?;
+        self.prev_frame.clear();
+        self.cursor_row_offset = 0;
+        self.flushed_visual_count = 0;
+        Ok(())
+    }
+
     pub fn flushed_visual_count(&self) -> usize {
         self.flushed_visual_count
     }

@@ -80,11 +80,11 @@ impl InteractiveComponent for ServerStatusOverlay {
                 KeyCode::Esc => MessageResult::message(ServerStatusMessage::Close),
                 KeyCode::Up => {
                     self.move_selection_up();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 KeyCode::Down => {
                     self.move_selection_down();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 KeyCode::Enter => {
                     if let Some(entry) = self

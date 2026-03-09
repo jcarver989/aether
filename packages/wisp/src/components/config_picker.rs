@@ -152,11 +152,11 @@ impl InteractiveComponent for ConfigPicker {
             PickerKey::Escape => MessageResult::message(ConfigPickerMessage::Close),
             PickerKey::MoveUp => {
                 self.move_selection_up();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             PickerKey::MoveDown => {
                 self.move_selection_down();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             PickerKey::Confirm => {
                 let change = self.confirm_selection();
@@ -164,11 +164,11 @@ impl InteractiveComponent for ConfigPicker {
             }
             PickerKey::Char(c) => {
                 self.push_query_char(c);
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             PickerKey::Backspace => {
                 self.pop_query_char();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight

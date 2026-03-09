@@ -6,6 +6,9 @@ use std::time::Instant;
 
 /// A component that renders a full frame with cursor information for the [`Renderer`](crate::Renderer).
 pub trait RootComponent {
+    /// Prepare any render caches or derived state needed for `render`.
+    fn prepare_render(&mut self, _context: &RenderContext) {}
+
     fn render(&mut self, context: &RenderContext) -> Frame;
 }
 
@@ -28,11 +31,9 @@ pub enum UiEvent {
 /// Result of handling a [`UiEvent`] in an [`InteractiveComponent`].
 ///
 /// - `handled` — whether the event was consumed (prevents further propagation).
-/// - `render` — whether a render should be enqueued even without messages.
 /// - `messages` — typed messages emitted upward to the parent.
 pub struct MessageResult<T> {
     pub handled: bool,
-    pub render: bool,
     pub messages: Vec<T>,
 }
 
@@ -41,25 +42,14 @@ impl<T> MessageResult<T> {
     pub fn ignored() -> Self {
         Self {
             handled: false,
-            render: false,
             messages: Vec::new(),
         }
     }
 
-    /// The event was consumed, no messages, no render needed.
+    /// The event was consumed, no messages.
     pub fn consumed() -> Self {
         Self {
             handled: true,
-            render: false,
-            messages: Vec::new(),
-        }
-    }
-
-    /// Request a render without emitting messages.
-    pub fn render() -> Self {
-        Self {
-            handled: true,
-            render: true,
             messages: Vec::new(),
         }
     }
@@ -68,7 +58,6 @@ impl<T> MessageResult<T> {
     pub fn message(message: T) -> Self {
         Self {
             handled: true,
-            render: false,
             messages: vec![message],
         }
     }
@@ -77,34 +66,25 @@ impl<T> MessageResult<T> {
     pub fn messages(messages: Vec<T>) -> Self {
         Self {
             handled: true,
-            render: false,
             messages,
         }
     }
 
-    /// Request a render in addition to current state.
-    pub fn with_render(mut self) -> Self {
-        self.render = true;
-        self
-    }
-
-    /// Transform message types, preserving `handled` and `render`.
+    /// Transform message types, preserving `handled`.
     pub fn map<U>(self, f: impl FnMut(T) -> U) -> MessageResult<U> {
         MessageResult {
             handled: self.handled,
-            render: self.render,
             messages: self.messages.into_iter().map(f).collect(),
         }
     }
 
-    /// Discard messages, preserving `handled` and `render`.
+    /// Discard messages, preserving `handled`.
     ///
     /// The output type is inferred from context, so this can convert between
     /// `MessageResult<M>` and `MessageResult<N>`.
     pub fn discard_messages<U>(self) -> MessageResult<U> {
         MessageResult {
             handled: self.handled,
-            render: self.render,
             messages: Vec::new(),
         }
     }
@@ -112,11 +92,9 @@ impl<T> MessageResult<T> {
     /// Merge two results.
     ///
     /// - `handled = self.handled || other.handled`
-    /// - `render = self.render || other.render`
     /// - messages are appended in order (`self.messages` before `other.messages`)
     pub fn merge(mut self, other: Self) -> Self {
         self.handled = self.handled || other.handled;
-        self.render = self.render || other.render;
         self.messages.extend(other.messages);
         self
     }

@@ -213,7 +213,7 @@ impl Component for ModelSelector {
                     }
                     item_lines.push(Line::styled(
                         format!("  {}", entry.provider_label()),
-                        context.theme.muted(),
+                        context.theme.text_secondary(),
                     ));
                     last_provider = Some(provider);
                 }
@@ -275,11 +275,11 @@ impl InteractiveComponent for ModelSelector {
                     }
                     PickerKey::MoveUp => {
                         self.combobox.move_up_where(|e| !e.is_disabled);
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     }
                     PickerKey::MoveDown => {
                         self.combobox.move_down_where(|e| !e.is_disabled);
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     }
                     PickerKey::MoveLeft => {
                         if self
@@ -289,7 +289,7 @@ impl InteractiveComponent for ModelSelector {
                         {
                             self.reasoning_effort = cycle_reasoning_left(self.reasoning_effort);
                         }
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     }
                     PickerKey::MoveRight => {
                         if self
@@ -299,19 +299,19 @@ impl InteractiveComponent for ModelSelector {
                         {
                             self.reasoning_effort = cycle_reasoning_right(self.reasoning_effort);
                         }
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     }
                     PickerKey::Confirm | PickerKey::Char(' ') => {
                         self.toggle_focused();
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     }
                     PickerKey::Char(c) => {
                         self.combobox.push_query_char(c);
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     }
                     PickerKey::Backspace => {
                         self.combobox.pop_query_char();
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     }
                     PickerKey::BackspaceOnEmpty | PickerKey::ControlChar | PickerKey::Other => {
                         MessageResult::consumed()
