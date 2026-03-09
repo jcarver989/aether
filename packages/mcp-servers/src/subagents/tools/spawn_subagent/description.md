@@ -1,13 +1,26 @@
-Spawn sub-agents in parallel to perform tasks concurrently.
+Spawns sub-agents in parallel to perform concurrent tasks.
 
-Takes an array of tasks, each with:
-- `agent_name`: name of the agent from sub-agents directory
-- prompt: the task for the agent to perform
+## Usage
 
-All agents execute in parallel. Results are returned when ALL agents complete.
-Each agent returns structured output with: summary, artifacts, decisions, `next_steps`.
+```json
+{
+  "tasks": [
+    {"agentName": "codebase-explorer", "prompt": "Find all API endpoints"},
+    {"agentName": "rust-code-monkey", "prompt": "Write tests for auth module"}
+  ]
+}
+```
 
-Ideal for:
+- `tasks` — **required**, array of task objects
+  - `agentName` — agent from sub-agents directory
+  - `prompt` — task for the agent to perform
+
+All agents execute in parallel. Results returned when ALL complete.
+
+**Returns per agent:** summary, artifacts, decisions, `next_steps`
+
+## Ideal For
+
 - Parallel codebase exploration
 - Concurrent file analysis
 - Multi-aspect code review

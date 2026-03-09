@@ -1,42 +1,27 @@
-Update any fields on a task.
+Updates fields on a task.
+
+## Usage
+
+```json
+{"id": "at-123.1", "status": "in_progress"}
+{"id": "at-123.1", "status": "completed", "summary": "Fixed the bug"}
+{"id": "at-123.1", "status": "completed", "summary": "Found 5 issues", "facts": ["All use deprecated API"], "next_steps": ["Migrate to new API"]}
+```
 
 ## Fields
 
 | Field | Description |
 |-------|-------------|
-| `id` | Task ID (required) |
-| `title` | New title |
-| `description` | New description (markdown) |
-| `status` | `pending`, `in_progress`, `completed`, or `blocked` |
-| `assignee` | Agent/worker assigned |
-| `deps` | Task IDs this depends on |
-| `summary` | Summary of work done |
-| `decisions` | Key decisions made |
-| `facts` | Important discoveries |
-| `next_steps` | Suggested follow-up |
-| `blockers` | Unresolved issues |
-| `files_read` | Files examined |
-| `resources` | External resources |
-
-## Examples
-
-**Start a task:**
-```json
-{"id": "at-123.1", "status": "in_progress"}
-```
-
-**Complete a task:**
-```json
-{"id": "at-123.1", "status": "completed", "summary": "Fixed the bug"}
-```
-
-**Complete with context:**
-```json
-{
-  "id": "at-123.1",
-  "status": "completed",
-  "summary": "Found 5 endpoints with deprecated auth",
-  "facts": ["All use validate_session()"],
-  "next_steps": ["Create migration guide"]
-}
-```
+| `id` | **required**, task ID |
+| `status` | `pending`, `in_progress`, `completed`, `blocked` |
+| `title` | new title |
+| `description` | new description (markdown) |
+| `assignee` | agent/worker assigned |
+| `deps` | task IDs this depends on |
+| `summary` | summary of work done |
+| `decisions` | key decisions made |
+| `facts` | important discoveries |
+| `next_steps` | suggested follow-up |
+| `blockers` | unresolved issues |
+| `files_read` | files examined |
+| `resources` | external resources |

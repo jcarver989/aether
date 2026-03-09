@@ -1,10 +1,20 @@
-Create or update an agent-authored skill.
+Creates or updates an agent-authored skill.
 
-Use this when you learn something worth remembering: a convention, pitfall, debugging insight,
-or codebase fact. One concept per skill. Keep it specific and actionable.
+Use this when you learn something worth remembering: conventions, pitfalls, debugging insights, codebase facts. One concept per skill.
 
-- If the skill doesn't exist, it will be created with `agent_authored: true`.
-- If the skill exists and is agent-authored, its description, tags, and content will be updated.
-  Existing helpful/harmful counters are preserved.
-- Human-authored skills (without `agent_authored: true`) cannot be overwritten — use this tool
-  only for agent notes.
+## Usage
+
+```json
+{"name": "my-insight", "description": "Short description", "content": "# Title\n\nDetailed markdown content..."}
+```
+
+- `name` — **required**, skill directory name
+- `description` — **required**, short description for table of contents
+- `content` — **required**, full markdown content
+- `tags` — optional array of tags (e.g., `["rust", "testing"]`)
+
+## Behavior
+
+- New skills are created with `agent_authored: true`
+- Existing agent-authored skills are updated (ratings preserved)
+- Human-authored skills cannot be overwritten

@@ -1,6 +1,11 @@
-Load the full content of one or more skills by name.
+Loads one or more skills by name.
 
-Takes an array of skill names and loads them into your context.
-Skills that don't exist are silently skipped.
+## Usage
 
-Consult the Available Skills table of contents in instructions to discover skill names.
+```json
+{"skills": ["rust", "testing-patterns"]}
+```
+
+- `skills` — **required**, array of skill names
+
+Skills that don't exist are silently skipped. Consult the Available Skills table of contents in your instructions to discover skill names.
