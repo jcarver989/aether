@@ -2,7 +2,7 @@ use crate::Component;
 use crate::component::RenderContext;
 use crate::line::Line;
 
-pub const BRAILLE_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+pub const BRAILLE_FRAMES: &[char] = &['⠁', '⠃', '⠇', '⡇', '⣇', '⣧', '⣷', '⣿', '⣷', '⣧', '⣇', '⡇', '⠇', '⠃'];
 
 pub struct Spinner {
     tick: u16,
