@@ -8,7 +8,7 @@ use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 
 /// Input for the `task_list` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskListInput {
     /// Filter by assignee
     #[serde(default)]
@@ -19,19 +19,20 @@ pub struct TaskListInput {
     pub status: Option<TaskStatusFilter>,
 
     /// List all tasks in a specific tree (by root task ID)
-    #[serde(default)]
+    #[serde(default, alias = "tree_id")]
     pub tree_id: Option<String>,
 
     /// Only return tasks that are ready to start (pending with all deps completed)
-    #[serde(default)]
+    #[serde(default, alias = "ready_only")]
     pub ready_only: Option<bool>,
 }
 
 /// Status filter for task listing
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub enum TaskStatusFilter {
     Pending,
+    #[serde(alias = "in_progress")]
     InProgress,
     Completed,
     Blocked,
@@ -50,7 +51,7 @@ impl From<TaskStatusFilter> for TaskStatus {
 
 /// Output for the `task_list` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskListOutput {
     /// Status of the operation
     pub status: String,
@@ -147,7 +148,7 @@ fn build_filter_description(input: &TaskListInput) -> String {
     if let Some(status) = input.status {
         let status_str = match status {
             TaskStatusFilter::Pending => "pending",
-            TaskStatusFilter::InProgress => "in_progress",
+            TaskStatusFilter::InProgress => "inProgress",
             TaskStatusFilter::Completed => "completed",
             TaskStatusFilter::Blocked => "blocked",
         };
@@ -291,7 +292,7 @@ mod tests {
         );
 
         assert_eq!(output.count, 1);
-        assert_eq!(output.tasks[0].status, "in_progress");
+        assert_eq!(output.tasks[0].status, "inProgress");
     }
 
     #[test]

@@ -12,6 +12,7 @@ use mcp_utils::display_meta::{
 #[serde(rename_all = "camelCase")]
 pub struct WriteFileArgs {
     /// The absolute path to the file to write
+    #[serde(alias = "file_path")]
     pub file_path: String,
     /// The content to write to the file
     pub content: String,
@@ -229,5 +230,17 @@ mod tests {
         assert_eq!(last_line.tag, DiffTag::Context);
         assert!(last_line.content.starts_with("... ("));
         assert!(last_line.content.contains("50 more lines"));
+    }
+
+    #[test]
+    fn write_file_args_accepts_snake_case_file_path() {
+        let args: WriteFileArgs = serde_json::from_value(serde_json::json!({
+            "file_path": "/tmp/out.txt",
+            "content": "hello"
+        }))
+        .unwrap();
+
+        assert_eq!(args.file_path, "/tmp/out.txt");
+        assert_eq!(args.content, "hello");
     }
 }

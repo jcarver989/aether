@@ -20,6 +20,7 @@ pub struct BashInput {
     /// Clear, concise description of what this command does in 5-10 words
     pub description: Option<String>,
     /// Set to true to run this command in the background
+    #[serde(alias = "run_in_background")]
     pub run_in_background: Option<bool>,
 }
 
@@ -57,6 +58,7 @@ pub enum BashResult {
 #[serde(rename_all = "camelCase")]
 pub struct ReadBackgroundBashInput {
     /// The ID of the background shell to retrieve output from
+    #[serde(alias = "bash_id")]
     pub bash_id: String,
     /// Optional regex to filter output lines
     pub filter: Option<String>,

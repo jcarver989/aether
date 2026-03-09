@@ -7,7 +7,7 @@ use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 
 /// Input for the `task_get` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskGetInput {
     /// Task ID to retrieve (e.g., "at-a1b2c3d4" or "at-a1b2c3d4.1")
     pub id: String,
@@ -15,7 +15,7 @@ pub struct TaskGetInput {
 
 /// Output for the `task_get` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskGetOutput {
     pub status: String,
     pub task: Task,

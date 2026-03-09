@@ -36,7 +36,7 @@ impl CallDirection {
 
 /// The operation to perform on a symbol
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub enum SymbolLookupOperation {
     /// Go to the definition of the symbol
     Definition,
@@ -47,18 +47,21 @@ pub enum SymbolLookupOperation {
     /// Get hover information (type, documentation) for the symbol
     Hover,
     /// Find functions/methods that call this symbol (one-step call hierarchy)
+    #[serde(alias = "incoming_calls")]
     IncomingCalls,
     /// Find functions/methods that this symbol calls (one-step call hierarchy)
+    #[serde(alias = "outgoing_calls")]
     OutgoingCalls,
 }
 
 /// Input for the `lsp_symbol` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct LspSymbolInput {
     /// The operation to perform
     pub operation: SymbolLookupOperation,
     /// The file path containing the symbol
+    #[serde(alias = "file_path")]
     pub file_path: String,
     /// The symbol name to look up (e.g., "`HashMap`", "spawn", "`LspClient`")
     pub symbol: String,
@@ -67,7 +70,7 @@ pub struct LspSymbolInput {
     #[serde(default)]
     pub line: Option<u32>,
     /// Whether to include the declaration in references results (default: true, only used for references operation)
-    #[serde(default = "default_true")]
+    #[serde(default = "default_true", alias = "include_declaration")]
     pub include_declaration: bool,
     /// Maximum number of results to return. When set, results are truncated and
     /// `truncated: true` is included in the response. `total_count` always
@@ -78,7 +81,7 @@ pub struct LspSymbolInput {
     /// Number of context lines to include around each location (only for
     /// definition, implementation, references). Each location will include N
     /// lines before and after the result range, formatted with line numbers.
-    #[serde(default)]
+    #[serde(default, alias = "context_lines")]
     pub context_lines: Option<u32>,
 }
 

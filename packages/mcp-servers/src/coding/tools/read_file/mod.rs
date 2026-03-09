@@ -12,6 +12,7 @@ const DEFAULT_LINE_LIMIT: usize = 2000;
 #[serde(rename_all = "camelCase")]
 pub struct ReadFileArgs {
     /// Path to the file to read (must be an existing file)
+    #[serde(alias = "file_path")]
     pub file_path: String,
     /// Starting line number to read from (1-indexed). If not specified, starts from line 1.
     pub offset: Option<usize>,
@@ -240,5 +241,19 @@ mod tests {
         .await;
 
         assert!(matches!(result, Err(FileError::NotFound { .. })));
+    }
+
+    #[test]
+    fn test_read_file_args_accepts_snake_case_file_path() {
+        let args: ReadFileArgs = serde_json::from_value(serde_json::json!({
+            "file_path": "/tmp/test.txt",
+            "offset": 1,
+            "limit": 10
+        }))
+        .unwrap();
+
+        assert_eq!(args.file_path, "/tmp/test.txt");
+        assert_eq!(args.offset, Some(1));
+        assert_eq!(args.limit, Some(10));
     }
 }

@@ -16,7 +16,7 @@ use aether_lspd::symbol_kind_to_string;
 
 /// Input for the `lsp_workspace_search` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct LspWorkspaceSearchInput {
     /// Search query (e.g., "`AppState`", "Repository")
     pub query: String,
@@ -24,7 +24,7 @@ pub struct LspWorkspaceSearchInput {
     #[serde(default)]
     pub limit: Option<usize>,
     /// Number of context lines to include around each result
-    #[serde(default)]
+    #[serde(default, alias = "context_lines")]
     pub context_lines: Option<u32>,
 }
 

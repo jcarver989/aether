@@ -8,7 +8,7 @@ use mcp_utils::display_meta::ToolResultMeta;
 
 /// Input for the `task_update` tool
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskUpdateInput {
     /// Task ID to update
     pub id: String,
@@ -38,13 +38,13 @@ pub struct TaskUpdateInput {
     #[serde(default)]
     pub facts: Option<Vec<String>>,
 
-    #[serde(default)]
+    #[serde(default, alias = "next_steps")]
     pub next_steps: Option<Vec<String>>,
 
     #[serde(default)]
     pub blockers: Option<Vec<String>>,
 
-    #[serde(default)]
+    #[serde(default, alias = "files_read")]
     pub files_read: Option<Vec<String>>,
 
     #[serde(default)]
@@ -53,7 +53,7 @@ pub struct TaskUpdateInput {
 
 /// Output for the `task_update` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskUpdateOutput {
     /// Status of the operation
     pub status: String,
@@ -216,7 +216,7 @@ mod tests {
 
         let output = execute_task_update(input, &mut store).unwrap();
 
-        assert_eq!(output.task.status, "in_progress");
+        assert_eq!(output.task.status, "inProgress");
         assert_eq!(output.changes, vec!["status"]);
     }
 
