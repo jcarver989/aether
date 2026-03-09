@@ -1,20 +1,25 @@
-Get instant compiler errors and warnings without running a build.
+Gets instant compiler errors and warnings without running a build.
 
-**PREFER THIS OVER `cargo check`, `npm run build`, `tsc`, `go build`:**
+**Prefer this over `cargo check`, `npm run build`, `tsc`, `go build`.**
+
+## Usage
+
+```json
+{}
+{"file_path": "src/main.rs"}
+```
+
+- `file_path` — optional, filter to specific file
+
+**Returns:** type errors, unused variables, clippy lints, etc. Structured JSON output.
+
+## Why Use This
+
 - Instant results (no compilation wait)
 - Works on unsaved/in-progress edits
-- Structured JSON output (no parsing needed)
-- Includes type errors, unused variables, clippy lints
+- Structured output (no parsing needed)
 
-**When to use:**
-- After editing code, check for errors instantly
-- Before committing, validate the workspace compiles
-- When you need structured error output for programmatic use
+## When CLI is Better
 
-**When CLI is better:**
-- Running the actual binary (use `bash` with `cargo run`)
-- Running tests (use `bash` with `cargo test`)
-
-**Examples:**
-- All errors in workspace: `{}`
-- Errors in one file: `{"file_path": "src/main.rs"}`
+- Running the actual binary → `bash` with `cargo run`
+- Running tests → `bash` with `cargo test`

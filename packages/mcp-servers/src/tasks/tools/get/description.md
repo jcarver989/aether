@@ -1,14 +1,10 @@
-Get the full details of a task by ID.
+Gets full details of a task by ID.
 
-Returns the complete task object including:
-- Title, description, status
-- Assignee and dependencies
-- Result and handoff context (if completed)
-- Timestamps (`created_at`, `updated_at`)
+## Usage
 
-Use this when you need the full task details, not just a summary.
-
-Example:
 ```json
+{"id": "at-a1b2c3d4"}
 {"id": "at-a1b2c3d4.1"}
 ```
+
+**Returns:** title, description, status, assignee, dependencies, result/handoff context (if completed), timestamps.

@@ -1,10 +1,20 @@
-Finds files by name pattern. **For finding where code symbols are defined, use `lsp_symbol` instead.**
+Finds files by name pattern.
 
-Best for: locating files when you know part of the filename (e.g., "*.test.ts", "config*.json")
+**For code symbols, use `lsp_symbol` instead.** This tool is for locating files by filename.
 
-Usage:
-- Supports glob patterns like "**/*.js" or "src/**/*.ts"
-- Returns matching file paths sorted alphabetically
-- Use this tool when you need to find files by name patterns
-- When doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead
-- You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.
+## Usage
+
+```json
+{"pattern": "**/*.rs"}
+{"pattern": "*.test.ts", "path": "/path/to/search"}
+```
+
+- `pattern` — **required**, glob pattern (e.g., `**/*.js`, `config*.json`)
+- `path` — directory to search (default: cwd)
+
+**Returns:** matching file paths, sorted alphabetically.
+
+## Tips
+
+- Run multiple searches in parallel when exploring
+- For open-ended searches requiring multiple rounds, consider spawning a sub-agent

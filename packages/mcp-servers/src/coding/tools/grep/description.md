@@ -1,19 +1,30 @@
-Text/pattern search. **For code structure (definitions, usages, types), use `lsp_symbol` instead—it's faster and understands code.**
+Text/pattern search using ripgrep.
 
-Best for: string literals, log messages, TODOs, comments, or regex patterns in non-code files.
+**For code structure (definitions, usages, types), use `lsp_symbol` instead.** Grep is for string literals, TODOs, logs, and non-code files.
 
-Usage:
-- Supports full regex syntax (e.g., "log.*Error", "function\s+\w+")
-- Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")
-- Output modes: "content" shows matching lines, "`files_with_matches`" shows file paths (default), "count" shows match counts
-- Pattern syntax: Uses ripgrep - literal braces need escaping (use `interface\{\}` to find `interface{}` in Go code)
-- Multiline matching: For cross-line patterns like `struct \{[\s\S]*?field`, use `multiline: true`
-- Call multiple grep in parallel when speculative searches are useful
+## Usage
 
-## When NOT to use grep
+```json
+{"pattern": "TODO|FIXME"}
+{"pattern": "error.*failed", "outputMode": "content", "-n": true}
+{"pattern": "impl Handler", "type": "rust"}
+{"pattern": "*.test.ts", "glob": "*.ts"}
+```
 
-- "Where is function X defined?" → `lsp_symbol(operation: "definition")`
-- "What calls function X?" → `lsp_symbol(operation: "incoming_calls")`
-- "What type is variable X?" → `lsp_symbol(operation: "hover")`
+- `pattern` — **required**, regex pattern
+- `outputMode` — `files_with_matches` (default), `content`, or `count`
+- `type` — file type filter (`js`, `py`, `rust`, etc.)
+- `glob` — glob pattern filter (e.g., `*.ts`)
+- `-n` — show line numbers (for content mode)
+- `-C` — context lines around matches
+- `multiline` — for cross-line patterns
 
-Grep can't distinguish `foo` the function from `foo` in a comment or string. LSP can.
+## When NOT to Use Grep
+
+| Query | Use Instead |
+|-------|-------------|
+| "Where is X defined?" | `lsp_symbol(operation: "definition")` |
+| "What calls X?" | `lsp_symbol(operation: "incoming_calls")` |
+| "What type is X?" | `lsp_symbol(operation: "hover")` |
+
+Grep can't distinguish `foo` the function from `foo` in comments/strings. LSP can.

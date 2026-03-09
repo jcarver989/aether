@@ -1,30 +1,25 @@
-Search for symbols across the **entire workspace** by name.
+Searches for symbols across the entire workspace by name.
 
-Unlike `lsp_symbol` (which operates on a known file + symbol position), this tool
-performs a fuzzy/substring query across all files the LSP knows about — ideal when
-you don't know which file a symbol lives in.
+Use this when you don't know which file a symbol lives in. For definition/references/hover on a known file, use `lsp_symbol` instead.
 
-**When to use:**
-- "Where is `AppState` defined?" (you don't know the file)
+## Usage
+
+```json
+{"query": "AppState"}
+{"query": "Repository", "limit": 10, "context_lines": 3}
+```
+
+- `query` — **required**, symbol name (fuzzy/substring matching)
+- `limit` — cap results
+- `context_lines` — include N lines of source around each result
+
+## When to Use
+
+- "Where is `AppState` defined?" (don't know the file)
 - "Find all structs matching `Repository`"
 - "Which module declares `process_request`?"
 
-**When `lsp_symbol` is better:**
-- You already know the file and want definition/references/hover/calls
+## Notes
 
-**Examples:**
-
-Find a struct by name:
-```json
-{ "query": "AppState" }
-```
-
-Limit results and include context:
-```json
-{ "query": "Repository", "limit": 10, "context_lines": 3 }
-```
-
-**Notes:**
-- Query matching is LSP-server dependent (typically substring/fuzzy)
-- Results are deduplicated across language servers
-- Use `limit` to cap large result sets
+- Query matching is LSP-server dependent (typically fuzzy)
+- Results deduplicated across language servers
