@@ -1,5 +1,3 @@
-use crate::tui::TickableComponent;
-
 use agent_client_protocol::{self as acp};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -74,10 +72,9 @@ impl PlanTracker {
     fn completed_at_for(&self, entry: &acp::PlanEntry) -> Option<Instant> {
         self.completed_at.get(&Self::entry_key(entry)).copied()
     }
-}
 
-impl TickableComponent for PlanTracker {
-    fn on_tick(&mut self, _now: Instant) {}
+    /// Advance the animation state. Call this on tick events.
+    pub fn on_tick(&mut self, _now: Instant) {}
 }
 
 #[cfg(test)]

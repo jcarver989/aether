@@ -1,6 +1,6 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyCode;
 
-use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
+use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::line::Line;
 
 /// Boolean toggle rendered as `[x]` / `[ ]`.
@@ -32,15 +32,18 @@ impl Component for Checkbox {
 }
 
 impl InteractiveComponent for Checkbox {
-    type Action = ();
+    type Message = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
-        match key_event.code {
-            KeyCode::Char(' ') => {
-                self.checked = !self.checked;
-                KeyEventResponse::consumed()
-            }
-            _ => KeyEventResponse::ignored(),
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+        match event {
+            UiEvent::Key(key_event) => match key_event.code {
+                KeyCode::Char(' ') => {
+                    self.checked = !self.checked;
+                    MessageResult::consumed().with_render()
+                }
+                _ => MessageResult::ignored(),
+            },
+            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
         }
     }
 }
@@ -57,9 +60,9 @@ mod tests {
     #[test]
     fn space_toggles() {
         let mut cb = Checkbox::new(false);
-        cb.on_key_event(key(KeyCode::Char(' ')));
+        cb.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
         assert!(cb.checked);
-        cb.on_key_event(key(KeyCode::Char(' ')));
+        cb.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
         assert!(!cb.checked);
     }
 
@@ -73,8 +76,8 @@ mod tests {
     #[test]
     fn other_keys_are_ignored() {
         let mut cb = Checkbox::new(false);
-        let outcome = cb.on_key_event(key(KeyCode::Char('a')));
-        assert!(!outcome.consumed);
+        let outcome = cb.on_event(UiEvent::Key(key(KeyCode::Char('a'))));
+        assert!(!outcome.handled);
         assert!(!cb.checked);
     }
 }

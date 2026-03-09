@@ -1,28 +1,69 @@
-use super::{App, AppEffect, AppRuntimeAction, PromptAttachment, build_attachment_blocks};
+use super::{App, AppAction, PromptAttachment, build_attachment_blocks};
 use crate::settings::{load_or_create_settings, save_settings};
-use crate::tui::{Line, Renderer, RuntimeAction};
-use acp_utils::client::AcpPromptHandle;
-use agent_client_protocol as acp;
-use crossterm::event::KeyEventKind;
-use std::io::{self, Write};
+use crate::tui::{Action, Line, Renderer};
+use std::io::Write;
 
-#[derive(Clone, Copy)]
-pub struct PromptContext<'a> {
-    pub prompt_handle: &'a AcpPromptHandle,
-    pub session_id: &'a acp::SessionId,
-}
-
-impl<'a> PromptContext<'a> {
-    pub fn new(prompt_handle: &'a AcpPromptHandle, session_id: &'a acp::SessionId) -> Self {
-        Self {
-            prompt_handle,
-            session_id,
+impl App {
+    pub async fn apply_effect<T: Write>(
+        &mut self,
+        renderer: &mut Renderer<T>,
+        effect: AppAction,
+    ) -> Result<Vec<Action<AppAction>>, Box<dyn std::error::Error>> {
+        match effect {
+            AppAction::PushScrollback(lines) => {
+                renderer.push_to_scrollback(&lines)?;
+                Ok(vec![])
+            }
+            AppAction::PromptSubmit {
+                user_input,
+                attachments,
+            } => {
+                let should_render = submit_prompt_with_attachments(
+                    renderer,
+                    &self.prompt_handle,
+                    &self.session_id,
+                    &user_input,
+                    attachments,
+                )
+                .await?;
+                Ok(if should_render {
+                    vec![Action::Render]
+                } else {
+                    vec![]
+                })
+            }
+            AppAction::SetConfigOption {
+                config_id,
+                new_value,
+            } => {
+                let _ =
+                    self.prompt_handle
+                        .set_config_option(&self.session_id, &config_id, &new_value);
+                Ok(vec![])
+            }
+            AppAction::SetTheme { file } => {
+                apply_theme_selection(renderer, file);
+                Ok(vec![Action::Render])
+            }
+            AppAction::Cancel => {
+                self.prompt_handle.cancel(&self.session_id)?;
+                Ok(vec![Action::Render])
+            }
+            AppAction::AuthenticateMcpServer { server_name } => {
+                let _ = self
+                    .prompt_handle
+                    .authenticate_mcp_server(&self.session_id, &server_name);
+                Ok(vec![Action::Render])
+            }
+            AppAction::AuthenticateProvider { method_id } => {
+                let _ = self
+                    .prompt_handle
+                    .authenticate(&self.session_id, &method_id);
+                self.state.on_authenticate_started(&method_id);
+                Ok(vec![Action::Render])
+            }
         }
     }
-}
-
-pub fn should_handle_key_event(kind: KeyEventKind) -> bool {
-    matches!(kind, KeyEventKind::Press | KeyEventKind::Repeat)
 }
 
 pub fn apply_theme_selection<T: Write>(renderer: &mut Renderer<T>, file: Option<String>) {
@@ -39,7 +80,8 @@ pub fn apply_theme_selection<T: Write>(renderer: &mut Renderer<T>, file: Option<
 
 pub async fn submit_prompt_with_attachments<T: Write>(
     renderer: &mut Renderer<T>,
-    prompt: PromptContext<'_>,
+    prompt_handle: &acp_utils::client::AcpPromptHandle,
+    session_id: &agent_client_protocol::SessionId,
     user_input: &str,
     attachments: Vec<PromptAttachment>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
@@ -55,8 +97,8 @@ pub async fn submit_prompt_with_attachments<T: Write>(
         renderer.push_to_scrollback(&warning_lines)?;
     }
 
-    prompt.prompt_handle.prompt(
-        prompt.session_id,
+    prompt_handle.prompt(
+        session_id,
         user_input,
         if outcome.blocks.is_empty() {
             None
@@ -68,97 +110,16 @@ pub async fn submit_prompt_with_attachments<T: Write>(
     Ok(should_render)
 }
 
-pub async fn apply_app_effect<T: Write>(
-    app: &mut App,
-    renderer: &mut Renderer<T>,
-    effect: AppEffect,
-    prompt: Option<PromptContext<'_>>,
-) -> Result<Vec<AppRuntimeAction>, Box<dyn std::error::Error>> {
-    match effect {
-        AppEffect::PushScrollback(lines) => {
-            renderer.push_to_scrollback(&lines)?;
-            Ok(vec![])
-        }
-        AppEffect::PromptSubmit {
-            user_input,
-            attachments,
-        } => {
-            let should_render = submit_prompt_with_attachments(
-                renderer,
-                required_prompt_context(prompt)?,
-                &user_input,
-                attachments,
-            )
-            .await?;
-            Ok(if should_render {
-                vec![RuntimeAction::Render]
-            } else {
-                vec![]
-            })
-        }
-        AppEffect::SetConfigOption {
-            config_id,
-            new_value,
-        } => {
-            let prompt = required_prompt_context(prompt)?;
-            let _ =
-                prompt
-                    .prompt_handle
-                    .set_config_option(prompt.session_id, &config_id, &new_value);
-            Ok(vec![])
-        }
-        AppEffect::SetTheme { file } => {
-            apply_theme_selection(renderer, file);
-            Ok(vec![RuntimeAction::Render])
-        }
-        AppEffect::Cancel => {
-            let prompt = required_prompt_context(prompt)?;
-            prompt.prompt_handle.cancel(prompt.session_id)?;
-            Ok(vec![RuntimeAction::Render])
-        }
-        AppEffect::AuthenticateMcpServer { server_name } => {
-            let prompt = required_prompt_context(prompt)?;
-            let _ = prompt
-                .prompt_handle
-                .authenticate_mcp_server(prompt.session_id, &server_name);
-            Ok(vec![RuntimeAction::Render])
-        }
-        AppEffect::AuthenticateProvider { method_id } => {
-            let prompt = required_prompt_context(prompt)?;
-            let _ = prompt
-                .prompt_handle
-                .authenticate(prompt.session_id, &method_id);
-            app.on_authenticate_started(&method_id);
-            Ok(vec![RuntimeAction::Render])
-        }
-    }
-}
-
-fn required_prompt_context(prompt: Option<PromptContext<'_>>) -> io::Result<PromptContext<'_>> {
-    prompt.ok_or_else(|| io::Error::other("missing prompt context"))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        PromptContext, apply_theme_selection, should_handle_key_event,
-        submit_prompt_with_attachments,
-    };
+    use super::{apply_theme_selection, submit_prompt_with_attachments};
     use crate::settings::{ThemeSettings, WispSettings, load_or_create_settings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
+    use crate::tui::Color;
     use crate::tui::Renderer;
     use crate::tui::theme::Theme;
     use acp_utils::client::AcpPromptHandle;
     use agent_client_protocol as acp;
-    use crossterm::event::KeyEventKind;
-    use crossterm::style::Color;
-
-    #[test]
-    fn handles_press_and_repeat_key_events() {
-        assert!(should_handle_key_event(KeyEventKind::Press));
-        assert!(should_handle_key_event(KeyEventKind::Repeat));
-        assert!(!should_handle_key_event(KeyEventKind::Release));
-    }
 
     #[test]
     fn apply_theme_selection_persists_and_applies_theme_file() {
@@ -216,7 +177,8 @@ mod tests {
 
         let should_render = submit_prompt_with_attachments(
             &mut renderer,
-            PromptContext::new(&prompt_handle, &session_id),
+            &prompt_handle,
+            &session_id,
             "hello",
             vec![attachment],
         )

@@ -42,18 +42,7 @@ impl<T: Write> Renderer<T> {
         self.terminal.push_to_scrollback(lines, self.size.width)
     }
 
-    pub fn update_render_context(&mut self) {
-        let size = match crossterm::terminal::size() {
-            Ok(size) => size,
-            Err(e) => {
-                eprintln!("Failed to get size: {e}");
-                (80, 24)
-            }
-        };
-        self.size = size.into();
-    }
-
-    pub fn update_render_context_with(&mut self, size: impl Into<Size>) {
+    pub fn on_resize(&mut self, size: impl Into<Size>) {
         self.size = size.into();
     }
 

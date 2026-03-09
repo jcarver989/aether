@@ -1,6 +1,6 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyCode;
 
-use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
+use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::line::Line;
 
 /// Numeric input field supporting integers or floats.
@@ -44,26 +44,27 @@ impl Component for NumberField {
 }
 
 impl InteractiveComponent for NumberField {
-    type Action = ();
+    type Message = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
-        match key_event.code {
-            KeyCode::Char(c) => {
-                let accept = c.is_ascii_digit()
-                    || (c == '-' && self.value.is_empty())
-                    || (c == '.' && !self.integer_only && !self.value.contains('.'));
-                if accept {
-                    self.value.push(c);
-                    KeyEventResponse::consumed()
-                } else {
-                    KeyEventResponse::consumed()
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+        match event {
+            UiEvent::Key(key_event) => match key_event.code {
+                KeyCode::Char(c) => {
+                    let accept = c.is_ascii_digit()
+                        || (c == '-' && self.value.is_empty())
+                        || (c == '.' && !self.integer_only && !self.value.contains('.'));
+                    if accept {
+                        self.value.push(c);
+                    }
+                    MessageResult::consumed().with_render()
                 }
-            }
-            KeyCode::Backspace => {
-                self.value.pop();
-                KeyEventResponse::consumed()
-            }
-            _ => KeyEventResponse::ignored(),
+                KeyCode::Backspace => {
+                    self.value.pop();
+                    MessageResult::consumed().with_render()
+                }
+                _ => MessageResult::ignored(),
+            },
+            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
         }
     }
 }
@@ -80,39 +81,39 @@ mod tests {
     #[test]
     fn integer_accepts_digits_and_leading_minus() {
         let mut field = NumberField::new(String::new(), true);
-        field.on_key_event(key(KeyCode::Char('-')));
-        field.on_key_event(key(KeyCode::Char('4')));
-        field.on_key_event(key(KeyCode::Char('2')));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('-'))));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('4'))));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('2'))));
         assert_eq!(field.value, "-42");
     }
 
     #[test]
     fn integer_rejects_dot() {
         let mut field = NumberField::new("1".to_string(), true);
-        field.on_key_event(key(KeyCode::Char('.')));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('.'))));
         assert_eq!(field.value, "1");
     }
 
     #[test]
     fn float_accepts_single_dot() {
         let mut field = NumberField::new(String::new(), false);
-        field.on_key_event(key(KeyCode::Char('3')));
-        field.on_key_event(key(KeyCode::Char('.')));
-        field.on_key_event(key(KeyCode::Char('5')));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('3'))));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('.'))));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('5'))));
         assert_eq!(field.value, "3.5");
     }
 
     #[test]
     fn float_rejects_second_dot() {
         let mut field = NumberField::new("1.2".to_string(), false);
-        field.on_key_event(key(KeyCode::Char('.')));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('.'))));
         assert_eq!(field.value, "1.2");
     }
 
     #[test]
     fn minus_rejected_when_not_first() {
         let mut field = NumberField::new("5".to_string(), true);
-        field.on_key_event(key(KeyCode::Char('-')));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('-'))));
         assert_eq!(field.value, "5");
     }
 
@@ -142,7 +143,7 @@ mod tests {
     #[test]
     fn backspace_removes_last() {
         let mut field = NumberField::new("12".to_string(), true);
-        field.on_key_event(key(KeyCode::Backspace));
+        field.on_event(UiEvent::Key(key(KeyCode::Backspace)));
         assert_eq!(field.value, "1");
     }
 }

@@ -5,9 +5,7 @@ use agent_client_protocol as acp;
 
 use crate::tui::components::spinner::BRAILLE_FRAMES as FRAMES;
 use crate::tui::diff::highlight_diff;
-use crate::tui::{
-    Component, DiffLine, DiffPreview, DiffTag, Line, RenderContext, TickableComponent,
-};
+use crate::tui::{Component, DiffLine, DiffPreview, DiffTag, Line, RenderContext};
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -151,6 +149,13 @@ impl ToolCallStatuses {
             running_any,
             completed_top_level,
             total_top_level,
+        }
+    }
+
+    /// Advance the animation state. Call this on tick events.
+    pub fn on_tick(&mut self, _now: Instant) {
+        if self.progress().running_any {
+            self.tick = self.tick.wrapping_add(1);
         }
     }
 
@@ -477,14 +482,6 @@ impl SubAgentState {
                 .tool_calls
                 .values()
                 .any(|tc| matches!(tc.status, ToolCallStatus::Running))
-    }
-}
-
-impl TickableComponent for ToolCallStatuses {
-    fn on_tick(&mut self, _now: Instant) {
-        if self.progress().running_any {
-            self.tick = self.tick.wrapping_add(1);
-        }
     }
 }
 

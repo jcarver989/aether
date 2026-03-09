@@ -1,58 +1,26 @@
-use super::{
-    AppEffect, AppRuntimeAction, effect_action, exit_action, render_action,
-    theme_file_from_picker_value,
-};
+use super::{AppAction, theme_file_from_picker_value};
 use crate::components::config_menu::ConfigMenu;
-use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayAction};
+use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayMessage};
 use crate::components::conversation_window::ConversationBuffer;
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::plan_tracker::PlanTracker;
 use crate::components::progress_indicator::ProgressIndicator;
-use crate::components::prompt_composer::{PromptComposer, PromptComposerAction};
+use crate::components::prompt_composer::{PromptComposer, PromptComposerMessage};
 use crate::components::server_status::server_status_summary;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
+use crate::tui::Action;
+use crate::tui::KeyEvent;
 use crate::tui::components::spinner::Spinner;
-use crate::tui::{FormAction, InteractiveComponent, KeyEventResponse, Line};
+use crate::tui::{FormMessage, InteractiveComponent, Line, MessageResult, UiEvent};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
-use acp_utils::notifications::{ElicitationParams, ElicitationResponse, McpServerStatusEntry};
+use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{
-    self as acp, ExtNotification, SessionConfigKind, SessionConfigOption,
-    SessionConfigOptionCategory, SessionConfigSelectOptions, SessionUpdate,
+    self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
+    SessionConfigSelectOptions,
 };
-use crossterm::event::KeyEvent;
-use tokio::sync::oneshot;
 use utils::ReasoningEffort;
-
-pub enum AppAction {
-    Key(KeyEvent),
-    Paste(String),
-    Resize {
-        cols: u16,
-        rows: u16,
-    },
-    Tick,
-    SessionUpdate(SessionUpdate),
-    ExtNotification(ExtNotification),
-    PromptDone,
-    PromptError,
-    ElicitationRequest {
-        params: ElicitationParams,
-        response_tx: oneshot::Sender<ElicitationResponse>,
-    },
-    AuthenticateComplete {
-        method_id: String,
-    },
-    AuthenticateFailed {
-        method_id: String,
-        error: String,
-    },
-    /// Test-only: inject file picker matches via dispatch instead of reaching into internal state.
-    #[doc(hidden)]
-    #[allow(dead_code)]
-    SetFilePickerMatches(Vec<crate::components::file_picker::FileMatch>),
-}
 
 pub struct UiState {
     pub(crate) tool_call_statuses: ToolCallStatuses,
@@ -104,9 +72,9 @@ impl UiState {
         }
     }
 
-    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Vec<AppRuntimeAction> {
+    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Vec<Action<AppAction>> {
         if self.keybindings.exit.matches(key_event) {
-            return vec![exit_action()];
+            return vec![Action::Exit];
         }
 
         if let Some(effects) = self.handle_elicitation_key(key_event) {
@@ -114,47 +82,40 @@ impl UiState {
         }
 
         if let Some(ref mut overlay) = self.config_overlay {
-            let outcome = overlay.on_key_event(key_event);
-            return self.handle_config_overlay_outcome(outcome);
+            let outcome = overlay.on_event(UiEvent::Key(key_event));
+            return self.handle_config_overlay_messages(outcome);
         }
 
-        let composer_outcome = self.prompt_composer.on_key_event(key_event);
-        if composer_outcome.consumed {
-            return self.handle_prompt_composer_outcome(composer_outcome);
+        let composer_outcome = self.prompt_composer.on_event(UiEvent::Key(key_event));
+        if composer_outcome.handled {
+            return self.handle_prompt_composer_messages(composer_outcome);
         }
 
         if self.keybindings.cycle_reasoning.matches(key_event) {
             if let Some(effect) = self.cycle_reasoning_option() {
-                return vec![effect_action(effect), render_action()];
+                return vec![Action::Custom(effect), Action::Render];
             }
             return vec![];
         }
 
         if self.keybindings.cycle_mode.matches(key_event) {
             if let Some(effect) = self.cycle_quick_option() {
-                return vec![effect_action(effect), render_action()];
+                return vec![Action::Custom(effect), Action::Render];
             }
             return vec![];
         }
 
         if self.keybindings.cancel.matches(key_event) && self.waiting_for_response {
-            return vec![effect_action(AppEffect::Cancel)];
+            return vec![Action::Custom(AppAction::Cancel)];
         }
 
         vec![]
     }
 
-    pub(crate) fn on_paste(&mut self, text: String) -> Vec<AppRuntimeAction> {
+    pub(crate) fn on_paste(&mut self, text: String) -> Vec<Action<AppAction>> {
         self.config_overlay = None;
-        if self.prompt_composer.on_paste(&text) {
-            vec![render_action()]
-        } else {
-            vec![]
-        }
-    }
-
-    pub(crate) fn on_resize(&mut self, _cols: u16, _rows: u16) -> Vec<AppRuntimeAction> {
-        vec![render_action()]
+        let outcome = self.prompt_composer.on_event(UiEvent::Paste(text));
+        self.handle_prompt_composer_messages(outcome)
     }
 
     pub(crate) fn update_config_options(&mut self, config_options: &[SessionConfigOption]) {
@@ -164,7 +125,7 @@ impl UiState {
         self.config_options = config_options.to_vec();
     }
 
-    pub(crate) fn cycle_quick_option(&self) -> Option<AppEffect> {
+    pub(crate) fn cycle_quick_option(&self) -> Option<AppAction> {
         let option = self
             .config_options
             .iter()
@@ -189,19 +150,19 @@ impl UiState {
         let next_index = (current_index + 1) % options.len();
         let next_value = options.get(next_index)?.value.0.to_string();
 
-        Some(AppEffect::SetConfigOption {
+        Some(AppAction::SetConfigOption {
             config_id: option.id.0.to_string(),
             new_value: next_value,
         })
     }
 
-    pub(crate) fn cycle_reasoning_option(&self) -> Option<AppEffect> {
+    pub(crate) fn cycle_reasoning_option(&self) -> Option<AppAction> {
         self.config_options
             .iter()
             .any(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())
             .then(|| {
                 let next = ReasoningEffort::cycle_next(self.reasoning_effort);
-                AppEffect::SetConfigOption {
+                AppAction::SetConfigOption {
                     config_id: ConfigOptionId::ReasoningEffort.as_str().to_string(),
                     new_value: ReasoningEffort::config_str(next).to_string(),
                 }
@@ -211,108 +172,126 @@ impl UiState {
     pub(crate) fn handle_elicitation_key(
         &mut self,
         key_event: KeyEvent,
-    ) -> Option<Vec<AppRuntimeAction>> {
+    ) -> Option<Vec<Action<AppAction>>> {
         let elicitation_form = self.elicitation_form.as_mut()?;
-        let outcome = elicitation_form.form.on_key_event(key_event);
+        let outcome = elicitation_form.form.on_event(UiEvent::Key(key_event));
 
-        match outcome.action {
-            Some(FormAction::Close) => {
-                if let Some(elicitation_form) = self.elicitation_form.take() {
-                    let _ = elicitation_form
-                        .response_tx
-                        .send(ElicitationForm::decline());
+        let handled = outcome.handled;
+        let render = outcome.render;
+        for message in outcome.messages {
+            match message {
+                FormMessage::Close => {
+                    if let Some(elicitation_form) = self.elicitation_form.take() {
+                        let _ = elicitation_form
+                            .response_tx
+                            .send(ElicitationForm::decline());
+                    }
+                }
+                FormMessage::Submit => {
+                    if let Some(elicitation_form) = self.elicitation_form.take() {
+                        let response = elicitation_form.confirm();
+                        let _ = elicitation_form.response_tx.send(response);
+                    }
                 }
             }
-            Some(FormAction::Submit) => {
-                if let Some(elicitation_form) = self.elicitation_form.take() {
-                    let response = elicitation_form.confirm();
-                    let _ = elicitation_form.response_tx.send(response);
-                }
-            }
-            None => {}
         }
 
-        if outcome.consumed {
-            Some(vec![render_action()])
+        if handled || render {
+            Some(vec![Action::Render])
         } else {
             Some(vec![])
         }
     }
 
-    pub(crate) fn handle_prompt_composer_outcome(
+    pub(crate) fn handle_prompt_composer_messages(
         &mut self,
-        outcome: KeyEventResponse<PromptComposerAction>,
-    ) -> Vec<AppRuntimeAction> {
-        match outcome.action {
-            Some(PromptComposerAction::OpenConfig) => {
-                self.open_config_overlay();
-                vec![render_action()]
-            }
-            Some(PromptComposerAction::SubmitRequested {
-                user_input,
-                attachments,
-            }) => {
-                let mut effects = vec![
-                    effect_action(AppEffect::PushScrollback(vec![Line::new(String::new())])),
-                    effect_action(AppEffect::PushScrollback(vec![Line::new(
-                        user_input.clone(),
-                    )])),
-                ];
+        outcome: MessageResult<PromptComposerMessage>,
+    ) -> Vec<Action<AppAction>> {
+        let mut actions = Vec::new();
 
-                self.waiting_for_response = true;
-                self.grid_loader.reset();
+        if outcome.render {
+            actions.push(Action::Render);
+        }
 
-                effects.push(render_action());
-                effects.push(effect_action(AppEffect::PromptSubmit {
+        for msg in outcome.messages {
+            match msg {
+                PromptComposerMessage::OpenConfig => {
+                    self.open_config_overlay();
+                    actions.push(Action::Render);
+                }
+                PromptComposerMessage::SubmitRequested {
                     user_input,
                     attachments,
-                }));
-                effects
+                } => {
+                    actions.push(Action::Custom(AppAction::PushScrollback(vec![Line::new(
+                        String::new(),
+                    )])));
+                    actions.push(Action::Custom(AppAction::PushScrollback(vec![Line::new(
+                        user_input.clone(),
+                    )])));
+
+                    self.waiting_for_response = true;
+                    self.grid_loader.reset();
+
+                    actions.push(Action::Render);
+                    actions.push(Action::Custom(AppAction::PromptSubmit {
+                        user_input,
+                        attachments,
+                    }));
+                }
             }
-            None => vec![render_action()],
         }
+
+        actions
     }
 
-    pub(crate) fn handle_config_overlay_outcome(
+    pub(crate) fn handle_config_overlay_messages(
         &mut self,
-        outcome: KeyEventResponse<ConfigOverlayAction>,
-    ) -> Vec<AppRuntimeAction> {
-        match outcome.action {
-            Some(ConfigOverlayAction::Close) => {
-                self.config_overlay = None;
-                vec![render_action()]
-            }
-            Some(ConfigOverlayAction::ApplyConfigChanges(changes)) => {
-                let mut effects = Vec::new();
-                for change in changes {
-                    if change.config_id == THEME_CONFIG_ID {
-                        effects.push(effect_action(AppEffect::SetTheme {
-                            file: theme_file_from_picker_value(&change.new_value),
-                        }));
-                    } else {
-                        effects.push(effect_action(AppEffect::SetConfigOption {
-                            config_id: change.config_id,
-                            new_value: change.new_value,
-                        }));
-                    }
-                }
-                effects.push(render_action());
-                effects
-            }
-            Some(ConfigOverlayAction::AuthenticateServer(name)) => {
-                vec![
-                    effect_action(AppEffect::AuthenticateMcpServer { server_name: name }),
-                    render_action(),
-                ]
-            }
-            Some(ConfigOverlayAction::AuthenticateProvider(method_id)) => {
-                vec![
-                    effect_action(AppEffect::AuthenticateProvider { method_id }),
-                    render_action(),
-                ]
-            }
-            None => vec![render_action()],
+        outcome: MessageResult<ConfigOverlayMessage>,
+    ) -> Vec<Action<AppAction>> {
+        let mut actions = Vec::new();
+
+        if outcome.render {
+            actions.push(Action::Render);
         }
+
+        for message in outcome.messages {
+            match message {
+                ConfigOverlayMessage::Close => {
+                    self.config_overlay = None;
+                    actions.push(Action::Render);
+                }
+                ConfigOverlayMessage::ApplyConfigChanges(changes) => {
+                    for change in changes {
+                        if change.config_id == THEME_CONFIG_ID {
+                            actions.push(Action::Custom(AppAction::SetTheme {
+                                file: theme_file_from_picker_value(&change.new_value),
+                            }));
+                        } else {
+                            actions.push(Action::Custom(AppAction::SetConfigOption {
+                                config_id: change.config_id,
+                                new_value: change.new_value,
+                            }));
+                        }
+                    }
+                    actions.push(Action::Render);
+                }
+                ConfigOverlayMessage::AuthenticateServer(name) => {
+                    actions.push(Action::Custom(AppAction::AuthenticateMcpServer {
+                        server_name: name,
+                    }));
+                    actions.push(Action::Render);
+                }
+                ConfigOverlayMessage::AuthenticateProvider(method_id) => {
+                    actions.push(Action::Custom(AppAction::AuthenticateProvider {
+                        method_id,
+                    }));
+                    actions.push(Action::Render);
+                }
+            }
+        }
+
+        actions
     }
 
     pub(crate) fn open_config_overlay(&mut self) {
@@ -453,10 +432,11 @@ pub(super) fn extract_reasoning_effort(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::config_menu::ConfigChange;
     use crate::keybindings::KeyBinding;
-    use crate::tui::RuntimeAction;
+    use crate::tui::Action;
+    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use agent_client_protocol::SessionConfigOptionCategory;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn ui_state_new_initializes_derived_displays() {
@@ -518,6 +498,67 @@ mod tests {
     }
 
     #[test]
+    fn prompt_composer_messages_process_all_messages_in_order() {
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+        let outcome = MessageResult::messages(vec![
+            PromptComposerMessage::OpenConfig,
+            PromptComposerMessage::SubmitRequested {
+                user_input: "hello".to_string(),
+                attachments: vec![],
+            },
+        ]);
+
+        let actions = state.handle_prompt_composer_messages(outcome);
+
+        assert!(
+            state.config_overlay.is_some(),
+            "config overlay should be opened"
+        );
+        assert!(
+            state.waiting_for_response,
+            "submit should mark waiting state"
+        );
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            Action::Custom(AppAction::PromptSubmit { user_input, .. }) if user_input == "hello"
+        )));
+    }
+
+    #[test]
+    fn config_overlay_messages_process_all_messages_in_order() {
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+        state.open_config_overlay();
+        let outcome = MessageResult::messages(vec![
+            ConfigOverlayMessage::ApplyConfigChanges(vec![ConfigChange {
+                config_id: "model".to_string(),
+                new_value: "gpt-5".to_string(),
+            }]),
+            ConfigOverlayMessage::Close,
+        ]);
+
+        let actions = state.handle_config_overlay_messages(outcome);
+
+        assert!(
+            state.config_overlay.is_none(),
+            "close message should be applied"
+        );
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            Action::Custom(AppAction::SetConfigOption { config_id, new_value })
+                if config_id == "model" && new_value == "gpt-5"
+        )));
+    }
+
+    #[test]
+    fn render_only_prompt_composer_result_enqueues_one_render() {
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+
+        let actions = state.handle_prompt_composer_messages(MessageResult::render());
+
+        assert!(matches!(actions.as_slice(), [Action::Render]));
+    }
+
+    #[test]
     fn custom_exit_keybinding_triggers_exit() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         state.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
@@ -525,14 +566,14 @@ mod tests {
         let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         let effects = state.on_key_event(default_exit);
         assert!(
-            !effects.iter().any(|e| matches!(e, RuntimeAction::Exit)),
+            !effects.iter().any(|e| matches!(e, Action::Exit)),
             "default Ctrl+C should no longer exit"
         );
 
         let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
         let effects = state.on_key_event(custom_exit);
         assert!(
-            matches!(effects.as_slice(), [RuntimeAction::Exit]),
+            matches!(effects.as_slice(), [Action::Exit]),
             "custom Ctrl+Q should exit"
         );
     }

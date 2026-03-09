@@ -1,8 +1,9 @@
-use super::{AppEffect, AppRuntimeAction, UiState, effect_action, render_action};
+use super::{AppAction, UiState};
 use crate::components::command_picker::CommandEntry;
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::progress_indicator::ProgressIndicator;
-use crate::tui::{RenderContext, TickableComponent};
+use crate::tui::Action;
+use crate::tui::RenderContext;
 use acp_utils::notifications::{
     CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
     ElicitationResponse, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
@@ -12,7 +13,7 @@ use std::time::Instant;
 use tokio::sync::oneshot;
 
 impl UiState {
-    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Vec<AppRuntimeAction> {
+    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Vec<Action<AppAction>> {
         let was_loading = self.grid_loader.visible;
         let mut should_render = was_loading;
         self.grid_loader.visible = false;
@@ -90,13 +91,13 @@ impl UiState {
         }
 
         if should_render {
-            vec![render_action()]
+            vec![Action::Render]
         } else {
             vec![]
         }
     }
 
-    pub(crate) fn on_prompt_done(&mut self, context: &RenderContext) -> Vec<AppRuntimeAction> {
+    pub(crate) fn on_prompt_done(&mut self, context: &RenderContext) -> Vec<Action<AppAction>> {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
         self.conversation.close_thought_block();
@@ -111,17 +112,17 @@ impl UiState {
 
         let mut effects = Vec::new();
         if !scrollback_lines.is_empty() {
-            effects.push(effect_action(AppEffect::PushScrollback(scrollback_lines)));
+            effects.push(Action::Custom(AppAction::PushScrollback(scrollback_lines)));
         }
-        effects.push(render_action());
+        effects.push(Action::Render);
         effects
     }
 
-    pub(crate) fn on_tick(&mut self) -> Vec<AppRuntimeAction> {
+    pub(crate) fn on_tick(&mut self) -> Vec<Action<AppAction>> {
         let now = Instant::now();
         let mut should_render = false;
 
-        self.grid_loader.on_tick(now);
+        self.grid_loader.on_tick();
         should_render |= self.grid_loader.visible;
 
         self.tool_call_statuses.on_tick(now);
@@ -134,12 +135,12 @@ impl UiState {
             .iter()
             .any(|entry| matches!(entry.status, acp::PlanEntryStatus::Completed));
 
-        self.progress_indicator.on_tick(now);
+        self.progress_indicator.on_tick();
         should_render |= self.progress_indicator.total > 0
             && self.progress_indicator.completed < self.progress_indicator.total;
 
         if should_render {
-            vec![render_action()]
+            vec![Action::Render]
         } else {
             vec![]
         }
@@ -149,20 +150,20 @@ impl UiState {
         &mut self,
         params: ElicitationParams,
         response_tx: oneshot::Sender<ElicitationResponse>,
-    ) -> Vec<AppRuntimeAction> {
+    ) -> Vec<Action<AppAction>> {
         self.config_overlay = None;
         self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
-        vec![render_action()]
+        vec![Action::Render]
     }
 
     pub(crate) fn on_ext_notification(
         &mut self,
         notification: ExtNotification,
-    ) -> Vec<AppRuntimeAction> {
+    ) -> Vec<Action<AppAction>> {
         match notification.method.as_ref() {
             CONTEXT_CLEARED_METHOD => {
                 self.reset_after_context_cleared();
-                vec![render_action()]
+                vec![Action::Render]
             }
             CONTEXT_USAGE_METHOD => {
                 if let Ok(params) =
@@ -174,7 +175,7 @@ impl UiState {
                             ((1.0 - usage_ratio) * 100.0).clamp(0.0, 100.0).round() as u8
                         });
                     }
-                    vec![render_action()]
+                    vec![Action::Render]
                 } else {
                     vec![]
                 }
@@ -186,7 +187,7 @@ impl UiState {
                     self.tool_call_statuses.on_sub_agent_progress(&progress);
                     self.conversation
                         .invalidate_tool_segment(&progress.parent_tool_id);
-                    vec![render_action()]
+                    vec![Action::Render]
                 } else {
                     vec![]
                 }
@@ -199,7 +200,7 @@ impl UiState {
                     if let Some(ref mut overlay) = self.config_overlay {
                         overlay.update_server_statuses(servers);
                     }
-                    vec![render_action()]
+                    vec![Action::Render]
                 } else {
                     vec![]
                 }
@@ -217,295 +218,87 @@ impl UiState {
         self.progress_indicator = ProgressIndicator::default();
     }
 
-    pub(crate) fn on_prompt_error(&mut self) -> Vec<AppRuntimeAction> {
+    pub(crate) fn on_prompt_error(&mut self, error: &acp::Error) -> Vec<Action<AppAction>> {
+        tracing::error!("Prompt error: {error}");
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
-        vec![render_action()]
+        vec![Action::Render]
     }
 
-    pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) {
+    pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) -> Vec<Action<AppAction>> {
         self.auth_methods
             .retain(|method| method.id.0.as_ref() != method_id);
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.remove_auth_method(method_id);
         }
+        vec![Action::Render]
     }
 
-    pub(crate) fn on_authenticate_failed(&mut self, method_id: &str) {
+    pub(crate) fn on_authenticate_failed(
+        &mut self,
+        method_id: &str,
+        error: &str,
+    ) -> Vec<Action<AppAction>> {
+        tracing::warn!("Provider auth failed for {method_id}: {error}");
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.on_authenticate_failed(method_id);
         }
+        vec![Action::Render]
+    }
+
+    pub(crate) fn on_connection_closed(&mut self) -> Vec<Action<AppAction>> {
+        vec![Action::Exit]
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::app::{App, AppAction};
-    use crate::components::conversation_window::SegmentContent;
-    use crate::tui::{RootComponent, RuntimeAction};
-    use acp_utils::notifications::{CONTEXT_USAGE_METHOD, McpServerStatus, McpServerStatusEntry};
-    use agent_client_protocol::SessionConfigOptionCategory;
-    use std::sync::Arc;
+    use crate::tui::Action;
 
     #[test]
-    fn prompt_done_keeps_running_tool_segment() {
-        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
+    fn on_prompt_error_clears_waiting_state_and_requests_render() {
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+        state.waiting_for_response = true;
+        state.grid_loader.visible = true;
 
-        let tool_call = acp::ToolCall::new("tool-1", "Read file");
-        screen.state.tool_call_statuses.on_tool_call(&tool_call);
-        screen.state.conversation.ensure_tool_segment("tool-1");
+        let error = acp::Error::internal_error();
+        let actions = state.on_prompt_error(&error);
 
-        let effects = screen.dispatch(AppAction::PromptDone, &RenderContext::new((120, 40)));
-
-        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
-        let segments: Vec<_> = screen.state.conversation.segments().collect();
-        assert!(matches!(segments[..], [SegmentContent::ToolCall(id)] if id == "tool-1"));
+        assert!(!state.waiting_for_response);
+        assert!(!state.grid_loader.visible);
+        assert!(matches!(actions.as_slice(), [Action::Render]));
     }
 
     #[test]
-    fn prompt_done_flush_respects_custom_theme() {
-        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
-        screen
-            .state
-            .conversation
-            .append_thought_chunk("theme should be preserved");
-
-        let context = RenderContext::new((120, 40));
-        let effects = screen.dispatch(AppAction::PromptDone, &context);
-        assert!(matches!(effects.last(), Some(RuntimeAction::Render)));
-    }
-
-    #[test]
-    fn streaming_chunks_keep_waiting_for_response() {
-        let mut screen = App::new("test-agent".to_string(), &[], vec![]);
-        screen.state.waiting_for_response = true;
-
-        screen.dispatch(
-            AppAction::SessionUpdate(SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
-                acp::ContentBlock::Text(acp::TextContent::new("hello")),
-            ))),
-            &RenderContext::new((120, 40)),
+    fn on_authenticate_complete_removes_method_and_requests_render() {
+        let mut state = UiState::new(
+            "test-agent".to_string(),
+            &[],
+            vec![acp::AuthMethod::new("anthropic", "Anthropic")],
         );
 
-        assert!(screen.state.waiting_for_response);
+        let actions = state.on_authenticate_complete("anthropic");
+
+        assert!(state.auth_methods.is_empty());
+        assert!(matches!(actions.as_slice(), [Action::Render]));
     }
 
     #[test]
-    fn sub_agent_progress_notification_triggers_render() {
-        let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        let json = r#"{"parent_tool_id":"p1","task_id":"t1","agent_name":"explorer","event":{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}}"#;
-        let raw = serde_json::value::to_raw_value(
-            &serde_json::from_str::<serde_json::Value>(json).unwrap(),
-        )
-        .unwrap();
-        let notification =
-            acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
+    fn on_authenticate_failed_requests_render() {
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
 
-        let effects = app.dispatch(
-            AppAction::ExtNotification(notification),
-            &RenderContext::new((120, 40)),
-        );
-        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
+        let actions = state.on_authenticate_failed("anthropic", "bad token");
+
+        assert!(matches!(actions.as_slice(), [Action::Render]));
     }
 
     #[test]
-    fn invalid_sub_agent_progress_json_silently_ignored() {
-        let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        let raw = serde_json::value::to_raw_value(&serde_json::json!({"bad": "data"})).unwrap();
-        let notification =
-            acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
+    fn on_connection_closed_requests_exit() {
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
 
-        let effects = app.dispatch(
-            AppAction::ExtNotification(notification),
-            &RenderContext::new((120, 40)),
-        );
-        assert!(effects.is_empty());
-    }
+        let actions = state.on_connection_closed();
 
-    #[test]
-    fn context_usage_notification_updates_percent_left() {
-        let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        let raw = serde_json::value::to_raw_value(&serde_json::json!({
-            "usage_ratio": 0.75,
-            "tokens_used": 150_000,
-            "context_limit": 200_000
-        }))
-        .unwrap();
-        let notification = acp::ExtNotification::new(CONTEXT_USAGE_METHOD, Arc::from(raw));
-
-        let effects = app.dispatch(
-            AppAction::ExtNotification(notification),
-            &RenderContext::new((120, 40)),
-        );
-
-        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
-        assert_eq!(app.state.context_usage_pct, Some(25));
-    }
-
-    #[test]
-    fn context_usage_notification_with_unknown_limit_clears_meter() {
-        let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        app.state.context_usage_pct = Some(33);
-
-        let raw = serde_json::value::to_raw_value(&serde_json::json!({
-            "usage_ratio": null,
-            "tokens_used": 0,
-            "context_limit": null
-        }))
-        .unwrap();
-        let notification = acp::ExtNotification::new(CONTEXT_USAGE_METHOD, Arc::from(raw));
-
-        let effects = app.dispatch(
-            AppAction::ExtNotification(notification),
-            &RenderContext::new((120, 40)),
-        );
-
-        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
-        assert_eq!(app.state.context_usage_pct, None);
-    }
-
-    #[test]
-    fn context_cleared_notification_resets_conversation_and_tool_state() {
-        let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        app.state.waiting_for_response = true;
-        app.state.grid_loader.visible = true;
-        app.state.context_usage_pct = Some(25);
-        app.state
-            .conversation
-            .set_segments(vec![SegmentContent::Text("hello".to_string())]);
-        app.state
-            .tool_call_statuses
-            .on_tool_call(&acp::ToolCall::new("tool-1", "Read file"));
-
-        let raw = serde_json::value::to_raw_value(&serde_json::json!({})).unwrap();
-        let notification = acp::ExtNotification::new(CONTEXT_CLEARED_METHOD, Arc::from(raw));
-
-        let effects = app.dispatch(
-            AppAction::ExtNotification(notification),
-            &RenderContext::new((120, 40)),
-        );
-
-        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
-        assert!(!app.state.waiting_for_response);
-        assert!(!app.state.grid_loader.visible);
-        assert_eq!(app.state.context_usage_pct, None);
-        assert_eq!(app.state.conversation.segments().len(), 0);
-        assert_eq!(app.state.tool_call_statuses.progress().total_top_level, 0);
-    }
-
-    #[test]
-    fn on_tick_requests_render_while_completed_entries_waiting_to_expire() {
-        let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        app.state.plan_tracker.replace(
-            vec![acp::PlanEntry::new(
-                "1",
-                acp::PlanEntryPriority::Medium,
-                acp::PlanEntryStatus::Completed,
-            )],
-            Instant::now(),
-        );
-
-        let effects = app.dispatch(AppAction::Tick, &RenderContext::new((120, 40)));
-        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
-    }
-
-    #[test]
-    fn on_tick_without_active_state_emits_no_actions() {
-        let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        let effects = app.dispatch(AppAction::Tick, &RenderContext::new((120, 40)));
-        assert!(effects.is_empty());
-    }
-
-    #[test]
-    fn config_option_update_refreshes_mode_display() {
-        let initial = vec![
-            acp::SessionConfigOption::select(
-                "mode",
-                "Mode",
-                "planner",
-                vec![
-                    acp::SessionConfigSelectOption::new("planner", "Planner"),
-                    acp::SessionConfigSelectOption::new("coder", "Coder"),
-                ],
-            )
-            .category(SessionConfigOptionCategory::Mode),
-        ];
-        let updated = vec![
-            acp::SessionConfigOption::select(
-                "mode",
-                "Mode",
-                "coder",
-                vec![
-                    acp::SessionConfigSelectOption::new("planner", "Planner"),
-                    acp::SessionConfigSelectOption::new("coder", "Coder"),
-                ],
-            )
-            .category(SessionConfigOptionCategory::Mode),
-        ];
-        let mut app = App::new("test-agent".to_string(), &initial, vec![]);
-
-        let effects = app.dispatch(
-            AppAction::SessionUpdate(SessionUpdate::ConfigOptionUpdate(
-                acp::ConfigOptionUpdate::new(updated),
-            )),
-            &RenderContext::new((120, 40)),
-        );
-
-        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
-        let output = app.render(&RenderContext::new((120, 40)));
-        assert!(
-            output
-                .lines()
-                .iter()
-                .any(|line| line.plain_text().contains("Coder"))
-        );
-    }
-
-    #[test]
-    fn available_commands_update_is_forwarded_to_prompt_composer() {
-        let mut app = App::new("test-agent".to_string(), &[], vec![]);
-
-        let effects = app.dispatch(
-            AppAction::SessionUpdate(SessionUpdate::AvailableCommandsUpdate(
-                acp::AvailableCommandsUpdate::new(vec![acp::AvailableCommand::new(
-                    "search",
-                    "Search code",
-                )]),
-            )),
-            &RenderContext::new((120, 40)),
-        );
-
-        assert!(effects.is_empty());
-        assert_eq!(app.state.available_commands().len(), 1);
-        assert_eq!(app.state.available_commands()[0].name, "search");
-    }
-
-    #[test]
-    fn server_status_notification_updates_overlay_state() {
-        let mut app = App::new("test-agent".to_string(), &[], vec![]);
-        app.state.open_config_overlay();
-        let notification =
-            acp::ExtNotification::from(acp_utils::notifications::McpNotification::ServerStatus {
-                servers: vec![McpServerStatusEntry {
-                    name: "docs".to_string(),
-                    status: McpServerStatus::Connected { tool_count: 0 },
-                }],
-            });
-
-        let effects = app.dispatch(
-            AppAction::ExtNotification(notification),
-            &RenderContext::new((120, 40)),
-        );
-
-        assert!(matches!(effects.as_slice(), [RuntimeAction::Render]));
-        assert_eq!(app.state.server_statuses.len(), 1);
-        assert!(matches!(
-            app.state.server_statuses[0],
-            McpServerStatusEntry {
-                ref name,
-                status: McpServerStatus::Connected { .. }
-            } if name == "docs"
-        ));
+        assert!(matches!(actions.as_slice(), [Action::Exit]));
     }
 }

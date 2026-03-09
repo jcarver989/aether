@@ -1,7 +1,6 @@
+use crate::Component;
 use crate::component::RenderContext;
 use crate::line::Line;
-use crate::{Component, TickableComponent};
-use std::time::Instant;
 
 pub const BRAILLE_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -37,19 +36,18 @@ impl Spinner {
     pub fn set_tick(&mut self, tick: u16) {
         self.tick = tick;
     }
+
+    /// Advance the animation state. Call this on tick events.
+    pub fn on_tick(&mut self) {
+        if self.visible {
+            self.tick = self.tick.wrapping_add(1);
+        }
+    }
 }
 
 impl Default for Spinner {
     fn default() -> Self {
         Self::braille()
-    }
-}
-
-impl TickableComponent for Spinner {
-    fn on_tick(&mut self, _now: Instant) {
-        if self.visible {
-            self.tick = self.tick.wrapping_add(1);
-        }
     }
 }
 
@@ -143,14 +141,14 @@ mod tests {
     fn on_tick_advances_when_visible() {
         let mut spinner = Spinner::default();
         spinner.visible = true;
-        spinner.on_tick(Instant::now());
+        spinner.on_tick();
         assert_eq!(spinner.current_frame(), BRAILLE_FRAMES[1]);
     }
 
     #[test]
     fn on_tick_noop_when_invisible() {
         let mut spinner = Spinner::default();
-        spinner.on_tick(Instant::now());
+        spinner.on_tick();
         assert_eq!(spinner.current_frame(), BRAILLE_FRAMES[0]);
     }
 

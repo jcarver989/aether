@@ -1,13 +1,17 @@
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use std::io;
 
-pub(crate) struct TerminalSession {
+pub fn terminal_size() -> io::Result<(u16, u16)> {
+    crossterm::terminal::size()
+}
+
+pub struct TerminalSession {
     enable_bracketed_paste: bool,
     cleaned_up: bool,
 }
 
 impl TerminalSession {
-    pub(crate) fn enter(enable_bracketed_paste: bool) -> io::Result<Self> {
+    pub fn enter(enable_bracketed_paste: bool) -> io::Result<Self> {
         enable_raw_mode()?;
         if enable_bracketed_paste {
             crossterm::execute!(io::stdout(), crossterm::event::EnableBracketedPaste)?;
@@ -19,7 +23,7 @@ impl TerminalSession {
         })
     }
 
-    pub(crate) fn cleanup(&mut self) -> io::Result<()> {
+    pub fn cleanup(&mut self) -> io::Result<()> {
         if self.cleaned_up {
             return Ok(());
         }

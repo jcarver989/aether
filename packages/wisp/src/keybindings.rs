@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Clone, Debug)]
 pub struct KeyBinding {

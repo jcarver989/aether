@@ -4865,7 +4865,6 @@ dependencies = [
  "acp_utils",
  "agent-client-protocol",
  "clap",
- "crossterm",
  "ignore",
  "mime_guess",
  "serde",

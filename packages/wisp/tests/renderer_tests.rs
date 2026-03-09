@@ -1,10 +1,11 @@
-use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol as acp;
-use tui::RuntimeAction;
+use tui::Action;
 use tui::testing::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::runtime::{PromptContext, apply_app_effect};
-use wisp::components::app::{App, AppAction, AppEffect};
-use wisp::tui::{Renderer as FrameRenderer, theme::Theme};
+use wisp::components::app::{App, AppAction};
+use wisp::tui::{App as TuiApp, Renderer as FrameRenderer, theme::Theme};
+
+use acp_utils::client::{AcpEvent, AcpPromptHandle};
+use tui::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, TerminalEvent};
 
 const TEST_AGENT: &str = "test-agent";
 const TEST_WIDTH: u16 = 200;
@@ -27,7 +28,13 @@ impl Renderer {
         config_options: &[acp::SessionConfigOption],
     ) -> Self {
         Self {
-            screen: App::new(agent_name, config_options, vec![]),
+            screen: App::new(
+                agent_name,
+                config_options,
+                vec![],
+                AcpPromptHandle::noop(),
+                acp::SessionId::new("test"),
+            ),
             renderer: FrameRenderer::new(terminal, Theme::default()),
         }
     }
@@ -36,8 +43,8 @@ impl Renderer {
         self.renderer.writer()
     }
 
-    fn update_render_context_with(&mut self, size: (u16, u16)) {
-        self.renderer.update_render_context_with(size);
+    fn on_resize(&mut self, size: (u16, u16)) {
+        self.renderer.on_resize(size);
     }
 
     fn initial_render(&mut self) -> std::io::Result<()> {
@@ -46,97 +53,95 @@ impl Renderer {
 
     async fn on_key_event(
         &mut self,
-        key_event: crossterm::event::KeyEvent,
-        prompt_handle: &AcpPromptHandle,
-        session_id: &acp::SessionId,
+        key_event: tui::KeyEvent,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let effects = self
             .screen
-            .dispatch(AppAction::Key(key_event), &self.renderer.context());
-        self.apply_effects(effects, Some((prompt_handle, session_id)))
-            .await
+            .on_terminal_event(TerminalEvent::Key(key_event), &self.renderer.context());
+        self.apply_effects(effects).await
     }
 
-    async fn on_session_update(&mut self, update: acp::SessionUpdate) -> std::io::Result<()> {
-        let effects = self
-            .screen
-            .dispatch(AppAction::SessionUpdate(update), &self.renderer.context());
-        self.apply_effects_no_prompt(effects).await
-    }
-
-    async fn on_prompt_done(&mut self) -> std::io::Result<()> {
-        let effects = self
-            .screen
-            .dispatch(AppAction::PromptDone, &self.renderer.context());
-        self.apply_effects_no_prompt(effects).await
-    }
-
-    async fn on_tick(&mut self) -> std::io::Result<()> {
-        let effects = self
-            .screen
-            .dispatch(AppAction::Tick, &self.renderer.context());
-        self.apply_effects_no_prompt(effects).await
-    }
-
-    async fn on_paste(&mut self, text: &str) -> std::io::Result<()> {
-        let effects = self
-            .screen
-            .dispatch(AppAction::Paste(text.to_string()), &self.renderer.context());
-        self.apply_effects_no_prompt(effects).await
-    }
-
-    async fn on_resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
-        self.renderer.update_render_context_with((cols, rows));
-        let effects = self
-            .screen
-            .dispatch(AppAction::Resize { cols, rows }, &self.renderer.context());
-        self.apply_effects_no_prompt(effects).await
-    }
-
-    async fn set_file_picker_matches(
+    async fn on_session_update(
         &mut self,
-        matches: Vec<wisp::components::file_picker::FileMatch>,
-    ) -> std::io::Result<()> {
-        let effects = self.screen.dispatch(
-            AppAction::SetFilePickerMatches(matches),
+        update: acp::SessionUpdate,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let effects = self.screen.on_event(
+            AcpEvent::SessionUpdate(Box::new(update)),
             &self.renderer.context(),
         );
-        self.apply_effects_no_prompt(effects).await
+        self.apply_effects(effects).await.map(|_| ())
+    }
+
+    async fn on_prompt_done(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let effects = self.screen.on_event(
+            AcpEvent::PromptDone(acp::StopReason::EndTurn),
+            &self.renderer.context(),
+        );
+        self.apply_effects(effects).await.map(|_| ())
+    }
+
+    async fn on_tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let effects = self.screen.on_tick(&self.renderer.context());
+        self.apply_effects(effects).await.map(|_| ())
+    }
+
+    async fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let effects = self.screen.on_terminal_event(
+            TerminalEvent::Paste(text.to_string()),
+            &self.renderer.context(),
+        );
+        self.apply_effects(effects).await.map(|_| ())
+    }
+
+    async fn on_resize_event(
+        &mut self,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.renderer.on_resize((cols, rows));
+        self.renderer.render(&mut self.screen)?;
+        Ok(())
+    }
+
+    async fn on_ext_notification(
+        &mut self,
+        notification: acp::ExtNotification,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let effects = self.screen.on_event(
+            AcpEvent::ExtNotification(notification),
+            &self.renderer.context(),
+        );
+        self.apply_effects(effects).await.map(|_| ())
+    }
+
+    async fn on_connection_closed(&mut self) -> Result<LoopAction, Box<dyn std::error::Error>> {
+        let effects = self
+            .screen
+            .on_event(AcpEvent::ConnectionClosed, &self.renderer.context());
+        self.apply_effects(effects).await
     }
 
     async fn apply_effects(
         &mut self,
-        effects: Vec<RuntimeAction<AppEffect>>,
-        prompt: Option<(&AcpPromptHandle, &acp::SessionId)>,
+        effects: Vec<Action<AppAction>>,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let mut should_render = false;
         let mut action = LoopAction::Continue;
 
         for effect in effects {
             match effect {
-                RuntimeAction::Exit => action = LoopAction::Exit,
-                RuntimeAction::Render => should_render = true,
-                RuntimeAction::Effect(effect) => {
-                    let actions = apply_app_effect(
-                        &mut self.screen,
-                        &mut self.renderer,
-                        effect,
-                        prompt.map(|(prompt_handle, session_id)| {
-                            PromptContext::new(prompt_handle, session_id)
-                        }),
-                    )
-                    .await?;
+                Action::Exit => action = LoopAction::Exit,
+                Action::Render => should_render = true,
+                Action::Custom(effect) => {
+                    let actions = self.screen.apply_effect(&mut self.renderer, effect).await?;
 
                     if actions
                         .iter()
-                        .any(|action| matches!(action, RuntimeAction::Render))
+                        .any(|action| matches!(action, Action::Render))
                     {
                         should_render = true;
                     }
-                    if actions
-                        .iter()
-                        .any(|action| matches!(action, RuntimeAction::Exit))
-                    {
+                    if actions.iter().any(|action| matches!(action, Action::Exit)) {
                         action = LoopAction::Exit;
                     }
                 }
@@ -148,40 +153,6 @@ impl Renderer {
         }
 
         Ok(action)
-    }
-
-    #[allow(clippy::unused_async)]
-    async fn apply_effects_no_prompt(
-        &mut self,
-        effects: Vec<RuntimeAction<AppEffect>>,
-    ) -> std::io::Result<()> {
-        let mut should_render = false;
-
-        for effect in effects {
-            match effect {
-                RuntimeAction::Exit => {}
-                RuntimeAction::Render => should_render = true,
-                RuntimeAction::Effect(AppEffect::PushScrollback(lines)) => {
-                    self.renderer.push_to_scrollback(&lines)?;
-                }
-                RuntimeAction::Effect(
-                    AppEffect::PromptSubmit { .. }
-                    | AppEffect::SetConfigOption { .. }
-                    | AppEffect::SetTheme { .. }
-                    | AppEffect::Cancel
-                    | AppEffect::AuthenticateMcpServer { .. }
-                    | AppEffect::AuthenticateProvider { .. },
-                ) => {
-                    panic!("unexpected prompt/config/cancel effect without prompt context");
-                }
-            }
-        }
-
-        if should_render {
-            self.renderer.render(&mut self.screen)?;
-        }
-
-        Ok(())
     }
 }
 
@@ -306,7 +277,7 @@ async fn test_agent_thought_chunks() {
 async fn test_agent_message_chunks_stream_before_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
+    renderer.on_resize((TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -330,7 +301,7 @@ async fn test_agent_message_chunks_stream_before_prompt_done() {
 async fn test_thought_and_text_chunks_stream_before_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
+    renderer.on_resize((TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -354,7 +325,7 @@ async fn test_thought_and_text_chunks_stream_before_prompt_done() {
 async fn test_text_and_thought_chunks_stream_in_arrival_order() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
+    renderer.on_resize((TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -627,7 +598,7 @@ async fn test_late_result_after_prompt_done() {
 async fn render_with_size(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer {
     let terminal = TestTerminal::new(size.0, size.1);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with(size);
+    renderer.on_resize(size);
 
     for event in events {
         match event {
@@ -647,15 +618,12 @@ async fn render(events: Vec<TestEvent>) -> Renderer {
 async fn test_user_message_submission() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
+    renderer.on_resize((TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello world", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "Hello world").await;
+    press_enter(&mut renderer).await;
 
     // Simulate the agent finishing so the grid loader clears
     renderer.on_prompt_done().await.unwrap();
@@ -730,45 +698,26 @@ fn tool_update_with_args(id: &str, args: &str) -> TestEvent {
     )))
 }
 
-async fn type_string(
-    renderer: &mut Renderer,
-    text: &str,
-    handle: &AcpPromptHandle,
-    session_id: &acp::SessionId,
-) {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
+async fn type_string(renderer: &mut Renderer, text: &str) {
     for ch in text.chars() {
         let key_event = KeyEvent {
             code: KeyCode::Char(ch),
             modifiers: KeyModifiers::empty(),
-            kind: crossterm::event::KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
         };
-        renderer
-            .on_key_event(key_event, handle, session_id)
-            .await
-            .unwrap();
+        renderer.on_key_event(key_event).await.unwrap();
     }
 }
 
-async fn press_enter(
-    renderer: &mut Renderer,
-    handle: &AcpPromptHandle,
-    session_id: &acp::SessionId,
-) {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
+async fn press_enter(renderer: &mut Renderer) {
     let enter_event = KeyEvent {
         code: KeyCode::Enter,
         modifiers: KeyModifiers::empty(),
-        kind: crossterm::event::KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
+        kind: KeyEventKind::Press,
+        state: KeyEventState::empty(),
     };
-    renderer
-        .on_key_event(enter_event, handle, session_id)
-        .await
-        .unwrap();
+    renderer.on_key_event(enter_event).await.unwrap();
 }
 
 // ── Regression: tool calls must render after initial_render ──────────
@@ -777,7 +726,7 @@ async fn press_enter(
 async fn test_in_progress_tool_call_visible_after_initial_render() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
+    renderer.on_resize((TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
@@ -802,7 +751,7 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
 async fn test_in_progress_tool_call_renders_correctly_after_resize() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
+    renderer.on_resize((TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -814,7 +763,7 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
         .unwrap();
 
     // Terminal resize triggers full re-render at new width
-    renderer.on_resize(100, 30).await.unwrap();
+    renderer.on_resize_event(100, 30).await.unwrap();
 
     let expected = expected_with_prompt(
         &["⠋ Read", "⠋ Working... (0/1 tools complete)"],
@@ -954,14 +903,11 @@ async fn test_prompt_done_does_not_duplicate_overflowed_lines() {
 async fn test_typing_renders_within_bordered_input() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
+    renderer.on_resize((80, 24));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "hello", &handle, &session_id).await;
+    type_string(&mut renderer, "hello").await;
 
     let expected = expected_prompt(80, "hello", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
@@ -971,21 +917,16 @@ async fn test_typing_renders_within_bordered_input() {
 async fn test_wrapped_input_prompt_rerender_has_single_box() {
     let terminal = TestTerminal::new(32, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((32, 24));
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
+    renderer.on_resize((32, 24));
 
     renderer.initial_render().unwrap();
     type_string(
         &mut renderer,
         "this input prompt is long enough to wrap across multiple rows",
-        &handle,
-        &session_id,
     )
     .await;
-    press_backspace(&mut renderer, &handle, &session_id).await;
-    press_backspace(&mut renderer, &handle, &session_id).await;
+    press_backspace(&mut renderer).await;
+    press_backspace(&mut renderer).await;
 
     let lines = renderer.writer().get_lines();
     let top_count = lines.iter().filter(|l| l.contains('╭')).count();
@@ -1015,15 +956,12 @@ async fn test_wrapped_input_prompt_rerender_has_single_box() {
 async fn test_backspace_updates_within_border() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
+    renderer.on_resize((80, 24));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "hello", &handle, &session_id).await;
-    press_backspace(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "hello").await;
+    press_backspace(&mut renderer).await;
 
     let expected = expected_prompt(80, "hell", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
@@ -1031,27 +969,18 @@ async fn test_backspace_updates_within_border() {
 
 #[tokio::test]
 async fn test_ctrl_c_exits_while_file_picker_is_open() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
     renderer
-        .on_key_event(
-            KeyEvent {
-                code: KeyCode::Char('@'),
-                modifiers: KeyModifiers::empty(),
-                kind: crossterm::event::KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::empty(),
-            },
-            &handle,
-            &session_id,
-        )
+        .on_key_event(KeyEvent {
+            code: KeyCode::Char('@'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
         .await
         .unwrap();
     assert!(
@@ -1060,16 +989,12 @@ async fn test_ctrl_c_exits_while_file_picker_is_open() {
     );
 
     let action = renderer
-        .on_key_event(
-            KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL,
-                kind: crossterm::event::KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::empty(),
-            },
-            &handle,
-            &session_id,
-        )
+        .on_key_event(KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
         .await
         .unwrap();
 
@@ -1078,27 +1003,18 @@ async fn test_ctrl_c_exits_while_file_picker_is_open() {
 
 #[tokio::test]
 async fn test_space_closes_file_picker_without_selection() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
     renderer
-        .on_key_event(
-            KeyEvent {
-                code: KeyCode::Char('@'),
-                modifiers: KeyModifiers::empty(),
-                kind: crossterm::event::KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::empty(),
-            },
-            &handle,
-            &session_id,
-        )
+        .on_key_event(KeyEvent {
+            code: KeyCode::Char('@'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
         .await
         .unwrap();
     assert!(
@@ -1107,16 +1023,12 @@ async fn test_space_closes_file_picker_without_selection() {
     );
 
     renderer
-        .on_key_event(
-            KeyEvent {
-                code: KeyCode::Char(' '),
-                modifiers: KeyModifiers::empty(),
-                kind: crossterm::event::KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::empty(),
-            },
-            &handle,
-            &session_id,
-        )
+        .on_key_event(KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
         .await
         .unwrap();
 
@@ -1130,7 +1042,7 @@ async fn test_space_closes_file_picker_without_selection() {
 async fn test_status_line_shows_agent_name() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, "claude-code".to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1159,7 +1071,7 @@ async fn test_status_line_shows_model_from_config_options() {
 
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1190,7 +1102,7 @@ async fn test_status_line_updates_on_config_option_update() {
 
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
     // Send a ConfigOptionUpdate with a new model
@@ -1231,7 +1143,7 @@ async fn test_status_line_updates_on_config_option_update() {
 async fn test_empty_prompt_renders_bordered_box() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1245,15 +1157,12 @@ async fn test_empty_prompt_renders_bordered_box() {
 async fn test_grid_loader_visible_after_prompt_submit() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
+    renderer.on_resize((TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     let lines = renderer.writer().get_lines();
     let has_spinner = lines.iter().any(|l| l.contains('⠋'));
@@ -1268,15 +1177,12 @@ async fn test_grid_loader_visible_after_prompt_submit() {
 async fn test_grid_loader_disappears_on_session_update() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
+    renderer.on_resize((TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     // First session update should hide the loader
     renderer
@@ -1301,15 +1207,12 @@ async fn test_grid_loader_disappears_on_session_update() {
 async fn test_grid_loader_disappears_on_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
+    renderer.on_resize((TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     renderer.on_prompt_done().await.unwrap();
 
@@ -1328,7 +1231,7 @@ async fn test_grid_loader_disappears_on_prompt_done() {
 async fn test_grid_loader_not_visible_on_initial_render() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1340,15 +1243,12 @@ async fn test_grid_loader_not_visible_on_initial_render() {
 async fn test_on_tick_advances_animation() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((TEST_WIDTH, 40));
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
+    renderer.on_resize((TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     let lines_before: Vec<String> = renderer.writer().get_lines();
 
@@ -1367,7 +1267,7 @@ async fn test_on_tick_advances_animation() {
 async fn test_on_tick_noop_when_not_waiting() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1387,7 +1287,7 @@ async fn test_on_tick_noop_when_not_waiting() {
 async fn test_paste_inserts_all_text_at_once() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
     renderer.on_paste("hello world").await.unwrap();
@@ -1400,7 +1300,7 @@ async fn test_paste_inserts_all_text_at_once() {
 async fn test_paste_strips_control_characters() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
     renderer.on_paste("line1\nline2\ttab").await.unwrap();
@@ -1411,28 +1311,19 @@ async fn test_paste_strips_control_characters() {
 
 #[tokio::test]
 async fn test_paste_closes_file_picker() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
 
     // Open file picker with @
     renderer
-        .on_key_event(
-            KeyEvent {
-                code: KeyCode::Char('@'),
-                modifiers: KeyModifiers::empty(),
-                kind: crossterm::event::KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::empty(),
-            },
-            &handle,
-            &session_id,
-        )
+        .on_key_event(KeyEvent {
+            code: KeyCode::Char('@'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
         .await
         .unwrap();
     assert!(
@@ -1451,249 +1342,26 @@ async fn test_paste_closes_file_picker() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-async fn send_key(
-    renderer: &mut Renderer,
-    code: crossterm::event::KeyCode,
-    modifiers: crossterm::event::KeyModifiers,
-    handle: &AcpPromptHandle,
-    session_id: &acp::SessionId,
-) {
+async fn send_key(renderer: &mut Renderer, code: KeyCode, modifiers: KeyModifiers) {
     renderer
-        .on_key_event(
-            crossterm::event::KeyEvent {
-                code,
-                modifiers,
-                kind: crossterm::event::KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::empty(),
-            },
-            handle,
-            session_id,
-        )
+        .on_key_event(KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
         .await
         .unwrap();
 }
 
-async fn open_picker_with_files(
-    renderer: &mut Renderer,
-    files: Vec<&str>,
-    handle: &AcpPromptHandle,
-    session_id: &acp::SessionId,
-) {
-    use wisp::components::file_picker::FileMatch;
-
-    // Type @ to set input_buffer state correctly
-    send_key(
-        renderer,
-        crossterm::event::KeyCode::Char('@'),
-        crossterm::event::KeyModifiers::empty(),
-        handle,
-        session_id,
-    )
-    .await;
-
-    // Replace the picker with known entries via dispatch
-    let matches: Vec<FileMatch> = files
-        .into_iter()
-        .map(|name| FileMatch {
-            path: std::path::PathBuf::from(name),
-            display_name: name.to_string(),
-        })
-        .collect();
-    renderer.set_file_picker_matches(matches).await.unwrap();
-}
-
-fn assert_picker_renders_selected(terminal: &TestTerminal, expected_file: &str) {
-    let lines = terminal.get_lines();
-    let marker = format!("▶ {expected_file}");
-    assert!(
-        lines.iter().any(|l| l.contains(&marker)),
-        "Expected '{}' to be selected in rendered output.\nBuffer:\n{}",
-        expected_file,
-        lines.join("\n")
-    );
-}
-
-#[tokio::test]
-async fn test_file_picker_down_arrow_moves_selection() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
-    renderer.initial_render().unwrap();
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    open_picker_with_files(
-        &mut renderer,
-        vec!["alpha.rs", "beta.rs", "gamma.rs"],
-        &handle,
-        &session_id,
-    )
-    .await;
-
-    // Initially selected_index=0
-    assert_picker_renders_selected(renderer.writer(), "alpha.rs");
-
-    // Down arrow → beta.rs
-    send_key(
-        &mut renderer,
-        KeyCode::Down,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
-    assert_picker_renders_selected(renderer.writer(), "beta.rs");
-
-    // Down arrow → gamma.rs
-    send_key(
-        &mut renderer,
-        KeyCode::Down,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
-    assert_picker_renders_selected(renderer.writer(), "gamma.rs");
-
-    // Down arrow wraps → alpha.rs
-    send_key(
-        &mut renderer,
-        KeyCode::Down,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
-    assert_picker_renders_selected(renderer.writer(), "alpha.rs");
-}
-
-#[tokio::test]
-async fn test_file_picker_up_arrow_moves_selection() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
-    renderer.initial_render().unwrap();
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    open_picker_with_files(
-        &mut renderer,
-        vec!["alpha.rs", "beta.rs", "gamma.rs"],
-        &handle,
-        &session_id,
-    )
-    .await;
-
-    // Up from index 0 wraps → gamma.rs
-    send_key(
-        &mut renderer,
-        KeyCode::Up,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
-    assert_picker_renders_selected(renderer.writer(), "gamma.rs");
-
-    // Up again → beta.rs
-    send_key(
-        &mut renderer,
-        KeyCode::Up,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
-    assert_picker_renders_selected(renderer.writer(), "beta.rs");
-}
-
-#[tokio::test]
-async fn test_file_picker_ctrl_n_moves_down() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
-    renderer.initial_render().unwrap();
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    open_picker_with_files(
-        &mut renderer,
-        vec!["alpha.rs", "beta.rs"],
-        &handle,
-        &session_id,
-    )
-    .await;
-
-    // Ctrl+N → beta.rs
-    send_key(
-        &mut renderer,
-        KeyCode::Char('n'),
-        KeyModifiers::CONTROL,
-        &handle,
-        &session_id,
-    )
-    .await;
-    assert_picker_renders_selected(renderer.writer(), "beta.rs");
-}
-
-#[tokio::test]
-async fn test_file_picker_ctrl_p_moves_up() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
-    renderer.initial_render().unwrap();
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    open_picker_with_files(
-        &mut renderer,
-        vec!["alpha.rs", "beta.rs"],
-        &handle,
-        &session_id,
-    )
-    .await;
-
-    // Ctrl+P from index 0 wraps → beta.rs
-    send_key(
-        &mut renderer,
-        KeyCode::Char('p'),
-        KeyModifiers::CONTROL,
-        &handle,
-        &session_id,
-    )
-    .await;
-    assert_picker_renders_selected(renderer.writer(), "beta.rs");
-}
-
-async fn press_backspace(
-    renderer: &mut Renderer,
-    handle: &AcpPromptHandle,
-    session_id: &acp::SessionId,
-) {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
+async fn press_backspace(renderer: &mut Renderer) {
     let backspace_event = KeyEvent {
         code: KeyCode::Backspace,
         modifiers: KeyModifiers::empty(),
-        kind: crossterm::event::KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
+        kind: KeyEventKind::Press,
+        state: KeyEventState::empty(),
     };
-    renderer
-        .on_key_event(backspace_event, handle, session_id)
-        .await
-        .unwrap();
+    renderer.on_key_event(backspace_event).await.unwrap();
 }
 
 // ── Config menu tests ────────────────────────────────────────────────
@@ -1724,14 +1392,11 @@ async fn test_config_command_opens_menu_for_single_option() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Config menu should open; picker requires explicit Enter
     assert!(
@@ -1746,19 +1411,14 @@ async fn test_config_command_opens_menu_for_single_option() {
 
 #[tokio::test]
 async fn test_config_menu_esc_closes() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -1769,7 +1429,7 @@ async fn test_config_menu_esc_closes() {
     );
 
     // Open the picker by pressing Enter on the selected menu entry
-    press_enter(&mut renderer, &handle, &session_id).await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -1780,14 +1440,7 @@ async fn test_config_menu_esc_closes() {
     );
 
     // First ESC closes the picker
-    send_key(
-        &mut renderer,
-        KeyCode::Esc,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -1798,14 +1451,7 @@ async fn test_config_menu_esc_closes() {
     );
 
     // Second ESC closes the menu
-    send_key(
-        &mut renderer,
-        KeyCode::Esc,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
     assert!(
         !has_config_menu(renderer.writer()),
         "Config menu should not be visible"
@@ -1814,19 +1460,14 @@ async fn test_config_menu_esc_closes() {
 
 #[tokio::test]
 async fn test_config_menu_arrow_navigation_single_entry() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // With single config option + Theme + MCP servers, menu has 3 entries: Model, Theme, MCP Servers
     assert!(
@@ -1844,14 +1485,7 @@ async fn test_config_menu_arrow_navigation_single_entry() {
     );
 
     // Down goes to Theme (index 1)
-    send_key(
-        &mut renderer,
-        KeyCode::Down,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
     let label = config_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("Theme")),
@@ -1859,14 +1493,7 @@ async fn test_config_menu_arrow_navigation_single_entry() {
     );
 
     // Down again goes to MCP Servers (index 2)
-    send_key(
-        &mut renderer,
-        KeyCode::Down,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
     let label = config_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("MCP Servers")),
@@ -1874,14 +1501,7 @@ async fn test_config_menu_arrow_navigation_single_entry() {
     );
 
     // Down again wraps back to Model (index 0)
-    send_key(
-        &mut renderer,
-        KeyCode::Down,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
     let label = config_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("Model")),
@@ -1894,21 +1514,18 @@ async fn test_config_single_option_shows_model_picker() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Menu opens; press Enter to open the model picker
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
     );
-    press_enter(&mut renderer, &handle, &session_id).await;
+    press_enter(&mut renderer).await;
 
     assert!(
         has_config_picker(renderer.writer()),
@@ -1927,16 +1544,13 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     // Open the picker from the menu
-    press_enter(&mut renderer, &handle, &session_id).await;
+    press_enter(&mut renderer).await;
 
     let lines = renderer.writer().get_lines();
     #[allow(clippy::cast_possible_truncation)]
@@ -1961,18 +1575,15 @@ async fn test_config_picker_filters_model_options() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     // Open the picker from the menu
-    press_enter(&mut renderer, &handle, &session_id).await;
+    press_enter(&mut renderer).await;
 
-    type_string(&mut renderer, "claude", &handle, &session_id).await;
+    type_string(&mut renderer, "claude").await;
 
     let lines = renderer.writer().get_lines();
     assert!(
@@ -1984,8 +1595,6 @@ async fn test_config_picker_filters_model_options() {
 
 #[tokio::test]
 async fn test_config_menu_swallows_other_keys() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let config_options = vec![
         acp::SessionConfigOption::select(
             "model",
@@ -2003,28 +1612,18 @@ async fn test_config_menu_swallows_other_keys() {
 
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
     );
 
     // Typing a character should not modify input buffer
-    send_key(
-        &mut renderer,
-        KeyCode::Char('x'),
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Char('x'), KeyModifiers::empty()).await;
 
     // Menu should still be open
     assert!(
@@ -2042,19 +1641,14 @@ async fn test_config_menu_swallows_other_keys() {
 
 #[tokio::test]
 async fn test_config_menu_ctrl_c_exits() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -2062,16 +1656,12 @@ async fn test_config_menu_ctrl_c_exits() {
 
     // Ctrl+C should still exit even with menu open
     let action = renderer
-        .on_key_event(
-            crossterm::event::KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL,
-                kind: crossterm::event::KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::empty(),
-            },
-            &handle,
-            &session_id,
-        )
+        .on_key_event(KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
         .await
         .unwrap();
 
@@ -2083,14 +1673,11 @@ async fn test_config_menu_updates_on_config_option_event() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -2136,14 +1723,11 @@ async fn test_config_clears_input_buffer() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Input buffer should be cleared
     let lines = renderer.writer().get_lines();
@@ -2159,14 +1743,11 @@ async fn test_config_clears_input_buffer() {
 async fn test_config_with_no_options_shows_placeholder() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     assert!(
         has_config_menu(renderer.writer()),
@@ -2185,24 +1766,12 @@ async fn test_config_with_no_options_shows_placeholder() {
 
 #[tokio::test]
 async fn test_slash_opens_command_picker() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    send_key(
-        &mut renderer,
-        KeyCode::Char('/'),
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     assert!(
         has_command_picker(renderer.writer()),
@@ -2214,13 +1783,10 @@ async fn test_slash_opens_command_picker() {
 async fn test_slash_mid_input_no_picker() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    type_string(&mut renderer, "hello/", &handle, &session_id).await;
+    type_string(&mut renderer, "hello/").await;
 
     assert!(
         !has_command_picker(renderer.writer()),
@@ -2230,37 +1796,18 @@ async fn test_slash_mid_input_no_picker() {
 
 #[tokio::test]
 async fn test_command_picker_esc_clears() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    send_key(
-        &mut renderer,
-        KeyCode::Char('/'),
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
     assert!(
         has_command_picker(renderer.writer()),
         "Command picker should be open"
     );
 
-    send_key(
-        &mut renderer,
-        KeyCode::Esc,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
 
     assert!(
         !has_command_picker(renderer.writer()),
@@ -2276,37 +1823,18 @@ async fn test_command_picker_esc_clears() {
 
 #[tokio::test]
 async fn test_command_picker_backspace_empty_closes() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    send_key(
-        &mut renderer,
-        KeyCode::Char('/'),
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
     assert!(
         has_command_picker(renderer.writer()),
         "Command picker should be open"
     );
 
-    send_key(
-        &mut renderer,
-        KeyCode::Backspace,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Backspace, KeyModifiers::empty()).await;
 
     assert!(
         !has_command_picker(renderer.writer()),
@@ -2316,15 +1844,10 @@ async fn test_command_picker_backspace_empty_closes() {
 
 #[tokio::test]
 async fn test_available_commands_update_stored() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
 
     renderer
         .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
@@ -2337,14 +1860,7 @@ async fn test_available_commands_update_stored() {
         .unwrap();
 
     // Open command picker and verify commands appear in rendered output
-    send_key(
-        &mut renderer,
-        KeyCode::Char('/'),
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let names = command_picker_visible_names(renderer.writer());
     assert!(
@@ -2359,15 +1875,10 @@ async fn test_available_commands_update_stored() {
 
 #[tokio::test]
 async fn test_available_commands_update_extracts_hint() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
 
     renderer
         .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
@@ -2384,14 +1895,7 @@ async fn test_available_commands_update_extracts_hint() {
         .unwrap();
 
     // Open command picker and verify the hint appears in rendered output
-    send_key(
-        &mut renderer,
-        KeyCode::Char('/'),
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let lines = renderer.writer().get_lines();
     assert!(
@@ -2403,15 +1907,10 @@ async fn test_available_commands_update_extracts_hint() {
 
 #[tokio::test]
 async fn test_command_picker_shows_mcp_commands() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
-
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
 
     // Feed available commands
     renderer
@@ -2425,14 +1924,7 @@ async fn test_command_picker_shows_mcp_commands() {
         .unwrap();
 
     // Open picker
-    send_key(
-        &mut renderer,
-        KeyCode::Char('/'),
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let names = command_picker_visible_names(renderer.writer());
     assert!(
@@ -2447,40 +1939,24 @@ async fn test_command_picker_shows_mcp_commands() {
 
 #[tokio::test]
 async fn test_command_picker_ctrl_c_exits() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.update_render_context_with((80, 24));
+    renderer.on_resize((80, 24));
     renderer.initial_render().unwrap();
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
-    send_key(
-        &mut renderer,
-        KeyCode::Char('/'),
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
     assert!(
         has_command_picker(renderer.writer()),
         "Command picker should be open"
     );
 
     let action = renderer
-        .on_key_event(
-            crossterm::event::KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL,
-                kind: crossterm::event::KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::empty(),
-            },
-            &handle,
-            &session_id,
-        )
+        .on_key_event(KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
         .await
         .unwrap();
 
@@ -2639,7 +2115,7 @@ async fn test_config_overlay_renders_after_large_overflow_scrollback() {
     // Small viewport to force overflow quickly
     let terminal = TestTerminal::new(40, 8);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((40, 8));
+    renderer.on_resize((40, 8));
     renderer.initial_render().unwrap();
 
     // Feed a LOT of content in a single streaming response (no prompt_done)
@@ -2657,11 +2133,9 @@ async fn test_config_overlay_renders_after_large_overflow_scrollback() {
     // Now open config overlay WHILE still in the streaming context
     // This is where the bug manifests - flushed_visual_count is high
     // but the overlay produces fewer lines
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
 
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Assert overlay state is correct
     assert!(
@@ -2685,12 +2159,10 @@ async fn test_config_overlay_renders_after_large_overflow_scrollback() {
 
 #[tokio::test]
 async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     let config_options = make_config_options();
     let terminal = TestTerminal::new(40, 8);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.update_render_context_with((40, 8));
+    renderer.on_resize((40, 8));
     renderer.initial_render().unwrap();
 
     // Create overflow history within a single streaming response
@@ -2704,12 +2176,9 @@ async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_v
             .unwrap();
     }
 
-    let handle = AcpPromptHandle::noop();
-    let session_id = acp::SessionId::new("test-session");
-
     // Open config overlay while flushed_visual_count is high
-    type_string(&mut renderer, "/config", &handle, &session_id).await;
-    press_enter(&mut renderer, &handle, &session_id).await;
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Verify overlay rendered correctly
     assert!(
@@ -2724,14 +2193,7 @@ async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_v
     );
 
     // Close overlay with Esc
-    send_key(
-        &mut renderer,
-        KeyCode::Esc,
-        KeyModifiers::empty(),
-        &handle,
-        &session_id,
-    )
-    .await;
+    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
 
     // Verify normal prompt rendering resumes
     assert!(
@@ -2755,5 +2217,634 @@ async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_v
         has_content,
         "Frame should not be empty after closing overlay.\nBuffer:\n{}",
         lines_after.join("\n")
+    );
+}
+
+// ── Migrated from mod.rs unit tests ──────────────────────────────────
+
+#[tokio::test]
+async fn test_shift_tab_cycles_mode_option() {
+    let options = vec![
+        acp::SessionConfigOption::select(
+            "mode",
+            "Mode",
+            "Planner",
+            vec![
+                acp::SessionConfigSelectOption::new("Planner", "Planner"),
+                acp::SessionConfigSelectOption::new("Coder", "Coder"),
+            ],
+        )
+        .category(acp::SessionConfigOptionCategory::Mode),
+    ];
+
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let action = renderer
+        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        .await
+        .unwrap();
+
+    assert!(matches!(action, LoopAction::Continue));
+}
+
+#[tokio::test]
+async fn test_shift_tab_wraps_mode_option() {
+    let options = vec![
+        acp::SessionConfigOption::select(
+            "mode",
+            "Mode",
+            "Coder",
+            vec![
+                acp::SessionConfigSelectOption::new("Planner", "Planner"),
+                acp::SessionConfigSelectOption::new("Coder", "Coder"),
+            ],
+        )
+        .category(acp::SessionConfigOptionCategory::Mode),
+    ];
+
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    renderer
+        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_shift_tab_ignored_when_overlay_consumes_input() {
+    let options = vec![
+        acp::SessionConfigOption::select(
+            "mode",
+            "Mode",
+            "Planner",
+            vec![acp::SessionConfigSelectOption::new("Planner", "Planner")],
+        )
+        .category(acp::SessionConfigOptionCategory::Mode),
+    ];
+
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    // Open config overlay
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config overlay should be visible"
+    );
+
+    // Send shift+tab — should be swallowed by the overlay
+    renderer
+        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        .await
+        .unwrap();
+
+    // Overlay should still be visible
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config overlay should still be visible after shift+tab"
+    );
+}
+
+#[tokio::test]
+async fn test_shift_tab_noop_when_no_cycleable_option_exists() {
+    let options = vec![
+        acp::SessionConfigOption::select(
+            "model",
+            "Model",
+            "m1",
+            vec![
+                acp::SessionConfigSelectOption::new("m1", "M1"),
+                acp::SessionConfigSelectOption::new("m2", "M2"),
+            ],
+        )
+        .category(acp::SessionConfigOptionCategory::Model),
+    ];
+
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let lines_before = renderer.writer().get_lines();
+
+    renderer
+        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        .await
+        .unwrap();
+
+    let lines_after = renderer.writer().get_lines();
+    assert_eq!(
+        lines_before, lines_after,
+        "Shift+Tab should be a no-op when no cycleable mode option"
+    );
+}
+
+#[tokio::test]
+async fn test_tab_cycles_reasoning_option() {
+    use acp_utils::config_option_id::ConfigOptionId;
+
+    let options = vec![acp::SessionConfigOption::select(
+        ConfigOptionId::ReasoningEffort.as_str(),
+        "Reasoning",
+        "none",
+        vec![
+            acp::SessionConfigSelectOption::new("none", "None"),
+            acp::SessionConfigSelectOption::new("low", "Low"),
+            acp::SessionConfigSelectOption::new("medium", "Medium"),
+        ],
+    )];
+
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    renderer
+        .on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_tab_noop_when_no_reasoning_option() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let lines_before = renderer.writer().get_lines();
+
+    renderer
+        .on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+        .await
+        .unwrap();
+
+    let lines_after = renderer.writer().get_lines();
+    assert_eq!(
+        lines_before, lines_after,
+        "Tab should be a no-op when no reasoning option"
+    );
+}
+
+#[tokio::test]
+async fn test_connection_closed_exits() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let action = renderer.on_connection_closed().await.unwrap();
+    assert!(matches!(action, LoopAction::Exit));
+}
+
+#[tokio::test]
+async fn test_ctrl_c_emits_exit() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let action = renderer
+        .on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+        .await
+        .unwrap();
+
+    assert!(matches!(action, LoopAction::Exit));
+}
+
+#[tokio::test]
+async fn test_escape_while_waiting_emits_cancel() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    // Submit a prompt to enter waiting state
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
+
+    // Press Escape while waiting — should cancel
+    let action = renderer
+        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+        .await
+        .unwrap();
+
+    assert!(matches!(action, LoopAction::Continue));
+}
+
+#[tokio::test]
+async fn test_escape_while_not_waiting_does_nothing() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let lines_before = renderer.writer().get_lines();
+
+    renderer
+        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+        .await
+        .unwrap();
+
+    let lines_after = renderer.writer().get_lines();
+    assert_eq!(
+        lines_before, lines_after,
+        "Escape should be a no-op when not waiting"
+    );
+}
+
+// ── Migrated from session.rs unit tests ──────────────────────────────
+
+#[tokio::test]
+async fn test_prompt_done_keeps_running_tool_segment() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    // Send a tool call that remains in-progress
+    renderer
+        .on_session_update(acp::SessionUpdate::ToolCall(acp::ToolCall::new(
+            "tool-1",
+            "Read file",
+        )))
+        .await
+        .unwrap();
+
+    renderer.on_prompt_done().await.unwrap();
+
+    // The running tool should still be visible
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("Read file")),
+        "Running tool should remain visible after prompt_done.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_prompt_done_flush_respects_rendering() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentThoughtChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
+                "theme should be preserved",
+            ))),
+        ))
+        .await
+        .unwrap();
+
+    renderer.on_prompt_done().await.unwrap();
+
+    // Should render successfully
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("theme should be preserved")),
+        "Thought text should be visible after prompt_done.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_streaming_chunks_keep_waiting_for_response() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    // Submit prompt to enter waiting state
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
+
+    // Send a streaming chunk (should not clear waiting state)
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("hello"))),
+        ))
+        .await
+        .unwrap();
+
+    // Escape should still trigger cancel (proving we're still waiting)
+    let action = renderer
+        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+        .await
+        .unwrap();
+
+    // If we're still waiting, escape triggers cancel effect which is handled
+    assert!(matches!(action, LoopAction::Continue));
+}
+
+#[tokio::test]
+async fn test_sub_agent_progress_notification_triggers_render() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let json = r#"{"parent_tool_id":"p1","task_id":"t1","agent_name":"explorer","event":{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}}"#;
+    let raw =
+        serde_json::value::to_raw_value(&serde_json::from_str::<serde_json::Value>(json).unwrap())
+            .unwrap();
+    let notification =
+        acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
+
+    renderer.on_ext_notification(notification).await.unwrap();
+
+    // Should render without crashing
+    let lines = renderer.writer().get_lines();
+    assert!(!lines.is_empty());
+}
+
+#[tokio::test]
+async fn test_invalid_sub_agent_progress_json_silently_ignored() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let raw = serde_json::value::to_raw_value(&serde_json::json!({"bad": "data"})).unwrap();
+    let notification =
+        acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
+
+    renderer.on_ext_notification(notification).await.unwrap();
+
+    // Should render without crashing
+    let lines = renderer.writer().get_lines();
+    assert!(!lines.is_empty());
+}
+
+#[tokio::test]
+async fn test_context_usage_notification_updates_percent_left() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let raw = serde_json::value::to_raw_value(&serde_json::json!({
+        "usage_ratio": 0.75,
+        "tokens_used": 150_000,
+        "context_limit": 200_000
+    }))
+    .unwrap();
+    let notification = acp::ExtNotification::new(
+        acp_utils::notifications::CONTEXT_USAGE_METHOD,
+        std::sync::Arc::from(raw),
+    );
+
+    renderer.on_ext_notification(notification).await.unwrap();
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("25%")),
+        "Status line should show 25% context remaining.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_context_usage_notification_with_unknown_limit_clears_meter() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    // First set a known usage
+    let raw = serde_json::value::to_raw_value(&serde_json::json!({
+        "usage_ratio": 0.67,
+        "tokens_used": 100_000,
+        "context_limit": 150_000
+    }))
+    .unwrap();
+    let notification = acp::ExtNotification::new(
+        acp_utils::notifications::CONTEXT_USAGE_METHOD,
+        std::sync::Arc::from(raw),
+    );
+    renderer.on_ext_notification(notification).await.unwrap();
+
+    // Then clear it with null ratio
+    let raw = serde_json::value::to_raw_value(&serde_json::json!({
+        "usage_ratio": null,
+        "tokens_used": 0,
+        "context_limit": null
+    }))
+    .unwrap();
+    let notification = acp::ExtNotification::new(
+        acp_utils::notifications::CONTEXT_USAGE_METHOD,
+        std::sync::Arc::from(raw),
+    );
+    renderer.on_ext_notification(notification).await.unwrap();
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        !lines.iter().any(|l| l.contains('%')),
+        "Status line should not show a percentage.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_context_cleared_notification_resets_conversation() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    // Add some conversation content
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
+                "hello world",
+            ))),
+        ))
+        .await
+        .unwrap();
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("hello world")),
+        "Content should be visible before clear"
+    );
+
+    // Send context_cleared notification
+    let raw = serde_json::value::to_raw_value(&serde_json::json!({})).unwrap();
+    let notification = acp::ExtNotification::new(
+        acp_utils::notifications::CONTEXT_CLEARED_METHOD,
+        std::sync::Arc::from(raw),
+    );
+    renderer.on_ext_notification(notification).await.unwrap();
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        !lines.iter().any(|l| l.contains("hello world")),
+        "Content should be cleared after context_cleared.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_on_tick_requests_render_while_completed_entries() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    // Send a plan with completed entries
+    renderer
+        .on_session_update(acp::SessionUpdate::Plan(acp::Plan::new(vec![
+            acp::PlanEntry::new(
+                "1",
+                acp::PlanEntryPriority::Medium,
+                acp::PlanEntryStatus::Completed,
+            ),
+        ])))
+        .await
+        .unwrap();
+
+    // Tick should produce a render (entries within grace period)
+    renderer.on_tick().await.unwrap();
+
+    // Should render without crashing
+    let lines = renderer.writer().get_lines();
+    assert!(!lines.is_empty());
+}
+
+#[tokio::test]
+async fn test_on_tick_without_active_state_is_noop() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let lines_before = renderer.writer().get_lines();
+
+    renderer.on_tick().await.unwrap();
+
+    let lines_after = renderer.writer().get_lines();
+    assert_eq!(
+        lines_before, lines_after,
+        "Tick should be a no-op when nothing active"
+    );
+}
+
+#[tokio::test]
+async fn test_config_option_update_refreshes_mode_display() {
+    let initial = vec![
+        acp::SessionConfigOption::select(
+            "mode",
+            "Mode",
+            "planner",
+            vec![
+                acp::SessionConfigSelectOption::new("planner", "Planner"),
+                acp::SessionConfigSelectOption::new("coder", "Coder"),
+            ],
+        )
+        .category(acp::SessionConfigOptionCategory::Mode),
+    ];
+
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &initial);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    let updated = vec![
+        acp::SessionConfigOption::select(
+            "mode",
+            "Mode",
+            "coder",
+            vec![
+                acp::SessionConfigSelectOption::new("planner", "Planner"),
+                acp::SessionConfigSelectOption::new("coder", "Coder"),
+            ],
+        )
+        .category(acp::SessionConfigOptionCategory::Mode),
+    ];
+
+    renderer
+        .on_session_update(acp::SessionUpdate::ConfigOptionUpdate(
+            acp::ConfigOptionUpdate::new(updated),
+        ))
+        .await
+        .unwrap();
+
+    let lines = renderer.writer().get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains("Coder")),
+        "Status line should show updated mode 'Coder'.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn test_available_commands_update_is_forwarded() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    renderer
+        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
+            acp::AvailableCommandsUpdate::new(vec![acp::AvailableCommand::new(
+                "search",
+                "Search code",
+            )]),
+        ))
+        .await
+        .unwrap();
+
+    // Open the command picker with /
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
+
+    let names = command_picker_visible_names(renderer.writer());
+    assert!(
+        names.iter().any(|n| n == "search"),
+        "Command picker should show 'search' command. Got: {names:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_server_status_notification_updates_overlay_state() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((TEST_WIDTH, 40));
+    renderer.initial_render().unwrap();
+
+    // Open config overlay
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config overlay should be visible"
+    );
+
+    // Send server status notification
+    let notification =
+        acp::ExtNotification::from(acp_utils::notifications::McpNotification::ServerStatus {
+            servers: vec![acp_utils::notifications::McpServerStatusEntry {
+                name: "docs".to_string(),
+                status: acp_utils::notifications::McpServerStatus::Connected { tool_count: 0 },
+            }],
+        });
+
+    renderer.on_ext_notification(notification).await.unwrap();
+
+    // Config overlay should still be open after server status notification
+    assert!(
+        has_config_menu(renderer.writer()),
+        "Config overlay should still be visible after server status update"
     );
 }

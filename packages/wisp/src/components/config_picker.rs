@@ -1,10 +1,8 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
-    Combobox, Component, InteractiveComponent, KeyEventResponse, Line, PickerKey, RenderContext,
-    Searchable, classify_key,
+    Combobox, Component, InteractiveComponent, Line, MessageResult, PickerKey, RenderContext,
+    Searchable, UiEvent, classify_key,
 };
-use crossterm::event::KeyEvent;
-
 impl Searchable for ConfigMenuValue {
     fn search_text(&self) -> String {
         format!("{} {}", self.name, self.value)
@@ -18,7 +16,7 @@ pub struct ConfigPicker {
     current_value: String,
 }
 
-pub enum ConfigPickerAction {
+pub enum ConfigPickerMessage {
     Close,
     ApplySelection(Option<ConfigChange>),
 }
@@ -143,36 +141,40 @@ impl Component for ConfigPicker {
 }
 
 impl InteractiveComponent for ConfigPicker {
-    type Action = ConfigPickerAction;
+    type Message = ConfigPickerMessage;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+        let UiEvent::Key(key_event) = event else {
+            return MessageResult::ignored();
+        };
+
         match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => KeyEventResponse::action(ConfigPickerAction::Close),
+            PickerKey::Escape => MessageResult::message(ConfigPickerMessage::Close),
             PickerKey::MoveUp => {
                 self.move_selection_up();
-                KeyEventResponse::consumed()
+                MessageResult::consumed().with_render()
             }
             PickerKey::MoveDown => {
                 self.move_selection_down();
-                KeyEventResponse::consumed()
+                MessageResult::consumed().with_render()
             }
             PickerKey::Confirm => {
                 let change = self.confirm_selection();
-                KeyEventResponse::action(ConfigPickerAction::ApplySelection(change))
+                MessageResult::message(ConfigPickerMessage::ApplySelection(change))
             }
             PickerKey::Char(c) => {
                 self.push_query_char(c);
-                KeyEventResponse::consumed()
+                MessageResult::consumed().with_render()
             }
             PickerKey::Backspace => {
                 self.pop_query_char();
-                KeyEventResponse::consumed()
+                MessageResult::consumed().with_render()
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::BackspaceOnEmpty
             | PickerKey::ControlChar
-            | PickerKey::Other => KeyEventResponse::consumed(),
+            | PickerKey::Other => MessageResult::consumed(),
         }
     }
 }
@@ -181,8 +183,8 @@ impl InteractiveComponent for ConfigPicker {
 mod tests {
     use super::*;
     use crate::tui::test_picker::{rendered_lines, selected_text, type_query};
+    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn entry() -> ConfigMenuEntry {
         ConfigMenuEntry {
@@ -255,7 +257,10 @@ mod tests {
     #[test]
     fn confirm_selection_returns_change_for_new_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.on_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        picker.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Down,
+            KeyModifiers::NONE,
+        )));
         let change = picker.confirm_selection().expect("config change");
         assert_eq!(change.config_id, "model");
         assert_eq!(
@@ -277,30 +282,42 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_enter_returns_apply_selection_action() {
+    fn handle_key_enter_returns_apply_selection_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.on_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        picker.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Down,
+            KeyModifiers::NONE,
+        )));
 
-        let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let outcome = picker.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
 
-        assert!(outcome.consumed);
+        assert!(outcome.handled);
 
-        match outcome.action {
-            Some(ConfigPickerAction::ApplySelection(Some(change))) => {
+        match outcome.messages.as_slice() {
+            [ConfigPickerMessage::ApplySelection(Some(change))] => {
                 assert_eq!(change.config_id, "model");
             }
-            _ => panic!("expected apply selection action"),
+            _ => panic!("expected apply selection message"),
         }
     }
 
     #[test]
-    fn handle_key_escape_returns_close_action() {
+    fn handle_key_escape_returns_close_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
 
-        let outcome = picker.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let outcome = picker.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
 
-        assert!(outcome.consumed);
+        assert!(outcome.handled);
 
-        assert!(matches!(outcome.action, Some(ConfigPickerAction::Close)));
+        assert!(matches!(
+            outcome.messages.as_slice(),
+            [ConfigPickerMessage::Close]
+        ));
     }
 }
