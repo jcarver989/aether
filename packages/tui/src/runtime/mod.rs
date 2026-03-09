@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
 use tokio::time::{self, Interval};
 pub mod terminal;
-pub use terminal::TerminalSession;
+pub use terminal::{MouseCapture, TerminalSession};
 
 #[cfg(all(test, feature = "testing"))]
 mod tests;

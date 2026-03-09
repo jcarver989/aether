@@ -49,8 +49,7 @@ impl<W: Write> TerminalScreen<W> {
         self.writer.queue(Clear(ClearType::Purge))?;
         write!(self.writer, "\x1b[H")?;
         self.writer.flush()?;
-        self.prev_frame.clear();
-        self.cursor_row_offset = 0;
+        self.reset_viewport_state();
         self.flushed_visual_count = 0;
         Ok(())
     }
@@ -69,8 +68,7 @@ impl<W: Write> TerminalScreen<W> {
 
     pub fn on_resize(&mut self, width: u16) {
         self.last_width = width;
-        self.prev_frame.clear();
-        self.cursor_row_offset = 0;
+        self.reset_viewport_state();
         self.resized = true;
     }
 
@@ -132,9 +130,13 @@ impl<W: Write> TerminalScreen<W> {
         write!(self.writer, "\x1b[H")?;
         self.writer.queue(EndSynchronizedUpdate)?;
         self.writer.flush()?;
+        self.reset_viewport_state();
+        Ok(())
+    }
+
+    fn reset_viewport_state(&mut self) {
         self.prev_frame.clear();
         self.cursor_row_offset = 0;
-        Ok(())
     }
 
     fn render_visible(&mut self, new_frame: &[Line], width: u16) -> io::Result<usize> {

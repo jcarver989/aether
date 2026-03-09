@@ -634,4 +634,3 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             .map_err(|e| e.to_string())
     }
 }
-

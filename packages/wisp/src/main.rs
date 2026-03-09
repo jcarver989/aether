@@ -12,7 +12,9 @@ mod tui;
 use crate::cli::Cli;
 use crate::components::app::App;
 use crate::runtime_state::RuntimeState;
-use crate::tui::{Renderer, TerminalSession, run_app, spawn_terminal_event_task, terminal_size};
+use crate::tui::{
+    MouseCapture, Renderer, TerminalSession, run_app, spawn_terminal_event_task, terminal_size,
+};
 use clap::Parser;
 use std::fs::create_dir_all;
 use std::process::ExitCode;
@@ -52,7 +54,7 @@ async fn main() -> ExitCode {
         working_dir,
     );
 
-    let _session = match TerminalSession::enter(true) {
+    let _session = match TerminalSession::enter(true, MouseCapture::Disabled) {
         Ok(session) => session,
         Err(e) => {
             eprintln!("Failed to enter terminal: {e}");

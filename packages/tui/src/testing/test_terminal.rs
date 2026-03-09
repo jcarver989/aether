@@ -39,13 +39,30 @@ impl TestTerminal {
         }
     }
 
-    /// Resize terminal and reflow visible buffer content to match the new width.
+    /// Resize terminal without preserving prior transcript content.
     pub fn resize(&mut self, columns: u16, rows: u16) {
+        let columns = columns.max(1);
+        let rows = rows.max(1);
+        self.buffer = vec![vec![' '; columns as usize]; rows as usize];
+        self.scrollback.clear();
+        self.size = (columns, rows);
+        self.cursor = (0, rows.saturating_sub(1));
+        self.saved_cursor = None;
+        self.pending_wrap = false;
+    }
+
+    /// Resize terminal and reflow existing transcript content to match the new width.
+    pub fn resize_preserving_transcript(&mut self, columns: u16, rows: u16) {
         let transcript = self.get_transcript_lines();
-        let mut wrapped: Vec<String> = Vec::new();
+        let wrapped = Self::reflow_lines(&transcript, columns);
+        self.apply_reflowed_lines(columns, rows, wrapped);
+    }
+
+    fn reflow_lines(lines: &[String], columns: u16) -> Vec<String> {
+        let mut wrapped = Vec::new();
         let width = columns.max(1) as usize;
 
-        for line in transcript {
+        for line in lines {
             if line.is_empty() {
                 wrapped.push(String::new());
                 continue;
@@ -61,10 +78,13 @@ impl TestTerminal {
             wrapped.push(String::new());
         }
 
+        wrapped
+    }
+
+    fn apply_reflowed_lines(&mut self, columns: u16, rows: u16, wrapped: Vec<String>) {
         let rows_usize = rows.max(1) as usize;
         let split_at = wrapped.len().saturating_sub(rows_usize);
-        let scrollback = &wrapped[..split_at];
-        let visible = &wrapped[split_at..];
+        let (scrollback, visible) = wrapped.split_at(split_at);
 
         self.scrollback = scrollback
             .iter()
