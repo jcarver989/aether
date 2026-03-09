@@ -46,6 +46,7 @@ impl<W: Write> TerminalScreen<W> {
     }
 
     pub fn clear_screen(&mut self) -> io::Result<()> {
+        self.writer.queue(Clear(ClearType::All))?;
         self.writer.queue(Clear(ClearType::Purge))?;
         write!(self.writer, "\x1b[H")?;
         self.writer.flush()?;
@@ -365,6 +366,17 @@ mod tests {
         let mut terminal = TerminalScreen::new(FakeWriter::new());
         terminal.push_to_scrollback(&[], 80).unwrap();
         assert!(terminal.writer.bytes.is_empty());
+    }
+
+    #[test]
+    fn clear_screen_emits_clear_all_and_purge() {
+        let mut terminal = TerminalScreen::new(FakeWriter::new());
+        terminal.clear_screen().unwrap();
+        let output = String::from_utf8_lossy(&terminal.writer.bytes);
+        // ClearType::All = \x1b[2J, ClearType::Purge = \x1b[3J
+        assert!(output.contains("\x1b[2J"), "missing ClearType::All");
+        assert!(output.contains("\x1b[3J"), "missing ClearType::Purge");
+        assert!(output.contains("\x1b[H"), "missing cursor home");
     }
 
     #[test]
