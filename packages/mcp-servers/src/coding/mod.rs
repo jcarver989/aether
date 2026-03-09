@@ -34,6 +34,7 @@ use crate::lsp::tools::check_errors::{
     LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
 };
 use crate::lsp::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
+use crate::lsp::tools::rename::{LspRenameInput, LspRenameOutput, execute_lsp_rename};
 use crate::lsp::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 
 use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename, truncate};
@@ -229,6 +230,7 @@ File I/O, search, shell, and LSP code intelligence tools for coding workflows.
 - **Errors & warnings** (instant check without build): `lsp_check_errors`
 - **Code symbols** (definitions, usages, types): `lsp_symbol`
 - **File structure** (what's in this file?): `lsp_document`
+- **Rename symbol** (refactor across codebase): `lsp_rename`
 ";
 
         match self.get_workspace_root() {
@@ -552,6 +554,19 @@ When using tools that take file paths, always use absolute paths from:
         let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
         execute_lsp_diagnostics(input, lsp.as_ref()).await.map(Json)
     }
+
+    #[doc = include_str!("../lsp/tools/rename/description.md")]
+    #[tool]
+    pub async fn lsp_rename(
+        &self,
+        request: Parameters<LspRenameInput>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Json<LspRenameOutput>, String> {
+        let Parameters(input) = request;
+        notify_preview(&context, ToolDisplayMeta::new("LSP rename", &input.symbol)).await;
+        let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
+        execute_lsp_rename(input, lsp.as_ref()).await.map(Json)
+    }
 }
 
 impl Default for CodingMcp<DefaultCodingTools> {
@@ -619,3 +634,4 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             .map_err(|e| e.to_string())
     }
 }
+

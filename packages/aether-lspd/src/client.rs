@@ -12,9 +12,9 @@ use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
     GotoDefinitionResponse, Hover, HoverParams, Location, PartialResultParams, Position,
-    PublishDiagnosticsParams, ReferenceContext, ReferenceParams, SymbolInformation,
-    TextDocumentIdentifier, TextDocumentPositionParams, Uri, WorkDoneProgressParams,
-    WorkspaceSymbolParams,
+    PublishDiagnosticsParams, ReferenceContext, ReferenceParams, RenameParams,
+    SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, Uri,
+    WorkDoneProgressParams, WorkspaceEdit, WorkspaceSymbolParams,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -295,6 +295,26 @@ impl LspClient {
         };
         self.call("callHierarchy/outgoingCalls", &params, Vec::new)
             .await
+    }
+
+    /// Perform a rename operation at a position.
+    /// Returns the workspace edit describing all changes needed.
+    pub async fn rename(
+        &self,
+        uri: Uri,
+        line: u32,
+        character: u32,
+        new_name: String,
+    ) -> ClientResult<Option<WorkspaceEdit>> {
+        let params = RenameParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position { line, character },
+            },
+            new_name,
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        };
+        self.call("textDocument/rename", &params, || None).await
     }
 
     /// Get cached diagnostics from the daemon

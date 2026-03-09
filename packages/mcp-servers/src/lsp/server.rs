@@ -17,6 +17,7 @@ use super::tools::check_errors::{
     LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
 };
 use super::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
+use super::tools::rename::{LspRenameInput, LspRenameOutput, execute_lsp_rename};
 use super::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
 use super::tools::workspace_search::{
     LspWorkspaceSearchInput, LspWorkspaceSearchOutput, execute_lsp_workspace_search,
@@ -104,6 +105,7 @@ Code intelligence tools powered by Language Server Protocol.
 - **Find symbol across workspace** (don't know the file?): `lsp_workspace_search`
 - **File structure** (what's in this file?): `lsp_document`
 - **Call relationships** (who calls X?): `lsp_symbol` with incoming_calls/outgoing_calls operation
+- **Rename symbol** (refactor across codebase): `lsp_rename`
 ";
 
         match self.get_workspace_root() {
@@ -185,5 +187,15 @@ impl LspMcp {
         execute_lsp_workspace_search(input, self.lsp.as_ref())
             .await
             .map(Json)
+    }
+
+    #[doc = include_str!("tools/rename/description.md")]
+    #[tool]
+    pub async fn lsp_rename(
+        &self,
+        request: Parameters<LspRenameInput>,
+    ) -> Result<Json<LspRenameOutput>, String> {
+        let Parameters(input) = request;
+        execute_lsp_rename(input, self.lsp.as_ref()).await.map(Json)
     }
 }
