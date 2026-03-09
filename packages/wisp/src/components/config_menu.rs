@@ -103,11 +103,11 @@ impl InteractiveComponent for ConfigMenu {
             KeyCode::Esc => MessageResult::message(ConfigMenuMessage::CloseAll),
             KeyCode::Up => {
                 self.move_selection_up();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             KeyCode::Enter => {
                 let msg = match self.selected_entry() {

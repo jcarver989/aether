@@ -340,12 +340,12 @@ impl InteractiveComponent for ConfigOverlay {
             return match outcome.messages.into_iter().next() {
                 Some(ServerStatusMessage::Close) => {
                     self.server_overlay = None;
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 Some(ServerStatusMessage::Authenticate(name)) => {
                     MessageResult::message(ConfigOverlayMessage::AuthenticateServer(name))
                 }
-                None => MessageResult::consumed().with_render(),
+                None => MessageResult::consumed(),
             };
         }
 
@@ -355,12 +355,12 @@ impl InteractiveComponent for ConfigOverlay {
             return match outcome.messages.into_iter().next() {
                 Some(ProviderLoginMessage::Close) => {
                     self.provider_login_overlay = None;
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 Some(ProviderLoginMessage::Authenticate(method_id)) => {
                     MessageResult::message(ConfigOverlayMessage::AuthenticateProvider(method_id))
                 }
-                None => MessageResult::consumed().with_render(),
+                None => MessageResult::consumed(),
             };
         }
 
@@ -371,12 +371,12 @@ impl InteractiveComponent for ConfigOverlay {
                 Some(ModelSelectorMessage::Done(changes)) => {
                     self.model_selector = None;
                     if changes.is_empty() {
-                        MessageResult::consumed().with_render()
+                        MessageResult::consumed()
                     } else {
                         MessageResult::message(ConfigOverlayMessage::ApplyConfigChanges(changes))
                     }
                 }
-                None => MessageResult::consumed().with_render(),
+                None => MessageResult::consumed(),
             };
         }
 
@@ -386,7 +386,7 @@ impl InteractiveComponent for ConfigOverlay {
             return match outcome.messages.into_iter().next() {
                 Some(ConfigPickerMessage::Close) => {
                     self.picker = None;
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 Some(ConfigPickerMessage::ApplySelection(change)) => {
                     self.picker = None;
@@ -397,10 +397,10 @@ impl InteractiveComponent for ConfigOverlay {
                                 change,
                             ]))
                         }
-                        None => MessageResult::consumed().with_render(),
+                        None => MessageResult::consumed(),
                     }
                 }
-                None => MessageResult::consumed().with_render(),
+                None => MessageResult::consumed(),
             };
         }
 
@@ -413,7 +413,7 @@ impl InteractiveComponent for ConfigOverlay {
                     .menu
                     .selected_entry()
                     .and_then(ConfigPicker::from_entry);
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             [ConfigMenuMessage::OpenModelSelector] => {
                 if let Some(entry) = self.menu.selected_entry() {
@@ -424,18 +424,18 @@ impl InteractiveComponent for ConfigOverlay {
                         self.current_reasoning_effort.as_deref(),
                     ));
                 }
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             [ConfigMenuMessage::OpenMcpServers] => {
                 self.server_overlay = Some(ServerStatusOverlay::new(self.server_statuses.clone()));
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             [ConfigMenuMessage::OpenProviderLogins] => {
                 let entries = self.build_login_entries();
                 self.provider_login_overlay = Some(ProviderLoginOverlay::new(entries));
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
-            _ => MessageResult::consumed().with_render(),
+            _ => MessageResult::consumed(),
         }
     }
 }

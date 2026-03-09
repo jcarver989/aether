@@ -18,7 +18,7 @@ impl App {
                 user_input,
                 attachments,
             } => {
-                let should_render = submit_prompt_with_attachments(
+                submit_prompt_with_attachments(
                     renderer,
                     &self.prompt_handle,
                     &self.session_id,
@@ -26,11 +26,7 @@ impl App {
                     attachments,
                 )
                 .await?;
-                Ok(if should_render {
-                    vec![Action::Render]
-                } else {
-                    vec![]
-                })
+                Ok(vec![])
             }
             AppAction::SetConfigOption {
                 config_id,
@@ -43,24 +39,29 @@ impl App {
             }
             AppAction::SetTheme { file } => {
                 apply_theme_selection(renderer, file);
-                Ok(vec![Action::Render])
+                Ok(vec![])
             }
             AppAction::Cancel => {
                 self.prompt_handle.cancel(&self.session_id)?;
-                Ok(vec![Action::Render])
+                Ok(vec![])
             }
             AppAction::AuthenticateMcpServer { server_name } => {
                 let _ = self
                     .prompt_handle
                     .authenticate_mcp_server(&self.session_id, &server_name);
-                Ok(vec![Action::Render])
+                Ok(vec![])
             }
             AppAction::AuthenticateProvider { method_id } => {
                 let _ = self
                     .prompt_handle
                     .authenticate(&self.session_id, &method_id);
                 self.state.on_authenticate_started(&method_id);
-                Ok(vec![Action::Render])
+                Ok(vec![])
+            }
+            AppAction::ClearScreen => {
+                self.state.reset_after_context_cleared();
+                renderer.clear_screen()?;
+                Ok(vec![])
             }
         }
     }
@@ -84,11 +85,10 @@ pub async fn submit_prompt_with_attachments<T: Write>(
     session_id: &agent_client_protocol::SessionId,
     user_input: &str,
     attachments: Vec<PromptAttachment>,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     let outcome = build_attachment_blocks(&attachments).await;
-    let should_render = !outcome.warnings.is_empty();
 
-    if should_render {
+    if !outcome.warnings.is_empty() {
         let warning_lines: Vec<Line> = outcome
             .warnings
             .into_iter()
@@ -107,7 +107,7 @@ pub async fn submit_prompt_with_attachments<T: Write>(
         },
     )?;
 
-    Ok(should_render)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn submit_prompt_with_attachments_reports_warning_render_need() {
+    async fn submit_prompt_with_attachments_pushes_warning_lines_to_scrollback() {
         let mut renderer = Renderer::new(Vec::new(), Theme::default());
         let prompt_handle = AcpPromptHandle::noop();
         let session_id = acp::SessionId::new("test");
@@ -175,7 +175,7 @@ mod tests {
             display_name: "missing-file.txt".to_string(),
         };
 
-        let should_render = submit_prompt_with_attachments(
+        submit_prompt_with_attachments(
             &mut renderer,
             &prompt_handle,
             &session_id,
@@ -185,6 +185,6 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(should_render);
+        assert_eq!(renderer.render_epoch(), 1);
     }
 }

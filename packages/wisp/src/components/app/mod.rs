@@ -45,6 +45,7 @@ pub enum AppAction {
     AuthenticateProvider {
         method_id: String,
     },
+    ClearScreen,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +96,14 @@ impl TuiApp for App {
         self.state.on_tick()
     }
 
+    fn render_version(&self) -> u64 {
+        self.state.render_version()
+    }
+
+    fn wants_tick(&self) -> bool {
+        self.state.wants_tick()
+    }
+
     fn on_event(&mut self, event: AcpEvent, context: &RenderContext) -> Vec<Action<AppAction>> {
         match event {
             AcpEvent::SessionUpdate(update) => self.state.on_session_update(*update),
@@ -125,6 +134,10 @@ impl TuiApp for App {
 }
 
 impl RootComponent for App {
+    fn prepare_render(&mut self, context: &RenderContext) {
+        self.state.prepare_render(context);
+    }
+
     fn render(&mut self, context: &RenderContext) -> Frame {
         let unhealthy_count = self
             .state
@@ -161,15 +174,6 @@ impl RootComponent for App {
             .state
             .plan_tracker
             .visible_entries(Instant::now(), grace_period);
-
-        let progress = self.state.tool_call_statuses.progress();
-        self.state
-            .progress_indicator
-            .update(progress.completed_top_level, progress.total_top_level);
-
-        self.state
-            .conversation
-            .ensure_all_rendered(&self.state.tool_call_statuses, context);
 
         let conversation_window = ConversationWindow {
             loader: &self.state.grid_loader,
@@ -334,12 +338,9 @@ mod tests {
 
         assert!(matches!(
             effects.as_slice(),
-            [
-                Action::Custom(AppAction::SetTheme {
-                    file: Some(file)
-                }),
-                Action::Render
-            ] if file == "catppuccin.tmTheme"
+            [Action::Custom(AppAction::SetTheme {
+                file: Some(file)
+            })] if file == "catppuccin.tmTheme"
         ));
     }
 
@@ -363,10 +364,7 @@ mod tests {
 
         assert!(matches!(
             effects.as_slice(),
-            [
-                Action::Custom(AppAction::SetTheme { file: None }),
-                Action::Render
-            ]
+            [Action::Custom(AppAction::SetTheme { file: None })]
         ));
     }
 
@@ -390,13 +388,10 @@ mod tests {
 
         assert!(matches!(
             effects.as_slice(),
-            [
-                Action::Custom(AppAction::SetConfigOption {
-                    config_id,
-                    new_value
-                }),
-                Action::Render
-            ] if config_id == "model" && new_value == "gpt-5"
+            [Action::Custom(AppAction::SetConfigOption {
+                config_id,
+                new_value
+            })] if config_id == "model" && new_value == "gpt-5"
         ));
     }
 

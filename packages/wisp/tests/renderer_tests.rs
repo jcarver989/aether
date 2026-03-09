@@ -1,5 +1,6 @@
 use agent_client_protocol as acp;
 use tui::Action;
+use tui::runtime::process_action_queue;
 use tui::testing::{TestTerminal, assert_buffer_eq};
 use wisp::components::app::{App, AppAction};
 use wisp::tui::{App as TuiApp, Renderer as FrameRenderer, theme::Theme};
@@ -55,42 +56,60 @@ impl Renderer {
         &mut self,
         key_event: tui::KeyEvent,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
+        let before = self.screen.render_version();
         let effects = self
             .screen
             .on_terminal_event(TerminalEvent::Key(key_event), &self.renderer.context());
-        self.apply_effects(effects).await
+        let pending_render = self.screen.render_version() != before;
+        self.apply_effects(effects, pending_render).await
     }
 
     async fn on_session_update(
         &mut self,
         update: acp::SessionUpdate,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let before = self.screen.render_version();
         let effects = self.screen.on_event(
             AcpEvent::SessionUpdate(Box::new(update)),
             &self.renderer.context(),
         );
-        self.apply_effects(effects).await.map(|_| ())
+        let pending_render = self.screen.render_version() != before;
+        self.apply_effects(effects, pending_render)
+            .await
+            .map(|_| ())
     }
 
     async fn on_prompt_done(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let before = self.screen.render_version();
         let effects = self.screen.on_event(
             AcpEvent::PromptDone(acp::StopReason::EndTurn),
             &self.renderer.context(),
         );
-        self.apply_effects(effects).await.map(|_| ())
+        let pending_render = self.screen.render_version() != before;
+        self.apply_effects(effects, pending_render)
+            .await
+            .map(|_| ())
     }
 
     async fn on_tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let before = self.screen.render_version();
         let effects = self.screen.on_tick(&self.renderer.context());
-        self.apply_effects(effects).await.map(|_| ())
+        let pending_render = self.screen.render_version() != before;
+        self.apply_effects(effects, pending_render)
+            .await
+            .map(|_| ())
     }
 
     async fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let before = self.screen.render_version();
         let effects = self.screen.on_terminal_event(
             TerminalEvent::Paste(text.to_string()),
             &self.renderer.context(),
         );
-        self.apply_effects(effects).await.map(|_| ())
+        let pending_render = self.screen.render_version() != before;
+        self.apply_effects(effects, pending_render)
+            .await
+            .map(|_| ())
     }
 
     async fn on_resize_event(
@@ -107,52 +126,43 @@ impl Renderer {
         &mut self,
         notification: acp::ExtNotification,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let before = self.screen.render_version();
         let effects = self.screen.on_event(
             AcpEvent::ExtNotification(notification),
             &self.renderer.context(),
         );
-        self.apply_effects(effects).await.map(|_| ())
+        let pending_render = self.screen.render_version() != before;
+        self.apply_effects(effects, pending_render)
+            .await
+            .map(|_| ())
     }
 
     async fn on_connection_closed(&mut self) -> Result<LoopAction, Box<dyn std::error::Error>> {
+        let before = self.screen.render_version();
         let effects = self
             .screen
             .on_event(AcpEvent::ConnectionClosed, &self.renderer.context());
-        self.apply_effects(effects).await
+        let pending_render = self.screen.render_version() != before;
+        self.apply_effects(effects, pending_render).await
     }
 
     async fn apply_effects(
         &mut self,
         effects: Vec<Action<AppAction>>,
+        pending_render: bool,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let mut should_render = false;
-        let mut action = LoopAction::Continue;
-
-        for effect in effects {
-            match effect {
-                Action::Exit => action = LoopAction::Exit,
-                Action::Render => should_render = true,
-                Action::Custom(effect) => {
-                    let actions = self.screen.apply_effect(&mut self.renderer, effect).await?;
-
-                    if actions
-                        .iter()
-                        .any(|action| matches!(action, Action::Render))
-                    {
-                        should_render = true;
-                    }
-                    if actions.iter().any(|action| matches!(action, Action::Exit)) {
-                        action = LoopAction::Exit;
-                    }
-                }
-            }
+        if process_action_queue(
+            &mut self.screen,
+            &mut self.renderer,
+            effects,
+            pending_render,
+        )
+        .await?
+        {
+            Ok(LoopAction::Exit)
+        } else {
+            Ok(LoopAction::Continue)
         }
-
-        if should_render {
-            self.renderer.render(&mut self.screen)?;
-        }
-
-        Ok(action)
     }
 }
 
@@ -391,10 +401,10 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
         &[
             "│ Thinking",
             "",
-            "⠋ search",
+            "⠒ search",
             "",
             "Done",
-            "⠋ Working... (0/1 tools complete)",
+            "⠒ Working... (0/1 tools complete)",
         ],
         TEST_WIDTH,
         "",
@@ -408,7 +418,7 @@ async fn test_agent_message_tool_call() {
     let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]).await;
 
     let expected = expected_with_prompt(
-        &["⠋ test_tool", "⠋ Working... (0/1 tools complete)"],
+        &["⠒ test_tool", "⠒ Working... (0/1 tools complete)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -488,7 +498,7 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
     .await;
 
     let expected = expected_with_prompt(
-        &["⠋ Read", "⠋ Working... (0/1 tools complete)"],
+        &["⠒ Read", "⠒ Working... (0/1 tools complete)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -506,7 +516,7 @@ async fn test_tool_progress_renders_running_tool() {
     .await;
 
     let expected = expected_with_prompt(
-        &["⠋ Read", "⠋ Working... (0/1 tools complete)"],
+        &["⠒ Read", "⠒ Working... (0/1 tools complete)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -559,8 +569,8 @@ async fn test_text_complete_preserves_running_tool_calls() {
             r#"✓ Read {"file":"a.rs"}"#,
             "",
             "Done reading",
-            "⠋ Write",
-            "⠋ Working... (0/1 tools complete)",
+            "⠒ Write",
+            "⠒ Working... (0/1 tools complete)",
         ],
         TEST_WIDTH,
         "",
@@ -739,7 +749,7 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
         .unwrap();
 
     let expected = expected_with_prompt(
-        &["⠋ Read", "⠋ Working... (0/1 tools complete)"],
+        &["⠒ Read", "⠒ Working... (0/1 tools complete)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -766,7 +776,7 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
     renderer.on_resize_event(100, 30).await.unwrap();
 
     let expected = expected_with_prompt(
-        &["⠋ Read", "⠋ Working... (0/1 tools complete)"],
+        &["⠒ Read", "⠒ Working... (0/1 tools complete)"],
         100,
         "",
         TEST_AGENT,
@@ -1165,7 +1175,7 @@ async fn test_grid_loader_visible_after_prompt_submit() {
     press_enter(&mut renderer).await;
 
     let lines = renderer.writer().get_lines();
-    let has_spinner = lines.iter().any(|l| l.contains('⠋'));
+    let has_spinner = lines.iter().any(|l| l.contains('⠒'));
     assert!(
         has_spinner,
         "Spinner should be visible after prompt submit.\nBuffer:\n{}",
@@ -1195,7 +1205,7 @@ async fn test_grid_loader_disappears_on_session_update() {
     let lines = renderer.writer().get_lines();
     let has_braille = lines
         .iter()
-        .any(|l| "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".chars().any(|c| l.contains(c)));
+        .any(|l| "⠒⠮⠷⢷⡾⣯⣽⣿⣭⢯".chars().any(|c| l.contains(c)));
     assert!(
         !has_braille,
         "Spinner should disappear after session update.\nBuffer:\n{}",
@@ -1219,7 +1229,7 @@ async fn test_grid_loader_disappears_on_prompt_done() {
     let lines = renderer.writer().get_lines();
     let has_braille = lines
         .iter()
-        .any(|l| "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".chars().any(|c| l.contains(c)));
+        .any(|l| "⠒⠮⠷⢷⡾⣯⣽⣿⣭⢯".chars().any(|c| l.contains(c)));
     assert!(
         !has_braille,
         "Spinner should disappear after prompt done.\nBuffer:\n{}",
@@ -2027,7 +2037,7 @@ async fn test_running_tool_hides_raw_args() {
     );
     assert_eq!(
         tool_line.trim(),
-        "⠋ read_file",
+        "⠒ read_file",
         "Running tool should show only name: {tool_line}"
     );
 }

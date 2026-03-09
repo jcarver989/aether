@@ -65,11 +65,11 @@ impl InteractiveComponent for ProviderLoginOverlay {
                 KeyCode::Esc => MessageResult::message(ProviderLoginMessage::Close),
                 KeyCode::Up => {
                     self.move_selection_up();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 KeyCode::Down => {
                     self.move_selection_down();
-                    MessageResult::consumed().with_render()
+                    MessageResult::consumed()
                 }
                 KeyCode::Enter => {
                     if let Some(entry) = self
@@ -154,10 +154,6 @@ mod tests {
             name: "Codex".to_string(),
             status: ProviderLoginStatus::NeedsLogin,
         }]
-    }
-
-    fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent::new(code, KeyModifiers::NONE)
     }
 
     #[test]

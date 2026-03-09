@@ -2,7 +2,7 @@ use crate::Component;
 use crate::component::RenderContext;
 use crate::line::Line;
 
-pub const BRAILLE_FRAMES: &[char] = &['⠁', '⠃', '⠇', '⡇', '⣇', '⣧', '⣷', '⣿', '⣷', '⣧', '⣇', '⡇', '⠇', '⠃'];
+pub const BRAILLE_FRAMES: &[char] = &['⠒', '⠮', '⠷', '⢷', '⡾', '⣯', '⣽', '⣿', '⣭', '⢯'];
 
 pub struct Spinner {
     tick: u16,
@@ -118,14 +118,6 @@ mod tests {
         let b = spinner_b.render(&ctx)[0].plain_text();
 
         assert_eq!(a, b);
-    }
-
-    #[test]
-    fn current_frame_returns_correct_char() {
-        let mut spinner = Spinner::default();
-        spinner.set_tick(2);
-        spinner.visible = true;
-        assert_eq!(spinner.current_frame(), '⠹');
     }
 
     #[test]

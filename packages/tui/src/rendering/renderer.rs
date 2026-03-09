@@ -20,6 +20,7 @@ pub struct Renderer<T: Write> {
     max_height: Option<usize>,
     #[cfg(feature = "syntax")]
     highlighter: Arc<SyntaxHighlighter>,
+    render_epoch: u64,
 }
 
 impl<T: Write> Renderer<T> {
@@ -32,11 +33,13 @@ impl<T: Write> Renderer<T> {
             max_height: None,
             #[cfg(feature = "syntax")]
             highlighter: Arc::new(SyntaxHighlighter::new()),
+            render_epoch: 0,
         }
     }
 
     pub fn render<C: RootComponent + ?Sized>(&mut self, root: &mut C) -> io::Result<()> {
         let context = self.context();
+        root.prepare_render(&context);
         let prepared = root
             .render(&context)
             .soft_wrap(self.size.width)
@@ -45,11 +48,18 @@ impl<T: Write> Renderer<T> {
         self.terminal.render_frame(&prepared, self.size.width)
     }
 
+    pub fn clear_screen(&mut self) -> io::Result<()> {
+        self.bump_render_epoch();
+        self.terminal.clear_screen()
+    }
+
     pub fn push_to_scrollback(&mut self, lines: &[Line]) -> io::Result<()> {
+        self.bump_render_epoch();
         self.terminal.push_to_scrollback(lines, self.size.width)
     }
 
     pub fn on_resize(&mut self, size: impl Into<Size>) {
+        self.bump_render_epoch();
         self.size = size.into();
     }
 
@@ -65,12 +75,21 @@ impl<T: Write> Renderer<T> {
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
+        self.bump_render_epoch();
         self.theme = Arc::new(theme);
     }
 
     #[allow(dead_code)]
     pub fn writer(&self) -> &T {
         self.terminal.writer()
+    }
+
+    pub fn render_epoch(&self) -> u64 {
+        self.render_epoch
+    }
+
+    fn bump_render_epoch(&mut self) {
+        self.render_epoch = self.render_epoch.wrapping_add(1);
     }
 }
 

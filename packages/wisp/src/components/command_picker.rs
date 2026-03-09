@@ -107,11 +107,11 @@ impl InteractiveComponent for CommandPicker {
             }
             PickerKey::MoveUp => {
                 self.combobox.move_up();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
-                MessageResult::consumed().with_render()
+                MessageResult::consumed()
             }
             PickerKey::Confirm => {
                 if let Some(command) = self.combobox.selected().cloned() {
