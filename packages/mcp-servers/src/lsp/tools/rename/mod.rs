@@ -12,13 +12,15 @@ use super::resolve_symbol_position;
 
 /// Input for the `lsp_rename` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct LspRenameInput {
     /// The file path containing the symbol to rename
+    #[serde(alias = "file_path")]
     pub file_path: String,
     /// The symbol name to rename (used for position resolution if line not provided)
     pub symbol: String,
     /// The new name for the symbol
+    #[serde(alias = "new_name")]
     pub new_name: String,
     /// Optional 1-indexed line number. When provided, skips automatic symbol resolution.
     #[serde(default)]

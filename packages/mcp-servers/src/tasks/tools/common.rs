@@ -20,7 +20,7 @@ impl From<TaskStatus> for PlanMetaStatus {
 
 /// Summary of a task for tool output (compact form for list views)
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskSummary {
     pub id: String,
     pub title: String,
@@ -38,7 +38,7 @@ impl From<&Task> for TaskSummary {
         Self {
             id: task.id.to_string(),
             title: task.title.clone(),
-            status: task.status.to_string(),
+            status: task.status.as_wire_str().to_string(),
             parent: task.parent.as_ref().map(std::string::ToString::to_string),
             assignee: task.assignee.clone(),
             deps: task

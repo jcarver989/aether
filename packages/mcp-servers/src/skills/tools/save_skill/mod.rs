@@ -22,7 +22,7 @@ pub struct SaveSkillInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub enum SaveSkillStatus {
     Created,
     Updated,

@@ -26,9 +26,11 @@ pub struct WebSearchInput {
     pub count: Option<u32>,
 
     /// Only include results from these domains
+    #[serde(alias = "allowed_domains")]
     pub allowed_domains: Option<Vec<String>>,
 
     /// Exclude results from these domains
+    #[serde(alias = "blocked_domains")]
     pub blocked_domains: Option<Vec<String>>,
 }
 
@@ -374,5 +376,21 @@ mod tests {
         assert_eq!(output.results.len(), 1);
         assert_eq!(output.results[0].title, "Rust Language");
         assert_eq!(output.results[0].snippet, "A systems language");
+    }
+
+    #[test]
+    fn web_search_input_accepts_snake_case_domains() {
+        let args: WebSearchInput = serde_json::from_value(serde_json::json!({
+            "query": "rust",
+            "count": 5,
+            "allowed_domains": ["docs.rs"],
+            "blocked_domains": ["example.com"]
+        }))
+        .unwrap();
+
+        assert_eq!(args.query, "rust");
+        assert_eq!(args.count, Some(5));
+        assert_eq!(args.allowed_domains, Some(vec!["docs.rs".to_string()]));
+        assert_eq!(args.blocked_domains, Some(vec!["example.com".to_string()]));
     }
 }

@@ -76,6 +76,7 @@ impl StructuredAgentOutput {
 #[serde(rename_all = "camelCase")]
 pub struct SubAgentTask {
     /// Name of the agent to spawn (must exist in sub-agents directory)
+    #[serde(alias = "agent_name")]
     pub agent_name: String,
     /// Task for the agent to perform
     pub prompt: String,
@@ -570,5 +571,17 @@ More text"#;
         let result = extract_json_from_markdown(markdown);
 
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_sub_agent_task_accepts_snake_case_agent_name() {
+        let task: SubAgentTask = serde_json::from_value(serde_json::json!({
+            "agent_name": "codebase-explorer",
+            "prompt": "Find entrypoints"
+        }))
+        .unwrap();
+
+        assert_eq!(task.agent_name, "codebase-explorer");
+        assert_eq!(task.prompt, "Find entrypoints");
     }
 }

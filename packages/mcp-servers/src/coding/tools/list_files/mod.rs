@@ -11,6 +11,7 @@ pub struct ListFilesArgs {
     /// Directory path to list (defaults to current directory if not provided)
     pub path: Option<String>,
     /// Include hidden files (starting with .)
+    #[serde(alias = "include_hidden")]
     pub include_hidden: Option<bool>,
 }
 
@@ -180,5 +181,17 @@ mod tests {
             .find(|file| file.name == "link.txt")
             .expect("symlink should be returned");
         assert!(matches!(file_info.file_type, FileType::Symlink));
+    }
+
+    #[test]
+    fn list_files_args_accepts_snake_case_include_hidden() {
+        let args: ListFilesArgs = serde_json::from_value(serde_json::json!({
+            "path": "/tmp",
+            "include_hidden": true
+        }))
+        .unwrap();
+
+        assert_eq!(args.path, Some("/tmp".to_string()));
+        assert_eq!(args.include_hidden, Some(true));
     }
 }

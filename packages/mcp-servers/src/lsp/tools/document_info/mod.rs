@@ -16,9 +16,10 @@ use aether_lspd::symbol_kind_to_string;
 
 /// Input for the `lsp_document` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct LspDocumentInput {
     /// The file path to analyze
+    #[serde(alias = "file_path")]
     pub file_path: String,
 }
 

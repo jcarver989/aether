@@ -9,6 +9,7 @@ pub enum OutputMode {
     /// Return matching lines with file paths and line numbers
     Content,
     /// Return only file paths that contain matches
+    #[serde(alias = "files_with_matches")]
     FilesWithMatches,
     /// Return match counts per file
     Count,

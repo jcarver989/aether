@@ -20,7 +20,7 @@ pub struct RateSkillInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub enum RateSkillStatus {
     Scored,
     Pruned,

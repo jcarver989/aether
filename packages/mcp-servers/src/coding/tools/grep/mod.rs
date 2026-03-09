@@ -63,7 +63,7 @@ pub struct GrepCountOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "camelCase")]
 #[schemars(extend("type" = "object"))]
 pub enum GrepOutput {
     Content(GrepContentOutput),
@@ -81,26 +81,28 @@ pub struct GrepInput {
     /// Glob pattern to filter files (e.g. "*.js")
     pub glob: Option<String>,
     /// File type to search (e.g. "js", "py", "rust")
-    #[serde(rename = "type")]
+    #[serde(rename = "type", alias = "file_type")]
     pub file_type: Option<String>,
     /// Output mode: "content", "`files_with_matches`", or "count"
+    #[serde(alias = "output_mode")]
     pub output_mode: Option<OutputMode>,
     /// Case insensitive search
-    #[serde(rename = "-i")]
+    #[serde(rename = "-i", alias = "case_insensitive")]
     pub case_insensitive: Option<bool>,
     /// Show line numbers (for content mode)
-    #[serde(rename = "-n")]
+    #[serde(rename = "-n", alias = "line_numbers")]
     pub line_numbers: Option<bool>,
     /// Lines to show before each match
-    #[serde(rename = "-B")]
+    #[serde(rename = "-B", alias = "context_before")]
     pub context_before: Option<u32>,
     /// Lines to show after each match
-    #[serde(rename = "-A")]
+    #[serde(rename = "-A", alias = "context_after")]
     pub context_after: Option<u32>,
     /// Lines to show before and after each match
-    #[serde(rename = "-C")]
+    #[serde(rename = "-C", alias = "context_around")]
     pub context_around: Option<u32>,
     /// Limit output to first N lines/entries
+    #[serde(alias = "head_limit")]
     pub head_limit: Option<usize>,
     /// Enable multiline mode
     pub multiline: Option<bool>,
@@ -787,5 +789,33 @@ mod tests {
             }
             _ => panic!("Expected Content output"),
         }
+    }
+
+    #[test]
+    fn grep_input_accepts_snake_case_fields() {
+        let args: GrepInput = serde_json::from_value(serde_json::json!({
+            "pattern": "hello",
+            "path": "/tmp",
+            "file_type": "rust",
+            "output_mode": "files_with_matches",
+            "case_insensitive": true,
+            "line_numbers": true,
+            "context_before": 1,
+            "context_after": 2,
+            "context_around": 3,
+            "head_limit": 10,
+            "multiline": false
+        }))
+        .unwrap();
+
+        assert_eq!(args.file_type, Some("rust".to_string()));
+        assert!(matches!(args.output_mode, Some(OutputMode::FilesWithMatches)));
+        assert_eq!(args.case_insensitive, Some(true));
+        assert_eq!(args.line_numbers, Some(true));
+        assert_eq!(args.context_before, Some(1));
+        assert_eq!(args.context_after, Some(2));
+        assert_eq!(args.context_around, Some(3));
+        assert_eq!(args.head_limit, Some(10));
+        assert_eq!(args.multiline, Some(false));
     }
 }

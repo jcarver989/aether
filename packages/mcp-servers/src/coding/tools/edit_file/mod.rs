@@ -14,13 +14,16 @@ use mcp_utils::display_meta::{
 #[serde(rename_all = "camelCase")]
 pub struct EditFileArgs {
     /// Path to the file to edit
+    #[serde(alias = "file_path")]
     pub file_path: String,
     /// Exact string to find and replace in the file
+    #[serde(alias = "old_string")]
     pub old_string: String,
     /// String to replace it with
+    #[serde(alias = "new_string")]
     pub new_string: String,
     /// Replace all occurrences (default: false - replace only first match)
-    #[serde(default)]
+    #[serde(default, alias = "replace_all")]
     pub replace_all: bool,
 }
 
@@ -301,5 +304,21 @@ mod tests {
         assert!(tags.contains(&DiffTag::Removed));
         assert!(tags.contains(&DiffTag::Context));
         assert!(!tags.contains(&DiffTag::Added));
+    }
+
+    #[test]
+    fn edit_file_args_accepts_snake_case_fields() {
+        let args: EditFileArgs = serde_json::from_value(serde_json::json!({
+            "file_path": "/tmp/test.txt",
+            "old_string": "foo",
+            "new_string": "bar",
+            "replace_all": true
+        }))
+        .unwrap();
+
+        assert_eq!(args.file_path, "/tmp/test.txt");
+        assert_eq!(args.old_string, "foo");
+        assert_eq!(args.new_string, "bar");
+        assert!(args.replace_all);
     }
 }

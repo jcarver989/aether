@@ -10,10 +10,10 @@ use std::collections::HashMap;
 
 /// Input for the `lsp_diagnostics` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct LspDiagnosticsInput {
     /// Optional: filter to specific file path. If not provided, returns all diagnostics.
-    #[serde(default, alias = "filePath")]
+    #[serde(default, alias = "file_path")]
     pub file_path: Option<String>,
 }
 

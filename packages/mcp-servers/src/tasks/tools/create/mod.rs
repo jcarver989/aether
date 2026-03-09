@@ -19,7 +19,7 @@ where
 
 /// Input for the `task_create` tool
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskCreateInput {
     /// Short descriptive title for the task
     pub title: String,
@@ -29,7 +29,7 @@ pub struct TaskCreateInput {
     pub description: Option<String>,
 
     /// Parent task ID - if provided, creates a subtask
-    #[serde(default, deserialize_with = "empty_string_as_none")]
+    #[serde(default, deserialize_with = "empty_string_as_none", alias = "parent_id")]
     pub parent_id: Option<String>,
 
     /// Agent or worker to assign the task to
@@ -43,7 +43,7 @@ pub struct TaskCreateInput {
 
 /// Output for the `task_create` tool
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskCreateOutput {
     /// Status of the operation
     pub status: String,
@@ -308,5 +308,52 @@ mod tests {
 
         let result = execute_task_create(&input, &mut store);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_input_accepts_camel_case() {
+        let input: TaskCreateInput = serde_json::from_value(json!({
+            "title": "Task with camelCase",
+            "description": "Using parentId",
+            "parentId": "at-parent"
+        }))
+        .unwrap();
+
+        assert_eq!(input.title, "Task with camelCase");
+        assert_eq!(input.parent_id, Some("at-parent".to_string()));
+    }
+
+    #[test]
+    fn test_input_accepts_snake_case_alias() {
+        let input: TaskCreateInput = serde_json::from_value(json!({
+            "title": "Task with snake_case",
+            "description": "Using parent_id",
+            "parent_id": "at-parent"
+        }))
+        .unwrap();
+
+        assert_eq!(input.title, "Task with snake_case");
+        assert_eq!(input.parent_id, Some("at-parent".to_string()));
+    }
+
+    #[test]
+    fn test_output_uses_camel_case() {
+        let (_temp, mut store) = setup();
+
+        let input = TaskCreateInput {
+            title: "Test camelCase output".to_string(),
+            description: None,
+            parent_id: None,
+            assignee: None,
+            deps: None,
+        };
+
+        let output = execute_task_create(&input, &mut store).unwrap();
+        let json = serde_json::to_string(&output).unwrap();
+
+        // Verify output uses camelCase field names
+        assert!(json.contains("\"status\""));
+        assert!(json.contains("\"task\""));
+        assert!(json.contains("\"message\""));
     }
 }

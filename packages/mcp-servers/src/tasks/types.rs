@@ -74,28 +74,36 @@ impl From<&str> for TaskId {
 
 /// Task status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub enum TaskStatus {
     Pending,
+    #[serde(alias = "in_progress")]
     InProgress,
     Completed,
     Blocked,
 }
 
+impl TaskStatus {
+    /// Returns the canonical camelCase string for wire format
+    pub fn as_wire_str(&self) -> &'static str {
+        match self {
+            TaskStatus::Pending => "pending",
+            TaskStatus::InProgress => "inProgress",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Blocked => "blocked",
+        }
+    }
+}
+
 impl fmt::Display for TaskStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TaskStatus::Pending => write!(f, "pending"),
-            TaskStatus::InProgress => write!(f, "in_progress"),
-            TaskStatus::Completed => write!(f, "completed"),
-            TaskStatus::Blocked => write!(f, "blocked"),
-        }
+        write!(f, "{}", self.as_wire_str())
     }
 }
 
 /// A task for tracking work in deep research workflows
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct Task {
     /// Unique task identifier
     pub id: TaskId,
@@ -136,7 +144,7 @@ pub struct Task {
     pub facts: Vec<String>,
 
     /// Suggested next steps
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "next_steps")]
     pub next_steps: Vec<String>,
 
     /// Blockers or unresolved issues
@@ -144,7 +152,7 @@ pub struct Task {
     pub blockers: Vec<String>,
 
     /// Files examined (not modified - git tracks modifications)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "files_read")]
     pub files_read: Vec<String>,
 
     /// External resources accessed with brief notes
@@ -152,9 +160,11 @@ pub struct Task {
     pub resources: Vec<String>,
 
     /// When the task was created
+    #[serde(alias = "created_at")]
     pub created_at: DateTime<Utc>,
 
     /// When the task was last updated
+    #[serde(alias = "updated_at")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -219,7 +229,7 @@ impl Task {
 
 /// Updates that can be applied to a task
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct TaskUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -246,13 +256,13 @@ pub struct TaskUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub facts: Option<Vec<String>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "next_steps")]
     pub next_steps: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blockers: Option<Vec<String>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "files_read")]
     pub files_read: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -382,10 +392,69 @@ mod tests {
         let json = serde_json::to_string(&task).unwrap();
         assert!(json.contains("\"id\":\"at-a1b2c3d4\""));
         assert!(json.contains("\"status\":\"pending\""));
+        // Verify camelCase field names
+        assert!(json.contains("\"createdAt\""));
+        assert!(json.contains("\"updatedAt\""));
 
         let deserialized: Task = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.id.as_str(), "at-a1b2c3d4");
         assert_eq!(deserialized.status, TaskStatus::Pending);
+    }
+
+    #[test]
+    fn test_task_deserializes_legacy_snake_case() {
+        // Test backward compatibility with legacy snake_case JSON
+        let legacy_json = r#"{
+            "id": "at-legacy",
+            "title": "Legacy Task",
+            "status": "pending",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "next_steps": ["step1"],
+            "files_read": ["file.rs"]
+        }"#;
+        let task: Task = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(task.id.as_str(), "at-legacy");
+        assert_eq!(task.next_steps, vec!["step1"]);
+        assert_eq!(task.files_read, vec!["file.rs"]);
+    }
+
+    #[test]
+    fn test_task_status_serialization() {
+        // Test that TaskStatus serializes to camelCase
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::Pending).unwrap(),
+            "\"pending\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::InProgress).unwrap(),
+            "\"inProgress\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::Completed).unwrap(),
+            "\"completed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::Blocked).unwrap(),
+            "\"blocked\""
+        );
+    }
+
+    #[test]
+    fn test_task_status_deserialization_aliases() {
+        // Test that both camelCase and snake_case are accepted
+        let camel: TaskStatus = serde_json::from_str("\"inProgress\"").unwrap();
+        let snake: TaskStatus = serde_json::from_str("\"in_progress\"").unwrap();
+        assert_eq!(camel, TaskStatus::InProgress);
+        assert_eq!(snake, TaskStatus::InProgress);
+    }
+
+    #[test]
+    fn test_task_status_wire_str() {
+        assert_eq!(TaskStatus::Pending.as_wire_str(), "pending");
+        assert_eq!(TaskStatus::InProgress.as_wire_str(), "inProgress");
+        assert_eq!(TaskStatus::Completed.as_wire_str(), "completed");
+        assert_eq!(TaskStatus::Blocked.as_wire_str(), "blocked");
     }
 
     #[test]
@@ -402,7 +471,10 @@ mod tests {
         assert!(json.contains("\"summary\":\"Found the answer\""));
         assert!(json.contains("\"decisions\":["));
         assert!(json.contains("\"facts\":["));
-        assert!(json.contains("\"next_steps\":["));
+        // Should serialize as camelCase
+        assert!(json.contains("\"nextSteps\":["));
+        // Should NOT contain snake_case
+        assert!(!json.contains("\"next_steps\""));
 
         let deserialized: Task = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.summary, Some("Found the answer".to_string()));
@@ -420,9 +492,9 @@ mod tests {
         assert!(!json.contains("\"summary\""));
         assert!(!json.contains("\"decisions\""));
         assert!(!json.contains("\"facts\""));
-        assert!(!json.contains("\"next_steps\""));
+        assert!(!json.contains("\"nextSteps\""));
         assert!(!json.contains("\"blockers\""));
-        assert!(!json.contains("\"files_read\""));
+        assert!(!json.contains("\"filesRead\""));
         assert!(!json.contains("\"resources\""));
     }
 
