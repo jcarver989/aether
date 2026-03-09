@@ -1,4 +1,5 @@
 use super::{App, AppAction, PromptAttachment, build_attachment_blocks};
+use crate::components::app::git_diff_mode::format_review_prompt;
 use crate::settings::{load_or_create_settings, save_settings};
 use crate::tui::{Action, Line, Renderer};
 use std::io::Write;
@@ -78,6 +79,20 @@ impl App {
             AppAction::CloseGitDiffViewer => {
                 self.git_diff_mode.close();
                 self.state.exit_git_diff();
+                Ok(vec![])
+            }
+            AppAction::SubmitDiffReview { comments } => {
+                let prompt = format_review_prompt(&comments);
+                self.git_diff_mode.close();
+                self.state.exit_git_diff();
+                submit_prompt_with_attachments(
+                    renderer,
+                    &self.prompt_handle,
+                    &self.session_id,
+                    &prompt,
+                    vec![],
+                )
+                .await?;
                 Ok(vec![])
             }
         }

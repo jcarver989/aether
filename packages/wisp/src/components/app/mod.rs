@@ -1,11 +1,11 @@
 mod attachments;
-mod git_diff_mode;
+pub(crate) mod git_diff_mode;
 pub mod runtime;
 mod session;
 mod state;
 
 pub(crate) use git_diff_mode::{
-    GitDiffLoadState, GitDiffMode, GitDiffViewState, PatchFocus, ScreenMode,
+    GitDiffLoadState, GitDiffMode, GitDiffViewState, PatchFocus, QueuedComment, ScreenMode,
 };
 pub(crate) use state::UiState;
 
@@ -29,6 +29,7 @@ pub use attachments::build_attachment_blocks;
 
 /// Runtime-executed side effects emitted by the app state machine.
 #[derive(Debug)]
+#[allow(private_interfaces)]
 pub enum AppAction {
     PushScrollback(Vec<Line>),
     PromptSubmit {
@@ -53,6 +54,9 @@ pub enum AppAction {
     OpenGitDiffViewer,
     RefreshGitDiffViewer,
     CloseGitDiffViewer,
+    SubmitDiffReview {
+        comments: Vec<QueuedComment>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -204,16 +208,26 @@ impl RootComponent for App {
                 .height
                 .saturating_sub(status_lines.len() as u16);
             let diff_context = context.with_size((context.size.width, diff_height));
+            let line_count = diff_height as usize;
             let mut lines = self.git_diff_mode.render(&diff_context);
             lines.extend(status_lines);
-            return Frame::new(
-                lines,
+
+            let cursor = if self.git_diff_mode.is_comment_input() {
+                let comment_cursor = self.git_diff_mode.comment_cursor_col();
+                Cursor {
+                    row: line_count.saturating_sub(1),
+                    col: "Comment: ".len() + comment_cursor,
+                    is_visible: true,
+                }
+            } else {
                 Cursor {
                     row: 0,
                     col: 0,
                     is_visible: false,
-                },
-            );
+                }
+            };
+
+            return Frame::new(lines, cursor);
         }
 
         let grace_period = self.state.plan_tracker.grace_period;

@@ -1,3 +1,4 @@
+use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
 use crate::tui::soft_wrap::truncate_text;
@@ -9,6 +10,7 @@ use crate::tui::{
 pub enum GitDiffViewMessage {
     Close,
     Refresh,
+    SubmitReview { comments: Vec<QueuedComment> },
 }
 
 pub struct GitDiffView<'a> {
@@ -54,6 +56,10 @@ impl Component for GitDiffView<'_> {
                 self.state.selected_file,
                 self.state.patch_scroll,
                 &self.state.cached_patch_lines,
+                self.state.cursor_line,
+                self.state.focus,
+                &self.state.queued_comments,
+                &self.state.comment_buffer,
                 left_width,
                 right_width,
                 available_height,
@@ -70,6 +76,10 @@ impl InteractiveComponent for GitDiffView<'_> {
         let UiEvent::Key(key) = event else {
             return MessageResult::consumed();
         };
+
+        if self.state.focus == PatchFocus::CommentInput {
+            return self.on_comment_input(key.code);
+        }
 
         match key.code {
             KeyCode::Esc => MessageResult::message(GitDiffViewMessage::Close),
@@ -91,27 +101,36 @@ impl InteractiveComponent for GitDiffView<'_> {
                 MessageResult::consumed()
             }
             KeyCode::Char('g') => {
-                self.state.scroll_patch_to_start();
+                self.state.move_cursor_to_start();
                 MessageResult::consumed()
             }
             KeyCode::Char('G') => {
-                self.state.scroll_patch_to_end();
+                self.state.move_cursor_to_end();
                 MessageResult::consumed()
             }
             KeyCode::PageDown => {
-                self.state.scroll_patch(20);
+                self.state.move_cursor(20);
                 MessageResult::consumed()
             }
             KeyCode::PageUp => {
-                self.state.scroll_patch(-20);
+                self.state.move_cursor(-20);
                 MessageResult::consumed()
             }
             KeyCode::Char('n') => {
-                self.jump_next_hunk();
+                self.state.jump_next_hunk();
                 MessageResult::consumed()
             }
             KeyCode::Char('p') => {
-                self.jump_prev_hunk();
+                self.state.jump_prev_hunk();
+                MessageResult::consumed()
+            }
+            KeyCode::Char('c') => {
+                self.enter_comment_mode();
+                MessageResult::consumed()
+            }
+            KeyCode::Char('s') => self.submit_review(),
+            KeyCode::Char('u') => {
+                self.state.queued_comments.pop();
                 MessageResult::consumed()
             }
             _ => MessageResult::consumed(),
@@ -126,8 +145,9 @@ impl GitDiffView<'_> {
                 self.state.select_relative(1);
             }
             PatchFocus::Patch => {
-                self.state.scroll_patch(1);
+                self.state.move_cursor(1);
             }
+            PatchFocus::CommentInput => {}
         }
     }
 
@@ -137,17 +157,81 @@ impl GitDiffView<'_> {
                 self.state.select_relative(-1);
             }
             PatchFocus::Patch => {
-                self.state.scroll_patch(-1);
+                self.state.move_cursor(-1);
             }
+            PatchFocus::CommentInput => {}
         }
     }
 
-    fn jump_next_hunk(&mut self) {
-        self.state.jump_next_hunk();
+    fn enter_comment_mode(&mut self) {
+        if self.state.focus != PatchFocus::Patch {
+            return;
+        }
+        let cursor = self.state.cursor_line;
+        if cursor >= self.state.cached_patch_line_refs.len() {
+            return;
+        }
+        if self.state.cached_patch_line_refs[cursor].is_none() {
+            return;
+        }
+        self.state.focus = PatchFocus::CommentInput;
+        self.state.comment_buffer.clear();
+        self.state.comment_cursor = 0;
     }
 
-    fn jump_prev_hunk(&mut self) {
-        self.state.jump_prev_hunk();
+    fn submit_review(&mut self) -> MessageResult<GitDiffViewMessage> {
+        if self.state.queued_comments.is_empty() {
+            return MessageResult::consumed();
+        }
+        let comments = std::mem::take(&mut self.state.queued_comments);
+        MessageResult::message(GitDiffViewMessage::SubmitReview { comments })
+    }
+
+    fn on_comment_input(
+        &mut self,
+        code: KeyCode,
+    ) -> MessageResult<GitDiffViewMessage> {
+        match code {
+            KeyCode::Esc => {
+                self.state.focus = PatchFocus::Patch;
+                self.state.comment_buffer.clear();
+                self.state.comment_cursor = 0;
+                MessageResult::consumed()
+            }
+            KeyCode::Enter => {
+                if let Some(comment) = build_queued_comment(self.state) {
+                    self.state.queued_comments.push(comment);
+                }
+                self.state.focus = PatchFocus::Patch;
+                self.state.comment_buffer.clear();
+                self.state.comment_cursor = 0;
+                MessageResult::consumed()
+            }
+            KeyCode::Char(c) => {
+                let byte_pos = char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
+                self.state.comment_buffer.insert(byte_pos, c);
+                self.state.comment_cursor += 1;
+                MessageResult::consumed()
+            }
+            KeyCode::Backspace => {
+                if self.state.comment_cursor > 0 {
+                    self.state.comment_cursor -= 1;
+                    let byte_pos = char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
+                    self.state.comment_buffer.remove(byte_pos);
+                }
+                MessageResult::consumed()
+            }
+            KeyCode::Left => {
+                self.state.comment_cursor = self.state.comment_cursor.saturating_sub(1);
+                MessageResult::consumed()
+            }
+            KeyCode::Right => {
+                let max = self.state.comment_buffer.chars().count();
+                self.state.comment_cursor = (self.state.comment_cursor + 1).min(max);
+                MessageResult::consumed()
+            }
+            _ => MessageResult::consumed(),
+        }
     }
 }
 
@@ -157,6 +241,10 @@ fn render_ready(
     selected_file_idx: usize,
     patch_scroll: usize,
     cached_patch_lines: &[Line],
+    cursor_line: usize,
+    focus: PatchFocus,
+    queued_comments: &[QueuedComment],
+    comment_buffer: &str,
     left_width: usize,
     right_width: usize,
     available_height: usize,
@@ -166,13 +254,39 @@ fn render_ready(
     let selected = selected_file_idx.min(files.len().saturating_sub(1));
     let selected_file = &files[selected];
 
-    let row_count = available_height.max(files.len());
-    let mut rows = Vec::with_capacity(row_count);
+    let show_comment_bar = focus == PatchFocus::CommentInput;
+    let content_height = if show_comment_bar {
+        available_height.saturating_sub(1)
+    } else {
+        available_height
+    };
+
+    let row_count = content_height.max(files.len());
+    let mut rows = Vec::with_capacity(available_height);
 
     for i in 0..row_count {
         let mut line = Line::default();
 
-        render_file_list_cell(&mut line, files, i, selected, left_width, theme);
+        // Show queue indicator in last file list row
+        let queue_row =
+            !queued_comments.is_empty() && i == content_height.saturating_sub(1);
+
+        if queue_row {
+            let indicator = format!(
+                " [{} comment{}] s:submit u:undo",
+                queued_comments.len(),
+                if queued_comments.len() == 1 { "" } else { "s" },
+            );
+            let padded = truncate_text(&indicator, left_width);
+            let pad = left_width.saturating_sub(padded.chars().count());
+            line.push_with_style(padded.as_ref(), Style::fg(theme.accent()));
+            if pad > 0 {
+                line.push_text(" ".repeat(pad));
+            }
+        } else {
+            render_file_list_cell(&mut line, files, i, selected, left_width, theme);
+        }
+
         line.push_with_style("\u{2502}", Style::fg(theme.text_secondary()));
         render_patch_cell(
             &mut line,
@@ -180,11 +294,32 @@ fn render_ready(
             cached_patch_lines,
             i,
             patch_scroll,
+            cursor_line,
+            focus,
             right_width,
             theme,
         );
 
         rows.push(line);
+    }
+
+    if show_comment_bar {
+        let mut bar = Line::default();
+        let label = format!("Comment: {comment_buffer}");
+        let truncated = truncate_text(&label, left_width + 1 + right_width);
+        bar.push_with_style(
+            truncated.as_ref(),
+            Style::fg(theme.text_primary()).bg_color(theme.highlight_bg()),
+        );
+        let bar_width = truncated.chars().count();
+        let total = left_width + 1 + right_width;
+        if bar_width < total {
+            bar.push_with_style(
+                " ".repeat(total - bar_width),
+                Style::default().bg_color(theme.highlight_bg()),
+            );
+        }
+        rows.push(bar);
     }
 
     rows
@@ -256,6 +391,8 @@ fn render_patch_cell(
     patch_lines: &[Line],
     row: usize,
     patch_scroll: usize,
+    cursor_line: usize,
+    focus: PatchFocus,
     right_width: usize,
     theme: &crate::tui::Theme,
 ) {
@@ -286,8 +423,26 @@ fn render_patch_cell(
         let patch_row = row - 2;
         let scrolled_row = patch_row + patch_scroll;
         if scrolled_row < patch_lines.len() {
-            line.append_line(&patch_lines[scrolled_row]);
+            let is_cursor = matches!(focus, PatchFocus::Patch | PatchFocus::CommentInput)
+                && scrolled_row == cursor_line;
+            if is_cursor {
+                append_with_cursor_highlight(line, &patch_lines[scrolled_row], theme);
+            } else {
+                line.append_line(&patch_lines[scrolled_row]);
+            }
         }
+    }
+}
+
+fn append_with_cursor_highlight(dest: &mut Line, source: &Line, theme: &crate::tui::Theme) {
+    let highlight_bg = theme.highlight_bg();
+    for span in source.spans() {
+        let mut style = span.style();
+        style.bg = Some(highlight_bg);
+        dest.push_with_style(span.text(), style);
+    }
+    if source.is_empty() {
+        dest.push_with_style(" ", Style::default().bg_color(highlight_bg));
     }
 }
 
@@ -310,10 +465,14 @@ fn render_message_layout(
     rows
 }
 
-pub(crate) fn build_patch_lines(file: &FileDiff, context: &RenderContext) -> Vec<Line> {
+pub(crate) fn build_patch_lines(
+    file: &FileDiff,
+    context: &RenderContext,
+) -> (Vec<Line>, Vec<Option<PatchLineRef>>) {
     let theme = &context.theme;
     let lang_hint = lang_hint_from_path(&file.path);
     let mut patch_lines = Vec::new();
+    let mut patch_refs = Vec::new();
 
     let max_line_no = file
         .hunks
@@ -327,9 +486,10 @@ pub(crate) fn build_patch_lines(file: &FileDiff, context: &RenderContext) -> Vec
     for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
         if hunk_idx > 0 {
             patch_lines.push(Line::default());
+            patch_refs.push(None);
         }
 
-        for pl in &hunk.lines {
+        for (line_idx, pl) in hunk.lines.iter().enumerate() {
             let mut line = Line::default();
 
             match pl.kind {
@@ -368,10 +528,14 @@ pub(crate) fn build_patch_lines(file: &FileDiff, context: &RenderContext) -> Vec
             }
 
             patch_lines.push(line);
+            patch_refs.push(Some(PatchLineRef {
+                hunk_index: hunk_idx,
+                line_index: line_idx,
+            }));
         }
     }
 
-    patch_lines
+    (patch_lines, patch_refs)
 }
 
 fn lang_hint_from_path(path: &str) -> &str {
@@ -418,6 +582,66 @@ fn digit_count(mut n: usize) -> usize {
         n /= 10;
     }
     count
+}
+
+fn char_to_byte_pos(s: &str, char_idx: usize) -> usize {
+    s.char_indices()
+        .nth(char_idx)
+        .map_or(s.len(), |(i, _)| i)
+}
+
+fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
+    let cursor = state.cursor_line;
+    let patch_ref = state.cached_patch_line_refs.get(cursor)?.as_ref()?;
+
+    let GitDiffLoadState::Ready(doc) = &state.load_state else {
+        return None;
+    };
+    let file = doc.files.get(state.selected_file)?;
+    let hunk = file.hunks.get(patch_ref.hunk_index)?;
+    let patch_line = hunk.lines.get(patch_ref.line_index)?;
+
+    // Reconstruct hunk text as unified diff
+    let mut hunk_text = String::new();
+    for pl in &hunk.lines {
+        match pl.kind {
+            PatchLineKind::Context => {
+                hunk_text.push(' ');
+                hunk_text.push_str(&pl.text);
+                hunk_text.push('\n');
+            }
+            PatchLineKind::Added => {
+                hunk_text.push('+');
+                hunk_text.push_str(&pl.text);
+                hunk_text.push('\n');
+            }
+            PatchLineKind::Removed => {
+                hunk_text.push('-');
+                hunk_text.push_str(&pl.text);
+                hunk_text.push('\n');
+            }
+            PatchLineKind::HunkHeader | PatchLineKind::Meta => {
+                hunk_text.push_str(&pl.text);
+                hunk_text.push('\n');
+            }
+        }
+    }
+    // Trim trailing newline
+    if hunk_text.ends_with('\n') {
+        hunk_text.pop();
+    }
+
+    let line_number = patch_line.new_line_no.or(patch_line.old_line_no);
+
+    Some(QueuedComment {
+        file_path: file.path.clone(),
+        hunk_index: patch_ref.hunk_index,
+        hunk_text,
+        line_text: patch_line.text.clone(),
+        line_number,
+        line_kind: patch_line.kind,
+        comment: state.comment_buffer.clone(),
+    })
 }
 
 #[cfg(test)]
@@ -672,7 +896,7 @@ mod tests {
         let doc = make_test_doc();
         let context = RenderContext::new((100, 24));
         let file = &doc.files[0];
-        let patch_lines = build_patch_lines(file, &context);
+        let (patch_lines, _refs) = build_patch_lines(file, &context);
 
         // Context line "fn main() {" should have multiple spans from syntax highlighting
         // (gutter span + syntax spans for "fn", "main", etc.)
@@ -685,7 +909,7 @@ mod tests {
 
         // Added line should also have syntax spans with bg overlay
         let added_line = &patch_lines[3]; // Added line
-        let content_spans: Vec<_> = added_line.spans().iter().skip(1).collect(); // skip gutter
+        let content_spans: Vec<&Span> = added_line.spans().iter().skip(1).collect(); // skip gutter
         assert!(
             !content_spans.is_empty(),
             "Added line should have content spans"
@@ -707,5 +931,256 @@ mod tests {
         assert_eq!(lang_hint_from_path("foo.py"), "py");
         assert_eq!(lang_hint_from_path("Makefile"), "Makefile");
         assert_eq!(lang_hint_from_path("a/b/c.tsx"), "tsx");
+    }
+
+    fn make_state_with_cache() -> GitDiffViewState {
+        let doc = make_test_doc();
+        let mut state = make_view_state(doc);
+        let context = RenderContext::new((100, 24));
+        state.ensure_patch_cache(&context);
+        state
+    }
+
+    #[test]
+    fn c_enters_comment_mode() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.cursor_line = 1; // Context line (has a ref)
+
+        let mut view = GitDiffView { state: &mut state };
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(view.state.focus, PatchFocus::CommentInput);
+    }
+
+    #[test]
+    fn c_on_spacer_is_noop() {
+        let doc = GitDiffDocument {
+            repo_root: PathBuf::from("/tmp/test"),
+            files: vec![FileDiff {
+                old_path: None,
+                path: "a.rs".to_string(),
+                status: FileStatus::Modified,
+                hunks: vec![
+                    Hunk {
+                        header: "@@ -1,1 +1,1 @@".to_string(),
+                        old_start: 1,
+                        old_count: 1,
+                        new_start: 1,
+                        new_count: 1,
+                        lines: vec![PatchLine {
+                            kind: PatchLineKind::HunkHeader,
+                            text: "@@ -1,1 +1,1 @@".to_string(),
+                            old_line_no: None,
+                            new_line_no: None,
+                        }],
+                    },
+                    Hunk {
+                        header: "@@ -5,1 +5,1 @@".to_string(),
+                        old_start: 5,
+                        old_count: 1,
+                        new_start: 5,
+                        new_count: 1,
+                        lines: vec![PatchLine {
+                            kind: PatchLineKind::HunkHeader,
+                            text: "@@ -5,1 +5,1 @@".to_string(),
+                            old_line_no: None,
+                            new_line_no: None,
+                        }],
+                    },
+                ],
+                binary: false,
+            }],
+        };
+        let mut state = make_view_state(doc);
+        let context = RenderContext::new((100, 24));
+        state.ensure_patch_cache(&context);
+        state.focus = PatchFocus::Patch;
+        // The spacer line between hunks has None ref
+        state.cursor_line = 1; // spacer between two hunks
+
+        let mut view = GitDiffView { state: &mut state };
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(view.state.focus, PatchFocus::Patch);
+    }
+
+    #[test]
+    fn esc_exits_comment_mode() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::CommentInput;
+        state.comment_buffer = "partial".to_string();
+
+        let mut view = GitDiffView { state: &mut state };
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(view.state.focus, PatchFocus::Patch);
+        assert!(view.state.comment_buffer.is_empty());
+    }
+
+    #[test]
+    fn enter_queues_comment() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.cursor_line = 1; // Context line
+        // Enter comment mode
+        let mut view = GitDiffView { state: &mut state };
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(view.state.focus, PatchFocus::CommentInput);
+
+        // Type some text
+        for ch in "test comment".chars() {
+            view.on_event(UiEvent::Key(KeyEvent::new(
+                KeyCode::Char(ch),
+                KeyModifiers::NONE,
+            )));
+        }
+        assert_eq!(view.state.comment_buffer, "test comment");
+
+        // Submit with Enter
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(view.state.focus, PatchFocus::Patch);
+        assert_eq!(view.state.queued_comments.len(), 1);
+        assert_eq!(view.state.queued_comments[0].comment, "test comment");
+        assert!(view.state.comment_buffer.is_empty());
+    }
+
+    #[test]
+    fn s_submits_review() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.queued_comments.push(QueuedComment {
+            file_path: "a.rs".to_string(),
+            hunk_index: 0,
+            hunk_text: "hunk".to_string(),
+            line_text: "line".to_string(),
+            line_number: Some(1),
+            line_kind: PatchLineKind::Context,
+            comment: "looks good".to_string(),
+        });
+
+        let mut view = GitDiffView { state: &mut state };
+        let result = view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('s'),
+            KeyModifiers::NONE,
+        )));
+        assert!(
+            result
+                .messages
+                .iter()
+                .any(|m| matches!(m, GitDiffViewMessage::SubmitReview { .. }))
+        );
+    }
+
+    #[test]
+    fn s_without_comments_is_noop() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+
+        let mut view = GitDiffView { state: &mut state };
+        let result = view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('s'),
+            KeyModifiers::NONE,
+        )));
+        assert!(result.messages.is_empty());
+    }
+
+    #[test]
+    fn u_removes_last_comment() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.queued_comments.push(QueuedComment {
+            file_path: "a.rs".to_string(),
+            hunk_index: 0,
+            hunk_text: "hunk".to_string(),
+            line_text: "line1".to_string(),
+            line_number: Some(1),
+            line_kind: PatchLineKind::Context,
+            comment: "first".to_string(),
+        });
+        state.queued_comments.push(QueuedComment {
+            file_path: "a.rs".to_string(),
+            hunk_index: 0,
+            hunk_text: "hunk".to_string(),
+            line_text: "line2".to_string(),
+            line_number: Some(2),
+            line_kind: PatchLineKind::Added,
+            comment: "second".to_string(),
+        });
+
+        let mut view = GitDiffView { state: &mut state };
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('u'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(view.state.queued_comments.len(), 1);
+        assert_eq!(view.state.queued_comments[0].comment, "first");
+    }
+
+    #[test]
+    fn cursor_navigation_clamps() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.cursor_line = 0;
+
+        // k at 0 stays at 0
+        state.move_cursor(-1);
+        assert_eq!(state.cursor_line, 0);
+
+        // Move to end
+        let max = state.max_patch_scroll();
+        state.cursor_line = max;
+        state.move_cursor(1);
+        assert_eq!(state.cursor_line, max);
+    }
+
+    #[test]
+    fn cursor_replaces_scroll() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.cursor_line = 0;
+
+        let mut view = GitDiffView { state: &mut state };
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(view.state.cursor_line, 1);
+
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('k'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(view.state.cursor_line, 0);
+    }
+
+    #[test]
+    fn build_queued_comment_extracts_data() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.cursor_line = 3; // Added line "    new();"
+        state.comment_buffer = "test review".to_string();
+
+        let comment = build_queued_comment(&state).unwrap();
+        assert_eq!(comment.file_path, "a.rs");
+        assert_eq!(comment.hunk_index, 0);
+        assert_eq!(comment.line_text, "    new();");
+        assert_eq!(comment.line_kind, PatchLineKind::Added);
+        assert_eq!(comment.line_number, Some(2));
+        assert_eq!(comment.comment, "test review");
+        assert!(comment.hunk_text.contains("+    new();"));
+        assert!(comment.hunk_text.contains("-    old();"));
     }
 }
