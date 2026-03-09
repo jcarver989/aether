@@ -18,6 +18,7 @@ mod tests;
 pub enum TerminalEvent {
     Key(KeyEvent),
     Paste(String),
+    Mouse(crossterm::event::MouseEvent),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -154,6 +155,14 @@ where
                     CrosstermEvent::Paste(text) => {
                         let before = app.render_version();
                         let actions = app.on_terminal_event(TerminalEvent::Paste(text), &renderer.context());
+                        let pending_render = app.render_version() != before;
+                        if process_actions(app, renderer, actions, pending_render).await? {
+                            return Ok(());
+                        }
+                    }
+                    CrosstermEvent::Mouse(mouse) => {
+                        let before = app.render_version();
+                        let actions = app.on_terminal_event(TerminalEvent::Mouse(mouse), &renderer.context());
                         let pending_render = app.render_version() != before;
                         if process_actions(app, renderer, actions, pending_render).await? {
                             return Ok(());

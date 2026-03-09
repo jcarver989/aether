@@ -1,5 +1,6 @@
 pub mod app;
 pub mod command_picker;
+pub(crate) mod git_diff_view;
 pub mod config_menu;
 pub mod config_overlay;
 pub mod config_picker;

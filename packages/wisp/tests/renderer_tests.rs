@@ -35,6 +35,7 @@ impl Renderer {
                 vec![],
                 AcpPromptHandle::noop(),
                 acp::SessionId::new("test"),
+                std::path::PathBuf::from("."),
             ),
             renderer: FrameRenderer::new(terminal, Theme::default()),
         }
@@ -42,6 +43,10 @@ impl Renderer {
 
     fn writer(&self) -> &TestTerminal {
         self.renderer.writer()
+    }
+
+    fn writer_mut(&mut self) -> &mut TestTerminal {
+        self.renderer.writer_mut()
     }
 
     fn on_resize(&mut self, size: (u16, u16)) {
@@ -908,6 +913,48 @@ async fn test_prompt_done_does_not_duplicate_overflowed_lines() {
 }
 
 // ── New tests: bordered input + status line ──────────────────────────
+
+#[tokio::test]
+async fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
+    let terminal = TestTerminal::new(80, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
+    renderer.on_resize((80, 24));
+    renderer.initial_render().unwrap();
+
+    let input = "this input prompt is long enough to wrap across multiple rows and should reflow cleanly on resize";
+    type_string(&mut renderer, input).await;
+
+    renderer.writer_mut().resize(32, 24);
+    renderer.on_resize_event(32, 24).await.unwrap();
+
+    let lines = renderer.writer().get_lines();
+    let top_count = lines.iter().filter(|l| l.contains('╭')).count();
+    let bottom_count = lines.iter().filter(|l| l.contains('╰')).count();
+    let content_rows = lines.iter().filter(|l| l.starts_with('│')).count();
+
+    assert_eq!(
+        top_count,
+        1,
+        "Expected a single prompt top border after resize reflow.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert_eq!(
+        bottom_count,
+        1,
+        "Expected a single prompt bottom border after resize reflow.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        content_rows >= 2,
+        "Expected wrapped prompt content rows after resize reflow.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        !lines.iter().any(|l| l == &"─".repeat(32)),
+        "Should not leave behind stale reflowed border fragments.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
 
 #[tokio::test]
 async fn test_typing_renders_within_bordered_input() {

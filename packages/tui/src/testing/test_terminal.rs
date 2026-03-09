@@ -39,6 +39,59 @@ impl TestTerminal {
         }
     }
 
+    /// Resize terminal and reflow visible buffer content to match the new width.
+    pub fn resize(&mut self, columns: u16, rows: u16) {
+        let transcript = self.get_transcript_lines();
+        let mut wrapped: Vec<String> = Vec::new();
+        let width = columns.max(1) as usize;
+
+        for line in transcript {
+            if line.is_empty() {
+                wrapped.push(String::new());
+                continue;
+            }
+
+            let chars: Vec<char> = line.chars().collect();
+            for chunk in chars.chunks(width) {
+                wrapped.push(chunk.iter().collect());
+            }
+        }
+
+        if wrapped.is_empty() {
+            wrapped.push(String::new());
+        }
+
+        let rows_usize = rows.max(1) as usize;
+        let split_at = wrapped.len().saturating_sub(rows_usize);
+        let scrollback = &wrapped[..split_at];
+        let visible = &wrapped[split_at..];
+
+        self.scrollback = scrollback
+            .iter()
+            .map(|line| Self::line_to_row(line, columns))
+            .collect();
+
+        self.buffer = visible
+            .iter()
+            .map(|line| Self::line_to_row(line, columns))
+            .collect();
+
+        while self.buffer.len() < rows_usize {
+            self.buffer.push(vec![' '; columns as usize]);
+        }
+
+        self.size = (columns, rows);
+        self.cursor = (0, rows.saturating_sub(1));
+        self.saved_cursor = None;
+        self.pending_wrap = false;
+    }
+
+    fn line_to_row(line: &str, columns: u16) -> Vec<char> {
+        let mut row: Vec<char> = line.chars().take(columns as usize).collect();
+        row.resize(columns as usize, ' ');
+        row
+    }
+
     /// Get all lines as a vector of strings (trailing whitespace trimmed)
     pub fn get_lines(&self) -> Vec<String> {
         self.buffer

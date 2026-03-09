@@ -17,12 +17,13 @@ pub struct RuntimeState {
     pub theme: Theme,
     pub event_rx: mpsc::UnboundedReceiver<AcpEvent>,
     pub prompt_handle: AcpPromptHandle,
+    pub working_dir: std::path::PathBuf,
 }
 
 impl RuntimeState {
     pub async fn from_cli(cli: &Cli) -> Result<Self, WispError> {
         let cwd = current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let new_session_request = NewSessionRequest::new(cwd);
+        let new_session_request = NewSessionRequest::new(cwd.clone());
         let init_request = InitializeRequest::new(ProtocolVersion::LATEST)
             .client_info(Implementation::new("wisp", env!("CARGO_PKG_VERSION")));
 
@@ -45,6 +46,7 @@ impl RuntimeState {
             theme: crate::settings::load_theme(&settings),
             event_rx: session.event_rx,
             prompt_handle: session.prompt_handle,
+            working_dir: cwd,
         })
     }
 }

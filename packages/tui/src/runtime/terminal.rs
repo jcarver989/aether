@@ -1,3 +1,4 @@
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use std::io;
 
@@ -40,5 +41,13 @@ impl TerminalSession {
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         let _ = self.cleanup();
+    }
+}
+
+pub fn set_mouse_capture(enabled: bool) {
+    if enabled {
+        let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
+    } else {
+        let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
     }
 }

@@ -29,6 +29,7 @@ pub struct TerminalScreen<W: Write> {
     /// How many visual lines have already been flushed to scrollback
     /// via progressive overflow handling.
     flushed_visual_count: usize,
+    resized: bool,
 }
 
 impl<W: Write> TerminalScreen<W> {
@@ -40,6 +41,7 @@ impl<W: Write> TerminalScreen<W> {
             cursor_row_offset: 0,
             cursor_visible: true,
             flushed_visual_count: 0,
+            resized: false,
         }
     }
 
@@ -61,12 +63,32 @@ impl<W: Write> TerminalScreen<W> {
         &self.writer
     }
 
-    pub fn render_frame(&mut self, frame: &PreparedFrame, width: u16) -> io::Result<()> {
-        self.restore_cursor_position()?;
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
 
-        if !frame.scrollback_lines().is_empty() {
-            self.push_visual_to_scrollback(frame.scrollback_lines())?;
+    pub fn on_resize(&mut self, width: u16) {
+        self.last_width = width;
+        self.prev_frame.clear();
+        self.cursor_row_offset = 0;
+        self.resized = true;
+    }
+
+    pub fn render_frame(&mut self, frame: &PreparedFrame, width: u16) -> io::Result<()> {
+        if self.resized {
+            self.clear_viewport()?;
+            if !frame.scrollback_lines().is_empty() {
+                self.push_visual_to_scrollback(frame.scrollback_lines())?;
+            }
             self.flushed_visual_count = frame.overflow();
+            self.resized = false;
+        } else {
+            self.restore_cursor_position()?;
+
+            if !frame.scrollback_lines().is_empty() {
+                self.push_visual_to_scrollback(frame.scrollback_lines())?;
+                self.flushed_visual_count = frame.overflow();
+            }
         }
 
         self.render_visible(frame.visible_lines(), width)?;
@@ -104,11 +126,21 @@ impl<W: Write> TerminalScreen<W> {
         Ok(())
     }
 
+    fn clear_viewport(&mut self) -> io::Result<()> {
+        self.writer.queue(BeginSynchronizedUpdate)?;
+        self.writer.queue(Clear(ClearType::All))?;
+        write!(self.writer, "\x1b[H")?;
+        self.writer.queue(EndSynchronizedUpdate)?;
+        self.writer.flush()?;
+        self.prev_frame.clear();
+        self.cursor_row_offset = 0;
+        Ok(())
+    }
+
     fn render_visible(&mut self, new_frame: &[Line], width: u16) -> io::Result<usize> {
         let prev_on_screen = self.prev_frame.len();
 
         if width != self.last_width {
-            self.prev_frame.clear();
             self.last_width = width;
         }
 
@@ -334,15 +366,19 @@ mod tests {
     }
 
     #[test]
-    fn width_change_forces_full_rerender() {
+    fn resize_marks_terminal_for_full_clear_and_redraw() {
         let mut terminal = TerminalScreen::new(FakeWriter::new());
-        let frame = frame(&["a", "b"], 80, 24);
-        terminal.render_frame(&frame, 80).unwrap();
+        let wide = frame(&["abcdefghij"], 10, 4);
+        terminal.render_frame(&wide, 10).unwrap();
 
         terminal.writer.bytes.clear();
-        terminal.render_frame(&frame, 120).unwrap();
+        terminal.on_resize(5);
+        let narrow = frame(&["abcdefghij"], 5, 4);
+        terminal.render_frame(&narrow, 5).unwrap();
+
         let output = String::from_utf8_lossy(&terminal.writer.bytes);
-        assert!(output.contains('a'));
-        assert!(output.contains('b'));
+        assert!(output.contains("\x1b[2J") || output.contains("\x1b[H"));
+        assert!(output.contains("abcde"));
+        assert!(output.contains("fghij"));
     }
 }
