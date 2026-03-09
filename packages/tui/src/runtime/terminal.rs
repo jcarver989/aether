@@ -1,4 +1,6 @@
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+use crossterm::event::{
+    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use std::io;
 
@@ -6,20 +8,33 @@ pub fn terminal_size() -> io::Result<(u16, u16)> {
     crossterm::terminal::size()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseCapture {
+    Disabled,
+    Enabled,
+}
+
 pub struct TerminalSession {
     enable_bracketed_paste: bool,
+    mouse_capture: MouseCapture,
     cleaned_up: bool,
 }
 
 impl TerminalSession {
-    pub fn enter(enable_bracketed_paste: bool) -> io::Result<Self> {
+    pub fn enter(enable_bracketed_paste: bool, mouse_capture: MouseCapture) -> io::Result<Self> {
         enable_raw_mode()?;
+        let mut stdout = io::stdout();
+
         if enable_bracketed_paste {
-            crossterm::execute!(io::stdout(), crossterm::event::EnableBracketedPaste)?;
+            crossterm::execute!(stdout, EnableBracketedPaste)?;
+        }
+        if mouse_capture == MouseCapture::Enabled {
+            crossterm::execute!(stdout, EnableMouseCapture)?;
         }
 
         Ok(Self {
             enable_bracketed_paste,
+            mouse_capture,
             cleaned_up: false,
         })
     }
@@ -29,8 +44,12 @@ impl TerminalSession {
             return Ok(());
         }
 
+        let mut stdout = io::stdout();
+        if self.mouse_capture == MouseCapture::Enabled {
+            crossterm::execute!(stdout, DisableMouseCapture)?;
+        }
         if self.enable_bracketed_paste {
-            crossterm::execute!(io::stdout(), crossterm::event::DisableBracketedPaste)?;
+            crossterm::execute!(stdout, DisableBracketedPaste)?;
         }
         disable_raw_mode()?;
         self.cleaned_up = true;
@@ -41,13 +60,5 @@ impl TerminalSession {
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         let _ = self.cleanup();
-    }
-}
-
-pub fn set_mouse_capture(enabled: bool) {
-    if enabled {
-        let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
-    } else {
-        let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
     }
 }

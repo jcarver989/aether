@@ -1,13 +1,14 @@
 mod attachments;
+mod git_diff_mode;
 pub mod runtime;
 mod session;
 mod state;
 
-pub(crate) use state::{
-    GitDiffLoadState, GitDiffViewState, PatchFocus, ScreenMode, UiState,
+pub(crate) use git_diff_mode::{
+    GitDiffLoadState, GitDiffMode, GitDiffViewState, PatchFocus, ScreenMode,
 };
+pub(crate) use state::UiState;
 
-use crate::components::git_diff_view::GitDiffView;
 use crate::tui::{
     Action, App as TuiApp, Component, Cursor, Frame, Line, RenderContext, Renderer, RootComponent,
     TerminalEvent,
@@ -49,8 +50,9 @@ pub enum AppAction {
         method_id: String,
     },
     ClearScreen,
-    ToggleGitDiffViewer,
+    OpenGitDiffViewer,
     RefreshGitDiffViewer,
+    CloseGitDiffViewer,
 }
 
 #[derive(Debug, Clone)]
@@ -63,8 +65,7 @@ pub struct App {
     state: UiState,
     prompt_handle: AcpPromptHandle,
     session_id: acp::SessionId,
-    working_dir: PathBuf,
-    cached_repo_root: Option<PathBuf>,
+    git_diff_mode: GitDiffMode,
 }
 
 impl App {
@@ -80,8 +81,7 @@ impl App {
             state: UiState::new(agent_name, config_options, auth_methods),
             prompt_handle,
             session_id,
-            working_dir,
-            cached_repo_root: None,
+            git_diff_mode: GitDiffMode::new(working_dir),
         }
     }
 }
@@ -97,9 +97,24 @@ impl TuiApp for App {
         _context: &RenderContext,
     ) -> Vec<Action<AppAction>> {
         match event {
-            TerminalEvent::Key(key_event) => self.state.on_key_event(key_event),
+            TerminalEvent::Key(key_event) => {
+                let input = self.state.on_key_event(key_event);
+                if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
+                    let interaction = self.git_diff_mode.on_key_event(key_event);
+                    let mut actions = input.actions;
+                    actions.extend(interaction.actions);
+                    if interaction.changed {
+                        self.state.bump_render_version();
+                    }
+                    actions
+                } else {
+                    input.actions
+                }
+            }
             TerminalEvent::Paste(text) => self.state.on_paste(text),
-            TerminalEvent::Mouse(mouse) => self.state.on_mouse_event(mouse),
+            TerminalEvent::Mouse(mouse) => self
+                .state
+                .on_mouse_event(mouse, Some(&mut self.git_diff_mode)),
         }
     }
 
@@ -146,7 +161,8 @@ impl TuiApp for App {
 
 impl RootComponent for App {
     fn prepare_render(&mut self, context: &RenderContext) {
-        self.state.prepare_render(context);
+        self.state
+            .prepare_render(context, Some(&mut self.git_diff_mode));
     }
 
     fn render(&mut self, context: &RenderContext) -> Frame {
@@ -180,20 +196,24 @@ impl RootComponent for App {
             return Frame::new(lines, cursor);
         }
 
-        if let ScreenMode::GitDiff(ref mut diff_state) = self.state.screen_mode {
+        if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
             let status_lines = status_line.render(context);
             #[allow(clippy::cast_possible_truncation)]
-            let diff_height = context.size.height.saturating_sub(status_lines.len() as u16);
+            let diff_height = context
+                .size
+                .height
+                .saturating_sub(status_lines.len() as u16);
             let diff_context = context.with_size((context.size.width, diff_height));
-            let view = GitDiffView { state: diff_state };
-            let mut lines = view.render(&diff_context);
+            let mut lines = self.git_diff_mode.render(&diff_context);
             lines.extend(status_lines);
-            let cursor = Cursor {
-                row: 0,
-                col: 0,
-                is_visible: false,
-            };
-            return Frame::new(lines, cursor);
+            return Frame::new(
+                lines,
+                Cursor {
+                    row: 0,
+                    col: 0,
+                    is_visible: false,
+                },
+            );
         }
 
         let grace_period = self.state.plan_tracker.grace_period;

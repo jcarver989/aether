@@ -12,9 +12,9 @@ use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
     GotoDefinitionResponse, Hover, HoverParams, Location, PartialResultParams, Position,
-    PublishDiagnosticsParams, ReferenceContext, ReferenceParams, RenameParams,
-    SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, Uri,
-    WorkDoneProgressParams, WorkspaceEdit, WorkspaceSymbolParams,
+    PublishDiagnosticsParams, ReferenceContext, ReferenceParams, RenameParams, SymbolInformation,
+    TextDocumentIdentifier, TextDocumentPositionParams, Uri, WorkDoneProgressParams, WorkspaceEdit,
+    WorkspaceSymbolParams,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;

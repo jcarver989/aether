@@ -97,7 +97,12 @@ pub async fn execute_lsp_rename(
 
     let workspace_edit = resolved
         .client
-        .rename(resolved.uri, resolved.line, resolved.column, input.new_name.clone())
+        .rename(
+            resolved.uri,
+            resolved.line,
+            resolved.column,
+            input.new_name.clone(),
+        )
         .await
         .map_err(|e| format!("Rename failed: {e}"))?;
 
@@ -183,7 +188,9 @@ fn collect_document_changes(doc_changes: &DocumentChanges) -> Result<Vec<LspFile
     match doc_changes {
         DocumentChanges::Edits(edits) => Ok(edits
             .iter()
-            .filter_map(|doc_edit| collect_text_document_edit(&doc_edit.text_document.uri, &doc_edit.edits))
+            .filter_map(|doc_edit| {
+                collect_text_document_edit(&doc_edit.text_document.uri, &doc_edit.edits)
+            })
             .collect()),
         DocumentChanges::Operations(ops) => ops
             .iter()
@@ -197,11 +204,14 @@ fn collect_document_changes(doc_changes: &DocumentChanges) -> Result<Vec<LspFile
     }
 }
 
-fn collect_document_change_operation(op: &DocumentChangeOperation) -> Result<Option<LspFileEdit>, String> {
+fn collect_document_change_operation(
+    op: &DocumentChangeOperation,
+) -> Result<Option<LspFileEdit>, String> {
     match op {
-        DocumentChangeOperation::Edit(doc_edit) => {
-            Ok(collect_text_document_edit(&doc_edit.text_document.uri, &doc_edit.edits))
-        }
+        DocumentChangeOperation::Edit(doc_edit) => Ok(collect_text_document_edit(
+            &doc_edit.text_document.uri,
+            &doc_edit.edits,
+        )),
         DocumentChangeOperation::Op(ResourceOp::Create(_)) => {
             Err("Rename returned unsupported workspace operation: create".to_string())
         }
@@ -218,14 +228,19 @@ fn collect_text_document_edit(
     uri: &lsp_types::Uri,
     edits: &[OneOf<lsp_types::TextEdit, lsp_types::AnnotatedTextEdit>],
 ) -> Option<LspFileEdit> {
-    let edits = edits.iter().map(extract_one_of_text_edit).collect::<Vec<_>>();
+    let edits = edits
+        .iter()
+        .map(extract_one_of_text_edit)
+        .collect::<Vec<_>>();
     (!edits.is_empty()).then(|| LspFileEdit {
         file_path: uri_to_path(uri),
         edits,
     })
 }
 
-fn extract_one_of_text_edit(edit: &OneOf<lsp_types::TextEdit, lsp_types::AnnotatedTextEdit>) -> lsp_types::TextEdit {
+fn extract_one_of_text_edit(
+    edit: &OneOf<lsp_types::TextEdit, lsp_types::AnnotatedTextEdit>,
+) -> lsp_types::TextEdit {
     match edit {
         OneOf::Left(edit) => edit.clone(),
         OneOf::Right(edit) => edit.text_edit.clone(),
@@ -280,7 +295,10 @@ fn apply_file_text_edits(content: &str, edits: &[lsp_types::TextEdit]) -> Result
     Ok(result)
 }
 
-fn lsp_position_to_byte_offset(content: &str, position: lsp_types::Position) -> Result<usize, String> {
+fn lsp_position_to_byte_offset(
+    content: &str,
+    position: lsp_types::Position,
+) -> Result<usize, String> {
     let target_line = usize::try_from(position.line)
         .map_err(|_| format!("Line {} out of range", position.line))?;
     let target_character = usize::try_from(position.character)
@@ -291,7 +309,10 @@ fn lsp_position_to_byte_offset(content: &str, position: lsp_types::Position) -> 
 
     while current_line < target_line {
         let Some(relative_newline) = content[line_start..].find('\n') else {
-            return Err(format!("Line {} not found while applying rename", position.line + 1));
+            return Err(format!(
+                "Line {} not found while applying rename",
+                position.line + 1
+            ));
         };
         line_start += relative_newline + 1;
         current_line += 1;

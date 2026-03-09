@@ -1,6 +1,5 @@
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
-use crate::components::wrap_selection;
-use crate::git_diff::{FileStatus, PatchLineKind};
+use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
 use crate::tui::soft_wrap::truncate_text;
 use crate::tui::span::Span;
 use crate::tui::{
@@ -24,7 +23,9 @@ impl Component for GitDiffView<'_> {
             return vec![Line::new("Too narrow")];
         }
 
-        let left_width = (total_width / 3).clamp(20, 28).min(total_width.saturating_sub(4));
+        let left_width = (total_width / 3)
+            .clamp(20, 28)
+            .min(total_width.saturating_sub(4));
         let right_width = total_width.saturating_sub(left_width + 1);
         let available_height = context.size.height as usize;
 
@@ -74,14 +75,11 @@ impl InteractiveComponent for GitDiffView<'_> {
             KeyCode::Esc => MessageResult::message(GitDiffViewMessage::Close),
             KeyCode::Char('r') => MessageResult::message(GitDiffViewMessage::Refresh),
             KeyCode::Char('h') | KeyCode::Left => {
-                self.state.focus = PatchFocus::FileList;
+                self.state.set_focus(PatchFocus::FileList);
                 MessageResult::consumed()
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                if self.state.focus == PatchFocus::FileList {
-                    self.state.focus = PatchFocus::Patch;
-                    self.state.patch_scroll = 0;
-                }
+                self.state.set_focus(PatchFocus::Patch);
                 MessageResult::consumed()
             }
             KeyCode::Char('j') | KeyCode::Down => {
@@ -93,28 +91,19 @@ impl InteractiveComponent for GitDiffView<'_> {
                 MessageResult::consumed()
             }
             KeyCode::Char('g') => {
-                if self.state.focus == PatchFocus::Patch {
-                    self.state.patch_scroll = 0;
-                }
+                self.state.scroll_patch_to_start();
                 MessageResult::consumed()
             }
             KeyCode::Char('G') => {
-                if self.state.focus == PatchFocus::Patch {
-                    self.state.patch_scroll = self.max_patch_scroll();
-                }
+                self.state.scroll_patch_to_end();
                 MessageResult::consumed()
             }
             KeyCode::PageDown => {
-                if self.state.focus == PatchFocus::Patch {
-                    self.state.patch_scroll = (self.state.patch_scroll + 20)
-                        .min(self.max_patch_scroll());
-                }
+                self.state.scroll_patch(20);
                 MessageResult::consumed()
             }
             KeyCode::PageUp => {
-                if self.state.focus == PatchFocus::Patch {
-                    self.state.patch_scroll = self.state.patch_scroll.saturating_sub(20);
-                }
+                self.state.scroll_patch(-20);
                 MessageResult::consumed()
             }
             KeyCode::Char('n') => {
@@ -134,17 +123,10 @@ impl GitDiffView<'_> {
     fn navigate_down(&mut self) {
         match self.state.focus {
             PatchFocus::FileList => {
-                let file_count = self.file_count();
-                if file_count > 0 {
-                    wrap_selection(&mut self.state.selected_file, file_count, 1);
-                    self.state.patch_scroll = 0;
-                }
+                self.state.select_relative(1);
             }
             PatchFocus::Patch => {
-                let max = self.max_patch_scroll();
-                if self.state.patch_scroll < max {
-                    self.state.patch_scroll += 1;
-                }
+                self.state.scroll_patch(1);
             }
         }
     }
@@ -152,70 +134,26 @@ impl GitDiffView<'_> {
     fn navigate_up(&mut self) {
         match self.state.focus {
             PatchFocus::FileList => {
-                let file_count = self.file_count();
-                if file_count > 0 {
-                    wrap_selection(&mut self.state.selected_file, file_count, -1);
-                    self.state.patch_scroll = 0;
-                }
+                self.state.select_relative(-1);
             }
             PatchFocus::Patch => {
-                self.state.patch_scroll = self.state.patch_scroll.saturating_sub(1);
+                self.state.scroll_patch(-1);
             }
         }
-    }
-
-    fn file_count(&self) -> usize {
-        match &self.state.load_state {
-            GitDiffLoadState::Ready(doc) => doc.files.len(),
-            _ => 0,
-        }
-    }
-
-    fn max_patch_scroll(&self) -> usize {
-        self.state.max_patch_scroll()
-    }
-
-    fn hunk_line_offsets(&self) -> Vec<usize> {
-        let GitDiffLoadState::Ready(doc) = &self.state.load_state else {
-            return Vec::new();
-        };
-        let selected = self.state.selected_file.min(doc.files.len().saturating_sub(1));
-        let file = &doc.files[selected];
-        let mut offsets = Vec::new();
-        let mut offset = 0;
-        for hunk in &file.hunks {
-            offsets.push(offset);
-            offset += hunk.lines.len() + 1; // +1 for spacer between hunks
-        }
-        offsets
     }
 
     fn jump_next_hunk(&mut self) {
-        if self.state.focus != PatchFocus::Patch {
-            return;
-        }
-        let offsets = self.hunk_line_offsets();
-        let current = self.state.patch_scroll;
-        if let Some(&next) = offsets.iter().find(|&&o| o > current) {
-            self.state.patch_scroll = next.min(self.max_patch_scroll());
-        }
+        self.state.jump_next_hunk();
     }
 
     fn jump_prev_hunk(&mut self) {
-        if self.state.focus != PatchFocus::Patch {
-            return;
-        }
-        let offsets = self.hunk_line_offsets();
-        let current = self.state.patch_scroll;
-        if let Some(&prev) = offsets.iter().rev().find(|&&o| o < current) {
-            self.state.patch_scroll = prev;
-        }
+        self.state.jump_prev_hunk();
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn render_ready(
-    files: &[crate::git_diff::FileDiff],
+    files: &[FileDiff],
     selected_file_idx: usize,
     patch_scroll: usize,
     cached_patch_lines: &[Line],
@@ -236,7 +174,15 @@ fn render_ready(
 
         render_file_list_cell(&mut line, files, i, selected, left_width, theme);
         line.push_with_style("\u{2502}", Style::fg(theme.text_secondary()));
-        render_patch_cell(&mut line, selected_file, cached_patch_lines, i, patch_scroll, right_width, theme);
+        render_patch_cell(
+            &mut line,
+            selected_file,
+            cached_patch_lines,
+            i,
+            patch_scroll,
+            right_width,
+            theme,
+        );
 
         rows.push(line);
     }
@@ -246,7 +192,7 @@ fn render_ready(
 
 fn render_file_list_cell(
     line: &mut Line,
-    files: &[crate::git_diff::FileDiff],
+    files: &[FileDiff],
     row: usize,
     selected: usize,
     left_width: usize,
@@ -267,7 +213,7 @@ fn render_file_list_cell(
         FileStatus::Modified => theme.text_secondary(),
     };
 
-    let stats_str = format!("+{}/-{}", file.additions, file.deletions);
+    let stats_str = format!("+{}/-{}", file.additions(), file.deletions());
     let stats_width = stats_str.len();
     let path_budget = left_width.saturating_sub(4 + stats_width + 1);
     let truncated_path = truncate_text(&file.path, path_budget);
@@ -306,7 +252,7 @@ fn render_file_list_cell(
 #[allow(clippy::too_many_arguments)]
 fn render_patch_cell(
     line: &mut Line,
-    selected_file: &crate::git_diff::FileDiff,
+    selected_file: &FileDiff,
     patch_lines: &[Line],
     row: usize,
     patch_scroll: usize,
@@ -364,18 +310,18 @@ fn render_message_layout(
     rows
 }
 
-pub(crate) fn build_patch_lines(
-    file: &crate::git_diff::FileDiff,
-    _right_width: usize,
-    context: &RenderContext,
-) -> Vec<Line> {
+pub(crate) fn build_patch_lines(file: &FileDiff, context: &RenderContext) -> Vec<Line> {
     let theme = &context.theme;
     let lang_hint = lang_hint_from_path(&file.path);
     let mut patch_lines = Vec::new();
 
-    let max_line_no = file.hunks.iter().flat_map(|h| &h.lines).filter_map(|l| {
-        l.old_line_no.into_iter().chain(l.new_line_no).max()
-    }).max().unwrap_or(0);
+    let max_line_no = file
+        .hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .filter_map(|l| l.old_line_no.into_iter().chain(l.new_line_no).max())
+        .max()
+        .unwrap_or(0);
     let gutter_width = digit_count(max_line_no);
 
     for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
@@ -388,10 +334,7 @@ pub(crate) fn build_patch_lines(
 
             match pl.kind {
                 PatchLineKind::HunkHeader => {
-                    line.push_with_style(
-                        &pl.text,
-                        Style::fg(theme.info()).bold(),
-                    );
+                    line.push_with_style(&pl.text, Style::fg(theme.info()).bold());
                 }
                 PatchLineKind::Context => {
                     let old_str = format_line_no(pl.old_line_no, gutter_width);
@@ -407,28 +350,20 @@ pub(crate) fn build_patch_lines(
                     let new_str = format_line_no(pl.new_line_no, gutter_width);
                     let bg = Some(theme.diff_added_bg());
                     let style = Style::fg(theme.diff_added_fg()).bg_color(theme.diff_added_bg());
-                    line.push_with_style(
-                        format!("{old_str} {new_str} + "),
-                        style,
-                    );
+                    line.push_with_style(format!("{old_str} {new_str} + "), style);
                     append_syntax_spans(&mut line, &pl.text, lang_hint, bg, context);
                 }
                 PatchLineKind::Removed => {
                     let old_str = format_line_no(pl.old_line_no, gutter_width);
                     let new_str = " ".repeat(gutter_width);
                     let bg = Some(theme.diff_removed_bg());
-                    let style = Style::fg(theme.diff_removed_fg()).bg_color(theme.diff_removed_bg());
-                    line.push_with_style(
-                        format!("{old_str} {new_str} - "),
-                        style,
-                    );
+                    let style =
+                        Style::fg(theme.diff_removed_fg()).bg_color(theme.diff_removed_bg());
+                    line.push_with_style(format!("{old_str} {new_str} - "), style);
                     append_syntax_spans(&mut line, &pl.text, lang_hint, bg, context);
                 }
                 PatchLineKind::Meta => {
-                    line.push_with_style(
-                        &pl.text,
-                        Style::fg(theme.text_secondary()).italic(),
-                    );
+                    line.push_with_style(&pl.text, Style::fg(theme.text_secondary()).italic());
                 }
             }
 
@@ -450,7 +385,9 @@ fn append_syntax_spans(
     bg_override: Option<crate::tui::Color>,
     context: &RenderContext,
 ) {
-    let spans = context.highlighter().highlight(text, lang_hint, &context.theme);
+    let spans = context
+        .highlighter()
+        .highlight(text, lang_hint, &context.theme);
     if let Some(content) = spans.first() {
         for span in content.spans() {
             let mut span_style = span.style();
@@ -499,8 +436,6 @@ mod tests {
                     old_path: Some("a.rs".to_string()),
                     path: "a.rs".to_string(),
                     status: FileStatus::Modified,
-                    additions: 1,
-                    deletions: 1,
                     hunks: vec![Hunk {
                         header: "@@ -1,3 +1,3 @@".to_string(),
                         old_start: 1,
@@ -546,8 +481,6 @@ mod tests {
                     old_path: None,
                     path: "b.rs".to_string(),
                     status: FileStatus::Added,
-                    additions: 1,
-                    deletions: 0,
                     hunks: vec![Hunk {
                         header: "@@ -0,0 +1,1 @@".to_string(),
                         old_start: 0,
@@ -584,8 +517,16 @@ mod tests {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(UiEvent::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
-        assert!(result.messages.iter().any(|m| matches!(m, GitDiffViewMessage::Close)));
+        let result = view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
+        assert!(
+            result
+                .messages
+                .iter()
+                .any(|m| matches!(m, GitDiffViewMessage::Close))
+        );
     }
 
     #[test]
@@ -593,8 +534,16 @@ mod tests {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(UiEvent::Key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)));
-        assert!(result.messages.iter().any(|m| matches!(m, GitDiffViewMessage::Refresh)));
+        let result = view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('r'),
+            KeyModifiers::NONE,
+        )));
+        assert!(
+            result
+                .messages
+                .iter()
+                .any(|m| matches!(m, GitDiffViewMessage::Refresh))
+        );
     }
 
     #[test]
@@ -604,7 +553,10 @@ mod tests {
         assert_eq!(state.selected_file, 0);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(UiEvent::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)));
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        )));
         assert_eq!(view.state.selected_file, 1);
     }
 
@@ -615,7 +567,10 @@ mod tests {
         assert_eq!(state.selected_file, 0);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(UiEvent::Key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE)));
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('k'),
+            KeyModifiers::NONE,
+        )));
         assert_eq!(view.state.selected_file, 1); // wraps from 0 to last
     }
 
@@ -626,7 +581,10 @@ mod tests {
         assert_eq!(state.focus, PatchFocus::FileList);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(UiEvent::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
         assert_eq!(view.state.focus, PatchFocus::Patch);
     }
 
@@ -637,7 +595,10 @@ mod tests {
         state.focus = PatchFocus::Patch;
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(UiEvent::Key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE)));
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('h'),
+            KeyModifiers::NONE,
+        )));
         assert_eq!(view.state.focus, PatchFocus::FileList);
     }
 
@@ -648,7 +609,10 @@ mod tests {
         state.patch_scroll = 5;
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(UiEvent::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)));
+        view.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        )));
         assert_eq!(view.state.patch_scroll, 0);
     }
 
@@ -697,7 +661,10 @@ mod tests {
 
         // First line should have file list entry and file header
         let first_text = lines[0].plain_text();
-        assert!(first_text.contains("a.rs"), "Should show file name: {first_text}");
+        assert!(
+            first_text.contains("a.rs"),
+            "Should show file name: {first_text}"
+        );
     }
 
     #[test]
@@ -705,7 +672,7 @@ mod tests {
         let doc = make_test_doc();
         let context = RenderContext::new((100, 24));
         let file = &doc.files[0];
-        let patch_lines = build_patch_lines(file, 70, &context);
+        let patch_lines = build_patch_lines(file, &context);
 
         // Context line "fn main() {" should have multiple spans from syntax highlighting
         // (gutter span + syntax spans for "fn", "main", etc.)

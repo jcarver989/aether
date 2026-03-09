@@ -45,8 +45,8 @@ impl Renderer {
         self.renderer.writer()
     }
 
-    fn writer_mut(&mut self) -> &mut TestTerminal {
-        self.renderer.writer_mut()
+    fn test_writer_mut(&mut self) -> &mut TestTerminal {
+        self.renderer.test_writer_mut()
     }
 
     fn on_resize(&mut self, size: (u16, u16)) {
@@ -924,7 +924,9 @@ async fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
     let input = "this input prompt is long enough to wrap across multiple rows and should reflow cleanly on resize";
     type_string(&mut renderer, input).await;
 
-    renderer.writer_mut().resize(32, 24);
+    renderer
+        .test_writer_mut()
+        .resize_preserving_transcript(32, 24);
     renderer.on_resize_event(32, 24).await.unwrap();
 
     let lines = renderer.writer().get_lines();

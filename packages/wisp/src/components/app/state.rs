@@ -1,24 +1,20 @@
-use super::{AppAction, theme_file_from_picker_value};
+use super::{AppAction, GitDiffMode, ScreenMode, theme_file_from_picker_value};
 use crate::components::config_menu::ConfigMenu;
 use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayMessage};
 use crate::components::conversation_window::ConversationBuffer;
 use crate::components::elicitation_form::ElicitationForm;
-use crate::components::git_diff_view::GitDiffViewMessage;
 use crate::components::plan_tracker::PlanTracker;
 use crate::components::progress_indicator::ProgressIndicator;
 use crate::components::prompt_composer::{PromptComposer, PromptComposerMessage};
 use crate::components::server_status::server_status_summary;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::git_diff::GitDiffDocument;
 use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::Action;
 use crate::tui::KeyEvent;
 use crate::tui::RenderContext;
 use crate::tui::components::spinner::Spinner;
-use crate::tui::{
-    FormMessage, InteractiveComponent, Line, MessageResult, MouseEvent, MouseEventKind, UiEvent,
-};
+use crate::tui::{FormMessage, InteractiveComponent, Line, MessageResult, UiEvent};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{
@@ -26,61 +22,6 @@ use agent_client_protocol::{
     SessionConfigSelectOptions,
 };
 use utils::ReasoningEffort;
-
-pub(crate) enum ScreenMode {
-    Conversation,
-    GitDiff(GitDiffViewState),
-}
-
-pub(crate) struct GitDiffViewState {
-    pub load_state: GitDiffLoadState,
-    pub focus: PatchFocus,
-    pub selected_file: usize,
-    pub patch_scroll: usize,
-    pub(crate) cached_patch_lines: Vec<Line>,
-    cached_for_file: Option<usize>,
-}
-
-impl GitDiffViewState {
-    pub(crate) fn new(load_state: GitDiffLoadState) -> Self {
-        Self {
-            load_state,
-            focus: PatchFocus::FileList,
-            selected_file: 0,
-            patch_scroll: 0,
-            cached_patch_lines: Vec::new(),
-            cached_for_file: None,
-        }
-    }
-
-    pub(crate) fn max_patch_scroll(&self) -> usize {
-        let GitDiffLoadState::Ready(doc) = &self.load_state else {
-            return 0;
-        };
-        let selected = self.selected_file.min(doc.files.len().saturating_sub(1));
-        let file = &doc.files[selected];
-        let total_lines: usize = file.hunks.iter().map(|h| h.lines.len() + 1).sum();
-        total_lines.saturating_sub(1)
-    }
-
-    pub(crate) fn invalidate_patch_cache(&mut self) {
-        self.cached_for_file = None;
-        self.cached_patch_lines.clear();
-    }
-}
-
-pub(crate) enum GitDiffLoadState {
-    Loading,
-    Ready(GitDiffDocument),
-    Empty,
-    Error { message: String },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PatchFocus {
-    FileList,
-    Patch,
-}
 
 pub struct UiState {
     pub(crate) tool_call_statuses: ToolCallStatuses,
@@ -103,6 +44,10 @@ pub struct UiState {
     pub(crate) keybindings: Keybindings,
     pub(crate) screen_mode: ScreenMode,
     render_version: u64,
+}
+
+pub(crate) struct UiInputResult {
+    pub(crate) actions: Vec<Action<AppAction>>,
 }
 
 impl UiState {
@@ -144,8 +89,12 @@ impl UiState {
         self.render_version = self.render_version.wrapping_add(1);
     }
 
-    pub(crate) fn close_git_diff(&mut self) {
-        crate::tui::set_mouse_capture(false);
+    pub(crate) fn enter_git_diff(&mut self) {
+        self.screen_mode = ScreenMode::GitDiff;
+        self.bump_render_version();
+    }
+
+    pub(crate) fn exit_git_diff(&mut self) {
         self.screen_mode = ScreenMode::Conversation;
         self.bump_render_version();
     }
@@ -164,99 +113,88 @@ impl UiState {
             .any(|entry| matches!(entry.status, acp::PlanEntryStatus::Completed))
     }
 
-    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Vec<Action<AppAction>> {
+    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> UiInputResult {
         if self.keybindings.exit.matches(key_event) {
-            return vec![Action::Exit];
+            return UiInputResult {
+                actions: vec![Action::Exit],
+            };
         }
 
-        if let Some(effects) = self.handle_elicitation_key(key_event) {
-            return effects;
+        if let Some(actions) = self.handle_elicitation_key(key_event) {
+            return UiInputResult { actions };
         }
 
         if self.keybindings.toggle_git_diff.matches(key_event) {
-            if matches!(self.screen_mode, ScreenMode::GitDiff(_)) {
-                self.close_git_diff();
-                return vec![];
+            let close_git_diff = matches!(self.screen_mode, ScreenMode::GitDiff);
+            if close_git_diff {
+                self.screen_mode = ScreenMode::Conversation;
+                self.bump_render_version();
             }
-            return vec![Action::Custom(AppAction::ToggleGitDiffViewer)];
+            return UiInputResult {
+                actions: if close_git_diff {
+                    vec![]
+                } else {
+                    vec![Action::Custom(AppAction::OpenGitDiffViewer)]
+                },
+            };
         }
 
-        if let Some(ref mut overlay) = self.config_overlay {
-            let outcome = overlay.on_event(UiEvent::Key(key_event));
-            return self.handle_config_overlay_messages(outcome);
-        }
-
-        if let ScreenMode::GitDiff(ref mut diff_state) = self.screen_mode {
-            let mut view = crate::components::git_diff_view::GitDiffView { state: diff_state };
-            let outcome = view.on_event(UiEvent::Key(key_event));
-            return self.handle_git_diff_view_messages(outcome);
-        }
-
-        let composer_outcome = self.prompt_composer.on_event(UiEvent::Key(key_event));
-        if composer_outcome.handled {
-            return self.handle_prompt_composer_messages(composer_outcome);
-        }
-
-        if self.keybindings.cycle_reasoning.matches(key_event) {
-            if let Some(effect) = self.cycle_reasoning_option() {
-                return vec![Action::Custom(effect)];
+        let outcome = if let Some(overlay) = self.config_overlay.as_mut() {
+            overlay.on_event(UiEvent::Key(key_event))
+        } else {
+            if matches!(self.screen_mode, ScreenMode::GitDiff) {
+                return UiInputResult { actions: vec![] };
             }
-            return vec![];
-        }
 
-        if self.keybindings.cycle_mode.matches(key_event) {
-            if let Some(effect) = self.cycle_quick_option() {
-                return vec![Action::Custom(effect)];
+            let composer_outcome = self.prompt_composer.on_event(UiEvent::Key(key_event));
+            if composer_outcome.handled {
+                return UiInputResult {
+                    actions: self.handle_prompt_composer_messages(composer_outcome),
+                };
             }
-            return vec![];
-        }
 
-        if self.keybindings.cancel.matches(key_event) && self.waiting_for_response {
-            return vec![Action::Custom(AppAction::Cancel)];
-        }
+            if self.keybindings.cycle_reasoning.matches(key_event) {
+                return UiInputResult {
+                    actions: self
+                        .cycle_reasoning_option()
+                        .map(|effect| vec![Action::Custom(effect)])
+                        .unwrap_or_default(),
+                };
+            }
 
-        vec![]
+            if self.keybindings.cycle_mode.matches(key_event) {
+                return UiInputResult {
+                    actions: self
+                        .cycle_quick_option()
+                        .map(|effect| vec![Action::Custom(effect)])
+                        .unwrap_or_default(),
+                };
+            }
+
+            if self.keybindings.cancel.matches(key_event) && self.waiting_for_response {
+                return UiInputResult {
+                    actions: vec![Action::Custom(AppAction::Cancel)],
+                };
+            }
+
+            return UiInputResult { actions: vec![] };
+        };
+
+        UiInputResult {
+            actions: self.handle_config_overlay_messages(outcome),
+        }
     }
 
-    fn handle_git_diff_view_messages(
+    pub(crate) fn on_mouse_event(
         &mut self,
-        outcome: MessageResult<GitDiffViewMessage>,
+        mouse: crate::tui::MouseEvent,
+        git_diff_mode: Option<&mut GitDiffMode>,
     ) -> Vec<Action<AppAction>> {
-        let changed = outcome.handled;
-        let mut actions = Vec::new();
-
-        for msg in outcome.messages {
-            match msg {
-                GitDiffViewMessage::Close => {
-                    self.close_git_diff();
-                }
-                GitDiffViewMessage::Refresh => {
-                    actions.push(Action::Custom(AppAction::RefreshGitDiffViewer));
-                }
-            }
-        }
-
-        if changed {
+        if matches!(self.screen_mode, ScreenMode::GitDiff)
+            && let Some(mode) = git_diff_mode
+            && mode.on_mouse_event(mouse)
+        {
             self.bump_render_version();
-        }
-
-        actions
-    }
-
-    pub(crate) fn on_mouse_event(&mut self, mouse: MouseEvent) -> Vec<Action<AppAction>> {
-        if let ScreenMode::GitDiff(ref mut diff_state) = self.screen_mode {
-            match mouse.kind {
-                MouseEventKind::ScrollUp => {
-                    diff_state.patch_scroll = diff_state.patch_scroll.saturating_sub(3);
-                    self.bump_render_version();
-                }
-                MouseEventKind::ScrollDown => {
-                    let max = diff_state.max_patch_scroll();
-                    diff_state.patch_scroll = (diff_state.patch_scroll + 3).min(max);
-                    self.bump_render_version();
-                }
-                _ => {}
-            }
         }
         vec![]
     }
@@ -472,26 +410,21 @@ impl UiState {
         menu
     }
 
-    pub(crate) fn prepare_render(&mut self, context: &RenderContext) {
+    pub(crate) fn prepare_render(
+        &mut self,
+        context: &RenderContext,
+        git_diff_mode: Option<&mut GitDiffMode>,
+    ) {
         let progress = self.tool_call_statuses.progress();
         self.progress_indicator
             .update(progress.completed_top_level, progress.total_top_level);
         self.conversation
             .ensure_all_rendered(&self.tool_call_statuses, context);
 
-        if let ScreenMode::GitDiff(ref mut diff_state) = self.screen_mode
-            && diff_state.cached_for_file != Some(diff_state.selected_file)
-            && let GitDiffLoadState::Ready(doc) = &diff_state.load_state
+        if matches!(self.screen_mode, ScreenMode::GitDiff)
+            && let Some(mode) = git_diff_mode
         {
-            let selected = diff_state.selected_file.min(doc.files.len().saturating_sub(1));
-            let file = &doc.files[selected];
-            let lines = if file.binary {
-                Vec::new()
-            } else {
-                crate::components::git_diff_view::build_patch_lines(file, 0, context)
-            };
-            diff_state.cached_patch_lines = lines;
-            diff_state.cached_for_file = Some(diff_state.selected_file);
+            mode.prepare_render(context);
         }
     }
 
@@ -605,7 +538,7 @@ mod tests {
     use crate::components::config_menu::ConfigChange;
     use crate::keybindings::KeyBinding;
     use crate::tui::Action;
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+    use crate::tui::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
     use agent_client_protocol::SessionConfigOptionCategory;
 
     #[test]
@@ -738,14 +671,14 @@ mod tests {
         let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         let effects = state.on_key_event(default_exit);
         assert!(
-            !effects.iter().any(|e| matches!(e, Action::Exit)),
+            !effects.actions.iter().any(|e| matches!(e, Action::Exit)),
             "default Ctrl+C should no longer exit"
         );
 
         let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
         let effects = state.on_key_event(custom_exit);
         assert!(
-            matches!(effects.as_slice(), [Action::Exit]),
+            matches!(effects.actions.as_slice(), [Action::Exit]),
             "custom Ctrl+Q should exit"
         );
     }
@@ -754,138 +687,69 @@ mod tests {
     fn ctrl_g_opens_git_diff_viewer() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let effects = state.on_key_event(key);
-        assert!(effects.iter().any(|e| matches!(
-            e,
-            Action::Custom(AppAction::ToggleGitDiffViewer)
-        )));
+        let result = state.on_key_event(key);
+        assert!(
+            result
+                .actions
+                .iter()
+                .any(|e| matches!(e, Action::Custom(AppAction::OpenGitDiffViewer)))
+        );
     }
 
     #[test]
     fn ctrl_g_closes_git_diff_viewer() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        state.screen_mode = ScreenMode::GitDiff(GitDiffViewState::new(GitDiffLoadState::Empty));
+        state.screen_mode = ScreenMode::GitDiff;
         let before = state.render_version();
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let effects = state.on_key_event(key);
+        let result = state.on_key_event(key);
 
         assert!(matches!(state.screen_mode, ScreenMode::Conversation));
-        assert!(effects.is_empty());
+        assert!(result.actions.is_empty());
         assert!(state.render_version() > before);
-    }
-
-    #[test]
-    fn esc_in_diff_mode_closes_viewer_not_cancel() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        state.waiting_for_response = true;
-        state.screen_mode = ScreenMode::GitDiff(GitDiffViewState::new(GitDiffLoadState::Empty));
-
-        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        let effects = state.on_key_event(key);
-
-        assert!(matches!(state.screen_mode, ScreenMode::Conversation));
-        assert!(
-            !effects.iter().any(|e| matches!(e, Action::Custom(AppAction::Cancel))),
-            "Esc should NOT cancel a running prompt when in diff mode"
-        );
     }
 
     #[test]
     fn ctrl_g_blocked_during_elicitation() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        state.elicitation_form =
-            Some(crate::components::elicitation_form::ElicitationForm::from_params(
+        state.elicitation_form = Some(
+            crate::components::elicitation_form::ElicitationForm::from_params(
                 acp_utils::notifications::ElicitationParams {
                     message: "test".to_string(),
                     schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
                 },
                 tokio::sync::oneshot::channel().0,
-            ));
+            ),
+        );
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let effects = state.on_key_event(key);
+        let result = state.on_key_event(key);
 
-        // Elicitation intercepts first, so we should NOT see ToggleGitDiffViewer
-        assert!(!effects.iter().any(|e| matches!(
-            e,
-            Action::Custom(AppAction::ToggleGitDiffViewer)
-        )));
+        assert!(
+            !result
+                .actions
+                .iter()
+                .any(|e| matches!(e, Action::Custom(AppAction::OpenGitDiffViewer)))
+        );
     }
-
     #[test]
-    fn mouse_scroll_down_in_git_diff_increases_patch_scroll() {
-        use crate::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
-        use std::path::PathBuf;
-
+    fn esc_in_diff_mode_issues_close_action_not_cancel() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut diff_state = GitDiffViewState::new(GitDiffLoadState::Ready(GitDiffDocument {
-            repo_root: PathBuf::from("/tmp"),
-            files: vec![FileDiff {
-                old_path: None,
-                path: "a.rs".to_string(),
-                status: FileStatus::Modified,
-                additions: 0,
-                deletions: 0,
-                hunks: vec![Hunk {
-                    header: String::new(),
-                    old_start: 1,
-                    old_count: 10,
-                    new_start: 1,
-                    new_count: 10,
-                    lines: (0..20)
-                        .map(|i| PatchLine {
-                            kind: PatchLineKind::Context,
-                            text: format!("line {i}"),
-                            old_line_no: Some(i + 1),
-                            new_line_no: Some(i + 1),
-                        })
-                        .collect(),
-                }],
-                binary: false,
-            }],
-        }));
-        diff_state.focus = PatchFocus::Patch;
-        state.screen_mode = ScreenMode::GitDiff(diff_state);
+        state.waiting_for_response = true;
+        state.screen_mode = ScreenMode::GitDiff;
 
-        let mouse = MouseEvent {
-            kind: MouseEventKind::ScrollDown,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::NONE,
-        };
-        let before = state.render_version();
-        state.on_mouse_event(mouse);
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let result = state.on_key_event(key);
 
-        if let ScreenMode::GitDiff(ref diff_state) = state.screen_mode {
-            assert_eq!(diff_state.patch_scroll, 3);
-        } else {
-            panic!("expected GitDiff mode");
-        }
-        assert!(state.render_version() > before);
-    }
-
-    #[test]
-    fn mouse_scroll_up_in_git_diff_decreases_patch_scroll() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut diff_state = GitDiffViewState::new(GitDiffLoadState::Empty);
-        diff_state.focus = PatchFocus::Patch;
-        diff_state.patch_scroll = 5;
-        state.screen_mode = ScreenMode::GitDiff(diff_state);
-
-        let mouse = MouseEvent {
-            kind: MouseEventKind::ScrollUp,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::NONE,
-        };
-        state.on_mouse_event(mouse);
-
-        if let ScreenMode::GitDiff(ref diff_state) = state.screen_mode {
-            assert_eq!(diff_state.patch_scroll, 2);
-        } else {
-            panic!("expected GitDiff mode");
-        }
+        assert!(result.actions.is_empty());
+        assert!(
+            !result
+                .actions
+                .iter()
+                .any(|e| matches!(e, Action::Custom(AppAction::Cancel))),
+            "Esc should NOT cancel a running prompt while git diff mode is active"
+        );
     }
 
     #[test]
@@ -899,7 +763,7 @@ mod tests {
             row: 0,
             modifiers: KeyModifiers::NONE,
         };
-        state.on_mouse_event(mouse);
+        state.on_mouse_event(mouse, None);
 
         assert_eq!(state.render_version(), before);
     }

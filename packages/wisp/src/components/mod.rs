@@ -1,6 +1,5 @@
 pub mod app;
 pub mod command_picker;
-pub(crate) mod git_diff_view;
 pub mod config_menu;
 pub mod config_overlay;
 pub mod config_picker;
@@ -8,6 +7,7 @@ pub mod container;
 pub mod conversation_window;
 pub mod elicitation_form;
 pub mod file_picker;
+pub(crate) mod git_diff_view;
 pub mod input_prompt;
 pub mod model_selector;
 pub(crate) mod plan_tracker;

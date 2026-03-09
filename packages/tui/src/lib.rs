@@ -147,6 +147,6 @@ pub use crossterm::style::Color;
 
 #[cfg(feature = "runtime")]
 pub use runtime::{
-    Action, App, RuntimeOptions, TerminalEvent, TerminalSession, run_app,
-    spawn_terminal_event_task, terminal::terminal_size, terminal::set_mouse_capture,
+    Action, App, MouseCapture, RuntimeOptions, TerminalEvent, TerminalSession, run_app,
+    spawn_terminal_event_task, terminal::terminal_size,
 };

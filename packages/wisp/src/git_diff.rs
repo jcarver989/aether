@@ -11,8 +11,6 @@ pub struct FileDiff {
     pub old_path: Option<String>,
     pub path: String,
     pub status: FileStatus,
-    pub additions: usize,
-    pub deletions: usize,
     pub hunks: Vec<Hunk>,
     pub binary: bool,
 }
@@ -81,7 +79,25 @@ impl FileStatus {
     }
 }
 
-pub async fn load_git_diff(
+impl FileDiff {
+    pub fn additions(&self) -> usize {
+        self.hunks
+            .iter()
+            .flat_map(|hunk| &hunk.lines)
+            .filter(|line| line.kind == PatchLineKind::Added)
+            .count()
+    }
+
+    pub fn deletions(&self) -> usize {
+        self.hunks
+            .iter()
+            .flat_map(|hunk| &hunk.lines)
+            .filter(|line| line.kind == PatchLineKind::Removed)
+            .count()
+    }
+}
+
+pub(crate) async fn load_git_diff(
     working_dir: &Path,
     cached_repo_root: Option<&Path>,
 ) -> Result<GitDiffDocument, GitDiffError> {
@@ -129,7 +145,13 @@ async fn resolve_repo_root(working_dir: &Path) -> Result<PathBuf, GitDiffError> 
 
 async fn run_git_diff(repo_root: &Path) -> Result<String, GitDiffError> {
     let output = tokio::process::Command::new("git")
-        .args(["diff", "--no-ext-diff", "--find-renames", "--unified=3", "HEAD"])
+        .args([
+            "diff",
+            "--no-ext-diff",
+            "--find-renames",
+            "--unified=3",
+            "HEAD",
+        ])
         .current_dir(repo_root)
         .output()
         .await
@@ -147,18 +169,11 @@ async fn run_git_diff(repo_root: &Path) -> Result<String, GitDiffError> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-pub fn parse_unified_diff(input: &str) -> Result<Vec<FileDiff>, GitDiffError> {
-    let mut files = Vec::new();
-    let file_chunks = split_diff_files(input);
-
-    for chunk in file_chunks {
-        match parse_file_diff(chunk) {
-            Ok(file_diff) => files.push(file_diff),
-            Err(e) => return Err(e),
-        }
-    }
-
-    Ok(files)
+pub(crate) fn parse_unified_diff(input: &str) -> Result<Vec<FileDiff>, GitDiffError> {
+    split_diff_files(input)
+        .into_iter()
+        .map(parse_file_diff)
+        .collect()
 }
 
 fn split_diff_files(input: &str) -> Vec<&str> {
@@ -186,10 +201,26 @@ fn parse_file_diff(chunk: &str) -> Result<FileDiff, GitDiffError> {
     }
 
     let (old_path, new_path) = parse_diff_header(lines[0])?;
+    let (status, binary, rename_from, hunk_start) = scan_file_metadata(&lines);
+    let hunks = if binary {
+        Vec::new()
+    } else {
+        parse_file_hunks(&lines[hunk_start..])?
+    };
+
+    Ok(FileDiff {
+        old_path: resolve_old_path(status, rename_from, old_path),
+        path: new_path,
+        status,
+        hunks,
+        binary,
+    })
+}
+
+fn scan_file_metadata(lines: &[&str]) -> (FileStatus, bool, Option<String>, usize) {
     let mut status = FileStatus::Modified;
     let mut binary = false;
-    let mut rename_from: Option<String> = None;
-    let mut hunks = Vec::new();
+    let mut rename_from = None;
     let mut i = 1;
 
     while i < lines.len() {
@@ -211,47 +242,38 @@ fn parse_file_diff(chunk: &str) -> Result<FileDiff, GitDiffError> {
         i += 1;
     }
 
-    if !binary {
-        while i < lines.len() {
-            if lines[i].starts_with("@@") {
-                let (hunk, consumed) = parse_hunk(&lines[i..])?;
-                hunks.push(hunk);
-                i += consumed;
-            } else {
-                i += 1;
-            }
+    (status, binary, rename_from, i)
+}
+
+fn parse_file_hunks(lines: &[&str]) -> Result<Vec<Hunk>, GitDiffError> {
+    let mut hunks = Vec::new();
+    let mut i = 0;
+
+    while i < lines.len() {
+        if lines[i].starts_with("@@") {
+            let (hunk, consumed) = parse_hunk(&lines[i..])?;
+            hunks.push(hunk);
+            i += consumed;
+        } else {
+            i += 1;
         }
     }
 
-    let mut additions = 0;
-    let mut deletions = 0;
-    for hunk in &hunks {
-        for patch_line in &hunk.lines {
-            match patch_line.kind {
-                PatchLineKind::Added => additions += 1,
-                PatchLineKind::Removed => deletions += 1,
-                _ => {}
-            }
-        }
-    }
+    Ok(hunks)
+}
 
-    let old_path_value = if status == FileStatus::Renamed {
-        rename_from.or(Some(old_path))
-    } else if status == FileStatus::Added {
+fn resolve_old_path(
+    status: FileStatus,
+    rename_from: Option<String>,
+    old_path: String,
+) -> Option<String> {
+    if status == FileStatus::Added {
         None
+    } else if status == FileStatus::Renamed {
+        rename_from.or(Some(old_path))
     } else {
         Some(old_path)
-    };
-
-    Ok(FileDiff {
-        old_path: old_path_value,
-        path: new_path,
-        status,
-        additions,
-        deletions,
-        hunks,
-        binary,
-    })
+    }
 }
 
 fn parse_diff_header(line: &str) -> Result<(String, String), GitDiffError> {
@@ -397,8 +419,8 @@ index abc1234..def5678 100644
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "src/main.rs");
         assert_eq!(files[0].status, FileStatus::Modified);
-        assert_eq!(files[0].additions, 1);
-        assert_eq!(files[0].deletions, 0);
+        assert_eq!(files[0].additions(), 1);
+        assert_eq!(files[0].deletions(), 0);
         assert!(!files[0].binary);
         assert_eq!(files[0].hunks.len(), 1);
     }
@@ -420,8 +442,8 @@ index 0000000..abc1234
         assert_eq!(files[0].path, "new_file.txt");
         assert_eq!(files[0].status, FileStatus::Added);
         assert!(files[0].old_path.is_none());
-        assert_eq!(files[0].additions, 2);
-        assert_eq!(files[0].deletions, 0);
+        assert_eq!(files[0].additions(), 2);
+        assert_eq!(files[0].deletions(), 0);
     }
 
     #[test]
@@ -440,8 +462,8 @@ index abc1234..0000000
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "old_file.txt");
         assert_eq!(files[0].status, FileStatus::Deleted);
-        assert_eq!(files[0].additions, 0);
-        assert_eq!(files[0].deletions, 2);
+        assert_eq!(files[0].additions(), 0);
+        assert_eq!(files[0].deletions(), 2);
     }
 
     #[test]
@@ -465,8 +487,8 @@ index abc1234..def5678 100644
         assert_eq!(files[0].path, "new_name.rs");
         assert_eq!(files[0].status, FileStatus::Renamed);
         assert_eq!(files[0].old_path.as_deref(), Some("old_name.rs"));
-        assert_eq!(files[0].additions, 1);
-        assert_eq!(files[0].deletions, 1);
+        assert_eq!(files[0].additions(), 1);
+        assert_eq!(files[0].deletions(), 1);
     }
 
     #[test]

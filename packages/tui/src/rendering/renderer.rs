@@ -85,7 +85,8 @@ impl<T: Write> Renderer<T> {
         self.terminal.writer()
     }
 
-    pub fn writer_mut(&mut self) -> &mut T {
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test_writer_mut(&mut self) -> &mut T {
         self.terminal.writer_mut()
     }
 
