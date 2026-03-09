@@ -61,6 +61,7 @@ impl<T: Write> Renderer<T> {
     pub fn on_resize(&mut self, size: impl Into<Size>) {
         self.bump_render_epoch();
         self.size = size.into();
+        self.terminal.on_resize(self.size.width);
     }
 
     pub fn context(&self) -> RenderContext {
@@ -82,6 +83,10 @@ impl<T: Write> Renderer<T> {
     #[allow(dead_code)]
     pub fn writer(&self) -> &T {
         self.terminal.writer()
+    }
+
+    pub fn writer_mut(&mut self) -> &mut T {
+        self.terminal.writer_mut()
     }
 
     pub fn render_epoch(&self) -> u64 {

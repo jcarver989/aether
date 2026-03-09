@@ -32,6 +32,7 @@ pub struct Keybindings {
     pub submit: KeyBinding,
     pub open_command_picker: KeyBinding,
     pub open_file_picker: KeyBinding,
+    pub toggle_git_diff: KeyBinding,
 }
 
 impl Default for Keybindings {
@@ -44,6 +45,7 @@ impl Default for Keybindings {
             submit: KeyBinding::new(KeyCode::Enter, KeyModifiers::NONE),
             open_command_picker: KeyBinding::new(KeyCode::Char('/'), KeyModifiers::NONE),
             open_file_picker: KeyBinding::new(KeyCode::Char('@'), KeyModifiers::NONE),
+            toggle_git_diff: KeyBinding::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
         }
     }
 }
@@ -103,5 +105,7 @@ mod tests {
         assert_eq!(kb.submit.code, KeyCode::Enter);
         assert_eq!(kb.open_command_picker.code, KeyCode::Char('/'));
         assert_eq!(kb.open_file_picker.code, KeyCode::Char('@'));
+        assert_eq!(kb.toggle_git_diff.code, KeyCode::Char('g'));
+        assert_eq!(kb.toggle_git_diff.modifiers, KeyModifiers::CONTROL);
     }
 }

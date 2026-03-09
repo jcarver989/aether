@@ -1,6 +1,7 @@
 mod cli;
 mod components;
 mod error;
+mod git_diff;
 mod keybindings;
 mod runtime_state;
 mod settings;
@@ -39,6 +40,7 @@ async fn main() -> ExitCode {
         theme,
         event_rx,
         prompt_handle,
+        working_dir,
     } = state;
 
     let mut app = App::new(
@@ -47,6 +49,7 @@ async fn main() -> ExitCode {
         auth_methods,
         prompt_handle,
         session_id,
+        working_dir,
     );
 
     let _session = match TerminalSession::enter(true) {

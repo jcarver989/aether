@@ -1,9 +1,12 @@
+use super::state::{GitDiffLoadState, GitDiffViewState, ScreenMode};
 use super::{App, AppAction, PromptAttachment, build_attachment_blocks};
 use crate::settings::{load_or_create_settings, save_settings};
+use crate::tui;
 use crate::tui::{Action, Line, Renderer};
 use std::io::Write;
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub async fn apply_effect<T: Write>(
         &mut self,
         renderer: &mut Renderer<T>,
@@ -63,7 +66,78 @@ impl App {
                 renderer.clear_screen()?;
                 Ok(vec![])
             }
+            AppAction::ToggleGitDiffViewer => {
+                self.state.screen_mode =
+                    ScreenMode::GitDiff(GitDiffViewState::new(GitDiffLoadState::Loading));
+                self.state.bump_render_version();
+                tui::set_mouse_capture(true);
+                self.load_git_diff().await;
+                Ok(vec![])
+            }
+            AppAction::RefreshGitDiffViewer => {
+                if let ScreenMode::GitDiff(ref mut diff_state) = self.state.screen_mode {
+                    let prev_path = match &diff_state.load_state {
+                        GitDiffLoadState::Ready(doc) => doc
+                            .files
+                            .get(diff_state.selected_file)
+                            .map(|f| f.path.clone()),
+                        _ => None,
+                    };
+                    let focus = diff_state.focus;
+                    diff_state.load_state = GitDiffLoadState::Loading;
+                    self.state.bump_render_version();
+                    self.load_git_diff().await;
+
+                    if let ScreenMode::GitDiff(ref mut diff_state) = self.state.screen_mode {
+                        diff_state.focus = focus;
+                        diff_state.patch_scroll = 0;
+                        if let (Some(prev), GitDiffLoadState::Ready(doc)) =
+                            (&prev_path, &diff_state.load_state)
+                        {
+                            diff_state.selected_file = doc
+                                .files
+                                .iter()
+                                .position(|f| f.path == *prev)
+                                .unwrap_or(0);
+                        }
+                    }
+                }
+                Ok(vec![])
+            }
         }
+    }
+
+    async fn load_git_diff(&mut self) {
+        match crate::git_diff::load_git_diff(&self.working_dir, self.cached_repo_root.as_deref())
+            .await
+        {
+            Ok(doc) => {
+                if self.cached_repo_root.is_none() {
+                    self.cached_repo_root = Some(doc.repo_root.clone());
+                }
+                if doc.files.is_empty() {
+                    if let ScreenMode::GitDiff(ref mut diff_state) = self.state.screen_mode {
+                        diff_state.load_state = GitDiffLoadState::Empty;
+                        diff_state.invalidate_patch_cache();
+                    }
+                } else if let ScreenMode::GitDiff(ref mut diff_state) = self.state.screen_mode {
+                    let file_count = doc.files.len();
+                    diff_state.load_state = GitDiffLoadState::Ready(doc);
+                    diff_state.selected_file =
+                        diff_state.selected_file.min(file_count.saturating_sub(1));
+                    diff_state.invalidate_patch_cache();
+                }
+            }
+            Err(e) => {
+                if let ScreenMode::GitDiff(ref mut diff_state) = self.state.screen_mode {
+                    diff_state.load_state = GitDiffLoadState::Error {
+                        message: e.to_string(),
+                    };
+                    diff_state.invalidate_patch_cache();
+                }
+            }
+        }
+        self.state.bump_render_version();
     }
 }
 

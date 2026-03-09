@@ -140,11 +140,13 @@ pub use syntax_highlighting::SyntaxHighlighter;
 pub use combobox::{Combobox, PickerKey, Searchable, classify_key};
 
 // Terminal event types (re-exported from crossterm)
-pub use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+pub use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseEvent, MouseEventKind,
+};
 pub use crossterm::style::Color;
 
 #[cfg(feature = "runtime")]
 pub use runtime::{
     Action, App, RuntimeOptions, TerminalEvent, TerminalSession, run_app,
-    spawn_terminal_event_task, terminal::terminal_size,
+    spawn_terminal_event_task, terminal::terminal_size, terminal::set_mouse_capture,
 };

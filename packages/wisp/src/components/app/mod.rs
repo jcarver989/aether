@@ -3,8 +3,11 @@ pub mod runtime;
 mod session;
 mod state;
 
-pub(crate) use state::UiState;
+pub(crate) use state::{
+    GitDiffLoadState, GitDiffViewState, PatchFocus, ScreenMode, UiState,
+};
 
+use crate::components::git_diff_view::GitDiffView;
 use crate::tui::{
     Action, App as TuiApp, Component, Cursor, Frame, Line, RenderContext, Renderer, RootComponent,
     TerminalEvent,
@@ -46,6 +49,8 @@ pub enum AppAction {
         method_id: String,
     },
     ClearScreen,
+    ToggleGitDiffViewer,
+    RefreshGitDiffViewer,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +63,8 @@ pub struct App {
     state: UiState,
     prompt_handle: AcpPromptHandle,
     session_id: acp::SessionId,
+    working_dir: PathBuf,
+    cached_repo_root: Option<PathBuf>,
 }
 
 impl App {
@@ -67,11 +74,14 @@ impl App {
         auth_methods: Vec<acp::AuthMethod>,
         prompt_handle: AcpPromptHandle,
         session_id: acp::SessionId,
+        working_dir: PathBuf,
     ) -> Self {
         Self {
             state: UiState::new(agent_name, config_options, auth_methods),
             prompt_handle,
             session_id,
+            working_dir,
+            cached_repo_root: None,
         }
     }
 }
@@ -89,6 +99,7 @@ impl TuiApp for App {
         match event {
             TerminalEvent::Key(key_event) => self.state.on_key_event(key_event),
             TerminalEvent::Paste(text) => self.state.on_paste(text),
+            TerminalEvent::Mouse(mouse) => self.state.on_mouse_event(mouse),
         }
     }
 
@@ -166,6 +177,22 @@ impl RootComponent for App {
             let container = Container::new(vec![overlay as &dyn Component, &status_line]);
             let (lines, _) = container.render_with_offsets(context);
 
+            return Frame::new(lines, cursor);
+        }
+
+        if let ScreenMode::GitDiff(ref mut diff_state) = self.state.screen_mode {
+            let status_lines = status_line.render(context);
+            #[allow(clippy::cast_possible_truncation)]
+            let diff_height = context.size.height.saturating_sub(status_lines.len() as u16);
+            let diff_context = context.with_size((context.size.width, diff_height));
+            let view = GitDiffView { state: diff_state };
+            let mut lines = view.render(&diff_context);
+            lines.extend(status_lines);
+            let cursor = Cursor {
+                row: 0,
+                col: 0,
+                is_visible: false,
+            };
             return Frame::new(lines, cursor);
         }
 
@@ -265,6 +292,7 @@ mod tests {
                 vec![],
                 AcpPromptHandle::noop(),
                 acp::SessionId::new("test"),
+                PathBuf::from("."),
             );
             let menu = app
                 .state
@@ -304,6 +332,7 @@ mod tests {
                 vec![],
                 AcpPromptHandle::noop(),
                 acp::SessionId::new("test"),
+                PathBuf::from("."),
             );
             let menu = app
                 .state
@@ -326,6 +355,7 @@ mod tests {
             vec![],
             AcpPromptHandle::noop(),
             acp::SessionId::new("test"),
+            PathBuf::from("."),
         );
         let outcome = MessageResult::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
@@ -352,6 +382,7 @@ mod tests {
             vec![],
             AcpPromptHandle::noop(),
             acp::SessionId::new("test"),
+            PathBuf::from("."),
         );
         let outcome = MessageResult::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
@@ -376,6 +407,7 @@ mod tests {
             vec![],
             AcpPromptHandle::noop(),
             acp::SessionId::new("test"),
+            PathBuf::from("."),
         );
         let outcome = MessageResult::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
@@ -403,6 +435,7 @@ mod tests {
             vec![],
             AcpPromptHandle::noop(),
             acp::SessionId::new("test"),
+            PathBuf::from("."),
         );
         screen
             .state
@@ -439,6 +472,7 @@ mod tests {
             vec![],
             AcpPromptHandle::noop(),
             acp::SessionId::new("test"),
+            PathBuf::from("."),
         );
         screen.state.open_config_overlay();
 
@@ -506,6 +540,7 @@ mod tests {
             vec![],
             AcpPromptHandle::noop(),
             acp::SessionId::new("test"),
+            PathBuf::from("."),
         );
         app.state.plan_tracker.replace(
             vec![acp::PlanEntry::new(

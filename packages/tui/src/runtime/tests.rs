@@ -201,6 +201,7 @@ async fn resize_is_runtime_managed_and_triggers_rerender() {
             terminal_events_clone.borrow_mut().push(match event {
                 TerminalEvent::Key(_) => "key",
                 TerminalEvent::Paste(_) => "paste",
+                TerminalEvent::Mouse(_) => "mouse",
             });
             vec![Action::Exit]
         },
