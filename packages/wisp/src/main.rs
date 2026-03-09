@@ -4,14 +4,14 @@ mod error;
 mod keybindings;
 mod runtime_state;
 mod settings;
-mod terminal_ui;
 #[cfg(test)]
 mod test_helpers;
 mod tui;
 
 use crate::cli::Cli;
+use crate::components::app::App;
 use crate::runtime_state::RuntimeState;
-use crate::terminal_ui::run_terminal_ui;
+use crate::tui::{Renderer, TerminalSession, run_app, spawn_terminal_event_task, terminal_size};
 use clap::Parser;
 use std::fs::create_dir_all;
 use std::process::ExitCode;
@@ -31,7 +31,45 @@ async fn main() -> ExitCode {
         }
     };
 
-    match run_terminal_ui(state).await {
+    let RuntimeState {
+        session_id,
+        agent_name,
+        config_options,
+        auth_methods,
+        theme,
+        event_rx,
+        prompt_handle,
+    } = state;
+
+    let mut app = App::new(
+        agent_name,
+        &config_options,
+        auth_methods,
+        prompt_handle,
+        session_id,
+    );
+
+    let _session = match TerminalSession::enter(true) {
+        Ok(session) => session,
+        Err(e) => {
+            eprintln!("Failed to enter terminal: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut renderer = Renderer::new(std::io::stdout(), theme);
+    let size = terminal_size().unwrap_or((80, 24));
+    renderer.on_resize(size);
+    let terminal_rx = spawn_terminal_event_task();
+
+    match run_app(
+        &mut app,
+        &mut renderer,
+        terminal_rx,
+        Some(event_rx),
+        Some(std::time::Duration::from_millis(100)),
+    )
+    .await
+    {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("Fatal error: {e}");

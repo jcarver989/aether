@@ -1,7 +1,7 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyCode;
 
 use super::select_option::SelectOption;
-use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
+use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -63,23 +63,26 @@ impl RadioSelect {
 }
 
 impl InteractiveComponent for RadioSelect {
-    type Action = ();
+    type Message = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
         if self.options.is_empty() {
-            return KeyEventResponse::ignored();
+            return MessageResult::ignored();
         }
 
-        match key_event.code {
-            KeyCode::Left | KeyCode::Up => {
-                self.selected = (self.selected + self.options.len() - 1) % self.options.len();
-                KeyEventResponse::consumed()
-            }
-            KeyCode::Right | KeyCode::Down => {
-                self.selected = (self.selected + 1) % self.options.len();
-                KeyEventResponse::consumed()
-            }
-            _ => KeyEventResponse::ignored(),
+        match event {
+            UiEvent::Key(key_event) => match key_event.code {
+                KeyCode::Left | KeyCode::Up => {
+                    self.selected = (self.selected + self.options.len() - 1) % self.options.len();
+                    MessageResult::consumed().with_render()
+                }
+                KeyCode::Right | KeyCode::Down => {
+                    self.selected = (self.selected + 1) % self.options.len();
+                    MessageResult::consumed().with_render()
+                }
+                _ => MessageResult::ignored(),
+            },
+            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
         }
     }
 }
@@ -113,18 +116,18 @@ mod tests {
     #[test]
     fn right_cycles_forward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_key_event(key(KeyCode::Right));
+        rs.on_event(UiEvent::Key(key(KeyCode::Right)));
         assert_eq!(rs.selected, 1);
-        rs.on_key_event(key(KeyCode::Right));
+        rs.on_event(UiEvent::Key(key(KeyCode::Right)));
         assert_eq!(rs.selected, 2);
-        rs.on_key_event(key(KeyCode::Right));
+        rs.on_event(UiEvent::Key(key(KeyCode::Right)));
         assert_eq!(rs.selected, 0); // wraps
     }
 
     #[test]
     fn left_cycles_backward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_key_event(key(KeyCode::Left));
+        rs.on_event(UiEvent::Key(key(KeyCode::Left)));
         assert_eq!(rs.selected, 2); // wraps to end
     }
 
@@ -145,7 +148,7 @@ mod tests {
     #[test]
     fn empty_options_ignores_keys() {
         let mut rs = RadioSelect::new(vec![], 0);
-        let outcome = rs.on_key_event(key(KeyCode::Right));
-        assert!(!outcome.consumed);
+        let outcome = rs.on_event(UiEvent::Key(key(KeyCode::Right)));
+        assert!(!outcome.handled);
     }
 }

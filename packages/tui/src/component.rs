@@ -14,66 +14,119 @@ pub trait Component {
     fn render(&self, context: &RenderContext) -> Vec<Line>;
 }
 
-/// A component with time-based animation state.
-pub trait TickableComponent {
-    /// Advance animation state by one tick.
-    fn on_tick(&mut self, now: Instant);
+/// Events that can be processed by an [`InteractiveComponent`].
+#[derive(Debug, Clone)]
+pub enum UiEvent {
+    /// A keyboard event.
+    Key(KeyEvent),
+    /// Pasted text from bracketed paste mode.
+    Paste(String),
+    /// A tick event for time-based updates.
+    Tick(Instant),
 }
 
-/// A component that can process keyboard input and emit typed actions.
-pub trait InteractiveComponent {
-    type Action;
-
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action>;
-}
-
-/// Result of handling a key event.
+/// Result of handling a [`UiEvent`] in an [`InteractiveComponent`].
 ///
-/// - `consumed` — whether the key was handled (prevents further propagation).
-/// - `action` — an optional typed action emitted to the parent.
-pub struct KeyEventResponse<A> {
-    pub consumed: bool,
-    pub action: Option<A>,
+/// - `handled` — whether the event was consumed (prevents further propagation).
+/// - `render` — whether a render should be enqueued even without messages.
+/// - `messages` — typed messages emitted upward to the parent.
+pub struct MessageResult<T> {
+    pub handled: bool,
+    pub render: bool,
+    pub messages: Vec<T>,
 }
 
-impl<A> KeyEventResponse<A> {
-    /// Transform the action type, preserving `consumed`.
-    pub fn map<B>(self, f: impl FnOnce(A) -> B) -> KeyEventResponse<B> {
-        KeyEventResponse {
-            consumed: self.consumed,
-            action: self.action.map(f),
-        }
-    }
-
-    /// Discard the action, preserving `consumed`.
-    ///
-    /// The output type is inferred from context, so this can convert between
-    /// `KeyEventResponse<A>` and `KeyEventResponse<B>`.
-    pub fn discard_action<B>(self) -> KeyEventResponse<B> {
-        KeyEventResponse {
-            consumed: self.consumed,
-            action: None,
-        }
-    }
-
+impl<T> MessageResult<T> {
+    /// The event was not recognized and should propagate.
     pub fn ignored() -> Self {
         Self {
-            consumed: false,
-            action: None,
+            handled: false,
+            render: false,
+            messages: Vec::new(),
         }
     }
 
+    /// The event was consumed, no messages, no render needed.
     pub fn consumed() -> Self {
         Self {
-            consumed: true,
-            action: None,
+            handled: true,
+            render: false,
+            messages: Vec::new(),
         }
     }
 
-    pub fn action(action: A) -> Self {
+    /// Request a render without emitting messages.
+    pub fn render() -> Self {
         Self {
-            consumed: true,
-            action: Some(action),
+            handled: true,
+            render: true,
+            messages: Vec::new(),
         }
     }
+
+    /// Emit a single message.
+    pub fn message(message: T) -> Self {
+        Self {
+            handled: true,
+            render: false,
+            messages: vec![message],
+        }
+    }
+
+    /// Emit multiple messages.
+    pub fn messages(messages: Vec<T>) -> Self {
+        Self {
+            handled: true,
+            render: false,
+            messages,
+        }
+    }
+
+    /// Request a render in addition to current state.
+    pub fn with_render(mut self) -> Self {
+        self.render = true;
+        self
+    }
+
+    /// Transform message types, preserving `handled` and `render`.
+    pub fn map<U>(self, f: impl FnMut(T) -> U) -> MessageResult<U> {
+        MessageResult {
+            handled: self.handled,
+            render: self.render,
+            messages: self.messages.into_iter().map(f).collect(),
+        }
+    }
+
+    /// Discard messages, preserving `handled` and `render`.
+    ///
+    /// The output type is inferred from context, so this can convert between
+    /// `MessageResult<M>` and `MessageResult<N>`.
+    pub fn discard_messages<U>(self) -> MessageResult<U> {
+        MessageResult {
+            handled: self.handled,
+            render: self.render,
+            messages: Vec::new(),
+        }
+    }
+
+    /// Merge two results.
+    ///
+    /// - `handled = self.handled || other.handled`
+    /// - `render = self.render || other.render`
+    /// - messages are appended in order (`self.messages` before `other.messages`)
+    pub fn merge(mut self, other: Self) -> Self {
+        self.handled = self.handled || other.handled;
+        self.render = self.render || other.render;
+        self.messages.extend(other.messages);
+        self
+    }
+}
+
+/// A component that can process [`UiEvent`]s and emit typed messages.
+pub trait InteractiveComponent: Component {
+    /// The message type emitted by this component.
+    type Message;
+
+    /// Process an event and return the result.
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message>;
 }

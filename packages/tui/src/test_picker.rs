@@ -1,12 +1,15 @@
-use crate::component::RenderContext;
+use crate::Component;
+use crate::component::{InteractiveComponent, RenderContext, UiEvent};
 use crate::line::Line;
 use crate::size::Size;
-use crate::{Component, InteractiveComponent};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn type_query<P: InteractiveComponent>(picker: &mut P, text: &str) {
     for c in text.chars() {
-        picker.on_key_event(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        let _ = picker.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Char(c),
+            KeyModifiers::NONE,
+        )));
     }
 }
 

@@ -19,7 +19,7 @@ fn renders_second_selected() {
 #[test]
 fn down_arrow_changes_selection() {
     let mut rs = RadioSelect::new(sample_options(), 0);
-    rs.on_key_event(key(KeyCode::Down));
+    rs.on_event(UiEvent::Key(key(KeyCode::Down)));
     let term = render_component(&rs, 80, 24);
     assert_buffer_eq(&term, &["○ Alpha", "● Beta", "○ Gamma"]);
 }
@@ -27,7 +27,7 @@ fn down_arrow_changes_selection() {
 #[test]
 fn up_from_first_wraps_to_last() {
     let mut rs = RadioSelect::new(sample_options(), 0);
-    rs.on_key_event(key(KeyCode::Up));
+    rs.on_event(UiEvent::Key(key(KeyCode::Up)));
     let term = render_component(&rs, 80, 24);
     assert_buffer_eq(&term, &["○ Alpha", "○ Beta", "● Gamma"]);
 }
@@ -35,7 +35,7 @@ fn up_from_first_wraps_to_last() {
 #[test]
 fn right_from_last_wraps_to_first() {
     let mut rs = RadioSelect::new(sample_options(), 2);
-    rs.on_key_event(key(KeyCode::Right));
+    rs.on_event(UiEvent::Key(key(KeyCode::Right)));
     let term = render_component(&rs, 80, 24);
     assert_buffer_eq(&term, &["● Alpha", "○ Beta", "○ Gamma"]);
 }

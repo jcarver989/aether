@@ -1,6 +1,6 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyCode;
 
-use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
+use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::line::Line;
 
 /// Single-line text input with cursor indicator.
@@ -30,19 +30,26 @@ impl Component for TextField {
 }
 
 impl InteractiveComponent for TextField {
-    type Action = ();
+    type Message = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
-        match key_event.code {
-            KeyCode::Char(c) => {
-                self.value.push(c);
-                KeyEventResponse::consumed()
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+        match event {
+            UiEvent::Key(key_event) => match key_event.code {
+                KeyCode::Char(c) => {
+                    self.value.push(c);
+                    MessageResult::consumed().with_render()
+                }
+                KeyCode::Backspace => {
+                    self.value.pop();
+                    MessageResult::consumed().with_render()
+                }
+                _ => MessageResult::ignored(),
+            },
+            UiEvent::Paste(text) => {
+                self.value.push_str(&text);
+                MessageResult::consumed().with_render()
             }
-            KeyCode::Backspace => {
-                self.value.pop();
-                KeyEventResponse::consumed()
-            }
-            _ => KeyEventResponse::ignored(),
+            UiEvent::Tick(_) => MessageResult::ignored(),
         }
     }
 }
@@ -59,22 +66,22 @@ mod tests {
     #[test]
     fn typing_appends_characters() {
         let mut field = TextField::new(String::new());
-        field.on_key_event(key(KeyCode::Char('h')));
-        field.on_key_event(key(KeyCode::Char('i')));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('h'))));
+        field.on_event(UiEvent::Key(key(KeyCode::Char('i'))));
         assert_eq!(field.value, "hi");
     }
 
     #[test]
     fn backspace_removes_last_character() {
         let mut field = TextField::new("abc".to_string());
-        field.on_key_event(key(KeyCode::Backspace));
+        field.on_event(UiEvent::Key(key(KeyCode::Backspace)));
         assert_eq!(field.value, "ab");
     }
 
     #[test]
     fn backspace_on_empty_is_no_op() {
         let mut field = TextField::new(String::new());
-        field.on_key_event(key(KeyCode::Backspace));
+        field.on_event(UiEvent::Key(key(KeyCode::Backspace)));
         assert_eq!(field.value, "");
     }
 
@@ -88,7 +95,16 @@ mod tests {
     #[test]
     fn unhandled_keys_are_ignored() {
         let mut field = TextField::new(String::new());
-        let outcome = field.on_key_event(key(KeyCode::Up));
-        assert!(!outcome.consumed);
+        let outcome = field.on_event(UiEvent::Key(key(KeyCode::Up)));
+        assert!(!outcome.handled);
+    }
+
+    #[test]
+    fn paste_appends_text() {
+        let mut field = TextField::new(String::new());
+        let outcome = field.on_event(UiEvent::Paste("hello".to_string()));
+        assert!(outcome.handled);
+        assert!(outcome.render);
+        assert_eq!(field.value, "hello");
     }
 }

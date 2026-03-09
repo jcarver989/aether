@@ -1,7 +1,7 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyCode;
 
 use super::select_option::SelectOption;
-use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
+use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -82,27 +82,30 @@ impl MultiSelect {
 }
 
 impl InteractiveComponent for MultiSelect {
-    type Action = ();
+    type Message = ();
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
         if self.options.is_empty() {
-            return KeyEventResponse::ignored();
+            return MessageResult::ignored();
         }
 
-        match key_event.code {
-            KeyCode::Char(' ') => {
-                self.selected[self.cursor] = !self.selected[self.cursor];
-                KeyEventResponse::consumed()
-            }
-            KeyCode::Up | KeyCode::Left => {
-                self.cursor = (self.cursor + self.options.len() - 1) % self.options.len();
-                KeyEventResponse::consumed()
-            }
-            KeyCode::Down | KeyCode::Right => {
-                self.cursor = (self.cursor + 1) % self.options.len();
-                KeyEventResponse::consumed()
-            }
-            _ => KeyEventResponse::ignored(),
+        match event {
+            UiEvent::Key(key_event) => match key_event.code {
+                KeyCode::Char(' ') => {
+                    self.selected[self.cursor] = !self.selected[self.cursor];
+                    MessageResult::consumed().with_render()
+                }
+                KeyCode::Up | KeyCode::Left => {
+                    self.cursor = (self.cursor + self.options.len() - 1) % self.options.len();
+                    MessageResult::consumed().with_render()
+                }
+                KeyCode::Down | KeyCode::Right => {
+                    self.cursor = (self.cursor + 1) % self.options.len();
+                    MessageResult::consumed().with_render()
+                }
+                _ => MessageResult::ignored(),
+            },
+            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
         }
     }
 }
@@ -139,18 +142,18 @@ mod tests {
     #[test]
     fn space_toggles_at_cursor() {
         let mut ms = sample();
-        ms.on_key_event(key(KeyCode::Char(' ')));
+        ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
         assert!(ms.selected[0]);
-        ms.on_key_event(key(KeyCode::Char(' ')));
+        ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
         assert!(!ms.selected[0]);
     }
 
     #[test]
     fn cursor_moves_with_arrows() {
         let mut ms = sample();
-        ms.on_key_event(key(KeyCode::Down));
+        ms.on_event(UiEvent::Key(key(KeyCode::Down)));
         assert_eq!(ms.cursor, 1);
-        ms.on_key_event(key(KeyCode::Char(' ')));
+        ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
         assert!(ms.selected[1]);
     }
 
@@ -173,7 +176,7 @@ mod tests {
     #[test]
     fn cursor_wraps() {
         let mut ms = sample();
-        ms.on_key_event(key(KeyCode::Up));
+        ms.on_event(UiEvent::Key(key(KeyCode::Up)));
         assert_eq!(ms.cursor, 2); // wraps to end
     }
 }

@@ -1,5 +1,5 @@
+use crate::tui::Color;
 use crate::tui::{Component, Line, RenderContext, Style};
-use crossterm::style::Color;
 use unicode_width::UnicodeWidthStr;
 
 /// Width consumed by left ("│ ") and right (" │") borders.

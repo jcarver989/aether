@@ -4,7 +4,7 @@
 //! entrypoint for rich CLI applications:
 //!
 //! - **[`Component`]** — Stateful widgets that render to `Vec<Line>`.
-//! - **[`InteractiveComponent`]** — Keyboard input handling with typed actions via [`KeyEventResponse`].
+//! - **[`InteractiveComponent`]** — Event handling with typed messages via [`MessageResult`].
 //! - **[`FocusRing`]** — Reusable focus tracking with Tab/`BackTab` cycling.
 //! - **[`TerminalScreen`]** / **[`Renderer`]** — Frame-diffing terminal output with cursor management.
 //! - **[`runtime::run_app`]** — Terminal lifecycle, event loop, ticks, external events, effects, and cleanup.
@@ -108,11 +108,10 @@ pub mod testing;
 
 // Core re-exports - always available
 pub use component::{
-    Component, Cursor, InteractiveComponent, KeyEventResponse, RenderContext, RootComponent,
-    TickableComponent,
+    Component, Cursor, InteractiveComponent, MessageResult, RenderContext, RootComponent, UiEvent,
 };
 pub use components::checkbox::Checkbox;
-pub use components::form::{Form, FormAction, FormField, FormFieldKind};
+pub use components::form::{Form, FormField, FormFieldKind, FormMessage};
 pub use components::multi_select::MultiSelect;
 pub use components::number_field::NumberField;
 pub use components::radio_select::RadioSelect;
@@ -140,7 +139,12 @@ pub use syntax_highlighting::SyntaxHighlighter;
 #[cfg(feature = "picker")]
 pub use combobox::{Combobox, PickerKey, Searchable, classify_key};
 
+// Terminal event types (re-exported from crossterm)
+pub use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+pub use crossterm::style::Color;
+
 #[cfg(feature = "runtime")]
 pub use runtime::{
-    RuntimeAction, RuntimeApp, RuntimeEvent, RuntimeOptions, run_app, spawn_terminal_event_task,
+    Action, App, RuntimeOptions, TerminalEvent, TerminalSession, run_app,
+    spawn_terminal_event_task, terminal::terminal_size,
 };

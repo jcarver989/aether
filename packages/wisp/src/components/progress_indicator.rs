@@ -1,6 +1,5 @@
 use crate::tui::components::spinner::BRAILLE_FRAMES as FRAMES;
-use crate::tui::{Component, Line, RenderContext, TickableComponent};
-use std::time::Instant;
+use crate::tui::{Component, Line, RenderContext};
 
 /// Renders a single progress line when tools are actively running.
 /// Shows: `⠋ Working... (N/M tools complete)`
@@ -21,10 +20,9 @@ impl ProgressIndicator {
     pub fn set_tick(&mut self, tick: u16) {
         self.tick = tick;
     }
-}
 
-impl TickableComponent for ProgressIndicator {
-    fn on_tick(&mut self, _now: Instant) {
+    /// Advance the animation state. Call this on tick events.
+    pub fn on_tick(&mut self) {
         if self.total > 0 && self.completed < self.total {
             self.tick = self.tick.wrapping_add(1);
         }
@@ -99,7 +97,7 @@ mod tests {
     fn on_tick_advances_when_running() {
         let mut indicator = ProgressIndicator::default();
         indicator.update(1, 3);
-        indicator.on_tick(Instant::now());
+        indicator.on_tick();
         let lines = indicator.render(&ctx());
         assert!(!lines.is_empty());
     }
@@ -108,14 +106,14 @@ mod tests {
     fn on_tick_noop_when_all_complete() {
         let mut indicator = ProgressIndicator::default();
         indicator.update(3, 3);
-        indicator.on_tick(Instant::now());
+        indicator.on_tick();
         assert!(indicator.render(&ctx()).is_empty());
     }
 
     #[test]
     fn on_tick_noop_when_empty() {
         let mut indicator = ProgressIndicator::default();
-        indicator.on_tick(Instant::now());
+        indicator.on_tick();
         assert!(indicator.render(&ctx()).is_empty());
     }
 }

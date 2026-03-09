@@ -1,4 +1,4 @@
-use crate::component::{Component, InteractiveComponent, KeyEventResponse, RenderContext};
+use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::focus::FocusRing;
 use crate::line::Line;
 use crate::style::Style;
@@ -8,10 +8,10 @@ use super::multi_select::MultiSelect;
 use super::number_field::NumberField;
 use super::radio_select::RadioSelect;
 use super::text_field::TextField;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyCode;
 
-/// Actions emitted by [`Form`] input handling.
-pub enum FormAction {
+/// Messages emitted by [`Form`] input handling.
+pub enum FormMessage {
     Close,
     Submit,
 }
@@ -86,13 +86,13 @@ impl FormFieldKind {
         }
     }
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> KeyEventResponse<()> {
+    fn handle_event(&mut self, event: UiEvent) -> MessageResult<()> {
         match self {
-            FormFieldKind::Text(w) => w.on_key_event(key_event),
-            FormFieldKind::Number(w) => w.on_key_event(key_event),
-            FormFieldKind::Boolean(w) => w.on_key_event(key_event),
-            FormFieldKind::SingleSelect(w) => w.on_key_event(key_event),
-            FormFieldKind::MultiSelect(w) => w.on_key_event(key_event),
+            FormFieldKind::Text(w) => w.on_event(event),
+            FormFieldKind::Number(w) => w.on_event(event),
+            FormFieldKind::Boolean(w) => w.on_event(event),
+            FormFieldKind::SingleSelect(w) => w.on_event(event),
+            FormFieldKind::MultiSelect(w) => w.on_event(event),
         }
     }
 }
@@ -173,26 +173,29 @@ impl Form {
 }
 
 impl InteractiveComponent for Form {
-    type Action = FormAction;
+    type Message = FormMessage;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
-        match key_event.code {
-            KeyCode::Esc => KeyEventResponse::action(FormAction::Close),
-            KeyCode::Enter => KeyEventResponse::action(FormAction::Submit),
-            KeyCode::Tab | KeyCode::BackTab => {
-                self.focus.handle_key(key_event);
-                KeyEventResponse::consumed()
-            }
-            _ => {
-                if let Some(field) = self.fields.get_mut(self.focus.focused()) {
-                    let outcome = field.kind.handle_key(key_event);
-                    if outcome.consumed {
-                        return outcome.discard_action();
-                    }
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+        match &event {
+            UiEvent::Key(key_event) => match key_event.code {
+                KeyCode::Esc => return MessageResult::message(FormMessage::Close),
+                KeyCode::Enter => return MessageResult::message(FormMessage::Submit),
+                KeyCode::Tab | KeyCode::BackTab => {
+                    self.focus.handle_key(*key_event);
+                    return MessageResult::consumed().with_render();
                 }
-                KeyEventResponse::consumed()
+                _ => {}
+            },
+            _ => {}
+        }
+
+        if let Some(field) = self.fields.get_mut(self.focus.focused()) {
+            let result = field.kind.handle_event(event);
+            if result.handled {
+                return result.discard_messages();
             }
         }
+        MessageResult::consumed()
     }
 }
 

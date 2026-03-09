@@ -1,9 +1,9 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, InteractiveComponent, KeyEventResponse, Line, RenderContext};
+use crate::tui::KeyCode;
+use crate::tui::{Component, InteractiveComponent, Line, MessageResult, RenderContext, UiEvent};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
-use crossterm::event::{KeyCode, KeyEvent};
 
 pub struct ConfigMenu {
     pub options: Vec<ConfigMenuEntry>,
@@ -43,7 +43,7 @@ pub struct ConfigChange {
     pub new_value: String,
 }
 
-pub enum ConfigMenuAction {
+pub enum ConfigMenuMessage {
     CloseAll,
     OpenSelectedPicker,
     OpenMcpServers,
@@ -92,33 +92,37 @@ impl Component for ConfigMenu {
 }
 
 impl InteractiveComponent for ConfigMenu {
-    type Action = ConfigMenuAction;
+    type Message = ConfigMenuMessage;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+        let UiEvent::Key(key_event) = event else {
+            return MessageResult::ignored();
+        };
+
         match key_event.code {
-            KeyCode::Esc => KeyEventResponse::action(ConfigMenuAction::CloseAll),
+            KeyCode::Esc => MessageResult::message(ConfigMenuMessage::CloseAll),
             KeyCode::Up => {
                 self.move_selection_up();
-                KeyEventResponse::consumed()
+                MessageResult::consumed().with_render()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                KeyEventResponse::consumed()
+                MessageResult::consumed().with_render()
             }
             KeyCode::Enter => {
-                let action = match self.selected_entry() {
+                let msg = match self.selected_entry() {
                     Some(e) if e.entry_kind == ConfigMenuEntryKind::McpServers => {
-                        ConfigMenuAction::OpenMcpServers
+                        ConfigMenuMessage::OpenMcpServers
                     }
                     Some(e) if e.entry_kind == ConfigMenuEntryKind::ProviderLogins => {
-                        ConfigMenuAction::OpenProviderLogins
+                        ConfigMenuMessage::OpenProviderLogins
                     }
-                    Some(e) if e.multi_select => ConfigMenuAction::OpenModelSelector,
-                    _ => ConfigMenuAction::OpenSelectedPicker,
+                    Some(e) if e.multi_select => ConfigMenuMessage::OpenModelSelector,
+                    _ => ConfigMenuMessage::OpenSelectedPicker,
                 };
-                KeyEventResponse::action(action)
+                MessageResult::message(msg)
             }
-            _ => KeyEventResponse::consumed(),
+            _ => MessageResult::consumed(),
         }
     }
 }
@@ -325,10 +329,10 @@ impl ConfigMenu {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use agent_client_protocol::{
         SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     };
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn make_select_option(
         id: &str,
@@ -511,13 +515,16 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let outcome = menu.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
 
-        assert!(outcome.consumed);
+        assert!(outcome.handled);
 
         assert!(matches!(
-            outcome.action,
-            Some(ConfigMenuAction::OpenSelectedPicker)
+            outcome.messages.as_slice(),
+            [ConfigMenuMessage::OpenSelectedPicker]
         ));
     }
 
@@ -526,11 +533,17 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let outcome = menu.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
 
-        assert!(outcome.consumed);
+        assert!(outcome.handled);
 
-        assert!(matches!(outcome.action, Some(ConfigMenuAction::CloseAll)));
+        assert!(matches!(
+            outcome.messages.as_slice(),
+            [ConfigMenuMessage::CloseAll]
+        ));
     }
 
     #[test]
@@ -556,10 +569,13 @@ mod tests {
             .meta(meta.into_meta());
         let mut menu = ConfigMenu::from_config_options(&[opt]);
 
-        let outcome = menu.on_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let outcome = menu.on_event(UiEvent::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
         assert!(matches!(
-            outcome.action,
-            Some(ConfigMenuAction::OpenModelSelector)
+            outcome.messages.as_slice(),
+            [ConfigMenuMessage::OpenModelSelector]
         ));
     }
 

@@ -1,16 +1,18 @@
-use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPickerAction};
-use crate::components::file_picker::{FileMatch, FilePicker, FilePickerAction};
+use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPickerMessage};
+use crate::components::file_picker::{FilePicker, FilePickerMessage};
 use crate::components::input_prompt::InputPrompt;
-use crate::components::text_input::{SelectedFileMention, TextInput, TextInputAction};
+use crate::components::text_input::{SelectedFileMention, TextInput, TextInputMessage};
 use crate::keybindings::Keybindings;
-use crate::tui::{Component, Cursor, InteractiveComponent, KeyEventResponse, Line, RenderContext};
-use crossterm::event::{KeyCode, KeyEvent};
+use crate::tui::KeyCode;
+use crate::tui::{
+    Component, Cursor, InteractiveComponent, Line, MessageResult, RenderContext, UiEvent,
+};
 use std::collections::HashSet;
 
 use super::app::PromptAttachment;
 
 #[derive(Debug)]
-pub enum PromptComposerAction {
+pub enum PromptComposerMessage {
     SubmitRequested {
         user_input: String,
         attachments: Vec<PromptAttachment>,
@@ -45,10 +47,10 @@ impl PromptComposer {
         self.available_commands = commands;
     }
 
-    pub fn on_paste(&mut self, text: &str) -> bool {
+    pub fn on_paste(&mut self, text: &str) -> MessageResult<PromptComposerMessage> {
         self.close_all();
         self.text_input.insert_paste(text);
-        true
+        MessageResult::render()
     }
 
     #[allow(dead_code)]
@@ -117,126 +119,122 @@ impl PromptComposer {
         &self.available_commands
     }
 
-    pub(crate) fn open_file_picker_with_matches(&mut self, matches: Vec<FileMatch>) {
-        self.file_picker = Some(FilePicker::from_matches(matches));
-    }
-
     fn handle_file_picker_outcome(
         &mut self,
-        outcome: &KeyEventResponse<FilePickerAction>,
-    ) -> KeyEventResponse<PromptComposerAction> {
-        match outcome.action {
-            Some(FilePickerAction::Close) => {
-                self.file_picker = None;
-            }
-            Some(FilePickerAction::CloseAndPopChar) => {
-                self.text_input.delete_char_before_cursor();
-                self.file_picker = None;
-            }
-            Some(FilePickerAction::CloseWithChar(c)) => {
-                self.text_input.insert_char_at_cursor(c);
-                self.file_picker = None;
-            }
-            Some(FilePickerAction::ConfirmSelection) => {
-                let selected = self
-                    .file_picker
-                    .take()
-                    .and_then(|picker| picker.selected().cloned());
-                if let Some(selected) = selected {
-                    self.text_input
-                        .apply_file_selection(selected.path, selected.display_name);
+        outcome: MessageResult<FilePickerMessage>,
+    ) -> MessageResult<PromptComposerMessage> {
+        if let Some(msg) = outcome.messages.into_iter().next() {
+            match msg {
+                FilePickerMessage::Close => {
+                    self.file_picker = None;
+                }
+                FilePickerMessage::CloseAndPopChar => {
+                    self.text_input.delete_char_before_cursor();
+                    self.file_picker = None;
+                }
+                FilePickerMessage::CloseWithChar(c) => {
+                    self.text_input.insert_char_at_cursor(c);
+                    self.file_picker = None;
+                }
+                FilePickerMessage::ConfirmSelection => {
+                    let selected = self
+                        .file_picker
+                        .take()
+                        .and_then(|picker| picker.selected().cloned());
+                    if let Some(selected) = selected {
+                        self.text_input
+                            .apply_file_selection(selected.path, selected.display_name);
+                    }
+                }
+                FilePickerMessage::CharTyped(c) => {
+                    self.text_input.insert_char_at_cursor(c);
+                }
+                FilePickerMessage::PopChar => {
+                    self.text_input.delete_char_before_cursor();
                 }
             }
-            Some(FilePickerAction::CharTyped(c)) => {
-                self.text_input.insert_char_at_cursor(c);
-            }
-            Some(FilePickerAction::PopChar) => {
-                self.text_input.delete_char_before_cursor();
-            }
-            None => {}
         }
 
-        KeyEventResponse {
-            consumed: outcome.consumed,
-            action: None,
-        }
+        MessageResult::consumed().with_render()
     }
 
     fn handle_command_picker_outcome(
         &mut self,
-        outcome: &KeyEventResponse<CommandPickerAction>,
-    ) -> KeyEventResponse<PromptComposerAction> {
-        match outcome.action {
-            Some(CommandPickerAction::Close) => {
-                self.command_picker = None;
+        outcome: MessageResult<CommandPickerMessage>,
+    ) -> MessageResult<PromptComposerMessage> {
+        if let Some(msg) = outcome.messages.into_iter().next() {
+            match msg {
+                CommandPickerMessage::Close => {
+                    self.command_picker = None;
+                }
+                CommandPickerMessage::CloseAndPopChar => {
+                    self.text_input.delete_char_before_cursor();
+                    self.command_picker = None;
+                }
+                CommandPickerMessage::CloseWithChar(c) => {
+                    self.text_input.insert_char_at_cursor(c);
+                    self.command_picker = None;
+                }
+                CommandPickerMessage::CommandChosen(cmd) => {
+                    self.command_picker = None;
+                    return self.apply_command(&cmd);
+                }
+                CommandPickerMessage::CharTyped(c) => {
+                    self.text_input.insert_char_at_cursor(c);
+                }
+                CommandPickerMessage::PopChar => {
+                    self.text_input.delete_char_before_cursor();
+                }
             }
-            Some(CommandPickerAction::CloseAndPopChar) => {
-                self.text_input.delete_char_before_cursor();
-                self.command_picker = None;
-            }
-            Some(CommandPickerAction::CloseWithChar(c)) => {
-                self.text_input.insert_char_at_cursor(c);
-                self.command_picker = None;
-            }
-            Some(CommandPickerAction::CommandChosen(ref cmd)) => {
-                self.command_picker = None;
-                return self.apply_command(cmd);
-            }
-            Some(CommandPickerAction::CharTyped(c)) => {
-                self.text_input.insert_char_at_cursor(c);
-            }
-            Some(CommandPickerAction::PopChar) => {
-                self.text_input.delete_char_before_cursor();
-            }
-            None => {}
         }
 
-        KeyEventResponse {
-            consumed: outcome.consumed,
-            action: None,
-        }
+        MessageResult::consumed().with_render()
     }
 
     fn handle_text_input_outcome(
         &mut self,
-        outcome: &KeyEventResponse<TextInputAction>,
-    ) -> KeyEventResponse<PromptComposerAction> {
-        match outcome.action {
-            Some(TextInputAction::Submit) => self.prepare_submit(),
-            Some(TextInputAction::OpenCommandPicker) => {
-                let mut commands = builtin_commands();
-                commands.extend(self.available_commands.clone());
-                self.command_picker = Some(CommandPicker::new(commands));
-                KeyEventResponse::consumed()
-            }
-            Some(TextInputAction::OpenFilePicker) => {
-                self.file_picker = Some(FilePicker::new());
-                KeyEventResponse::consumed()
-            }
-            None => KeyEventResponse {
-                consumed: outcome.consumed,
-                action: None,
-            },
+        outcome: MessageResult<TextInputMessage>,
+    ) -> MessageResult<PromptComposerMessage> {
+        if let Some(msg) = outcome.messages.into_iter().next() {
+            return match msg {
+                TextInputMessage::Submit => self.prepare_submit(),
+                TextInputMessage::OpenCommandPicker => {
+                    let mut commands = builtin_commands();
+                    commands.extend(self.available_commands.clone());
+                    self.command_picker = Some(CommandPicker::new(commands));
+                    MessageResult::consumed().with_render()
+                }
+                TextInputMessage::OpenFilePicker => {
+                    self.file_picker = Some(FilePicker::new());
+                    MessageResult::consumed().with_render()
+                }
+            };
         }
+
+        if outcome.handled {
+            return MessageResult::consumed().with_render();
+        }
+
+        MessageResult::ignored()
     }
 
-    fn apply_command(&mut self, cmd: &CommandEntry) -> KeyEventResponse<PromptComposerAction> {
+    fn apply_command(&mut self, cmd: &CommandEntry) -> MessageResult<PromptComposerMessage> {
         if cmd.builtin && cmd.name == "config" {
             self.text_input.clear();
             self.close_all();
-            KeyEventResponse::action(PromptComposerAction::OpenConfig)
+            MessageResult::message(PromptComposerMessage::OpenConfig)
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
-            KeyEventResponse::consumed()
+            MessageResult::consumed().with_render()
         } else {
             self.text_input.set_input(format!("/{}", cmd.name));
             self.prepare_submit()
         }
     }
 
-    fn prepare_submit(&mut self) -> KeyEventResponse<PromptComposerAction> {
+    fn prepare_submit(&mut self) -> MessageResult<PromptComposerMessage> {
         if self.text_input.buffer().trim().is_empty() {
-            return KeyEventResponse::consumed();
+            return MessageResult::consumed();
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
@@ -244,7 +242,7 @@ impl PromptComposer {
         self.text_input.clear();
         self.close_all();
 
-        KeyEventResponse::action(PromptComposerAction::SubmitRequested {
+        MessageResult::message(PromptComposerMessage::SubmitRequested {
             user_input,
             attachments,
         })
@@ -252,30 +250,36 @@ impl PromptComposer {
 }
 
 impl InteractiveComponent for PromptComposer {
-    type Action = PromptComposerAction;
+    type Message = PromptComposerMessage;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
-        if let Some(ref mut picker) = self.file_picker {
-            let outcome = picker.on_key_event(key_event);
-            if outcome.consumed {
-                return self.handle_file_picker_outcome(&outcome);
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+        match event {
+            UiEvent::Key(key_event) => {
+                if let Some(ref mut picker) = self.file_picker {
+                    let outcome = picker.on_event(UiEvent::Key(key_event));
+                    if outcome.handled {
+                        return self.handle_file_picker_outcome(outcome);
+                    }
+
+                    if matches!(
+                        key_event.code,
+                        KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
+                    ) {
+                        return MessageResult::consumed();
+                    }
+                }
+
+                if let Some(ref mut picker) = self.command_picker {
+                    let outcome = picker.on_event(UiEvent::Key(key_event));
+                    return self.handle_command_picker_outcome(outcome);
+                }
+
+                let outcome = self.text_input.on_event(UiEvent::Key(key_event));
+                self.handle_text_input_outcome(outcome)
             }
-
-            if matches!(
-                key_event.code,
-                KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
-            ) {
-                return KeyEventResponse::consumed();
-            }
+            UiEvent::Paste(text) => self.on_paste(&text),
+            UiEvent::Tick(_) => MessageResult::ignored(),
         }
-
-        if let Some(ref mut picker) = self.command_picker {
-            let outcome = picker.on_key_event(key_event);
-            return self.handle_command_picker_outcome(&outcome);
-        }
-
-        let outcome = self.text_input.on_key_event(key_event);
-        self.handle_text_input_outcome(&outcome)
     }
 }
 
@@ -329,7 +333,7 @@ fn builtin_commands() -> Vec<CommandEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyEvent, KeyModifiers};
+    use crate::tui::{KeyEvent, KeyModifiers};
     use std::path::PathBuf;
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -340,14 +344,14 @@ mod tests {
     fn builtin_config_command_emits_open_config() {
         let mut composer = PromptComposer::default();
 
-        composer.on_key_event(key(KeyCode::Char('/')));
+        composer.on_event(UiEvent::Key(key(KeyCode::Char('/'))));
 
         assert!(composer.has_command_picker());
 
-        let outcome = composer.on_key_event(key(KeyCode::Enter));
+        let outcome = composer.on_event(UiEvent::Key(key(KeyCode::Enter)));
         assert!(matches!(
-            outcome.action,
-            Some(PromptComposerAction::OpenConfig)
+            outcome.messages.as_slice(),
+            [PromptComposerMessage::OpenConfig]
         ));
         assert_eq!(composer.buffer(), "");
         assert!(!composer.has_active_picker());
@@ -364,13 +368,13 @@ mod tests {
             builtin: false,
         }]);
 
-        composer.on_key_event(key(KeyCode::Char('/')));
-        composer.on_key_event(key(KeyCode::Char('s')));
+        composer.on_event(UiEvent::Key(key(KeyCode::Char('/'))));
+        composer.on_event(UiEvent::Key(key(KeyCode::Char('s'))));
 
-        let outcome = composer.on_key_event(key(KeyCode::Enter));
+        let outcome = composer.on_event(UiEvent::Key(key(KeyCode::Enter)));
         assert!(matches!(
-            outcome.action,
-            Some(PromptComposerAction::SubmitRequested { ref user_input, .. })
+            outcome.messages.as_slice(),
+            [PromptComposerMessage::SubmitRequested { user_input, .. }]
             if user_input == "/status"
         ));
         assert_eq!(composer.buffer(), "");
@@ -387,11 +391,11 @@ mod tests {
             builtin: false,
         }]);
 
-        composer.on_key_event(key(KeyCode::Char('/')));
-        composer.on_key_event(key(KeyCode::Char('s')));
-        let outcome = composer.on_key_event(key(KeyCode::Enter));
+        composer.on_event(UiEvent::Key(key(KeyCode::Char('/'))));
+        composer.on_event(UiEvent::Key(key(KeyCode::Char('s'))));
+        let outcome = composer.on_event(UiEvent::Key(key(KeyCode::Enter)));
 
-        assert!(outcome.action.is_none());
+        assert!(outcome.messages.is_empty());
 
         assert_eq!(composer.buffer(), "/search ");
         assert!(!composer.has_active_picker());
@@ -407,7 +411,9 @@ mod tests {
         composer.set_input("inspect @keep.rs now".to_string());
 
         let outcome = composer.prepare_submit();
-        let Some(PromptComposerAction::SubmitRequested { attachments, .. }) = outcome.action else {
+        let [PromptComposerMessage::SubmitRequested { attachments, .. }] =
+            outcome.messages.as_slice()
+        else {
             panic!("expected submit request");
         };
 
@@ -417,22 +423,35 @@ mod tests {
     }
 
     #[test]
-    fn on_paste_closes_picker_and_inserts_text() {
+    fn paste_event_closes_picker_and_inserts_text() {
         let mut composer = PromptComposer::default();
-        composer.on_key_event(key(KeyCode::Char('@')));
+        composer.on_event(UiEvent::Key(key(KeyCode::Char('@'))));
         assert!(composer.has_file_picker());
 
-        assert!(composer.on_paste("pasted text"));
+        let outcome = composer.on_event(UiEvent::Paste("pasted text".to_string()));
+        assert!(outcome.handled);
+        assert!(outcome.render);
         assert!(!composer.has_active_picker());
         assert_eq!(composer.buffer(), "@pasted text");
     }
 
     #[test]
+    fn tick_event_is_ignored() {
+        let mut composer = PromptComposer::default();
+
+        let outcome = composer.on_event(UiEvent::Tick(std::time::Instant::now()));
+
+        assert!(!outcome.handled);
+        assert!(!outcome.render);
+        assert!(outcome.messages.is_empty());
+    }
+
+    #[test]
     fn file_picker_cursor_tracks_query_length() {
         let mut composer = PromptComposer::default();
-        composer.on_key_event(key(KeyCode::Char('@')));
-        composer.on_key_event(key(KeyCode::Char('f')));
-        composer.on_key_event(key(KeyCode::Char('o')));
+        composer.on_event(UiEvent::Key(key(KeyCode::Char('@'))));
+        composer.on_event(UiEvent::Key(key(KeyCode::Char('f'))));
+        composer.on_event(UiEvent::Key(key(KeyCode::Char('o'))));
 
         assert_eq!(composer.cursor_index(), 3);
     }

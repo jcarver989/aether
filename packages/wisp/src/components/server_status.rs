@@ -1,14 +1,14 @@
 use crate::components::wrap_selection;
-use crate::tui::{Component, InteractiveComponent, KeyEventResponse, Line, RenderContext};
+use crate::tui::KeyCode;
+use crate::tui::{Component, InteractiveComponent, Line, MessageResult, RenderContext, UiEvent};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
-use crossterm::event::{KeyCode, KeyEvent};
 
 pub struct ServerStatusOverlay {
     pub entries: Vec<McpServerStatusEntry>,
     pub selected_index: usize,
 }
 
-pub enum ServerStatusAction {
+pub enum ServerStatusMessage {
     Close,
     Authenticate(String),
 }
@@ -72,32 +72,35 @@ impl Component for ServerStatusOverlay {
 }
 
 impl InteractiveComponent for ServerStatusOverlay {
-    type Action = ServerStatusAction;
+    type Message = ServerStatusMessage;
 
-    fn on_key_event(&mut self, key_event: KeyEvent) -> KeyEventResponse<Self::Action> {
-        match key_event.code {
-            KeyCode::Esc => KeyEventResponse::action(ServerStatusAction::Close),
-            KeyCode::Up => {
-                self.move_selection_up();
-                KeyEventResponse::consumed()
-            }
-            KeyCode::Down => {
-                self.move_selection_down();
-                KeyEventResponse::consumed()
-            }
-            KeyCode::Enter => {
-                if let Some(entry) = self
-                    .entries
-                    .get(self.selected_index)
-                    .filter(|e| matches!(e.status, McpServerStatus::NeedsOAuth))
-                {
-                    return KeyEventResponse::action(ServerStatusAction::Authenticate(
-                        entry.name.clone(),
-                    ));
+    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+        match event {
+            UiEvent::Key(key_event) => match key_event.code {
+                KeyCode::Esc => MessageResult::message(ServerStatusMessage::Close),
+                KeyCode::Up => {
+                    self.move_selection_up();
+                    MessageResult::consumed().with_render()
                 }
-                KeyEventResponse::consumed()
-            }
-            _ => KeyEventResponse::consumed(),
+                KeyCode::Down => {
+                    self.move_selection_down();
+                    MessageResult::consumed().with_render()
+                }
+                KeyCode::Enter => {
+                    if let Some(entry) = self
+                        .entries
+                        .get(self.selected_index)
+                        .filter(|e| matches!(e.status, McpServerStatus::NeedsOAuth))
+                    {
+                        return MessageResult::message(ServerStatusMessage::Authenticate(
+                            entry.name.clone(),
+                        ));
+                    }
+                    MessageResult::consumed()
+                }
+                _ => MessageResult::consumed(),
+            },
+            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
         }
     }
 }
@@ -216,13 +219,13 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         overlay.selected_index = 1; // linear - NeedsOAuth
 
-        let outcome = overlay.on_key_event(KeyEvent::new(
+        let outcome = overlay.on_event(UiEvent::Key(crate::tui::KeyEvent::new(
             KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        match outcome.action {
-            Some(ServerStatusAction::Authenticate(name)) => assert_eq!(name, "linear"),
-            _ => panic!("Expected Authenticate action"),
+            crate::tui::KeyModifiers::NONE,
+        )));
+        match outcome.messages.as_slice() {
+            [ServerStatusMessage::Authenticate(name)] => assert_eq!(name, "linear"),
+            _ => panic!("Expected Authenticate message"),
         }
     }
 
@@ -231,21 +234,24 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         overlay.selected_index = 0; // github - Connected
 
-        let outcome = overlay.on_key_event(KeyEvent::new(
+        let outcome = overlay.on_event(UiEvent::Key(crate::tui::KeyEvent::new(
             KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        assert!(outcome.action.is_none());
+            crate::tui::KeyModifiers::NONE,
+        )));
+        assert!(outcome.messages.is_empty());
     }
 
     #[test]
     fn esc_closes_overlay() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
-        let outcome = overlay.on_key_event(KeyEvent::new(
+        let outcome = overlay.on_event(UiEvent::Key(crate::tui::KeyEvent::new(
             KeyCode::Esc,
-            crossterm::event::KeyModifiers::NONE,
+            crate::tui::KeyModifiers::NONE,
+        )));
+        assert!(matches!(
+            outcome.messages.as_slice(),
+            [ServerStatusMessage::Close]
         ));
-        assert!(matches!(outcome.action, Some(ServerStatusAction::Close)));
     }
 
     #[test]
