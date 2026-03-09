@@ -33,10 +33,12 @@ use tokio::sync::{Notify, RwLock, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 /// After the diagnostics version first advances, wait this long with no new
-/// `publishDiagnostics` before considering the result settled.  Rust-analyzer
+/// `publishDiagnostics` before considering the result settled. Rust-analyzer
 /// often sends a clearing (empty) publish immediately, followed by the real
-/// diagnostics 100–500 ms later.
-const DIAGNOSTICS_SETTLE_DURATION: Duration = Duration::from_millis(200);
+/// diagnostics a few hundred milliseconds later. Use a comfortably larger
+/// quiet period than the observed 100–500 ms gap so all-files diagnostics
+/// queries don't race and return stale empty results.
+const DIAGNOSTICS_SETTLE_DURATION: Duration = Duration::from_millis(600);
 
 /// Key for identifying an LSP instance
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -399,9 +401,10 @@ impl LspHandle {
     ///
     /// **Phase 1** — wait for the version to advance (existing behaviour).
     /// **Phase 2** — settle: keep waiting until no new `publishDiagnostics`
-    /// arrive for 200 ms, resetting the timer on each new publish.  This avoids
-    /// returning on rust-analyzer's initial clearing publish (empty diagnostics)
-    /// before the real diagnostics arrive ~200-500 ms later.
+    /// arrive for [`DIAGNOSTICS_SETTLE_DURATION`], resetting the timer on each
+    /// new publish. This avoids returning on rust-analyzer's initial clearing
+    /// publish (empty diagnostics) before the real diagnostics arrive a few
+    /// hundred milliseconds later.
     ///
     /// Both phases are bounded by the overall `timeout`.
     pub async fn wait_for_fresh_diagnostics(&self, version_before: u64, timeout: Duration) {
@@ -1102,6 +1105,35 @@ mod tests {
             diagnostics_version: Arc::new(AtomicU64::new(0)),
             _task: tokio::spawn(async {}),
         }
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_fresh_diagnostics_waits_for_late_followup_publish() {
+        let handle = test_handle_with_known_uris(&[]);
+        let diagnostics_notify = Arc::clone(&handle.diagnostics_notify);
+        let diagnostics_version = Arc::clone(&handle.diagnostics_version);
+
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            diagnostics_version.fetch_add(1, Ordering::Relaxed);
+            diagnostics_notify.notify_waiters();
+
+            // Simulate rust-analyzer's common pattern: an initial clearing publish,
+            // then the real diagnostics a few hundred milliseconds later.
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            diagnostics_version.fetch_add(1, Ordering::Relaxed);
+            diagnostics_notify.notify_waiters();
+        });
+
+        handle
+            .wait_for_fresh_diagnostics(0, Duration::from_secs(2))
+            .await;
+
+        assert_eq!(
+            handle.diagnostics_version.load(Ordering::Relaxed),
+            2,
+            "wait_for_fresh_diagnostics returned before the late follow-up publish arrived"
+        );
     }
 
     #[tokio::test]
