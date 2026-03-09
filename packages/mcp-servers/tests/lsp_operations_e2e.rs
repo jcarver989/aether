@@ -154,6 +154,100 @@ fn main() {
     );
 }
 
+/// Test: lsp_rename applies workspace edits for a Rust symbol
+#[tokio::test]
+async fn test_lsp_rename_applies_workspace_edits() {
+    let project = CargoProject::new("rename_test").expect("Failed to create project");
+    project
+        .add_file(
+            "src/lib.rs",
+            r#"pub fn greet() -> &'static str {
+    "hello"
+}
+"#,
+        )
+        .expect("Failed to add lib.rs");
+    project
+        .add_file(
+            "src/main.rs",
+            r#"fn main() {
+    let a = rename_test::greet();
+    let b = rename_test::greet();
+    println!("{} {}", a, b);
+}
+"#,
+        )
+        .expect("Failed to add main.rs");
+
+    let lib_rs = project.file_path_str("src/lib.rs");
+    let main_rs = project.file_path_str("src/main.rs");
+    let (_server_handle, client) = connect_lsp(&project).await;
+
+    let result = poll_lsp_tool(
+        &client,
+        "lsp_rename",
+        serde_json::json!({
+            "file_path": lib_rs,
+            "symbol": "greet",
+            "new_name": "say_hello",
+            "line": 1
+        }),
+        |r| {
+            let lib_content = std::fs::read_to_string(&lib_rs).ok();
+            let main_content = std::fs::read_to_string(&main_rs).ok();
+
+            r.get("success").and_then(|v| v.as_bool()) == Some(true)
+                && r.get("filesAffected").and_then(|v| v.as_u64()).is_some_and(|n| n >= 2)
+                && r.get("totalEdits").and_then(|v| v.as_u64()).is_some_and(|n| n >= 3)
+                && lib_content
+                    .as_deref()
+                    .is_some_and(|content| content.contains("say_hello") && !content.contains("greet"))
+                && main_content
+                    .as_deref()
+                    .is_some_and(|content| content.contains("say_hello") && !content.contains("greet"))
+        },
+    )
+    .await;
+
+    assert_eq!(result["success"].as_bool(), Some(true));
+    assert_eq!(result["oldName"].as_str(), Some("greet"));
+    assert_eq!(result["newName"].as_str(), Some("say_hello"));
+
+    let files_affected = result["filesAffected"].as_u64().unwrap();
+    let total_edits = result["totalEdits"].as_u64().unwrap();
+    assert!(files_affected >= 2, "expected at least 2 files, got {files_affected}");
+    assert!(total_edits >= 3, "expected at least 3 edits, got {total_edits}");
+
+    let changes = result["changes"].as_array().unwrap();
+    let changed_paths: Vec<&str> = changes
+        .iter()
+        .filter_map(|entry| entry.get("filePath").and_then(|v| v.as_str()))
+        .collect();
+
+    assert!(
+        changed_paths.iter().any(|path| path.ends_with("src/lib.rs")),
+        "expected lib.rs in changes, got {changed_paths:?}"
+    );
+    assert!(
+        changed_paths.iter().any(|path| path.ends_with("src/main.rs")),
+        "expected main.rs in changes, got {changed_paths:?}"
+    );
+
+    let lib_content = std::fs::read_to_string(project.root().join("src/lib.rs"))
+        .expect("failed to read lib.rs after rename");
+    let main_content = std::fs::read_to_string(project.root().join("src/main.rs"))
+        .expect("failed to read main.rs after rename");
+
+    assert!(
+        lib_content.contains("say_hello") && !lib_content.contains("greet"),
+        "expected lib.rs to be renamed, got: {lib_content}"
+    );
+    assert!(
+        main_content.contains("say_hello") && !main_content.contains("greet"),
+        "expected main.rs to be renamed, got: {main_content}"
+    );
+}
+
 /// Test: document symbols returns structs and functions
 #[tokio::test]
 async fn test_document_symbols() {
