@@ -3,9 +3,9 @@ use std::borrow::Cow;
 use unicode_width::UnicodeWidthStr;
 
 use crate::line::Line;
+use crate::rendering::render_context::RenderContext;
 use crate::span::Span;
 use crate::style::Style;
-use crate::syntax_highlighting::SyntaxHighlighter;
 use crate::theme::Theme;
 
 /// A single rendered cell in a table row.
@@ -234,18 +234,14 @@ fn line_display_width(line: &Line) -> usize {
         .sum()
 }
 
-pub fn render_markdown(
-    text: &str,
-    theme: &Theme,
-    highlighter: &mut SyntaxHighlighter,
-) -> Vec<Line> {
-    let renderer = MarkdownRenderer::new(theme, highlighter);
+pub fn render_markdown(text: &str, context: &RenderContext) -> Vec<Line> {
+    let renderer = MarkdownRenderer::new(context);
     renderer.render(text)
 }
 
 struct MarkdownRenderer<'a> {
+    context: &'a RenderContext,
     theme: &'a Theme,
-    highlighter: &'a mut SyntaxHighlighter,
     lines: Vec<Line>,
     current_line: Line,
     style_stack: Vec<Style>,
@@ -266,10 +262,10 @@ struct MarkdownRenderer<'a> {
 }
 
 impl<'a> MarkdownRenderer<'a> {
-    fn new(theme: &'a Theme, highlighter: &'a mut SyntaxHighlighter) -> Self {
+    fn new(context: &'a RenderContext) -> Self {
         Self {
-            theme,
-            highlighter,
+            context,
+            theme: &context.theme,
             lines: Vec::new(),
             current_line: Line::default(),
             style_stack: Vec::new(),
@@ -427,7 +423,10 @@ impl<'a> MarkdownRenderer<'a> {
                 self.in_code_block = false;
                 let code = std::mem::take(&mut self.code_buffer);
                 let lang = std::mem::take(&mut self.code_lang);
-                let code_lines = self.highlighter.highlight(&code, &lang, self.theme);
+                let code_lines = self
+                    .context
+                    .highlighter()
+                    .highlight(&code, &lang, self.theme);
                 self.lines.extend(code_lines);
                 self.lines.push(Line::default());
             }
@@ -601,14 +600,20 @@ mod tests {
         Theme::default()
     }
 
+    fn test_context() -> RenderContext {
+        RenderContext::new((80, 24))
+    }
+
+    fn test_context_with_theme(theme: Theme) -> RenderContext {
+        RenderContext::new_with_theme((80, 24), theme)
+    }
+
     fn render(md: &str) -> Vec<Line> {
-        let mut highlighter = SyntaxHighlighter::new();
-        render_markdown(md, &test_theme(), &mut highlighter)
+        render_markdown(md, &test_context())
     }
 
     fn render_with_theme(md: &str, theme: &Theme) -> Vec<Line> {
-        let mut highlighter = SyntaxHighlighter::new();
-        render_markdown(md, theme, &mut highlighter)
+        render_markdown(md, &test_context_with_theme(theme.clone()))
     }
 
     #[test]
@@ -804,20 +809,20 @@ mod tests {
 
     #[test]
     fn highlight_cache_returns_cached_code_block() {
-        let mut highlighter = SyntaxHighlighter::new();
+        let ctx = test_context();
         let md = "```rust\nfn main() {}\n```";
-        let first = render_markdown(md, &test_theme(), &mut highlighter);
-        let second = render_markdown(md, &test_theme(), &mut highlighter);
+        let first = render_markdown(md, &ctx);
+        let second = render_markdown(md, &ctx);
         assert_eq!(first, second);
     }
 
     #[test]
     fn highlight_cache_not_affected_by_different_code_block() {
-        let mut highlighter = SyntaxHighlighter::new();
+        let ctx = test_context();
         let md1 = "```rust\nfn a() {}\n```";
         let md2 = "```rust\nfn b() {}\n```";
-        let lines1 = render_markdown(md1, &test_theme(), &mut highlighter);
-        let lines2 = render_markdown(md2, &test_theme(), &mut highlighter);
+        let lines1 = render_markdown(md1, &ctx);
+        let lines2 = render_markdown(md2, &ctx);
         // Produce different output
         assert_ne!(
             lines1.iter().map(Line::plain_text).collect::<String>(),

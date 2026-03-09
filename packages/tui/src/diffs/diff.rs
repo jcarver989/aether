@@ -3,9 +3,9 @@ use crossterm::style::Color;
 use crate::{DiffPreview, DiffTag};
 
 use crate::line::Line;
+use crate::rendering::render_context::RenderContext;
 use crate::span::Span;
 use crate::style::Style;
-use crate::syntax_highlighting::SyntaxHighlighter;
 use crate::theme::Theme;
 
 const MAX_DIFF_LINES: usize = 20;
@@ -21,14 +21,13 @@ struct DiffStyle<'a> {
 /// Context lines are shown with a `"    "` prefix and code background.
 /// Removed lines are shown with a `"  - "` prefix and red-tinted background.
 /// Added lines are shown with a `"  + "` prefix and green-tinted background.
-pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
+pub fn highlight_diff(preview: &DiffPreview, context: &RenderContext) -> Vec<Line> {
+    let theme: &Theme = &context.theme;
     let total = preview.lines.len();
     let truncated = total > MAX_DIFF_LINES;
     let budget = if truncated { MAX_DIFF_LINES } else { total };
 
     let mut lines = Vec::with_capacity(budget + usize::from(truncated));
-
-    let mut highlighter = SyntaxHighlighter::new();
 
     let context_style = DiffStyle {
         prefix: "    ",
@@ -75,7 +74,9 @@ pub fn highlight_diff(preview: &DiffPreview, theme: &Theme) -> Vec<Line> {
         }
         line.push_span(Span::with_style(style.prefix, prefix_style));
 
-        let spans = highlighter.highlight(&diff_line.content, &preview.lang_hint, theme);
+        let spans = context
+            .highlighter()
+            .highlight(&diff_line.content, &preview.lang_hint, theme);
         if let Some(content) = spans.first() {
             for span in content.spans() {
                 let mut span_style = span.style();
@@ -107,6 +108,10 @@ mod tests {
     use super::*;
     use crate::DiffLine;
 
+    fn test_context() -> RenderContext {
+        RenderContext::new((80, 24))
+    }
+
     fn test_theme() -> Theme {
         Theme::default()
     }
@@ -125,7 +130,7 @@ mod tests {
             tag: DiffTag::Removed,
             content: "old line".to_string(),
         }]);
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().contains("- old line"));
     }
@@ -136,7 +141,7 @@ mod tests {
             tag: DiffTag::Added,
             content: "new line".to_string(),
         }]);
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().contains("+ new line"));
     }
@@ -147,7 +152,7 @@ mod tests {
             tag: DiffTag::Context,
             content: "unchanged".to_string(),
         }]);
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 1);
         let text = lines[0].plain_text();
         assert!(
@@ -178,7 +183,7 @@ mod tests {
                 content: "after".to_string(),
             },
         ]);
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 4);
         assert!(lines[0].plain_text().contains("before"));
         assert!(lines[1].plain_text().contains("- old"));
@@ -198,7 +203,7 @@ mod tests {
                 content: "new".to_string(),
             },
         ]);
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 2);
         assert!(lines[0].plain_text().contains("- old"));
         assert!(lines[1].plain_text().contains("+ new"));
@@ -217,7 +222,7 @@ mod tests {
             })
             .collect();
         let preview = make_preview(diff_lines);
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         // 20 content lines + 1 overflow line
         assert_eq!(lines.len(), MAX_DIFF_LINES + 1);
         let last = lines.last().unwrap().plain_text();
@@ -240,7 +245,7 @@ mod tests {
             })
             .collect();
         let preview = make_preview(diff_lines);
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 20);
         assert!(!lines.last().unwrap().plain_text().contains("more lines"));
     }
@@ -261,7 +266,7 @@ mod tests {
             lang_hint: "rs".to_string(),
             start_line: None,
         };
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 2);
         // With syntax highlighting, there should be multiple spans (not just 2: prefix + text)
         assert!(
@@ -278,7 +283,8 @@ mod tests {
             content: "old".to_string(),
         }]);
         let theme = test_theme();
-        let lines = highlight_diff(&preview, &theme);
+        let ctx = test_context();
+        let lines = highlight_diff(&preview, &ctx);
         let prefix_span = &lines[0].spans()[0];
         assert_eq!(prefix_span.style().bg, Some(theme.diff_removed_bg()));
         assert_eq!(prefix_span.style().fg, Some(theme.diff_removed_fg()));
@@ -291,7 +297,8 @@ mod tests {
             content: "new".to_string(),
         }]);
         let theme = test_theme();
-        let lines = highlight_diff(&preview, &theme);
+        let ctx = test_context();
+        let lines = highlight_diff(&preview, &ctx);
         let prefix_span = &lines[0].spans()[0];
         assert_eq!(prefix_span.style().bg, Some(theme.diff_added_bg()));
         assert_eq!(prefix_span.style().fg, Some(theme.diff_added_fg()));
@@ -303,8 +310,8 @@ mod tests {
             tag: DiffTag::Context,
             content: "same".to_string(),
         }]);
-        let theme = test_theme();
-        let lines = highlight_diff(&preview, &theme);
+        let ctx = test_context();
+        let lines = highlight_diff(&preview, &ctx);
         let prefix_span = &lines[0].spans()[0];
         assert_eq!(prefix_span.style().bg, None);
     }
@@ -312,7 +319,7 @@ mod tests {
     #[test]
     fn empty_diff_produces_no_lines() {
         let preview = make_preview(vec![]);
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         assert!(lines.is_empty());
     }
 
@@ -340,7 +347,7 @@ mod tests {
             lang_hint: String::new(),
             start_line: Some(10),
         };
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 4);
         assert!(
             lines[0].plain_text().contains("10"),
@@ -368,7 +375,7 @@ mod tests {
             tag: DiffTag::Removed,
             content: "old".to_string(),
         }]);
-        let lines = highlight_diff(&preview, &test_theme());
+        let lines = highlight_diff(&preview, &test_context());
         let text = lines[0].plain_text();
         // Without line numbers, the line should start with the prefix directly
         assert!(

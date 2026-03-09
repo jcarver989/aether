@@ -8,6 +8,9 @@ use super::terminal_screen::TerminalScreen;
 use crate::component::RootComponent;
 use crate::theme::Theme;
 
+#[cfg(feature = "syntax")]
+use crate::syntax_highlighting::SyntaxHighlighter;
+
 /// Pure TUI renderer that owns current render configuration.
 pub struct Renderer<T: Write> {
     terminal: TerminalScreen<T>,
@@ -15,6 +18,8 @@ pub struct Renderer<T: Write> {
     theme: Arc<Theme>,
     focused: bool,
     max_height: Option<usize>,
+    #[cfg(feature = "syntax")]
+    highlighter: Arc<SyntaxHighlighter>,
 }
 
 impl<T: Write> Renderer<T> {
@@ -25,6 +30,8 @@ impl<T: Write> Renderer<T> {
             theme: Arc::new(theme),
             focused: true,
             max_height: None,
+            #[cfg(feature = "syntax")]
+            highlighter: Arc::new(SyntaxHighlighter::new()),
         }
     }
 
@@ -52,6 +59,8 @@ impl<T: Write> Renderer<T> {
             theme: self.theme.clone(),
             focused: self.focused,
             max_height: self.max_height,
+            #[cfg(feature = "syntax")]
+            highlighter: self.highlighter.clone(),
         }
     }
 
