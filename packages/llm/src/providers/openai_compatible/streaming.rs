@@ -142,7 +142,7 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
 fn map_openai_compatible_finish_reason(reason: FinishReason) -> StopReason {
     match reason {
         FinishReason::Stop => StopReason::EndTurn,
-        FinishReason::Length => StopReason::Length,
+        FinishReason::Length | FinishReason::ModelContextWindowExceeded => StopReason::Length,
         FinishReason::ToolCalls => StopReason::ToolCalls,
         FinishReason::ContentFilter => StopReason::ContentFilter,
         FinishReason::FunctionCall => StopReason::FunctionCall,
@@ -246,6 +246,46 @@ mod tests {
             events.last(),
             Some(LlmResponse::Done {
                 stop_reason: Some(StopReason::ToolCalls)
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_process_compatible_stream_maps_context_window_exceeded_to_length() {
+        let response: ChatCompletionStreamResponse = serde_json::from_str(
+            r#"{
+                "id": "chunk_1",
+                "created": 1,
+                "model": "glm-5",
+                "choices": [{
+                    "index": 0,
+                    "finish_reason": "model_context_window_exceeded",
+                    "delta": {
+                        "role": "assistant",
+                        "content": ""
+                    }
+                }]
+            }"#,
+        )
+        .expect("response should deserialize");
+
+        let mut processed = Box::pin(process_compatible_stream(tokio_stream::iter(vec![Ok::<
+            ChatCompletionStreamResponse,
+            std::io::Error,
+        >(
+            response,
+        )])));
+
+        let mut events = Vec::new();
+        while let Some(event) = processed.next().await {
+            events.push(event.unwrap());
+        }
+
+        assert!(matches!(events[0], LlmResponse::Start { .. }));
+        assert!(matches!(
+            events.last(),
+            Some(LlmResponse::Done {
+                stop_reason: Some(StopReason::Length)
             })
         ));
     }

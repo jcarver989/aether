@@ -342,6 +342,52 @@ async fn test_auto_continue_triggers_on_length_stop_reason() -> Result<(), Box<d
 }
 
 #[tokio::test]
+async fn test_auto_continue_triggers_on_empty_length_stop_reason() -> Result<(), Box<dyn Error>> {
+    let llm_responses = [
+        vec![
+            LlmResponse::start("msg_1"),
+            LlmResponse::done_with_stop_reason(StopReason::Length),
+        ],
+        vec![
+            LlmResponse::start("msg_2"),
+            LlmResponse::text("Recovered after compaction"),
+            LlmResponse::done_with_stop_reason(StopReason::EndTurn),
+        ],
+    ];
+
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(vec![UserMessage::text("do something")])
+        .max_auto_continues(3)
+        .run()
+        .await?;
+
+    let auto_continue_count = messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
+        .count();
+    assert_eq!(
+        auto_continue_count, 1,
+        "Expected AutoContinue after an empty length stop, got {messages:?}"
+    );
+
+    assert!(
+        messages.iter().any(|m| matches!(
+            m,
+            AgentMessage::Text { chunk, .. } if chunk == "Recovered after compaction"
+        )),
+        "Expected follow-up response after empty length stop, got {messages:?}"
+    );
+
+    assert!(
+        matches!(messages.last(), Some(AgentMessage::Done)),
+        "Expected Done message"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_auto_continue_respects_max_limit() -> Result<(), Box<dyn Error>> {
     let tool_request = AddNumbersRequest::new(2, 3);
 

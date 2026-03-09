@@ -155,7 +155,7 @@ impl Agent {
         let has_content = !message_content.is_empty() || has_tool_calls;
 
         // Skip context update for empty responses (e.g., API errors mid-stream)
-        if !has_content {
+        if !has_content && !self.auto_continue.should_continue(stop_reason.as_ref()) {
             let _ = self.message_tx.send(AgentMessage::Done).await;
             return;
         }
@@ -529,14 +529,15 @@ impl Agent {
         let Some(context_limit) = self.token_tracker.context_limit() else {
             return;
         };
-        if self.compaction_config.is_none() {
+        let Some(config) = self.compaction_config.as_ref() else {
             return;
-        }
+        };
         let estimated = self.context.estimated_token_count();
-        let threshold = context_limit - context_limit / 10;
+        let threshold = (f64::from(context_limit) * config.threshold).ceil() as u32;
         if estimated >= threshold {
             tracing::info!(
-                "Pre-flight compaction triggered: estimated {estimated} tokens >= 90% of {context_limit} limit"
+                "Pre-flight compaction triggered: estimated {estimated} tokens >= {:.1}% of {context_limit} limit",
+                config.threshold * 100.0
             );
             if let CompactionOutcome::Failed(e) = self.compact_context().await {
                 tracing::warn!("Pre-flight compaction failed: {e}");
@@ -806,5 +807,58 @@ impl IterationState {
 
     fn is_complete(&self) -> bool {
         self.llm_done && self.pending_tool_ids.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use llm::testing::FakeLlmProvider;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn test_preflight_compaction_uses_configured_threshold() {
+        let llm = Arc::new(
+            FakeLlmProvider::with_single_response(vec![
+                LlmResponse::start("summary"),
+                LlmResponse::text("summary"),
+                LlmResponse::done(),
+            ])
+            .with_context_window(Some(100)),
+        );
+        let context = Context::new(
+            vec![ChatMessage::User {
+                content: "x".repeat(344),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+        let (user_tx, user_rx) = mpsc::channel(1);
+        let (message_tx, _message_rx) = mpsc::channel(8);
+        drop(user_tx);
+
+        let mut agent = Agent::new(
+            AgentConfig {
+                llm,
+                context,
+                mcp_command_tx: None,
+                tool_timeout: Duration::from_secs(1),
+                compaction_config: Some(CompactionConfig::with_threshold(0.85)),
+                auto_continue: AutoContinue::new(0),
+            },
+            user_rx,
+            message_tx,
+        );
+
+        agent.maybe_preflight_compact().await;
+
+        assert!(
+            matches!(
+                agent.context.messages().as_slice(),
+                [ChatMessage::Summary { content, .. }] if content == "summary"
+            ),
+            "expected context to be compacted, got {:?}",
+            agent.context.messages()
+        );
     }
 }
