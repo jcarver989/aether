@@ -1,4 +1,5 @@
 use acp_utils::notifications::{ContextClearedParams, ContextUsageParams, SubAgentProgressParams};
+use acp_utils::server::AcpActorHandle;
 use aether_core::events::{AgentMessage, SubAgentProgressPayload};
 use agent_client_protocol::{
     self as acp, Content, ContentBlock, ContentChunk, HttpHeader, McpServer, PlanEntry,
@@ -11,6 +12,8 @@ use mcp_utils::client::{McpServerConfig, ServerConfig};
 use mcp_utils::display_meta::{PlanMetaStatus, ToolResultMeta};
 use rmcp::model::Prompt as McpPrompt;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
+
+use aether_core::context::ext::{SessionEvent, UserEvent};
 
 /// Converts an MCP Prompt to an ACP `AvailableCommand`
 ///
@@ -123,16 +126,28 @@ pub fn map_agent_message_to_session_notification(
     session_id: SessionId,
     msg: &AgentMessage,
 ) -> Option<SessionNotification> {
+    map_agent_message_to_notification(session_id, msg, NotificationMode::Live)
+}
+
+#[derive(Clone, Copy)]
+enum NotificationMode {
+    Live,
+    Replay,
+}
+
+fn map_agent_message_to_notification(
+    session_id: SessionId,
+    msg: &AgentMessage,
+    mode: NotificationMode,
+) -> Option<SessionNotification> {
     match msg {
         AgentMessage::Text {
             chunk, is_complete, ..
-        } => map_text_to_notification(session_id, chunk, *is_complete),
+        } => map_text_to_notification(session_id, chunk, *is_complete, mode),
 
         AgentMessage::Thought {
-            chunk,
-            is_complete: false,
-            ..
-        } => Some(map_thought_to_notification(session_id, chunk)),
+            chunk, is_complete, ..
+        } => map_thought_to_notification(session_id, chunk, *is_complete, mode),
 
         AgentMessage::ToolCall { request, .. } => {
             Some(map_tool_call_to_notification(session_id, request))
@@ -172,10 +187,7 @@ pub fn map_agent_message_to_session_notification(
             ))),
         )),
 
-        AgentMessage::Thought {
-            is_complete: true, ..
-        }
-        | AgentMessage::ContextUsageUpdate { .. }
+        AgentMessage::ContextUsageUpdate { .. }
         | AgentMessage::ContextCleared
         | AgentMessage::Cancelled { .. }
         | AgentMessage::Done
@@ -256,11 +268,14 @@ fn map_text_to_notification(
     session_id: SessionId,
     chunk: &str,
     is_complete: bool,
+    mode: NotificationMode,
 ) -> Option<SessionNotification> {
-    // Skip the final completion message to avoid sending duplicate content.
-    // The client has already received all the chunks during streaming.
-    if is_complete {
-        return None;
+    match mode {
+        // Skip the final completion message to avoid sending duplicate content.
+        // The client has already received all the chunks during streaming.
+        NotificationMode::Live if is_complete => return None,
+        NotificationMode::Replay if !is_complete => return None,
+        NotificationMode::Live | NotificationMode::Replay => {}
     }
 
     Some(acp::SessionNotification::new(
@@ -271,13 +286,24 @@ fn map_text_to_notification(
     ))
 }
 
-fn map_thought_to_notification(session_id: SessionId, chunk: &str) -> SessionNotification {
-    acp::SessionNotification::new(
+fn map_thought_to_notification(
+    session_id: SessionId,
+    chunk: &str,
+    is_complete: bool,
+    mode: NotificationMode,
+) -> Option<SessionNotification> {
+    match mode {
+        NotificationMode::Live if is_complete => return None,
+        NotificationMode::Replay if !is_complete => return None,
+        NotificationMode::Live | NotificationMode::Replay => {}
+    }
+
+    Some(acp::SessionNotification::new(
         session_id,
         SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
             chunk.to_owned(),
         )))),
-    )
+    ))
 }
 
 fn map_tool_call_to_notification(
@@ -394,6 +420,36 @@ fn map_tool_progress_to_notification(
     ))
 }
 
+/// Replay session events to the client as ACP notifications.
+pub async fn replay_to_client(
+    events: &[SessionEvent],
+    actor_handle: &AcpActorHandle,
+    session_id: &SessionId,
+) {
+    for event in events {
+        let notification = match event {
+            SessionEvent::User(UserEvent::Message { content }) => Some(SessionNotification::new(
+                session_id.clone(),
+                SessionUpdate::UserMessageChunk(ContentChunk::new(ContentBlock::Text(
+                    TextContent::new(content.clone()),
+                ))),
+            )),
+            SessionEvent::Agent(message) => map_agent_message_to_notification(
+                session_id.clone(),
+                message,
+                NotificationMode::Replay,
+            ),
+            _ => None,
+        };
+
+        if let Some(notif) = notification
+            && let Err(e) = actor_handle.send_session_notification(notif).await
+        {
+            tracing::error!("Failed to send replay notification: {e:?}");
+        }
+    }
+}
+
 fn try_parse_display_meta(message: &str) -> Option<ToolResultMeta> {
     serde_json::from_str::<ToolResultMeta>(message).ok()
 }
@@ -481,6 +537,66 @@ mod tests {
         match notification.update {
             acp::SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
                 acp::ContentBlock::Text(text) => assert_eq!(text.text, "thinking..."),
+                other => panic!("Expected text content, got {other:?}"),
+            },
+            other => panic!("Expected AgentThoughtChunk, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_live_mapping_skips_completed_text_but_replay_keeps_it() {
+        let session_id = acp::SessionId::new("test-session");
+        let message = AgentMessage::Text {
+            message_id: "msg_1".to_string(),
+            chunk: "done".to_string(),
+            is_complete: true,
+            model_name: "TestModel".to_string(),
+        };
+
+        assert!(map_agent_message_to_notification(
+            session_id.clone(),
+            &message,
+            NotificationMode::Live,
+        )
+        .is_none());
+
+        let notification =
+            map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
+                .expect("replay notification");
+
+        match notification.update {
+            acp::SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
+                acp::ContentBlock::Text(text) => assert_eq!(text.text, "done"),
+                other => panic!("Expected text content, got {other:?}"),
+            },
+            other => panic!("Expected AgentMessageChunk, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_live_mapping_skips_completed_thought_but_replay_keeps_it() {
+        let session_id = acp::SessionId::new("test-session");
+        let message = AgentMessage::Thought {
+            message_id: "msg_1".to_string(),
+            chunk: "final reasoning".to_string(),
+            is_complete: true,
+            model_name: "TestModel".to_string(),
+        };
+
+        assert!(map_agent_message_to_notification(
+            session_id.clone(),
+            &message,
+            NotificationMode::Live,
+        )
+        .is_none());
+
+        let notification =
+            map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
+                .expect("replay notification");
+
+        match notification.update {
+            acp::SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
+                acp::ContentBlock::Text(text) => assert_eq!(text.text, "final reasoning"),
                 other => panic!("Expected text content, got {other:?}"),
             },
             other => panic!("Expected AgentThoughtChunk, got {other:?}"),

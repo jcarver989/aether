@@ -64,6 +64,47 @@ impl Context {
         u32::try_from(total_bytes / 4).unwrap_or(u32::MAX)
     }
 
+    /// Build an assistant turn and its tool call results and append them to messages.
+    pub fn push_assistant_turn(
+        &mut self,
+        content: &str,
+        reasoning_content: &str,
+        completed_tools: Vec<Result<super::ToolCallResult, super::ToolCallError>>,
+    ) {
+        let tool_requests: Vec<_> = completed_tools
+            .iter()
+            .map(|result| match result {
+                Ok(r) => super::ToolCallRequest {
+                    id: r.id.clone(),
+                    name: r.name.clone(),
+                    arguments: r.arguments.clone(),
+                },
+                Err(e) => super::ToolCallRequest {
+                    id: e.id.clone(),
+                    name: e.name.clone(),
+                    arguments: e.arguments.clone().unwrap_or_default(),
+                },
+            })
+            .collect();
+
+        self.messages.push(ChatMessage::Assistant {
+            content: content.to_string(),
+            reasoning_content: (!reasoning_content.is_empty())
+                .then_some(reasoning_content.to_string()),
+            timestamp: IsoString::now(),
+            tool_calls: tool_requests,
+        });
+
+        for result in completed_tools {
+            self.messages.push(ChatMessage::ToolCallResult(result));
+        }
+    }
+
+    /// Clear all non-system messages, retaining only system prompts.
+    pub fn clear_conversation(&mut self) {
+        self.messages.retain(|msg| msg.is_system());
+    }
+
     /// Get all non-system messages for summarization
     pub fn messages_for_summary(&self) -> Vec<&ChatMessage> {
         self.messages

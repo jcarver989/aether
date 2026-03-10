@@ -5,6 +5,7 @@ use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::McpSpawnResult;
 use aether_core::mcp::mcp;
 use aether_core::mcp::run_mcp_task::McpCommand;
+use llm::ChatMessage;
 use llm::provider::StreamingModelProvider;
 use mcp_servers::McpBuilderExt;
 use mcp_utils::client::oauth::BrowserOAuthHandler;
@@ -30,13 +31,16 @@ pub struct Session {
 }
 
 impl Session {
-    /// Creates a new session with the given LLM provider and configuration
+    /// Creates a new session with the given LLM provider and configuration.
+    ///
+    /// Pass `restored_messages` to pre-populate conversation history (e.g. session resume).
     pub async fn new(
         llm: impl StreamingModelProvider + 'static,
         mcp_config_path: Option<PathBuf>,
         cwd: PathBuf,
         extra_mcp_servers: Vec<McpServerConfig>,
         prompt_patterns: Vec<String>,
+        restored_messages: Option<Vec<ChatMessage>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         debug!("MCP config: {:?}", mcp_config_path);
         debug!("Using project root: {:?}", cwd);
@@ -71,11 +75,15 @@ impl Session {
 
         let system_prompt = build_system_prompt(&roots_path, instructions, prompt_patterns).await?;
 
-        let builder = agent(llm)
+        let mut agent_builder = agent(llm)
             .system_prompt(Prompt::text(&system_prompt))
             .tools(mcp_tx.clone(), tool_definitions);
 
-        let (agent_tx, agent_rx, agent_handle) = builder.spawn().await?;
+        if let Some(messages) = restored_messages {
+            agent_builder = agent_builder.messages(messages);
+        }
+
+        let (agent_tx, agent_rx, agent_handle) = agent_builder.spawn().await?;
 
         Ok(Self {
             agent_tx,

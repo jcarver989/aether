@@ -13,6 +13,7 @@ use std::fmt;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tracing::warn;
 use tracing::{error, info};
 
 use super::mappers::{
@@ -20,7 +21,9 @@ use super::mappers::{
     try_extract_plan_notification, try_into_ext_notification,
 };
 use super::session::Session;
+use super::session_store::SessionStore;
 use acp_utils::server::AcpActorHandle;
+use aether_core::context::ext::{SessionEvent, UserEvent};
 
 pub(crate) enum SessionCommand {
     Prompt {
@@ -58,6 +61,7 @@ pub(crate) fn spawn_relay(
     session: Session,
     actor_handle: AcpActorHandle,
     acp_session_id: SessionId,
+    session_store: Arc<SessionStore>,
 ) -> RelayHandle {
     let (cmd_tx, cmd_rx) = mpsc::channel(50);
     let (mcp_request_tx, mcp_request_rx) = mpsc::channel(50);
@@ -67,6 +71,7 @@ pub(crate) fn spawn_relay(
         mcp_request_rx,
         actor_handle,
         acp_session_id,
+        session_store,
     ));
     RelayHandle {
         cmd_tx,
@@ -81,6 +86,7 @@ async fn run_session_relay(
     mut mcp_request_rx: mpsc::Receiver<McpRequest>,
     actor_handle: AcpActorHandle,
     acp_session_id: SessionId,
+    session_store: Arc<SessionStore>,
 ) {
     let Session {
         agent_tx,
@@ -120,6 +126,7 @@ async fn run_session_relay(
                             cmd_rx: &mut cmd_rx,
                             actor_handle: &actor_handle,
                             acp_session_id: &acp_session_id,
+                            session_store: &session_store,
                         };
                         let result = handle_prompt(&mut ctx, text, switch_model, reasoning_effort).await;
                         let _ = result_tx.send(result);
@@ -150,6 +157,7 @@ struct PromptContext<'a> {
     cmd_rx: &'a mut mpsc::Receiver<SessionCommand>,
     actor_handle: &'a AcpActorHandle,
     acp_session_id: &'a SessionId,
+    session_store: &'a Arc<SessionStore>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,10 +189,23 @@ async fn handle_prompt(
         .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
 
     if is_clear_command(&text) {
+        log_event(
+            ctx.session_store,
+            &ctx.acp_session_id.0,
+            SessionEvent::User(UserEvent::ClearContext),
+        );
         return handle_clear_context(ctx).await;
     }
 
     let text = expand_slash_command_if_needed(ctx.mcp_tx, text).await;
+
+    log_event(
+        ctx.session_store,
+        &ctx.acp_session_id.0,
+        SessionEvent::User(UserEvent::Message {
+            content: text.clone(),
+        }),
+    );
 
     ctx.agent_tx
         .send(UserMessage::text(&text))
@@ -243,6 +264,11 @@ where
         tokio::select! {
             msg = ctx.agent_rx.recv() => {
                 if let Some(msg) = msg {
+                    log_event(
+                        ctx.session_store,
+                        &ctx.acp_session_id.0,
+                        SessionEvent::Agent(msg.clone()),
+                    );
                     forward_notification(ctx.actor_handle, ctx.acp_session_id, &msg).await;
                     if let Some(reason) = on_agent_message(&msg) {
                         info!("Turn completed, stop reason: {:?}", reason);
@@ -301,6 +327,12 @@ async fn handle_in_flight_command(
                 "prompt already in progress".to_string(),
             )));
         }
+    }
+}
+
+fn log_event(store: &SessionStore, session_id: &str, event: SessionEvent) {
+    if let Err(e) = store.append_event(session_id, &event) {
+        warn!("Failed to append session log entry: {e}");
     }
 }
 

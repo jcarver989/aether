@@ -36,6 +36,7 @@ pub struct AgentBuilder {
     llm: Arc<dyn StreamingModelProvider>,
     prompts: Vec<Prompt>,
     tool_definitions: Vec<ToolDefinition>,
+    initial_messages: Vec<ChatMessage>,
     mcp_tx: Option<Sender<McpCommand>>,
     channel_capacity: usize,
     tool_timeout: Duration,
@@ -49,6 +50,7 @@ impl AgentBuilder {
             llm,
             prompts: Vec::new(),
             tool_definitions: Vec::new(),
+            initial_messages: Vec::new(),
             mcp_tx: None,
             channel_capacity: 1000,
             tool_timeout: Duration::from_secs(60 * 20),
@@ -139,6 +141,14 @@ impl AgentBuilder {
         self
     }
 
+    /// Pre-populate the context with conversation history (e.g. from a restored session).
+    ///
+    /// These messages are inserted after the system prompt.
+    pub fn messages(mut self, messages: Vec<ChatMessage>) -> Self {
+        self.initial_messages = messages;
+        self
+    }
+
     pub async fn spawn(self) -> Result<(Sender<UserMessage>, Receiver<AgentMessage>, AgentHandle)> {
         let mut messages = Vec::new();
 
@@ -151,6 +161,8 @@ impl AgentBuilder {
                 });
             }
         }
+
+        messages.extend(self.initial_messages);
 
         let (user_message_tx, user_message_rx) =
             mpsc::channel::<UserMessage>(self.channel_capacity);

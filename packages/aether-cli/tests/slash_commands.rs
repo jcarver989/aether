@@ -29,7 +29,7 @@ fn create_test_prompt(name: &str, description: Option<&str>, args: Vec<&str>) ->
 fn test_map_prompt_to_command_strips_namespace() {
     let prompt = create_test_prompt("coding__web", Some("Search the web"), vec![]);
 
-    let command = aether_cli::acp::mappers::map_mcp_prompt_to_available_command(&prompt);
+    let command = aether_cli::map_mcp_prompt_to_available_command(&prompt);
 
     assert_eq!(command.name, "web");
     assert_eq!(command.description, "Search the web");
@@ -41,7 +41,7 @@ fn test_map_prompt_to_command_strips_namespace() {
 fn test_map_prompt_to_command_without_namespace() {
     let prompt = create_test_prompt("test", Some("Run tests"), vec![]);
 
-    let command = aether_cli::acp::mappers::map_mcp_prompt_to_available_command(&prompt);
+    let command = aether_cli::map_mcp_prompt_to_available_command(&prompt);
 
     assert_eq!(command.name, "test");
     assert_eq!(command.description, "Run tests");
@@ -55,7 +55,7 @@ fn test_map_prompt_to_command_with_arguments() {
         vec!["query", "pattern"],
     );
 
-    let command = aether_cli::acp::mappers::map_mcp_prompt_to_available_command(&prompt);
+    let command = aether_cli::map_mcp_prompt_to_available_command(&prompt);
 
     assert_eq!(command.name, "search");
     match command.input {
