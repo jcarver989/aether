@@ -1,4 +1,4 @@
-use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
+use crate::components::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::focus::FocusRing;
 use crate::line::Line;
 use crate::style::Style;

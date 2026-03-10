@@ -1,5 +1,5 @@
 use crate::Component;
-use crate::component::{InteractiveComponent, RenderContext, UiEvent};
+use crate::components::{InteractiveComponent, RenderContext, UiEvent};
 use crate::line::Line;
 use crate::size::Size;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

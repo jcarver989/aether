@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 
 use super::select_option::SelectOption;
-use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
+use crate::components::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::line::Line;
 use crate::style::Style;
 

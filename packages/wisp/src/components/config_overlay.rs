@@ -34,17 +34,6 @@ enum ActiveConfigOverlayView {
     Picker,
 }
 
-struct MaxHeightComponent<'a> {
-    inner: &'a dyn Component,
-    max_height: usize,
-}
-
-impl Component for MaxHeightComponent<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
-        self.inner.render(&context.with_max_height(self.max_height))
-    }
-}
-
 pub struct ConfigOverlay {
     menu: ConfigMenu,
     picker: Option<ConfigPicker>,
@@ -54,6 +43,7 @@ pub struct ConfigOverlay {
     server_statuses: Vec<McpServerStatusEntry>,
     auth_methods: Vec<acp::AuthMethod>,
     current_reasoning_effort: Option<String>,
+    version: u64,
 }
 
 #[derive(Debug)]
@@ -79,7 +69,16 @@ impl ConfigOverlay {
             server_statuses,
             auth_methods,
             current_reasoning_effort: None,
+            version: 0,
         }
+    }
+
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+
+    fn bump_version(&mut self) {
+        self.version = self.version.wrapping_add(1);
     }
 
     #[allow(dead_code)]
@@ -106,22 +105,16 @@ impl ConfigOverlay {
             })
     }
 
-    pub(crate) fn prepare_render(&mut self, context: &RenderContext) {
-        let height = (context.size.height.saturating_sub(1)) as usize;
-        if height < MIN_HEIGHT {
-            return;
-        }
-        let child_max_height = height.saturating_sub(4);
-        let ctx = context.with_max_height(child_max_height);
+    pub(crate) fn update_child_viewport(&mut self, max_height: usize) {
         match self.active_view() {
             ActiveConfigOverlayView::ModelSelector => {
                 if let Some(ref mut ms) = self.model_selector {
-                    ms.prepare_render(&ctx);
+                    ms.update_viewport(max_height);
                 }
             }
             ActiveConfigOverlayView::Picker => {
                 if let Some(ref mut p) = self.picker {
-                    p.prepare_render(&ctx);
+                    p.update_viewport(max_height);
                 }
             }
             _ => {}
@@ -145,6 +138,7 @@ impl ConfigOverlay {
             let login_summary = provider_login_summary(&login_entries);
             self.menu.add_provider_logins_entry(&login_summary);
         }
+        self.bump_version();
     }
 
     pub fn update_server_statuses(&mut self, statuses: Vec<McpServerStatusEntry>) {
@@ -152,12 +146,14 @@ impl ConfigOverlay {
         if let Some(ref mut overlay) = self.server_overlay {
             overlay.update_entries(self.server_statuses.clone());
         }
+        self.bump_version();
     }
 
     pub fn on_authenticate_started(&mut self, method_id: &str) {
         if let Some(ref mut overlay) = self.provider_login_overlay {
             overlay.set_authenticating(method_id);
         }
+        self.bump_version();
     }
 
     pub fn remove_auth_method(&mut self, method_id: &str) {
@@ -168,6 +164,7 @@ impl ConfigOverlay {
                 self.provider_login_overlay = None;
             }
         }
+        self.bump_version();
     }
 
     fn build_login_entries(&self) -> Vec<ProviderLoginEntry> {
@@ -189,6 +186,7 @@ impl ConfigOverlay {
         {
             entry.status = ProviderLoginStatus::NeedsLogin;
         }
+        self.bump_version();
     }
 
     pub fn cursor_col(&self) -> usize {
@@ -257,71 +255,43 @@ impl Component for ConfigOverlay {
 
         let footer = self.footer_text();
         let child_max_height = height.saturating_sub(4);
+        let inner_w = Container::inner_width(context.size.width);
+        let child_context = context
+            .with_size((inner_w, context.size.height))
+            .with_max_height(child_max_height);
 
-        match self.active_view() {
-            ActiveConfigOverlayView::ServerOverlay => {
-                let child = MaxHeightComponent {
-                    inner: self.server_overlay.as_ref().expect("active server overlay"),
-                    max_height: child_max_height,
-                };
-                Container::new(vec![&child])
-                    .title(" Configuration ")
-                    .footer(footer)
-                    .border_color(context.theme.muted())
-                    .fill_height(height)
-                    .gap(GAP)
-                    .render(context)
-            }
-            ActiveConfigOverlayView::ProviderLoginOverlay => {
-                let child = MaxHeightComponent {
-                    inner: self
-                        .provider_login_overlay
-                        .as_ref()
-                        .expect("active provider login overlay"),
-                    max_height: child_max_height,
-                };
-                Container::new(vec![&child])
-                    .title(" Configuration ")
-                    .footer(footer)
-                    .border_color(context.theme.muted())
-                    .fill_height(height)
-                    .gap(GAP)
-                    .render(context)
-            }
-            ActiveConfigOverlayView::ModelSelector => {
-                let child = MaxHeightComponent {
-                    inner: self.model_selector.as_ref().expect("active model selector"),
-                    max_height: child_max_height,
-                };
-                Container::new(vec![&child])
-                    .title(" Configuration ")
-                    .footer(footer)
-                    .border_color(context.theme.muted())
-                    .fill_height(height)
-                    .gap(GAP)
-                    .render(context)
-            }
-            ActiveConfigOverlayView::Picker => {
-                let child = MaxHeightComponent {
-                    inner: self.picker.as_ref().expect("active picker"),
-                    max_height: child_max_height,
-                };
-                Container::new(vec![&child])
-                    .title(" Configuration ")
-                    .footer(footer)
-                    .border_color(context.theme.muted())
-                    .fill_height(height)
-                    .gap(GAP)
-                    .render(context)
-            }
-            ActiveConfigOverlayView::Menu => Container::new(vec![&self.menu])
-                .title(" Configuration ")
-                .footer(footer)
-                .border_color(context.theme.muted())
-                .fill_height(height)
-                .gap(GAP)
-                .render(context),
-        }
+        let child_lines = match self.active_view() {
+            ActiveConfigOverlayView::ServerOverlay => self
+                .server_overlay
+                .as_ref()
+                .expect("active server overlay")
+                .render(&child_context),
+            ActiveConfigOverlayView::ProviderLoginOverlay => self
+                .provider_login_overlay
+                .as_ref()
+                .expect("active provider login overlay")
+                .render(&child_context),
+            ActiveConfigOverlayView::ModelSelector => self
+                .model_selector
+                .as_ref()
+                .expect("active model selector")
+                .render(&child_context),
+            ActiveConfigOverlayView::Picker => self
+                .picker
+                .as_ref()
+                .expect("active picker")
+                .render(&child_context),
+            ActiveConfigOverlayView::Menu => self.menu.render(&child_context),
+        };
+
+        let mut container = Container::new()
+            .title(" Configuration ")
+            .footer(footer)
+            .border_color(context.theme.muted())
+            .fill_height(height)
+            .gap(GAP);
+        container.push(child_lines);
+        container.render(context)
     }
 }
 
@@ -333,6 +303,9 @@ impl InteractiveComponent for ConfigOverlay {
         let UiEvent::Key(key_event) = event else {
             return MessageResult::ignored();
         };
+
+        // Every handled key event changes visible state.
+        self.bump_version();
 
         // Server overlay has highest priority
         if let Some(ref mut overlay) = self.server_overlay {
@@ -520,14 +493,16 @@ mod tests {
     /// Render the overlay and return the footer line text.
     fn render_footer(overlay: &mut ConfigOverlay) -> String {
         let context = RenderContext::new((80, 24));
-        overlay.prepare_render(&context);
+        let height = (context.size.height.saturating_sub(1)) as usize;
+        overlay.update_child_viewport(height.saturating_sub(4));
         let lines = overlay.render(&context);
         lines[lines.len() - 2].plain_text()
     }
 
     fn render_plain_text(overlay: &mut ConfigOverlay) -> Vec<String> {
         let context = RenderContext::new((80, 24));
-        overlay.prepare_render(&context);
+        let height = (context.size.height.saturating_sub(1)) as usize;
+        overlay.update_child_viewport(height.saturating_sub(4));
         overlay
             .render(&context)
             .into_iter()
@@ -966,7 +941,8 @@ mod tests {
 
         // Render at a tall terminal (60 rows)
         let context_tall = RenderContext::new((80, 60));
-        overlay.prepare_render(&context_tall);
+        let height_tall = (context_tall.size.height.saturating_sub(1)) as usize;
+        overlay.update_child_viewport(height_tall.saturating_sub(4));
         let lines_tall = overlay.render(&context_tall);
         let tall_model_lines = lines_tall
             .iter()
@@ -975,7 +951,8 @@ mod tests {
 
         // Render at a short terminal (15 rows)
         let context_short = RenderContext::new((80, 15));
-        overlay.prepare_render(&context_short);
+        let height_short = (context_short.size.height.saturating_sub(1)) as usize;
+        overlay.update_child_viewport(height_short.saturating_sub(4));
         let lines_short = overlay.render(&context_short);
         let short_model_lines = lines_short
             .iter()

@@ -167,13 +167,14 @@ impl ModelSelector {
 }
 
 impl ModelSelector {
-    pub(crate) fn prepare_render(&mut self, context: &RenderContext) {
-        let has_selected_line = !self.selected_models.is_empty();
-        if let Some(h) = context.max_height {
-            let overhead = if has_selected_line { 4 } else { 2 };
-            self.combobox
-                .set_max_visible(h.saturating_sub(overhead).max(1));
-        }
+    pub(crate) fn update_viewport(&mut self, max_height: usize) {
+        let overhead = if self.selected_models.is_empty() {
+            2
+        } else {
+            4
+        };
+        self.combobox
+            .set_max_visible(max_height.saturating_sub(overhead).max(1));
     }
 }
 
@@ -651,7 +652,7 @@ mod tests {
     fn grouped_render_respects_small_height() {
         let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
         let context = RenderContext::new((120, 40)).with_max_height(6);
-        builder.prepare_render(&context);
+        builder.update_viewport(6);
         let lines: Vec<String> = builder
             .render(&context)
             .iter()

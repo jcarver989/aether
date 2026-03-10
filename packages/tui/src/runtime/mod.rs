@@ -1,4 +1,4 @@
-use crate::component::{RenderContext, RootComponent};
+use crate::components::{RenderContext, RootComponent};
 use crate::rendering::renderer::Renderer;
 use crate::theme::Theme;
 use crossterm::event::{Event as CrosstermEvent, KeyEvent, KeyEventKind, read};
@@ -71,8 +71,6 @@ pub trait App: RootComponent {
         action: Self::Action,
     ) -> Result<Vec<Action<Self::Action>>, Self::Error>;
 
-    fn render_version(&self) -> u64;
-
     fn wants_tick(&self) -> bool {
         false
     }
@@ -108,7 +106,13 @@ pub async fn run_app<T, U: Write>(
 where
     T: App + ?Sized,
 {
-    renderer.render(app).map_err(T::Error::from)?;
+    let initial_props = app.props(&renderer.context());
+    renderer
+        .render_with_props(app, &initial_props)
+        .map_err(T::Error::from)?;
+    let mut previous_props = initial_props;
+    let mut last_render_epoch = renderer.render_epoch();
+
     let mut tick = tick_rate.map(new_tick_interval);
 
     loop {
@@ -140,31 +144,25 @@ where
                 match event {
                     CrosstermEvent::Resize(cols, rows) => {
                         renderer.on_resize((cols, rows));
-                        renderer.render(app).map_err(T::Error::from)?;
+                        maybe_render(app, renderer, &mut previous_props, &mut last_render_epoch)?;
                     }
                     CrosstermEvent::Key(key)
                         if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
                     {
-                        let before = app.render_version();
                         let actions = app.on_terminal_event(TerminalEvent::Key(key), &renderer.context());
-                        let pending_render = app.render_version() != before;
-                        if process_actions(app, renderer, actions, pending_render).await? {
+                        if process_action_queue(app, renderer, actions, &mut previous_props, &mut last_render_epoch).await? {
                             return Ok(());
                         }
                     }
                     CrosstermEvent::Paste(text) => {
-                        let before = app.render_version();
                         let actions = app.on_terminal_event(TerminalEvent::Paste(text), &renderer.context());
-                        let pending_render = app.render_version() != before;
-                        if process_actions(app, renderer, actions, pending_render).await? {
+                        if process_action_queue(app, renderer, actions, &mut previous_props, &mut last_render_epoch).await? {
                             return Ok(());
                         }
                     }
                     CrosstermEvent::Mouse(mouse) => {
-                        let before = app.render_version();
                         let actions = app.on_terminal_event(TerminalEvent::Mouse(mouse), &renderer.context());
-                        let pending_render = app.render_version() != before;
-                        if process_actions(app, renderer, actions, pending_render).await? {
+                        if process_action_queue(app, renderer, actions, &mut previous_props, &mut last_render_epoch).await? {
                             return Ok(());
                         }
                     }
@@ -175,10 +173,8 @@ where
             app_event = external_fut => {
                 match app_event {
                     Some(event) => {
-                        let before = app.render_version();
                         let actions = app.on_event(event, &renderer.context());
-                        let pending_render = app.render_version() != before;
-                        if process_actions(app, renderer, actions, pending_render).await? {
+                        if process_action_queue(app, renderer, actions, &mut previous_props, &mut last_render_epoch).await? {
                             return Ok(());
                         }
                     }
@@ -189,10 +185,8 @@ where
             }
 
             _ = tick_fut => {
-                let before = app.render_version();
                 let actions = app.on_tick(&renderer.context());
-                let pending_render = app.render_version() != before;
-                if process_actions(app, renderer, actions, pending_render).await? {
+                if process_action_queue(app, renderer, actions, &mut previous_props, &mut last_render_epoch).await? {
                     return Ok(());
                 }
             }
@@ -210,54 +204,52 @@ pub async fn process_action_queue<T, U>(
     app: &mut T,
     renderer: &mut Renderer<U>,
     actions: Vec<Action<T::Action>>,
-    pending_render: bool,
+    previous_props: &mut T::Props,
+    last_render_epoch: &mut u64,
 ) -> Result<bool, T::Error>
 where
     T: App + ?Sized,
     U: Write,
 {
     let mut queue: VecDeque<_> = actions.into();
-    let mut pending_render = pending_render;
 
     while let Some(action) = queue.pop_front() {
         match action {
             Action::Exit => return Ok(true),
             Action::Custom(effect) => {
-                if pending_render {
-                    renderer.render(app).map_err(T::Error::from)?;
-                    pending_render = false;
-                }
-
-                let app_version_before = app.render_version();
-                let renderer_version_before = renderer.render_epoch();
+                maybe_render(app, renderer, previous_props, last_render_epoch)?;
 
                 let follow_up = app.on_action(renderer, effect).await?;
-
-                let app_changed = app.render_version() != app_version_before;
-                let renderer_changed = renderer.render_epoch() != renderer_version_before;
-
-                pending_render |= app_changed || renderer_changed;
                 queue.extend(follow_up);
             }
         }
     }
 
-    if pending_render {
-        renderer.render(app).map_err(T::Error::from)?;
-    }
+    maybe_render(app, renderer, previous_props, last_render_epoch)?;
 
     Ok(false)
 }
 
-async fn process_actions<T, U>(
+fn maybe_render<T, U>(
     app: &mut T,
     renderer: &mut Renderer<U>,
-    actions: Vec<Action<T::Action>>,
-    pending_render: bool,
-) -> Result<bool, T::Error>
+    previous_props: &mut T::Props,
+    last_render_epoch: &mut u64,
+) -> Result<(), T::Error>
 where
     T: App + ?Sized,
     U: Write,
 {
-    process_action_queue(app, renderer, actions, pending_render).await
+    let current_props = app.props(&renderer.context());
+    let epoch_changed = renderer.render_epoch() != *last_render_epoch;
+
+    if current_props != *previous_props || epoch_changed {
+        renderer
+            .render_with_props(app, &current_props)
+            .map_err(T::Error::from)?;
+        *previous_props = current_props;
+        *last_render_epoch = renderer.render_epoch();
+    }
+
+    Ok(())
 }

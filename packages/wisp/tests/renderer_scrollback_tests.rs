@@ -7,7 +7,13 @@ struct StubRoot {
 }
 
 impl RootComponent for StubRoot {
-    fn render(&mut self, _context: &RenderContext) -> Frame {
+    type Props = u64;
+
+    fn props(&mut self, _context: &RenderContext) -> u64 {
+        0
+    }
+
+    fn render(&self, _props: &u64, _context: &RenderContext) -> Frame {
         Frame::new(self.lines.clone(), self.cursor)
     }
 }

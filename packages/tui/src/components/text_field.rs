@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
+use crate::components::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::line::Line;
 
 /// Single-line text input with cursor indicator.

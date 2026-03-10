@@ -87,10 +87,9 @@ impl ConfigPicker {
 }
 
 impl ConfigPicker {
-    pub(crate) fn prepare_render(&mut self, context: &RenderContext) {
-        if let Some(h) = context.max_height {
-            self.combobox.set_max_visible(h.saturating_sub(1).max(1));
-        }
+    pub(crate) fn update_viewport(&mut self, max_height: usize) {
+        self.combobox
+            .set_max_visible(max_height.saturating_sub(1).max(1));
     }
 }
 

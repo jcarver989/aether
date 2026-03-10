@@ -1,4 +1,4 @@
-use crate::component::RenderContext;
+use crate::components::RenderContext;
 use crate::line::Line;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nucleo::pattern::{CaseMatching, Normalization};

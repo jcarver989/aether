@@ -2,8 +2,10 @@ use agent_client_protocol as acp;
 use tui::Action;
 use tui::runtime::process_action_queue;
 use tui::testing::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::{App, AppAction};
-use wisp::tui::{App as TuiApp, Renderer as FrameRenderer, theme::Theme};
+use wisp::components::app::{App, AppAction, AppProps};
+use wisp::tui::{
+    App as TuiApp, Renderer as FrameRenderer, RootComponent, theme::Theme,
+};
 
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use tui::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, TerminalEvent};
@@ -20,6 +22,8 @@ enum LoopAction {
 struct Renderer {
     screen: App,
     renderer: FrameRenderer<TestTerminal>,
+    previous_props: AppProps,
+    last_render_epoch: u64,
 }
 
 impl Renderer {
@@ -28,16 +32,22 @@ impl Renderer {
         agent_name: String,
         config_options: &[acp::SessionConfigOption],
     ) -> Self {
+        let mut screen = App::new(
+            agent_name,
+            config_options,
+            vec![],
+            AcpPromptHandle::noop(),
+            acp::SessionId::new("test"),
+            std::path::PathBuf::from("."),
+        );
+        let renderer = FrameRenderer::new(terminal, Theme::default());
+        let previous_props = screen.props(&renderer.context());
+        let last_render_epoch = renderer.render_epoch();
         Self {
-            screen: App::new(
-                agent_name,
-                config_options,
-                vec![],
-                AcpPromptHandle::noop(),
-                acp::SessionId::new("test"),
-                std::path::PathBuf::from("."),
-            ),
-            renderer: FrameRenderer::new(terminal, Theme::default()),
+            screen,
+            renderer,
+            previous_props,
+            last_render_epoch,
         }
     }
 
@@ -54,67 +64,52 @@ impl Renderer {
     }
 
     fn initial_render(&mut self) -> std::io::Result<()> {
-        self.renderer.render(&mut self.screen)
+        self.renderer.render(&mut self.screen)?;
+        self.previous_props = self.screen.props(&self.renderer.context());
+        self.last_render_epoch = self.renderer.render_epoch();
+        Ok(())
     }
 
     async fn on_key_event(
         &mut self,
         key_event: tui::KeyEvent,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let before = self.screen.render_version();
         let effects = self
             .screen
             .on_terminal_event(TerminalEvent::Key(key_event), &self.renderer.context());
-        let pending_render = self.screen.render_version() != before;
-        self.apply_effects(effects, pending_render).await
+        self.apply_effects(effects).await
     }
 
     async fn on_session_update(
         &mut self,
         update: acp::SessionUpdate,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let before = self.screen.render_version();
         let effects = self.screen.on_event(
             AcpEvent::SessionUpdate(Box::new(update)),
             &self.renderer.context(),
         );
-        let pending_render = self.screen.render_version() != before;
-        self.apply_effects(effects, pending_render)
-            .await
-            .map(|_| ())
+        self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_prompt_done(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let before = self.screen.render_version();
         let effects = self.screen.on_event(
             AcpEvent::PromptDone(acp::StopReason::EndTurn),
             &self.renderer.context(),
         );
-        let pending_render = self.screen.render_version() != before;
-        self.apply_effects(effects, pending_render)
-            .await
-            .map(|_| ())
+        self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let before = self.screen.render_version();
         let effects = self.screen.on_tick(&self.renderer.context());
-        let pending_render = self.screen.render_version() != before;
-        self.apply_effects(effects, pending_render)
-            .await
-            .map(|_| ())
+        self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let before = self.screen.render_version();
         let effects = self.screen.on_terminal_event(
             TerminalEvent::Paste(text.to_string()),
             &self.renderer.context(),
         );
-        let pending_render = self.screen.render_version() != before;
-        self.apply_effects(effects, pending_render)
-            .await
-            .map(|_| ())
+        self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_resize_event(
@@ -124,6 +119,8 @@ impl Renderer {
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.renderer.on_resize((cols, rows));
         self.renderer.render(&mut self.screen)?;
+        self.previous_props = self.screen.props(&self.renderer.context());
+        self.last_render_epoch = self.renderer.render_epoch();
         Ok(())
     }
 
@@ -131,36 +128,30 @@ impl Renderer {
         &mut self,
         notification: acp::ExtNotification,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let before = self.screen.render_version();
         let effects = self.screen.on_event(
             AcpEvent::ExtNotification(notification),
             &self.renderer.context(),
         );
-        let pending_render = self.screen.render_version() != before;
-        self.apply_effects(effects, pending_render)
-            .await
-            .map(|_| ())
+        self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_connection_closed(&mut self) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let before = self.screen.render_version();
         let effects = self
             .screen
             .on_event(AcpEvent::ConnectionClosed, &self.renderer.context());
-        let pending_render = self.screen.render_version() != before;
-        self.apply_effects(effects, pending_render).await
+        self.apply_effects(effects).await
     }
 
     async fn apply_effects(
         &mut self,
         effects: Vec<Action<AppAction>>,
-        pending_render: bool,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         if process_action_queue(
             &mut self.screen,
             &mut self.renderer,
             effects,
-            pending_render,
+            &mut self.previous_props,
+            &mut self.last_render_epoch,
         )
         .await?
         {

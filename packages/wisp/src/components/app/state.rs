@@ -43,7 +43,6 @@ pub struct UiState {
     pub(crate) plan_tracker: PlanTracker,
     pub(crate) keybindings: Keybindings,
     pub(crate) screen_mode: ScreenMode,
-    render_version: u64,
 }
 
 pub(crate) struct UiInputResult {
@@ -77,26 +76,15 @@ impl UiState {
             plan_tracker: PlanTracker::default(),
             keybindings,
             screen_mode: ScreenMode::Conversation,
-            render_version: 0,
         }
-    }
-
-    pub(crate) fn render_version(&self) -> u64 {
-        self.render_version
-    }
-
-    pub(crate) fn bump_render_version(&mut self) {
-        self.render_version = self.render_version.wrapping_add(1);
     }
 
     pub(crate) fn enter_git_diff(&mut self) {
         self.screen_mode = ScreenMode::GitDiff;
-        self.bump_render_version();
     }
 
     pub(crate) fn exit_git_diff(&mut self) {
         self.screen_mode = ScreenMode::Conversation;
-        self.bump_render_version();
     }
 
     pub(crate) fn wants_tick(&self) -> bool {
@@ -106,9 +94,8 @@ impl UiState {
     }
 
     fn plan_tracker_has_tick_driven_visibility(&self) -> bool {
-        let now = std::time::Instant::now();
         self.plan_tracker
-            .visible_entries(now, self.plan_tracker.grace_period)
+            .visible_entries(self.plan_tracker.last_tick(), self.plan_tracker.grace_period)
             .iter()
             .any(|entry| matches!(entry.status, acp::PlanEntryStatus::Completed))
     }
@@ -128,7 +115,6 @@ impl UiState {
             let close_git_diff = matches!(self.screen_mode, ScreenMode::GitDiff);
             if close_git_diff {
                 self.screen_mode = ScreenMode::Conversation;
-                self.bump_render_version();
             }
             return UiInputResult {
                 actions: if close_git_diff {
@@ -192,9 +178,8 @@ impl UiState {
     ) -> Vec<Action<AppAction>> {
         if matches!(self.screen_mode, ScreenMode::GitDiff)
             && let Some(mode) = git_diff_mode
-            && mode.on_mouse_event(mouse)
         {
-            self.bump_render_version();
+            mode.on_mouse_event(mouse);
         }
         vec![]
     }
@@ -263,7 +248,6 @@ impl UiState {
         let elicitation_form = self.elicitation_form.as_mut()?;
         let outcome = elicitation_form.form.on_event(UiEvent::Key(key_event));
 
-        let mut changed = outcome.handled;
         for message in outcome.messages {
             match message {
                 FormMessage::Close => {
@@ -272,21 +256,16 @@ impl UiState {
                             .response_tx
                             .send(ElicitationForm::decline());
                     }
-                    changed = true;
                 }
                 FormMessage::Submit => {
                     if let Some(elicitation_form) = self.elicitation_form.take() {
                         let response = elicitation_form.confirm();
                         let _ = elicitation_form.response_tx.send(response);
                     }
-                    changed = true;
                 }
             }
         }
 
-        if changed {
-            self.bump_render_version();
-        }
         Some(vec![])
     }
 
@@ -294,7 +273,6 @@ impl UiState {
         &mut self,
         outcome: MessageResult<PromptComposerMessage>,
     ) -> Vec<Action<AppAction>> {
-        let mut changed = outcome.handled;
         let mut actions = Vec::new();
 
         for msg in outcome.messages {
@@ -318,7 +296,6 @@ impl UiState {
 
                     self.waiting_for_response = true;
                     self.grid_loader.reset();
-                    changed = true;
 
                     actions.push(Action::Custom(AppAction::PromptSubmit {
                         user_input,
@@ -328,10 +305,6 @@ impl UiState {
             }
         }
 
-        if changed {
-            self.bump_render_version();
-        }
-
         actions
     }
 
@@ -339,14 +312,12 @@ impl UiState {
         &mut self,
         outcome: MessageResult<ConfigOverlayMessage>,
     ) -> Vec<Action<AppAction>> {
-        let mut changed = outcome.handled;
         let mut actions = Vec::new();
 
         for message in outcome.messages {
             match message {
                 ConfigOverlayMessage::Close => {
                     self.config_overlay = None;
-                    changed = true;
                 }
                 ConfigOverlayMessage::ApplyConfigChanges(changes) => {
                     for change in changes {
@@ -375,10 +346,6 @@ impl UiState {
             }
         }
 
-        if changed {
-            self.bump_render_version();
-        }
-
         actions
     }
 
@@ -393,7 +360,7 @@ impl UiState {
             )
             .with_reasoning_effort_from_options(&self.config_options),
         );
-        self.bump_render_version();
+
     }
 
     pub(crate) fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {
@@ -410,7 +377,7 @@ impl UiState {
         menu
     }
 
-    pub(crate) fn prepare_render(
+    pub(crate) fn refresh_caches(
         &mut self,
         context: &RenderContext,
         git_diff_mode: Option<&mut GitDiffMode>,
@@ -424,7 +391,7 @@ impl UiState {
         if matches!(self.screen_mode, ScreenMode::GitDiff)
             && let Some(mode) = git_diff_mode
         {
-            mode.prepare_render(context);
+            mode.refresh_caches(context);
         }
     }
 
@@ -432,7 +399,7 @@ impl UiState {
     pub(crate) fn on_authenticate_started(&mut self, method_id: &str) {
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.on_authenticate_started(method_id);
-            self.bump_render_version();
+    
         }
     }
 }
@@ -653,14 +620,12 @@ mod tests {
     }
 
     #[test]
-    fn handled_prompt_composer_result_marks_dirty_without_actions() {
+    fn handled_prompt_composer_result_returns_no_actions() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let before = state.render_version();
 
         let actions = state.handle_prompt_composer_messages(MessageResult::consumed());
 
         assert!(actions.is_empty());
-        assert!(state.render_version() > before);
     }
 
     #[test]
@@ -700,14 +665,12 @@ mod tests {
     fn ctrl_g_closes_git_diff_viewer() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         state.screen_mode = ScreenMode::GitDiff;
-        let before = state.render_version();
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
         let result = state.on_key_event(key);
 
         assert!(matches!(state.screen_mode, ScreenMode::Conversation));
         assert!(result.actions.is_empty());
-        assert!(state.render_version() > before);
     }
 
     #[test]
@@ -755,7 +718,6 @@ mod tests {
     #[test]
     fn mouse_scroll_ignored_in_conversation_mode() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let before = state.render_version();
 
         let mouse = MouseEvent {
             kind: MouseEventKind::ScrollDown,
@@ -764,7 +726,5 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         };
         state.on_mouse_event(mouse, None);
-
-        assert_eq!(state.render_version(), before);
     }
 }

@@ -1,21 +1,7 @@
-use crate::line::Line;
-pub use crate::rendering::frame::{Cursor, Frame};
+use super::Component;
 pub use crate::rendering::render_context::RenderContext;
 use crossterm::event::KeyEvent;
 use std::time::Instant;
-
-/// A component that renders a full frame with cursor information for the [`Renderer`](crate::Renderer).
-pub trait RootComponent {
-    /// Prepare any render caches or derived state needed for `render`.
-    fn prepare_render(&mut self, _context: &RenderContext) {}
-
-    fn render(&mut self, context: &RenderContext) -> Frame;
-}
-
-/// A stateful widget that can render itself as styled terminal lines.
-pub trait Component {
-    fn render(&self, context: &RenderContext) -> Vec<Line>;
-}
 
 /// Events that can be processed by an [`InteractiveComponent`].
 #[derive(Debug, Clone)]

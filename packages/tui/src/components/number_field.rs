@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::component::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
+use crate::components::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
 use crate::line::Line;
 
 /// Numeric input field supporting integers or floats.

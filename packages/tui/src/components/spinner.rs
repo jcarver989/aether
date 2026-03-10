@@ -1,5 +1,5 @@
 use crate::Component;
-use crate::component::RenderContext;
+use crate::components::RenderContext;
 use crate::line::Line;
 
 pub const BRAILLE_FRAMES: &[char] = &['⠒', '⠮', '⠷', '⢷', '⡾', '⣯', '⣽', '⣿', '⣭', '⢯'];
@@ -24,7 +24,11 @@ impl Spinner {
     }
 
     pub fn current_frame(&self) -> char {
-        self.frames[self.tick as usize % self.frames.len()]
+        self.frames[self.frame_index()]
+    }
+
+    pub fn frame_index(&self) -> usize {
+        self.tick as usize % self.frames.len()
     }
 
     pub fn reset(&mut self) {
