@@ -1,19 +1,26 @@
 use crate::core::{AgentError, Result, substitute_parameters};
+use glob::glob;
 use mcp_utils::client::ServerInstructions;
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::process::Command;
+use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub enum Prompt {
     Text(String),
     File {
         path: String,
-        ancestors: bool,
         args: Option<HashMap<String, String>>,
         cwd: Option<PathBuf>,
+    },
+    /// Resolve prompt files from glob patterns relative to cwd.
+    /// Absolute paths are also supported.
+    PromptGlobs {
+        patterns: Vec<String>,
+        cwd: PathBuf,
     },
     SystemEnv(Option<PathBuf>),
     McpInstructions(Vec<ServerInstructions>),
@@ -24,31 +31,24 @@ impl Prompt {
         Self::Text(str.to_string())
     }
 
-    pub fn file(path: &str, ancestors: bool) -> Self {
+    pub fn file(path: &str) -> Self {
         Self::File {
             path: path.to_string(),
-            ancestors,
             args: None,
             cwd: None,
         }
     }
 
-    pub fn file_with_args(path: &str, ancestors: bool, args: HashMap<String, String>) -> Self {
+    pub fn file_with_args(path: &str, args: HashMap<String, String>) -> Self {
         Self::File {
             path: path.to_string(),
-            ancestors,
             args: Some(args),
             cwd: None,
         }
     }
 
-    pub fn agents_md() -> Self {
-        Self::File {
-            path: "AGENTS.md".to_string(),
-            ancestors: true,
-            args: None,
-            cwd: None,
-        }
+    pub fn from_globs(patterns: Vec<String>, cwd: PathBuf) -> Self {
+        Self::PromptGlobs { patterns, cwd }
     }
 
     pub fn system_env() -> Self {
@@ -57,18 +57,13 @@ impl Prompt {
 
     pub fn with_cwd(self, cwd: PathBuf) -> Self {
         match self {
-            Self::File {
+            Self::File { path, args, .. } => Self::File {
                 path,
-                ancestors,
-                args,
-                ..
-            } => Self::File {
-                path,
-                ancestors,
                 args,
                 cwd: Some(cwd),
             },
             Self::SystemEnv(_) => Self::SystemEnv(Some(cwd)),
+            Self::PromptGlobs { patterns, .. } => Self::PromptGlobs { patterns, cwd },
             Self::Text(_) | Self::McpInstructions(_) => self,
         }
     }
@@ -81,19 +76,12 @@ impl Prompt {
     pub async fn build(&self) -> Result<String> {
         match self {
             Prompt::Text(text) => Ok(text.clone()),
-            Prompt::File {
-                path,
-                ancestors,
-                args,
-                cwd,
-            } => {
-                let content = if *ancestors {
-                    Self::resolve_file_with_ancestors(path, cwd.as_deref()).await?
-                } else {
-                    Self::resolve_file(&PathBuf::from(path)).await?
-                };
-
+            Prompt::File { path, args, cwd: _ } => {
+                let content = Self::resolve_file(&PathBuf::from(path)).await?;
                 Ok(substitute_parameters(&content, args))
+            }
+            Prompt::PromptGlobs { patterns, cwd } => {
+                Self::resolve_prompt_globs(patterns, cwd).await
             }
             Prompt::SystemEnv(cwd) => Self::resolve_system_env(cwd.as_deref()).await,
             Prompt::McpInstructions(instructions) => Ok(format_mcp_instructions(instructions)),
@@ -104,7 +92,10 @@ impl Prompt {
     pub async fn build_all(prompts: &[Prompt]) -> Result<String> {
         let mut parts = Vec::with_capacity(prompts.len());
         for p in prompts {
-            parts.push(p.build().await?);
+            let part = p.build().await?;
+            if !part.is_empty() {
+                parts.push(part);
+            }
         }
         Ok(parts.join("\n\n"))
     }
@@ -115,47 +106,36 @@ impl Prompt {
         })
     }
 
-    async fn resolve_file_with_ancestors(filename: &str, cwd: Option<&Path>) -> Result<String> {
-        let mut prompt = Vec::new();
-        let mut current_dir = match cwd {
-            Some(dir) => dir.to_path_buf(),
-            None => env::current_dir().map_err(|e| {
-                AgentError::IoError(format!("Failed to get current directory: {e}"))
-            })?,
-        };
+    async fn resolve_prompt_globs(patterns: &[String], cwd: &Path) -> Result<String> {
+        let mut contents = Vec::new();
 
-        loop {
-            let file_path = current_dir.join(filename);
-            if fs::metadata(&file_path)
-                .await
-                .map(|m| m.is_file())
-                .unwrap_or(false)
-            {
-                let content = Self::resolve_file(&file_path).await?;
-                prompt.push(content);
-            }
+        for pattern in patterns {
+            let full_pattern = if Path::new(pattern).is_absolute() {
+                pattern.clone()
+            } else {
+                cwd.join(pattern).to_string_lossy().to_string()
+            };
 
-            match current_dir.parent() {
-                Some(parent) => {
-                    // Stop before root (/)
-                    if parent.parent().is_none() {
-                        break;
+            let paths = glob(&full_pattern).map_err(|e| {
+                AgentError::IoError(format!("Invalid glob pattern '{pattern}': {e}"))
+            })?;
+
+            let mut matched: Vec<PathBuf> = paths.filter_map(|p| p.ok()).collect();
+            matched.sort();
+
+            for path in matched {
+                if path.is_file() {
+                    match fs::read_to_string(&path).await {
+                        Ok(content) => contents.push(content),
+                        Err(e) => {
+                            warn!("Failed to read prompt file '{}': {e}", path.display());
+                        }
                     }
-                    current_dir = parent.to_path_buf();
                 }
-                None => break,
             }
         }
 
-        if prompt.is_empty() {
-            return Err(AgentError::IoError(format!(
-                "No '{filename}' files found in directory tree"
-            )));
-        }
-
-        // Want root -> CWD (i.e. general --> specific prompt)
-        prompt.reverse();
-        Ok(prompt.join("\n\n"))
+        Ok(contents.join("\n\n"))
     }
 
     async fn resolve_system_env(cwd: Option<&Path>) -> Result<String> {
@@ -266,11 +246,82 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_file_with_ancestors_uses_provided_cwd() {
-        let dir = std::env::temp_dir();
-        let result = Prompt::resolve_file_with_ancestors("AGENTS.md", Some(dir.as_path())).await;
-        // Should fail because no AGENTS.md in temp dir, but importantly it shouldn't
-        // look in the process's cwd
-        assert!(result.is_err());
+    async fn prompt_globs_resolves_single_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("AGENTS.md"), "# Instructions\nBe helpful").unwrap();
+
+        let prompt = Prompt::from_globs(vec!["AGENTS.md".to_string()], dir.path().to_path_buf());
+        let result = prompt.build().await.unwrap();
+        assert_eq!(result, "# Instructions\nBe helpful");
+    }
+
+    #[tokio::test]
+    async fn prompt_globs_resolves_glob_pattern() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules_dir = dir.path().join(".aether/rules");
+        std::fs::create_dir_all(&rules_dir).unwrap();
+        std::fs::write(rules_dir.join("a-coding.md"), "Use Rust").unwrap();
+        std::fs::write(rules_dir.join("b-testing.md"), "Write tests").unwrap();
+
+        let prompt = Prompt::from_globs(
+            vec![".aether/rules/*.md".to_string()],
+            dir.path().to_path_buf(),
+        );
+        let result = prompt.build().await.unwrap();
+        assert!(result.contains("Use Rust"));
+        assert!(result.contains("Write tests"));
+    }
+
+    #[tokio::test]
+    async fn prompt_globs_returns_empty_for_no_matches() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let prompt = Prompt::from_globs(
+            vec!["nonexistent*.md".to_string()],
+            dir.path().to_path_buf(),
+        );
+        let result = prompt.build().await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn prompt_globs_supports_absolute_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("rules.md");
+        std::fs::write(&file_path, "Absolute rule").unwrap();
+
+        let prompt = Prompt::from_globs(
+            vec![file_path.to_string_lossy().to_string()],
+            PathBuf::from("/tmp"),
+        );
+        let result = prompt.build().await.unwrap();
+        assert_eq!(result, "Absolute rule");
+    }
+
+    #[tokio::test]
+    async fn prompt_globs_concatenates_multiple_patterns() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("AGENTS.md"), "Agent instructions").unwrap();
+        std::fs::write(dir.path().join("SYSTEM.md"), "System prompt").unwrap();
+
+        let prompt = Prompt::from_globs(
+            vec!["AGENTS.md".to_string(), "SYSTEM.md".to_string()],
+            dir.path().to_path_buf(),
+        );
+        let result = prompt.build().await.unwrap();
+        assert!(result.contains("Agent instructions"));
+        assert!(result.contains("System prompt"));
+        assert!(result.contains("\n\n"));
+    }
+
+    #[tokio::test]
+    async fn build_all_skips_empty_parts() {
+        let prompts = vec![
+            Prompt::text("Part one"),
+            Prompt::text(""),
+            Prompt::text("Part two"),
+        ];
+        let result = Prompt::build_all(&prompts).await.unwrap();
+        assert_eq!(result, "Part one\n\nPart two");
     }
 }

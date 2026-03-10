@@ -9,6 +9,7 @@ use tracing::debug;
 
 use super::error::CliError;
 use super::{OutputFormat, RunConfig};
+use crate::acp::settings::load_or_create_settings;
 use crate::prompt::build_system_prompt;
 
 pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
@@ -46,13 +47,19 @@ pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
         .await
         .map_err(|e| CliError::McpError(e.to_string()))?;
 
-    let system_prompt = build_system_prompt(&cwd, instructions, config.system_prompt.as_deref())
+    let settings = load_or_create_settings(Some(&cwd));
+
+    let system_prompt = build_system_prompt(&cwd, instructions, settings.prompts)
         .await
         .map_err(CliError::AgentError)?;
 
-    let agent_builder = agent(config.model)
+    let mut agent_builder = agent(config.model)
         .system_prompt(Prompt::text(&system_prompt))
         .tools(mcp_tx, tool_definitions);
+
+    if let Some(custom) = config.system_prompt.as_deref() {
+        agent_builder = agent_builder.system_prompt(Prompt::text(custom));
+    }
 
     let (agent_tx, agent_rx, _agent_handle) = agent_builder
         .spawn()

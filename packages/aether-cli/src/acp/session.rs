@@ -33,10 +33,10 @@ impl Session {
     /// Creates a new session with the given LLM provider and configuration
     pub async fn new(
         llm: impl StreamingModelProvider + 'static,
-        system_prompt: Option<String>,
         mcp_config_path: Option<PathBuf>,
         cwd: PathBuf,
         extra_mcp_servers: Vec<McpServerConfig>,
+        prompt_patterns: Vec<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         debug!("MCP config: {:?}", mcp_config_path);
         debug!("Using project root: {:?}", cwd);
@@ -69,8 +69,7 @@ impl Session {
             handle: mcp_handle,
         } = builder.spawn().await?;
 
-        let system_prompt =
-            build_system_prompt(&roots_path, instructions, system_prompt.as_deref()).await?;
+        let system_prompt = build_system_prompt(&roots_path, instructions, prompt_patterns).await?;
 
         let builder = agent(llm)
             .system_prompt(Prompt::text(&system_prompt))

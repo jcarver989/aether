@@ -29,7 +29,11 @@ pub struct TaskCreateInput {
     pub description: Option<String>,
 
     /// Parent task ID - if provided, creates a subtask
-    #[serde(default, deserialize_with = "empty_string_as_none", alias = "parent_id")]
+    #[serde(
+        default,
+        deserialize_with = "empty_string_as_none",
+        alias = "parent_id"
+    )]
     pub parent_id: Option<String>,
 
     /// Agent or worker to assign the task to
