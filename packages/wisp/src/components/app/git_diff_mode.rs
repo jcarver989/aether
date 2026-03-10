@@ -2,7 +2,7 @@ use super::AppAction;
 use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
 use crate::tui::{
-    Action, Component, InteractiveComponent, KeyEvent, Line, MessageResult, MouseEvent,
+    Action, InteractiveComponent, KeyEvent, Line, MessageResult, MouseEvent,
     MouseEventKind, RenderContext, UiEvent,
 };
 use std::path::PathBuf;
@@ -302,6 +302,7 @@ pub(crate) struct GitDiffMode {
     cached_repo_root: Option<PathBuf>,
     state: GitDiffViewState,
     pending_restore: Option<RefreshState>,
+    version: u64,
 }
 
 pub(crate) struct GitDiffModeInteraction {
@@ -322,12 +323,22 @@ impl GitDiffMode {
             cached_repo_root: None,
             state: GitDiffViewState::new(GitDiffLoadState::Empty),
             pending_restore: None,
+            version: 0,
         }
+    }
+
+    pub(crate) fn version(&self) -> u64 {
+        self.version
+    }
+
+    fn bump_version(&mut self) {
+        self.version = self.version.wrapping_add(1);
     }
 
     pub(crate) fn begin_open(&mut self) {
         self.pending_restore = None;
         self.state = GitDiffViewState::new(GitDiffLoadState::Loading);
+        self.bump_version();
     }
 
     pub(crate) fn begin_refresh(&mut self) {
@@ -337,6 +348,7 @@ impl GitDiffMode {
         });
         self.state.load_state = GitDiffLoadState::Loading;
         self.state.invalidate_patch_cache();
+        self.bump_version();
     }
 
     pub(crate) async fn complete_load(&mut self) {
@@ -358,11 +370,13 @@ impl GitDiffMode {
                 self.state.invalidate_patch_cache();
             }
         }
+        self.bump_version();
     }
 
     pub(crate) fn close(&mut self) {
         self.pending_restore = None;
         self.state = GitDiffViewState::new(GitDiffLoadState::Empty);
+        self.bump_version();
     }
 
     pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> GitDiffModeInteraction {
@@ -370,18 +384,26 @@ impl GitDiffMode {
             state: &mut self.state,
         };
         let outcome = view.on_event(UiEvent::Key(key_event));
-        self.handle_messages(outcome)
+        let result = self.handle_messages(outcome);
+        if result.changed {
+            self.bump_version();
+        }
+        result
     }
 
     pub(crate) fn on_mouse_event(&mut self, mouse: MouseEvent) -> bool {
-        match mouse.kind {
+        let changed = match mouse.kind {
             MouseEventKind::ScrollUp => self.state.scroll_patch(-3),
             MouseEventKind::ScrollDown => self.state.scroll_patch(3),
             _ => false,
+        };
+        if changed {
+            self.bump_version();
         }
+        changed
     }
 
-    pub(crate) fn prepare_render(&mut self, context: &RenderContext) {
+    pub(crate) fn refresh_caches(&mut self, context: &RenderContext) {
         self.state.ensure_patch_cache(context);
         // 2 rows: file header + spacer above patch content
         let viewport_height = (context.size.height as usize).saturating_sub(2);
@@ -396,11 +418,8 @@ impl GitDiffMode {
         self.state.comment_cursor
     }
 
-    pub(crate) fn render(&mut self, context: &RenderContext) -> Vec<Line> {
-        GitDiffView {
-            state: &mut self.state,
-        }
-        .render(context)
+    pub(crate) fn render(&self, context: &RenderContext) -> Vec<Line> {
+        GitDiffView::render_from_state(&self.state, context)
     }
 
     fn handle_messages(

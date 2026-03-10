@@ -19,6 +19,7 @@ use agent_client_protocol::{self as acp, SessionConfigOption};
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
+use utils::ReasoningEffort;
 
 use crate::components::container::Container;
 use crate::components::conversation_window::ConversationWindow;
@@ -65,11 +66,68 @@ pub struct PromptAttachment {
     pub display_name: String,
 }
 
+#[derive(Clone, PartialEq)]
+pub struct StatusLineProps {
+    pub(crate) agent_name: String,
+    pub(crate) mode_display: Option<String>,
+    pub(crate) model_display: Option<String>,
+    pub(crate) reasoning_effort: Option<ReasoningEffort>,
+    pub(crate) context_pct_left: Option<u8>,
+    pub(crate) waiting_for_response: bool,
+    pub(crate) unhealthy_server_count: usize,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct ConversationScreenProps {
+    pub(crate) conversation_version: u64,
+    pub(crate) prompt_version: u64,
+    pub(crate) spinner_active: bool,
+    pub(crate) spinner_frame: usize,
+    pub(crate) plan_version: u64,
+    pub(crate) tool_tick: u16,
+    pub(crate) progress_tick: u16,
+    pub(crate) progress_active: bool,
+    pub(crate) has_elicitation: bool,
+    pub(crate) status: StatusLineProps,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct ConfigOverlayScreenProps {
+    pub(crate) overlay_version: u64,
+    pub(crate) status: StatusLineProps,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct GitDiffScreenProps {
+    pub(crate) diff_version: u64,
+    pub(crate) status: StatusLineProps,
+}
+
+#[derive(Clone, PartialEq)]
+pub enum AppProps {
+    Conversation(ConversationScreenProps),
+    ConfigOverlay(ConfigOverlayScreenProps),
+    GitDiff(GitDiffScreenProps),
+}
+
+impl AppProps {
+    fn status(&self) -> &StatusLineProps {
+        match self {
+            AppProps::Conversation(p) => &p.status,
+            AppProps::ConfigOverlay(p) => &p.status,
+            AppProps::GitDiff(p) => &p.status,
+        }
+    }
+}
+
 pub struct App {
     state: UiState,
     prompt_handle: AcpPromptHandle,
     session_id: acp::SessionId,
     git_diff_mode: GitDiffMode,
+    cached_visible_plan_entries: Vec<acp::PlanEntry>,
+    cached_plan_version: u64,
+    cached_plan_tick: Instant,
 }
 
 impl App {
@@ -86,6 +144,27 @@ impl App {
             prompt_handle,
             session_id,
             git_diff_mode: GitDiffMode::new(working_dir),
+            cached_visible_plan_entries: Vec::new(),
+            cached_plan_version: 0,
+            cached_plan_tick: Instant::now(),
+        }
+    }
+
+    fn status_line_props(&self) -> StatusLineProps {
+        let unhealthy_count = self
+            .state
+            .server_statuses
+            .iter()
+            .filter(|status| !matches!(status.status, McpServerStatus::Connected { .. }))
+            .count();
+        StatusLineProps {
+            agent_name: self.state.agent_name.clone(),
+            mode_display: self.state.mode_display.clone(),
+            model_display: self.state.model_display.clone(),
+            reasoning_effort: self.state.reasoning_effort,
+            context_pct_left: self.state.context_usage_pct,
+            waiting_for_response: self.state.waiting_for_response,
+            unhealthy_server_count: unhealthy_count,
         }
     }
 }
@@ -107,9 +186,6 @@ impl TuiApp for App {
                     let interaction = self.git_diff_mode.on_key_event(key_event);
                     let mut actions = input.actions;
                     actions.extend(interaction.actions);
-                    if interaction.changed {
-                        self.state.bump_render_version();
-                    }
                     actions
                 } else {
                     input.actions
@@ -124,10 +200,6 @@ impl TuiApp for App {
 
     fn on_tick(&mut self, _context: &RenderContext) -> Vec<Action<AppAction>> {
         self.state.on_tick()
-    }
-
-    fn render_version(&self) -> u64 {
-        self.state.render_version()
     }
 
     fn wants_tick(&self) -> bool {
@@ -159,43 +231,86 @@ impl TuiApp for App {
         renderer: &mut Renderer<T>,
         effect: Self::Action,
     ) -> Result<Vec<Action<Self::Action>>, Self::Error> {
-        self.apply_effect(renderer, effect).await
+        self.apply_action(renderer, effect).await
     }
 }
 
 impl RootComponent for App {
-    fn prepare_render(&mut self, context: &RenderContext) {
-        self.state
-            .prepare_render(context, Some(&mut self.git_diff_mode));
-    }
+    type Props = AppProps;
 
-    fn render(&mut self, context: &RenderContext) -> Frame {
-        let unhealthy_count = self
-            .state
-            .server_statuses
-            .iter()
-            .filter(|status| !matches!(status.status, McpServerStatus::Connected { .. }))
-            .count();
-        let status_line = StatusLine {
-            agent_name: &self.state.agent_name,
-            mode_display: self.state.mode_display.as_deref(),
-            model_display: self.state.model_display.as_deref(),
-            reasoning_effort: self.state.reasoning_effort,
-            context_pct_left: self.state.context_usage_pct,
-            waiting_for_response: self.state.waiting_for_response,
-            unhealthy_server_count: unhealthy_count,
-        };
+    fn props(&mut self, context: &RenderContext) -> AppProps {
+        self.state
+            .refresh_caches(context, Some(&mut self.git_diff_mode));
+
+        let status = self.status_line_props();
 
         if let Some(ref mut overlay) = self.state.config_overlay {
-            overlay.prepare_render(context);
+            let height = (context.size.height.saturating_sub(1)) as usize;
+            if height >= 3 {
+                overlay.update_child_viewport(height.saturating_sub(4));
+            }
+            return AppProps::ConfigOverlay(ConfigOverlayScreenProps {
+                overlay_version: overlay.version(),
+                status,
+            });
+        }
+
+        if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
+            return AppProps::GitDiff(GitDiffScreenProps {
+                diff_version: self.git_diff_mode.version(),
+                status,
+            });
+        }
+
+        let plan_version = self.state.plan_tracker.version();
+        let last_tick = self.state.plan_tracker.last_tick();
+        if plan_version != self.cached_plan_version || last_tick != self.cached_plan_tick {
+            let grace_period = self.state.plan_tracker.grace_period;
+            self.cached_visible_plan_entries = self
+                .state
+                .plan_tracker
+                .visible_entries(last_tick, grace_period);
+            self.cached_plan_version = plan_version;
+            self.cached_plan_tick = last_tick;
+        }
+
+        AppProps::Conversation(ConversationScreenProps {
+            conversation_version: self.state.conversation.version(),
+            prompt_version: self.state.prompt_composer.version(),
+            spinner_active: self.state.grid_loader.visible,
+            spinner_frame: self.state.grid_loader.frame_index(),
+            plan_version: self.state.plan_tracker.version(),
+            tool_tick: self.state.tool_call_statuses.tick(),
+            progress_tick: self.state.progress_indicator.tick(),
+            progress_active: self.state.progress_indicator.is_active(),
+            has_elicitation: self.state.elicitation_form.is_some(),
+            status,
+        })
+    }
+
+    fn render(&self, props: &AppProps, context: &RenderContext) -> Frame {
+        let s = props.status();
+        let status_line = StatusLine {
+            agent_name: &s.agent_name,
+            mode_display: s.mode_display.as_deref(),
+            model_display: s.model_display.as_deref(),
+            reasoning_effort: s.reasoning_effort,
+            context_pct_left: s.context_pct_left,
+            waiting_for_response: s.waiting_for_response,
+            unhealthy_server_count: s.unhealthy_server_count,
+        };
+
+        if let Some(ref overlay) = self.state.config_overlay {
             let cursor = Cursor {
                 row: overlay.cursor_row_offset(),
                 col: overlay.cursor_col(),
                 is_visible: overlay.has_picker(),
             };
 
-            let container = Container::new(vec![overlay as &dyn Component, &status_line]);
-            let (lines, _) = container.render_with_offsets(context);
+            let mut container = Container::new();
+            container.push(overlay.render(context));
+            container.push(status_line.render(context));
+            let (lines, _) = container.render_with_offsets();
 
             return Frame::new(lines, cursor);
         }
@@ -230,34 +345,27 @@ impl RootComponent for App {
             return Frame::new(lines, cursor);
         }
 
-        let grace_period = self.state.plan_tracker.grace_period;
-        let visible_plan_entries = self
-            .state
-            .plan_tracker
-            .visible_entries(Instant::now(), grace_period);
-
         let conversation_window = ConversationWindow {
             loader: &self.state.grid_loader,
             conversation: &self.state.conversation,
         };
         let plan_view = PlanView {
-            entries: &visible_plan_entries,
+            entries: &self.cached_visible_plan_entries,
         };
 
-        let mut container: Container<'_> = Container::new(vec![
-            &conversation_window,
-            &plan_view,
-            &self.state.progress_indicator,
-            &self.state.prompt_composer,
-        ]);
-        let prompt_component_index = container.len() - 1;
+        let mut container = Container::new();
+        container.push(conversation_window.render(context));
+        container.push(plan_view.render(context));
+        container.push(self.state.progress_indicator.render(context));
+        let prompt_component_index = container.len();
+        container.push(self.state.prompt_composer.render(context));
 
         if let Some(ref elicitation_form) = self.state.elicitation_form {
-            container.push(&elicitation_form.form);
+            container.push(elicitation_form.form.render(context));
         }
 
-        container.push(&status_line);
-        let (lines, offsets) = container.render_with_offsets(context);
+        container.push(status_line.render(context));
+        let (lines, offsets) = container.render_with_offsets();
         let prompt_cursor = self.state.prompt_composer.cursor(context);
         let cursor = Cursor {
             row: offsets[prompt_component_index] + prompt_cursor.row,
@@ -289,8 +397,13 @@ mod tests {
     use crate::tui::MessageResult;
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use std::fs;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use tempfile::TempDir;
+
+    fn render_app(app: &mut App, context: &RenderContext) -> Frame {
+        let props = app.props(context);
+        app.render(&props, context)
+    }
 
     #[allow(dead_code)]
     fn custom_theme() -> crate::tui::theme::Theme {
@@ -483,7 +596,7 @@ mod tests {
             }]);
 
         let context = RenderContext::new((120, 40));
-        let output = screen.render(&context);
+        let output = render_app(&mut screen, &context);
         let input_row = output
             .lines()
             .iter()
@@ -511,7 +624,7 @@ mod tests {
         screen.state.open_config_overlay();
 
         let context = RenderContext::new((120, 40));
-        let output = screen.render(&context);
+        let output = render_app(&mut screen, &context);
         assert!(
             output
                 .lines()
@@ -520,7 +633,7 @@ mod tests {
         );
 
         screen.state.config_overlay = None;
-        let output = screen.render(&context);
+        let output = render_app(&mut screen, &context);
         assert!(
             !output
                 .lines()
@@ -587,12 +700,175 @@ mod tests {
                 .unwrap(),
         );
 
-        let output = app.render(&RenderContext::new((120, 40)));
+        let output = render_app(&mut app, &RenderContext::new((120, 40)));
         assert!(
             !output
                 .lines()
                 .iter()
                 .any(|line| line.plain_text().contains("Plan"))
         );
+    }
+
+    #[test]
+    fn plan_version_increments_on_replace() {
+        let mut app = App::new(
+            "test-agent".to_string(),
+            &[],
+            vec![],
+            AcpPromptHandle::noop(),
+            acp::SessionId::new("test"),
+            PathBuf::from("."),
+        );
+
+        let initial_version = app.state.plan_tracker.version();
+        app.state.plan_tracker.replace(
+            vec![acp::PlanEntry::new(
+                "Task A",
+                acp::PlanEntryPriority::Medium,
+                acp::PlanEntryStatus::Pending,
+            )],
+            Instant::now(),
+        );
+
+        assert!(app.state.plan_tracker.version() > initial_version);
+    }
+
+    #[test]
+    fn plan_version_increments_on_clear() {
+        let mut app = App::new(
+            "test-agent".to_string(),
+            &[],
+            vec![],
+            AcpPromptHandle::noop(),
+            acp::SessionId::new("test"),
+            PathBuf::from("."),
+        );
+
+        app.state.plan_tracker.replace(
+            vec![acp::PlanEntry::new(
+                "Task A",
+                acp::PlanEntryPriority::Medium,
+                acp::PlanEntryStatus::Pending,
+            )],
+            Instant::now(),
+        );
+        let version_before_clear = app.state.plan_tracker.version();
+        app.state.plan_tracker.clear();
+
+        assert!(app.state.plan_tracker.version() > version_before_clear);
+    }
+
+    #[test]
+    fn props_include_plan_version_not_count() {
+        let mut app = App::new(
+            "test-agent".to_string(),
+            &[],
+            vec![],
+            AcpPromptHandle::noop(),
+            acp::SessionId::new("test"),
+            PathBuf::from("."),
+        );
+
+        app.state.plan_tracker.replace(
+            vec![
+                acp::PlanEntry::new(
+                    "Task A",
+                    acp::PlanEntryPriority::Medium,
+                    acp::PlanEntryStatus::Pending,
+                ),
+                acp::PlanEntry::new(
+                    "Task B",
+                    acp::PlanEntryPriority::Medium,
+                    acp::PlanEntryStatus::Pending,
+                ),
+            ],
+            Instant::now(),
+        );
+
+        let context = RenderContext::new((120, 40));
+        let props = app.props(&context);
+
+        if let AppProps::Conversation(conv_props) = props {
+            assert_eq!(conv_props.plan_version, app.state.plan_tracker.version());
+        } else {
+            panic!("Expected Conversation props");
+        }
+    }
+
+    #[test]
+    fn tool_tick_advances_even_when_grid_loader_hidden() {
+        let mut app = App::new(
+            "test-agent".to_string(),
+            &[],
+            vec![],
+            AcpPromptHandle::noop(),
+            acp::SessionId::new("test"),
+            PathBuf::from("."),
+        );
+
+        // Add a running tool call
+        let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
+        app.state.tool_call_statuses.on_tool_call(&tool_call);
+
+        // Hide the grid loader
+        app.state.grid_loader.visible = false;
+
+        let context = RenderContext::new((120, 40));
+        let props_before = app.props(&context);
+        let tick_before = if let AppProps::Conversation(ref p) = props_before {
+            p.tool_tick
+        } else {
+            panic!("Expected Conversation props");
+        };
+
+        // Advance the tick
+        app.state.on_tick();
+
+        let props_after = app.props(&context);
+        let tick_after = if let AppProps::Conversation(ref p) = props_after {
+            p.tool_tick
+        } else {
+            panic!("Expected Conversation props");
+        };
+
+        // Tool tick should have advanced even though grid loader is hidden
+        assert!(tick_after > tick_before);
+    }
+
+    #[test]
+    fn progress_tick_advances_when_tools_running() {
+        let mut app = App::new(
+            "test-agent".to_string(),
+            &[],
+            vec![],
+            AcpPromptHandle::noop(),
+            acp::SessionId::new("test"),
+            PathBuf::from("."),
+        );
+
+        // Add a running tool call so progress indicator gets updated via tool_call_statuses
+        let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
+        app.state.tool_call_statuses.on_tool_call(&tool_call);
+
+        let context = RenderContext::new((120, 40));
+        let props_before = app.props(&context);
+        let tick_before = if let AppProps::Conversation(ref p) = props_before {
+            p.progress_tick
+        } else {
+            panic!("Expected Conversation props");
+        };
+
+        // Advance the tick
+        app.state.on_tick();
+
+        let props_after = app.props(&context);
+        let tick_after = if let AppProps::Conversation(ref p) = props_after {
+            p.progress_tick
+        } else {
+            panic!("Expected Conversation props");
+        };
+
+        // Progress tick should have advanced
+        assert!(tick_after > tick_before);
     }
 }

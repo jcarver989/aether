@@ -22,6 +22,7 @@ struct Segment {
 pub(crate) struct ConversationBuffer {
     segments: Vec<Segment>,
     thought_block_open: bool,
+    version: u64,
 }
 
 impl ConversationBuffer {
@@ -29,7 +30,16 @@ impl ConversationBuffer {
         Self {
             segments: Vec::new(),
             thought_block_open: false,
+            version: 0,
         }
+    }
+
+    pub(crate) fn version(&self) -> u64 {
+        self.version
+    }
+
+    fn bump_version(&mut self) {
+        self.version = self.version.wrapping_add(1);
     }
 
     #[cfg(test)]
@@ -66,6 +76,7 @@ impl ConversationBuffer {
                 lines: None,
             });
         }
+        self.bump_version();
     }
 
     pub(crate) fn append_thought_chunk(&mut self, chunk: &str) {
@@ -79,6 +90,7 @@ impl ConversationBuffer {
         {
             existing.push_str(chunk);
             segment.lines = None;
+            self.bump_version();
             return;
         }
 
@@ -87,6 +99,7 @@ impl ConversationBuffer {
             lines: None,
         });
         self.thought_block_open = true;
+        self.bump_version();
     }
 
     pub(crate) fn close_thought_block(&mut self) {
@@ -96,6 +109,7 @@ impl ConversationBuffer {
     pub(crate) fn clear(&mut self) {
         self.segments.clear();
         self.thought_block_open = false;
+        self.bump_version();
     }
 
     pub(crate) fn ensure_tool_segment(&mut self, tool_id: &str) {
@@ -109,6 +123,7 @@ impl ConversationBuffer {
                 content: SegmentContent::ToolCall(tool_id.to_string()),
                 lines: None,
             });
+            self.bump_version();
         }
     }
 
@@ -118,6 +133,7 @@ impl ConversationBuffer {
                 segment.lines = None;
             }
         }
+        self.bump_version();
     }
 
     fn drain_segments_except(
@@ -159,6 +175,7 @@ impl ConversationBuffer {
             }
         }
 
+        self.bump_version();
         (scrollback_lines, completed_tool_ids)
     }
 

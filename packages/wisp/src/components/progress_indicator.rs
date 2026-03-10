@@ -11,6 +11,10 @@ pub struct ProgressIndicator {
 }
 
 impl ProgressIndicator {
+    pub fn is_active(&self) -> bool {
+        self.total > 0 && self.completed < self.total
+    }
+
     pub fn update(&mut self, completed: usize, total: usize) {
         self.completed = completed;
         self.total = total;
@@ -26,6 +30,11 @@ impl ProgressIndicator {
         if self.total > 0 && self.completed < self.total {
             self.tick = self.tick.wrapping_add(1);
         }
+    }
+
+    /// Returns the current animation tick value.
+    pub fn tick(&self) -> u16 {
+        self.tick
     }
 }
 

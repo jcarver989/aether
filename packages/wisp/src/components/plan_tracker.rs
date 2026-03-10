@@ -8,6 +8,8 @@ pub struct PlanTracker {
     entries: Vec<acp::PlanEntry>,
     completed_at: HashMap<PlanEntryKey, Instant>,
     pub grace_period: Duration,
+    last_tick: Instant,
+    version: u64,
 }
 
 impl Default for PlanTracker {
@@ -16,6 +18,8 @@ impl Default for PlanTracker {
             entries: Vec::new(),
             completed_at: HashMap::new(),
             grace_period: Duration::from_secs(3),
+            last_tick: Instant::now(),
+            version: 0,
         }
     }
 }
@@ -38,6 +42,7 @@ impl PlanTracker {
         }
 
         self.entries = entries;
+        self.version = self.version.wrapping_add(1);
     }
 
     pub fn visible_entries(&self, now: Instant, grace_period: Duration) -> Vec<acp::PlanEntry> {
@@ -51,6 +56,7 @@ impl PlanTracker {
     pub fn clear(&mut self) {
         self.entries.clear();
         self.completed_at.clear();
+        self.version = self.version.wrapping_add(1);
     }
 
     fn is_visible(&self, entry: &acp::PlanEntry, now: Instant, grace_period: Duration) -> bool {
@@ -58,7 +64,9 @@ impl PlanTracker {
             acp::PlanEntryStatus::Completed => self
                 .completed_at
                 .get(&Self::entry_key(entry))
-                .is_some_and(|completed_at| now.duration_since(*completed_at) <= grace_period),
+                .is_some_and(|completed_at| {
+                    now.saturating_duration_since(*completed_at) <= grace_period
+                }),
             _ => true,
         }
     }
@@ -73,8 +81,20 @@ impl PlanTracker {
         self.completed_at.get(&Self::entry_key(entry)).copied()
     }
 
+    pub fn last_tick(&self) -> Instant {
+        self.last_tick
+    }
+
     /// Advance the animation state. Call this on tick events.
-    pub fn on_tick(&mut self, _now: Instant) {}
+    pub fn on_tick(&mut self, now: Instant) {
+        self.last_tick = now;
+    }
+
+    /// Returns the version counter, incremented on each `replace` or `clear` call.
+    /// Use this to detect plan content changes without comparing entry counts.
+    pub fn version(&self) -> u64 {
+        self.version
+    }
 }
 
 #[cfg(test)]
@@ -207,5 +227,49 @@ mod tests {
             tracker.visible_entries(now + GRACE_PERIOD + Duration::from_millis(1), GRACE_PERIOD);
         let visible_contents: Vec<_> = visible.iter().map(|e| e.content.as_str()).collect();
         assert_eq!(visible_contents, vec!["In Progress", "Pending"]);
+    }
+
+    #[test]
+    fn completed_entry_visible_when_now_before_completed_at_does_not_panic() {
+        let mut tracker = PlanTracker::default();
+        let completed_at = Instant::now();
+
+        // Add a completed entry at time T
+        tracker.replace(
+            vec![plan_entry("Task A", PlanEntryStatus::Completed)],
+            completed_at,
+        );
+
+        // Query visibility at a time BEFORE completed_at
+        // This should not panic and should treat the entry as still within grace period
+        // (saturating_duration_since returns 0 when now < completed_at)
+        let now_before = completed_at - Duration::from_secs(1);
+        let visible = tracker.visible_entries(now_before, GRACE_PERIOD);
+        assert_eq!(visible.len(), 1, "completed entry should still be visible");
+    }
+
+    #[test]
+    fn version_increments_on_replace() {
+        let mut tracker = PlanTracker::default();
+        let now = Instant::now();
+
+        let initial_version = tracker.version();
+        tracker.replace(vec![plan_entry("Task A", PlanEntryStatus::Pending)], now);
+        assert!(tracker.version() > initial_version);
+
+        let version_after_first = tracker.version();
+        tracker.replace(vec![plan_entry("Task B", PlanEntryStatus::Pending)], now);
+        assert!(tracker.version() > version_after_first);
+    }
+
+    #[test]
+    fn version_increments_on_clear() {
+        let mut tracker = PlanTracker::default();
+        let now = Instant::now();
+
+        tracker.replace(vec![plan_entry("Task A", PlanEntryStatus::Pending)], now);
+        let version_before_clear = tracker.version();
+        tracker.clear();
+        assert!(tracker.version() > version_before_clear);
     }
 }

@@ -17,55 +17,65 @@ pub struct GitDiffView<'a> {
     pub state: &'a mut GitDiffViewState,
 }
 
+impl GitDiffView<'_> {
+    pub fn render_from_state(state: &GitDiffViewState, context: &RenderContext) -> Vec<Line> {
+        render_git_diff_state(state, context)
+    }
+}
+
 impl Component for GitDiffView<'_> {
     fn render(&self, context: &RenderContext) -> Vec<Line> {
-        let theme = &context.theme;
-        let total_width = context.size.width as usize;
-        if total_width < 10 {
-            return vec![Line::new("Too narrow")];
-        }
+        render_git_diff_state(self.state, context)
+    }
+}
 
-        let left_width = (total_width / 3)
-            .clamp(20, 28)
-            .min(total_width.saturating_sub(4));
-        let right_width = total_width.saturating_sub(left_width + 1);
-        let available_height = context.size.height as usize;
+fn render_git_diff_state(state: &GitDiffViewState, context: &RenderContext) -> Vec<Line> {
+    let theme = &context.theme;
+    let total_width = context.size.width as usize;
+    if total_width < 10 {
+        return vec![Line::new("Too narrow")];
+    }
 
-        match &self.state.load_state {
-            GitDiffLoadState::Loading => {
-                render_message_layout("Loading...", left_width, available_height, theme)
-            }
-            GitDiffLoadState::Empty => render_message_layout(
-                "No changes in working tree relative to HEAD",
-                left_width,
-                available_height,
-                theme,
-            ),
-            GitDiffLoadState::Error { message } => {
-                let msg = format!("Git diff unavailable: {message}");
-                render_message_layout(&msg, left_width, available_height, theme)
-            }
-            GitDiffLoadState::Ready(doc) if doc.files.is_empty() => render_message_layout(
-                "No changes in working tree relative to HEAD",
-                left_width,
-                available_height,
-                theme,
-            ),
-            GitDiffLoadState::Ready(doc) => render_ready(
-                &doc.files,
-                self.state.selected_file,
-                self.state.patch_scroll,
-                &self.state.cached_patch_lines,
-                self.state.cursor_line,
-                self.state.focus,
-                &self.state.queued_comments,
-                &self.state.comment_buffer,
-                left_width,
-                right_width,
-                available_height,
-                context,
-            ),
+    let left_width = (total_width / 3)
+        .clamp(20, 28)
+        .min(total_width.saturating_sub(4));
+    let right_width = total_width.saturating_sub(left_width + 1);
+    let available_height = context.size.height as usize;
+
+    match &state.load_state {
+        GitDiffLoadState::Loading => {
+            render_message_layout("Loading...", left_width, available_height, theme)
         }
+        GitDiffLoadState::Empty => render_message_layout(
+            "No changes in working tree relative to HEAD",
+            left_width,
+            available_height,
+            theme,
+        ),
+        GitDiffLoadState::Error { message } => {
+            let msg = format!("Git diff unavailable: {message}");
+            render_message_layout(&msg, left_width, available_height, theme)
+        }
+        GitDiffLoadState::Ready(doc) if doc.files.is_empty() => render_message_layout(
+            "No changes in working tree relative to HEAD",
+            left_width,
+            available_height,
+            theme,
+        ),
+        GitDiffLoadState::Ready(doc) => render_ready(
+            &doc.files,
+            state.selected_file,
+            state.patch_scroll,
+            &state.cached_patch_lines,
+            state.cursor_line,
+            state.focus,
+            &state.queued_comments,
+            &state.comment_buffer,
+            left_width,
+            right_width,
+            available_height,
+            context,
+        ),
     }
 }
 

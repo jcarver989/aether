@@ -5,12 +5,12 @@ use crate::tui::{Action, Line, Renderer};
 use std::io::Write;
 
 impl App {
-    pub async fn apply_effect<T: Write>(
+    pub async fn apply_action<T: Write>(
         &mut self,
         renderer: &mut Renderer<T>,
-        effect: AppAction,
+        action: AppAction,
     ) -> Result<Vec<Action<AppAction>>, Box<dyn std::error::Error>> {
-        match effect {
+        match action {
             AppAction::PushScrollback(lines) => {
                 renderer.push_to_scrollback(&lines)?;
                 Ok(vec![])
@@ -70,12 +70,12 @@ impl App {
                 self.state.enter_git_diff();
                 self.git_diff_mode.begin_open();
                 self.git_diff_mode.complete_load().await;
-                self.state.bump_render_version();
+
                 Ok(vec![])
             }
             AppAction::RefreshGitDiffViewer => {
                 self.git_diff_mode.complete_load().await;
-                self.state.bump_render_version();
+
                 Ok(vec![])
             }
             AppAction::CloseGitDiffViewer => {
@@ -217,7 +217,10 @@ mod tests {
         );
 
         let actions = app
-            .apply_effect(&mut renderer, crate::components::app::AppAction::ClearScreen)
+            .apply_action(
+                &mut renderer,
+                crate::components::app::AppAction::ClearScreen,
+            )
             .await
             .unwrap();
         assert!(actions.is_empty());

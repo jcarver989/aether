@@ -14,21 +14,17 @@ use tokio::sync::oneshot;
 
 impl UiState {
     pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Vec<Action<AppAction>> {
-        let was_loading = self.grid_loader.visible;
         self.grid_loader.visible = false;
-        let mut changed = was_loading;
 
         match update {
             SessionUpdate::AgentMessageChunk(chunk) => {
                 if let acp::ContentBlock::Text(text_content) = chunk.content {
                     self.conversation.append_text_chunk(&text_content.text);
-                    changed = true;
                 }
             }
             SessionUpdate::AgentThoughtChunk(chunk) => {
                 if let acp::ContentBlock::Text(text_content) = chunk.content {
                     self.conversation.append_thought_chunk(&text_content.text);
-                    changed = true;
                 }
             }
             SessionUpdate::ToolCall(tool_call) => {
@@ -38,7 +34,6 @@ impl UiState {
                     .ensure_tool_segment(&tool_call.tool_call_id.0);
                 self.conversation
                     .invalidate_tool_segment(&tool_call.tool_call_id.0);
-                changed = true;
             }
             SessionUpdate::ToolCallUpdate(update) => {
                 self.conversation.close_thought_block();
@@ -49,7 +44,6 @@ impl UiState {
                     self.conversation
                         .invalidate_tool_segment(&update.tool_call_id.0);
                 }
-                changed = true;
             }
             SessionUpdate::AvailableCommandsUpdate(update) => {
                 let commands = update
@@ -79,19 +73,13 @@ impl UiState {
                 if let Some(ref mut overlay) = self.config_overlay {
                     overlay.update_config_options(&update.config_options);
                 }
-                changed = true;
             }
             SessionUpdate::Plan(plan) => {
                 self.plan_tracker.replace(plan.entries, Instant::now());
-                changed = true;
             }
             _ => {
                 self.conversation.close_thought_block();
             }
-        }
-
-        if changed {
-            self.bump_render_version();
         }
 
         vec![]
@@ -110,8 +98,6 @@ impl UiState {
             self.tool_call_statuses.remove_tool(&id);
         }
 
-        self.bump_render_version();
-
         let mut effects = Vec::new();
         if !scrollback_lines.is_empty() {
             effects.push(Action::Custom(AppAction::PushScrollback(scrollback_lines)));
@@ -120,17 +106,12 @@ impl UiState {
     }
 
     pub(crate) fn on_tick(&mut self) -> Vec<Action<AppAction>> {
-        let should_render = self.wants_tick();
         let now = Instant::now();
 
         self.grid_loader.on_tick();
         self.tool_call_statuses.on_tick(now);
         self.plan_tracker.on_tick(now);
         self.progress_indicator.on_tick();
-
-        if should_render {
-            self.bump_render_version();
-        }
 
         vec![]
     }
@@ -142,7 +123,7 @@ impl UiState {
     ) -> Vec<Action<AppAction>> {
         self.config_overlay = None;
         self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
-        self.bump_render_version();
+
         vec![]
     }
 
@@ -150,12 +131,9 @@ impl UiState {
         &mut self,
         notification: ExtNotification,
     ) -> Vec<Action<AppAction>> {
-        let mut changed = false;
-
         match notification.method.as_ref() {
             CONTEXT_CLEARED_METHOD => {
                 self.reset_after_context_cleared();
-                changed = true;
             }
             CONTEXT_USAGE_METHOD => {
                 if let Ok(params) =
@@ -167,7 +145,6 @@ impl UiState {
                             ((1.0 - usage_ratio) * 100.0).clamp(0.0, 100.0).round() as u8
                         });
                     }
-                    changed = true;
                 }
             }
             SUB_AGENT_PROGRESS_METHOD => {
@@ -177,7 +154,6 @@ impl UiState {
                     self.tool_call_statuses.on_sub_agent_progress(&progress);
                     self.conversation
                         .invalidate_tool_segment(&progress.parent_tool_id);
-                    changed = true;
                 }
             }
             _ => {
@@ -188,13 +164,8 @@ impl UiState {
                     if let Some(ref mut overlay) = self.config_overlay {
                         overlay.update_server_statuses(servers);
                     }
-                    changed = true;
                 }
             }
-        }
-
-        if changed {
-            self.bump_render_version();
         }
 
         vec![]
@@ -214,7 +185,7 @@ impl UiState {
         tracing::error!("Prompt error: {error}");
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
-        self.bump_render_version();
+
         vec![]
     }
 
@@ -224,7 +195,7 @@ impl UiState {
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.remove_auth_method(method_id);
         }
-        self.bump_render_version();
+
         vec![]
     }
 
@@ -237,7 +208,7 @@ impl UiState {
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.on_authenticate_failed(method_id);
         }
-        self.bump_render_version();
+
         vec![]
     }
 
@@ -252,11 +223,10 @@ mod tests {
     use crate::tui::Action;
 
     #[test]
-    fn on_prompt_error_clears_waiting_state_and_marks_dirty() {
+    fn on_prompt_error_clears_waiting_state() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         state.waiting_for_response = true;
         state.grid_loader.visible = true;
-        let before = state.render_version();
 
         let error = acp::Error::internal_error();
         let actions = state.on_prompt_error(&error);
@@ -264,34 +234,29 @@ mod tests {
         assert!(!state.waiting_for_response);
         assert!(!state.grid_loader.visible);
         assert!(actions.is_empty());
-        assert!(state.render_version() > before);
     }
 
     #[test]
-    fn on_authenticate_complete_removes_method_and_marks_dirty() {
+    fn on_authenticate_complete_removes_method() {
         let mut state = UiState::new(
             "test-agent".to_string(),
             &[],
             vec![acp::AuthMethod::new("anthropic", "Anthropic")],
         );
-        let before = state.render_version();
 
         let actions = state.on_authenticate_complete("anthropic");
 
         assert!(state.auth_methods.is_empty());
         assert!(actions.is_empty());
-        assert!(state.render_version() > before);
     }
 
     #[test]
-    fn on_authenticate_failed_marks_dirty() {
+    fn on_authenticate_failed_returns_no_actions() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let before = state.render_version();
 
         let actions = state.on_authenticate_failed("anthropic", "bad token");
 
         assert!(actions.is_empty());
-        assert!(state.render_version() > before);
     }
 
     #[test]

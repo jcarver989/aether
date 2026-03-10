@@ -66,7 +66,6 @@
 //! ```
 
 // Core modules - always available
-pub mod component;
 pub mod components;
 pub mod diffs;
 pub use diffs::diff_types;
@@ -107,9 +106,7 @@ pub mod runtime;
 pub mod testing;
 
 // Core re-exports - always available
-pub use component::{
-    Component, Cursor, InteractiveComponent, MessageResult, RenderContext, RootComponent, UiEvent,
-};
+pub use components::{Component, Cursor, InteractiveComponent, MessageResult, RenderContext, RootComponent, UiEvent};
 pub use components::checkbox::Checkbox;
 pub use components::form::{Form, FormField, FormFieldKind, FormMessage};
 pub use components::multi_select::MultiSelect;
