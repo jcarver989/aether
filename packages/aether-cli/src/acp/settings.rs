@@ -194,6 +194,22 @@ mod tests {
     }
 
     #[test]
+    fn load_ignores_project_session_persistence_setting() {
+        let project_dir = TempDir::new().unwrap();
+        let aether_dir = project_dir.path().join(".aether");
+        std::fs::create_dir_all(&aether_dir).unwrap();
+        std::fs::write(
+            aether_dir.join("settings.json"),
+            r#"{"sessionPersistence": false}"#,
+        )
+        .unwrap();
+
+        let baseline = load_or_create_settings(None);
+        let settings = load_or_create_settings(Some(project_dir.path()));
+        assert_eq!(settings, baseline);
+    }
+
+    #[test]
     fn round_trip_with_prompts() {
         let temp_dir = TempDir::new().unwrap();
         let store = SettingsStore::from_path(temp_dir.path());

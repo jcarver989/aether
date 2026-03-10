@@ -291,15 +291,7 @@ impl Agent {
     }
 
     fn reset_context_preserving_system_messages(&mut self) {
-        let system_messages = self
-            .context
-            .messages()
-            .iter()
-            .filter(|msg| msg.is_system())
-            .cloned()
-            .collect();
-
-        self.context = Context::new(system_messages, self.context.tools().clone());
+        self.context.clear_conversation();
     }
 
     /// Inject a continuation prompt when the LLM stops due to a resumable reason.
@@ -699,34 +691,8 @@ impl Agent {
         reasoning_content: &str,
         completed_tools: Vec<Result<ToolCallResult, ToolCallError>>,
     ) {
-        let tool_requests: Vec<_> = completed_tools
-            .iter()
-            .map(|result| match result {
-                Ok(result) => ToolCallRequest {
-                    id: result.id.clone(),
-                    name: result.name.clone(),
-                    arguments: result.arguments.clone(),
-                },
-                Err(error) => ToolCallRequest {
-                    id: error.id.clone(),
-                    name: error.name.clone(),
-                    arguments: error.arguments.clone().unwrap_or_default(),
-                },
-            })
-            .collect();
-
-        self.context.add_message(ChatMessage::Assistant {
-            content: message_content.to_string(),
-            reasoning_content: (!reasoning_content.is_empty())
-                .then_some(reasoning_content.to_string()),
-            timestamp: IsoString::now(),
-            tool_calls: tool_requests,
-        });
-
-        for result in completed_tools {
-            self.context
-                .add_message(ChatMessage::ToolCallResult(result));
-        }
+        self.context
+            .push_assistant_turn(message_content, reasoning_content, completed_tools);
     }
 }
 

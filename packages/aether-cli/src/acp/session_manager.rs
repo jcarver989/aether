@@ -12,6 +12,7 @@ use llm::ReasoningEffort;
 use llm::catalog::{self, LlmModel};
 use llm::oauth::OAuthCredentialStore;
 use llm::parser::ModelProviderParser;
+use llm::types::IsoString;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -22,16 +23,19 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
 use super::config_setting::ConfigSetting;
-use super::mappers::map_acp_mcp_servers;
+use super::mappers::{map_acp_mcp_servers, replay_to_client};
 use super::model_config::{
     build_config_options, effective_model, mode_name_for_state, model_exists, pick_default_model,
     resolve_mode, validated_modes,
 };
 use super::relay::{RelayHandle, SessionCommand, spawn_relay};
 use super::session::Session;
+use super::session_store::{SessionMeta, SessionStore};
 use super::settings::{AetherCliSettings, load_or_create_settings};
 use acp_utils::content::map_content_blocks_to_text;
 use acp_utils::server::AcpActorHandle;
+use aether_core::context::ext::ContextExt;
+use llm::Context;
 
 /// Mutable per-session config state.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -106,26 +110,97 @@ struct SessionState {
 pub struct SessionManager {
     settings: AetherCliSettings,
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
-    next_session_id: Arc<Mutex<u64>>,
     actor_handle: AcpActorHandle,
+    session_store: Arc<SessionStore>,
 }
 
 impl SessionManager {
     pub fn new(actor_handle: AcpActorHandle) -> Self {
         info!("Creating SessionManager");
+        let settings = load_or_create_settings(None);
+        let session_store = SessionStore::new()
+            .map(Arc::new)
+            .unwrap_or_else(|e| panic!("Failed to initialize session store: {e}"));
         Self {
-            settings: load_or_create_settings(None),
+            settings,
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            next_session_id: Arc::new(Mutex::new(0)),
             actor_handle,
+            session_store,
         }
     }
 
-    async fn generate_session_id(&self) -> String {
-        let mut id = self.next_session_id.lock().await;
-        let session_id = format!("session-{}", *id);
-        *id += 1;
-        session_id
+    async fn register_session(
+        &self,
+        session: Session,
+        session_id: &str,
+        acp_session_id: &SessionId,
+        model: &str,
+        selected_mode: Option<String>,
+        reasoning_effort: Option<ReasoningEffort>,
+    ) -> Vec<acp::SessionConfigOption> {
+        let RelayHandle {
+            cmd_tx,
+            mcp_request_tx,
+            join_handle,
+        } = spawn_relay(
+            session,
+            self.actor_handle.clone(),
+            acp_session_id.clone(),
+            self.session_store.clone(),
+        );
+
+        let mut config = SessionConfigState::new(model.to_string());
+        config.reasoning_effort = reasoning_effort;
+        config.selected_mode.clone_from(&selected_mode);
+
+        let state = SessionState {
+            relay_tx: cmd_tx,
+            mcp_request_tx,
+            _relay_handle: join_handle,
+            config,
+        };
+
+        let mut sessions = self.sessions.lock().await;
+        sessions.insert(session_id.to_string(), state);
+
+        let available = catalog::available_models();
+        build_config_options(
+            &self.settings,
+            &available,
+            selected_mode.as_deref(),
+            model,
+            reasoning_effort,
+        )
+    }
+
+    fn spawn_available_commands_notification(
+        &self,
+        available_commands: Vec<acp::AvailableCommand>,
+        acp_session_id: SessionId,
+        session_id: &str,
+    ) {
+        if available_commands.is_empty() {
+            return;
+        }
+        let command_count = available_commands.len();
+        let notification = SessionNotification::new(
+            acp_session_id,
+            SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(
+                available_commands,
+            )),
+        );
+        let actor_handle = self.actor_handle.clone();
+        let session_id_log = session_id.to_string();
+        spawn(async move {
+            if let Err(e) = actor_handle.send_session_notification(notification).await {
+                error!("Failed to send available commands notification: {:?}", e);
+            } else {
+                info!(
+                    "Sent available commands update for session {} ({} commands)",
+                    session_id_log, command_count
+                );
+            }
+        });
     }
 }
 
@@ -171,6 +246,7 @@ mod tests {
     use super::*;
     use crate::acp::config_setting::ConfigSetting;
     use crate::acp::settings::Mode;
+    use agent_client_protocol::{InitializeRequest, ProtocolVersion};
 
     fn available_models() -> Vec<LlmModel> {
         vec![
@@ -277,6 +353,20 @@ mod tests {
         );
         assert!(state.selected_mode.is_none());
     }
+
+    #[tokio::test]
+    async fn initialize_always_advertises_load_session_support() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let manager = SessionManager::new(AcpActorHandle::new(tx));
+
+        let response = manager
+            .initialize(InitializeRequest::new(ProtocolVersion::LATEST))
+            .await
+            .expect("initialize succeeds");
+
+        let json = serde_json::to_string(&response).expect("response serializes");
+        assert!(json.contains("\"loadSession\":true"));
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -288,7 +378,7 @@ impl Agent for SessionManager {
             .agent_info(Implementation::new("Aether", "0.1.0"))
             .agent_capabilities(
                 AgentCapabilities::new()
-                    .load_session(false)
+                    .load_session(true)
                     .prompt_capabilities(
                         PromptCapabilities::new()
                             .embedded_context(true)
@@ -345,7 +435,7 @@ impl Agent for SessionManager {
 
     async fn new_session(&self, args: NewSessionRequest) -> Result<NewSessionResponse, acp::Error> {
         info!("Creating new session with cwd: {:?}", args.cwd);
-        let session_id = self.generate_session_id().await;
+        let session_id = uuid::Uuid::new_v4().to_string();
         let acp_session_id = acp::SessionId::new(session_id.clone());
 
         let project_settings = load_or_create_settings(Some(&args.cwd));
@@ -386,6 +476,7 @@ impl Agent for SessionManager {
             args.cwd.clone(),
             map_acp_mcp_servers(args.mcp_servers),
             prompt_patterns,
+            None,
         )
         .await
         .map_err(|e| {
@@ -398,62 +489,33 @@ impl Agent for SessionManager {
             acp::Error::internal_error()
         })?;
 
-        let RelayHandle {
-            cmd_tx,
-            mcp_request_tx,
-            join_handle,
-        } = spawn_relay(session, self.actor_handle.clone(), acp_session_id.clone());
-
-        let mut config = SessionConfigState::new(model_str.clone());
-        config.reasoning_effort = initial_reasoning_effort;
-        config.selected_mode.clone_from(&initial_selected_mode);
-
-        let state = SessionState {
-            relay_tx: cmd_tx,
-            mcp_request_tx,
-            _relay_handle: join_handle,
-            config,
+        let meta = SessionMeta {
+            session_id: session_id.clone(),
+            cwd: args.cwd.clone(),
+            model: model_str.clone(),
+            created_at: IsoString::now().0,
         };
+        if let Err(e) = self.session_store.append_meta(&session_id, &meta) {
+            error!("Failed to write session meta: {e}");
+        }
 
-        let mut sessions = self.sessions.lock().await;
-        sessions.insert(session_id.clone(), state);
+        let config_options = self
+            .register_session(
+                session,
+                &session_id,
+                &acp_session_id,
+                &model_str,
+                initial_selected_mode,
+                initial_reasoning_effort,
+            )
+            .await;
 
         info!("Session {} created successfully", session_id);
 
-        let config_options = build_config_options(
-            &self.settings,
-            &available,
-            initial_selected_mode.as_deref(),
-            &model_str,
-            initial_reasoning_effort,
-        );
         let response =
             NewSessionResponse::new(acp_session_id.clone()).config_options(config_options);
 
-        // Send available commands update notification asynchronously (don't await)
-        // This allows the response to be sent first, then the notification follows
-        if !available_commands.is_empty() {
-            let command_count = available_commands.len();
-            let notification = SessionNotification::new(
-                acp_session_id,
-                SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(
-                    available_commands,
-                )),
-            );
-
-            let actor_handle = self.actor_handle.clone();
-            let session_id_log = session_id.clone();
-            spawn(async move {
-                if let Err(e) = actor_handle.send_session_notification(notification).await {
-                    error!("Failed to send available commands notification: {:?}", e);
-                } else {
-                    info!(
-                        "Sent available commands update for session {} ({} commands)",
-                        session_id_log, command_count
-                    );
-                }
-            });
-        }
+        self.spawn_available_commands_notification(available_commands, acp_session_id, &session_id);
 
         Ok(response)
     }
@@ -462,9 +524,74 @@ impl Agent for SessionManager {
         &self,
         args: LoadSessionRequest,
     ) -> Result<LoadSessionResponse, acp::Error> {
-        info!("Received load_session request: {:?}", args);
-        // Not supported yet
-        Err(acp::Error::method_not_found())
+        let session_id = args.session_id.0.to_string();
+        info!("Loading session: {session_id}");
+
+        let (meta, events) = self.session_store.load(&session_id).ok_or_else(|| {
+            error!("Session not found: {session_id}");
+            acp::Error::invalid_params()
+        })?;
+
+        let model = meta.model;
+        let context = Context::from_events(&events);
+
+        let project_settings = load_or_create_settings(Some(&args.cwd));
+        let prompt_patterns = project_settings.prompts.clone();
+
+        let parser = ModelProviderParser::default();
+        let (llm, _) = parser.parse(&model).map_err(|e| {
+            error!("Failed to create provider for '{}': {e}", model);
+            acp::Error::internal_error()
+        })?;
+
+        let mcp_config_path = resolve_mcp_config(&args.cwd);
+
+        let restored_messages: Vec<_> = context
+            .messages()
+            .iter()
+            .filter(|m| !m.is_system())
+            .cloned()
+            .collect();
+
+        let session = Session::new(
+            llm,
+            mcp_config_path,
+            args.cwd.clone(),
+            map_acp_mcp_servers(args.mcp_servers),
+            prompt_patterns,
+            Some(restored_messages),
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to create session for load: {e}");
+            acp::Error::internal_error()
+        })?;
+
+        let available_commands = session.list_available_commands().await.map_err(|e| {
+            error!("Failed to list available commands: {e}");
+            acp::Error::internal_error()
+        })?;
+
+        let acp_session_id = acp::SessionId::new(session_id.clone());
+
+        let config_options = self
+            .register_session(session, &session_id, &acp_session_id, &model, None, None)
+            .await;
+
+        info!("Session {session_id} loaded successfully");
+
+        let response = LoadSessionResponse::new().config_options(config_options);
+
+        // Replay history to client
+        let actor_handle = self.actor_handle.clone();
+        let replay_session_id = acp_session_id.clone();
+        spawn(async move {
+            replay_to_client(&events, &actor_handle, &replay_session_id).await;
+        });
+
+        self.spawn_available_commands_notification(available_commands, acp_session_id, &session_id);
+
+        Ok(response)
     }
 
     async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
