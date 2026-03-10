@@ -24,10 +24,6 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(clap::Args, Debug)]
 pub struct AcpArgs {
-    /// System prompt for the agent
-    #[clap(long)]
-    pub system_prompt: Option<String>,
-
     /// Path to log file directory (default: /tmp/aether-acp-logs)
     #[clap(long, default_value = "/tmp/aether-acp-logs")]
     pub log_dir: PathBuf,
@@ -48,7 +44,7 @@ pub async fn run_acp(args: AcpArgs) -> acp::Result<()> {
         .run_until(async move {
             let (actor_request_tx, actor_request_rx) = mpsc::unbounded_channel();
             let actor_handle = AcpActorHandle::new(actor_request_tx);
-            let agent = SessionManager::new(args.system_prompt, actor_handle.clone());
+            let agent = SessionManager::new(actor_handle.clone());
 
             let (conn, handle_io) = AgentSideConnection::new(agent, stdout, stdin, |fut| {
                 spawn_local(fut);

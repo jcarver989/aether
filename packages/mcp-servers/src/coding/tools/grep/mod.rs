@@ -809,7 +809,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(args.file_type, Some("rust".to_string()));
-        assert!(matches!(args.output_mode, Some(OutputMode::FilesWithMatches)));
+        assert!(matches!(
+            args.output_mode,
+            Some(OutputMode::FilesWithMatches)
+        ));
         assert_eq!(args.case_insensitive, Some(true));
         assert_eq!(args.line_numbers, Some(true));
         assert_eq!(args.context_before, Some(1));

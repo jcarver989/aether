@@ -104,7 +104,6 @@ struct SessionState {
 
 /// Manages ACP sessions, each session has its own agent and state
 pub struct SessionManager {
-    system_prompt: Option<String>,
     settings: AetherCliSettings,
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
     next_session_id: Arc<Mutex<u64>>,
@@ -112,11 +111,10 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    pub fn new(system_prompt: Option<String>, actor_handle: AcpActorHandle) -> Self {
+    pub fn new(actor_handle: AcpActorHandle) -> Self {
         info!("Creating SessionManager");
         Self {
-            system_prompt,
-            settings: load_or_create_settings(),
+            settings: load_or_create_settings(None),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             next_session_id: Arc::new(Mutex::new(0)),
             actor_handle,
@@ -350,6 +348,9 @@ impl Agent for SessionManager {
         let session_id = self.generate_session_id().await;
         let acp_session_id = acp::SessionId::new(session_id.clone());
 
+        let project_settings = load_or_create_settings(Some(&args.cwd));
+        let prompt_patterns = project_settings.prompts.clone();
+
         let available = catalog::available_models();
         let default_model = pick_default_model(&available).ok_or_else(|| {
             error!("No models available — set an API key env var (e.g. ANTHROPIC_API_KEY)");
@@ -381,10 +382,10 @@ impl Agent for SessionManager {
 
         let session = Session::new(
             llm,
-            self.system_prompt.clone(),
             mcp_config_path.clone(),
             args.cwd.clone(),
             map_acp_mcp_servers(args.mcp_servers),
+            prompt_patterns,
         )
         .await
         .map_err(|e| {

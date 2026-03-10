@@ -23,6 +23,7 @@ clap = { workspace = true }
 thiserror = { workspace = true }
 agent-client-protocol = { workspace = true }
 acp_utils = { path = "../acp-utils", default-features = false }
+glob = { workspace = true }
 mcp_utils = { path = "../mcp-utils"}
 llm = { path = "../llm" }
 

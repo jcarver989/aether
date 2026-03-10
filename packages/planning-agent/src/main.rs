@@ -117,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_mcp_json("mcp.json");
 
     let run_id = EvalRunner::new(runner, results_store)
-        .with_agent_prompt(Prompt::file("./tests/AGENTS.md", false).build().await?)
+        .with_agent_prompt(Prompt::file("./tests/AGENTS.md").build().await?)
         .run_evals(evals, config)
         .await?;
 
