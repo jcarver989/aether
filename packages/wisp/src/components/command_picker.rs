@@ -1,7 +1,7 @@
+use crate::tui::rendering::soft_wrap::{display_width_text, pad_text_to_width, truncate_text};
 use crate::tui::{
     Combobox, Component, InteractiveComponent, Line, MessageResult, PickerKey, RenderContext,
     Searchable, Style, UiEvent, classify_key,
-    soft_wrap::{display_width_text, pad_text_to_width, truncate_text},
 };
 
 #[derive(Debug, Clone)]
@@ -157,8 +157,8 @@ fn build_styled_command_line(
 mod tests {
     use super::*;
     use crate::tui::RenderContext;
-    use crate::tui::soft_wrap::{display_width_line, display_width_text};
-    use crate::tui::span::Span;
+    use crate::tui::rendering::soft_wrap::{display_width_line, display_width_text};
+    use crate::tui::rendering::span::Span;
     use crate::tui::test_picker::{
         rendered_lines, rendered_lines_with_size, rendered_raw_lines, rendered_raw_lines_with_size,
         selected_text, type_query,

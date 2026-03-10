@@ -9,14 +9,11 @@ pub(crate) use git_diff_mode::{
 };
 pub(crate) use state::UiState;
 
-use crate::tui::{
-    Action, App as TuiApp, Component, Cursor, Frame, Line, RenderContext, Renderer, RootComponent,
-    TerminalEvent,
-};
+use crate::tui::advanced::Renderer;
+use crate::tui::{App as TuiApp, AppEvent, Component, Cursor, Effects, Frame, Line, RenderContext};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use acp_utils::notifications::McpServerStatus;
 use agent_client_protocol::{self as acp, SessionConfigOption};
-use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 use utils::ReasoningEffort;
@@ -66,58 +63,14 @@ pub struct PromptAttachment {
     pub display_name: String,
 }
 
-#[derive(Clone, PartialEq)]
-pub struct StatusLineProps {
-    pub(crate) agent_name: String,
-    pub(crate) mode_display: Option<String>,
-    pub(crate) model_display: Option<String>,
-    pub(crate) reasoning_effort: Option<ReasoningEffort>,
-    pub(crate) context_pct_left: Option<u8>,
-    pub(crate) waiting_for_response: bool,
-    pub(crate) unhealthy_server_count: usize,
-}
-
-#[derive(Clone, PartialEq)]
-pub struct ConversationScreenProps {
-    pub(crate) conversation_version: u64,
-    pub(crate) prompt_version: u64,
-    pub(crate) spinner_active: bool,
-    pub(crate) spinner_frame: usize,
-    pub(crate) plan_version: u64,
-    pub(crate) tool_tick: u16,
-    pub(crate) progress_tick: u16,
-    pub(crate) progress_active: bool,
-    pub(crate) has_elicitation: bool,
-    pub(crate) status: StatusLineProps,
-}
-
-#[derive(Clone, PartialEq)]
-pub struct ConfigOverlayScreenProps {
-    pub(crate) overlay_version: u64,
-    pub(crate) status: StatusLineProps,
-}
-
-#[derive(Clone, PartialEq)]
-pub struct GitDiffScreenProps {
-    pub(crate) diff_version: u64,
-    pub(crate) status: StatusLineProps,
-}
-
-#[derive(Clone, PartialEq)]
-pub enum AppProps {
-    Conversation(ConversationScreenProps),
-    ConfigOverlay(ConfigOverlayScreenProps),
-    GitDiff(GitDiffScreenProps),
-}
-
-impl AppProps {
-    fn status(&self) -> &StatusLineProps {
-        match self {
-            AppProps::Conversation(p) => &p.status,
-            AppProps::ConfigOverlay(p) => &p.status,
-            AppProps::GitDiff(p) => &p.status,
-        }
-    }
+struct StatusLineProps {
+    agent_name: String,
+    mode_display: Option<String>,
+    model_display: Option<String>,
+    reasoning_effort: Option<ReasoningEffort>,
+    context_pct_left: Option<u8>,
+    waiting_for_response: bool,
+    unhealthy_server_count: usize,
 }
 
 pub struct App {
@@ -150,6 +103,30 @@ impl App {
         }
     }
 
+    fn prepare_for_view(&mut self, context: &RenderContext) {
+        self.state
+            .refresh_caches(context, Some(&mut self.git_diff_mode));
+
+        if let Some(ref mut overlay) = self.state.config_overlay {
+            let height = (context.size.height.saturating_sub(1)) as usize;
+            if height >= 3 {
+                overlay.update_child_viewport(height.saturating_sub(4));
+            }
+        }
+
+        let plan_version = self.state.plan_tracker.version();
+        let last_tick = self.state.plan_tracker.last_tick();
+        if plan_version != self.cached_plan_version || last_tick != self.cached_plan_tick {
+            let grace_period = self.state.plan_tracker.grace_period;
+            self.cached_visible_plan_entries = self
+                .state
+                .plan_tracker
+                .visible_entries(last_tick, grace_period);
+            self.cached_plan_version = plan_version;
+            self.cached_plan_tick = last_tick;
+        }
+    }
+
     fn status_line_props(&self) -> StatusLineProps {
         let unhealthy_count = self
             .state
@@ -171,125 +148,60 @@ impl App {
 
 impl TuiApp for App {
     type Event = AcpEvent;
-    type Action = AppAction;
+    type Effect = AppAction;
     type Error = Box<dyn std::error::Error>;
 
-    fn on_terminal_event(
+    fn update(
         &mut self,
-        event: TerminalEvent,
-        _context: &RenderContext,
-    ) -> Vec<Action<AppAction>> {
-        match event {
-            TerminalEvent::Key(key_event) => {
+        event: AppEvent<Self::Event>,
+        context: &RenderContext,
+    ) -> Effects<Self::Effect> {
+        let effects = match event {
+            AppEvent::Key(key_event) => {
                 let input = self.state.on_key_event(key_event);
                 if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
-                    let interaction = self.git_diff_mode.on_key_event(key_event);
-                    let mut actions = input.actions;
-                    actions.extend(interaction.actions);
-                    actions
+                    let git_effects = self.git_diff_mode.on_key_event(key_event);
+                    input.merge(git_effects)
                 } else {
-                    input.actions
+                    input
                 }
             }
-            TerminalEvent::Paste(text) => self.state.on_paste(text),
-            TerminalEvent::Mouse(mouse) => self
+            AppEvent::Paste(text) => self.state.on_paste(text),
+            AppEvent::Mouse(mouse) => self
                 .state
                 .on_mouse_event(mouse, Some(&mut self.git_diff_mode)),
-        }
-    }
+            AppEvent::Tick(_) => self.state.on_tick(),
+            AppEvent::Resize(_) => Effects::none(),
+            AppEvent::External(event) => match event {
+                AcpEvent::SessionUpdate(update) => self.state.on_session_update(*update),
+                AcpEvent::ExtNotification(notification) => {
+                    self.state.on_ext_notification(notification)
+                }
+                AcpEvent::PromptDone(_) => self.state.on_prompt_done(context),
+                AcpEvent::PromptError(error) => self.state.on_prompt_error(&error),
+                AcpEvent::ElicitationRequest {
+                    params,
+                    response_tx,
+                } => self.state.on_elicitation_request(params, response_tx),
+                AcpEvent::AuthenticateComplete { method_id } => {
+                    self.state.on_authenticate_complete(&method_id)
+                }
+                AcpEvent::AuthenticateFailed { method_id, error } => {
+                    self.state.on_authenticate_failed(&method_id, &error)
+                }
+                AcpEvent::ConnectionClosed => self.state.on_connection_closed(),
+            },
+        };
 
-    fn on_tick(&mut self, _context: &RenderContext) -> Vec<Action<AppAction>> {
-        self.state.on_tick()
-    }
-
-    fn wants_tick(&self) -> bool {
-        self.state.wants_tick()
-    }
-
-    fn on_event(&mut self, event: AcpEvent, context: &RenderContext) -> Vec<Action<AppAction>> {
-        match event {
-            AcpEvent::SessionUpdate(update) => self.state.on_session_update(*update),
-            AcpEvent::ExtNotification(notification) => self.state.on_ext_notification(notification),
-            AcpEvent::PromptDone(_) => self.state.on_prompt_done(context),
-            AcpEvent::PromptError(error) => self.state.on_prompt_error(&error),
-            AcpEvent::ElicitationRequest {
-                params,
-                response_tx,
-            } => self.state.on_elicitation_request(params, response_tx),
-            AcpEvent::AuthenticateComplete { method_id } => {
-                self.state.on_authenticate_complete(&method_id)
-            }
-            AcpEvent::AuthenticateFailed { method_id, error } => {
-                self.state.on_authenticate_failed(&method_id, &error)
-            }
-            AcpEvent::ConnectionClosed => self.state.on_connection_closed(),
-        }
-    }
-
-    async fn on_action<T: Write>(
-        &mut self,
-        renderer: &mut Renderer<T>,
-        effect: Self::Action,
-    ) -> Result<Vec<Action<Self::Action>>, Self::Error> {
-        self.apply_action(renderer, effect).await
-    }
-}
-
-impl RootComponent for App {
-    type Props = AppProps;
-
-    fn props(&mut self, context: &RenderContext) -> AppProps {
-        self.state
-            .refresh_caches(context, Some(&mut self.git_diff_mode));
-
-        let status = self.status_line_props();
-
-        if let Some(ref mut overlay) = self.state.config_overlay {
-            let height = (context.size.height.saturating_sub(1)) as usize;
-            if height >= 3 {
-                overlay.update_child_viewport(height.saturating_sub(4));
-            }
-            return AppProps::ConfigOverlay(ConfigOverlayScreenProps {
-                overlay_version: overlay.version(),
-                status,
-            });
+        if !effects.is_exit() {
+            self.prepare_for_view(context);
         }
 
-        if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
-            return AppProps::GitDiff(GitDiffScreenProps {
-                diff_version: self.git_diff_mode.version(),
-                status,
-            });
-        }
-
-        let plan_version = self.state.plan_tracker.version();
-        let last_tick = self.state.plan_tracker.last_tick();
-        if plan_version != self.cached_plan_version || last_tick != self.cached_plan_tick {
-            let grace_period = self.state.plan_tracker.grace_period;
-            self.cached_visible_plan_entries = self
-                .state
-                .plan_tracker
-                .visible_entries(last_tick, grace_period);
-            self.cached_plan_version = plan_version;
-            self.cached_plan_tick = last_tick;
-        }
-
-        AppProps::Conversation(ConversationScreenProps {
-            conversation_version: self.state.conversation.version(),
-            prompt_version: self.state.prompt_composer.version(),
-            spinner_active: self.state.grid_loader.visible,
-            spinner_frame: self.state.grid_loader.frame_index(),
-            plan_version: self.state.plan_tracker.version(),
-            tool_tick: self.state.tool_call_statuses.tick(),
-            progress_tick: self.state.progress_indicator.tick(),
-            progress_active: self.state.progress_indicator.is_active(),
-            has_elicitation: self.state.elicitation_form.is_some(),
-            status,
-        })
+        effects
     }
 
-    fn render(&self, props: &AppProps, context: &RenderContext) -> Frame {
-        let s = props.status();
+    fn view(&self, context: &RenderContext) -> Frame {
+        let s = self.status_line_props();
         let status_line = StatusLine {
             agent_name: &s.agent_name,
             mode_display: s.mode_display.as_deref(),
@@ -375,6 +287,20 @@ impl RootComponent for App {
 
         Frame::new(lines, cursor)
     }
+
+    async fn run_effect(
+        &mut self,
+        renderer: &mut Renderer<impl std::io::Write>,
+        effect: Self::Effect,
+    ) -> Result<Effects<Self::Effect>, Self::Error> {
+        let follow_up = self.apply_action(renderer, effect).await?;
+        self.prepare_for_view(&renderer.context());
+        Ok(follow_up)
+    }
+
+    fn wants_tick(&self) -> bool {
+        self.state.wants_tick()
+    }
 }
 
 fn theme_file_from_picker_value(value: &str) -> Option<String> {
@@ -401,8 +327,8 @@ mod tests {
     use tempfile::TempDir;
 
     fn render_app(app: &mut App, context: &RenderContext) -> Frame {
-        let props = app.props(context);
-        app.render(&props, context)
+        app.prepare_for_view(context);
+        app.view(context)
     }
 
     #[allow(dead_code)]
@@ -513,11 +439,12 @@ mod tests {
 
         let effects = app.state.handle_config_overlay_messages(outcome);
 
+        let actions = effects.into_effects();
         assert!(matches!(
-            effects.as_slice(),
-            [Action::Custom(AppAction::SetTheme {
+            actions.as_slice(),
+            [AppAction::SetTheme {
                 file: Some(file)
-            })] if file == "catppuccin.tmTheme"
+            }] if file == "catppuccin.tmTheme"
         ));
     }
 
@@ -540,9 +467,10 @@ mod tests {
 
         let effects = app.state.handle_config_overlay_messages(outcome);
 
+        let actions = effects.into_effects();
         assert!(matches!(
-            effects.as_slice(),
-            [Action::Custom(AppAction::SetTheme { file: None })]
+            actions.as_slice(),
+            [AppAction::SetTheme { file: None }]
         ));
     }
 
@@ -565,12 +493,13 @@ mod tests {
 
         let effects = app.state.handle_config_overlay_messages(outcome);
 
+        let actions = effects.into_effects();
         assert!(matches!(
-            effects.as_slice(),
-            [Action::Custom(AppAction::SetConfigOption {
+            actions.as_slice(),
+            [AppAction::SetConfigOption {
                 config_id,
                 new_value
-            })] if config_id == "model" && new_value == "gpt-5"
+            }] if config_id == "model" && new_value == "gpt-5"
         ));
     }
 
@@ -786,13 +715,12 @@ mod tests {
         );
 
         let context = RenderContext::new((120, 40));
-        let props = app.props(&context);
+        app.prepare_for_view(&context);
 
-        if let AppProps::Conversation(conv_props) = props {
-            assert_eq!(conv_props.plan_version, app.state.plan_tracker.version());
-        } else {
-            panic!("Expected Conversation props");
-        }
+        assert_eq!(
+            app.cached_plan_version,
+            app.state.plan_tracker.version()
+        );
     }
 
     #[test]
@@ -806,32 +734,14 @@ mod tests {
             PathBuf::from("."),
         );
 
-        // Add a running tool call
         let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
         app.state.tool_call_statuses.on_tool_call(&tool_call);
-
-        // Hide the grid loader
         app.state.grid_loader.visible = false;
 
-        let context = RenderContext::new((120, 40));
-        let props_before = app.props(&context);
-        let tick_before = if let AppProps::Conversation(ref p) = props_before {
-            p.tool_tick
-        } else {
-            panic!("Expected Conversation props");
-        };
-
-        // Advance the tick
+        let tick_before = app.state.tool_call_statuses.tick();
         app.state.on_tick();
+        let tick_after = app.state.tool_call_statuses.tick();
 
-        let props_after = app.props(&context);
-        let tick_after = if let AppProps::Conversation(ref p) = props_after {
-            p.tool_tick
-        } else {
-            panic!("Expected Conversation props");
-        };
-
-        // Tool tick should have advanced even though grid loader is hidden
         assert!(tick_after > tick_before);
     }
 
@@ -846,29 +756,19 @@ mod tests {
             PathBuf::from("."),
         );
 
-        // Add a running tool call so progress indicator gets updated via tool_call_statuses
         let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
         app.state.tool_call_statuses.on_tool_call(&tool_call);
 
-        let context = RenderContext::new((120, 40));
-        let props_before = app.props(&context);
-        let tick_before = if let AppProps::Conversation(ref p) = props_before {
-            p.progress_tick
-        } else {
-            panic!("Expected Conversation props");
-        };
-
-        // Advance the tick
+        app.state.progress_indicator.update(0, 1);
+        let ctx = RenderContext::new((80, 24));
+        let output_before = app.state.progress_indicator.render(&ctx);
         app.state.on_tick();
+        let output_after = app.state.progress_indicator.render(&ctx);
 
-        let props_after = app.props(&context);
-        let tick_after = if let AppProps::Conversation(ref p) = props_after {
-            p.progress_tick
-        } else {
-            panic!("Expected Conversation props");
-        };
-
-        // Progress tick should have advanced
-        assert!(tick_after > tick_before);
+        assert_ne!(
+            output_before[0].plain_text(),
+            output_after[0].plain_text(),
+            "spinner frame should change after tick"
+        );
     }
 }

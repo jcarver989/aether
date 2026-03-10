@@ -1,21 +1,99 @@
 # tui
 
-A lightweight, composable terminal UI framework for building rich CLI applications.
+A lightweight, composable terminal UI framework for building full-screen CLI apps.
 
-## Features
+## Start here
 
-- **Component model** — `Component`, `InteractiveComponent`, `RootComponent`, and typed actions
-- **Styled text** — `Line`/`Span`/`Style` primitives with ANSI output, unicode-width aware
-- **Frame-diffing renderer** — `TerminalScreen` diffs frames and only rewrites changed lines; `Renderer` adds soft-wrap, cursor management, and progressive scrollback overflow
-- **Focus management** — `FocusRing` for Tab/BackTab cycling across child components
-- **Theme system** — Semantic color palettes derived from `.tmTheme` files
-- **Built-in widgets** — `TextField`, `NumberField`, `Checkbox`, `RadioSelect`, `MultiSelect`, `Form`, `Spinner`, `Combobox`
-- **Runtime entrypoint** — `tui::run_app(...)` + `RuntimeApp` for trait-based application runtime control
+The primary app model has four pieces:
 
-## Rendering primitives
+- `App` — your application state machine
+- `AppEvent` — unified terminal, external, and tick events
+- `Effects` — follow-up work or exit
+- `Runner` — terminal bootstrap and event loop ownership
+
+A minimal app looks like this:
 
 ```rust
-use tui::{Component, Line, RenderContext};
+use tui::{App, AppEvent, Cursor, Effects, Frame, KeyCode, Line, RenderContext, Runner};
+
+struct Counter {
+    count: i32,
+}
+
+impl App for Counter {
+    type Event = ();
+    type Effect = ();
+    type Error = std::io::Error;
+
+    fn update(&mut self, event: AppEvent<Self::Event>, _ctx: &RenderContext) -> Effects<Self::Effect> {
+        match event {
+            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
+            AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
+                self.count += 1;
+                Effects::none()
+            }
+            AppEvent::Key(key) if key.code == KeyCode::Char('k') => {
+                self.count -= 1;
+                Effects::none()
+            }
+            _ => Effects::none(),
+        }
+    }
+
+    fn view(&self, _ctx: &RenderContext) -> Frame {
+        Frame::new(
+            vec![Line::new(format!("Count: {}", self.count))],
+            Cursor {
+                row: 0,
+                col: 0,
+                is_visible: false,
+            },
+        )
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), std::io::Error> {
+    Runner::new(Counter { count: 0 }).run().await
+}
+```
+
+See:
+
+- `examples/counter.rs` for the minimal happy path
+- `examples/child_widgets.rs` for reusable child widgets
+- `examples/manual_runtime.rs` for advanced manual runtime control
+
+### Runner configuration
+
+Use builder methods when you need to customize the default runtime:
+
+```rust,no_run
+# use std::time::Duration;
+# use tui::{App, AppEvent, Cursor, Effects, Frame, Line, RenderContext, Runner};
+# struct MyApp;
+# impl App for MyApp {
+#     type Event = (); type Effect = (); type Error = std::io::Error;
+#     fn update(&mut self, _event: AppEvent<Self::Event>, _ctx: &RenderContext) -> Effects<Self::Effect> { Effects::none() }
+#     fn view(&self, _ctx: &RenderContext) -> Frame {
+#         Frame::new(vec![Line::new("")], Cursor { row: 0, col: 0, is_visible: false })
+#     }
+# }
+# async fn example(app: MyApp, rx: tokio::sync::mpsc::UnboundedReceiver<()>) -> Result<(), std::io::Error> {
+Runner::new(app)
+    .tick_rate(Duration::from_millis(100))
+    .external_events(rx)
+    .run()
+    .await
+# }
+```
+
+## Reusable widgets
+
+Use `Component` for rendering reusable child widgets and `InteractiveComponent` when a child widget needs to emit messages back to its parent.
+
+```rust
+use tui::{Component, InteractiveComponent, Line, MessageResult, RenderContext, UiEvent};
 
 struct Greeting {
     name: String,
@@ -26,109 +104,60 @@ impl Component for Greeting {
         vec![Line::new(format!("Hello, {}!", self.name))]
     }
 }
-```
 
-## Running an application
+impl InteractiveComponent for Greeting {
+    type Message = ();
 
-`tui` uses a trait-based runtime API:
-- `run_app(...)` as the main entrypoint
-- `RuntimeApp` for app-owned event/effect handling
-
-```rust,no_run
-use std::error::Error;
-use tui::{
-    Cursor, Frame, RenderContext, RootComponent, RuntimeAction, RuntimeApp, RuntimeEvent,
-    RuntimeOptions, run_app,
-};
-
-struct App {
-    value: usize,
-}
-
-enum Effect {
-    Save,
-}
-
-impl RootComponent for App {
-    fn render(&mut self, _context: &RenderContext) -> Frame {
-        Frame::new(
-            vec![tui::Line::new(format!("value: {}", self.value))],
-            Cursor {
-                row: 0,
-                col: 0,
-                is_visible: false,
-            },
-        )
+    fn on_event(&mut self, _event: UiEvent) -> MessageResult<Self::Message> {
+        MessageResult::ignored()
     }
-}
-
-impl RuntimeApp for App {
-    type External = ();
-    type Effect = Effect;
-    type Error = Box<dyn Error>;
-
-    fn on_event(
-        &mut self,
-        event: RuntimeEvent<Self::External>,
-        _context: &RenderContext,
-    ) -> Vec<RuntimeAction<Self::Effect>> {
-        match event {
-            RuntimeEvent::Terminal(crossterm::event::Event::Key(_)) => {
-                self.value += 1;
-                vec![RuntimeAction::Render, RuntimeAction::Effect(Effect::Save)]
-            }
-            RuntimeEvent::Tick(_) => vec![RuntimeAction::Render],
-            RuntimeEvent::External(_) => vec![],
-            RuntimeEvent::Terminal(_) => vec![],
-        }
-    }
-
-    async fn on_effect<W: std::io::Write>(
-        &mut self,
-        _renderer: &mut tui::Renderer<W>,
-        effect: Self::Effect,
-    ) -> Result<Vec<RuntimeAction<Self::Effect>>, Self::Error> {
-        match effect {
-            Effect::Save => Ok(vec![]),
-        }
-    }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let mut app = App { value: 0 };
-
-    run_app(
-        &mut app,
-        None::<tokio::sync::mpsc::UnboundedReceiver<()>>,
-        RuntimeOptions::default(),
-    )
-    .await
 }
 ```
 
-The high-level runtime centers on `run_app(...)`, with `RuntimeApp` keeping event and
-effect handling on the app itself. Low-level APIs like `Renderer` and
-`spawn_terminal_event_task()` remain available for advanced consumers that want full
-control over terminal lifecycle or event plumbing.
+Focus helpers:
 
-External async event sources are supported via an optional
-`tokio::sync::mpsc::UnboundedReceiver<_>` passed to `run_app(...)`.
+- `FocusRing` for simple Tab / BackTab traversal
+- `FocusGroup` for higher-level focus routing and scope boundaries
+
+Useful building blocks:
+
+- `Container`
+- `Form`
+- `TextField`
+- `Checkbox`
+- `RadioSelect`
+- `MultiSelect`
+- `Dialog`
+- `Spinner`
+- `StatusBar`
+
+## Advanced control
+
+If you need to manage terminal setup or the event loop yourself, use `tui::advanced`.
+
+```rust
+use tui::advanced::{run_app, Action, Renderer, RootApp, RootComponent, TerminalSession};
+```
+
+Advanced APIs are for cases where you want manual renderer control, explicit terminal lifecycle management, or the legacy runtime path. Most applications should prefer `App` + `Runner`.
 
 ## Feature flags
 
-| Feature    | Default | Description                                      |
-|------------|---------|--------------------------------------------------|
-| `markdown` | yes     | Markdown rendering (pulls in `pulldown-cmark`)   |
-| `serde`    | yes     | JSON serialization for form values (`serde_json`) |
-| `runtime`  | yes     | Runtime entrypoint and terminal event handling   |
-| `picker`   | yes     | Fuzzy-search combobox (`nucleo`)                 |
+| Feature | Description | Default |
+|---|---|---|
+| `syntax` | Syntax highlighting via syntect | ✅ |
+| `markdown` | Markdown rendering | ✅ |
+| `diff` | Diff preview rendering | ✅ |
+| `serde` | Form JSON serialization helpers | ✅ |
+| `runtime` | Async terminal runtime | ✅ |
+| `picker` | Fuzzy combobox picker | ✅ |
+| `testing` | Test utilities | ❌ |
 
-Disable defaults with `default-features = false` and enable only what you need:
+Disable defaults when you only need lower-level primitives:
 
 ```toml
 [dependencies]
-tui = { version = "0.1", default-features = false, features = ["markdown"] }
+tui = { version = "0.1", default-features = false }
 ```
 
 ## License

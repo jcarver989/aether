@@ -1,5 +1,5 @@
 use crate::components::reasoning_bar::reasoning_bar;
-use crate::tui::soft_wrap::{display_width_line, display_width_text};
+use crate::tui::rendering::soft_wrap::{display_width_line, display_width_text};
 use crate::tui::{Component, Line, RenderContext};
 use utils::ReasoningEffort;
 

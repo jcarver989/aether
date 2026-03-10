@@ -1,7 +1,8 @@
 use super::{App, AppAction, PromptAttachment, build_attachment_blocks};
 use crate::components::app::git_diff_mode::format_review_prompt;
 use crate::settings::{load_or_create_settings, save_settings};
-use crate::tui::{Action, Line, Renderer};
+use crate::tui::{Effects, Line};
+use crate::tui::advanced::Renderer;
 use std::io::Write;
 
 impl App {
@@ -9,11 +10,11 @@ impl App {
         &mut self,
         renderer: &mut Renderer<T>,
         action: AppAction,
-    ) -> Result<Vec<Action<AppAction>>, Box<dyn std::error::Error>> {
+    ) -> Result<Effects<AppAction>, Box<dyn std::error::Error>> {
         match action {
             AppAction::PushScrollback(lines) => {
                 renderer.push_to_scrollback(&lines)?;
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::PromptSubmit {
                 user_input,
@@ -27,7 +28,7 @@ impl App {
                     attachments,
                 )
                 .await?;
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::SetConfigOption {
                 config_id,
@@ -36,52 +37,50 @@ impl App {
                 let _ =
                     self.prompt_handle
                         .set_config_option(&self.session_id, &config_id, &new_value);
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::SetTheme { file } => {
                 apply_theme_selection(renderer, file);
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::Cancel => {
                 self.prompt_handle.cancel(&self.session_id)?;
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::AuthenticateMcpServer { server_name } => {
                 let _ = self
                     .prompt_handle
                     .authenticate_mcp_server(&self.session_id, &server_name);
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::AuthenticateProvider { method_id } => {
                 let _ = self
                     .prompt_handle
                     .authenticate(&self.session_id, &method_id);
                 self.state.on_authenticate_started(&method_id);
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::ClearScreen => {
                 self.state.reset_after_context_cleared();
                 renderer.clear_screen()?;
                 self.prompt_handle
                     .prompt(&self.session_id, "/clear", None)?;
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::OpenGitDiffViewer => {
                 self.state.enter_git_diff();
                 self.git_diff_mode.begin_open();
                 self.git_diff_mode.complete_load().await;
-
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::RefreshGitDiffViewer => {
                 self.git_diff_mode.complete_load().await;
-
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::CloseGitDiffViewer => {
                 self.git_diff_mode.close();
                 self.state.exit_git_diff();
-                Ok(vec![])
+                Ok(Effects::none())
             }
             AppAction::SubmitDiffReview { comments } => {
                 let prompt = format_review_prompt(&comments);
@@ -95,7 +94,7 @@ impl App {
                     vec![],
                 )
                 .await?;
-                Ok(vec![])
+                Ok(Effects::none())
             }
         }
     }
@@ -149,9 +148,8 @@ mod tests {
     use super::{apply_theme_selection, submit_prompt_with_attachments};
     use crate::settings::{ThemeSettings, WispSettings, load_or_create_settings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
-    use crate::tui::Color;
-    use crate::tui::Renderer;
-    use crate::tui::theme::Theme;
+    use crate::tui::advanced::Renderer;
+    use crate::tui::{Color, Theme};
     use acp_utils::client::AcpPromptHandle;
     use agent_client_protocol as acp;
 
@@ -216,14 +214,14 @@ mod tests {
             PathBuf::from("."),
         );
 
-        let actions = app
+        let effects = app
             .apply_action(
                 &mut renderer,
                 crate::components::app::AppAction::ClearScreen,
             )
             .await
             .unwrap();
-        assert!(actions.is_empty());
+        assert!(!effects.is_exit());
     }
 
     #[tokio::test]

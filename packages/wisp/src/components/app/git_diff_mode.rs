@@ -2,8 +2,8 @@ use super::AppAction;
 use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
 use crate::tui::{
-    Action, InteractiveComponent, KeyEvent, Line, MessageResult, MouseEvent,
-    MouseEventKind, RenderContext, UiEvent,
+    Effects, InteractiveComponent, KeyEvent, Line, MessageResult, MouseEvent, MouseEventKind,
+    RenderContext, UiEvent,
 };
 use std::path::PathBuf;
 
@@ -302,19 +302,8 @@ pub(crate) struct GitDiffMode {
     cached_repo_root: Option<PathBuf>,
     state: GitDiffViewState,
     pending_restore: Option<RefreshState>,
-    version: u64,
 }
 
-pub(crate) struct GitDiffModeInteraction {
-    pub(crate) actions: Vec<Action<AppAction>>,
-    pub(crate) changed: bool,
-}
-
-impl GitDiffModeInteraction {
-    fn handled(actions: Vec<Action<AppAction>>, changed: bool) -> Self {
-        Self { actions, changed }
-    }
-}
 
 impl GitDiffMode {
     pub(crate) fn new(working_dir: PathBuf) -> Self {
@@ -323,22 +312,13 @@ impl GitDiffMode {
             cached_repo_root: None,
             state: GitDiffViewState::new(GitDiffLoadState::Empty),
             pending_restore: None,
-            version: 0,
         }
-    }
-
-    pub(crate) fn version(&self) -> u64 {
-        self.version
-    }
-
-    fn bump_version(&mut self) {
-        self.version = self.version.wrapping_add(1);
     }
 
     pub(crate) fn begin_open(&mut self) {
         self.pending_restore = None;
         self.state = GitDiffViewState::new(GitDiffLoadState::Loading);
-        self.bump_version();
+
     }
 
     pub(crate) fn begin_refresh(&mut self) {
@@ -348,7 +328,7 @@ impl GitDiffMode {
         });
         self.state.load_state = GitDiffLoadState::Loading;
         self.state.invalidate_patch_cache();
-        self.bump_version();
+
     }
 
     pub(crate) async fn complete_load(&mut self) {
@@ -370,25 +350,21 @@ impl GitDiffMode {
                 self.state.invalidate_patch_cache();
             }
         }
-        self.bump_version();
+
     }
 
     pub(crate) fn close(&mut self) {
         self.pending_restore = None;
         self.state = GitDiffViewState::new(GitDiffLoadState::Empty);
-        self.bump_version();
+
     }
 
-    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> GitDiffModeInteraction {
+    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Effects<AppAction> {
         let mut view = GitDiffView {
             state: &mut self.state,
         };
         let outcome = view.on_event(UiEvent::Key(key_event));
-        let result = self.handle_messages(outcome);
-        if result.changed {
-            self.bump_version();
-        }
-        result
+        self.handle_messages(outcome)
     }
 
     pub(crate) fn on_mouse_event(&mut self, mouse: MouseEvent) -> bool {
@@ -397,9 +373,6 @@ impl GitDiffMode {
             MouseEventKind::ScrollDown => self.state.scroll_patch(3),
             _ => false,
         };
-        if changed {
-            self.bump_version();
-        }
         changed
     }
 
@@ -425,26 +398,21 @@ impl GitDiffMode {
     fn handle_messages(
         &mut self,
         outcome: MessageResult<GitDiffViewMessage>,
-    ) -> GitDiffModeInteraction {
-        let changed = outcome.handled;
-        let mut actions = Vec::new();
-
-        for message in outcome.messages {
-            match message {
-                GitDiffViewMessage::Close => {
-                    actions.push(Action::Custom(AppAction::CloseGitDiffViewer));
-                }
+    ) -> Effects<AppAction> {
+        outcome
+            .messages
+            .into_iter()
+            .map(|message| match message {
+                GitDiffViewMessage::Close => AppAction::CloseGitDiffViewer,
                 GitDiffViewMessage::Refresh => {
                     self.begin_refresh();
-                    actions.push(Action::Custom(AppAction::RefreshGitDiffViewer));
+                    AppAction::RefreshGitDiffViewer
                 }
                 GitDiffViewMessage::SubmitReview { comments } => {
-                    actions.push(Action::Custom(AppAction::SubmitDiffReview { comments }));
+                    AppAction::SubmitDiffReview { comments }
                 }
-            }
-        }
-
-        GitDiffModeInteraction::handled(actions, changed)
+            })
+            .collect()
     }
 }
 
@@ -594,7 +562,8 @@ mod tests {
             QueuedComment {
                 file_path: "src/foo.rs".to_string(),
                 hunk_index: 0,
-                hunk_text: "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }".to_string(),
+                hunk_text: "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }"
+                    .to_string(),
                 line_text: "    new();".to_string(),
                 line_number: Some(2),
                 line_kind: PatchLineKind::Added,
@@ -603,7 +572,8 @@ mod tests {
             QueuedComment {
                 file_path: "src/foo.rs".to_string(),
                 hunk_index: 0,
-                hunk_text: "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }".to_string(),
+                hunk_text: "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }"
+                    .to_string(),
                 line_text: "    old();".to_string(),
                 line_number: Some(2),
                 line_kind: PatchLineKind::Removed,
@@ -621,10 +591,20 @@ mod tests {
         ];
 
         let prompt = format_review_prompt(&comments);
-        assert!(prompt.contains("## `src/foo.rs`"), "should have foo.rs header");
-        assert!(prompt.contains("## `src/bar.rs`"), "should have bar.rs header");
+        assert!(
+            prompt.contains("## `src/foo.rs`"),
+            "should have foo.rs header"
+        );
+        assert!(
+            prompt.contains("## `src/bar.rs`"),
+            "should have bar.rs header"
+        );
         // Both foo.rs comments should appear under the same hunk
-        assert_eq!(prompt.matches("```diff").count(), 2, "one hunk per file group");
+        assert_eq!(
+            prompt.matches("```diff").count(),
+            2,
+            "one hunk per file group"
+        );
         assert!(prompt.contains("Looks risky"));
         assert!(prompt.contains("Why remove this?"));
         assert!(prompt.contains("Needs a test"));

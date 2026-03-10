@@ -176,7 +176,7 @@ impl InteractiveComponent for FilePicker {
 mod tests {
     use super::*;
     use crate::tui::RenderContext;
-    use crate::tui::soft_wrap::display_width_line;
+    use crate::tui::rendering::soft_wrap::display_width_line;
     use crate::tui::test_picker::{
         rendered_lines, rendered_raw_lines, rendered_raw_lines_with_size, selected_text, type_query,
     };

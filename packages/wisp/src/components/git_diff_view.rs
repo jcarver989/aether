@@ -1,8 +1,8 @@
 use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
-use crate::tui::soft_wrap::truncate_text;
-use crate::tui::span::Span;
+use crate::tui::rendering::soft_wrap::truncate_text;
+use crate::tui::rendering::span::Span;
 use crate::tui::{
     Component, InteractiveComponent, KeyCode, Line, MessageResult, RenderContext, Style, UiEvent,
 };
@@ -197,10 +197,7 @@ impl GitDiffView<'_> {
         MessageResult::message(GitDiffViewMessage::SubmitReview { comments })
     }
 
-    fn on_comment_input(
-        &mut self,
-        code: KeyCode,
-    ) -> MessageResult<GitDiffViewMessage> {
+    fn on_comment_input(&mut self, code: KeyCode) -> MessageResult<GitDiffViewMessage> {
         match code {
             KeyCode::Esc => {
                 self.state.focus = PatchFocus::Patch;
@@ -218,7 +215,8 @@ impl GitDiffView<'_> {
                 MessageResult::consumed()
             }
             KeyCode::Char(c) => {
-                let byte_pos = char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
+                let byte_pos =
+                    char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                 self.state.comment_buffer.insert(byte_pos, c);
                 self.state.comment_cursor += 1;
                 MessageResult::consumed()
@@ -226,7 +224,8 @@ impl GitDiffView<'_> {
             KeyCode::Backspace => {
                 if self.state.comment_cursor > 0 {
                     self.state.comment_cursor -= 1;
-                    let byte_pos = char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
+                    let byte_pos =
+                        char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                     self.state.comment_buffer.remove(byte_pos);
                 }
                 MessageResult::consumed()
@@ -278,8 +277,7 @@ fn render_ready(
         let mut line = Line::default();
 
         // Show queue indicator in last file list row
-        let queue_row =
-            !queued_comments.is_empty() && i == content_height.saturating_sub(1);
+        let queue_row = !queued_comments.is_empty() && i == content_height.saturating_sub(1);
 
         if queue_row {
             let indicator = format!(
@@ -595,9 +593,7 @@ fn digit_count(mut n: usize) -> usize {
 }
 
 fn char_to_byte_pos(s: &str, char_idx: usize) -> usize {
-    s.char_indices()
-        .nth(char_idx)
-        .map_or(s.len(), |(i, _)| i)
+    s.char_indices().nth(char_idx).map_or(s.len(), |(i, _)| i)
 }
 
 fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
