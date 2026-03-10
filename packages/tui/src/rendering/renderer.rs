@@ -1,11 +1,11 @@
 use std::io::{self, Write};
 use std::sync::Arc;
 
+use super::frame::Frame;
 use super::line::Line;
 use super::render_context::RenderContext;
 use super::size::Size;
 use super::terminal_screen::TerminalScreen;
-use crate::components::RootComponent;
 use crate::theme::Theme;
 
 #[cfg(feature = "syntax")]
@@ -37,22 +37,15 @@ impl<T: Write> Renderer<T> {
         }
     }
 
-    /// Convenience method: derives props, then renders.
-    pub fn render<C: RootComponent + ?Sized>(&mut self, root: &mut C) -> io::Result<()> {
-        let context = self.context();
-        let props = root.props(&context);
-        self.render_with_props(root, &props)
-    }
-
-    /// Render using pre-computed props (no mutation of root).
-    pub fn render_with_props<C: RootComponent + ?Sized>(
+    /// Render a frame using a closure.
+    ///
+    /// The closure receives a RenderContext and returns a Frame.
+    pub fn render_frame(
         &mut self,
-        root: &C,
-        props: &C::Props,
+        f: impl FnOnce(&RenderContext) -> Frame,
     ) -> io::Result<()> {
         let context = self.context();
-        let prepared = root
-            .render(props, &context)
+        let prepared = f(&context)
             .soft_wrap(self.size.width)
             .clamp_cursor()
             .prepare(self.size, self.terminal.flushed_visual_count());

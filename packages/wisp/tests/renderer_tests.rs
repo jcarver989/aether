@@ -1,14 +1,13 @@
 use agent_client_protocol as acp;
-use tui::Action;
-use tui::runtime::process_action_queue;
 use tui::testing::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::{App, AppAction, AppProps};
-use wisp::tui::{
-    App as TuiApp, Renderer as FrameRenderer, RootComponent, theme::Theme,
-};
+use wisp::components::app::{App, AppAction};
+use wisp::tui::Theme;
+use wisp::tui::advanced::Renderer as FrameRenderer;
 
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
-use tui::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, TerminalEvent};
+use tui::{
+    App as TuiApp, AppEvent, Effects, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
+};
 
 const TEST_AGENT: &str = "test-agent";
 const TEST_WIDTH: u16 = 200;
@@ -22,8 +21,6 @@ enum LoopAction {
 struct Renderer {
     screen: App,
     renderer: FrameRenderer<TestTerminal>,
-    previous_props: AppProps,
-    last_render_epoch: u64,
 }
 
 impl Renderer {
@@ -32,7 +29,7 @@ impl Renderer {
         agent_name: String,
         config_options: &[acp::SessionConfigOption],
     ) -> Self {
-        let mut screen = App::new(
+        let screen = App::new(
             agent_name,
             config_options,
             vec![],
@@ -41,14 +38,7 @@ impl Renderer {
             std::path::PathBuf::from("."),
         );
         let renderer = FrameRenderer::new(terminal, Theme::default());
-        let previous_props = screen.props(&renderer.context());
-        let last_render_epoch = renderer.render_epoch();
-        Self {
-            screen,
-            renderer,
-            previous_props,
-            last_render_epoch,
-        }
+        Self { screen, renderer }
     }
 
     fn writer(&self) -> &TestTerminal {
@@ -64,9 +54,8 @@ impl Renderer {
     }
 
     fn initial_render(&mut self) -> std::io::Result<()> {
-        self.renderer.render(&mut self.screen)?;
-        self.previous_props = self.screen.props(&self.renderer.context());
-        self.last_render_epoch = self.renderer.render_epoch();
+        self.renderer
+            .render_frame(|ctx| self.screen.view(ctx))?;
         Ok(())
     }
 
@@ -76,7 +65,7 @@ impl Renderer {
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let effects = self
             .screen
-            .on_terminal_event(TerminalEvent::Key(key_event), &self.renderer.context());
+            .update(AppEvent::Key(key_event), &self.renderer.context());
         self.apply_effects(effects).await
     }
 
@@ -84,31 +73,33 @@ impl Renderer {
         &mut self,
         update: acp::SessionUpdate,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self.screen.on_event(
-            AcpEvent::SessionUpdate(Box::new(update)),
+        let effects = self.screen.update(
+            AppEvent::External(AcpEvent::SessionUpdate(Box::new(update))),
             &self.renderer.context(),
         );
         self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_prompt_done(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self.screen.on_event(
-            AcpEvent::PromptDone(acp::StopReason::EndTurn),
+        let effects = self.screen.update(
+            AppEvent::External(AcpEvent::PromptDone(acp::StopReason::EndTurn)),
             &self.renderer.context(),
         );
         self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self.screen.on_tick(&self.renderer.context());
+        let effects = self.screen.update(
+            AppEvent::Tick(std::time::Instant::now()),
+            &self.renderer.context(),
+        );
         self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self.screen.on_terminal_event(
-            TerminalEvent::Paste(text.to_string()),
-            &self.renderer.context(),
-        );
+        let effects = self
+            .screen
+            .update(AppEvent::Paste(text.to_string()), &self.renderer.context());
         self.apply_effects(effects).await.map(|_| ())
     }
 
@@ -118,43 +109,53 @@ impl Renderer {
         rows: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.renderer.on_resize((cols, rows));
-        self.renderer.render(&mut self.screen)?;
-        self.previous_props = self.screen.props(&self.renderer.context());
-        self.last_render_epoch = self.renderer.render_epoch();
-        Ok(())
+        let effects = self.screen.update(
+            AppEvent::Resize((cols, rows).into()),
+            &self.renderer.context(),
+        );
+        self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_ext_notification(
         &mut self,
         notification: acp::ExtNotification,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self.screen.on_event(
-            AcpEvent::ExtNotification(notification),
+        let effects = self.screen.update(
+            AppEvent::External(AcpEvent::ExtNotification(notification)),
             &self.renderer.context(),
         );
         self.apply_effects(effects).await.map(|_| ())
     }
 
     async fn on_connection_closed(&mut self) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let effects = self
-            .screen
-            .on_event(AcpEvent::ConnectionClosed, &self.renderer.context());
+        let effects = self.screen.update(
+            AppEvent::External(AcpEvent::ConnectionClosed),
+            &self.renderer.context(),
+        );
         self.apply_effects(effects).await
     }
 
     async fn apply_effects(
         &mut self,
-        effects: Vec<Action<AppAction>>,
+        effects: Effects<AppAction>,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        if process_action_queue(
-            &mut self.screen,
-            &mut self.renderer,
-            effects,
-            &mut self.previous_props,
-            &mut self.last_render_epoch,
-        )
-        .await?
-        {
+        let should_exit = effects.is_exit();
+        let mut queue: std::collections::VecDeque<_> = effects.into_effects().into();
+
+        while let Some(effect) = queue.pop_front() {
+            self.renderer
+                .render_frame(|ctx| self.screen.view(ctx))?;
+            let follow_up = self.screen.run_effect(&mut self.renderer, effect).await?;
+            if follow_up.is_exit() {
+                return Ok(LoopAction::Exit);
+            }
+            queue.extend(follow_up.into_effects());
+        }
+
+        self.renderer
+            .render_frame(|ctx| self.screen.view(ctx))?;
+
+        if should_exit {
             Ok(LoopAction::Exit)
         } else {
             Ok(LoopAction::Continue)
@@ -2873,7 +2874,6 @@ async fn test_server_status_notification_updates_overlay_state() {
     renderer.on_resize((TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    // Open config overlay
     type_string(&mut renderer, "/config").await;
     press_enter(&mut renderer).await;
     assert!(
@@ -2881,7 +2881,6 @@ async fn test_server_status_notification_updates_overlay_state() {
         "Config overlay should be visible"
     );
 
-    // Send server status notification
     let notification =
         acp::ExtNotification::from(acp_utils::notifications::McpNotification::ServerStatus {
             servers: vec![acp_utils::notifications::McpServerStatusEntry {
@@ -2892,7 +2891,6 @@ async fn test_server_status_notification_updates_overlay_state() {
 
     renderer.on_ext_notification(notification).await.unwrap();
 
-    // Config overlay should still be open after server status notification
     assert!(
         has_config_menu(renderer.writer()),
         "Config overlay should still be visible after server status update"

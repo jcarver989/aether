@@ -3,7 +3,7 @@ use acp_utils::notifications::{
 };
 use agent_client_protocol as acp;
 
-use crate::tui::components::spinner::BRAILLE_FRAMES as FRAMES;
+use crate::tui::BRAILLE_FRAMES as FRAMES;
 use crate::tui::diff::highlight_diff;
 use crate::tui::{Component, DiffLine, DiffPreview, DiffTag, Line, RenderContext};
 use std::collections::HashMap;

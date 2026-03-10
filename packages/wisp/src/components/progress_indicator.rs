@@ -1,4 +1,4 @@
-use crate::tui::components::spinner::BRAILLE_FRAMES as FRAMES;
+use crate::tui::BRAILLE_FRAMES as FRAMES;
 use crate::tui::{Component, Line, RenderContext};
 
 /// Renders a single progress line when tools are actively running.
@@ -11,10 +11,6 @@ pub struct ProgressIndicator {
 }
 
 impl ProgressIndicator {
-    pub fn is_active(&self) -> bool {
-        self.total > 0 && self.completed < self.total
-    }
-
     pub fn update(&mut self, completed: usize, total: usize) {
         self.completed = completed;
         self.total = total;
@@ -32,10 +28,6 @@ impl ProgressIndicator {
         }
     }
 
-    /// Returns the current animation tick value.
-    pub fn tick(&self) -> u16 {
-        self.tick
-    }
 }
 
 impl Component for ProgressIndicator {

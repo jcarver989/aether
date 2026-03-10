@@ -43,7 +43,6 @@ pub struct ConfigOverlay {
     server_statuses: Vec<McpServerStatusEntry>,
     auth_methods: Vec<acp::AuthMethod>,
     current_reasoning_effort: Option<String>,
-    version: u64,
 }
 
 #[derive(Debug)]
@@ -69,16 +68,7 @@ impl ConfigOverlay {
             server_statuses,
             auth_methods,
             current_reasoning_effort: None,
-            version: 0,
         }
-    }
-
-    pub fn version(&self) -> u64 {
-        self.version
-    }
-
-    fn bump_version(&mut self) {
-        self.version = self.version.wrapping_add(1);
     }
 
     #[allow(dead_code)]
@@ -138,7 +128,7 @@ impl ConfigOverlay {
             let login_summary = provider_login_summary(&login_entries);
             self.menu.add_provider_logins_entry(&login_summary);
         }
-        self.bump_version();
+
     }
 
     pub fn update_server_statuses(&mut self, statuses: Vec<McpServerStatusEntry>) {
@@ -146,14 +136,14 @@ impl ConfigOverlay {
         if let Some(ref mut overlay) = self.server_overlay {
             overlay.update_entries(self.server_statuses.clone());
         }
-        self.bump_version();
+
     }
 
     pub fn on_authenticate_started(&mut self, method_id: &str) {
         if let Some(ref mut overlay) = self.provider_login_overlay {
             overlay.set_authenticating(method_id);
         }
-        self.bump_version();
+
     }
 
     pub fn remove_auth_method(&mut self, method_id: &str) {
@@ -164,7 +154,7 @@ impl ConfigOverlay {
                 self.provider_login_overlay = None;
             }
         }
-        self.bump_version();
+
     }
 
     fn build_login_entries(&self) -> Vec<ProviderLoginEntry> {
@@ -186,7 +176,7 @@ impl ConfigOverlay {
         {
             entry.status = ProviderLoginStatus::NeedsLogin;
         }
-        self.bump_version();
+
     }
 
     pub fn cursor_col(&self) -> usize {
@@ -305,7 +295,7 @@ impl InteractiveComponent for ConfigOverlay {
         };
 
         // Every handled key event changes visible state.
-        self.bump_version();
+
 
         // Server overlay has highest priority
         if let Some(ref mut overlay) = self.server_overlay {

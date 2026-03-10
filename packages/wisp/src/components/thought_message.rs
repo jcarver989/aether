@@ -1,6 +1,4 @@
-use crate::tui::Style;
-use crate::tui::theme::Theme;
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Component, Line, RenderContext, Style, Theme};
 
 pub struct ThoughtMessage<'a> {
     pub text: &'a str,
@@ -34,7 +32,7 @@ impl Component for ThoughtMessage<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::soft_wrap::soft_wrap_line;
+    use crate::tui::rendering::soft_wrap::soft_wrap_line;
 
     #[test]
     fn renders_border_prefixed_thought_line() {

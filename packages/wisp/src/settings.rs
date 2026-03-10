@@ -41,17 +41,17 @@ pub fn load_or_create_settings() -> WispSettings {
     }
 }
 
-pub fn load_theme(settings: &WispSettings) -> tui::theme::Theme {
+pub fn load_theme(settings: &WispSettings) -> tui::Theme {
     let Some(theme_file) = settings.theme.file.as_deref() else {
-        return tui::theme::Theme::default();
+        return tui::Theme::default();
     };
 
     let Some(path) = resolve_theme_file_path(theme_file) else {
         warn!("Rejected unsafe theme filename: {}", theme_file);
-        return tui::theme::Theme::default();
+        return tui::Theme::default();
     };
 
-    tui::theme::Theme::load_from_path(&path)
+    tui::Theme::load_from_path(&path)
 }
 
 pub fn resolve_theme_file_path(file_name: &str) -> Option<PathBuf> {

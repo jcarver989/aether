@@ -1,9 +1,8 @@
-use super::{AppAction, UiState};
+use super::AppAction;
 use crate::components::command_picker::CommandEntry;
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::progress_indicator::ProgressIndicator;
-use crate::tui::Action;
-use crate::tui::RenderContext;
+use crate::tui::{Effects, RenderContext};
 use acp_utils::notifications::{
     CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
     ElicitationResponse, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
@@ -12,8 +11,10 @@ use agent_client_protocol::{self as acp, ExtNotification, SessionUpdate};
 use std::time::Instant;
 use tokio::sync::oneshot;
 
+use super::UiState;
+
 impl UiState {
-    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Vec<Action<AppAction>> {
+    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Effects<AppAction> {
         self.grid_loader.visible = false;
 
         match update {
@@ -82,10 +83,10 @@ impl UiState {
             }
         }
 
-        vec![]
+        Effects::none()
     }
 
-    pub(crate) fn on_prompt_done(&mut self, context: &RenderContext) -> Vec<Action<AppAction>> {
+    pub(crate) fn on_prompt_done(&mut self, context: &RenderContext) -> Effects<AppAction> {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
         self.conversation.close_thought_block();
@@ -98,14 +99,14 @@ impl UiState {
             self.tool_call_statuses.remove_tool(&id);
         }
 
-        let mut effects = Vec::new();
-        if !scrollback_lines.is_empty() {
-            effects.push(Action::Custom(AppAction::PushScrollback(scrollback_lines)));
+        if scrollback_lines.is_empty() {
+            Effects::none()
+        } else {
+            Effects::one(AppAction::PushScrollback(scrollback_lines))
         }
-        effects
     }
 
-    pub(crate) fn on_tick(&mut self) -> Vec<Action<AppAction>> {
+    pub(crate) fn on_tick(&mut self) -> Effects<AppAction> {
         let now = Instant::now();
 
         self.grid_loader.on_tick();
@@ -113,24 +114,24 @@ impl UiState {
         self.plan_tracker.on_tick(now);
         self.progress_indicator.on_tick();
 
-        vec![]
+        Effects::none()
     }
 
     pub(crate) fn on_elicitation_request(
         &mut self,
         params: ElicitationParams,
         response_tx: oneshot::Sender<ElicitationResponse>,
-    ) -> Vec<Action<AppAction>> {
+    ) -> Effects<AppAction> {
         self.config_overlay = None;
         self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
 
-        vec![]
+        Effects::none()
     }
 
     pub(crate) fn on_ext_notification(
         &mut self,
         notification: ExtNotification,
-    ) -> Vec<Action<AppAction>> {
+    ) -> Effects<AppAction> {
         match notification.method.as_ref() {
             CONTEXT_CLEARED_METHOD => {
                 self.reset_after_context_cleared();
@@ -168,7 +169,7 @@ impl UiState {
             }
         }
 
-        vec![]
+        Effects::none()
     }
 
     pub(crate) fn reset_after_context_cleared(&mut self) {
@@ -181,46 +182,45 @@ impl UiState {
         self.progress_indicator = ProgressIndicator::default();
     }
 
-    pub(crate) fn on_prompt_error(&mut self, error: &acp::Error) -> Vec<Action<AppAction>> {
+    pub(crate) fn on_prompt_error(&mut self, error: &acp::Error) -> Effects<AppAction> {
         tracing::error!("Prompt error: {error}");
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
 
-        vec![]
+        Effects::none()
     }
 
-    pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) -> Vec<Action<AppAction>> {
+    pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) -> Effects<AppAction> {
         self.auth_methods
             .retain(|method| method.id.0.as_ref() != method_id);
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.remove_auth_method(method_id);
         }
 
-        vec![]
+        Effects::none()
     }
 
     pub(crate) fn on_authenticate_failed(
         &mut self,
         method_id: &str,
         error: &str,
-    ) -> Vec<Action<AppAction>> {
+    ) -> Effects<AppAction> {
         tracing::warn!("Provider auth failed for {method_id}: {error}");
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.on_authenticate_failed(method_id);
         }
 
-        vec![]
+        Effects::none()
     }
 
-    pub(crate) fn on_connection_closed(&mut self) -> Vec<Action<AppAction>> {
-        vec![Action::Exit]
+    pub(crate) fn on_connection_closed(&mut self) -> Effects<AppAction> {
+        Effects::exit()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::Action;
 
     #[test]
     fn on_prompt_error_clears_waiting_state() {
@@ -229,11 +229,11 @@ mod tests {
         state.grid_loader.visible = true;
 
         let error = acp::Error::internal_error();
-        let actions = state.on_prompt_error(&error);
+        let effects = state.on_prompt_error(&error);
 
         assert!(!state.waiting_for_response);
         assert!(!state.grid_loader.visible);
-        assert!(actions.is_empty());
+        assert!(!effects.is_exit());
     }
 
     #[test]
@@ -244,27 +244,27 @@ mod tests {
             vec![acp::AuthMethod::new("anthropic", "Anthropic")],
         );
 
-        let actions = state.on_authenticate_complete("anthropic");
+        let effects = state.on_authenticate_complete("anthropic");
 
         assert!(state.auth_methods.is_empty());
-        assert!(actions.is_empty());
+        assert!(!effects.is_exit());
     }
 
     #[test]
-    fn on_authenticate_failed_returns_no_actions() {
+    fn on_authenticate_failed_returns_no_effects() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
 
-        let actions = state.on_authenticate_failed("anthropic", "bad token");
+        let effects = state.on_authenticate_failed("anthropic", "bad token");
 
-        assert!(actions.is_empty());
+        assert!(!effects.is_exit());
     }
 
     #[test]
     fn on_connection_closed_requests_exit() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
 
-        let actions = state.on_connection_closed();
+        let effects = state.on_connection_closed();
 
-        assert!(matches!(actions.as_slice(), [Action::Exit]));
+        assert!(effects.is_exit());
     }
 }

@@ -12,9 +12,7 @@ mod tui;
 use crate::cli::Cli;
 use crate::components::app::App;
 use crate::runtime_state::RuntimeState;
-use crate::tui::{
-    MouseCapture, Renderer, TerminalSession, run_app, spawn_terminal_event_task, terminal_size,
-};
+use crate::tui::Runner;
 use clap::Parser;
 use std::fs::create_dir_all;
 use std::process::ExitCode;
@@ -45,7 +43,7 @@ async fn main() -> ExitCode {
         working_dir,
     } = state;
 
-    let mut app = App::new(
+    let app = App::new(
         agent_name,
         &config_options,
         auth_methods,
@@ -54,26 +52,11 @@ async fn main() -> ExitCode {
         working_dir,
     );
 
-    let _session = match TerminalSession::enter(true, MouseCapture::Disabled) {
-        Ok(session) => session,
-        Err(e) => {
-            eprintln!("Failed to enter terminal: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let mut renderer = Renderer::new(std::io::stdout(), theme);
-    let size = terminal_size().unwrap_or((80, 24));
-    renderer.on_resize(size);
-    let terminal_rx = spawn_terminal_event_task();
-
-    match run_app(
-        &mut app,
-        &mut renderer,
-        terminal_rx,
-        Some(event_rx),
-        Some(std::time::Duration::from_millis(100)),
-    )
-    .await
+    match Runner::new(app)
+        .theme(theme)
+        .external_events(event_rx)
+        .run()
+        .await
     {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

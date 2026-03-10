@@ -26,7 +26,6 @@ pub struct PromptComposer {
     available_commands: Vec<CommandEntry>,
     file_picker: Option<FilePicker>,
     command_picker: Option<CommandPicker>,
-    version: u64,
 }
 
 impl Default for PromptComposer {
@@ -42,27 +41,18 @@ impl PromptComposer {
             available_commands: Vec::new(),
             file_picker: None,
             command_picker: None,
-            version: 0,
         }
-    }
-
-    pub fn version(&self) -> u64 {
-        self.version
-    }
-
-    fn bump_version(&mut self) {
-        self.version = self.version.wrapping_add(1);
     }
 
     pub fn set_available_commands(&mut self, commands: Vec<CommandEntry>) {
         self.available_commands = commands;
-        self.bump_version();
+
     }
 
     pub fn on_paste(&mut self, text: &str) -> MessageResult<PromptComposerMessage> {
         self.close_all();
         self.text_input.insert_paste(text);
-        self.bump_version();
+
         MessageResult::consumed()
     }
 
@@ -163,7 +153,7 @@ impl PromptComposer {
             }
         }
 
-        self.bump_version();
+
         MessageResult::consumed()
     }
 
@@ -186,7 +176,7 @@ impl PromptComposer {
                 }
                 CommandPickerMessage::CommandChosen(cmd) => {
                     self.command_picker = None;
-                    self.bump_version();
+            
                     return self.apply_command(&cmd);
                 }
                 CommandPickerMessage::CharTyped(c) => {
@@ -198,7 +188,7 @@ impl PromptComposer {
             }
         }
 
-        self.bump_version();
+
         MessageResult::consumed()
     }
 
@@ -280,7 +270,7 @@ impl InteractiveComponent for PromptComposer {
                         key_event.code,
                         KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
                     ) {
-                        self.bump_version();
+                
                         return MessageResult::consumed();
                     }
                 }
@@ -296,9 +286,6 @@ impl InteractiveComponent for PromptComposer {
             UiEvent::Paste(text) => self.on_paste(&text),
             UiEvent::Tick(_) => MessageResult::ignored(),
         };
-        if result.handled {
-            self.bump_version();
-        }
         result
     }
 }

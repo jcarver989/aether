@@ -1,7 +1,7 @@
 use super::*;
 use crossterm::event::KeyCode;
 use tui::TextField;
-use tui::rendering::terminal_screen::TerminalScreen;
+use tui::advanced::TerminalScreen;
 
 #[test]
 fn empty_renders_cursor() {
