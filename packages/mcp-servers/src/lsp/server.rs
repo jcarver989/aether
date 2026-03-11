@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 
 use super::registry::LspRegistry;
 use super::tools::check_errors::{
-    LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
+    LspDiagnosticsOutput, LspDiagnosticsRequest, execute_lsp_diagnostics,
 };
 use super::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
 use super::tools::rename::{LspRenameInput, LspRenameOutput, execute_lsp_rename};
@@ -169,10 +169,10 @@ impl LspMcp {
     #[tool]
     pub async fn lsp_check_errors(
         &self,
-        request: Parameters<LspDiagnosticsInput>,
+        request: Parameters<LspDiagnosticsRequest>,
     ) -> Result<Json<LspDiagnosticsOutput>, String> {
-        let Parameters(input) = request;
-        execute_lsp_diagnostics(input, self.lsp.as_ref())
+        let Parameters(request) = request;
+        execute_lsp_diagnostics(request, self.lsp.as_ref())
             .await
             .map(Json)
     }

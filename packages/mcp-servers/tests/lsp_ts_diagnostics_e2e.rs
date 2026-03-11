@@ -14,7 +14,6 @@ mod common;
 
 use aether_lspd::testing::{NodeProject, TestProject};
 use common::{call_tool, connect_lsp, has_errors, has_no_errors, poll_diagnostics};
-use std::time::Duration;
 
 /// Test: MCP edit_file tool → typescript-language-server picks up change → diagnostics queryable
 #[tokio::test]
@@ -164,12 +163,12 @@ async fn test_ts_diagnostics_after_edit_without_polling() {
 
     // 5. Wait for typescript-language-server to process, then make a SINGLE call.
     //    tsserver is slower than rust-analyzer, so give it more time.
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
     let result = call_tool(
         &client,
         "lsp_check_errors",
-        serde_json::json!({ "file_path": index_ts }),
+        serde_json::json!({ "input": { "scope": "file", "filePath": index_ts } }),
     )
     .await;
 

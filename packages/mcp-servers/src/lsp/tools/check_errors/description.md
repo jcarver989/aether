@@ -4,14 +4,35 @@ Gets instant compiler errors and warnings without running a build.
 
 ## Usage
 
+The tool has two explicit modes:
+
+**Workspace-wide diagnostics:**
+
 ```json
-{}
-{"file_path": "src/main.rs"}
+{"input":{"scope":"workspace"}}
 ```
 
-- `file_path` — optional, filter to specific file
+**Single-file diagnostics:**
 
-**Returns:** type errors, unused variables, clippy lints, etc. Structured JSON output.
+```json
+{"input":{"scope":"file","filePath":"/absolute/path/to/file.rs"}}
+```
+
+## Parameters
+
+- `input` — **required**, wrapper object for the diagnostics query
+- `input.scope` — **required**, either `"workspace"` or `"file"`
+- `input.filePath` — required when `input.scope="file"`, must be an absolute path to an existing file
+
+## Response
+
+The response includes the resolved scope so you can verify what was executed:
+
+- `scope` — the scope that was queried
+- `workspaceRoot` — present when scope is `"workspace"`
+- `filePath` — present when scope is `"file"`
+- `diagnostics` — list of errors, warnings, etc.
+- `summary` — counts by severity
 
 ## Why Use This
 
@@ -23,3 +44,8 @@ Gets instant compiler errors and warnings without running a build.
 
 - Running the actual binary → `bash` with `cargo run`
 - Running tests → `bash` with `cargo test`
+
+## Important
+
+- Directory paths are **invalid** and will return an error
+- Invalid requests return explicit validation errors, never empty success results
