@@ -3,7 +3,7 @@ use crossterm::style::Color;
 use crate::{DiffPreview, DiffTag};
 
 use crate::line::Line;
-use crate::rendering::render_context::RenderContext;
+use crate::rendering::render_context::ViewContext;
 use crate::span::Span;
 use crate::style::Style;
 use crate::theme::Theme;
@@ -21,7 +21,7 @@ struct DiffStyle<'a> {
 /// Context lines are shown with a `"    "` prefix and code background.
 /// Removed lines are shown with a `"  - "` prefix and red-tinted background.
 /// Added lines are shown with a `"  + "` prefix and green-tinted background.
-pub fn highlight_diff(preview: &DiffPreview, context: &RenderContext) -> Vec<Line> {
+pub fn highlight_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Line> {
     let theme: &Theme = &context.theme;
     let total = preview.lines.len();
     let truncated = total > MAX_DIFF_LINES;
@@ -108,8 +108,8 @@ mod tests {
     use super::*;
     use crate::DiffLine;
 
-    fn test_context() -> RenderContext {
-        RenderContext::new((80, 24))
+    fn test_context() -> ViewContext {
+        ViewContext::new((80, 24))
     }
 
     fn test_theme() -> Theme {

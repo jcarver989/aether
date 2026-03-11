@@ -1,7 +1,7 @@
 use crate::tui::rendering::soft_wrap::{display_width_text, pad_text_to_width, truncate_text};
 use crate::tui::{
-    Combobox, Component, InteractiveComponent, Line, MessageResult, PickerKey, RenderContext,
-    Searchable, Style, UiEvent, classify_key,
+    Combobox, Line, Outcome, PickerKey, PickerMessage, ViewContext, Searchable, Style, Widget,
+    WidgetEvent, classify_key,
 };
 
 #[derive(Debug, Clone)]
@@ -23,14 +23,7 @@ pub struct CommandPicker {
     combobox: Combobox<CommandEntry>,
 }
 
-pub enum CommandPickerMessage {
-    Close,
-    CloseAndPopChar,
-    CloseWithChar(char),
-    CommandChosen(CommandEntry),
-    CharTyped(char),
-    PopChar,
-}
+pub type CommandPickerMessage = PickerMessage<CommandEntry>;
 
 impl CommandPicker {
     pub fn new(commands: Vec<CommandEntry>) -> Self {
@@ -45,8 +38,50 @@ impl CommandPicker {
     }
 }
 
-impl Component for CommandPicker {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl Widget for CommandPicker {
+    type Message = CommandPickerMessage;
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key_event) = event else {
+            return Outcome::ignored();
+        };
+        match classify_key(*key_event, self.combobox.query().is_empty()) {
+            PickerKey::Escape => Outcome::message(PickerMessage::Close),
+            PickerKey::BackspaceOnEmpty => Outcome::message(PickerMessage::CloseAndPopChar),
+            PickerKey::MoveUp => {
+                self.combobox.move_up();
+                Outcome::consumed()
+            }
+            PickerKey::MoveDown => {
+                self.combobox.move_down();
+                Outcome::consumed()
+            }
+            PickerKey::Confirm => {
+                if let Some(command) = self.combobox.selected().cloned() {
+                    Outcome::message(PickerMessage::Confirm(command))
+                } else {
+                    Outcome::message(PickerMessage::Close)
+                }
+            }
+            PickerKey::Char(c) => {
+                if c.is_whitespace() {
+                    return Outcome::message(PickerMessage::CloseWithChar(c));
+                }
+                self.combobox.push_query_char(c);
+                Outcome::message(PickerMessage::CharTyped(c))
+            }
+            PickerKey::Backspace => {
+                self.combobox.pop_query_char();
+                Outcome::message(PickerMessage::PopChar)
+            }
+            PickerKey::MoveLeft
+            | PickerKey::MoveRight
+            | PickerKey::ControlChar
+            | PickerKey::Other => Outcome::consumed(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         let mut lines = Vec::new();
 
         if self.combobox.is_empty() {
@@ -93,52 +128,6 @@ impl Component for CommandPicker {
     }
 }
 
-impl InteractiveComponent for CommandPicker {
-    type Message = CommandPickerMessage;
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        let UiEvent::Key(key_event) = event else {
-            return MessageResult::ignored();
-        };
-        match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => MessageResult::message(CommandPickerMessage::Close),
-            PickerKey::BackspaceOnEmpty => {
-                MessageResult::message(CommandPickerMessage::CloseAndPopChar)
-            }
-            PickerKey::MoveUp => {
-                self.combobox.move_up();
-                MessageResult::consumed()
-            }
-            PickerKey::MoveDown => {
-                self.combobox.move_down();
-                MessageResult::consumed()
-            }
-            PickerKey::Confirm => {
-                if let Some(command) = self.combobox.selected().cloned() {
-                    MessageResult::message(CommandPickerMessage::CommandChosen(command))
-                } else {
-                    MessageResult::message(CommandPickerMessage::Close)
-                }
-            }
-            PickerKey::Char(c) => {
-                if c.is_whitespace() {
-                    return MessageResult::message(CommandPickerMessage::CloseWithChar(c));
-                }
-                self.combobox.push_query_char(c);
-                MessageResult::message(CommandPickerMessage::CharTyped(c))
-            }
-            PickerKey::Backspace => {
-                self.combobox.pop_query_char();
-                MessageResult::message(CommandPickerMessage::PopChar)
-            }
-            PickerKey::MoveLeft
-            | PickerKey::MoveRight
-            | PickerKey::ControlChar
-            | PickerKey::Other => MessageResult::consumed(),
-        }
-    }
-}
-
 fn build_styled_command_line(
     truncated: &str,
     name_byte_len: usize,
@@ -156,14 +145,20 @@ fn build_styled_command_line(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::RenderContext;
+    use crate::tui::ViewContext;
     use crate::tui::rendering::soft_wrap::{display_width_line, display_width_text};
     use crate::tui::rendering::span::Span;
     use crate::tui::test_picker::{
-        rendered_lines, rendered_lines_with_size, rendered_raw_lines, rendered_raw_lines_with_size,
-        selected_text, type_query,
+        rendered_lines_from, rendered_lines_with_context, rendered_raw_lines_with_context,
+        type_query,
     };
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+
+    const DEFAULT_SIZE: (u16, u16) = (120, 40);
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
 
     fn sample_commands() -> Vec<CommandEntry> {
         vec![
@@ -191,10 +186,19 @@ mod tests {
         ]
     }
 
+    fn selected_text(picker: &CommandPicker) -> Option<String> {
+        let context = ViewContext::new(DEFAULT_SIZE);
+        let lines = picker.render(&context);
+        lines
+            .iter()
+            .find(|line| line.plain_text().starts_with("▶ "))
+            .map(|line| line.plain_text())
+    }
+
     #[test]
     fn init_shows_all_commands() {
-        let mut picker = CommandPicker::new(sample_commands());
-        let lines = rendered_lines(&mut picker);
+        let picker = CommandPicker::new(sample_commands());
+        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
         assert_eq!(lines.len(), 3);
         assert!(lines.iter().any(|l| l.contains("/config")));
         assert!(lines.iter().any(|l| l.contains("/search")));
@@ -205,7 +209,7 @@ mod tests {
     fn query_filters_by_name() {
         let mut picker = CommandPicker::new(sample_commands());
         type_query(&mut picker, "conf");
-        let lines = rendered_lines(&mut picker);
+        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("/config"));
     }
@@ -214,7 +218,7 @@ mod tests {
     fn query_filters_by_description() {
         let mut picker = CommandPicker::new(sample_commands());
         type_query(&mut picker, "browse");
-        let lines = rendered_lines(&mut picker);
+        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("/web"));
     }
@@ -222,29 +226,23 @@ mod tests {
     #[test]
     fn selection_wraps() {
         let mut picker = CommandPicker::new(sample_commands());
-        let first = selected_text(&mut picker).unwrap();
+        let first = selected_text(&picker).unwrap();
 
-        picker.on_event(UiEvent::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)));
-        let last = selected_text(&mut picker).unwrap();
+        picker.on_event(&WidgetEvent::Key(key(KeyCode::Up)));
+        let last = selected_text(&picker).unwrap();
         assert_ne!(first, last);
 
-        picker.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        )));
-        let back_to_first = selected_text(&mut picker).unwrap();
+        picker.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        let back_to_first = selected_text(&picker).unwrap();
         assert_eq!(first, back_to_first);
     }
 
     #[test]
     fn selected_command_changes_on_move() {
         let mut picker = CommandPicker::new(sample_commands());
-        let first = selected_text(&mut picker).unwrap();
-        picker.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        )));
-        let second = selected_text(&mut picker).unwrap();
+        let first = selected_text(&picker).unwrap();
+        picker.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        let second = selected_text(&picker).unwrap();
         assert_ne!(first, second);
     }
 
@@ -254,23 +252,17 @@ mod tests {
         type_query(&mut picker, "co");
         assert_eq!(picker.query(), "co");
 
-        picker.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Backspace,
-            KeyModifiers::NONE,
-        )));
+        picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
         assert_eq!(picker.query(), "c");
 
-        picker.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Backspace,
-            KeyModifiers::NONE,
-        )));
+        picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
         assert_eq!(picker.query(), "");
     }
 
     #[test]
     fn render_includes_hint_for_commands_with_hint() {
-        let mut picker = CommandPicker::new(sample_commands());
-        let lines = rendered_lines(&mut picker);
+        let picker = CommandPicker::new(sample_commands());
+        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
 
         assert!(
             lines.iter().any(|l| l.contains("[query pattern]")),
@@ -284,8 +276,8 @@ mod tests {
 
     #[test]
     fn render_omits_hint_brackets_for_commands_without_hint() {
-        let mut picker = CommandPicker::new(sample_commands());
-        let lines = rendered_lines(&mut picker);
+        let picker = CommandPicker::new(sample_commands());
+        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
 
         let config_line = lines
             .iter()
@@ -300,7 +292,7 @@ mod tests {
     #[test]
     fn selected_entry_has_highlight_background() {
         let picker = CommandPicker::new(sample_commands());
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         let lines = picker.render(&context);
         let selected_line = lines
             .iter()
@@ -316,9 +308,9 @@ mod tests {
 
     #[test]
     fn selected_entry_has_text_primary_foreground() {
-        let mut picker = CommandPicker::new(sample_commands());
-        let context = RenderContext::new((80, 24));
-        let lines = rendered_raw_lines(&mut picker);
+        let picker = CommandPicker::new(sample_commands());
+        let context = ViewContext::new((80, 24));
+        let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (80, 24));
         let selected_line = lines
             .iter()
             .find(|line| line.plain_text().starts_with("▶ "))
@@ -333,9 +325,9 @@ mod tests {
 
     #[test]
     fn selected_entry_highlight_fills_full_line_width() {
-        let mut picker = CommandPicker::new(sample_commands());
-        let context = RenderContext::new((30, 24));
-        let lines = rendered_raw_lines_with_size(&mut picker, context.size);
+        let picker = CommandPicker::new(sample_commands());
+        let context = ViewContext::new((30, 24));
+        let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (30, 24));
         let selected_line = lines
             .iter()
             .find(|line| line.plain_text().starts_with("▶ "))
@@ -352,15 +344,12 @@ mod tests {
     fn handle_key_enter_returns_selected_command() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Enter,
-            KeyModifiers::NONE,
-        )));
+        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
         assert!(matches!(
-            outcome.messages.as_slice(),
-            [CommandPickerMessage::CommandChosen(_)]
+            outcome.into_messages().as_slice(),
+            [PickerMessage::Confirm(_)]
         ));
     }
 
@@ -368,23 +357,20 @@ mod tests {
     fn handle_key_backspace_on_empty_query_requests_close() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Backspace,
-            KeyModifiers::NONE,
-        )));
+        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
 
         assert!(matches!(
-            outcome.messages.as_slice(),
-            [CommandPickerMessage::CloseAndPopChar]
+            outcome.into_messages().as_slice(),
+            [PickerMessage::CloseAndPopChar]
         ));
     }
 
     #[test]
     fn non_selected_items_have_multi_span_styling() {
-        let mut picker = CommandPicker::new(sample_commands());
-        let raw_lines = rendered_raw_lines(&mut picker);
+        let picker = CommandPicker::new(sample_commands());
+        let raw_lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), DEFAULT_SIZE);
 
         let non_selected = raw_lines
             .iter()
@@ -415,8 +401,8 @@ mod tests {
 
     #[test]
     fn descriptions_are_column_aligned() {
-        let mut picker = CommandPicker::new(sample_commands());
-        let lines = rendered_lines(&mut picker);
+        let picker = CommandPicker::new(sample_commands());
+        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
 
         let command_lines: Vec<&str> = lines.iter().map(std::string::String::as_str).collect();
         assert_eq!(command_lines.len(), 3);
@@ -450,8 +436,8 @@ mod tests {
             builtin: false,
         }];
 
-        let mut picker = CommandPicker::new(commands);
-        let lines = rendered_lines_with_size(&mut picker, (30, 10));
+        let picker = CommandPicker::new(commands);
+        let lines = rendered_lines_with_context(|ctx| picker.render(ctx), (30, 10));
         let command_line = &lines[0];
 
         assert_eq!(lines.len(), 1);
@@ -471,16 +457,13 @@ mod tests {
     fn handle_key_char_returns_char_typed() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Char('r'),
-            KeyModifiers::NONE,
-        )));
+        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Char('r'))));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
 
         assert!(matches!(
-            outcome.messages.as_slice(),
-            [CommandPickerMessage::CharTyped('r')]
+            outcome.into_messages().as_slice(),
+            [PickerMessage::CharTyped('r')]
         ));
         assert_eq!(picker.query(), "r");
     }
@@ -489,16 +472,13 @@ mod tests {
     fn handle_key_whitespace_closes_picker() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Char(' '),
-            KeyModifiers::NONE,
-        )));
+        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
 
         assert!(matches!(
-            outcome.messages.as_slice(),
-            [CommandPickerMessage::CloseWithChar(' ')]
+            outcome.into_messages().as_slice(),
+            [PickerMessage::CloseWithChar(' ')]
         ));
     }
 
@@ -507,16 +487,13 @@ mod tests {
         let mut picker = CommandPicker::new(sample_commands());
         type_query(&mut picker, "co");
 
-        let outcome = picker.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Backspace,
-            KeyModifiers::NONE,
-        )));
+        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
 
         assert!(matches!(
-            outcome.messages.as_slice(),
-            [CommandPickerMessage::PopChar]
+            outcome.into_messages().as_slice(),
+            [PickerMessage::PopChar]
         ));
         assert_eq!(picker.query(), "c");
     }

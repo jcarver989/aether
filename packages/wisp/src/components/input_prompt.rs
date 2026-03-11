@@ -1,5 +1,5 @@
 use crate::tui::rendering::soft_wrap::{display_width_line, soft_wrap_line};
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Line, ViewContext};
 use unicode_width::UnicodeWidthChar;
 
 pub struct InputPrompt<'a> {
@@ -16,7 +16,7 @@ pub struct InputPromptLayout {
 }
 
 impl InputPrompt<'_> {
-    pub fn layout(&self, context: &RenderContext) -> InputPromptLayout {
+    pub fn layout(&self, context: &ViewContext) -> InputPromptLayout {
         let width = usize::from(context.size.width);
         let cursor_index = clamp_to_char_boundary(self.input, self.cursor_index);
         let cursor_display_width = plain_display_width(&self.input[..cursor_index]);
@@ -92,20 +92,20 @@ impl InputPrompt<'_> {
     }
 }
 
-impl Component for InputPrompt<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl InputPrompt<'_> {
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         self.layout(context).lines
     }
 }
 
-fn style_input(input: &str, context: &RenderContext) -> Line {
+fn style_input(input: &str, context: &ViewContext) -> Line {
     if !input.contains('@') {
         return Line::styled(input, context.theme.text_primary());
     }
     style_mentions(input, context)
 }
 
-fn style_mentions(input: &str, context: &RenderContext) -> Line {
+fn style_mentions(input: &str, context: &ViewContext) -> Line {
     let mut styled = Line::default();
     let mut last_pos = 0;
 
@@ -154,7 +154,7 @@ mod tests {
             input: "",
             cursor_index: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = prompt.render(&ctx);
         assert_eq!(lines.len(), 3);
     }
@@ -165,7 +165,7 @@ mod tests {
             input: "",
             cursor_index: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = prompt.render(&ctx);
         assert!(lines[0].plain_text().contains("╭"));
         assert!(lines[0].plain_text().contains("╮"));
@@ -177,7 +177,7 @@ mod tests {
             input: "",
             cursor_index: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = prompt.render(&ctx);
         assert!(lines[2].plain_text().contains("╰"));
         assert!(lines[2].plain_text().contains("╯"));
@@ -189,7 +189,7 @@ mod tests {
             input: "",
             cursor_index: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = prompt.render(&ctx);
         assert!(lines[1].plain_text().contains("> "));
         assert!(lines[1].plain_text().contains("│"));
@@ -201,7 +201,7 @@ mod tests {
             input: "hello",
             cursor_index: 5,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = prompt.render(&ctx);
         assert!(lines[1].plain_text().contains("hello"));
     }
@@ -212,7 +212,7 @@ mod tests {
             input: "test",
             cursor_index: 4,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let a = prompt.render(&ctx);
         let b = prompt.render(&ctx);
         assert_eq!(a, b);
@@ -224,8 +224,8 @@ mod tests {
             input: "",
             cursor_index: 0,
         };
-        let narrow = RenderContext::new((40, 24));
-        let wide = RenderContext::new((120, 24));
+        let narrow = ViewContext::new((40, 24));
+        let wide = ViewContext::new((120, 24));
         let narrow_lines = prompt.render(&narrow);
         let wide_lines = prompt.render(&wide);
         // Both should produce 3 lines but different widths
@@ -241,7 +241,7 @@ mod tests {
             input: "this is a very long input that should wrap",
             cursor_index: 41,
         };
-        let ctx = RenderContext::new((20, 24));
+        let ctx = ViewContext::new((20, 24));
         let lines = prompt.render(&ctx);
         assert!(lines.len() > 3);
         assert!(lines.iter().all(|line| line.plain_text().contains("│")
@@ -255,7 +255,7 @@ mod tests {
             input: "@main.rs explain this",
             cursor_index: 20,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = prompt.render(&ctx);
         assert!(lines[1].plain_text().contains("@main.rs"));
         assert!(lines[1].plain_text().contains("explain this"));

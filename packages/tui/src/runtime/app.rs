@@ -10,7 +10,7 @@
 //! # Example
 //!
 //! ```rust
-//! use tui::{App, AppEvent, Effects, Frame, Line, RenderContext, Runner};
+//! use tui::{App, AppEvent, Effects, Frame, Line, ViewContext, Runner};
 //! use tui::{KeyEvent, KeyCode, KeyModifiers};
 //!
 //! struct Counter {
@@ -22,7 +22,7 @@
 //!     type Effect = ();
 //!     type Error = std::io::Error;
 //!
-//!     fn update(&mut self, event: AppEvent<()>, ctx: &RenderContext) -> Effects<()> {
+//!     fn update(&mut self, event: AppEvent<()>, ctx: &ViewContext) -> Effects<()> {
 //!         match event {
 //!             AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
 //!             AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
@@ -37,7 +37,7 @@
 //!         }
 //!     }
 //!
-//!     fn view(&self, ctx: &RenderContext) -> Frame {
+//!     fn view(&self, ctx: &ViewContext) -> Frame {
 //!         Frame::new(
 //!             vec![Line::new(format!("Count: {}", self.count))],
 //!             tui::Cursor { row: 0, col: 0, is_visible: false },
@@ -46,7 +46,7 @@
 //!
 //!     async fn run_effect(
 //!         &mut self,
-//!         _renderer: &mut tui::advanced::Renderer<impl std::io::Write>,
+//!         _terminal: &mut tui::advanced::Terminal<'_, impl std::io::Write>,
 //!         _effect: (),
 //!     ) -> Result<Effects<()>, std::io::Error> {
 //!         Ok(Effects::none())
@@ -57,8 +57,8 @@
 use super::spawn_terminal_event_task;
 use super::terminal::{MouseCapture, TerminalSession, terminal_size};
 use crate::Frame;
-use crate::rendering::render_context::RenderContext;
-use crate::rendering::renderer::Renderer;
+use crate::rendering::render_context::ViewContext;
+use crate::rendering::renderer::{Renderer, Terminal};
 use crate::rendering::size::Size;
 use crate::theme::Theme;
 use crossterm::event::{Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent};
@@ -223,25 +223,25 @@ pub trait App {
     fn update(
         &mut self,
         event: AppEvent<Self::Event>,
-        ctx: &RenderContext,
+        ctx: &ViewContext,
     ) -> Effects<Self::Effect>;
 
     /// Render the current application state.
     ///
     /// Called after each update/effect cycle. The framework handles frame diffing
     /// to minimize terminal writes.
-    fn view(&self, ctx: &RenderContext) -> Frame;
+    fn view(&self, ctx: &ViewContext) -> Frame;
 
     /// Execute an effect and return follow-up effects.
     ///
     /// Effects allow async operations like network requests, file I/O, etc.
-    /// The renderer is provided for effects that need to manipulate the terminal
-    /// (e.g., pushing to scrollback).
+    /// A [`Terminal`] handle is provided for effects that need terminal
+    /// operations (e.g., pushing to scrollback, clearing screen, changing theme).
     ///
     /// Default implementation returns no effects.
     async fn run_effect(
         &mut self,
-        _renderer: &mut Renderer<impl Write>,
+        _terminal: &mut Terminal<'_, impl Write>,
         effect: Self::Effect,
     ) -> Result<Effects<Self::Effect>, Self::Error> {
         // Default: consume the effect without action
@@ -507,7 +507,7 @@ async fn process_effects<A: App, W: Write>(
         // Render before running effect
         renderer.render_frame(|ctx| app.view(ctx))?;
 
-        let follow_up = app.run_effect(renderer, effect).await?;
+        let follow_up = app.run_effect(&mut renderer.terminal(), effect).await?;
         if follow_up.is_exit() {
             return Ok(true);
         }

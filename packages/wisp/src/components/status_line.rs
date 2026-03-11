@@ -1,6 +1,6 @@
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::rendering::soft_wrap::{display_width_line, display_width_text};
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Line, ViewContext};
 use utils::ReasoningEffort;
 
 pub struct StatusLine<'a> {
@@ -13,8 +13,8 @@ pub struct StatusLine<'a> {
     pub unhealthy_server_count: usize,
 }
 
-impl Component for StatusLine<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl StatusLine<'_> {
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         let mut left_line = Line::default();
         let sep = context.theme.text_secondary();
 
@@ -87,7 +87,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().contains("claude-code"));
@@ -104,7 +104,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         // Should have leading spaces for indentation
         assert!(lines[0].plain_text().contains("  test-agent"));
@@ -121,7 +121,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         assert_eq!(lines.len(), 1);
         let text = lines[0].plain_text();
@@ -140,7 +140,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(text.contains("aether-acp"));
@@ -161,7 +161,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         assert_eq!(lines.len(), 1);
         let text = lines[0].plain_text();
@@ -180,7 +180,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(!text.contains("context"), "should not contain context info");
@@ -197,7 +197,7 @@ mod tests {
             waiting_for_response: true,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(text.contains("aether"), "should contain agent name");
@@ -222,7 +222,7 @@ mod tests {
             waiting_for_response: true,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(text.contains("aether"), "should contain agent name");
@@ -243,7 +243,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 1,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(
@@ -263,7 +263,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 3,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(
@@ -283,7 +283,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(
@@ -303,7 +303,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 2,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(
@@ -327,7 +327,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         assert_eq!(lines.len(), 1);
         let text = lines[0].plain_text();
@@ -360,7 +360,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         assert_eq!(lines.len(), 1);
 
@@ -388,7 +388,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         assert_eq!(lines.len(), 1);
 
@@ -416,7 +416,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         assert_eq!(lines.len(), 1);
 
@@ -444,7 +444,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
 
         let spans = lines[0].spans();
@@ -487,7 +487,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(text.contains("gpt-4o"), "should contain model name");
@@ -515,7 +515,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(!text.contains('▰'), "should not contain filled bar chars");
@@ -533,7 +533,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
         assert!(text.contains("▱▱▱"), "should contain empty reasoning bar");
@@ -550,7 +550,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
         };
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
 
         let spans = lines[0].spans();

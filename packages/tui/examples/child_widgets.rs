@@ -1,14 +1,26 @@
 use tui::{
-    App, AppEvent, Component, Cursor, Effects, Frame, InteractiveComponent, KeyCode, Line,
-    MessageResult, RenderContext, Runner, Style, UiEvent,
+    App, AppEvent, Cursor, Effects, Frame, KeyCode, Line, Outcome, ViewContext, Runner, Style,
+    Widget, WidgetEvent,
 };
 
 struct IncrementButton {
     label: String,
 }
 
-impl Component for IncrementButton {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl Widget for IncrementButton {
+    type Message = i32;
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
+        match key.code {
+            KeyCode::Enter => Outcome::message(1),
+            _ => Outcome::ignored(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         let style = if context.focused {
             Style::default().bold().color(context.theme.primary())
         } else {
@@ -16,17 +28,6 @@ impl Component for IncrementButton {
         };
 
         vec![Line::with_style(format!("[ {} ]", self.label), style)]
-    }
-}
-
-impl InteractiveComponent for IncrementButton {
-    type Message = i32;
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        match event {
-            UiEvent::Key(key) if key.code == KeyCode::Enter => MessageResult::message(1),
-            _ => MessageResult::ignored(),
-        }
     }
 }
 
@@ -43,13 +44,13 @@ impl App for WidgetApp {
     fn update(
         &mut self,
         event: AppEvent<Self::Event>,
-        _ctx: &RenderContext,
+        _ctx: &ViewContext,
     ) -> Effects<Self::Effect> {
         match event {
             AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
             AppEvent::Key(key) => {
-                let result = self.button.on_event(UiEvent::Key(key));
-                for message in result.messages {
+                let result = self.button.on_event(&WidgetEvent::Key(key));
+                for message in result.into_messages() {
                     self.count += message;
                 }
                 Effects::none()
@@ -58,7 +59,7 @@ impl App for WidgetApp {
         }
     }
 
-    fn view(&self, ctx: &RenderContext) -> Frame {
+    fn view(&self, ctx: &ViewContext) -> Frame {
         let mut lines = vec![
             Line::new("Reusable widget example"),
             Line::new(""),

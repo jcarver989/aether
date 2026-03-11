@@ -1,7 +1,7 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
-    Combobox, Component, InteractiveComponent, Line, MessageResult, PickerKey, RenderContext,
-    Searchable, UiEvent, classify_key,
+    Combobox, Line, Outcome, PickerKey, ViewContext, Searchable, Widget, WidgetEvent,
+    classify_key,
 };
 impl Searchable for ConfigMenuValue {
     fn search_text(&self) -> String {
@@ -93,8 +93,44 @@ impl ConfigPicker {
     }
 }
 
-impl Component for ConfigPicker {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl Widget for ConfigPicker {
+    type Message = ConfigPickerMessage;
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
+        match classify_key(*key, self.combobox.query().is_empty()) {
+            PickerKey::Escape => Outcome::message(ConfigPickerMessage::Close),
+            PickerKey::MoveUp => {
+                self.move_selection_up();
+                Outcome::consumed()
+            }
+            PickerKey::MoveDown => {
+                self.move_selection_down();
+                Outcome::consumed()
+            }
+            PickerKey::Confirm => {
+                let change = self.confirm_selection();
+                Outcome::message(ConfigPickerMessage::ApplySelection(change))
+            }
+            PickerKey::Char(c) => {
+                self.push_query_char(c);
+                Outcome::consumed()
+            }
+            PickerKey::Backspace => {
+                self.pop_query_char();
+                Outcome::consumed()
+            }
+            PickerKey::MoveLeft
+            | PickerKey::MoveRight
+            | PickerKey::BackspaceOnEmpty
+            | PickerKey::ControlChar
+            | PickerKey::Other => Outcome::consumed(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let header = format!("  {} search: {}", self.title, self.combobox.query());
         lines.push(Line::styled(header, context.theme.muted()));
@@ -139,51 +175,16 @@ impl Component for ConfigPicker {
     }
 }
 
-impl InteractiveComponent for ConfigPicker {
-    type Message = ConfigPickerMessage;
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        let UiEvent::Key(key_event) = event else {
-            return MessageResult::ignored();
-        };
-
-        match classify_key(key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => MessageResult::message(ConfigPickerMessage::Close),
-            PickerKey::MoveUp => {
-                self.move_selection_up();
-                MessageResult::consumed()
-            }
-            PickerKey::MoveDown => {
-                self.move_selection_down();
-                MessageResult::consumed()
-            }
-            PickerKey::Confirm => {
-                let change = self.confirm_selection();
-                MessageResult::message(ConfigPickerMessage::ApplySelection(change))
-            }
-            PickerKey::Char(c) => {
-                self.push_query_char(c);
-                MessageResult::consumed()
-            }
-            PickerKey::Backspace => {
-                self.pop_query_char();
-                MessageResult::consumed()
-            }
-            PickerKey::MoveLeft
-            | PickerKey::MoveRight
-            | PickerKey::BackspaceOnEmpty
-            | PickerKey::ControlChar
-            | PickerKey::Other => MessageResult::consumed(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::test_picker::{rendered_lines, selected_text, type_query};
+    use crate::tui::test_picker::{rendered_lines_from, type_query};
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
+
+    fn rendered_lines(picker: &ConfigPicker) -> Vec<String> {
+        rendered_lines_from(&picker.render(&ViewContext::new((120, 40))))
+    }
 
     fn entry() -> ConfigMenuEntry {
         ConfigMenuEntry {
@@ -222,8 +223,9 @@ mod tests {
 
     #[test]
     fn initializes_with_current_value_selected() {
-        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        let selected = selected_text(&mut picker).unwrap();
+        let picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let lines = rendered_lines(&picker);
+        let selected = lines.iter().find(|l| l.starts_with("▶")).unwrap();
         assert!(selected.contains("GPT-4o"));
     }
 
@@ -231,7 +233,7 @@ mod tests {
     fn query_filters_by_name() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
         type_query(&mut picker, "gemini");
-        let lines = rendered_lines(&mut picker);
+        let lines = rendered_lines(&picker);
         // header + 1 match
         assert_eq!(lines.len(), 2);
         assert!(lines[1].contains("Gemini 2.5 Pro"));
@@ -241,7 +243,7 @@ mod tests {
     fn query_filters_by_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
         type_query(&mut picker, "anthropic/claude");
-        let lines = rendered_lines(&mut picker);
+        let lines = rendered_lines(&picker);
         // header + 1 match
         assert_eq!(lines.len(), 2);
         assert!(lines[1].contains("Claude Sonnet"));
@@ -256,7 +258,7 @@ mod tests {
     #[test]
     fn confirm_selection_returns_change_for_new_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.on_event(UiEvent::Key(KeyEvent::new(
+        picker.on_event(&WidgetEvent::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
         )));
@@ -283,19 +285,20 @@ mod tests {
     #[test]
     fn handle_key_enter_returns_apply_selection_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.on_event(UiEvent::Key(KeyEvent::new(
+        picker.on_event(&WidgetEvent::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
         )));
 
-        let outcome = picker.on_event(UiEvent::Key(KeyEvent::new(
+        let outcome = picker.on_event(&WidgetEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
 
-        match outcome.messages.as_slice() {
+        let messages = outcome.into_messages();
+        match messages.as_slice() {
             [ConfigPickerMessage::ApplySelection(Some(change))] => {
                 assert_eq!(change.config_id, "model");
             }
@@ -307,15 +310,16 @@ mod tests {
     fn handle_key_escape_returns_close_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
 
-        let outcome = picker.on_event(UiEvent::Key(KeyEvent::new(
+        let outcome = picker.on_event(&WidgetEvent::Key(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
 
+        let messages = outcome.into_messages();
         assert!(matches!(
-            outcome.messages.as_slice(),
+            messages.as_slice(),
             [ConfigPickerMessage::Close]
         ));
     }

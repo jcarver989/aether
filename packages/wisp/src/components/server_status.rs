@@ -1,6 +1,6 @@
 use crate::components::wrap_selection;
 use crate::tui::KeyCode;
-use crate::tui::{Component, InteractiveComponent, Line, MessageResult, RenderContext, UiEvent};
+use crate::tui::{Line, Outcome, ViewContext, Widget, WidgetEvent};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 
 pub struct ServerStatusOverlay {
@@ -13,8 +13,40 @@ pub enum ServerStatusMessage {
     Authenticate(String),
 }
 
-impl Component for ServerStatusOverlay {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl Widget for ServerStatusOverlay {
+    type Message = ServerStatusMessage;
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
+        match key.code {
+            KeyCode::Esc => Outcome::message(ServerStatusMessage::Close),
+            KeyCode::Up => {
+                self.move_selection_up();
+                Outcome::consumed()
+            }
+            KeyCode::Down => {
+                self.move_selection_down();
+                Outcome::consumed()
+            }
+            KeyCode::Enter => {
+                if let Some(entry) = self
+                    .entries
+                    .get(self.selected_index)
+                    .filter(|e| matches!(e.status, McpServerStatus::NeedsOAuth))
+                {
+                    return Outcome::message(ServerStatusMessage::Authenticate(
+                        entry.name.clone(),
+                    ));
+                }
+                Outcome::consumed()
+            }
+            _ => Outcome::consumed(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         if self.entries.is_empty() {
             return vec![Line::new("  (no MCP servers configured)".to_string())];
         }
@@ -68,40 +100,6 @@ impl Component for ServerStatusOverlay {
                 }
             })
             .collect()
-    }
-}
-
-impl InteractiveComponent for ServerStatusOverlay {
-    type Message = ServerStatusMessage;
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        match event {
-            UiEvent::Key(key_event) => match key_event.code {
-                KeyCode::Esc => MessageResult::message(ServerStatusMessage::Close),
-                KeyCode::Up => {
-                    self.move_selection_up();
-                    MessageResult::consumed()
-                }
-                KeyCode::Down => {
-                    self.move_selection_down();
-                    MessageResult::consumed()
-                }
-                KeyCode::Enter => {
-                    if let Some(entry) = self
-                        .entries
-                        .get(self.selected_index)
-                        .filter(|e| matches!(e.status, McpServerStatus::NeedsOAuth))
-                    {
-                        return MessageResult::message(ServerStatusMessage::Authenticate(
-                            entry.name.clone(),
-                        ));
-                    }
-                    MessageResult::consumed()
-                }
-                _ => MessageResult::consumed(),
-            },
-            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
-        }
     }
 }
 
@@ -174,7 +172,7 @@ mod tests {
     #[test]
     fn renders_all_entries_with_status_indicators() {
         let overlay = ServerStatusOverlay::new(sample_entries());
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = overlay.render(&ctx);
 
         assert_eq!(lines.len(), 3);
@@ -196,7 +194,7 @@ mod tests {
     #[test]
     fn selected_entry_has_pointer() {
         let overlay = ServerStatusOverlay::new(sample_entries());
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = overlay.render(&ctx);
 
         assert!(lines[0].plain_text().starts_with("▶"));
@@ -219,11 +217,12 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         overlay.selected_index = 1; // linear - NeedsOAuth
 
-        let outcome = overlay.on_event(UiEvent::Key(crate::tui::KeyEvent::new(
+        let outcome = overlay.on_event(&WidgetEvent::Key(crate::tui::KeyEvent::new(
             KeyCode::Enter,
             crate::tui::KeyModifiers::NONE,
         )));
-        match outcome.messages.as_slice() {
+        let messages = outcome.into_messages();
+        match messages.as_slice() {
             [ServerStatusMessage::Authenticate(name)] => assert_eq!(name, "linear"),
             _ => panic!("Expected Authenticate message"),
         }
@@ -234,22 +233,23 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         overlay.selected_index = 0; // github - Connected
 
-        let outcome = overlay.on_event(UiEvent::Key(crate::tui::KeyEvent::new(
+        let outcome = overlay.on_event(&WidgetEvent::Key(crate::tui::KeyEvent::new(
             KeyCode::Enter,
             crate::tui::KeyModifiers::NONE,
         )));
-        assert!(outcome.messages.is_empty());
+        assert!(outcome.into_messages().is_empty());
     }
 
     #[test]
     fn esc_closes_overlay() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
-        let outcome = overlay.on_event(UiEvent::Key(crate::tui::KeyEvent::new(
+        let outcome = overlay.on_event(&WidgetEvent::Key(crate::tui::KeyEvent::new(
             KeyCode::Esc,
             crate::tui::KeyModifiers::NONE,
         )));
+        let messages = outcome.into_messages();
         assert!(matches!(
-            outcome.messages.as_slice(),
+            messages.as_slice(),
             [ServerStatusMessage::Close]
         ));
     }
@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn empty_entries_shows_placeholder() {
         let overlay = ServerStatusOverlay::new(vec![]);
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = overlay.render(&ctx);
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().contains("no MCP servers configured"));

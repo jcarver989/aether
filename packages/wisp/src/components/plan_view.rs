@@ -1,6 +1,6 @@
 use agent_client_protocol::{PlanEntry, PlanEntryStatus};
 
-use crate::tui::{Component, Line, RenderContext, Style};
+use crate::tui::{Line, ViewContext, Style};
 
 const CHECKBOX_EMPTY: &str = "\u{2610}"; // Ballot Box
 const CHECKBOX_FILLED: &str = "\u{2611}"; // Ballot Box with Check
@@ -17,8 +17,8 @@ pub struct PlanView<'a> {
     pub entries: &'a [PlanEntry],
 }
 
-impl Component for PlanView<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl PlanView<'_> {
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         if self.entries.is_empty() {
             return vec![];
         }
@@ -59,8 +59,8 @@ mod tests {
     use super::*;
     use agent_client_protocol::{PlanEntry, PlanEntryPriority, PlanEntryStatus};
 
-    fn ctx() -> RenderContext {
-        RenderContext::new((80, 24))
+    fn ctx() -> ViewContext {
+        ViewContext::new((80, 24))
     }
 
     fn entry(content: &str, status: PlanEntryStatus) -> PlanEntry {

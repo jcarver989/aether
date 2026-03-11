@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::components::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
+use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 
 /// Boolean toggle rendered as `[x]` / `[ ]`.
@@ -19,8 +19,23 @@ impl Checkbox {
     }
 }
 
-impl Component for Checkbox {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl Widget for Checkbox {
+    type Message = ();
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
+        match key.code {
+            KeyCode::Char(' ') => {
+                self.checked = !self.checked;
+                Outcome::consumed()
+            }
+            _ => Outcome::ignored(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         let display = if self.checked { "[x]" } else { "[ ]" };
         let style = if context.focused {
             context.theme.primary()
@@ -28,23 +43,6 @@ impl Component for Checkbox {
             context.theme.text_primary()
         };
         vec![Line::styled(display, style)]
-    }
-}
-
-impl InteractiveComponent for Checkbox {
-    type Message = ();
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        match event {
-            UiEvent::Key(key_event) => match key_event.code {
-                KeyCode::Char(' ') => {
-                    self.checked = !self.checked;
-                    MessageResult::consumed()
-                }
-                _ => MessageResult::ignored(),
-            },
-            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
-        }
     }
 }
 
@@ -60,9 +58,9 @@ mod tests {
     #[test]
     fn space_toggles() {
         let mut cb = Checkbox::new(false);
-        cb.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
+        cb.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
         assert!(cb.checked);
-        cb.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
+        cb.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
         assert!(!cb.checked);
     }
 
@@ -76,8 +74,8 @@ mod tests {
     #[test]
     fn other_keys_are_ignored() {
         let mut cb = Checkbox::new(false);
-        let outcome = cb.on_event(UiEvent::Key(key(KeyCode::Char('a'))));
-        assert!(!outcome.handled);
+        let outcome = cb.on_event(&WidgetEvent::Key(key(KeyCode::Char('a'))));
+        assert!(!outcome.is_handled());
         assert!(!cb.checked);
     }
 }

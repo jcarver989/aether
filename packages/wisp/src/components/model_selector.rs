@@ -1,8 +1,8 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{
-    Combobox, Component, InteractiveComponent, Line, MessageResult, PickerKey, RenderContext,
-    Searchable, UiEvent, classify_key,
+    Combobox, Line, Outcome, PickerKey, ViewContext, Searchable, Widget, WidgetEvent,
+    classify_key,
 };
 use acp_utils::config_option_id::ConfigOptionId;
 use std::cmp::Ordering;
@@ -178,8 +178,65 @@ impl ModelSelector {
     }
 }
 
-impl Component for ModelSelector {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl Widget for ModelSelector {
+    type Message = ModelSelectorMessage;
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
+        match classify_key(*key, self.combobox.query().is_empty()) {
+            PickerKey::Escape => {
+                let changes = self.confirm();
+                Outcome::message(ModelSelectorMessage::Done(changes))
+            }
+            PickerKey::MoveUp => {
+                self.combobox.move_up_where(|e| !e.is_disabled);
+                Outcome::consumed()
+            }
+            PickerKey::MoveDown => {
+                self.combobox.move_down_where(|e| !e.is_disabled);
+                Outcome::consumed()
+            }
+            PickerKey::MoveLeft => {
+                if self
+                    .combobox
+                    .selected()
+                    .is_some_and(|e| e.supports_reasoning)
+                {
+                    self.reasoning_effort = cycle_reasoning_left(self.reasoning_effort);
+                }
+                Outcome::consumed()
+            }
+            PickerKey::MoveRight => {
+                if self
+                    .combobox
+                    .selected()
+                    .is_some_and(|e| e.supports_reasoning)
+                {
+                    self.reasoning_effort = cycle_reasoning_right(self.reasoning_effort);
+                }
+                Outcome::consumed()
+            }
+            PickerKey::Confirm | PickerKey::Char(' ') => {
+                self.toggle_focused();
+                Outcome::consumed()
+            }
+            PickerKey::Char(c) => {
+                self.combobox.push_query_char(c);
+                Outcome::consumed()
+            }
+            PickerKey::Backspace => {
+                self.combobox.pop_query_char();
+                Outcome::consumed()
+            }
+            PickerKey::BackspaceOnEmpty | PickerKey::ControlChar | PickerKey::Other => {
+                Outcome::consumed()
+            }
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let header = format!("  Model search: {}", self.combobox.query());
         lines.push(Line::new(header));
@@ -253,74 +310,12 @@ impl Component for ModelSelector {
             }
         }
 
-        if let Some(h) = context.max_height {
-            let available_for_items = h.saturating_sub(lines.len());
-            item_lines.truncate(available_for_items);
-        }
+        let max_h = context.size.height as usize;
+        let available_for_items = max_h.saturating_sub(lines.len());
+        item_lines.truncate(available_for_items);
         lines.extend(item_lines);
 
         lines
-    }
-}
-
-impl InteractiveComponent for ModelSelector {
-    type Message = ModelSelectorMessage;
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        match event {
-            UiEvent::Key(key_event) => {
-                match classify_key(key_event, self.combobox.query().is_empty()) {
-                    PickerKey::Escape => {
-                        let changes = self.confirm();
-                        MessageResult::message(ModelSelectorMessage::Done(changes))
-                    }
-                    PickerKey::MoveUp => {
-                        self.combobox.move_up_where(|e| !e.is_disabled);
-                        MessageResult::consumed()
-                    }
-                    PickerKey::MoveDown => {
-                        self.combobox.move_down_where(|e| !e.is_disabled);
-                        MessageResult::consumed()
-                    }
-                    PickerKey::MoveLeft => {
-                        if self
-                            .combobox
-                            .selected()
-                            .is_some_and(|e| e.supports_reasoning)
-                        {
-                            self.reasoning_effort = cycle_reasoning_left(self.reasoning_effort);
-                        }
-                        MessageResult::consumed()
-                    }
-                    PickerKey::MoveRight => {
-                        if self
-                            .combobox
-                            .selected()
-                            .is_some_and(|e| e.supports_reasoning)
-                        {
-                            self.reasoning_effort = cycle_reasoning_right(self.reasoning_effort);
-                        }
-                        MessageResult::consumed()
-                    }
-                    PickerKey::Confirm | PickerKey::Char(' ') => {
-                        self.toggle_focused();
-                        MessageResult::consumed()
-                    }
-                    PickerKey::Char(c) => {
-                        self.combobox.push_query_char(c);
-                        MessageResult::consumed()
-                    }
-                    PickerKey::Backspace => {
-                        self.combobox.pop_query_char();
-                        MessageResult::consumed()
-                    }
-                    PickerKey::BackspaceOnEmpty | PickerKey::ControlChar | PickerKey::Other => {
-                        MessageResult::consumed()
-                    }
-                }
-            }
-            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
-        }
     }
 }
 
@@ -349,9 +344,13 @@ fn reasoning_config_value(effort: Option<ReasoningEffort>) -> &'static str {
 mod tests {
     use super::*;
     use crate::components::config_menu::{ConfigMenuEntryKind, ConfigMenuValue};
-    use crate::tui::test_picker::{rendered_lines, type_query};
+    use crate::tui::test_picker::{rendered_lines_from, type_query};
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
+
+    fn rendered_lines(selector: &ModelSelector) -> Vec<String> {
+        rendered_lines_from(&selector.render(&ViewContext::new((120, 40))))
+    }
 
     fn model_entry() -> ConfigMenuEntry {
         ConfigMenuEntry {
@@ -442,10 +441,10 @@ mod tests {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         assert_eq!(builder.selected_count(), 0);
 
-        builder.on_event(UiEvent::Key(space())); // toggle first
+        builder.on_event(&WidgetEvent::Key(space())); // toggle first
         assert_eq!(builder.selected_count(), 1);
 
-        builder.on_event(UiEvent::Key(space())); // toggle first again
+        builder.on_event(&WidgetEvent::Key(space())); // toggle first again
         assert_eq!(builder.selected_count(), 0);
     }
 
@@ -458,7 +457,7 @@ mod tests {
     #[test]
     fn confirm_with_one_returns_single_model() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        builder.on_event(UiEvent::Key(space())); // select first
+        builder.on_event(&WidgetEvent::Key(space())); // select first
         let changes = builder.confirm();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].config_id, "model");
@@ -468,9 +467,9 @@ mod tests {
     #[test]
     fn confirm_with_two_returns_comma_joined() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        builder.on_event(UiEvent::Key(space())); // select first
-        builder.on_event(UiEvent::Key(key(KeyCode::Down)));
-        builder.on_event(UiEvent::Key(space())); // select second
+        builder.on_event(&WidgetEvent::Key(space())); // select first
+        builder.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        builder.on_event(&WidgetEvent::Key(space())); // select second
 
         let changes = builder.confirm();
         assert_eq!(changes.len(), 1);
@@ -495,7 +494,7 @@ mod tests {
     fn search_filters_entries() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         type_query(&mut builder, "deepseek");
-        let lines = rendered_lines(&mut builder);
+        let lines = rendered_lines(&builder);
         assert!(lines.iter().any(|l| l.trim() == "DeepSeek"));
         assert!(lines.iter().any(|l| l.contains("[ ] DeepSeek Chat")));
     }
@@ -503,7 +502,7 @@ mod tests {
     #[test]
     fn render_groups_models_under_provider_headers() {
         let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-        let lines = rendered_lines(&mut builder);
+        let lines = rendered_lines(&builder);
 
         let openrouter_headers = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
         assert_eq!(openrouter_headers, 1, "expected one OpenRouter header line");
@@ -521,7 +520,7 @@ mod tests {
     fn search_filters_and_keeps_provider_headers() {
         let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
         type_query(&mut builder, "gemini");
-        let lines = rendered_lines(&mut builder);
+        let lines = rendered_lines(&builder);
 
         assert!(
             lines.iter().any(|l| l.trim() == "OpenRouter"),
@@ -577,7 +576,7 @@ mod tests {
         };
         let mut selector = ModelSelector::from_model_entry(&entry, None, None);
         type_query(&mut selector, "gpt");
-        let lines = rendered_lines(&mut selector);
+        let lines = rendered_lines(&selector);
 
         let codex_count = lines.iter().filter(|l| l.trim() == "Codex").count();
         let openrouter_count = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
@@ -591,7 +590,7 @@ mod tests {
         );
     }
 
-    fn focused_provider_and_row(selector: &mut ModelSelector) -> (String, String) {
+    fn focused_provider_and_row(selector: &ModelSelector) -> (String, String) {
         let lines = rendered_lines(selector);
         let focused_idx = lines
             .iter()
@@ -618,17 +617,17 @@ mod tests {
     fn grouped_navigation_follows_rendered_order() {
         let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
 
-        let (provider, focused) = focused_provider_and_row(&mut selector);
+        let (provider, focused) = focused_provider_and_row(&selector);
         assert_eq!(provider, "Anthropic");
         assert!(focused.contains("Claude Sonnet 4.5"));
 
-        selector.on_event(UiEvent::Key(key(KeyCode::Down)));
-        let (provider, focused) = focused_provider_and_row(&mut selector);
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        let (provider, focused) = focused_provider_and_row(&selector);
         assert_eq!(provider, "Google");
         assert!(focused.contains("Gemini 2.5 Pro"));
 
-        selector.on_event(UiEvent::Key(key(KeyCode::Down)));
-        let (provider, focused) = focused_provider_and_row(&mut selector);
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        let (provider, focused) = focused_provider_and_row(&selector);
         assert_eq!(provider, "OpenRouter");
         assert!(focused.contains("Claude Sonnet 4.5"));
     }
@@ -638,12 +637,12 @@ mod tests {
         let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
         type_query(&mut selector, "2.5");
 
-        let (provider, focused) = focused_provider_and_row(&mut selector);
+        let (provider, focused) = focused_provider_and_row(&selector);
         assert_eq!(provider, "Google");
         assert!(focused.contains("Gemini 2.5 Pro"));
 
-        selector.on_event(UiEvent::Key(key(KeyCode::Down)));
-        let (provider, focused) = focused_provider_and_row(&mut selector);
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        let (provider, focused) = focused_provider_and_row(&selector);
         assert_eq!(provider, "OpenRouter");
         assert!(focused.contains("Gemini 2.5 Pro"));
     }
@@ -651,7 +650,7 @@ mod tests {
     #[test]
     fn grouped_render_respects_small_height() {
         let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-        let context = RenderContext::new((120, 40)).with_max_height(6);
+        let context = ViewContext::new((120, 6));
         builder.update_viewport(6);
         let lines: Vec<String> = builder
             .render(&context)
@@ -674,8 +673,9 @@ mod tests {
     #[test]
     fn escape_returns_done_action() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        let outcome = builder.on_event(UiEvent::Key(key(KeyCode::Esc)));
-        match outcome.messages.as_slice() {
+        let outcome = builder.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
+        let messages = outcome.into_messages();
+        match messages.as_slice() {
             [ModelSelectorMessage::Done(changes)] => assert!(changes.is_empty()),
             other => panic!("expected Done([]), got: {other:?}"),
         }
@@ -686,22 +686,23 @@ mod tests {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         assert_eq!(builder.selected_count(), 0);
 
-        builder.on_event(UiEvent::Key(key(KeyCode::Enter))); // toggle first
+        builder.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // toggle first
         assert_eq!(builder.selected_count(), 1);
 
-        builder.on_event(UiEvent::Key(key(KeyCode::Enter))); // toggle first again
+        builder.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // toggle first again
         assert_eq!(builder.selected_count(), 0);
     }
 
     #[test]
     fn escape_with_selections_returns_done_with_change() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        builder.on_event(UiEvent::Key(space())); // select first
-        builder.on_event(UiEvent::Key(key(KeyCode::Down)));
-        builder.on_event(UiEvent::Key(space())); // select second
+        builder.on_event(&WidgetEvent::Key(space())); // select first
+        builder.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        builder.on_event(&WidgetEvent::Key(space())); // select second
 
-        let outcome = builder.on_event(UiEvent::Key(key(KeyCode::Esc)));
-        match outcome.messages.as_slice() {
+        let outcome = builder.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
+        let messages = outcome.into_messages();
+        match messages.as_slice() {
             [ModelSelectorMessage::Done(changes)] => {
                 assert_eq!(changes.len(), 1);
                 let change = &changes[0];
@@ -721,7 +722,7 @@ mod tests {
             Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
             None,
         );
-        let lines = rendered_lines(&mut builder);
+        let lines = rendered_lines(&builder);
         // Second line after header should be a spacer, then selected models line
         assert!(
             lines[1].trim().is_empty(),
@@ -743,7 +744,7 @@ mod tests {
     #[test]
     fn render_hides_selected_line_when_none_selected() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        let lines = rendered_lines(&mut builder);
+        let lines = rendered_lines(&builder);
         assert!(
             !lines.iter().any(|l| l.contains("Selected:")),
             "should not show Selected line when nothing is selected"
@@ -773,8 +774,8 @@ mod tests {
             None,
         );
         // Toggle a second model on
-        builder.on_event(UiEvent::Key(key(KeyCode::Down)));
-        builder.on_event(UiEvent::Key(space()));
+        builder.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        builder.on_event(&WidgetEvent::Key(space()));
         let changes = builder.confirm();
         assert_eq!(changes.len(), 1);
         let change = &changes[0];
@@ -853,10 +854,10 @@ mod tests {
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
         assert_eq!(selector.reasoning_effort, None);
 
-        selector.on_event(UiEvent::Key(key(KeyCode::Right)));
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
         assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Low));
 
-        selector.on_event(UiEvent::Key(key(KeyCode::Right)));
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
         assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Medium));
     }
 
@@ -865,19 +866,19 @@ mod tests {
         let mut selector =
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
         // Move to non-reasoning model (DeepSeek)
-        selector.on_event(UiEvent::Key(key(KeyCode::Down)));
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
         assert!(!selector.combobox.selected().unwrap().supports_reasoning);
 
-        selector.on_event(UiEvent::Key(key(KeyCode::Right)));
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
         assert_eq!(selector.reasoning_effort, None);
     }
 
     #[test]
     fn render_shows_bar_on_focused_reasoning_row() {
-        use crate::tui::test_picker::rendered_raw_lines;
-        let mut selector =
+        use crate::tui::test_picker::rendered_raw_lines_with_context;
+        let selector =
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
-        let lines = rendered_raw_lines(&mut selector);
+        let lines = rendered_raw_lines_with_context(|ctx| selector.render(ctx), (120, 40));
         let focused_line = lines
             .iter()
             .find(|l| l.plain_text().contains("▶"))
@@ -892,8 +893,8 @@ mod tests {
         let mut selector =
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
         // Move to non-reasoning model
-        selector.on_event(UiEvent::Key(key(KeyCode::Down)));
-        let lines = rendered_lines(&mut selector);
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        let lines = rendered_lines(&selector);
         let focused_line = lines
             .iter()
             .find(|l| l.contains("▶"))
@@ -909,9 +910,9 @@ mod tests {
         let mut selector =
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
         // Toggle a model on
-        selector.on_event(UiEvent::Key(space()));
+        selector.on_event(&WidgetEvent::Key(space()));
         // Change reasoning
-        selector.on_event(UiEvent::Key(key(KeyCode::Right)));
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
 
         let changes = selector.confirm();
         assert_eq!(changes.len(), 2, "expected model + reasoning changes");
@@ -931,8 +932,8 @@ mod tests {
             None,
         );
         // Don't change models, just reasoning
-        selector.on_event(UiEvent::Key(key(KeyCode::Right)));
-        selector.on_event(UiEvent::Key(key(KeyCode::Right)));
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
+        selector.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
 
         let changes = selector.confirm();
         assert_eq!(changes.len(), 1);

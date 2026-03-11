@@ -2,18 +2,18 @@ use super::{App, AppAction, PromptAttachment, build_attachment_blocks};
 use crate::components::app::git_diff_mode::format_review_prompt;
 use crate::settings::{load_or_create_settings, save_settings};
 use crate::tui::{Effects, Line};
-use crate::tui::advanced::Renderer;
+use crate::tui::advanced::Terminal;
 use std::io::Write;
 
 impl App {
-    pub async fn apply_action<T: Write>(
+    pub async fn apply_action(
         &mut self,
-        renderer: &mut Renderer<T>,
+        terminal: &mut Terminal<'_, impl Write>,
         action: AppAction,
     ) -> Result<Effects<AppAction>, Box<dyn std::error::Error>> {
         match action {
             AppAction::PushScrollback(lines) => {
-                renderer.push_to_scrollback(&lines)?;
+                terminal.push_to_scrollback(&lines)?;
                 Ok(Effects::none())
             }
             AppAction::PromptSubmit {
@@ -21,7 +21,7 @@ impl App {
                 attachments,
             } => {
                 submit_prompt_with_attachments(
-                    renderer,
+                    terminal,
                     &self.prompt_handle,
                     &self.session_id,
                     &user_input,
@@ -40,7 +40,7 @@ impl App {
                 Ok(Effects::none())
             }
             AppAction::SetTheme { file } => {
-                apply_theme_selection(renderer, file);
+                apply_theme_selection(terminal, file);
                 Ok(Effects::none())
             }
             AppAction::Cancel => {
@@ -62,7 +62,7 @@ impl App {
             }
             AppAction::ClearScreen => {
                 self.state.reset_after_context_cleared();
-                renderer.clear_screen()?;
+                terminal.clear_screen()?;
                 self.prompt_handle
                     .prompt(&self.session_id, "/clear", None)?;
                 Ok(Effects::none())
@@ -87,7 +87,7 @@ impl App {
                 self.git_diff_mode.close();
                 self.state.exit_git_diff();
                 submit_prompt_with_attachments(
-                    renderer,
+                    terminal,
                     &self.prompt_handle,
                     &self.session_id,
                     &prompt,
@@ -100,7 +100,7 @@ impl App {
     }
 }
 
-pub fn apply_theme_selection<T: Write>(renderer: &mut Renderer<T>, file: Option<String>) {
+pub fn apply_theme_selection(terminal: &mut Terminal<'_, impl Write>, file: Option<String>) {
     let mut settings = load_or_create_settings();
     settings.theme.file = file;
 
@@ -109,11 +109,11 @@ pub fn apply_theme_selection<T: Write>(renderer: &mut Renderer<T>, file: Option<
     }
 
     let theme = crate::settings::load_theme(&settings);
-    renderer.set_theme(theme);
+    terminal.set_theme(theme);
 }
 
-pub async fn submit_prompt_with_attachments<T: Write>(
-    renderer: &mut Renderer<T>,
+pub async fn submit_prompt_with_attachments(
+    terminal: &mut Terminal<'_, impl Write>,
     prompt_handle: &acp_utils::client::AcpPromptHandle,
     session_id: &agent_client_protocol::SessionId,
     user_input: &str,
@@ -127,7 +127,7 @@ pub async fn submit_prompt_with_attachments<T: Write>(
             .into_iter()
             .map(|warning| Line::new(format!("[wisp] {warning}")))
             .collect();
-        renderer.push_to_scrollback(&warning_lines)?;
+        terminal.push_to_scrollback(&warning_lines)?;
     }
 
     prompt_handle.prompt(
@@ -162,7 +162,7 @@ mod tests {
 
         with_wisp_home(temp_dir.path(), || {
             let mut renderer = Renderer::new(Vec::new(), Theme::default());
-            apply_theme_selection(&mut renderer, Some("custom.tmTheme".to_string()));
+            apply_theme_selection(&mut renderer.terminal(), Some("custom.tmTheme".to_string()));
 
             assert_eq!(
                 renderer.context().theme.text_primary(),
@@ -190,7 +190,7 @@ mod tests {
             .unwrap();
 
             let mut renderer = Renderer::new(Vec::new(), Theme::default());
-            apply_theme_selection(&mut renderer, None);
+            apply_theme_selection(&mut renderer.terminal(), None);
 
             let loaded = load_or_create_settings();
             assert_eq!(loaded.theme.file, None);
@@ -216,7 +216,7 @@ mod tests {
 
         let effects = app
             .apply_action(
-                &mut renderer,
+                &mut renderer.terminal(),
                 crate::components::app::AppAction::ClearScreen,
             )
             .await
@@ -235,7 +235,7 @@ mod tests {
         };
 
         submit_prompt_with_attachments(
-            &mut renderer,
+            &mut renderer.terminal(),
             &prompt_handle,
             &session_id,
             "hello",

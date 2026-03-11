@@ -1,1 +1,1 @@
-pub use tui::Container;
+pub use tui::Panel;

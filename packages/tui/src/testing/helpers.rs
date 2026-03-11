@@ -4,7 +4,7 @@ use crate::rendering::frame::Cursor;
 use crate::rendering::frame::Frame;
 use crate::rendering::size::Size;
 use crate::rendering::terminal_screen::TerminalScreen;
-use crate::{Component, RenderContext, SelectOption};
+use crate::{ViewContext, SelectOption};
 
 use super::TestTerminal;
 
@@ -21,9 +21,13 @@ fn frame_from_lines(lines: &[crate::line::Line], width: u16, _rows: u16) -> Fram
     .clamp_cursor()
 }
 
-pub fn render_component(component: &impl Component, width: u16, rows: u16) -> TestTerminal {
-    let ctx = RenderContext::new((width, rows));
-    let lines = component.render(&ctx);
+pub fn render_component(
+    render: impl Fn(&ViewContext) -> Vec<crate::line::Line>,
+    width: u16,
+    rows: u16,
+) -> TestTerminal {
+    let ctx = ViewContext::new((width, rows));
+    let lines = render(&ctx);
     let terminal = TestTerminal::new(width, rows);
     let mut screen = TerminalScreen::new(terminal);
     let frame = frame_from_lines(&lines, width, rows).prepare(Size::from((width, rows)), 0);
@@ -32,13 +36,13 @@ pub fn render_component(component: &impl Component, width: u16, rows: u16) -> Te
 }
 
 pub fn render_component_with_terminal_state(
-    component: &impl Component,
+    render: impl Fn(&ViewContext) -> Vec<crate::line::Line>,
     terminal_state: &mut TerminalScreen<TestTerminal>,
     width: u16,
     rows: u16,
 ) {
-    let ctx = RenderContext::new((width, rows));
-    let lines = component.render(&ctx);
+    let ctx = ViewContext::new((width, rows));
+    let lines = render(&ctx);
     let frame = frame_from_lines(&lines, width, rows).prepare(Size::from((width, rows)), 0);
     terminal_state.render_frame(&frame, width).unwrap();
 }

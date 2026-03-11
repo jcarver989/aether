@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 
 use super::select_option::SelectOption;
-use crate::components::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
+use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -32,20 +32,8 @@ impl MultiSelect {
             .collect();
         serde_json::Value::Array(values)
     }
-}
 
-impl Component for MultiSelect {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
-        if context.focused {
-            self.render_options(context)
-        } else {
-            vec![self.render_inline(context)]
-        }
-    }
-}
-
-impl MultiSelect {
-    fn render_inline(&self, context: &RenderContext) -> Line {
+    fn render_inline(&self, context: &ViewContext) -> Line {
         let chosen: Vec<&str> = self
             .options
             .iter()
@@ -61,7 +49,7 @@ impl MultiSelect {
         }
     }
 
-    fn render_options(&self, context: &RenderContext) -> Vec<Line> {
+    fn render_options(&self, context: &ViewContext) -> Vec<Line> {
         self.options
             .iter()
             .enumerate()
@@ -81,31 +69,39 @@ impl MultiSelect {
     }
 }
 
-impl InteractiveComponent for MultiSelect {
+impl Widget for MultiSelect {
     type Message = ();
 
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
         if self.options.is_empty() {
-            return MessageResult::ignored();
+            return Outcome::ignored();
         }
 
-        match event {
-            UiEvent::Key(key_event) => match key_event.code {
-                KeyCode::Char(' ') => {
-                    self.selected[self.cursor] = !self.selected[self.cursor];
-                    MessageResult::consumed()
-                }
-                KeyCode::Up | KeyCode::Left => {
-                    self.cursor = (self.cursor + self.options.len() - 1) % self.options.len();
-                    MessageResult::consumed()
-                }
-                KeyCode::Down | KeyCode::Right => {
-                    self.cursor = (self.cursor + 1) % self.options.len();
-                    MessageResult::consumed()
-                }
-                _ => MessageResult::ignored(),
-            },
-            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
+        match key.code {
+            KeyCode::Char(' ') => {
+                self.selected[self.cursor] = !self.selected[self.cursor];
+                Outcome::consumed()
+            }
+            KeyCode::Up | KeyCode::Left => {
+                self.cursor = (self.cursor + self.options.len() - 1) % self.options.len();
+                Outcome::consumed()
+            }
+            KeyCode::Down | KeyCode::Right => {
+                self.cursor = (self.cursor + 1) % self.options.len();
+                Outcome::consumed()
+            }
+            _ => Outcome::ignored(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
+        if context.focused {
+            self.render_options(context)
+        } else {
+            vec![self.render_inline(context)]
         }
     }
 }
@@ -142,18 +138,18 @@ mod tests {
     #[test]
     fn space_toggles_at_cursor() {
         let mut ms = sample();
-        ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
+        ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
         assert!(ms.selected[0]);
-        ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
+        ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
         assert!(!ms.selected[0]);
     }
 
     #[test]
     fn cursor_moves_with_arrows() {
         let mut ms = sample();
-        ms.on_event(UiEvent::Key(key(KeyCode::Down)));
+        ms.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
         assert_eq!(ms.cursor, 1);
-        ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
+        ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
         assert!(ms.selected[1]);
     }
 
@@ -176,7 +172,7 @@ mod tests {
     #[test]
     fn cursor_wraps() {
         let mut ms = sample();
-        ms.on_event(UiEvent::Key(key(KeyCode::Up)));
+        ms.on_event(&WidgetEvent::Key(key(KeyCode::Up)));
         assert_eq!(ms.cursor, 2); // wraps to end
     }
 }

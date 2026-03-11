@@ -2,8 +2,8 @@ use super::AppAction;
 use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
 use crate::tui::{
-    Effects, InteractiveComponent, KeyEvent, Line, MessageResult, MouseEvent, MouseEventKind,
-    RenderContext, UiEvent,
+    Effects, KeyEvent, Line, MouseEvent, MouseEventKind, Outcome, ViewContext, Widget,
+    WidgetEvent,
 };
 use std::path::PathBuf;
 
@@ -244,7 +244,7 @@ impl GitDiffViewState {
         }
     }
 
-    pub(crate) fn ensure_patch_cache(&mut self, context: &RenderContext) {
+    pub(crate) fn ensure_patch_cache(&mut self, context: &ViewContext) {
         if self.cached_for_file == Some(self.selected_file) {
             return;
         }
@@ -363,7 +363,7 @@ impl GitDiffMode {
         let mut view = GitDiffView {
             state: &mut self.state,
         };
-        let outcome = view.on_event(UiEvent::Key(key_event));
+        let outcome = view.on_event(&WidgetEvent::Key(key_event));
         self.handle_messages(outcome)
     }
 
@@ -376,7 +376,7 @@ impl GitDiffMode {
         changed
     }
 
-    pub(crate) fn refresh_caches(&mut self, context: &RenderContext) {
+    pub(crate) fn refresh_caches(&mut self, context: &ViewContext) {
         self.state.ensure_patch_cache(context);
         // 2 rows: file header + spacer above patch content
         let viewport_height = (context.size.height as usize).saturating_sub(2);
@@ -391,16 +391,16 @@ impl GitDiffMode {
         self.state.comment_cursor
     }
 
-    pub(crate) fn render(&self, context: &RenderContext) -> Vec<Line> {
+    pub(crate) fn render(&self, context: &ViewContext) -> Vec<Line> {
         GitDiffView::render_from_state(&self.state, context)
     }
 
     fn handle_messages(
         &mut self,
-        outcome: MessageResult<GitDiffViewMessage>,
+        outcome: Outcome<GitDiffViewMessage>,
     ) -> Effects<AppAction> {
         outcome
-            .messages
+            .into_messages()
             .into_iter()
             .map(|message| match message {
                 GitDiffViewMessage::Close => AppAction::CloseGitDiffViewer,

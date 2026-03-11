@@ -6,7 +6,7 @@ use tui::{BRAILLE_FRAMES, Spinner};
 fn invisible_renders_empty() {
     let mut spinner = Spinner::default();
     spinner.visible = false;
-    let ctx = RenderContext::new((80, 24));
+    let ctx = ViewContext::new((80, 24));
     let lines = spinner.render(&ctx);
     assert!(lines.is_empty());
     // Also verify it produces an empty buffer
@@ -19,7 +19,7 @@ fn visible_tick_0_renders_first_frame() {
     let mut spinner = Spinner::default();
     spinner.visible = true;
     spinner.set_tick(0);
-    let term = render_component(&spinner, 80, 24);
+    let term = render_component(|ctx| spinner.render(ctx), 80, 24);
     let lines = term.get_lines();
     let expected = BRAILLE_FRAMES[0].to_string();
     assert!(
@@ -35,7 +35,7 @@ fn tick_1_renders_second_frame() {
     let mut spinner = Spinner::default();
     spinner.visible = true;
     spinner.set_tick(1);
-    let term = render_component(&spinner, 80, 24);
+    let term = render_component(|ctx| spinner.render(ctx), 80, 24);
     let lines = term.get_lines();
     let expected = BRAILLE_FRAMES[1].to_string();
     assert!(
@@ -56,13 +56,13 @@ fn rerender_updates_frame_in_place() {
     let mut terminal_state = TerminalScreen::new(terminal);
 
     // Initial render
-    render_component_with_terminal_state(&spinner, &mut terminal_state, 80, 24);
+    render_component_with_terminal_state(|ctx| spinner.render(ctx), &mut terminal_state, 80, 24);
     let first_frame = BRAILLE_FRAMES[0].to_string();
     assert!(terminal_state.writer().get_lines()[0].contains(&first_frame));
 
     // Advance tick and re-render through the same TerminalState
     spinner.set_tick(1);
-    render_component_with_terminal_state(&spinner, &mut terminal_state, 80, 24);
+    render_component_with_terminal_state(|ctx| spinner.render(ctx), &mut terminal_state, 80, 24);
     let second_frame = BRAILLE_FRAMES[1].to_string();
     assert!(
         terminal_state.writer().get_lines()[0].contains(&second_frame),

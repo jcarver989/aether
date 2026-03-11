@@ -1,22 +1,20 @@
 pub mod checkbox;
-pub mod component;
-pub mod container;
-pub mod dialog;
 pub mod form;
 pub mod interactive_component;
+pub mod layout;
 pub mod multi_select;
 pub mod number_field;
+pub mod panel;
 pub mod radio_select;
 pub mod select_option;
 pub mod spinner;
-pub mod status_bar;
 pub mod text_field;
 
-// Re-export the core traits and types
-pub use component::{Component, RenderContext};
-pub use container::{BORDER_H_PAD, Container};
-pub use interactive_component::{InteractiveComponent, MessageResult, UiEvent};
+pub use interactive_component::{Outcome, PickerMessage, Widget, WidgetEvent};
+pub use layout::Layout;
+pub use panel::{BORDER_H_PAD, Panel};
 pub use crate::rendering::frame::{Cursor, Frame};
+pub use crate::rendering::render_context::ViewContext;
 
 /// Wrapping navigation helper for selection indices.
 /// `delta` of -1 moves up, +1 moves down, wrapping at boundaries.
