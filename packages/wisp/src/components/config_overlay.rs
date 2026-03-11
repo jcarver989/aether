@@ -149,6 +149,7 @@ impl ConfigOverlay {
             overlay.remove_entry(method_id);
             if overlay.is_empty() {
                 self.provider_login_overlay = None;
+                self.focus.focus(FOCUS_MENU);
             }
         }
     }
@@ -643,6 +644,29 @@ mod tests {
         assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
         assert!(text.contains("[Enter] Authenticate"), "rendered:\n{text}");
         assert!(text.contains("[Esc] Back"), "rendered:\n{text}");
+    }
+
+    #[test]
+    fn provider_login_overlay_closes_when_empty() {
+        let mut menu = make_menu();
+        menu.add_provider_logins_entry("2 needs login");
+        let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        assert_eq!(overlay.focus.focused(), FOCUS_PROVIDER_LOGIN);
+        assert!(overlay.provider_login_overlay.is_some());
+
+        overlay.remove_auth_method("anthropic");
+        overlay.remove_auth_method("openrouter");
+
+        assert!(overlay.provider_login_overlay.is_none());
+        assert_eq!(overlay.focus.focused(), FOCUS_MENU);
+
+        let lines = render_plain_text(&mut overlay);
+        let text = lines.join("\n");
+
+        assert!(text.contains("Provider: OpenRouter"), "rendered:\n{text}");
     }
 
     #[test]
