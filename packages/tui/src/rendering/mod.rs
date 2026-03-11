@@ -1,6 +1,5 @@
 pub mod frame;
 pub mod line;
-pub mod prepared_frame;
 pub mod render_context;
 pub mod renderer;
 pub mod size;
@@ -8,3 +7,4 @@ pub mod soft_wrap;
 pub mod span;
 pub mod style;
 pub(crate) mod terminal_screen;
+pub mod visual_frame;

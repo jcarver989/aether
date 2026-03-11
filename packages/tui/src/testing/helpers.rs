@@ -7,7 +7,7 @@ use crate::{SelectOption, ViewContext};
 
 use super::TestTerminal;
 
-fn frame_from_lines(lines: &[crate::line::Line], width: u16, _rows: u16) -> Frame {
+fn frame_from_lines(lines: &[crate::line::Line], _width: u16, _rows: u16) -> Frame {
     Frame::new(
         lines.to_vec(),
         Cursor {
@@ -16,7 +16,6 @@ fn frame_from_lines(lines: &[crate::line::Line], width: u16, _rows: u16) -> Fram
             is_visible: true,
         },
     )
-    .soft_wrap(width)
     .clamp_cursor()
 }
 

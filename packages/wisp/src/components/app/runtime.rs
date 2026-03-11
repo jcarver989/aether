@@ -244,6 +244,8 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(renderer.render_epoch(), 1);
+        let output = String::from_utf8_lossy(renderer.writer());
+        assert!(output.contains("[wisp]"));
+        assert!(output.contains("missing-file.txt"));
     }
 }
