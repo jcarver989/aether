@@ -1,7 +1,9 @@
 use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
-use crate::tui::{KeyCode, Line, Response, Span, Style, ViewContext, Widget, WidgetEvent, truncate_text};
+use crate::tui::{
+    KeyCode, Line, Response, Span, Style, ViewContext, Widget, WidgetEvent, truncate_text,
+};
 
 pub enum GitDiffViewMessage {
     Close,

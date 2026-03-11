@@ -1,4 +1,4 @@
-use tui::{App, AppEvent, Cursor, Response, Frame, KeyCode, Line, ViewContext, Runner};
+use tui::{App, AppEvent, Cursor, Frame, KeyCode, Line, Response, Runner, ViewContext};
 
 struct CounterApp {
     count: i32,

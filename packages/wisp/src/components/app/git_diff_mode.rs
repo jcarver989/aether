@@ -2,8 +2,7 @@ use super::AppAction;
 use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
 use crate::tui::{
-    KeyEvent, Line, MouseEvent, MouseEventKind, Response, ViewContext, Widget,
-    WidgetEvent,
+    KeyEvent, Line, MouseEvent, MouseEventKind, Response, ViewContext, Widget, WidgetEvent,
 };
 use std::path::PathBuf;
 
@@ -304,7 +303,6 @@ pub(crate) struct GitDiffMode {
     pending_restore: Option<RefreshState>,
 }
 
-
 impl GitDiffMode {
     pub(crate) fn new(working_dir: PathBuf) -> Self {
         Self {
@@ -318,7 +316,6 @@ impl GitDiffMode {
     pub(crate) fn begin_open(&mut self) {
         self.pending_restore = None;
         self.state = GitDiffViewState::new(GitDiffLoadState::Loading);
-
     }
 
     pub(crate) fn begin_refresh(&mut self) {
@@ -328,7 +325,6 @@ impl GitDiffMode {
         });
         self.state.load_state = GitDiffLoadState::Loading;
         self.state.invalidate_patch_cache();
-
     }
 
     pub(crate) async fn complete_load(&mut self) {
@@ -350,13 +346,11 @@ impl GitDiffMode {
                 self.state.invalidate_patch_cache();
             }
         }
-
     }
 
     pub(crate) fn close(&mut self) {
         self.pending_restore = None;
         self.state = GitDiffViewState::new(GitDiffLoadState::Empty);
-
     }
 
     pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Response<AppAction> {
@@ -395,10 +389,7 @@ impl GitDiffMode {
         GitDiffView::render_from_state(&self.state, context)
     }
 
-    fn handle_messages(
-        &mut self,
-        outcome: Response<GitDiffViewMessage>,
-    ) -> Response<AppAction> {
+    fn handle_messages(&mut self, outcome: Response<GitDiffViewMessage>) -> Response<AppAction> {
         outcome
             .into_messages()
             .into_iter()

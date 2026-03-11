@@ -1,6 +1,5 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenu, ConfigMenuMessage};
 use crate::components::config_picker::{ConfigPicker, ConfigPickerMessage};
-use crate::tui::Panel;
 use crate::components::model_selector::{ModelSelector, ModelSelectorMessage};
 use crate::components::provider_login::{
     ProviderLoginEntry, ProviderLoginMessage, ProviderLoginOverlay, ProviderLoginStatus,
@@ -10,6 +9,7 @@ use crate::components::server_status::{
     ServerStatusMessage, ServerStatusOverlay, server_status_summary,
 };
 use crate::settings::{list_theme_files, load_or_create_settings};
+use crate::tui::Panel;
 use crate::tui::{Line, Response, ViewContext, Widget, WidgetEvent};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
@@ -128,7 +128,6 @@ impl ConfigOverlay {
             let login_summary = provider_login_summary(&login_entries);
             self.menu.add_provider_logins_entry(&login_summary);
         }
-
     }
 
     pub fn update_server_statuses(&mut self, statuses: Vec<McpServerStatusEntry>) {
@@ -136,14 +135,12 @@ impl ConfigOverlay {
         if let Some(ref mut overlay) = self.server_overlay {
             overlay.update_entries(self.server_statuses.clone());
         }
-
     }
 
     pub fn on_authenticate_started(&mut self, method_id: &str) {
         if let Some(ref mut overlay) = self.provider_login_overlay {
             overlay.set_authenticating(method_id);
         }
-
     }
 
     pub fn remove_auth_method(&mut self, method_id: &str) {
@@ -154,7 +151,6 @@ impl ConfigOverlay {
                 self.provider_login_overlay = None;
             }
         }
-
     }
 
     fn build_login_entries(&self) -> Vec<ProviderLoginEntry> {
@@ -176,7 +172,6 @@ impl ConfigOverlay {
         {
             entry.status = ProviderLoginStatus::NeedsLogin;
         }
-
     }
 
     pub fn cursor_col(&self) -> usize {
@@ -303,9 +298,7 @@ impl Widget for ConfigOverlay {
                     match change {
                         Some(change) => {
                             self.menu.apply_change(&change);
-                            Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![
-                                change,
-                            ]))
+                            Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![change]))
                         }
                         None => Response::ok(),
                     }
@@ -672,10 +665,7 @@ mod tests {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
         let messages = outcome.into_messages();
-        assert!(matches!(
-            messages.as_slice(),
-            [ConfigOverlayMessage::Close]
-        ));
+        assert!(matches!(messages.as_slice(), [ConfigOverlayMessage::Close]));
     }
 
     #[test]

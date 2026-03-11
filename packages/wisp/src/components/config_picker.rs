@@ -1,7 +1,6 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
-    Combobox, Line, Response, PickerKey, ViewContext, Searchable, Widget, WidgetEvent,
-    classify_key,
+    Combobox, Line, PickerKey, Response, Searchable, ViewContext, Widget, WidgetEvent, classify_key,
 };
 impl Searchable for ConfigMenuValue {
     fn search_text(&self) -> String {
@@ -318,9 +317,6 @@ mod tests {
         assert!(outcome.is_handled());
 
         let messages = outcome.into_messages();
-        assert!(matches!(
-            messages.as_slice(),
-            [ConfigPickerMessage::Close]
-        ));
+        assert!(matches!(messages.as_slice(), [ConfigPickerMessage::Close]));
     }
 }

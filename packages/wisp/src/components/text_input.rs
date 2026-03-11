@@ -389,10 +389,7 @@ mod tests {
         let outcome = input.on_event(&key(KeyCode::Enter));
 
         assert!(outcome.is_handled());
-        assert!(matches!(
-            outcome,
-            Response::One(TextInputMessage::Submit)
-        ));
+        assert!(matches!(outcome, Response::One(TextInputMessage::Submit)));
     }
 
     #[test]

@@ -1,12 +1,12 @@
 use agent_client_protocol as acp;
-use tui::testing::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::{App, AppAction};
 use tui::Theme;
 use tui::advanced::Renderer as FrameRenderer;
+use tui::testing::{TestTerminal, assert_buffer_eq};
+use wisp::components::app::{App, AppAction};
 
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use tui::{
-    App as TuiApp, AppEvent, Response, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
+    App as TuiApp, AppEvent, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, Response,
 };
 
 const TEST_AGENT: &str = "test-agent";
@@ -54,8 +54,7 @@ impl Renderer {
     }
 
     fn initial_render(&mut self) -> std::io::Result<()> {
-        self.renderer
-            .render_frame(|ctx| self.screen.view(ctx))?;
+        self.renderer.render_frame(|ctx| self.screen.view(ctx))?;
         Ok(())
     }
 
@@ -143,17 +142,18 @@ impl Renderer {
         let mut queue: std::collections::VecDeque<_> = effects.into_messages().into();
 
         while let Some(effect) = queue.pop_front() {
-            self.renderer
-                .render_frame(|ctx| self.screen.view(ctx))?;
-            let follow_up = self.screen.run_effect(&mut self.renderer.terminal(), effect).await?;
+            self.renderer.render_frame(|ctx| self.screen.view(ctx))?;
+            let follow_up = self
+                .screen
+                .run_effect(&mut self.renderer.terminal(), effect)
+                .await?;
             if follow_up.is_exit() {
                 return Ok(LoopAction::Exit);
             }
             queue.extend(follow_up.into_messages());
         }
 
-        self.renderer
-            .render_frame(|ctx| self.screen.view(ctx))?;
+        self.renderer.render_frame(|ctx| self.screen.view(ctx))?;
 
         if should_exit {
             Ok(LoopAction::Exit)

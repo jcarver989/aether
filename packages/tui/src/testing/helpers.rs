@@ -4,7 +4,7 @@ use crate::rendering::frame::Cursor;
 use crate::rendering::frame::Frame;
 use crate::rendering::size::Size;
 use crate::rendering::terminal_screen::TerminalScreen;
-use crate::{ViewContext, SelectOption};
+use crate::{SelectOption, ViewContext};
 
 use super::TestTerminal;
 

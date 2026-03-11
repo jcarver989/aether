@@ -1,5 +1,5 @@
 use crate::tui::{
-    Combobox, Line, Response, PickerKey, PickerMessage, ViewContext, Searchable, Widget,
+    Combobox, Line, PickerKey, PickerMessage, Response, Searchable, ViewContext, Widget,
     WidgetEvent, classify_key,
 };
 use ignore::WalkBuilder;
@@ -163,7 +163,9 @@ impl Widget for FilePicker {
 mod tests {
     use super::*;
     use crate::tui::ViewContext;
-    use crate::tui::test_picker::{rendered_lines_from, rendered_raw_lines_with_context, type_query};
+    use crate::tui::test_picker::{
+        rendered_lines_from, rendered_raw_lines_with_context, type_query,
+    };
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
 
     const DEFAULT_SIZE: (u16, u16) = (120, 40);

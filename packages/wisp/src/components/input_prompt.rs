@@ -43,9 +43,8 @@ impl InputPrompt<'_> {
         let inner_width = width - 2; // space between │ and │
         // " " + marker area ("> " or "  ")
         let content_width = inner_width.saturating_sub(3).max(1);
-        let wrapped_chunks = styled_input.soft_wrap(
-            u16::try_from(content_width).unwrap_or(u16::MAX),
-        );
+        let wrapped_chunks =
+            styled_input.soft_wrap(u16::try_from(content_width).unwrap_or(u16::MAX));
 
         let cursor_content_row = cursor_display_width / content_width;
         let cursor_content_col = cursor_display_width % content_width;

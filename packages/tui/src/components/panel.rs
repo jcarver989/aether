@@ -1,4 +1,4 @@
-use crate::{Color, Line, ViewContext, Style};
+use crate::{Color, Line, Style, ViewContext};
 use unicode_width::UnicodeWidthStr;
 
 /// Width consumed by left ("│ ") and right (" │") borders.

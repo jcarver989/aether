@@ -512,7 +512,10 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.on_event(&WidgetEvent::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        let outcome = menu.on_event(&WidgetEvent::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
 
         assert!(outcome.is_handled());
 
@@ -528,15 +531,15 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.on_event(&WidgetEvent::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+        let outcome = menu.on_event(&WidgetEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
 
         assert!(outcome.is_handled());
 
         let messages = outcome.into_messages();
-        assert!(matches!(
-            messages.as_slice(),
-            [ConfigMenuMessage::CloseAll]
-        ));
+        assert!(matches!(messages.as_slice(), [ConfigMenuMessage::CloseAll]));
     }
 
     #[test]
@@ -562,7 +565,10 @@ mod tests {
             .meta(meta.into_meta());
         let mut menu = ConfigMenu::from_config_options(&[opt]);
 
-        let outcome = menu.on_event(&WidgetEvent::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        let outcome = menu.on_event(&WidgetEvent::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
         let messages = outcome.into_messages();
         assert!(matches!(
             messages.as_slice(),

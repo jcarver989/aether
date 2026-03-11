@@ -27,7 +27,6 @@ impl ProgressIndicator {
             self.tick = self.tick.wrapping_add(1);
         }
     }
-
 }
 
 impl ProgressIndicator {

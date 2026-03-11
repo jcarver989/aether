@@ -1,5 +1,5 @@
 use tui::advanced::MouseCapture;
-use tui::{App, AppEvent, Cursor, Response, Frame, KeyCode, Line, ViewContext};
+use tui::{App, AppEvent, Cursor, Frame, KeyCode, Line, Response, ViewContext};
 
 struct ConfiguredApp;
 

@@ -1,4 +1,4 @@
-use crate::tui::{Line, ViewContext, Style, Theme};
+use crate::tui::{Line, Style, Theme, ViewContext};
 
 pub struct ThoughtMessage<'a> {
     pub text: &'a str,

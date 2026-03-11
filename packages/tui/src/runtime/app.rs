@@ -120,11 +120,8 @@ pub trait App {
     ///
     /// This is the main event handler for the application. All terminal events,
     /// external events, and ticks flow through this method.
-    fn update(
-        &mut self,
-        event: AppEvent<Self::Event>,
-        ctx: &ViewContext,
-    ) -> Response<Self::Effect>;
+    fn update(&mut self, event: AppEvent<Self::Event>, ctx: &ViewContext)
+    -> Response<Self::Effect>;
 
     /// Render the current application state.
     ///
