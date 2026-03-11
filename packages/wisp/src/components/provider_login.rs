@@ -98,6 +98,7 @@ impl ProviderLoginOverlay {
         }
     }
 
+    #[allow(dead_code)]
     pub fn entries(&self) -> &[ProviderLoginEntry] {
         self.list.items()
     }

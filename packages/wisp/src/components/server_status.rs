@@ -109,10 +109,6 @@ impl ServerStatusOverlay {
         }
     }
 
-    pub fn entries(&self) -> impl Iterator<Item = &McpServerStatusEntry> {
-        self.list.items().iter().map(|item| &item.0)
-    }
-
     pub fn update_entries(&mut self, entries: Vec<McpServerStatusEntry>) {
         let prev_index = self.list.selected_index();
         let items: Vec<ServerItem> = entries.into_iter().map(ServerItem).collect();

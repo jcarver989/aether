@@ -189,16 +189,19 @@ impl ConfigMenu {
         }
     }
 
+    #[allow(dead_code)]
     pub fn from_entries(entries: Vec<ConfigMenuEntry>) -> Self {
         Self {
             list: SelectList::new(entries, "no config options"),
         }
     }
 
+    #[allow(dead_code)]
     pub fn options(&self) -> &[ConfigMenuEntry] {
         self.list.items()
     }
 
+    #[allow(dead_code)]
     pub fn selected_index(&self) -> usize {
         self.list.selected_index()
     }
