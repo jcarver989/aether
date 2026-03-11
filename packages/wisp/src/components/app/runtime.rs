@@ -1,20 +1,20 @@
 use super::{App, AppAction, PromptAttachment, build_attachment_blocks};
 use crate::components::app::git_diff_mode::format_review_prompt;
 use crate::settings::{load_or_create_settings, save_settings};
-use crate::tui::advanced::Terminal;
-use crate::tui::{Line, Response};
+use crate::tui::Line;
+use crate::tui::advanced::Renderer;
 use std::io::Write;
 
 impl App {
     pub async fn apply_action(
         &mut self,
-        terminal: &mut Terminal<'_, impl Write>,
+        terminal: &mut Renderer<impl Write>,
         action: AppAction,
-    ) -> Result<Response<AppAction>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<AppAction>, Box<dyn std::error::Error>> {
         match action {
             AppAction::PushScrollback(lines) => {
                 terminal.push_to_scrollback(&lines)?;
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::PromptSubmit {
                 user_input,
@@ -28,7 +28,7 @@ impl App {
                     attachments,
                 )
                 .await?;
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::SetConfigOption {
                 config_id,
@@ -37,50 +37,50 @@ impl App {
                 let _ =
                     self.prompt_handle
                         .set_config_option(&self.session_id, &config_id, &new_value);
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::SetTheme { file } => {
                 apply_theme_selection(terminal, file);
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::Cancel => {
                 self.prompt_handle.cancel(&self.session_id)?;
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::AuthenticateMcpServer { server_name } => {
                 let _ = self
                     .prompt_handle
                     .authenticate_mcp_server(&self.session_id, &server_name);
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::AuthenticateProvider { method_id } => {
                 let _ = self
                     .prompt_handle
                     .authenticate(&self.session_id, &method_id);
                 self.state.on_authenticate_started(&method_id);
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::ClearScreen => {
                 self.state.reset_after_context_cleared();
                 terminal.clear_screen()?;
                 self.prompt_handle
                     .prompt(&self.session_id, "/clear", None)?;
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::OpenGitDiffViewer => {
                 self.state.enter_git_diff();
                 self.git_diff_mode.begin_open();
                 self.git_diff_mode.complete_load().await;
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::RefreshGitDiffViewer => {
                 self.git_diff_mode.complete_load().await;
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::CloseGitDiffViewer => {
                 self.git_diff_mode.close();
                 self.state.exit_git_diff();
-                Ok(Response::ok())
+                Ok(vec![])
             }
             AppAction::SubmitDiffReview { comments } => {
                 let prompt = format_review_prompt(&comments);
@@ -94,13 +94,13 @@ impl App {
                     vec![],
                 )
                 .await?;
-                Ok(Response::ok())
+                Ok(vec![])
             }
         }
     }
 }
 
-pub fn apply_theme_selection(terminal: &mut Terminal<'_, impl Write>, file: Option<String>) {
+pub fn apply_theme_selection(terminal: &mut Renderer<impl Write>, file: Option<String>) {
     let mut settings = load_or_create_settings();
     settings.theme.file = file;
 
@@ -113,7 +113,7 @@ pub fn apply_theme_selection(terminal: &mut Terminal<'_, impl Write>, file: Opti
 }
 
 pub async fn submit_prompt_with_attachments(
-    terminal: &mut Terminal<'_, impl Write>,
+    terminal: &mut Renderer<impl Write>,
     prompt_handle: &acp_utils::client::AcpPromptHandle,
     session_id: &agent_client_protocol::SessionId,
     user_input: &str,
@@ -162,7 +162,7 @@ mod tests {
 
         with_wisp_home(temp_dir.path(), || {
             let mut renderer = Renderer::new(Vec::new(), Theme::default());
-            apply_theme_selection(&mut renderer.terminal(), Some("custom.tmTheme".to_string()));
+            apply_theme_selection(&mut renderer, Some("custom.tmTheme".to_string()));
 
             assert_eq!(
                 renderer.context().theme.text_primary(),
@@ -190,7 +190,7 @@ mod tests {
             .unwrap();
 
             let mut renderer = Renderer::new(Vec::new(), Theme::default());
-            apply_theme_selection(&mut renderer.terminal(), None);
+            apply_theme_selection(&mut renderer, None);
 
             let loaded = load_or_create_settings();
             assert_eq!(loaded.theme.file, None);
@@ -216,12 +216,12 @@ mod tests {
 
         let effects = app
             .apply_action(
-                &mut renderer.terminal(),
+                &mut renderer,
                 crate::components::app::AppAction::ClearScreen,
             )
             .await
             .unwrap();
-        assert!(!effects.is_exit());
+        assert!(!app.state.exit_requested);
     }
 
     #[tokio::test]
@@ -235,7 +235,7 @@ mod tests {
         };
 
         submit_prompt_with_attachments(
-            &mut renderer.terminal(),
+            &mut renderer,
             &prompt_handle,
             &session_id,
             "hello",

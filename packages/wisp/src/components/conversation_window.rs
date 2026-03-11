@@ -2,7 +2,7 @@ use std::mem::{Discriminant, discriminant, take};
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::tui::{Line, Spinner, ViewContext, Widget, render_markdown};
+use crate::tui::{Component, Line, Spinner, ViewContext, render_markdown};
 
 #[derive(Debug, Clone)]
 pub(crate) enum SegmentContent {

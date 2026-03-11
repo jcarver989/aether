@@ -1,6 +1,6 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
-    Combobox, Line, PickerKey, Response, Searchable, ViewContext, Widget, WidgetEvent, classify_key,
+    Combobox, Component, Event, Line, PickerKey, Searchable, ViewContext, classify_key,
 };
 impl Searchable for ConfigMenuValue {
     fn search_text(&self) -> String {
@@ -92,40 +92,40 @@ impl ConfigPicker {
     }
 }
 
-impl Widget for ConfigPicker {
+impl Component for ConfigPicker {
     type Message = ConfigPickerMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(key) = event else {
+            return None;
         };
         match classify_key(*key, self.combobox.query().is_empty()) {
-            PickerKey::Escape => Response::one(ConfigPickerMessage::Close),
+            PickerKey::Escape => Some(vec![ConfigPickerMessage::Close]),
             PickerKey::MoveUp => {
                 self.move_selection_up();
-                Response::ok()
+                Some(vec![])
             }
             PickerKey::MoveDown => {
                 self.move_selection_down();
-                Response::ok()
+                Some(vec![])
             }
             PickerKey::Confirm => {
                 let change = self.confirm_selection();
-                Response::one(ConfigPickerMessage::ApplySelection(change))
+                Some(vec![ConfigPickerMessage::ApplySelection(change)])
             }
             PickerKey::Char(c) => {
                 self.push_query_char(c);
-                Response::ok()
+                Some(vec![])
             }
             PickerKey::Backspace => {
                 self.pop_query_char();
-                Response::ok()
+                Some(vec![])
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::BackspaceOnEmpty
             | PickerKey::ControlChar
-            | PickerKey::Other => Response::ok(),
+            | PickerKey::Other => Some(vec![]),
         }
     }
 
@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn confirm_selection_returns_change_for_new_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.on_event(&WidgetEvent::Key(KeyEvent::new(
+        picker.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
         )));
@@ -284,19 +284,19 @@ mod tests {
     #[test]
     fn handle_key_enter_returns_apply_selection_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.on_event(&WidgetEvent::Key(KeyEvent::new(
+        picker.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
         )));
 
-        let outcome = picker.on_event(&WidgetEvent::Key(KeyEvent::new(
+        let outcome = picker.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
-        let messages = outcome.into_messages();
+        let messages = outcome.unwrap();
         match messages.as_slice() {
             [ConfigPickerMessage::ApplySelection(Some(change))] => {
                 assert_eq!(change.config_id, "model");
@@ -309,14 +309,11 @@ mod tests {
     fn handle_key_escape_returns_close_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
 
-        let outcome = picker.on_event(&WidgetEvent::Key(KeyEvent::new(
-            KeyCode::Esc,
-            KeyModifiers::NONE,
-        )));
+        let outcome = picker.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
-        let messages = outcome.into_messages();
+        let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ConfigPickerMessage::Close]));
     }
 }

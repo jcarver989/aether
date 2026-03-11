@@ -1,17 +1,22 @@
 use tui::advanced::MouseCapture;
-use tui::{App, AppEvent, Cursor, Frame, KeyCode, Line, Response, ViewContext};
+use tui::{App, AppEvent, Cursor, Frame, KeyCode, Line, ViewContext};
 
-struct ConfiguredApp;
+struct ConfiguredApp {
+    exit_requested: bool,
+}
 
 impl App for ConfiguredApp {
     type Event = ();
     type Effect = ();
     type Error = std::io::Error;
 
-    fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
+    fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Option<Vec<()>> {
         match event {
-            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
-            _ => Response::ok(),
+            AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                self.exit_requested = true;
+                Some(vec![])
+            }
+            _ => Some(vec![]),
         }
     }
 
@@ -29,6 +34,10 @@ impl App for ConfiguredApp {
             },
         )
     }
+
+    fn should_exit(&self) -> bool {
+        self.exit_requested
+    }
 }
 
 /// This example demonstrates configuring the [`Runner`] with builder methods.
@@ -39,9 +48,11 @@ impl App for ConfiguredApp {
 async fn main() -> Result<(), std::io::Error> {
     use tui::Runner;
 
-    Runner::new(ConfiguredApp)
-        .mouse_capture(MouseCapture::Disabled)
-        .no_ticks()
-        .run()
-        .await
+    Runner::new(ConfiguredApp {
+        exit_requested: false,
+    })
+    .mouse_capture(MouseCapture::Disabled)
+    .no_ticks()
+    .run()
+    .await
 }

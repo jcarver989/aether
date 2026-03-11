@@ -5,9 +5,7 @@ use tui::testing::{TestTerminal, assert_buffer_eq};
 use wisp::components::app::{App, AppAction};
 
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
-use tui::{
-    App as TuiApp, AppEvent, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, Response,
-};
+use tui::{App as TuiApp, AppEvent, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
 const TEST_AGENT: &str = "test-agent";
 const TEST_WIDTH: u16 = 200;
@@ -136,26 +134,22 @@ impl Renderer {
 
     async fn apply_effects(
         &mut self,
-        effects: Response<AppAction>,
+        effects: Option<Vec<AppAction>>,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let should_exit = effects.is_exit();
-        let mut queue: std::collections::VecDeque<_> = effects.into_messages().into();
+        let mut queue: std::collections::VecDeque<_> = effects.unwrap_or_default().into();
 
         while let Some(effect) = queue.pop_front() {
             self.renderer.render_frame(|ctx| self.screen.view(ctx))?;
-            let follow_up = self
-                .screen
-                .run_effect(&mut self.renderer.terminal(), effect)
-                .await?;
-            if follow_up.is_exit() {
+            let follow_up = self.screen.run_effect(&mut self.renderer, effect).await?;
+            if self.screen.should_exit() {
                 return Ok(LoopAction::Exit);
             }
-            queue.extend(follow_up.into_messages());
+            queue.extend(follow_up);
         }
 
         self.renderer.render_frame(|ctx| self.screen.view(ctx))?;
 
-        if should_exit {
+        if self.screen.should_exit() {
             Ok(LoopAction::Exit)
         } else {
             Ok(LoopAction::Continue)

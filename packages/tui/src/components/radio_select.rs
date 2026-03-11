@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 
 use super::select_option::SelectOption;
-use crate::components::{Response, ViewContext, Widget, WidgetEvent};
+use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -49,27 +49,27 @@ impl RadioSelect {
     }
 }
 
-impl Widget for RadioSelect {
+impl Component for RadioSelect {
     type Message = ();
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(key) = event else {
+            return None;
         };
         if self.options.is_empty() {
-            return Response::ignored();
+            return None;
         }
 
         match key.code {
             KeyCode::Left | KeyCode::Up => {
                 self.selected = (self.selected + self.options.len() - 1) % self.options.len();
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Right | KeyCode::Down => {
                 self.selected = (self.selected + 1) % self.options.len();
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ignored(),
+            _ => None,
         }
     }
 
@@ -117,18 +117,18 @@ mod tests {
     #[test]
     fn right_cycles_forward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
+        rs.on_event(&Event::Key(key(KeyCode::Right)));
         assert_eq!(rs.selected, 1);
-        rs.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
+        rs.on_event(&Event::Key(key(KeyCode::Right)));
         assert_eq!(rs.selected, 2);
-        rs.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
+        rs.on_event(&Event::Key(key(KeyCode::Right)));
         assert_eq!(rs.selected, 0); // wraps
     }
 
     #[test]
     fn left_cycles_backward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_event(&WidgetEvent::Key(key(KeyCode::Left)));
+        rs.on_event(&Event::Key(key(KeyCode::Left)));
         assert_eq!(rs.selected, 2); // wraps to end
     }
 
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn empty_options_ignores_keys() {
         let mut rs = RadioSelect::new(vec![], 0);
-        let outcome = rs.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
-        assert!(!outcome.is_handled());
+        let outcome = rs.on_event(&Event::Key(key(KeyCode::Right)));
+        assert!(outcome.is_none());
     }
 }

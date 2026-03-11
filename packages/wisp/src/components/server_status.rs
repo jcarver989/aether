@@ -1,11 +1,55 @@
-use crate::components::wrap_selection;
-use crate::tui::KeyCode;
-use crate::tui::{Line, Response, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Component, Event, Line, SelectItem, SelectList, SelectListMessage, ViewContext};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 
+struct ServerItem(McpServerStatusEntry);
+
+impl SelectItem for ServerItem {
+    fn render_item(&self, selected: bool, context: &ViewContext) -> Line {
+        let prefix = if selected { "▶ " } else { "  " };
+        let (indicator, detail) = match &self.0.status {
+            McpServerStatus::Connected { tool_count } => ("✓", format!("{tool_count} tools")),
+            McpServerStatus::Failed { error } => ("✗", error.clone()),
+            McpServerStatus::NeedsOAuth => ("⚡", "needs authentication".to_string()),
+        };
+        let text = format!("{prefix}{}  {indicator} {detail}", self.0.name);
+        match &self.0.status {
+            McpServerStatus::Connected { .. } => {
+                if selected {
+                    Line::with_style(text, context.theme.selected_row_style())
+                } else {
+                    Line::new(text)
+                }
+            }
+            McpServerStatus::Failed { .. } => {
+                if selected {
+                    Line::with_style(
+                        text,
+                        context
+                            .theme
+                            .selected_row_style_with_fg(context.theme.error()),
+                    )
+                } else {
+                    Line::styled(text, context.theme.error())
+                }
+            }
+            McpServerStatus::NeedsOAuth => {
+                if selected {
+                    Line::with_style(
+                        text,
+                        context
+                            .theme
+                            .selected_row_style_with_fg(context.theme.warning()),
+                    )
+                } else {
+                    Line::styled(text, context.theme.warning())
+                }
+            }
+        }
+    }
+}
+
 pub struct ServerStatusOverlay {
-    pub entries: Vec<McpServerStatusEntry>,
-    pub selected_index: usize,
+    list: SelectList<ServerItem>,
 }
 
 pub enum ServerStatusMessage {
@@ -13,91 +57,27 @@ pub enum ServerStatusMessage {
     Authenticate(String),
 }
 
-impl Widget for ServerStatusOverlay {
+impl Component for ServerStatusOverlay {
     type Message = ServerStatusMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key) = event else {
-            return Response::ignored();
-        };
-        match key.code {
-            KeyCode::Esc => Response::one(ServerStatusMessage::Close),
-            KeyCode::Up => {
-                self.move_selection_up();
-                Response::ok()
-            }
-            KeyCode::Down => {
-                self.move_selection_down();
-                Response::ok()
-            }
-            KeyCode::Enter => {
-                if let Some(entry) = self
-                    .entries
-                    .get(self.selected_index)
-                    .filter(|e| matches!(e.status, McpServerStatus::NeedsOAuth))
-                {
-                    return Response::one(ServerStatusMessage::Authenticate(entry.name.clone()));
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let outcome = self.list.on_event(event);
+        match outcome.as_deref() {
+            Some([SelectListMessage::Close]) => Some(vec![ServerStatusMessage::Close]),
+            Some([SelectListMessage::Select(_)]) => {
+                if let Some(item) = self.list.selected_item() {
+                    if matches!(item.0.status, McpServerStatus::NeedsOAuth) {
+                        return Some(vec![ServerStatusMessage::Authenticate(item.0.name.clone())]);
+                    }
                 }
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ok(),
+            _ => outcome.map(|_| vec![]),
         }
     }
 
     fn render(&self, context: &ViewContext) -> Vec<Line> {
-        if self.entries.is_empty() {
-            return vec![Line::new("  (no MCP servers configured)".to_string())];
-        }
-
-        self.entries
-            .iter()
-            .enumerate()
-            .map(|(i, entry)| {
-                let selected = i == self.selected_index;
-                let prefix = if selected { "▶ " } else { "  " };
-                let (indicator, detail) = match &entry.status {
-                    McpServerStatus::Connected { tool_count } => {
-                        ("✓", format!("{tool_count} tools"))
-                    }
-                    McpServerStatus::Failed { error } => ("✗", error.clone()),
-                    McpServerStatus::NeedsOAuth => ("⚡", "needs authentication".to_string()),
-                };
-                let text = format!("{prefix}{}  {indicator} {detail}", entry.name);
-                match &entry.status {
-                    McpServerStatus::Connected { .. } => {
-                        if selected {
-                            Line::with_style(text, context.theme.selected_row_style())
-                        } else {
-                            Line::new(text)
-                        }
-                    }
-                    McpServerStatus::Failed { .. } => {
-                        if selected {
-                            Line::with_style(
-                                text,
-                                context
-                                    .theme
-                                    .selected_row_style_with_fg(context.theme.error()),
-                            )
-                        } else {
-                            Line::styled(text, context.theme.error())
-                        }
-                    }
-                    McpServerStatus::NeedsOAuth => {
-                        if selected {
-                            Line::with_style(
-                                text,
-                                context
-                                    .theme
-                                    .selected_row_style_with_fg(context.theme.warning()),
-                            )
-                        } else {
-                            Line::styled(text, context.theme.warning())
-                        }
-                    }
-                }
-            })
-            .collect()
+        self.list.render(context)
     }
 }
 
@@ -123,24 +103,22 @@ pub fn server_status_summary(statuses: &[McpServerStatusEntry]) -> String {
 
 impl ServerStatusOverlay {
     pub fn new(entries: Vec<McpServerStatusEntry>) -> Self {
+        let items: Vec<ServerItem> = entries.into_iter().map(ServerItem).collect();
         Self {
-            entries,
-            selected_index: 0,
+            list: SelectList::new(items, "no MCP servers configured"),
         }
     }
 
-    fn move_selection_up(&mut self) {
-        wrap_selection(&mut self.selected_index, self.entries.len(), -1);
-    }
-
-    fn move_selection_down(&mut self) {
-        wrap_selection(&mut self.selected_index, self.entries.len(), 1);
+    pub fn entries(&self) -> impl Iterator<Item = &McpServerStatusEntry> {
+        self.list.items().iter().map(|item| &item.0)
     }
 
     pub fn update_entries(&mut self, entries: Vec<McpServerStatusEntry>) {
-        let prev_index = self.selected_index;
-        self.entries = entries;
-        self.selected_index = prev_index.min(self.entries.len().saturating_sub(1));
+        let prev_index = self.list.selected_index();
+        let items: Vec<ServerItem> = entries.into_iter().map(ServerItem).collect();
+        self.list.set_items(items);
+        let max = self.list.len().saturating_sub(1);
+        self.list.set_selected(prev_index.min(max));
     }
 }
 
@@ -203,23 +181,29 @@ mod tests {
     fn navigation_wraps_around() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
 
-        overlay.move_selection_up();
-        assert_eq!(overlay.selected_index, 2);
+        overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
+            crate::tui::KeyCode::Up,
+            crate::tui::KeyModifiers::NONE,
+        )));
+        assert_eq!(overlay.list.selected_index(), 2);
 
-        overlay.move_selection_down();
-        assert_eq!(overlay.selected_index, 0);
+        overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
+            crate::tui::KeyCode::Down,
+            crate::tui::KeyModifiers::NONE,
+        )));
+        assert_eq!(overlay.list.selected_index(), 0);
     }
 
     #[test]
     fn enter_on_needs_oauth_emits_authenticate() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
-        overlay.selected_index = 1; // linear - NeedsOAuth
+        overlay.list.set_selected(1); // linear - NeedsOAuth
 
-        let outcome = overlay.on_event(&WidgetEvent::Key(crate::tui::KeyEvent::new(
-            KeyCode::Enter,
+        let outcome = overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
+            crate::tui::KeyCode::Enter,
             crate::tui::KeyModifiers::NONE,
         )));
-        let messages = outcome.into_messages();
+        let messages = outcome.unwrap();
         match messages.as_slice() {
             [ServerStatusMessage::Authenticate(name)] => assert_eq!(name, "linear"),
             _ => panic!("Expected Authenticate message"),
@@ -229,23 +213,23 @@ mod tests {
     #[test]
     fn enter_on_connected_is_noop() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
-        overlay.selected_index = 0; // github - Connected
+        // index 0 = github (Connected)
 
-        let outcome = overlay.on_event(&WidgetEvent::Key(crate::tui::KeyEvent::new(
-            KeyCode::Enter,
+        let outcome = overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
+            crate::tui::KeyCode::Enter,
             crate::tui::KeyModifiers::NONE,
         )));
-        assert!(outcome.into_messages().is_empty());
+        assert!(outcome.unwrap().is_empty());
     }
 
     #[test]
     fn esc_closes_overlay() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
-        let outcome = overlay.on_event(&WidgetEvent::Key(crate::tui::KeyEvent::new(
-            KeyCode::Esc,
+        let outcome = overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
+            crate::tui::KeyCode::Esc,
             crate::tui::KeyModifiers::NONE,
         )));
-        let messages = outcome.into_messages();
+        let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ServerStatusMessage::Close]));
     }
 
@@ -261,12 +245,12 @@ mod tests {
     #[test]
     fn update_entries_clamps_index() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
-        overlay.selected_index = 2;
+        overlay.list.set_selected(2);
 
         overlay.update_entries(vec![McpServerStatusEntry {
             name: "github".to_string(),
             status: McpServerStatus::Connected { tool_count: 3 },
         }]);
-        assert_eq!(overlay.selected_index, 0);
+        assert_eq!(overlay.list.selected_index(), 0);
     }
 }

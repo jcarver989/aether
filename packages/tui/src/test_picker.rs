@@ -1,12 +1,12 @@
-use crate::Widget;
-use crate::components::{ViewContext, WidgetEvent};
+use crate::Component;
+use crate::components::{Event, ViewContext};
 use crate::line::Line;
 use crate::size::Size;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-pub fn type_query<P: Widget>(picker: &mut P, text: &str) {
+pub fn type_query<P: Component>(picker: &mut P, text: &str) {
     for c in text.chars() {
-        let _ = picker.on_event(&WidgetEvent::Key(KeyEvent::new(
+        let _ = picker.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Char(c),
             KeyModifiers::NONE,
         )));

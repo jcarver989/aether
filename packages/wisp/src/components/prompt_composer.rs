@@ -4,7 +4,7 @@ use crate::components::input_prompt::InputPrompt;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputMessage};
 use crate::keybindings::Keybindings;
 use crate::tui::KeyCode;
-use crate::tui::{Cursor, Line, PickerMessage, Response, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Component, Cursor, Event, Line, PickerMessage, ViewContext};
 use std::collections::HashSet;
 
 use super::app::PromptAttachment;
@@ -109,9 +109,9 @@ impl PromptComposer {
 
     fn handle_picker_outcome<T>(
         &mut self,
-        outcome: Response<PickerMessage<T>>,
+        outcome: Option<Vec<PickerMessage<T>>>,
     ) -> (bool, Option<T>) {
-        let Some(msg) = outcome.into_messages().into_iter().next() else {
+        let Some(msg) = outcome.unwrap_or_default().into_iter().next() else {
             return (false, None);
         };
         match msg {
@@ -138,8 +138,8 @@ impl PromptComposer {
 
     fn handle_file_picker_outcome(
         &mut self,
-        outcome: Response<FilePickerMessage>,
-    ) -> Response<PromptComposerMessage> {
+        outcome: Option<Vec<FilePickerMessage>>,
+    ) -> Option<Vec<PromptComposerMessage>> {
         let (close, confirmed) = self.handle_picker_outcome(outcome);
         if let Some(file_match) = confirmed {
             self.file_picker = None;
@@ -148,13 +148,13 @@ impl PromptComposer {
         } else if close {
             self.file_picker = None;
         }
-        Response::ok()
+        Some(vec![])
     }
 
     fn handle_command_picker_outcome(
         &mut self,
-        outcome: Response<CommandPickerMessage>,
-    ) -> Response<PromptComposerMessage> {
+        outcome: Option<Vec<CommandPickerMessage>>,
+    ) -> Option<Vec<PromptComposerMessage>> {
         let (close, confirmed) = self.handle_picker_outcome(outcome);
         if let Some(cmd) = confirmed {
             self.command_picker = None;
@@ -162,54 +162,53 @@ impl PromptComposer {
         } else if close {
             self.command_picker = None;
         }
-        Response::ok()
+        Some(vec![])
     }
 
     fn handle_text_input_outcome(
         &mut self,
-        outcome: Response<TextInputMessage>,
-    ) -> Response<PromptComposerMessage> {
-        match outcome {
-            Response::Ignored => Response::ignored(),
-            Response::Ok => Response::ok(),
-            outcome => match outcome.into_messages().into_iter().next() {
-                Some(TextInputMessage::Submit) => self.prepare_submit(),
-                Some(TextInputMessage::OpenCommandPicker) => {
-                    let mut commands = builtin_commands();
-                    commands.extend(self.available_commands.clone());
-                    self.command_picker = Some(CommandPicker::new(commands));
-                    Response::ok()
-                }
-                Some(TextInputMessage::OpenFilePicker) => {
-                    self.file_picker = Some(FilePicker::new());
-                    Response::ok()
-                }
-                None => Response::ok(),
-            },
+        outcome: Option<Vec<TextInputMessage>>,
+    ) -> Option<Vec<PromptComposerMessage>> {
+        let Some(msgs) = outcome else {
+            return None;
+        };
+        match msgs.into_iter().next() {
+            Some(TextInputMessage::Submit) => self.prepare_submit(),
+            Some(TextInputMessage::OpenCommandPicker) => {
+                let mut commands = builtin_commands();
+                commands.extend(self.available_commands.clone());
+                self.command_picker = Some(CommandPicker::new(commands));
+                Some(vec![])
+            }
+            Some(TextInputMessage::OpenFilePicker) => {
+                self.file_picker = Some(FilePicker::new());
+                Some(vec![])
+            }
+            None => Some(vec![]),
         }
     }
 
-    fn apply_command(&mut self, cmd: &CommandEntry) -> Response<PromptComposerMessage> {
+    fn apply_command(&mut self, cmd: &CommandEntry) -> Option<Vec<PromptComposerMessage>> {
         if cmd.builtin && cmd.name == "clear" {
             self.text_input.clear();
             self.close_all();
-            Response::one(PromptComposerMessage::ClearScreen)
+            Some(vec![PromptComposerMessage::ClearScreen])
         } else if cmd.builtin && cmd.name == "config" {
             self.text_input.clear();
             self.close_all();
-            Response::one(PromptComposerMessage::OpenConfig)
+            Some(vec![PromptComposerMessage::OpenConfig])
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
-            Response::ok()
+            Some(vec![])
         } else {
             self.text_input.set_input(format!("/{}", cmd.name));
             self.prepare_submit()
         }
     }
 
-    fn prepare_submit(&mut self) -> Response<PromptComposerMessage> {
+    fn prepare_submit(&mut self) -> Option<Vec<PromptComposerMessage>> {
         if self.text_input.buffer().trim().is_empty() {
-            return Response::ok();
+            return Some(vec![]);
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
@@ -217,27 +216,27 @@ impl PromptComposer {
         self.text_input.clear();
         self.close_all();
 
-        Response::one(PromptComposerMessage::SubmitRequested {
+        Some(vec![PromptComposerMessage::SubmitRequested {
             user_input,
             attachments,
-        })
+        }])
     }
 }
 
-impl Widget for PromptComposer {
+impl Component for PromptComposer {
     type Message = PromptComposerMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         match event {
-            WidgetEvent::Paste(text) => {
+            Event::Paste(text) => {
                 self.close_all();
                 self.text_input.insert_paste(text);
-                Response::ok()
+                Some(vec![])
             }
-            WidgetEvent::Key(key_event) => {
+            Event::Key(key_event) => {
                 if let Some(ref mut picker) = self.file_picker {
                     let outcome = picker.on_event(event);
-                    if outcome.is_handled() {
+                    if outcome.is_some() {
                         return self.handle_file_picker_outcome(outcome);
                     }
 
@@ -245,7 +244,7 @@ impl Widget for PromptComposer {
                         key_event.code,
                         KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
                     ) {
-                        return Response::ok();
+                        return Some(vec![]);
                     }
                 }
 
@@ -257,7 +256,7 @@ impl Widget for PromptComposer {
                 let outcome = self.text_input.on_event(event);
                 self.handle_text_input_outcome(outcome)
             }
-            _ => Response::ignored(),
+            _ => None,
         }
     }
 
@@ -322,8 +321,8 @@ mod tests {
     use crate::tui::{KeyEvent, KeyModifiers};
     use std::path::PathBuf;
 
-    fn key(code: KeyCode) -> WidgetEvent {
-        WidgetEvent::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
     #[test]
@@ -339,7 +338,7 @@ mod tests {
 
         let outcome = composer.on_event(&key(KeyCode::Enter));
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PromptComposerMessage::OpenConfig]
         ));
         assert_eq!(composer.buffer(), "");
@@ -362,7 +361,7 @@ mod tests {
 
         let outcome = composer.on_event(&key(KeyCode::Enter));
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PromptComposerMessage::SubmitRequested { user_input, .. }]
             if user_input == "/status"
         ));
@@ -384,7 +383,7 @@ mod tests {
         composer.on_event(&key(KeyCode::Char('s')));
         let outcome = composer.on_event(&key(KeyCode::Enter));
 
-        assert!(outcome.into_messages().is_empty());
+        assert!(outcome.unwrap().is_empty());
 
         assert_eq!(composer.buffer(), "/search ");
         assert!(!composer.has_active_picker());
@@ -400,7 +399,7 @@ mod tests {
         composer.set_input("inspect @keep.rs now".to_string());
 
         let outcome = composer.prepare_submit();
-        let messages = outcome.into_messages();
+        let messages = outcome.unwrap();
         let [PromptComposerMessage::SubmitRequested { attachments, .. }] = messages.as_slice()
         else {
             panic!("expected submit request");
@@ -417,9 +416,9 @@ mod tests {
         composer.on_event(&key(KeyCode::Char('@')));
         assert!(composer.has_file_picker());
 
-        let outcome = composer.on_event(&WidgetEvent::Paste("pasted text".to_string()));
-        assert!(outcome.is_handled());
-        assert!(outcome.into_messages().is_empty());
+        let outcome = composer.on_event(&Event::Paste("pasted text".to_string()));
+        assert!(outcome.is_some());
+        assert!(outcome.unwrap().is_empty());
         assert!(!composer.has_active_picker());
         assert_eq!(composer.buffer(), "@pasted text");
     }

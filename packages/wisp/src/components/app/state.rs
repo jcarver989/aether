@@ -10,9 +10,7 @@ use crate::components::server_status::server_status_summary;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
-use crate::tui::{
-    FormMessage, KeyEvent, Line, Response, Spinner, ViewContext, Widget, WidgetEvent,
-};
+use crate::tui::{Component, Event, FocusRing, FormMessage, KeyEvent, Line, Spinner, ViewContext};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{
@@ -21,6 +19,10 @@ use agent_client_protocol::{
 };
 use std::time::Instant;
 use utils::ReasoningEffort;
+
+pub(super) const FOCUS_COMPOSER: usize = 0;
+pub(super) const FOCUS_CONFIG_OVERLAY: usize = 1;
+pub(super) const FOCUS_ELICITATION: usize = 2;
 
 pub struct UiState {
     pub(crate) tool_call_statuses: ToolCallStatuses,
@@ -42,6 +44,8 @@ pub struct UiState {
     pub(crate) plan_tracker: PlanTracker,
     pub(crate) keybindings: Keybindings,
     pub(crate) screen_mode: ScreenMode,
+    pub(crate) exit_requested: bool,
+    pub(super) focus: FocusRing,
 }
 
 impl UiState {
@@ -71,6 +75,8 @@ impl UiState {
             plan_tracker: PlanTracker::default(),
             keybindings,
             screen_mode: ScreenMode::Conversation,
+            exit_requested: false,
+            focus: FocusRing::new(3),
         }
     }
 
@@ -98,44 +104,37 @@ impl UiState {
             .any(|entry| matches!(entry.status, acp::PlanEntryStatus::Completed))
     }
 
-    pub(crate) fn on_event(
-        &mut self,
-        event: &WidgetEvent,
-        git_diff_mode: Option<&mut GitDiffMode>,
-    ) -> Response<AppAction> {
+    pub(crate) fn on_event(&mut self, event: &Event) -> Option<Vec<AppAction>> {
         match event {
-            WidgetEvent::Key(key_event) => self.handle_key(*key_event),
-            WidgetEvent::Paste(_) => {
+            Event::Key(key_event) => self.handle_key(*key_event),
+            Event::Paste(_) => {
                 self.config_overlay = None;
                 let outcome = self.prompt_composer.on_event(event);
                 self.handle_prompt_composer_messages(outcome)
             }
-            WidgetEvent::Mouse(mouse) => {
-                if matches!(self.screen_mode, ScreenMode::GitDiff) {
-                    if let Some(mode) = git_diff_mode {
-                        mode.on_mouse_event(*mouse);
-                    }
-                }
-                Response::ok()
-            }
-            WidgetEvent::Tick => {
+            Event::Tick => {
                 let now = Instant::now();
                 self.grid_loader.on_tick();
                 self.tool_call_statuses.on_tick(now);
                 self.plan_tracker.on_tick(now);
                 self.progress_indicator.on_tick();
-                Response::ok()
+                Some(vec![])
             }
+            _ => Some(vec![]),
         }
     }
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> Response<AppAction> {
+    fn handle_key(&mut self, key_event: KeyEvent) -> Option<Vec<AppAction>> {
         if self.keybindings.exit.matches(key_event) {
-            return Response::exit();
+            self.exit_requested = true;
+            return Some(vec![]);
         }
 
-        if let Some(effects) = self.handle_elicitation_key(key_event) {
-            return effects;
+        // Elicitation form captures all input when present
+        if self.elicitation_form.is_some() {
+            return self
+                .handle_elicitation_key(key_event)
+                .unwrap_or(Some(vec![]));
         }
 
         if self.keybindings.toggle_git_diff.matches(key_event) {
@@ -144,48 +143,54 @@ impl UiState {
                 self.screen_mode = ScreenMode::Conversation;
             }
             return if close_git_diff {
-                Response::ok()
+                Some(vec![])
             } else {
-                Response::one(AppAction::OpenGitDiffViewer)
+                Some(vec![AppAction::OpenGitDiffViewer])
             };
         }
 
-        let event = WidgetEvent::Key(key_event);
+        let event = Event::Key(key_event);
 
-        let outcome = if let Some(overlay) = self.config_overlay.as_mut() {
-            overlay.on_event(&event)
-        } else {
-            if matches!(self.screen_mode, ScreenMode::GitDiff) {
-                return Response::ok();
+        match self.focus.focused() {
+            FOCUS_CONFIG_OVERLAY => {
+                let outcome = self
+                    .config_overlay
+                    .as_mut()
+                    .expect("config overlay")
+                    .on_event(&event);
+                self.handle_config_overlay_messages(outcome)
             }
+            _ => {
+                if matches!(self.screen_mode, ScreenMode::GitDiff) {
+                    return Some(vec![]);
+                }
 
-            let composer_outcome = self.prompt_composer.on_event(&event);
-            if composer_outcome.is_handled() {
-                return self.handle_prompt_composer_messages(composer_outcome);
+                let composer_outcome = self.prompt_composer.on_event(&event);
+                if composer_outcome.is_some() {
+                    return self.handle_prompt_composer_messages(composer_outcome);
+                }
+
+                if self.keybindings.cycle_reasoning.matches(key_event) {
+                    return self
+                        .cycle_reasoning_option()
+                        .map(|action| Some(vec![action]))
+                        .unwrap_or(Some(vec![]));
+                }
+
+                if self.keybindings.cycle_mode.matches(key_event) {
+                    return self
+                        .cycle_quick_option()
+                        .map(|action| Some(vec![action]))
+                        .unwrap_or(Some(vec![]));
+                }
+
+                if self.keybindings.cancel.matches(key_event) && self.waiting_for_response {
+                    return Some(vec![AppAction::Cancel]);
+                }
+
+                Some(vec![])
             }
-
-            if self.keybindings.cycle_reasoning.matches(key_event) {
-                return self
-                    .cycle_reasoning_option()
-                    .map(Response::one)
-                    .unwrap_or_default();
-            }
-
-            if self.keybindings.cycle_mode.matches(key_event) {
-                return self
-                    .cycle_quick_option()
-                    .map(Response::one)
-                    .unwrap_or_default();
-            }
-
-            if self.keybindings.cancel.matches(key_event) && self.waiting_for_response {
-                return Response::one(AppAction::Cancel);
-            }
-
-            return Response::ok();
-        };
-
-        self.handle_config_overlay_messages(outcome)
+        }
     }
 
     pub(crate) fn update_config_options(&mut self, config_options: &[SessionConfigOption]) {
@@ -242,11 +247,11 @@ impl UiState {
     pub(crate) fn handle_elicitation_key(
         &mut self,
         key_event: KeyEvent,
-    ) -> Option<Response<AppAction>> {
+    ) -> Option<Option<Vec<AppAction>>> {
         let elicitation_form = self.elicitation_form.as_mut()?;
-        let outcome = elicitation_form.form.on_event(&WidgetEvent::Key(key_event));
+        let outcome = elicitation_form.form.on_event(&Event::Key(key_event));
 
-        for message in outcome.into_messages() {
+        for message in outcome.unwrap_or_default() {
             match message {
                 FormMessage::Close => {
                     if let Some(elicitation_form) = self.elicitation_form.take() {
@@ -254,88 +259,95 @@ impl UiState {
                             .response_tx
                             .send(ElicitationForm::decline());
                     }
+                    self.focus.focus(FOCUS_COMPOSER);
                 }
                 FormMessage::Submit => {
                     if let Some(elicitation_form) = self.elicitation_form.take() {
                         let response = elicitation_form.confirm();
                         let _ = elicitation_form.response_tx.send(response);
                     }
+                    self.focus.focus(FOCUS_COMPOSER);
                 }
             }
         }
 
-        Some(Response::ok())
+        Some(Some(vec![]))
     }
 
     pub(crate) fn handle_prompt_composer_messages(
         &mut self,
-        outcome: Response<PromptComposerMessage>,
-    ) -> Response<AppAction> {
-        outcome
-            .into_messages()
-            .into_iter()
-            .flat_map(|msg| match msg {
-                PromptComposerMessage::ClearScreen => {
-                    vec![AppAction::ClearScreen]
-                }
-                PromptComposerMessage::OpenConfig => {
-                    self.open_config_overlay();
-                    vec![]
-                }
-                PromptComposerMessage::SubmitRequested {
-                    user_input,
-                    attachments,
-                } => {
-                    self.waiting_for_response = true;
-                    self.grid_loader.reset();
-                    vec![
-                        AppAction::PushScrollback(vec![Line::new(String::new())]),
-                        AppAction::PushScrollback(vec![Line::new(user_input.clone())]),
-                        AppAction::PromptSubmit {
-                            user_input,
-                            attachments,
-                        },
-                    ]
-                }
-            })
-            .collect()
+        outcome: Option<Vec<PromptComposerMessage>>,
+    ) -> Option<Vec<AppAction>> {
+        Some(
+            outcome
+                .unwrap_or_default()
+                .into_iter()
+                .flat_map(|msg| match msg {
+                    PromptComposerMessage::ClearScreen => {
+                        vec![AppAction::ClearScreen]
+                    }
+                    PromptComposerMessage::OpenConfig => {
+                        self.open_config_overlay();
+                        vec![]
+                    }
+                    PromptComposerMessage::SubmitRequested {
+                        user_input,
+                        attachments,
+                    } => {
+                        self.waiting_for_response = true;
+                        self.grid_loader.reset();
+                        vec![
+                            AppAction::PushScrollback(vec![Line::new(String::new())]),
+                            AppAction::PushScrollback(vec![Line::new(user_input.clone())]),
+                            AppAction::PromptSubmit {
+                                user_input,
+                                attachments,
+                            },
+                        ]
+                    }
+                })
+                .collect(),
+        )
     }
 
     pub(crate) fn handle_config_overlay_messages(
         &mut self,
-        outcome: Response<ConfigOverlayMessage>,
-    ) -> Response<AppAction> {
-        outcome
-            .into_messages()
-            .into_iter()
-            .flat_map(|message| match message {
-                ConfigOverlayMessage::Close => {
-                    self.config_overlay = None;
-                    vec![]
-                }
-                ConfigOverlayMessage::ApplyConfigChanges(changes) => changes
-                    .into_iter()
-                    .map(|change| {
-                        if change.config_id == THEME_CONFIG_ID {
-                            AppAction::SetTheme {
-                                file: theme_file_from_picker_value(&change.new_value),
+        outcome: Option<Vec<ConfigOverlayMessage>>,
+    ) -> Option<Vec<AppAction>> {
+        Some(
+            outcome
+                .unwrap_or_default()
+                .into_iter()
+                .flat_map(|message| match message {
+                    ConfigOverlayMessage::Close => {
+                        self.config_overlay = None;
+                        self.focus.focus(FOCUS_COMPOSER);
+                        vec![]
+                    }
+                    ConfigOverlayMessage::ApplyConfigChanges(changes) => changes
+                        .into_iter()
+                        .map(|change| {
+                            if change.config_id == THEME_CONFIG_ID {
+                                AppAction::SetTheme {
+                                    file: theme_file_from_picker_value(&change.new_value),
+                                }
+                            } else {
+                                AppAction::SetConfigOption {
+                                    config_id: change.config_id,
+                                    new_value: change.new_value,
+                                }
                             }
-                        } else {
-                            AppAction::SetConfigOption {
-                                config_id: change.config_id,
-                                new_value: change.new_value,
-                            }
-                        }
-                    })
-                    .collect(),
-                ConfigOverlayMessage::AuthenticateServer(name) => {
-                    vec![AppAction::AuthenticateMcpServer { server_name: name }]
-                }
-                ConfigOverlayMessage::AuthenticateProvider(method_id) => {
-                    vec![AppAction::AuthenticateProvider { method_id }]
-                }
-            })
-            .collect()
+                        })
+                        .collect(),
+                    ConfigOverlayMessage::AuthenticateServer(name) => {
+                        vec![AppAction::AuthenticateMcpServer { server_name: name }]
+                    }
+                    ConfigOverlayMessage::AuthenticateProvider(method_id) => {
+                        vec![AppAction::AuthenticateProvider { method_id }]
+                    }
+                })
+                .collect(),
+        )
     }
 
     pub(crate) fn open_config_overlay(&mut self) {
@@ -349,6 +361,7 @@ impl UiState {
             )
             .with_reasoning_effort_from_options(&self.config_options),
         );
+        self.focus.focus(FOCUS_CONFIG_OVERLAY);
     }
 
     pub(crate) fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {
@@ -491,7 +504,7 @@ mod tests {
     use super::*;
     use crate::components::config_menu::ConfigChange;
     use crate::keybindings::KeyBinding;
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, WidgetEvent};
+    use crate::tui::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
     use agent_client_protocol::SessionConfigOptionCategory;
 
     #[test]
@@ -556,7 +569,7 @@ mod tests {
     #[test]
     fn prompt_composer_messages_process_all_messages_in_order() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let outcome = Response::many(vec![
+        let outcome = Some(vec![
             PromptComposerMessage::OpenConfig,
             PromptComposerMessage::SubmitRequested {
                 user_input: "hello".to_string(),
@@ -574,7 +587,7 @@ mod tests {
             state.waiting_for_response,
             "submit should mark waiting state"
         );
-        assert!(effects.into_messages().iter().any(|e| matches!(
+        assert!(effects.unwrap_or_default().iter().any(|e| matches!(
             e,
             AppAction::PromptSubmit { user_input, .. } if user_input == "hello"
         )));
@@ -584,7 +597,7 @@ mod tests {
     fn config_overlay_messages_process_all_messages_in_order() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         state.open_config_overlay();
-        let outcome = Response::many(vec![
+        let outcome = Some(vec![
             ConfigOverlayMessage::ApplyConfigChanges(vec![ConfigChange {
                 config_id: "model".to_string(),
                 new_value: "gpt-5".to_string(),
@@ -598,7 +611,7 @@ mod tests {
             state.config_overlay.is_none(),
             "close message should be applied"
         );
-        assert!(effects.into_messages().iter().any(|e| matches!(
+        assert!(effects.unwrap_or_default().iter().any(|e| matches!(
             e,
             AppAction::SetConfigOption { config_id, new_value }
                 if config_id == "model" && new_value == "gpt-5"
@@ -609,9 +622,9 @@ mod tests {
     fn handled_prompt_composer_result_returns_no_effects() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
 
-        let effects = state.handle_prompt_composer_messages(Response::ok());
+        let effects = state.handle_prompt_composer_messages(Some(vec![]));
 
-        assert!(effects.into_messages().is_empty());
+        assert!(effects.unwrap_or_default().is_empty());
     }
 
     #[test]
@@ -620,22 +633,26 @@ mod tests {
         state.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
         let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        let effects = state.on_event(&WidgetEvent::Key(default_exit), None);
-        assert!(!effects.is_exit(), "default Ctrl+C should no longer exit");
+        state.on_event(&Event::Key(default_exit));
+        assert!(
+            !state.exit_requested,
+            "default Ctrl+C should no longer exit"
+        );
 
+        state.exit_requested = false;
         let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        let effects = state.on_event(&WidgetEvent::Key(custom_exit), None);
-        assert!(effects.is_exit(), "custom Ctrl+Q should exit");
+        state.on_event(&Event::Key(custom_exit));
+        assert!(state.exit_requested, "custom Ctrl+Q should exit");
     }
 
     #[test]
     fn ctrl_g_opens_git_diff_viewer() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let effects = state.on_event(&WidgetEvent::Key(key), None);
+        let effects = state.on_event(&Event::Key(key));
         assert!(
             effects
-                .into_messages()
+                .unwrap_or_default()
                 .iter()
                 .any(|e| matches!(e, AppAction::OpenGitDiffViewer))
         );
@@ -647,10 +664,10 @@ mod tests {
         state.screen_mode = ScreenMode::GitDiff;
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let effects = state.on_event(&WidgetEvent::Key(key), None);
+        let effects = state.on_event(&Event::Key(key));
 
         assert!(matches!(state.screen_mode, ScreenMode::Conversation));
-        assert!(effects.into_messages().is_empty());
+        assert!(effects.unwrap_or_default().is_empty());
     }
 
     #[test]
@@ -667,11 +684,11 @@ mod tests {
         );
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let effects = state.on_event(&WidgetEvent::Key(key), None);
+        let effects = state.on_event(&Event::Key(key));
 
         assert!(
             !effects
-                .into_messages()
+                .unwrap_or_default()
                 .iter()
                 .any(|e| matches!(e, AppAction::OpenGitDiffViewer))
         );
@@ -684,12 +701,12 @@ mod tests {
         state.screen_mode = ScreenMode::GitDiff;
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        let effects = state.on_event(&WidgetEvent::Key(key), None);
+        let effects = state.on_event(&Event::Key(key));
 
-        assert!(!effects.is_exit());
+        assert!(!state.exit_requested);
         assert!(
             !effects
-                .into_messages()
+                .unwrap_or_default()
                 .iter()
                 .any(|e| matches!(e, AppAction::Cancel)),
             "Esc should NOT cancel a running prompt while git diff mode is active"
@@ -706,6 +723,6 @@ mod tests {
             row: 0,
             modifiers: KeyModifiers::NONE,
         };
-        state.on_event(&WidgetEvent::Mouse(mouse), None);
+        state.on_event(&Event::Mouse(mouse));
     }
 }

@@ -1,11 +1,9 @@
 use crate::keybindings::Keybindings;
-use crate::tui::KeyCode;
-use crate::tui::{KeyEvent, Line, Response, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Component, Event, KeyEvent, Line, TextField, ViewContext};
 use std::path::PathBuf;
 
 pub struct TextInput {
-    buffer: String,
-    cursor_pos: usize,
+    field: TextField,
     mentions: Vec<SelectedFileMention>,
     keybindings: Keybindings,
 }
@@ -32,26 +30,31 @@ impl Default for TextInput {
 impl TextInput {
     pub fn new(keybindings: Keybindings) -> Self {
         Self {
-            buffer: String::new(),
-            cursor_pos: 0,
+            field: TextField::new(String::new()),
             mentions: Vec::new(),
             keybindings,
         }
     }
 
     pub fn buffer(&self) -> &str {
-        &self.buffer
+        &self.field.value
     }
 
     /// Returns the visual cursor index, accounting for an active file picker
     /// whose query extends beyond the `@` trigger character.
     pub fn cursor_index(&self, picker_query_len: Option<usize>) -> usize {
         if let Some(query_len) = picker_query_len {
-            let at_pos = self.active_mention_start().unwrap_or(self.buffer.len());
+            let at_pos = self
+                .active_mention_start()
+                .unwrap_or(self.field.value.len());
             at_pos + 1 + query_len
         } else {
-            self.cursor_pos
+            self.field.cursor_pos()
         }
+    }
+
+    pub fn mentions(&self) -> &[SelectedFileMention] {
+        &self.mentions
     }
 
     pub fn take_mentions(&mut self) -> Vec<SelectedFileMention> {
@@ -59,34 +62,31 @@ impl TextInput {
     }
 
     pub fn set_input(&mut self, s: String) {
-        self.cursor_pos = s.len();
-        self.buffer = s;
+        self.field.set_value(s);
+    }
+
+    pub fn set_cursor_pos(&mut self, pos: usize) {
+        self.field.set_cursor_pos(pos);
     }
 
     pub fn clear(&mut self) {
-        self.set_input(String::new());
+        self.field.clear();
+    }
+
+    pub fn insert_char_at_cursor(&mut self, c: char) {
+        self.field.insert_at_cursor(c);
+    }
+
+    pub fn delete_char_before_cursor(&mut self) -> bool {
+        self.field.delete_before_cursor()
     }
 
     pub fn insert_paste(&mut self, text: &str) {
         for c in text.chars() {
             if !c.is_control() {
-                self.insert_char_at_cursor(c);
+                self.field.insert_at_cursor(c);
             }
         }
-    }
-
-    pub fn insert_char_at_cursor(&mut self, c: char) {
-        self.buffer.insert(self.cursor_pos, c);
-        self.cursor_pos += c.len_utf8();
-    }
-
-    pub fn delete_char_before_cursor(&mut self) -> bool {
-        let Some((prev, _)) = self.buffer[..self.cursor_pos].char_indices().next_back() else {
-            return false;
-        };
-        self.buffer.drain(prev..self.cursor_pos);
-        self.cursor_pos = prev;
-        true
     }
 
     pub fn apply_file_selection(&mut self, path: PathBuf, display_name: String) {
@@ -98,7 +98,7 @@ impl TextInput {
         });
 
         if let Some(at_pos) = self.active_mention_start() {
-            let mut s = self.buffer[..at_pos].to_string();
+            let mut s = self.field.value[..at_pos].to_string();
             s.push_str(&mention);
             s.push(' ');
             self.set_input(s);
@@ -106,96 +106,51 @@ impl TextInput {
     }
 
     fn active_mention_start(&self) -> Option<usize> {
-        mention_start(&self.buffer)
-    }
-
-    fn move_cursor_left(&mut self) {
-        self.cursor_pos = self.buffer[..self.cursor_pos]
-            .char_indices()
-            .next_back()
-            .map_or(0, |(i, _)| i);
-    }
-
-    fn move_cursor_right(&mut self) {
-        if let Some(c) = self.buffer[self.cursor_pos..].chars().next() {
-            self.cursor_pos += c.len_utf8();
-        }
-    }
-
-    fn move_cursor_home(&mut self) {
-        self.cursor_pos = 0;
-    }
-
-    fn move_cursor_end(&mut self) {
-        self.cursor_pos = self.buffer.len();
+        mention_start(&self.field.value)
     }
 }
 
-impl Widget for TextInput {
+impl Component for TextInput {
     type Message = TextInputMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         match event {
-            WidgetEvent::Paste(text) => {
+            Event::Paste(text) => {
                 self.insert_paste(text);
-                return Response::ok();
+                Some(vec![])
             }
-            WidgetEvent::Key(key_event) => self.handle_key(key_event),
-            _ => Response::ignored(),
+            Event::Key(key_event) => self.handle_key(key_event),
+            _ => None,
         }
     }
 
     fn render(&self, _context: &ViewContext) -> Vec<Line> {
-        vec![Line::new(self.buffer.clone())]
+        vec![Line::new(self.field.value.clone())]
     }
 }
 
 impl TextInput {
-    fn handle_key(&mut self, key_event: &KeyEvent) -> Response<TextInputMessage> {
-        match key_event.code {
-            KeyCode::Left => {
-                self.move_cursor_left();
-                Response::ok()
-            }
-            KeyCode::Right => {
-                self.move_cursor_right();
-                Response::ok()
-            }
-            KeyCode::Home => {
-                self.move_cursor_home();
-                Response::ok()
-            }
-            KeyCode::End => {
-                self.move_cursor_end();
-                Response::ok()
-            }
-            _ if self.keybindings.submit.matches(*key_event) => {
-                Response::one(TextInputMessage::Submit)
-            }
-            _ if self.keybindings.open_command_picker.matches(*key_event)
-                && self.buffer.is_empty() =>
-            {
-                if let Some(c) = self.keybindings.open_command_picker.char() {
-                    self.insert_char_at_cursor(c);
-                }
-                Response::one(TextInputMessage::OpenCommandPicker)
-            }
-            _ if self.keybindings.open_file_picker.matches(*key_event) => {
-                if let Some(c) = self.keybindings.open_file_picker.char() {
-                    self.insert_char_at_cursor(c);
-                }
-                Response::one(TextInputMessage::OpenFilePicker)
-            }
-            KeyCode::Char(c) => {
-                self.insert_char_at_cursor(c);
-                Response::ok()
-            }
-            KeyCode::Backspace => {
-                self.delete_char_before_cursor();
-                Response::ok()
-            }
-            _ => Response::ignored(),
+    fn handle_key(&mut self, key_event: &KeyEvent) -> Option<Vec<TextInputMessage>> {
+        if self.keybindings.submit.matches(*key_event) {
+            return Some(vec![TextInputMessage::Submit]);
         }
+
+        if self.keybindings.open_command_picker.matches(*key_event) && self.field.value.is_empty() {
+            if let Some(c) = self.keybindings.open_command_picker.char() {
+                self.field.insert_at_cursor(c);
+            }
+            return Some(vec![TextInputMessage::OpenCommandPicker]);
+        }
+
+        if self.keybindings.open_file_picker.matches(*key_event) {
+            if let Some(c) = self.keybindings.open_file_picker.char() {
+                self.field.insert_at_cursor(c);
+            }
+            return Some(vec![TextInputMessage::OpenFilePicker]);
+        }
+
+        // Delegate cursor navigation, char input, and backspace to TextField
+        self.field.on_event(&Event::Key(*key_event)).map(|_| vec![])
     }
 }
 
@@ -212,10 +167,11 @@ fn mention_start(input: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::KeyCode;
     use crate::tui::KeyModifiers;
 
-    fn key(code: KeyCode) -> WidgetEvent {
-        WidgetEvent::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
     #[test]
@@ -231,8 +187,8 @@ mod tests {
     #[test]
     fn right_arrow_moves_cursor_forward_one_char() {
         let mut input = TextInput::default();
-        input.buffer = "hello".to_string();
-        input.cursor_pos = 2;
+        input.set_input("hello".to_string());
+        input.set_cursor_pos(2);
 
         input.on_event(&key(KeyCode::Right));
 
@@ -242,8 +198,8 @@ mod tests {
     #[test]
     fn left_at_start_stays_at_zero() {
         let mut input = TextInput::default();
-        input.buffer = "hello".to_string();
-        input.cursor_pos = 0;
+        input.set_input("hello".to_string());
+        input.set_cursor_pos(0);
 
         input.on_event(&key(KeyCode::Left));
 
@@ -263,8 +219,8 @@ mod tests {
     #[test]
     fn home_moves_to_start() {
         let mut input = TextInput::default();
-        input.buffer = "hello".to_string();
-        input.cursor_pos = 3;
+        input.set_input("hello".to_string());
+        input.set_cursor_pos(3);
 
         input.on_event(&key(KeyCode::Home));
 
@@ -274,8 +230,8 @@ mod tests {
     #[test]
     fn end_moves_to_end() {
         let mut input = TextInput::default();
-        input.buffer = "hello".to_string();
-        input.cursor_pos = 1;
+        input.set_input("hello".to_string());
+        input.set_cursor_pos(1);
 
         input.on_event(&key(KeyCode::End));
 
@@ -285,37 +241,37 @@ mod tests {
     #[test]
     fn typing_inserts_at_cursor_position() {
         let mut input = TextInput::default();
-        input.buffer = "hllo".to_string();
-        input.cursor_pos = 1;
+        input.set_input("hllo".to_string());
+        input.set_cursor_pos(1);
 
         input.on_event(&key(KeyCode::Char('e')));
 
-        assert_eq!(input.buffer, "hello");
+        assert_eq!(input.buffer(), "hello");
         assert_eq!(input.cursor_index(None), 2);
     }
 
     #[test]
     fn backspace_at_cursor_middle_deletes_correct_char() {
         let mut input = TextInput::default();
-        input.buffer = "hello".to_string();
-        input.cursor_pos = 3;
+        input.set_input("hello".to_string());
+        input.set_cursor_pos(3);
 
         input.on_event(&key(KeyCode::Backspace));
 
-        assert_eq!(input.buffer, "helo");
+        assert_eq!(input.buffer(), "helo");
         assert_eq!(input.cursor_index(None), 2);
     }
 
     #[test]
     fn backspace_at_start_does_nothing() {
         let mut input = TextInput::default();
-        input.buffer = "hello".to_string();
-        input.cursor_pos = 0;
+        input.set_input("hello".to_string());
+        input.set_cursor_pos(0);
 
         let outcome = input.on_event(&key(KeyCode::Backspace));
 
-        assert!(outcome.is_handled());
-        assert_eq!(input.buffer, "hello");
+        assert!(outcome.is_some());
+        assert_eq!(input.buffer(), "hello");
         assert_eq!(input.cursor_index(None), 0);
     }
 
@@ -344,12 +300,12 @@ mod tests {
     #[test]
     fn paste_inserts_at_cursor_position() {
         let mut input = TextInput::default();
-        input.buffer = "hd".to_string();
-        input.cursor_pos = 1;
+        input.set_input("hd".to_string());
+        input.set_cursor_pos(1);
 
         input.insert_paste("ello worl");
 
-        assert_eq!(input.buffer, "hello world");
+        assert_eq!(input.buffer(), "hello world");
         assert_eq!(input.cursor_index(None), 10);
     }
 
@@ -359,12 +315,12 @@ mod tests {
 
         let outcome = input.on_event(&key(KeyCode::Char('/')));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
         assert!(matches!(
-            outcome,
-            Response::One(TextInputMessage::OpenCommandPicker)
+            outcome.as_deref(),
+            Some([TextInputMessage::OpenCommandPicker])
         ));
-        assert_eq!(input.buffer, "/");
+        assert_eq!(input.buffer(), "/");
     }
 
     #[test]
@@ -373,12 +329,12 @@ mod tests {
 
         let outcome = input.on_event(&key(KeyCode::Char('@')));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
         assert!(matches!(
-            outcome,
-            Response::One(TextInputMessage::OpenFilePicker)
+            outcome.as_deref(),
+            Some([TextInputMessage::OpenFilePicker])
         ));
-        assert_eq!(input.buffer, "@");
+        assert_eq!(input.buffer(), "@");
     }
 
     #[test]
@@ -388,8 +344,11 @@ mod tests {
 
         let outcome = input.on_event(&key(KeyCode::Enter));
 
-        assert!(outcome.is_handled());
-        assert!(matches!(outcome, Response::One(TextInputMessage::Submit)));
+        assert!(outcome.is_some());
+        assert!(matches!(
+            outcome.as_deref(),
+            Some([TextInputMessage::Submit])
+        ));
     }
 
     #[test]
@@ -399,16 +358,16 @@ mod tests {
 
         input.apply_file_selection(PathBuf::from("foo.rs"), "foo.rs".to_string());
 
-        assert_eq!(input.buffer, "@foo.rs ");
-        assert_eq!(input.mentions.len(), 1);
-        assert_eq!(input.mentions[0].mention, "@foo.rs");
+        assert_eq!(input.buffer(), "@foo.rs ");
+        assert_eq!(input.mentions().len(), 1);
+        assert_eq!(input.mentions()[0].mention, "@foo.rs");
     }
 
     #[test]
     fn cursor_index_without_picker() {
         let mut input = TextInput::default();
-        input.buffer = "hello".to_string();
-        input.cursor_pos = 3;
+        input.set_input("hello".to_string());
+        input.set_cursor_pos(3);
 
         assert_eq!(input.cursor_index(None), 3);
     }
@@ -429,7 +388,7 @@ mod tests {
 
         input.clear();
 
-        assert_eq!(input.buffer, "");
+        assert_eq!(input.buffer(), "");
         assert_eq!(input.cursor_index(None), 0);
     }
 }

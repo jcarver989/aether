@@ -1,6 +1,6 @@
 use crate::tui::{
-    Combobox, Line, PickerKey, PickerMessage, Response, Searchable, ViewContext, Widget,
-    WidgetEvent, classify_key,
+    Combobox, Component, Event, Line, PickerKey, PickerMessage, Searchable, ViewContext,
+    classify_key,
 };
 use ignore::WalkBuilder;
 use std::env::current_dir;
@@ -89,46 +89,46 @@ fn should_exclude_path(path: &Path) -> bool {
     })
 }
 
-impl Widget for FilePicker {
+impl Component for FilePicker {
     type Message = FilePickerMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key_event) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(key_event) = event else {
+            return None;
         };
         match classify_key(*key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => Response::one(PickerMessage::Close),
+            PickerKey::Escape => Some(vec![PickerMessage::Close]),
             PickerKey::MoveUp => {
                 self.combobox.move_up();
-                Response::ok()
+                Some(vec![])
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
-                Response::ok()
+                Some(vec![])
             }
             PickerKey::Confirm => {
                 if let Some(selected) = self.combobox.selected().cloned() {
-                    Response::one(PickerMessage::Confirm(selected))
+                    Some(vec![PickerMessage::Confirm(selected)])
                 } else {
-                    Response::one(PickerMessage::Close)
+                    Some(vec![PickerMessage::Close])
                 }
             }
             PickerKey::Char(c) => {
                 if c.is_whitespace() {
-                    return Response::one(PickerMessage::CloseWithChar(c));
+                    return Some(vec![PickerMessage::CloseWithChar(c)]);
                 }
                 self.combobox.push_query_char(c);
-                Response::one(PickerMessage::CharTyped(c))
+                Some(vec![PickerMessage::CharTyped(c)])
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                Response::one(PickerMessage::PopChar)
+                Some(vec![PickerMessage::PopChar])
             }
-            PickerKey::BackspaceOnEmpty => Response::one(PickerMessage::CloseAndPopChar),
+            PickerKey::BackspaceOnEmpty => Some(vec![PickerMessage::CloseAndPopChar]),
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::ControlChar
-            | PickerKey::Other => Response::ignored(),
+            | PickerKey::Other => None,
         }
     }
 
@@ -226,11 +226,11 @@ mod tests {
 
         let first = selected_text(&picker).unwrap();
 
-        picker.on_event(&WidgetEvent::Key(key(KeyCode::Up)));
+        picker.on_event(&Event::Key(key(KeyCode::Up)));
         let last = selected_text(&picker).unwrap();
         assert_ne!(first, last);
 
-        picker.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        picker.on_event(&Event::Key(key(KeyCode::Down)));
         let back_to_first = selected_text(&picker).unwrap();
         assert_eq!(first, back_to_first);
     }
@@ -294,12 +294,12 @@ mod tests {
     fn handle_key_char_updates_query_and_returns_char_typed() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/renderer.rs")]);
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Char('r'))));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char('r'))));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::CharTyped('r')]
         ));
         assert_eq!(picker.query(), "r");
@@ -309,12 +309,12 @@ mod tests {
     fn handle_key_whitespace_closes_picker() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char(' '))));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::CloseWithChar(' ')]
         ));
     }
@@ -323,12 +323,12 @@ mod tests {
     fn handle_key_enter_requests_confirmation() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Enter)));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::Confirm(_)]
         ));
     }
@@ -337,12 +337,12 @@ mod tests {
     fn backspace_with_empty_query_closes_and_pops() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace)));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::CloseAndPopChar]
         ));
     }
@@ -352,12 +352,12 @@ mod tests {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
         type_query(&mut picker, "ma");
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace)));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::PopChar]
         ));
         assert_eq!(picker.query(), "m");

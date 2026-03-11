@@ -1,6 +1,6 @@
 use crate::tui::{
-    Combobox, Line, PickerKey, PickerMessage, Response, Searchable, Style, ViewContext, Widget,
-    WidgetEvent, classify_key, display_width_text, pad_text_to_width, truncate_text,
+    Combobox, Component, Event, Line, PickerKey, PickerMessage, Searchable, Style, ViewContext,
+    classify_key, display_width_text, pad_text_to_width, truncate_text,
 };
 
 #[derive(Debug, Clone)]
@@ -37,46 +37,46 @@ impl CommandPicker {
     }
 }
 
-impl Widget for CommandPicker {
+impl Component for CommandPicker {
     type Message = CommandPickerMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key_event) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(key_event) = event else {
+            return None;
         };
         match classify_key(*key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => Response::one(PickerMessage::Close),
-            PickerKey::BackspaceOnEmpty => Response::one(PickerMessage::CloseAndPopChar),
+            PickerKey::Escape => Some(vec![PickerMessage::Close]),
+            PickerKey::BackspaceOnEmpty => Some(vec![PickerMessage::CloseAndPopChar]),
             PickerKey::MoveUp => {
                 self.combobox.move_up();
-                Response::ok()
+                Some(vec![])
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
-                Response::ok()
+                Some(vec![])
             }
             PickerKey::Confirm => {
                 if let Some(command) = self.combobox.selected().cloned() {
-                    Response::one(PickerMessage::Confirm(command))
+                    Some(vec![PickerMessage::Confirm(command)])
                 } else {
-                    Response::one(PickerMessage::Close)
+                    Some(vec![PickerMessage::Close])
                 }
             }
             PickerKey::Char(c) => {
                 if c.is_whitespace() {
-                    return Response::one(PickerMessage::CloseWithChar(c));
+                    return Some(vec![PickerMessage::CloseWithChar(c)]);
                 }
                 self.combobox.push_query_char(c);
-                Response::one(PickerMessage::CharTyped(c))
+                Some(vec![PickerMessage::CharTyped(c)])
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                Response::one(PickerMessage::PopChar)
+                Some(vec![PickerMessage::PopChar])
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::ControlChar
-            | PickerKey::Other => Response::ok(),
+            | PickerKey::Other => Some(vec![]),
         }
     }
 
@@ -225,11 +225,11 @@ mod tests {
         let mut picker = CommandPicker::new(sample_commands());
         let first = selected_text(&picker).unwrap();
 
-        picker.on_event(&WidgetEvent::Key(key(KeyCode::Up)));
+        picker.on_event(&Event::Key(key(KeyCode::Up)));
         let last = selected_text(&picker).unwrap();
         assert_ne!(first, last);
 
-        picker.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        picker.on_event(&Event::Key(key(KeyCode::Down)));
         let back_to_first = selected_text(&picker).unwrap();
         assert_eq!(first, back_to_first);
     }
@@ -238,7 +238,7 @@ mod tests {
     fn selected_command_changes_on_move() {
         let mut picker = CommandPicker::new(sample_commands());
         let first = selected_text(&picker).unwrap();
-        picker.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        picker.on_event(&Event::Key(key(KeyCode::Down)));
         let second = selected_text(&picker).unwrap();
         assert_ne!(first, second);
     }
@@ -249,10 +249,10 @@ mod tests {
         type_query(&mut picker, "co");
         assert_eq!(picker.query(), "co");
 
-        picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
+        picker.on_event(&Event::Key(key(KeyCode::Backspace)));
         assert_eq!(picker.query(), "c");
 
-        picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
+        picker.on_event(&Event::Key(key(KeyCode::Backspace)));
         assert_eq!(picker.query(), "");
     }
 
@@ -341,11 +341,11 @@ mod tests {
     fn handle_key_enter_returns_selected_command() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Enter)));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::Confirm(_)]
         ));
     }
@@ -354,12 +354,12 @@ mod tests {
     fn handle_key_backspace_on_empty_query_requests_close() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace)));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::CloseAndPopChar]
         ));
     }
@@ -454,12 +454,12 @@ mod tests {
     fn handle_key_char_returns_char_typed() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Char('r'))));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char('r'))));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::CharTyped('r')]
         ));
         assert_eq!(picker.query(), "r");
@@ -469,12 +469,12 @@ mod tests {
     fn handle_key_whitespace_closes_picker() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char(' '))));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::CloseWithChar(' ')]
         ));
     }
@@ -484,12 +484,12 @@ mod tests {
         let mut picker = CommandPicker::new(sample_commands());
         type_query(&mut picker, "co");
 
-        let outcome = picker.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace)));
 
-        assert!(outcome.is_handled());
+        assert!(outcome.is_some());
 
         assert!(matches!(
-            outcome.into_messages().as_slice(),
+            outcome.unwrap().as_slice(),
             [PickerMessage::PopChar]
         ));
         assert_eq!(picker.query(), "c");

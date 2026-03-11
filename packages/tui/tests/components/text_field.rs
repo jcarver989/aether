@@ -1,7 +1,7 @@
 use super::*;
 use crossterm::event::KeyCode;
 use tui::TextField;
-use tui::advanced::TerminalScreen;
+use tui::advanced::Renderer;
 
 #[test]
 fn empty_renders_cursor() {
@@ -20,9 +20,9 @@ fn with_value_renders_text_and_cursor() {
 #[test]
 fn typing_appends_to_render() {
     let mut tf = TextField::new(String::new());
-    tf.on_event(&WidgetEvent::Key(key(KeyCode::Char('a'))));
-    tf.on_event(&WidgetEvent::Key(key(KeyCode::Char('b'))));
-    tf.on_event(&WidgetEvent::Key(key(KeyCode::Char('c'))));
+    tf.on_event(&Event::Key(key(KeyCode::Char('a'))));
+    tf.on_event(&Event::Key(key(KeyCode::Char('b'))));
+    tf.on_event(&Event::Key(key(KeyCode::Char('c'))));
     let term = render_component(|ctx| tf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["abc▏"]);
 }
@@ -30,7 +30,7 @@ fn typing_appends_to_render() {
 #[test]
 fn backspace_removes_from_render() {
     let mut tf = TextField::new("hi".to_string());
-    tf.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
+    tf.on_event(&Event::Key(key(KeyCode::Backspace)));
     let term = render_component(|ctx| tf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["h▏"]);
 }
@@ -38,7 +38,7 @@ fn backspace_removes_from_render() {
 #[test]
 fn backspace_on_empty_renders_cursor() {
     let mut tf = TextField::new(String::new());
-    tf.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
+    tf.on_event(&Event::Key(key(KeyCode::Backspace)));
     let term = render_component(|ctx| tf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["▏"]);
 }
@@ -47,16 +47,17 @@ fn backspace_on_empty_renders_cursor() {
 fn terminal_state_diff_after_mutation() {
     let mut tf = TextField::new("ab".to_string());
     let terminal = TestTerminal::new(80, 24);
-    let mut terminal_state = TerminalScreen::new(terminal);
+    let mut renderer = Renderer::new(terminal, tui::Theme::default());
+    renderer.on_resize((80, 24));
 
     // Initial render
-    render_component_with_terminal_state(|ctx| tf.render(ctx), &mut terminal_state, 80, 24);
-    assert_buffer_eq(terminal_state.writer(), &["ab▏"]);
+    render_component_with_renderer(|ctx| tf.render(ctx), &mut renderer, 80, 24);
+    assert_buffer_eq(renderer.writer(), &["ab▏"]);
 
-    // Mutate and re-render through same TerminalState (exercises diff path)
-    tf.on_event(&WidgetEvent::Key(key(KeyCode::Char('c'))));
-    render_component_with_terminal_state(|ctx| tf.render(ctx), &mut terminal_state, 80, 24);
-    assert_buffer_eq(terminal_state.writer(), &["abc▏"]);
+    // Mutate and re-render through same Renderer (exercises diff path)
+    tf.on_event(&Event::Key(key(KeyCode::Char('c'))));
+    render_component_with_renderer(|ctx| tf.render(ctx), &mut renderer, 80, 24);
+    assert_buffer_eq(renderer.writer(), &["abc▏"]);
 }
 
 #[test]

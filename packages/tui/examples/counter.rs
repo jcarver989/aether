@@ -1,7 +1,8 @@
-use tui::{App, AppEvent, Cursor, Frame, KeyCode, Line, Response, Runner, ViewContext};
+use tui::{App, AppEvent, Cursor, Frame, KeyCode, Line, Runner, ViewContext};
 
 struct CounterApp {
     count: i32,
+    exit_requested: bool,
 }
 
 impl App for CounterApp {
@@ -13,18 +14,21 @@ impl App for CounterApp {
         &mut self,
         event: AppEvent<Self::Event>,
         _ctx: &ViewContext,
-    ) -> Response<Self::Effect> {
+    ) -> Option<Vec<Self::Effect>> {
         match event {
-            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
+            AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                self.exit_requested = true;
+                Some(vec![])
+            }
             AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                 self.count += 1;
-                Response::ok()
+                Some(vec![])
             }
             AppEvent::Key(key) if key.code == KeyCode::Char('k') => {
                 self.count -= 1;
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ok(),
+            _ => Some(vec![]),
         }
     }
 
@@ -44,9 +48,18 @@ impl App for CounterApp {
             },
         )
     }
+
+    fn should_exit(&self) -> bool {
+        self.exit_requested
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    Runner::new(CounterApp { count: 0 }).run().await
+    Runner::new(CounterApp {
+        count: 0,
+        exit_requested: false,
+    })
+    .run()
+    .await
 }

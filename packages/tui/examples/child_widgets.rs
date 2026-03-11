@@ -1,22 +1,21 @@
 use tui::{
-    App, AppEvent, Cursor, Frame, KeyCode, Line, Response, Runner, Style, ViewContext, Widget,
-    WidgetEvent,
+    App, AppEvent, Component, Cursor, Event, Frame, KeyCode, Line, Runner, Style, ViewContext,
 };
 
 struct IncrementButton {
     label: String,
 }
 
-impl Widget for IncrementButton {
+impl Component for IncrementButton {
     type Message = i32;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(key) = event else {
+            return None;
         };
         match key.code {
-            KeyCode::Enter => Response::one(1),
-            _ => Response::ignored(),
+            KeyCode::Enter => Some(vec![1]),
+            _ => None,
         }
     }
 
@@ -29,6 +28,7 @@ impl Widget for IncrementButton {
 struct WidgetApp {
     count: i32,
     button: IncrementButton,
+    exit_requested: bool,
 }
 
 impl App for WidgetApp {
@@ -40,17 +40,20 @@ impl App for WidgetApp {
         &mut self,
         event: AppEvent<Self::Event>,
         _ctx: &ViewContext,
-    ) -> Response<Self::Effect> {
+    ) -> Option<Vec<Self::Effect>> {
         match event {
-            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
+            AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                self.exit_requested = true;
+                Some(vec![])
+            }
             AppEvent::Key(key) => {
-                let result = self.button.on_event(&WidgetEvent::Key(key));
-                for message in result.into_messages() {
+                let result = self.button.on_event(&Event::Key(key));
+                for message in result.unwrap_or_default() {
                     self.count += message;
                 }
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ok(),
+            _ => Some(vec![]),
         }
     }
 
@@ -74,6 +77,10 @@ impl App for WidgetApp {
             },
         )
     }
+
+    fn should_exit(&self) -> bool {
+        self.exit_requested
+    }
 }
 
 #[tokio::main]
@@ -83,6 +90,7 @@ async fn main() -> Result<(), std::io::Error> {
         button: IncrementButton {
             label: "Increment".to_string(),
         },
+        exit_requested: false,
     })
     .run()
     .await

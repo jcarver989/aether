@@ -1,4 +1,4 @@
-use crate::components::{Response, ViewContext, Widget, WidgetEvent};
+use crate::components::{Component, Event, ViewContext};
 use crate::focus::FocusRing;
 use crate::line::Line;
 use crate::style::Style;
@@ -148,35 +148,35 @@ impl FormFieldKind {
         dispatch_field!(self, w => w.render_field(context, focused))
     }
 
-    fn handle_event(&mut self, event: &WidgetEvent) -> Response<()> {
+    fn handle_event(&mut self, event: &Event) -> Option<Vec<()>> {
         dispatch_field!(self, w => w.on_event(event))
     }
 }
 
-impl Widget for Form {
+impl Component for Form {
     type Message = FormMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(key) = event else {
+            return None;
         };
         match key.code {
-            KeyCode::Esc => return Response::one(FormMessage::Close),
-            KeyCode::Enter => return Response::one(FormMessage::Submit),
+            KeyCode::Esc => return Some(vec![FormMessage::Close]),
+            KeyCode::Enter => return Some(vec![FormMessage::Submit]),
             KeyCode::Tab | KeyCode::BackTab => {
                 self.focus.handle_key(*key);
-                return Response::ok();
+                return Some(vec![]);
             }
             _ => {}
         }
 
         if let Some(field) = self.fields.get_mut(self.focus.focused()) {
             let result = field.kind.handle_event(event);
-            if result.is_handled() {
-                return result.discard_messages();
+            if result.is_some() {
+                return Some(vec![]);
             }
         }
-        Response::ok()
+        Some(vec![])
     }
 
     fn render(&self, context: &ViewContext) -> Vec<Line> {

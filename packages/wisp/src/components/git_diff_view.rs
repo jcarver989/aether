@@ -1,9 +1,7 @@
 use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
-use crate::tui::{
-    KeyCode, Line, Response, Span, Style, ViewContext, Widget, WidgetEvent, truncate_text,
-};
+use crate::tui::{Component, Event, KeyCode, Line, Span, Style, ViewContext, truncate_text};
 
 pub enum GitDiffViewMessage {
     Close,
@@ -71,12 +69,12 @@ fn render_git_diff_state(state: &GitDiffViewState, context: &ViewContext) -> Vec
     }
 }
 
-impl Widget for GitDiffView<'_> {
+impl Component for GitDiffView<'_> {
     type Message = GitDiffViewMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(key) = event else {
+            return None;
         };
 
         if self.state.focus == PatchFocus::CommentInput {
@@ -84,58 +82,58 @@ impl Widget for GitDiffView<'_> {
         }
 
         match key.code {
-            KeyCode::Esc => Response::one(GitDiffViewMessage::Close),
-            KeyCode::Char('r') => Response::one(GitDiffViewMessage::Refresh),
+            KeyCode::Esc => Some(vec![GitDiffViewMessage::Close]),
+            KeyCode::Char('r') => Some(vec![GitDiffViewMessage::Refresh]),
             KeyCode::Char('h') | KeyCode::Left => {
                 self.state.set_focus(PatchFocus::FileList);
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 self.state.set_focus(PatchFocus::Patch);
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 self.navigate_down();
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.navigate_up();
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Char('g') => {
                 self.state.move_cursor_to_start();
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Char('G') => {
                 self.state.move_cursor_to_end();
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::PageDown => {
                 self.state.move_cursor(20);
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::PageUp => {
                 self.state.move_cursor(-20);
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Char('n') => {
                 self.state.jump_next_hunk();
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Char('p') => {
                 self.state.jump_prev_hunk();
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Char('c') => {
                 self.enter_comment_mode();
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Char('s') => self.submit_review(),
             KeyCode::Char('u') => {
                 self.state.queued_comments.pop();
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ok(),
+            _ => Some(vec![]),
         }
     }
 
@@ -185,21 +183,21 @@ impl GitDiffView<'_> {
         self.state.comment_cursor = 0;
     }
 
-    fn submit_review(&mut self) -> Response<GitDiffViewMessage> {
+    fn submit_review(&mut self) -> Option<Vec<GitDiffViewMessage>> {
         if self.state.queued_comments.is_empty() {
-            return Response::ok();
+            return Some(vec![]);
         }
         let comments = std::mem::take(&mut self.state.queued_comments);
-        Response::one(GitDiffViewMessage::SubmitReview { comments })
+        Some(vec![GitDiffViewMessage::SubmitReview { comments }])
     }
 
-    fn on_comment_input(&mut self, code: KeyCode) -> Response<GitDiffViewMessage> {
+    fn on_comment_input(&mut self, code: KeyCode) -> Option<Vec<GitDiffViewMessage>> {
         match code {
             KeyCode::Esc => {
                 self.state.focus = PatchFocus::Patch;
                 self.state.comment_buffer.clear();
                 self.state.comment_cursor = 0;
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Enter => {
                 if let Some(comment) = build_queued_comment(self.state) {
@@ -208,14 +206,14 @@ impl GitDiffView<'_> {
                 self.state.focus = PatchFocus::Patch;
                 self.state.comment_buffer.clear();
                 self.state.comment_cursor = 0;
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Char(c) => {
                 let byte_pos =
                     char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                 self.state.comment_buffer.insert(byte_pos, c);
                 self.state.comment_cursor += 1;
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Backspace => {
                 if self.state.comment_cursor > 0 {
@@ -224,18 +222,18 @@ impl GitDiffView<'_> {
                         char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                     self.state.comment_buffer.remove(byte_pos);
                 }
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Left => {
                 self.state.comment_cursor = self.state.comment_cursor.saturating_sub(1);
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Right => {
                 let max = self.state.comment_buffer.chars().count();
                 self.state.comment_cursor = (self.state.comment_cursor + 1).min(max);
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ok(),
+            _ => Some(vec![]),
         }
     }
 }
@@ -746,10 +744,10 @@ mod tests {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
+        let result = view.on_event(&Event::Key(key(KeyCode::Esc)));
         assert!(
             result
-                .into_messages()
+                .unwrap_or_default()
                 .iter()
                 .any(|m| matches!(m, GitDiffViewMessage::Close))
         );
@@ -760,10 +758,10 @@ mod tests {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&WidgetEvent::Key(key(KeyCode::Char('r'))));
+        let result = view.on_event(&Event::Key(key(KeyCode::Char('r'))));
         assert!(
             result
-                .into_messages()
+                .unwrap_or_default()
                 .iter()
                 .any(|m| matches!(m, GitDiffViewMessage::Refresh))
         );
@@ -776,7 +774,7 @@ mod tests {
         assert_eq!(state.selected_file, 0);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('j'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('j'))));
         assert_eq!(view.state.selected_file, 1);
     }
 
@@ -787,7 +785,7 @@ mod tests {
         assert_eq!(state.selected_file, 0);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('k'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('k'))));
         assert_eq!(view.state.selected_file, 1); // wraps from 0 to last
     }
 
@@ -798,7 +796,7 @@ mod tests {
         assert_eq!(state.focus, PatchFocus::FileList);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        view.on_event(&Event::Key(key(KeyCode::Enter)));
         assert_eq!(view.state.focus, PatchFocus::Patch);
     }
 
@@ -809,7 +807,7 @@ mod tests {
         state.focus = PatchFocus::Patch;
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('h'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('h'))));
         assert_eq!(view.state.focus, PatchFocus::FileList);
     }
 
@@ -820,7 +818,7 @@ mod tests {
         state.patch_scroll = 5;
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('j'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('j'))));
         assert_eq!(view.state.patch_scroll, 0);
     }
 
@@ -932,7 +930,7 @@ mod tests {
         state.cursor_line = 1; // Context line (has a ref)
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('c'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('c'))));
         assert_eq!(view.state.focus, PatchFocus::CommentInput);
     }
 
@@ -983,7 +981,7 @@ mod tests {
         state.cursor_line = 1; // spacer between two hunks
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('c'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('c'))));
         assert_eq!(view.state.focus, PatchFocus::Patch);
     }
 
@@ -994,7 +992,7 @@ mod tests {
         state.comment_buffer = "partial".to_string();
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
+        view.on_event(&Event::Key(key(KeyCode::Esc)));
         assert_eq!(view.state.focus, PatchFocus::Patch);
         assert!(view.state.comment_buffer.is_empty());
     }
@@ -1006,17 +1004,17 @@ mod tests {
         state.cursor_line = 1; // Context line
         // Enter comment mode
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('c'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('c'))));
         assert_eq!(view.state.focus, PatchFocus::CommentInput);
 
         // Type some text
         for ch in "test comment".chars() {
-            view.on_event(&WidgetEvent::Key(key(KeyCode::Char(ch))));
+            view.on_event(&Event::Key(key(KeyCode::Char(ch))));
         }
         assert_eq!(view.state.comment_buffer, "test comment");
 
         // Submit with Enter
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        view.on_event(&Event::Key(key(KeyCode::Enter)));
         assert_eq!(view.state.focus, PatchFocus::Patch);
         assert_eq!(view.state.queued_comments.len(), 1);
         assert_eq!(view.state.queued_comments[0].comment, "test comment");
@@ -1038,10 +1036,10 @@ mod tests {
         });
 
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&WidgetEvent::Key(key(KeyCode::Char('s'))));
+        let result = view.on_event(&Event::Key(key(KeyCode::Char('s'))));
         assert!(
             result
-                .into_messages()
+                .unwrap_or_default()
                 .iter()
                 .any(|m| matches!(m, GitDiffViewMessage::SubmitReview { .. }))
         );
@@ -1053,8 +1051,8 @@ mod tests {
         state.focus = PatchFocus::Patch;
 
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&WidgetEvent::Key(key(KeyCode::Char('s'))));
-        assert!(result.into_messages().is_empty());
+        let result = view.on_event(&Event::Key(key(KeyCode::Char('s'))));
+        assert!(result.unwrap_or_default().is_empty());
     }
 
     #[test]
@@ -1081,7 +1079,7 @@ mod tests {
         });
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('u'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('u'))));
         assert_eq!(view.state.queued_comments.len(), 1);
         assert_eq!(view.state.queued_comments[0].comment, "first");
     }
@@ -1110,10 +1108,10 @@ mod tests {
         state.cursor_line = 0;
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('j'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('j'))));
         assert_eq!(view.state.cursor_line, 1);
 
-        view.on_event(&WidgetEvent::Key(key(KeyCode::Char('k'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('k'))));
         assert_eq!(view.state.cursor_line, 0);
     }
 

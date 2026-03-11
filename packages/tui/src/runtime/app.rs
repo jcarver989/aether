@@ -4,62 +4,13 @@
 //!
 //! - [`App`] — single trait combining event handling, effects, and rendering
 //! - [`AppEvent`] — unified event type for terminal, external, and tick events
-//! - [`Response`] — unified result type for event handling and effects
 //! - [`Runner`] — builder-style runner that owns terminal lifecycle
-//!
-//! # Example
-//!
-//! ```rust
-//! use tui::{App, AppEvent, Response, Frame, Line, ViewContext, Runner};
-//! use tui::{KeyEvent, KeyCode, KeyModifiers};
-//!
-//! struct Counter {
-//!     count: i32,
-//! }
-//!
-//! impl App for Counter {
-//!     type Event = ();
-//!     type Effect = ();
-//!     type Error = std::io::Error;
-//!
-//!     fn update(&mut self, event: AppEvent<()>, ctx: &ViewContext) -> Response<()> {
-//!         match event {
-//!             AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
-//!             AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
-//!                 self.count += 1;
-//!                 Response::ok()
-//!             }
-//!             AppEvent::Key(key) if key.code == KeyCode::Char('k') => {
-//!                 self.count -= 1;
-//!                 Response::ok()
-//!             }
-//!             _ => Response::ok(),
-//!         }
-//!     }
-//!
-//!     fn view(&self, ctx: &ViewContext) -> Frame {
-//!         Frame::new(
-//!             vec![Line::new(format!("Count: {}", self.count))],
-//!             tui::Cursor { row: 0, col: 0, is_visible: false },
-//!         )
-//!     }
-//!
-//!     async fn run_effect(
-//!         &mut self,
-//!         _terminal: &mut tui::advanced::Terminal<'_, impl std::io::Write>,
-//!         _effect: (),
-//!     ) -> Result<Response<()>, std::io::Error> {
-//!         Ok(Response::ok())
-//!     }
-//! }
-//! ```
 
 use super::spawn_terminal_event_task;
 use super::terminal::{MouseCapture, TerminalSession, terminal_size};
 use crate::Frame;
-use crate::components::Response;
 use crate::rendering::render_context::ViewContext;
-use crate::rendering::renderer::{Renderer, Terminal};
+use crate::rendering::renderer::Renderer;
 use crate::rendering::size::Size;
 use crate::theme::Theme;
 use crossterm::event::{Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent};
@@ -106,7 +57,7 @@ pub enum AppEvent<E> {
 /// 2. Events arrive via `update`
 /// 3. Effects from `update` are processed via `run_effect`
 /// 4. After each update/effect cycle, `view` is called again
-/// 5. When `update` returns `Response::exit()`, the app terminates
+/// 5. When `should_exit()` returns `true`, the app terminates
 #[allow(async_fn_in_trait)]
 pub trait App {
     /// Application-specific external event type.
@@ -120,8 +71,16 @@ pub trait App {
     ///
     /// This is the main event handler for the application. All terminal events,
     /// external events, and ticks flow through this method.
-    fn update(&mut self, event: AppEvent<Self::Event>, ctx: &ViewContext)
-    -> Response<Self::Effect>;
+    ///
+    /// Returns `Option<Vec<Effect>>`:
+    /// - `None` — event not recognized
+    /// - `Some(vec![])` — event handled, no effects
+    /// - `Some(effects)` — event handled, run these effects
+    fn update(
+        &mut self,
+        event: AppEvent<Self::Event>,
+        ctx: &ViewContext,
+    ) -> Option<Vec<Self::Effect>>;
 
     /// Render the current application state.
     ///
@@ -132,18 +91,26 @@ pub trait App {
     /// Execute an effect and return follow-up effects.
     ///
     /// Effects allow async operations like network requests, file I/O, etc.
-    /// A [`Terminal`] handle is provided for effects that need terminal
+    /// A [`Renderer`] handle is provided for effects that need terminal
     /// operations (e.g., pushing to scrollback, clearing screen, changing theme).
     ///
     /// Default implementation returns no effects.
     async fn run_effect(
         &mut self,
-        _terminal: &mut Terminal<'_, impl Write>,
+        _renderer: &mut Renderer<impl Write>,
         effect: Self::Effect,
-    ) -> Result<Response<Self::Effect>, Self::Error> {
+    ) -> Result<Vec<Self::Effect>, Self::Error> {
         // Default: consume the effect without action
         let _ = effect;
-        Ok(Response::ok())
+        Ok(vec![])
+    }
+
+    /// Whether the app should exit.
+    ///
+    /// The runtime checks this after each update/effect cycle.
+    /// Apps track exit state internally.
+    fn should_exit(&self) -> bool {
+        false
     }
 
     /// Whether the app wants tick events.
@@ -382,7 +349,7 @@ async fn handle_event<A: App, W: Write>(
 ) -> Result<bool, A::Error> {
     let ctx = renderer.context();
     let response = app.update(event, &ctx);
-    if response.is_exit() {
+    if app.should_exit() {
         return Ok(true);
     }
     if process_effects(app, renderer, response).await? {
@@ -396,19 +363,19 @@ async fn handle_event<A: App, W: Write>(
 async fn process_effects<A: App, W: Write>(
     app: &mut A,
     renderer: &mut Renderer<W>,
-    response: Response<A::Effect>,
+    response: Option<Vec<A::Effect>>,
 ) -> Result<bool, A::Error> {
-    let mut queue: VecDeque<A::Effect> = response.into_messages().into();
+    let mut queue: VecDeque<A::Effect> = response.unwrap_or_default().into();
 
     while let Some(effect) = queue.pop_front() {
         // Render before running effect
         renderer.render_frame(|ctx| app.view(ctx))?;
 
-        let follow_up = app.run_effect(&mut renderer.terminal(), effect).await?;
-        if follow_up.is_exit() {
+        let follow_up = app.run_effect(renderer, effect).await?;
+        if app.should_exit() {
             return Ok(true);
         }
-        queue.extend(follow_up.into_messages());
+        queue.extend(follow_up);
     }
 
     Ok(false)
