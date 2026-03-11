@@ -214,7 +214,7 @@ mod tests {
             PathBuf::from("."),
         );
 
-        let effects = app
+        let _effects = app
             .apply_action(
                 &mut renderer,
                 crate::components::app::AppAction::ClearScreen,

@@ -498,7 +498,7 @@ mod tests {
 
     #[test]
     fn render_groups_models_under_provider_headers() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
+        let builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
         let lines = rendered_lines(&builder);
 
         let openrouter_headers = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
@@ -714,7 +714,7 @@ mod tests {
 
     #[test]
     fn render_shows_selected_models_at_top() {
-        let mut builder = ModelSelector::from_model_entry(
+        let builder = ModelSelector::from_model_entry(
             &model_entry(),
             Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
             None,
@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn render_hides_selected_line_when_none_selected() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
+        let builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         let lines = rendered_lines(&builder);
         assert!(
             !lines.iter().any(|l| l.contains("Selected:")),

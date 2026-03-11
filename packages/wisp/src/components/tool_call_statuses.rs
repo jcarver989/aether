@@ -485,18 +485,6 @@ impl SubAgentState {
     }
 }
 
-impl ToolCallStatuses {
-    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
-        let mut lines = Vec::new();
-        for id in &self.tool_order {
-            if let Some(view) = self.view_for(id, self.tick) {
-                lines.extend(view.render(context));
-            }
-        }
-        lines
-    }
-}
-
 fn convert_diff_preview(acp: &AcpDiffPreview) -> DiffPreview {
     DiffPreview {
         lines: acp
