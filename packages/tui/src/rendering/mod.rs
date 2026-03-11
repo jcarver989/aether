@@ -7,3 +7,4 @@ pub mod size;
 pub mod soft_wrap;
 pub mod span;
 pub mod style;
+pub(crate) mod terminal_screen;
