@@ -1,11 +1,33 @@
 mod common;
 
-use aether_lspd::LanguageId;
+use aether_lspd::{LanguageId, LspClient, lockfile_path, socket_path};
 use common::{
     CargoProject, DaemonHarness, RA_INIT_TIMEOUT, TestProject, did_change_params, did_open_params,
 };
 use lsp_types::{DidCloseTextDocumentParams, TextDocumentIdentifier};
 use std::time::Duration;
+
+#[tokio::test]
+async fn daemon_persists_after_client_disconnect() {
+    let project = CargoProject::new("disconnect_persists").expect("Failed to create project");
+    let sock_path = socket_path(project.root(), LanguageId::Rust);
+    let lock_path = lockfile_path(&sock_path);
+
+    let client = LspClient::connect_or_spawn(project.root(), LanguageId::Rust)
+        .await
+        .expect("Failed to spawn daemon");
+    client
+        .disconnect()
+        .await
+        .expect("Failed to disconnect client");
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    assert!(
+        lock_path.exists(),
+        "Daemon should still be running after client disconnect without explicit shutdown"
+    );
+}
 
 /// Test: Full lifecycle - initialize, didOpen, diagnostics, disconnect
 #[tokio::test]

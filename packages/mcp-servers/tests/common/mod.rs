@@ -155,3 +155,19 @@ pub fn has_errors(result: &serde_json::Value) -> bool {
 pub fn has_no_errors(result: &serde_json::Value) -> bool {
     error_count(result).is_some_and(|n| n == 0)
 }
+
+/// Clean up daemon socket artifacts for a test project's workspace root.
+///
+/// The actual daemon process is terminated by the workspace-root liveness check
+/// (once the `TempDir` is dropped, the daemon detects the missing root and exits).
+/// This helper removes leftover socket/lock/log files from the filesystem.
+pub async fn cleanup_daemon(project: &impl TestProject) {
+    use aether_lspd::{LanguageId, socket_path};
+
+    for lang in [LanguageId::Rust, LanguageId::TypeScript] {
+        let sock = socket_path(project.root(), lang);
+        let _ = tokio::fs::remove_file(&sock).await;
+        let _ = tokio::fs::remove_file(sock.with_extension("lock")).await;
+        let _ = tokio::fs::remove_file(sock.with_extension("log")).await;
+    }
+}

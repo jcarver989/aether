@@ -100,6 +100,11 @@ impl LspDaemon {
                     tracing::info!("Idle timeout reached, shutting down");
                     return Ok(());
                 }
+
+                () = check_workspace_liveness(&self.lsp_manager, Duration::from_secs(10)) => {
+                    tracing::info!("All workspace roots deleted, shutting down");
+                    return Ok(());
+                }
             }
         }
     }
@@ -147,6 +152,23 @@ async fn check_idle_timeout_with_interval(
 
         let last = *last_activity.read().await;
         if last.elapsed() >= timeout {
+            return;
+        }
+    }
+}
+
+/// Returns `true` when all roots are non-existent and the list is non-empty.
+fn all_roots_deleted(roots: &[PathBuf]) -> bool {
+    !roots.is_empty() && roots.iter().all(|root| !root.exists())
+}
+
+/// Resolves when every workspace root managed by `lsp_manager` has been deleted
+/// from disk. Polls at `poll_interval`.
+async fn check_workspace_liveness(lsp_manager: &LspManager, poll_interval: Duration) {
+    loop {
+        sleep(poll_interval).await;
+        let roots = lsp_manager.workspace_roots().await;
+        if all_roots_deleted(&roots) {
             return;
         }
     }
@@ -225,5 +247,38 @@ mod tests {
         .await;
 
         assert!(result.is_ok(), "Idle timeout should complete");
+    }
+
+    #[test]
+    fn all_roots_deleted_empty_returns_false() {
+        assert!(!all_roots_deleted(&[]));
+    }
+
+    #[test]
+    fn all_roots_deleted_existing_dir_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!all_roots_deleted(&[dir.path().to_path_buf()]));
+    }
+
+    #[test]
+    fn all_roots_deleted_nonexistent_returns_true() {
+        let gone = PathBuf::from("/tmp/aether-lspd-test-nonexistent-dir-that-does-not-exist");
+        assert!(all_roots_deleted(&[gone]));
+    }
+
+    #[test]
+    fn all_roots_deleted_mixed_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = PathBuf::from("/tmp/aether-lspd-test-nonexistent-dir-that-does-not-exist");
+        assert!(!all_roots_deleted(&[dir.path().to_path_buf(), gone]));
+    }
+
+    #[test]
+    fn all_roots_deleted_after_tempdir_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        assert!(!all_roots_deleted(&[root.clone()]));
+        drop(dir);
+        assert!(all_roots_deleted(&[root]));
     }
 }

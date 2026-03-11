@@ -127,6 +127,15 @@ impl LspManager {
     }
 
     /// Shutdown all LSP instances
+    pub async fn workspace_roots(&self) -> Vec<PathBuf> {
+        self.lsps
+            .read()
+            .await
+            .keys()
+            .map(|k| k.workspace_root.clone())
+            .collect()
+    }
+
     pub async fn shutdown(&self) {
         self.lsps.write().await.clear();
     }
