@@ -27,13 +27,14 @@ fn key_event(code: KeyCode) -> CrosstermEvent {
     })
 }
 
-
 #[test]
 fn command_from_vec_collapses_common_cases() {
     let empty: Vec<i32> = vec![];
     assert!(matches!(Response::from_vec(empty), Response::Ok));
     assert!(matches!(Response::from_vec(vec![1]), Response::One(1)));
-    assert!(matches!(Response::from_vec(vec![1, 2]), Response::Many(values) if values == vec![1, 2]));
+    assert!(
+        matches!(Response::from_vec(vec![1, 2]), Response::Many(values) if values == vec![1, 2])
+    );
 }
 
 #[test]

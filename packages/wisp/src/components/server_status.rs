@@ -36,9 +36,7 @@ impl Widget for ServerStatusOverlay {
                     .get(self.selected_index)
                     .filter(|e| matches!(e.status, McpServerStatus::NeedsOAuth))
                 {
-                    return Response::one(ServerStatusMessage::Authenticate(
-                        entry.name.clone(),
-                    ));
+                    return Response::one(ServerStatusMessage::Authenticate(entry.name.clone()));
                 }
                 Response::ok()
             }
@@ -248,10 +246,7 @@ mod tests {
             crate::tui::KeyModifiers::NONE,
         )));
         let messages = outcome.into_messages();
-        assert!(matches!(
-            messages.as_slice(),
-            [ServerStatusMessage::Close]
-        ));
+        assert!(matches!(messages.as_slice(), [ServerStatusMessage::Close]));
     }
 
     #[test]

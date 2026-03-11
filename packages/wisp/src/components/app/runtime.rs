@@ -1,8 +1,8 @@
 use super::{App, AppAction, PromptAttachment, build_attachment_blocks};
 use crate::components::app::git_diff_mode::format_review_prompt;
 use crate::settings::{load_or_create_settings, save_settings};
-use crate::tui::{Response, Line};
 use crate::tui::advanced::Terminal;
+use crate::tui::{Line, Response};
 use std::io::Write;
 
 impl App {

@@ -11,15 +11,15 @@ use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::{
-    FormMessage, KeyEvent, Line, Response, ViewContext, Spinner, Widget, WidgetEvent,
+    FormMessage, KeyEvent, Line, Response, Spinner, ViewContext, Widget, WidgetEvent,
 };
-use std::time::Instant;
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{
     self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOptions,
 };
+use std::time::Instant;
 use utils::ReasoningEffort;
 
 pub struct UiState {
@@ -329,9 +329,7 @@ impl UiState {
                     })
                     .collect(),
                 ConfigOverlayMessage::AuthenticateServer(name) => {
-                    vec![AppAction::AuthenticateMcpServer {
-                        server_name: name,
-                    }]
+                    vec![AppAction::AuthenticateMcpServer { server_name: name }]
                 }
                 ConfigOverlayMessage::AuthenticateProvider(method_id) => {
                     vec![AppAction::AuthenticateProvider { method_id }]
@@ -623,10 +621,7 @@ mod tests {
 
         let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         let effects = state.on_event(&WidgetEvent::Key(default_exit), None);
-        assert!(
-            !effects.is_exit(),
-            "default Ctrl+C should no longer exit"
-        );
+        assert!(!effects.is_exit(), "default Ctrl+C should no longer exit");
 
         let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
         let effects = state.on_event(&WidgetEvent::Key(custom_exit), None);
@@ -638,10 +633,12 @@ mod tests {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
         let effects = state.on_event(&WidgetEvent::Key(key), None);
-        assert!(effects
-            .into_messages()
-            .iter()
-            .any(|e| matches!(e, AppAction::OpenGitDiffViewer)));
+        assert!(
+            effects
+                .into_messages()
+                .iter()
+                .any(|e| matches!(e, AppAction::OpenGitDiffViewer))
+        );
     }
 
     #[test]
@@ -672,10 +669,12 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
         let effects = state.on_event(&WidgetEvent::Key(key), None);
 
-        assert!(!effects
-            .into_messages()
-            .iter()
-            .any(|e| matches!(e, AppAction::OpenGitDiffViewer)));
+        assert!(
+            !effects
+                .into_messages()
+                .iter()
+                .any(|e| matches!(e, AppAction::OpenGitDiffViewer))
+        );
     }
 
     #[test]

@@ -36,10 +36,7 @@ impl<T: Write> Renderer<T> {
     /// Render a frame using a closure.
     ///
     /// The closure receives a ViewContext and returns a Frame.
-    pub fn render_frame(
-        &mut self,
-        f: impl FnOnce(&ViewContext) -> Frame,
-    ) -> io::Result<()> {
+    pub fn render_frame(&mut self, f: impl FnOnce(&ViewContext) -> Frame) -> io::Result<()> {
         let context = self.context();
         let prepared = f(&context)
             .soft_wrap(self.size.width)

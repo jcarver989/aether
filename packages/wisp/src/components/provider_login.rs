@@ -200,10 +200,7 @@ mod tests {
             KeyModifiers::NONE,
         )));
         let messages = outcome.into_messages();
-        assert!(matches!(
-            messages.as_slice(),
-            [ProviderLoginMessage::Close]
-        ));
+        assert!(matches!(messages.as_slice(), [ProviderLoginMessage::Close]));
     }
 
     #[test]

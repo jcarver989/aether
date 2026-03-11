@@ -4,7 +4,7 @@ use crate::components::input_prompt::InputPrompt;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputMessage};
 use crate::keybindings::Keybindings;
 use crate::tui::KeyCode;
-use crate::tui::{Cursor, Line, Response, PickerMessage, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Cursor, Line, PickerMessage, Response, ViewContext, Widget, WidgetEvent};
 use std::collections::HashSet;
 
 use super::app::PromptAttachment;
@@ -44,7 +44,6 @@ impl PromptComposer {
 
     pub fn set_available_commands(&mut self, commands: Vec<CommandEntry>) {
         self.available_commands = commands;
-
     }
 
     #[allow(dead_code)]

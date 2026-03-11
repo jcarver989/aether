@@ -1,5 +1,5 @@
-use tui::testing::TestTerminal;
 use tui::advanced::Renderer;
+use tui::testing::TestTerminal;
 use tui::{Cursor, Frame, Line, Theme};
 
 fn render_frame(renderer: &mut Renderer<TestTerminal>, lines: Vec<Line>, cursor: Cursor) {

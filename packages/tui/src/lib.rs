@@ -40,11 +40,11 @@ pub mod testing;
 
 // Core re-exports - always available
 pub use components::checkbox::Checkbox;
-pub use components::layout::Layout;
-pub use components::panel::{BORDER_H_PAD, Panel};
 pub use components::form::{Form, FormField, FormFieldKind, FormMessage};
+pub use components::layout::Layout;
 pub use components::multi_select::MultiSelect;
 pub use components::number_field::NumberField;
+pub use components::panel::{BORDER_H_PAD, Panel};
 pub use components::radio_select::RadioSelect;
 pub use components::select_option::SelectOption;
 pub use components::spinner::{BRAILLE_FRAMES, Spinner};

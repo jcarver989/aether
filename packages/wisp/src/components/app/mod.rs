@@ -11,7 +11,7 @@ pub(crate) use state::UiState;
 
 use crate::tui::advanced::Terminal;
 use crate::tui::{
-    App as TuiApp, AppEvent, Cursor, Response, Frame, Layout, Line, ViewContext, Widget,
+    App as TuiApp, AppEvent, Cursor, Frame, Layout, Line, Response, ViewContext, Widget,
     WidgetEvent,
 };
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
@@ -719,10 +719,7 @@ mod tests {
         let context = ViewContext::new((120, 40));
         app.prepare_for_view(&context);
 
-        assert_eq!(
-            app.cached_plan_version,
-            app.state.plan_tracker.version()
-        );
+        assert_eq!(app.cached_plan_version, app.state.plan_tracker.version());
     }
 
     #[test]

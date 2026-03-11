@@ -1,5 +1,5 @@
 use crate::tui::{
-    Combobox, Line, Response, PickerKey, PickerMessage, ViewContext, Searchable, Style, Widget,
+    Combobox, Line, PickerKey, PickerMessage, Response, Searchable, Style, ViewContext, Widget,
     WidgetEvent, classify_key, display_width_text, pad_text_to_width, truncate_text,
 };
 
@@ -144,12 +144,12 @@ fn build_styled_command_line(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::{Span, ViewContext, display_width_text};
     use crate::tui::test_picker::{
         rendered_lines_from, rendered_lines_with_context, rendered_raw_lines_with_context,
         type_query,
     };
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+    use crate::tui::{Span, ViewContext, display_width_text};
 
     const DEFAULT_SIZE: (u16, u16) = (120, 40);
 

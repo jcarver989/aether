@@ -1,8 +1,7 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{
-    Combobox, Line, Response, PickerKey, ViewContext, Searchable, Widget, WidgetEvent,
-    classify_key,
+    Combobox, Line, PickerKey, Response, Searchable, ViewContext, Widget, WidgetEvent, classify_key,
 };
 use acp_utils::config_option_id::ConfigOptionId;
 use std::cmp::Ordering;

@@ -1,6 +1,6 @@
 use tui::{
-    App, AppEvent, Cursor, Frame, KeyCode, Line, Response, ViewContext, Runner, Style,
-    Widget, WidgetEvent,
+    App, AppEvent, Cursor, Frame, KeyCode, Line, Response, Runner, Style, ViewContext, Widget,
+    WidgetEvent,
 };
 
 struct IncrementButton {

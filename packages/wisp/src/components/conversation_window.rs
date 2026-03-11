@@ -2,7 +2,7 @@ use std::mem::{Discriminant, discriminant, take};
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::tui::{Line, ViewContext, Spinner, Widget, render_markdown};
+use crate::tui::{Line, Spinner, ViewContext, Widget, render_markdown};
 
 #[derive(Debug, Clone)]
 pub(crate) enum SegmentContent {
@@ -64,7 +64,6 @@ impl ConversationBuffer {
                 lines: None,
             });
         }
-
     }
 
     pub(crate) fn append_thought_chunk(&mut self, chunk: &str) {
@@ -78,7 +77,7 @@ impl ConversationBuffer {
         {
             existing.push_str(chunk);
             segment.lines = None;
-    
+
             return;
         }
 
@@ -87,7 +86,6 @@ impl ConversationBuffer {
             lines: None,
         });
         self.thought_block_open = true;
-
     }
 
     pub(crate) fn close_thought_block(&mut self) {
@@ -97,7 +95,6 @@ impl ConversationBuffer {
     pub(crate) fn clear(&mut self) {
         self.segments.clear();
         self.thought_block_open = false;
-
     }
 
     pub(crate) fn ensure_tool_segment(&mut self, tool_id: &str) {
@@ -111,7 +108,6 @@ impl ConversationBuffer {
                 content: SegmentContent::ToolCall(tool_id.to_string()),
                 lines: None,
             });
-    
         }
     }
 
@@ -121,7 +117,6 @@ impl ConversationBuffer {
                 segment.lines = None;
             }
         }
-
     }
 
     fn drain_segments_except(
@@ -162,7 +157,6 @@ impl ConversationBuffer {
                 completed_tool_ids.push(id);
             }
         }
-
 
         (scrollback_lines, completed_tool_ids)
     }
