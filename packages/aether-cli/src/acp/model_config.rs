@@ -165,10 +165,10 @@ pub(crate) fn validated_modes(
     settings
         .modes
         .iter()
-        .filter_map(|(name, mode)| {
+        .filter_map(|mode| {
             mode_to_effective_config(available, mode).map(|(model, reasoning_effort)| {
                 ValidatedMode {
-                    name: name.clone(),
+                    name: mode.name.clone(),
                     model,
                     reasoning_effort,
                 }
@@ -301,13 +301,11 @@ mod tests {
         reasoning_effort: Option<&str>,
     ) -> AetherCliSettings {
         let mut settings = AetherCliSettings::default();
-        settings.modes.insert(
-            name.to_string(),
-            Mode {
-                model: model.to_string(),
-                reasoning_effort: reasoning_effort.map(ToOwned::to_owned),
-            },
-        );
+        settings.modes.push(Mode {
+            name: name.to_string(),
+            model: model.to_string(),
+            reasoning_effort: reasoning_effort.map(ToOwned::to_owned),
+        });
         settings
     }
 
@@ -418,13 +416,11 @@ mod tests {
     #[test]
     fn build_mode_config_option_skips_invalid_modes() {
         let mut settings = AetherCliSettings::default();
-        settings.modes.insert(
-            "Bad".to_string(),
-            Mode {
-                model: invalid_mode_model(),
-                reasoning_effort: Some("max".to_string()),
-            },
-        );
+        settings.modes.push(Mode {
+            name: "Bad".to_string(),
+            model: invalid_mode_model(),
+            reasoning_effort: Some("max".to_string()),
+        });
 
         let option = build_mode_config_option(&settings, &test_models(), None);
         assert!(option.is_none(), "invalid modes should be skipped");
@@ -443,20 +439,16 @@ mod tests {
     #[test]
     fn mode_name_for_state_matches_valid_tuple() {
         let mut settings = AetherCliSettings::default();
-        settings.modes.insert(
-            "Planner".to_string(),
-            Mode {
-                model: "anthropic:claude-sonnet-4-5".to_string(),
-                reasoning_effort: Some("high".to_string()),
-            },
-        );
-        settings.modes.insert(
-            "Bad".to_string(),
-            Mode {
-                model: invalid_mode_model(),
-                reasoning_effort: Some("high".to_string()),
-            },
-        );
+        settings.modes.push(Mode {
+            name: "Planner".to_string(),
+            model: "anthropic:claude-sonnet-4-5".to_string(),
+            reasoning_effort: Some("high".to_string()),
+        });
+        settings.modes.push(Mode {
+            name: "Bad".to_string(),
+            model: invalid_mode_model(),
+            reasoning_effort: Some("high".to_string()),
+        });
 
         let models = test_models();
         let selected = mode_name_for_state(
@@ -472,20 +464,16 @@ mod tests {
     #[test]
     fn mode_name_for_state_ignores_invalid_modes() {
         let mut settings = AetherCliSettings::default();
-        settings.modes.insert(
-            "BadModel".to_string(),
-            Mode {
-                model: invalid_mode_model(),
-                reasoning_effort: Some("high".to_string()),
-            },
-        );
-        settings.modes.insert(
-            "BadReasoning".to_string(),
-            Mode {
-                model: "anthropic:claude-sonnet-4-5".to_string(),
-                reasoning_effort: Some("max".to_string()),
-            },
-        );
+        settings.modes.push(Mode {
+            name: "BadModel".to_string(),
+            model: invalid_mode_model(),
+            reasoning_effort: Some("high".to_string()),
+        });
+        settings.modes.push(Mode {
+            name: "BadReasoning".to_string(),
+            model: "anthropic:claude-sonnet-4-5".to_string(),
+            reasoning_effort: Some("max".to_string()),
+        });
 
         let selected = mode_name_for_state(
             &settings,

@@ -1,6 +1,5 @@
 use acp_utils::settings::SettingsStore;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -10,7 +9,7 @@ use tracing::warn;
 #[serde(rename_all = "camelCase")]
 pub struct AetherCliSettings {
     #[serde(default)]
-    pub modes: BTreeMap<String, Mode>,
+    pub modes: Vec<Mode>,
     #[serde(default = "default_prompts")]
     pub prompts: Vec<String>,
 }
@@ -18,7 +17,7 @@ pub struct AetherCliSettings {
 impl Default for AetherCliSettings {
     fn default() -> Self {
         Self {
-            modes: BTreeMap::new(),
+            modes: Vec::new(),
             prompts: default_prompts(),
         }
     }
@@ -27,10 +26,14 @@ impl Default for AetherCliSettings {
 impl AetherCliSettings {
     /// Merge project-level settings into self (user-level).
     /// - `prompts`: concatenated (user first, then project, deduplicated)
-    /// - `modes`: project overrides user for same keys
+    /// - `modes`: project overrides user for same names, new modes appended
     pub fn merge(&mut self, other: AetherCliSettings) {
-        for (name, mode) in other.modes {
-            self.modes.insert(name, mode);
+        for mode in other.modes {
+            if let Some(existing) = self.modes.iter_mut().find(|m| m.name == mode.name) {
+                *existing = mode;
+            } else {
+                self.modes.push(mode);
+            }
         }
 
         for pattern in other.prompts {
@@ -48,6 +51,7 @@ fn default_prompts() -> Vec<String> {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Mode {
+    pub name: String,
     pub model: String,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
@@ -61,7 +65,7 @@ pub fn load_or_create_settings(project_dir: Option<&Path>) -> AetherCliSettings 
         AetherCliSettings::default()
     };
 
-    if let Some(project) = project_dir.and_then(|dir| load_project_settings(dir)) {
+    if let Some(project) = project_dir.and_then(load_project_settings) {
         settings.merge(project);
     }
 
@@ -92,16 +96,12 @@ mod tests {
     fn round_trip_serde() {
         let temp_dir = TempDir::new().unwrap();
         let store = SettingsStore::from_path(temp_dir.path());
-        let mut modes = BTreeMap::new();
-        modes.insert(
-            "Planner".to_string(),
-            Mode {
+        let settings = AetherCliSettings {
+            modes: vec![Mode {
+                name: "Planner".to_string(),
                 model: "codex:gpt-5.3".to_string(),
                 reasoning_effort: Some("high".to_string()),
-            },
-        );
-        let settings = AetherCliSettings {
-            modes,
+            }],
             prompts: vec!["AGENTS.md".to_string()],
         };
 
@@ -156,25 +156,21 @@ mod tests {
     #[test]
     fn merge_modes_project_overrides() {
         let mut user = AetherCliSettings::default();
-        user.modes.insert(
-            "Fast".to_string(),
-            Mode {
-                model: "user-model".to_string(),
-                reasoning_effort: None,
-            },
-        );
+        user.modes.push(Mode {
+            name: "Fast".to_string(),
+            model: "user-model".to_string(),
+            reasoning_effort: None,
+        });
 
         let mut project = AetherCliSettings::default();
-        project.modes.insert(
-            "Fast".to_string(),
-            Mode {
-                model: "project-model".to_string(),
-                reasoning_effort: Some("high".to_string()),
-            },
-        );
+        project.modes.push(Mode {
+            name: "Fast".to_string(),
+            model: "project-model".to_string(),
+            reasoning_effort: Some("high".to_string()),
+        });
 
         user.merge(project);
-        assert_eq!(user.modes["Fast"].model, "project-model");
+        assert_eq!(user.modes[0].model, "project-model");
     }
 
     #[test]
@@ -214,7 +210,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let store = SettingsStore::from_path(temp_dir.path());
         let settings = AetherCliSettings {
-            modes: BTreeMap::new(),
+            modes: Vec::new(),
             prompts: vec![
                 "AGENTS.md".to_string(),
                 ".aether/rules/*.md".to_string(),
@@ -226,5 +222,17 @@ mod tests {
         let loaded: AetherCliSettings = store.load_or_create();
 
         assert_eq!(loaded, settings);
+    }
+
+    #[test]
+    fn modes_order_preserved_from_json() {
+        let json = r#"{"modes": [{"name": "Zebra", "model": "model-z"}, {"name": "Alpha", "model": "model-a"}, {"name": "Middle", "model": "model-m"}], "prompts": []}"#;
+        let settings: AetherCliSettings = serde_json::from_str(json).unwrap();
+        let mode_names: Vec<_> = settings.modes.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(
+            mode_names,
+            vec!["Zebra", "Alpha", "Middle"],
+            "modes should preserve JSON array order"
+        );
     }
 }

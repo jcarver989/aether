@@ -258,20 +258,16 @@ mod tests {
 
     fn settings_with_modes() -> AetherCliSettings {
         let mut settings = AetherCliSettings::default();
-        settings.modes.insert(
-            "Planner".to_string(),
-            Mode {
-                model: "anthropic:claude-sonnet-4-5".to_string(),
-                reasoning_effort: Some("high".to_string()),
-            },
-        );
-        settings.modes.insert(
-            "Coder".to_string(),
-            Mode {
-                model: "deepseek:deepseek-chat".to_string(),
-                reasoning_effort: None,
-            },
-        );
+        settings.modes.push(Mode {
+            name: "Planner".to_string(),
+            model: "anthropic:claude-sonnet-4-5".to_string(),
+            reasoning_effort: Some("high".to_string()),
+        });
+        settings.modes.push(Mode {
+            name: "Coder".to_string(),
+            model: "deepseek:deepseek-chat".to_string(),
+            reasoning_effort: None,
+        });
         settings
     }
 
