@@ -2,7 +2,7 @@ use super::AppAction;
 use crate::components::command_picker::CommandEntry;
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::progress_indicator::ProgressIndicator;
-use crate::tui::{Effects, ViewContext};
+use crate::tui::{Response, ViewContext};
 use acp_utils::notifications::{
     CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
     ElicitationResponse, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
@@ -14,7 +14,7 @@ use tokio::sync::oneshot;
 use super::UiState;
 
 impl UiState {
-    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Effects<AppAction> {
+    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Response<AppAction> {
         self.grid_loader.visible = false;
 
         match update {
@@ -83,10 +83,10 @@ impl UiState {
             }
         }
 
-        Effects::none()
+        Response::ok()
     }
 
-    pub(crate) fn on_prompt_done(&mut self, context: &ViewContext) -> Effects<AppAction> {
+    pub(crate) fn on_prompt_done(&mut self, context: &ViewContext) -> Response<AppAction> {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
         self.conversation.close_thought_block();
@@ -100,9 +100,9 @@ impl UiState {
         }
 
         if scrollback_lines.is_empty() {
-            Effects::none()
+            Response::ok()
         } else {
-            Effects::one(AppAction::PushScrollback(scrollback_lines))
+            Response::one(AppAction::PushScrollback(scrollback_lines))
         }
     }
 
@@ -110,17 +110,17 @@ impl UiState {
         &mut self,
         params: ElicitationParams,
         response_tx: oneshot::Sender<ElicitationResponse>,
-    ) -> Effects<AppAction> {
+    ) -> Response<AppAction> {
         self.config_overlay = None;
         self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
 
-        Effects::none()
+        Response::ok()
     }
 
     pub(crate) fn on_ext_notification(
         &mut self,
         notification: ExtNotification,
-    ) -> Effects<AppAction> {
+    ) -> Response<AppAction> {
         match notification.method.as_ref() {
             CONTEXT_CLEARED_METHOD => {
                 self.reset_after_context_cleared();
@@ -158,7 +158,7 @@ impl UiState {
             }
         }
 
-        Effects::none()
+        Response::ok()
     }
 
     pub(crate) fn reset_after_context_cleared(&mut self) {
@@ -171,39 +171,39 @@ impl UiState {
         self.progress_indicator = ProgressIndicator::default();
     }
 
-    pub(crate) fn on_prompt_error(&mut self, error: &acp::Error) -> Effects<AppAction> {
+    pub(crate) fn on_prompt_error(&mut self, error: &acp::Error) -> Response<AppAction> {
         tracing::error!("Prompt error: {error}");
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
 
-        Effects::none()
+        Response::ok()
     }
 
-    pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) -> Effects<AppAction> {
+    pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) -> Response<AppAction> {
         self.auth_methods
             .retain(|method| method.id.0.as_ref() != method_id);
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.remove_auth_method(method_id);
         }
 
-        Effects::none()
+        Response::ok()
     }
 
     pub(crate) fn on_authenticate_failed(
         &mut self,
         method_id: &str,
         error: &str,
-    ) -> Effects<AppAction> {
+    ) -> Response<AppAction> {
         tracing::warn!("Provider auth failed for {method_id}: {error}");
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.on_authenticate_failed(method_id);
         }
 
-        Effects::none()
+        Response::ok()
     }
 
-    pub(crate) fn on_connection_closed(&mut self) -> Effects<AppAction> {
-        Effects::exit()
+    pub(crate) fn on_connection_closed(&mut self) -> Response<AppAction> {
+        Response::exit()
     }
 }
 

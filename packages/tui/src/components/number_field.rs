@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
+use crate::components::{Response, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 
 /// Numeric input field supporting integers or floats.
@@ -17,7 +17,6 @@ impl NumberField {
         }
     }
 
-    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         if self.integer_only {
             self.value
@@ -36,9 +35,9 @@ impl NumberField {
 impl Widget for NumberField {
     type Message = ();
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match key.code {
             KeyCode::Char(c) => {
@@ -48,19 +47,25 @@ impl Widget for NumberField {
                 if accept {
                     self.value.push(c);
                 }
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Backspace => {
                 self.value.pop();
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::ignored(),
+            _ => Response::ignored(),
         }
     }
 
     fn render(&self, context: &ViewContext) -> Vec<Line> {
+        self.render_field(context, true)
+    }
+}
+
+impl NumberField {
+    pub fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
         let mut line = Line::new(&self.value);
-        if context.focused {
+        if focused {
             line.push_styled("▏", context.theme.primary());
         }
         vec![line]
@@ -115,14 +120,12 @@ mod tests {
         assert_eq!(field.value, "5");
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn to_json_integer() {
         let field = NumberField::new("42".to_string(), true);
         assert_eq!(field.to_json(), serde_json::json!(42));
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn to_json_float() {
         let field = NumberField::new("3.14".to_string(), false);
@@ -131,7 +134,6 @@ mod tests {
         assert_eq!(field.to_json(), expected);
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn to_json_empty_returns_null() {
         let field = NumberField::new(String::new(), true);

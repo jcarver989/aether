@@ -2,8 +2,7 @@ use std::mem::{Discriminant, discriminant, take};
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::tui::markdown::render_markdown;
-use crate::tui::{Line, ViewContext, Spinner, Widget};
+use crate::tui::{Line, ViewContext, Spinner, Widget, render_markdown};
 
 #[derive(Debug, Clone)]
 pub(crate) enum SegmentContent {
@@ -289,7 +288,7 @@ fn extend_with_vertical_margin(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::components::spinner::BRAILLE_FRAMES;
+    use crate::tui::BRAILLE_FRAMES;
 
     #[test]
     fn renders_empty_when_loader_and_segments_are_empty() {

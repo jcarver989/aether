@@ -10,7 +10,7 @@ use crate::components::server_status::{
     ServerStatusMessage, ServerStatusOverlay, server_status_summary,
 };
 use crate::settings::{list_theme_files, load_or_create_settings};
-use crate::tui::{Line, Outcome, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Line, Response, ViewContext, Widget, WidgetEvent};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
@@ -239,9 +239,9 @@ impl Widget for ConfigOverlay {
     type Message = ConfigOverlayMessage;
 
     #[allow(clippy::too_many_lines)]
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(_key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
 
         // Server overlay has highest priority
@@ -250,12 +250,12 @@ impl Widget for ConfigOverlay {
             return match outcome.into_messages().into_iter().next() {
                 Some(ServerStatusMessage::Close) => {
                     self.server_overlay = None;
-                    Outcome::consumed()
+                    Response::ok()
                 }
                 Some(ServerStatusMessage::Authenticate(name)) => {
-                    Outcome::message(ConfigOverlayMessage::AuthenticateServer(name))
+                    Response::one(ConfigOverlayMessage::AuthenticateServer(name))
                 }
-                None => Outcome::consumed(),
+                None => Response::ok(),
             };
         }
 
@@ -265,12 +265,12 @@ impl Widget for ConfigOverlay {
             return match outcome.into_messages().into_iter().next() {
                 Some(ProviderLoginMessage::Close) => {
                     self.provider_login_overlay = None;
-                    Outcome::consumed()
+                    Response::ok()
                 }
                 Some(ProviderLoginMessage::Authenticate(method_id)) => {
-                    Outcome::message(ConfigOverlayMessage::AuthenticateProvider(method_id))
+                    Response::one(ConfigOverlayMessage::AuthenticateProvider(method_id))
                 }
-                None => Outcome::consumed(),
+                None => Response::ok(),
             };
         }
 
@@ -281,12 +281,12 @@ impl Widget for ConfigOverlay {
                 Some(ModelSelectorMessage::Done(changes)) => {
                     self.model_selector = None;
                     if changes.is_empty() {
-                        Outcome::consumed()
+                        Response::ok()
                     } else {
-                        Outcome::message(ConfigOverlayMessage::ApplyConfigChanges(changes))
+                        Response::one(ConfigOverlayMessage::ApplyConfigChanges(changes))
                     }
                 }
-                None => Outcome::consumed(),
+                None => Response::ok(),
             };
         }
 
@@ -296,21 +296,21 @@ impl Widget for ConfigOverlay {
             return match outcome.into_messages().into_iter().next() {
                 Some(ConfigPickerMessage::Close) => {
                     self.picker = None;
-                    Outcome::consumed()
+                    Response::ok()
                 }
                 Some(ConfigPickerMessage::ApplySelection(change)) => {
                     self.picker = None;
                     match change {
                         Some(change) => {
                             self.menu.apply_change(&change);
-                            Outcome::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
+                            Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![
                                 change,
                             ]))
                         }
-                        None => Outcome::consumed(),
+                        None => Response::ok(),
                     }
                 }
-                None => Outcome::consumed(),
+                None => Response::ok(),
             };
         }
 
@@ -318,13 +318,13 @@ impl Widget for ConfigOverlay {
         let outcome = self.menu.on_event(event);
         let messages = outcome.into_messages();
         match messages.as_slice() {
-            [ConfigMenuMessage::CloseAll] => Outcome::message(ConfigOverlayMessage::Close),
+            [ConfigMenuMessage::CloseAll] => Response::one(ConfigOverlayMessage::Close),
             [ConfigMenuMessage::OpenSelectedPicker] => {
                 self.picker = self
                     .menu
                     .selected_entry()
                     .and_then(ConfigPicker::from_entry);
-                Outcome::consumed()
+                Response::ok()
             }
             [ConfigMenuMessage::OpenModelSelector] => {
                 if let Some(entry) = self.menu.selected_entry() {
@@ -335,18 +335,18 @@ impl Widget for ConfigOverlay {
                         self.current_reasoning_effort.as_deref(),
                     ));
                 }
-                Outcome::consumed()
+                Response::ok()
             }
             [ConfigMenuMessage::OpenMcpServers] => {
                 self.server_overlay = Some(ServerStatusOverlay::new(self.server_statuses.clone()));
-                Outcome::consumed()
+                Response::ok()
             }
             [ConfigMenuMessage::OpenProviderLogins] => {
                 let entries = self.build_login_entries();
                 self.provider_login_overlay = Some(ProviderLoginOverlay::new(entries));
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::consumed(),
+            _ => Response::ok(),
         }
     }
 
@@ -386,10 +386,9 @@ impl Widget for ConfigOverlay {
             ActiveConfigOverlayView::Menu => self.menu.render(&child_context),
         };
 
-        let mut container = Panel::new()
+        let mut container = Panel::new(context.theme.muted())
             .title(" Configuration ")
             .footer(footer)
-            .border_color(context.theme.muted())
             .fill_height(height)
             .gap(GAP);
         container.push(child_lines);

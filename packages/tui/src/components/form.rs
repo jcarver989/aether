@@ -1,4 +1,4 @@
-use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
+use crate::components::{Response, ViewContext, Widget, WidgetEvent};
 use crate::focus::FocusRing;
 use crate::line::Line;
 use crate::style::Style;
@@ -54,7 +54,6 @@ impl Form {
         }
     }
 
-    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         let mut map = serde_json::Map::new();
         for field in &self.fields {
@@ -90,7 +89,7 @@ impl Form {
                 label_style,
             );
 
-            let field_lines = field.kind.render(&context.with_focused(is_selected));
+            let field_lines = field.kind.render_field(context, is_selected);
             if let Some((first, rest)) = field_lines.split_first() {
                 label_line.append_line(first);
                 lines.push(label_line);
@@ -128,52 +127,45 @@ impl Form {
     }
 }
 
+macro_rules! dispatch_field {
+    ($self:expr, $w:ident => $body:expr) => {
+        match $self {
+            FormFieldKind::Text($w) => $body,
+            FormFieldKind::Number($w) => $body,
+            FormFieldKind::Boolean($w) => $body,
+            FormFieldKind::SingleSelect($w) => $body,
+            FormFieldKind::MultiSelect($w) => $body,
+        }
+    };
+}
+
 impl FormFieldKind {
-    #[cfg(feature = "serde")]
     fn to_json(&self) -> serde_json::Value {
-        match self {
-            FormFieldKind::Text(w) => w.to_json(),
-            FormFieldKind::Number(w) => w.to_json(),
-            FormFieldKind::Boolean(w) => w.to_json(),
-            FormFieldKind::SingleSelect(w) => w.to_json(),
-            FormFieldKind::MultiSelect(w) => w.to_json(),
-        }
+        dispatch_field!(self, w => w.to_json())
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
-        match self {
-            FormFieldKind::Text(w) => w.render(context),
-            FormFieldKind::Number(w) => w.render(context),
-            FormFieldKind::Boolean(w) => w.render(context),
-            FormFieldKind::SingleSelect(w) => w.render(context),
-            FormFieldKind::MultiSelect(w) => w.render(context),
-        }
+    fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
+        dispatch_field!(self, w => w.render_field(context, focused))
     }
 
-    fn handle_event(&mut self, event: &WidgetEvent) -> Outcome<()> {
-        match self {
-            FormFieldKind::Text(w) => w.on_event(event),
-            FormFieldKind::Number(w) => w.on_event(event),
-            FormFieldKind::Boolean(w) => w.on_event(event),
-            FormFieldKind::SingleSelect(w) => w.on_event(event),
-            FormFieldKind::MultiSelect(w) => w.on_event(event),
-        }
+    fn handle_event(&mut self, event: &WidgetEvent) -> Response<()> {
+        dispatch_field!(self, w => w.on_event(event))
     }
 }
 
 impl Widget for Form {
     type Message = FormMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match key.code {
-            KeyCode::Esc => return Outcome::message(FormMessage::Close),
-            KeyCode::Enter => return Outcome::message(FormMessage::Submit),
+            KeyCode::Esc => return Response::one(FormMessage::Close),
+            KeyCode::Enter => return Response::one(FormMessage::Submit),
             KeyCode::Tab | KeyCode::BackTab => {
                 self.focus.handle_key(*key);
-                return Outcome::consumed();
+                return Response::ok();
             }
             _ => {}
         }
@@ -184,7 +176,7 @@ impl Widget for Form {
                 return result.discard_messages();
             }
         }
-        Outcome::consumed()
+        Response::ok()
     }
 
     fn render(&self, context: &ViewContext) -> Vec<Line> {

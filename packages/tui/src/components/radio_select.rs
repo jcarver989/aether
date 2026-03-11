@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 
 use super::select_option::SelectOption;
-use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
+use crate::components::{Response, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -16,7 +16,6 @@ impl RadioSelect {
         Self { options, selected }
     }
 
-    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         self.options
             .get(self.selected)
@@ -53,29 +52,35 @@ impl RadioSelect {
 impl Widget for RadioSelect {
     type Message = ();
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         if self.options.is_empty() {
-            return Outcome::ignored();
+            return Response::ignored();
         }
 
         match key.code {
             KeyCode::Left | KeyCode::Up => {
                 self.selected = (self.selected + self.options.len() - 1) % self.options.len();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Right | KeyCode::Down => {
                 self.selected = (self.selected + 1) % self.options.len();
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::ignored(),
+            _ => Response::ignored(),
         }
     }
 
     fn render(&self, context: &ViewContext) -> Vec<Line> {
-        if context.focused {
+        self.render_field(context, true)
+    }
+}
+
+impl RadioSelect {
+    pub fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
+        if focused {
             self.render_options(context)
         } else {
             vec![self.render_inline(context)]
@@ -127,14 +132,12 @@ mod tests {
         assert_eq!(rs.selected, 2); // wraps to end
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn to_json_returns_selected_value() {
         let rs = RadioSelect::new(sample_options(), 1);
         assert_eq!(rs.to_json(), serde_json::json!("b"));
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn to_json_empty_options_returns_null() {
         let rs = RadioSelect::new(vec![], 0);

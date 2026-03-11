@@ -1,6 +1,5 @@
 use crate::components::reasoning_bar::reasoning_bar;
-use crate::tui::rendering::soft_wrap::{display_width_line, display_width_text};
-use crate::tui::{Line, ViewContext};
+use crate::tui::{Line, ViewContext, display_width_text};
 use utils::ReasoningEffort;
 
 pub struct StatusLine<'a> {
@@ -63,7 +62,7 @@ impl StatusLine<'_> {
 
         let width = context.size.width as usize;
         let right_len = display_width_text(&right);
-        let left_len = display_width_line(&left_line);
+        let left_len = left_line.display_width();
 
         let padding = width.saturating_sub(left_len + right_len);
         left_line.push_text(" ".repeat(padding));

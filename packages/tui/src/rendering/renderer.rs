@@ -68,7 +68,6 @@ impl<T: Write> Renderer<T> {
         ViewContext {
             size: self.size,
             theme: self.theme.clone(),
-            focused: true,
             #[cfg(feature = "syntax")]
             highlighter: self.highlighter.clone(),
         }

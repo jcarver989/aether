@@ -62,8 +62,8 @@ fn terminal_state_diff_after_mutation() {
 #[test]
 fn unfocused_renders_without_cursor() {
     let tf = TextField::new("hello".to_string());
-    let ctx = ViewContext::new((80, 24)).with_focused(false);
-    let lines = tf.render(&ctx);
+    let ctx = ViewContext::new((80, 24));
+    let lines = tf.render_field(&ctx, false);
     let term = render_lines(&lines, 80, 24);
     assert_buffer_eq(&term, &["hello"]);
 }
@@ -71,8 +71,8 @@ fn unfocused_renders_without_cursor() {
 #[test]
 fn unfocused_empty_renders_empty() {
     let tf = TextField::new(String::new());
-    let ctx = ViewContext::new((80, 24)).with_focused(false);
-    let lines = tf.render(&ctx);
+    let ctx = ViewContext::new((80, 24));
+    let lines = tf.render_field(&ctx, false);
     let term = render_lines(&lines, 80, 24);
     assert_buffer_eq(&term, &[""]);
 }

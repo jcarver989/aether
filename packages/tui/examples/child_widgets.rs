@@ -1,5 +1,5 @@
 use tui::{
-    App, AppEvent, Cursor, Effects, Frame, KeyCode, Line, Outcome, ViewContext, Runner, Style,
+    App, AppEvent, Cursor, Frame, KeyCode, Line, Response, ViewContext, Runner, Style,
     Widget, WidgetEvent,
 };
 
@@ -10,23 +10,18 @@ struct IncrementButton {
 impl Widget for IncrementButton {
     type Message = i32;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match key.code {
-            KeyCode::Enter => Outcome::message(1),
-            _ => Outcome::ignored(),
+            KeyCode::Enter => Response::one(1),
+            _ => Response::ignored(),
         }
     }
 
     fn render(&self, context: &ViewContext) -> Vec<Line> {
-        let style = if context.focused {
-            Style::default().bold().color(context.theme.primary())
-        } else {
-            Style::default().color(context.theme.text_secondary())
-        };
-
+        let style = Style::default().bold().color(context.theme.primary());
         vec![Line::with_style(format!("[ {} ]", self.label), style)]
     }
 }
@@ -45,17 +40,17 @@ impl App for WidgetApp {
         &mut self,
         event: AppEvent<Self::Event>,
         _ctx: &ViewContext,
-    ) -> Effects<Self::Effect> {
+    ) -> Response<Self::Effect> {
         match event {
-            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
+            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
             AppEvent::Key(key) => {
                 let result = self.button.on_event(&WidgetEvent::Key(key));
                 for message in result.into_messages() {
                     self.count += message;
                 }
-                Effects::none()
+                Response::ok()
             }
-            _ => Effects::none(),
+            _ => Response::ok(),
         }
     }
 
@@ -68,7 +63,7 @@ impl App for WidgetApp {
             Line::new("Press q to quit."),
             Line::new(""),
         ];
-        lines.extend(self.button.render(&ctx.with_focused(true)));
+        lines.extend(self.button.render(ctx));
 
         Frame::new(
             lines,

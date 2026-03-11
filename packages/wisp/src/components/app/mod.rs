@@ -11,7 +11,7 @@ pub(crate) use state::UiState;
 
 use crate::tui::advanced::Terminal;
 use crate::tui::{
-    App as TuiApp, AppEvent, Cursor, Effects, Frame, Layout, Line, ViewContext, Widget,
+    App as TuiApp, AppEvent, Cursor, Response, Frame, Layout, Line, ViewContext, Widget,
     WidgetEvent,
 };
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
@@ -157,7 +157,7 @@ impl TuiApp for App {
         &mut self,
         event: AppEvent<Self::Event>,
         context: &ViewContext,
-    ) -> Effects<Self::Effect> {
+    ) -> Response<Self::Effect> {
         let effects = match event {
             AppEvent::Key(key_event) => {
                 let event = WidgetEvent::Key(key_event);
@@ -178,7 +178,7 @@ impl TuiApp for App {
                 self.state.on_event(&event, Some(&mut self.git_diff_mode))
             }
             AppEvent::Tick(_) => self.state.on_event(&WidgetEvent::Tick, None),
-            AppEvent::Resize(_) => Effects::none(),
+            AppEvent::Resize(_) => Response::ok(),
             AppEvent::External(event) => match event {
                 AcpEvent::SessionUpdate(update) => self.state.on_session_update(*update),
                 AcpEvent::ExtNotification(notification) => {
@@ -294,7 +294,7 @@ impl TuiApp for App {
         &mut self,
         terminal: &mut Terminal<'_, impl std::io::Write>,
         effect: Self::Effect,
-    ) -> Result<Effects<Self::Effect>, Self::Error> {
+    ) -> Result<Response<Self::Effect>, Self::Error> {
         let follow_up = self.apply_action(terminal, effect).await?;
         self.prepare_for_view(&terminal.context());
         Ok(follow_up)
@@ -322,7 +322,7 @@ mod tests {
     use crate::components::config_overlay::ConfigOverlayMessage;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
-    use crate::tui::{Outcome, WidgetEvent};
+    use crate::tui::{Response, WidgetEvent};
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use std::fs;
     use std::time::{Duration, Instant};
@@ -334,7 +334,7 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    fn custom_theme() -> crate::tui::theme::Theme {
+    fn custom_theme() -> crate::tui::Theme {
         let temp_dir = TempDir::new().expect("temp dir");
         let themes_dir = temp_dir.path().join("themes");
         fs::create_dir_all(&themes_dir).expect("create themes dir");
@@ -346,7 +346,7 @@ mod tests {
             },
         };
 
-        let mut theme = crate::tui::theme::Theme::default();
+        let mut theme = crate::tui::Theme::default();
         with_wisp_home(temp_dir.path(), || {
             theme = crate::settings::load_theme(&settings);
         });
@@ -432,7 +432,7 @@ mod tests {
             acp::SessionId::new("test"),
             PathBuf::from("."),
         );
-        let outcome = Outcome::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
+        let outcome = Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
                 config_id: THEME_CONFIG_ID.to_string(),
                 new_value: "catppuccin.tmTheme".to_string(),
@@ -441,7 +441,7 @@ mod tests {
 
         let effects = app.state.handle_config_overlay_messages(outcome);
 
-        let actions = effects.into_effects();
+        let actions = effects.into_messages();
         assert!(matches!(
             actions.as_slice(),
             [AppAction::SetTheme {
@@ -460,7 +460,7 @@ mod tests {
             acp::SessionId::new("test"),
             PathBuf::from("."),
         );
-        let outcome = Outcome::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
+        let outcome = Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
                 config_id: THEME_CONFIG_ID.to_string(),
                 new_value: "   ".to_string(),
@@ -469,7 +469,7 @@ mod tests {
 
         let effects = app.state.handle_config_overlay_messages(outcome);
 
-        let actions = effects.into_effects();
+        let actions = effects.into_messages();
         assert!(matches!(
             actions.as_slice(),
             [AppAction::SetTheme { file: None }]
@@ -486,7 +486,7 @@ mod tests {
             acp::SessionId::new("test"),
             PathBuf::from("."),
         );
-        let outcome = Outcome::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
+        let outcome = Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
                 config_id: "model".to_string(),
                 new_value: "gpt-5".to_string(),
@@ -495,7 +495,7 @@ mod tests {
 
         let effects = app.state.handle_config_overlay_messages(outcome);
 
-        let actions = effects.into_effects();
+        let actions = effects.into_messages();
         assert!(matches!(
             actions.as_slice(),
             [AppAction::SetConfigOption {

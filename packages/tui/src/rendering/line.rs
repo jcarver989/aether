@@ -2,6 +2,7 @@ use crossterm::style::{Attribute, Color, SetAttribute, SetBackgroundColor, SetFo
 use std::fmt::Write as _;
 use unicode_width::UnicodeWidthStr;
 
+use super::soft_wrap;
 use super::span::Span;
 use super::style::Style;
 
@@ -120,6 +121,16 @@ impl Line {
         }
 
         out
+    }
+
+    /// Display width in terminal columns (accounts for unicode widths).
+    pub fn display_width(&self) -> usize {
+        soft_wrap::display_width_line(self)
+    }
+
+    /// Soft-wrap this line to fit within `width` columns.
+    pub fn soft_wrap(&self, width: u16) -> Vec<Line> {
+        soft_wrap::soft_wrap_line(self, width)
     }
 
     #[allow(dead_code)]

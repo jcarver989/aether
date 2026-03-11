@@ -11,7 +11,7 @@ use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::{
-    Effects, FormMessage, KeyEvent, Line, Outcome, ViewContext, Spinner, Widget, WidgetEvent,
+    FormMessage, KeyEvent, Line, Response, ViewContext, Spinner, Widget, WidgetEvent,
 };
 use std::time::Instant;
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
@@ -102,7 +102,7 @@ impl UiState {
         &mut self,
         event: &WidgetEvent,
         git_diff_mode: Option<&mut GitDiffMode>,
-    ) -> Effects<AppAction> {
+    ) -> Response<AppAction> {
         match event {
             WidgetEvent::Key(key_event) => self.handle_key(*key_event),
             WidgetEvent::Paste(_) => {
@@ -116,7 +116,7 @@ impl UiState {
                         mode.on_mouse_event(*mouse);
                     }
                 }
-                Effects::none()
+                Response::ok()
             }
             WidgetEvent::Tick => {
                 let now = Instant::now();
@@ -124,14 +124,14 @@ impl UiState {
                 self.tool_call_statuses.on_tick(now);
                 self.plan_tracker.on_tick(now);
                 self.progress_indicator.on_tick();
-                Effects::none()
+                Response::ok()
             }
         }
     }
 
-    fn handle_key(&mut self, key_event: KeyEvent) -> Effects<AppAction> {
+    fn handle_key(&mut self, key_event: KeyEvent) -> Response<AppAction> {
         if self.keybindings.exit.matches(key_event) {
-            return Effects::exit();
+            return Response::exit();
         }
 
         if let Some(effects) = self.handle_elicitation_key(key_event) {
@@ -144,9 +144,9 @@ impl UiState {
                 self.screen_mode = ScreenMode::Conversation;
             }
             return if close_git_diff {
-                Effects::none()
+                Response::ok()
             } else {
-                Effects::one(AppAction::OpenGitDiffViewer)
+                Response::one(AppAction::OpenGitDiffViewer)
             };
         }
 
@@ -156,7 +156,7 @@ impl UiState {
             overlay.on_event(&event)
         } else {
             if matches!(self.screen_mode, ScreenMode::GitDiff) {
-                return Effects::none();
+                return Response::ok();
             }
 
             let composer_outcome = self.prompt_composer.on_event(&event);
@@ -167,22 +167,22 @@ impl UiState {
             if self.keybindings.cycle_reasoning.matches(key_event) {
                 return self
                     .cycle_reasoning_option()
-                    .map(Effects::one)
+                    .map(Response::one)
                     .unwrap_or_default();
             }
 
             if self.keybindings.cycle_mode.matches(key_event) {
                 return self
                     .cycle_quick_option()
-                    .map(Effects::one)
+                    .map(Response::one)
                     .unwrap_or_default();
             }
 
             if self.keybindings.cancel.matches(key_event) && self.waiting_for_response {
-                return Effects::one(AppAction::Cancel);
+                return Response::one(AppAction::Cancel);
             }
 
-            return Effects::none();
+            return Response::ok();
         };
 
         self.handle_config_overlay_messages(outcome)
@@ -242,7 +242,7 @@ impl UiState {
     pub(crate) fn handle_elicitation_key(
         &mut self,
         key_event: KeyEvent,
-    ) -> Option<Effects<AppAction>> {
+    ) -> Option<Response<AppAction>> {
         let elicitation_form = self.elicitation_form.as_mut()?;
         let outcome = elicitation_form.form.on_event(&WidgetEvent::Key(key_event));
 
@@ -264,13 +264,13 @@ impl UiState {
             }
         }
 
-        Some(Effects::none())
+        Some(Response::ok())
     }
 
     pub(crate) fn handle_prompt_composer_messages(
         &mut self,
-        outcome: Outcome<PromptComposerMessage>,
-    ) -> Effects<AppAction> {
+        outcome: Response<PromptComposerMessage>,
+    ) -> Response<AppAction> {
         outcome
             .into_messages()
             .into_iter()
@@ -303,8 +303,8 @@ impl UiState {
 
     pub(crate) fn handle_config_overlay_messages(
         &mut self,
-        outcome: Outcome<ConfigOverlayMessage>,
-    ) -> Effects<AppAction> {
+        outcome: Response<ConfigOverlayMessage>,
+    ) -> Response<AppAction> {
         outcome
             .into_messages()
             .into_iter()
@@ -558,7 +558,7 @@ mod tests {
     #[test]
     fn prompt_composer_messages_process_all_messages_in_order() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let outcome = Outcome::messages(vec![
+        let outcome = Response::many(vec![
             PromptComposerMessage::OpenConfig,
             PromptComposerMessage::SubmitRequested {
                 user_input: "hello".to_string(),
@@ -576,7 +576,7 @@ mod tests {
             state.waiting_for_response,
             "submit should mark waiting state"
         );
-        assert!(effects.into_effects().iter().any(|e| matches!(
+        assert!(effects.into_messages().iter().any(|e| matches!(
             e,
             AppAction::PromptSubmit { user_input, .. } if user_input == "hello"
         )));
@@ -586,7 +586,7 @@ mod tests {
     fn config_overlay_messages_process_all_messages_in_order() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         state.open_config_overlay();
-        let outcome = Outcome::messages(vec![
+        let outcome = Response::many(vec![
             ConfigOverlayMessage::ApplyConfigChanges(vec![ConfigChange {
                 config_id: "model".to_string(),
                 new_value: "gpt-5".to_string(),
@@ -600,7 +600,7 @@ mod tests {
             state.config_overlay.is_none(),
             "close message should be applied"
         );
-        assert!(effects.into_effects().iter().any(|e| matches!(
+        assert!(effects.into_messages().iter().any(|e| matches!(
             e,
             AppAction::SetConfigOption { config_id, new_value }
                 if config_id == "model" && new_value == "gpt-5"
@@ -611,9 +611,9 @@ mod tests {
     fn handled_prompt_composer_result_returns_no_effects() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
 
-        let effects = state.handle_prompt_composer_messages(Outcome::consumed());
+        let effects = state.handle_prompt_composer_messages(Response::ok());
 
-        assert!(effects.into_effects().is_empty());
+        assert!(effects.into_messages().is_empty());
     }
 
     #[test]
@@ -639,7 +639,7 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
         let effects = state.on_event(&WidgetEvent::Key(key), None);
         assert!(effects
-            .into_effects()
+            .into_messages()
             .iter()
             .any(|e| matches!(e, AppAction::OpenGitDiffViewer)));
     }
@@ -653,7 +653,7 @@ mod tests {
         let effects = state.on_event(&WidgetEvent::Key(key), None);
 
         assert!(matches!(state.screen_mode, ScreenMode::Conversation));
-        assert!(effects.into_effects().is_empty());
+        assert!(effects.into_messages().is_empty());
     }
 
     #[test]
@@ -673,7 +673,7 @@ mod tests {
         let effects = state.on_event(&WidgetEvent::Key(key), None);
 
         assert!(!effects
-            .into_effects()
+            .into_messages()
             .iter()
             .any(|e| matches!(e, AppAction::OpenGitDiffViewer)));
     }
@@ -690,7 +690,7 @@ mod tests {
         assert!(!effects.is_exit());
         assert!(
             !effects
-                .into_effects()
+                .into_messages()
                 .iter()
                 .any(|e| matches!(e, AppAction::Cancel)),
             "Esc should NOT cancel a running prompt while git diff mode is active"

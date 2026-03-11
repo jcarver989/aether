@@ -16,20 +16,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [features]
-default = ["syntax", "markdown", "serde", "runtime", "picker", "diff"]
+default = ["syntax", "runtime", "picker"]
 
-## Enable syntax highlighting via syntect.
-## Required for: markdown code blocks, diff highlighting, loading .tmTheme files.
-syntax = ["dep:syntect"]
-
-## Enable markdown rendering (implies syntax).
-markdown = ["syntax", "dep:pulldown-cmark"]
-
-## Enable diff preview rendering with syntax highlighting (implies syntax).
-diff = ["syntax"]
-
-## Enable `to_json()` methods for form widgets.
-serde = ["dep:serde_json"]
+## Enable syntax highlighting, markdown rendering, and diff previews via syntect.
+syntax = ["dep:syntect", "dep:pulldown-cmark"]
 
 ## Enable async terminal event handling via tokio.
 runtime = ["dep:tokio"]
@@ -46,7 +36,7 @@ syntect = { workspace = true, optional = true }
 pulldown-cmark = { workspace = true, optional = true }
 nucleo = { workspace = true, optional = true }
 unicode-width = { workspace = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, optional = true }
 tracing = { workspace = true }
 

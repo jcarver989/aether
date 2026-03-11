@@ -1,6 +1,6 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
-    Combobox, Line, Outcome, PickerKey, ViewContext, Searchable, Widget, WidgetEvent,
+    Combobox, Line, Response, PickerKey, ViewContext, Searchable, Widget, WidgetEvent,
     classify_key,
 };
 impl Searchable for ConfigMenuValue {
@@ -96,37 +96,37 @@ impl ConfigPicker {
 impl Widget for ConfigPicker {
     type Message = ConfigPickerMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match classify_key(*key, self.combobox.query().is_empty()) {
-            PickerKey::Escape => Outcome::message(ConfigPickerMessage::Close),
+            PickerKey::Escape => Response::one(ConfigPickerMessage::Close),
             PickerKey::MoveUp => {
                 self.move_selection_up();
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::MoveDown => {
                 self.move_selection_down();
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::Confirm => {
                 let change = self.confirm_selection();
-                Outcome::message(ConfigPickerMessage::ApplySelection(change))
+                Response::one(ConfigPickerMessage::ApplySelection(change))
             }
             PickerKey::Char(c) => {
                 self.push_query_char(c);
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::Backspace => {
                 self.pop_query_char();
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::BackspaceOnEmpty
             | PickerKey::ControlChar
-            | PickerKey::Other => Outcome::consumed(),
+            | PickerKey::Other => Response::ok(),
         }
     }
 

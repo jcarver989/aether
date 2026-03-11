@@ -1,4 +1,4 @@
 pub mod diff_types;
 
-#[cfg(feature = "diff")]
+#[cfg(feature = "syntax")]
 pub mod diff;

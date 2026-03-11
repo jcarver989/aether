@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
 
 pub mod app;
-pub use app::{App, AppEvent, Effects, Runner, run};
+pub use app::{App, AppEvent, Runner, run};
 
 pub mod terminal;
 pub use terminal::{MouseCapture, TerminalSession};

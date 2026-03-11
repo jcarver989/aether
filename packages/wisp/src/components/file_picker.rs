@@ -1,5 +1,5 @@
 use crate::tui::{
-    Combobox, Line, Outcome, PickerKey, PickerMessage, ViewContext, Searchable, Widget,
+    Combobox, Line, Response, PickerKey, PickerMessage, ViewContext, Searchable, Widget,
     WidgetEvent, classify_key,
 };
 use ignore::WalkBuilder;
@@ -92,43 +92,43 @@ fn should_exclude_path(path: &Path) -> bool {
 impl Widget for FilePicker {
     type Message = FilePickerMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key_event) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match classify_key(*key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => Outcome::message(PickerMessage::Close),
+            PickerKey::Escape => Response::one(PickerMessage::Close),
             PickerKey::MoveUp => {
                 self.combobox.move_up();
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::Confirm => {
                 if let Some(selected) = self.combobox.selected().cloned() {
-                    Outcome::message(PickerMessage::Confirm(selected))
+                    Response::one(PickerMessage::Confirm(selected))
                 } else {
-                    Outcome::message(PickerMessage::Close)
+                    Response::one(PickerMessage::Close)
                 }
             }
             PickerKey::Char(c) => {
                 if c.is_whitespace() {
-                    return Outcome::message(PickerMessage::CloseWithChar(c));
+                    return Response::one(PickerMessage::CloseWithChar(c));
                 }
                 self.combobox.push_query_char(c);
-                Outcome::message(PickerMessage::CharTyped(c))
+                Response::one(PickerMessage::CharTyped(c))
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                Outcome::message(PickerMessage::PopChar)
+                Response::one(PickerMessage::PopChar)
             }
-            PickerKey::BackspaceOnEmpty => Outcome::message(PickerMessage::CloseAndPopChar),
+            PickerKey::BackspaceOnEmpty => Response::one(PickerMessage::CloseAndPopChar),
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::ControlChar
-            | PickerKey::Other => Outcome::ignored(),
+            | PickerKey::Other => Response::ignored(),
         }
     }
 
@@ -163,7 +163,6 @@ impl Widget for FilePicker {
 mod tests {
     use super::*;
     use crate::tui::ViewContext;
-    use crate::tui::rendering::soft_wrap::display_width_line;
     use crate::tui::test_picker::{rendered_lines_from, rendered_raw_lines_with_context, type_query};
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -283,7 +282,7 @@ mod tests {
             .expect("should render a selected line");
 
         assert_eq!(
-            display_width_line(selected_line),
+            selected_line.display_width(),
             context.size.width as usize,
             "selected row should fill the full visible width",
         );

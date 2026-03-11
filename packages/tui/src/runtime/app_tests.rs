@@ -3,7 +3,8 @@
 //! This file tests the new simplified app API with framework-owned rerender policy.
 //! The framework decides when to render (after each update/effect cycle), not the app.
 
-use super::app::{App, AppEvent, Effects};
+use super::app::{App, AppEvent};
+use crate::components::Response;
 use crate::components::{Cursor, ViewContext};
 use crate::rendering::renderer::{Renderer, Terminal};
 use crate::testing::TestTerminal;
@@ -30,17 +31,17 @@ fn key_event(code: KeyCode) -> CrosstermEvent {
 #[test]
 fn command_from_vec_collapses_common_cases() {
     let empty: Vec<i32> = vec![];
-    assert!(matches!(Effects::from_vec(empty), Effects::None));
-    assert!(matches!(Effects::from_vec(vec![1]), Effects::One(1)));
-    assert!(matches!(Effects::from_vec(vec![1, 2]), Effects::Many(values) if values == vec![1, 2]));
+    assert!(matches!(Response::from_vec(empty), Response::Ok));
+    assert!(matches!(Response::from_vec(vec![1]), Response::One(1)));
+    assert!(matches!(Response::from_vec(vec![1, 2]), Response::Many(values) if values == vec![1, 2]));
 }
 
 #[test]
 fn command_merge_preserves_order_and_quit() {
-    let merged = Effects::one(1).merge(Effects::many(vec![2, 3]));
-    assert!(matches!(merged, Effects::Many(values) if values == vec![1, 2, 3]));
+    let merged = Response::one(1).merge(Response::many(vec![2, 3]));
+    assert!(matches!(merged, Response::Many(values) if values == vec![1, 2, 3]));
 
-    let quit_merged: Effects<i32> = Effects::one(1).merge(Effects::exit());
+    let quit_merged: Response<i32> = Response::one(1).merge(Response::exit());
     assert!(quit_merged.is_exit());
 }
 
@@ -61,14 +62,14 @@ async fn app_rerenders_after_state_changing_events() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                     self.count += 1;
-                    Effects::none()
+                    Response::ok()
                 }
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
-                _ => Effects::none(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
+                _ => Response::ok(),
             }
         }
 
@@ -128,14 +129,14 @@ async fn app_rerenders_after_external_events() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<String>, _ctx: &ViewContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<String>, _ctx: &ViewContext) -> Response<()> {
             match event {
                 AppEvent::External(msg) => {
                     self.value = msg;
-                    Effects::one(())
+                    Response::one(())
                 }
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
-                _ => Effects::none(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
+                _ => Response::ok(),
             }
         }
 
@@ -155,8 +156,8 @@ async fn app_rerenders_after_external_events() {
             &mut self,
             _terminal: &mut Terminal<'_, impl Write>,
             _effect: (),
-        ) -> Result<Effects<()>, io::Error> {
-            Ok(Effects::exit())
+        ) -> Result<Response<()>, io::Error> {
+            Ok(Response::exit())
         }
     }
 
@@ -204,13 +205,13 @@ async fn app_rerenders_after_effect_completion() {
         type Effect = TestEffect;
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<TestEffect> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<TestEffect> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char(' ') => {
-                    Effects::one(TestEffect::Increment)
+                    Response::one(TestEffect::Increment)
                 }
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
-                _ => Effects::none(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
+                _ => Response::ok(),
             }
         }
 
@@ -230,11 +231,11 @@ async fn app_rerenders_after_effect_completion() {
             &mut self,
             _terminal: &mut Terminal<'_, impl Write>,
             effect: TestEffect,
-        ) -> Result<Effects<TestEffect>, io::Error> {
+        ) -> Result<Response<TestEffect>, io::Error> {
             match effect {
                 TestEffect::Increment => {
                     self.count += 1;
-                    Ok(Effects::none())
+                    Ok(Response::ok())
                 }
             }
         }
@@ -285,11 +286,11 @@ async fn frame_diffing_avoids_unnecessary_terminal_writes() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
             match event {
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
                 // No state change - frame content stays the same
-                _ => Effects::none(),
+                _ => Response::ok(),
             }
         }
 
@@ -354,18 +355,18 @@ async fn tick_events_trigger_rerender() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
             match event {
                 AppEvent::Tick(_) => {
                     self.ticks += 1;
                     self.tick_count.set(self.tick_count.get() + 1);
                     if self.ticks >= 2 {
-                        Effects::exit()
+                        Response::exit()
                     } else {
-                        Effects::none()
+                        Response::ok()
                     }
                 }
-                _ => Effects::none(),
+                _ => Response::ok(),
             }
         }
 
@@ -428,10 +429,10 @@ async fn resize_triggers_rerender_with_updated_size() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
             match event {
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
-                _ => Effects::none(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
+                _ => Response::ok(),
             }
         }
 
@@ -499,14 +500,14 @@ async fn app_does_not_require_props_for_rendering() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                     self.state += 1;
-                    Effects::none()
+                    Response::ok()
                 }
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
-                _ => Effects::none(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
+                _ => Response::ok(),
             }
         }
 
@@ -582,18 +583,18 @@ impl App for CounterApp {
     type Effect = ();
     type Error = std::io::Error;
 
-    fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
+    fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
         match event {
-            AppEvent::Key(key) if key.code == KeyCode::Char('q') => return Effects::exit(),
+            AppEvent::Key(key) if key.code == KeyCode::Char('q') => return Response::exit(),
             AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                 self.count += 1;
-                Effects::none()
+                Response::ok()
             }
             AppEvent::Key(key) if key.code == KeyCode::Char('k') => {
                 self.count -= 1;
-                Effects::none()
+                Response::ok()
             }
-            _ => Effects::none(),
+            _ => Response::ok(),
         }
     }
 
@@ -612,7 +613,7 @@ impl App for CounterApp {
         &mut self,
         _terminal: &mut Terminal<'_, impl Write>,
         _effect: (),
-    ) -> Result<Effects<()>, std::io::Error> {
-        Ok(Effects::none())
+    ) -> Result<Response<()>, std::io::Error> {
+        Ok(Response::ok())
     }
 }
