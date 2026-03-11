@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use super::frame::Frame;
 use super::line::Line;
-use super::prepared_frame::PreparedFrame;
 use super::render_context::ViewContext;
 use super::size::Size;
 use super::terminal_screen::{TerminalCommand, TerminalScreen};
+use super::visual_frame::VisualFrame;
 use crate::theme::Theme;
 
 #[cfg(feature = "syntax")]
@@ -27,9 +27,7 @@ pub struct Renderer<W: Write> {
     theme: Arc<Theme>,
     #[cfg(feature = "syntax")]
     highlighter: Arc<SyntaxHighlighter>,
-    render_epoch: u64,
-    prev_frame: Vec<Line>,
-    last_width: u16,
+    prev_visible_lines: Vec<Line>,
     flushed_visual_count: usize,
     resized: bool,
 }
@@ -42,9 +40,7 @@ impl<W: Write> Renderer<W> {
             theme: Arc::new(theme),
             #[cfg(feature = "syntax")]
             highlighter: Arc::new(SyntaxHighlighter::new()),
-            render_epoch: 0,
-            prev_frame: Vec::new(),
-            last_width: 0,
+            prev_visible_lines: Vec::new(),
             flushed_visual_count: 0,
             resized: false,
         }
@@ -55,28 +51,26 @@ impl<W: Write> Renderer<W> {
     /// The closure receives a ViewContext and returns a Frame.
     pub fn render_frame(&mut self, f: impl FnOnce(&ViewContext) -> Frame) -> io::Result<()> {
         let context = self.context();
-        let frame = f(&context).soft_wrap(self.size.width).clamp_cursor();
+        let frame = f(&context).clamp_cursor();
         self.render_frame_internal(&frame)
     }
 
     pub fn clear_screen(&mut self) -> io::Result<()> {
-        self.bump_render_epoch();
-        self.terminal.execute(&[TerminalCommand::ClearAll])?;
-        self.prev_frame.clear();
+        let commands = vec![TerminalCommand::ClearAll];
+        self.terminal.execute(&commands)?;
+        self.prev_visible_lines.clear();
         self.flushed_visual_count = 0;
+        self.resized = false;
         Ok(())
     }
 
     pub fn push_to_scrollback(&mut self, lines: &[Line]) -> io::Result<()> {
-        self.bump_render_epoch();
         self.push_lines_to_scrollback(lines, self.size.width)
     }
 
     pub fn on_resize(&mut self, size: impl Into<Size>) {
-        self.bump_render_epoch();
         self.size = size.into();
-        self.last_width = self.size.width;
-        self.prev_frame.clear();
+        self.prev_visible_lines.clear();
         self.terminal.reset_cursor_offset();
         self.resized = true;
     }
@@ -91,7 +85,6 @@ impl<W: Write> Renderer<W> {
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
-        self.bump_render_epoch();
         self.theme = Arc::new(theme);
     }
 
@@ -104,71 +97,69 @@ impl<W: Write> Renderer<W> {
         &mut self.terminal.writer
     }
 
-    pub fn render_epoch(&self) -> u64 {
-        self.render_epoch
-    }
-
     #[cfg(test)]
     fn flushed_visual_count(&self) -> usize {
         self.flushed_visual_count
     }
 
-    fn bump_render_epoch(&mut self) {
-        self.render_epoch = self.render_epoch.wrapping_add(1);
-    }
-
     fn render_frame_internal(&mut self, frame: &Frame) -> io::Result<()> {
-        let prepared = PreparedFrame::new(
-            frame.lines(),
-            frame.cursor(),
-            self.size,
-            self.flushed_visual_count,
-        );
-
-        if self.resized {
-            self.terminal.execute(&[TerminalCommand::ClearViewport])?;
-            self.prev_frame.clear();
-            if !prepared.scrollback_lines().is_empty() {
-                self.push_visual_to_scrollback(prepared.scrollback_lines())?;
-            }
-            self.flushed_visual_count = prepared.overflow();
-            self.resized = false;
+        let visual = VisualFrame::from_frame(frame, self.size, self.flushed_visual_count);
+        let previous_visible_rows = if self.resized {
+            0
         } else {
-            self.terminal
-                .execute(&[TerminalCommand::RestoreCursorPosition])?;
-            if !prepared.scrollback_lines().is_empty() {
-                self.push_visual_to_scrollback(prepared.scrollback_lines())?;
-                self.flushed_visual_count = prepared.overflow();
-            }
+            self.prev_visible_lines.len()
+        };
+
+        let mut commands = vec![if self.resized {
+            TerminalCommand::ClearViewport
+        } else {
+            TerminalCommand::RestoreCursorPosition
+        }];
+
+        if !visual.scrollback_lines().is_empty() {
+            commands.push(TerminalCommand::PushScrollbackLines {
+                previous_visible_rows,
+                lines: visual.scrollback_lines(),
+            });
+            self.flushed_visual_count = visual.overflow();
+            self.prev_visible_lines.clear();
         }
 
-        self.render_visible(prepared.visible_lines(), self.size.width)?;
+        if let Some(cmd) =
+            build_visible_rewrite_command(&self.prev_visible_lines, visual.visible_lines())
+        {
+            commands.push(cmd);
+        }
+
         let rows_up = u16::try_from(
-            prepared
+            visual
                 .visible_lines()
                 .len()
                 .saturating_sub(1)
-                .saturating_sub(prepared.cursor().row),
+                .saturating_sub(visual.cursor().row),
         )
         .unwrap_or(u16::MAX);
 
-        self.terminal.execute(&[
-            TerminalCommand::SetCursorVisible(prepared.cursor().is_visible),
-            TerminalCommand::PlaceCursor {
-                rows_up,
-                col: u16::try_from(prepared.cursor().col).unwrap_or(u16::MAX),
-            },
-        ])?;
+        commands.push(TerminalCommand::SetCursorVisible(
+            visual.cursor().is_visible,
+        ));
+        commands.push(TerminalCommand::PlaceCursor {
+            rows_up,
+            col: u16::try_from(visual.cursor().col).unwrap_or(u16::MAX),
+        });
+
+        self.terminal.execute(&commands)?;
+        let (_, visible_lines, _, _) = visual.into_parts();
+        self.prev_visible_lines = visible_lines;
+        self.resized = false;
+
         Ok(())
     }
 
     fn push_lines_to_scrollback(&mut self, lines: &[Line], width: u16) -> io::Result<()> {
-        use super::soft_wrap::soft_wrap_line;
+        use super::visual_frame::prepare_lines_for_scrollback;
 
-        let visual: Vec<Line> = lines
-            .iter()
-            .flat_map(|line| soft_wrap_line(line, width))
-            .collect();
+        let visual = prepare_lines_for_scrollback(lines, width);
 
         if visual.is_empty() {
             self.flushed_visual_count = 0;
@@ -176,81 +167,64 @@ impl<W: Write> Renderer<W> {
         }
 
         let remaining = &visual[self.flushed_visual_count.min(visual.len())..];
-
-        self.terminal
-            .execute(&[TerminalCommand::RestoreCursorPosition])?;
+        let mut commands = vec![TerminalCommand::RestoreCursorPosition];
 
         if remaining.is_empty() {
             self.flushed_visual_count = 0;
+            self.terminal.execute(&commands)?;
             return Ok(());
         }
 
-        self.push_visual_to_scrollback(remaining)?;
+        commands.push(TerminalCommand::PushScrollbackLines {
+            previous_visible_rows: self.prev_visible_lines.len(),
+            lines: remaining,
+        });
+
+        self.terminal.execute(&commands)?;
+        self.prev_visible_lines.clear();
         self.flushed_visual_count = 0;
         Ok(())
     }
+}
 
-    fn render_visible(&mut self, new_frame: &[Line], width: u16) -> io::Result<usize> {
-        let prev_on_screen = self.prev_frame.len();
+/// Builds command for visible line diffing.
+/// Returns Some(command) if rewrite is needed, None if frames are identical.
+fn build_visible_rewrite_command<'a>(
+    prev_visible_lines: &[Line],
+    new_frame: &'a [Line],
+) -> Option<TerminalCommand<'a>> {
+    let previous_visible_rows = prev_visible_lines.len();
 
-        if width != self.last_width {
-            self.last_width = width;
-        }
-
-        if new_frame == self.prev_frame {
-            return Ok(0);
-        }
-
-        let first_diff = self
-            .prev_frame
-            .iter()
-            .zip(new_frame.iter())
-            .position(|(old, new)| old != new)
-            .unwrap_or(self.prev_frame.len().min(new_frame.len()));
-
-        let rewrite_from = if new_frame.is_empty() {
-            0
-        } else {
-            first_diff.min(new_frame.len() - 1)
-        };
-
-        let to_write = &new_frame[rewrite_from..];
-        let append_after_existing = rewrite_from >= prev_on_screen && prev_on_screen > 0;
-
-        let rows_up = if rewrite_from < prev_on_screen {
-            u16::try_from(prev_on_screen - 1 - rewrite_from).unwrap_or(u16::MAX)
-        } else {
-            0
-        };
-
-        self.terminal
-            .execute(&[TerminalCommand::RewriteVisibleLines {
-                rows_up,
-                append_after_existing,
-                lines: to_write,
-            }])?;
-
-        let lines_written = to_write.len();
-        self.prev_frame = new_frame.to_vec();
-        Ok(lines_written)
+    if new_frame == prev_visible_lines {
+        return None;
     }
 
-    fn push_visual_to_scrollback(&mut self, visual_lines: &[Line]) -> io::Result<()> {
-        if visual_lines.is_empty() {
-            return Ok(());
-        }
+    let first_diff = prev_visible_lines
+        .iter()
+        .zip(new_frame.iter())
+        .position(|(old, new)| old != new)
+        .unwrap_or(prev_visible_lines.len().min(new_frame.len()));
 
-        let prev_frame_len = self.prev_frame.len();
+    let rewrite_from = if new_frame.is_empty() {
+        0
+    } else {
+        first_diff.min(new_frame.len() - 1)
+    };
 
-        self.terminal
-            .execute(&[TerminalCommand::PushScrollbackLines {
-                previous_visible_rows: prev_frame_len,
-                lines: visual_lines,
-            }])?;
+    let to_write = &new_frame[rewrite_from..];
+    let append_after_existing = rewrite_from >= previous_visible_rows && previous_visible_rows > 0;
 
-        self.prev_frame.clear();
-        Ok(())
-    }
+    let rows_up = if rewrite_from < previous_visible_rows {
+        u16::try_from(previous_visible_rows - 1 - rewrite_from).unwrap_or(u16::MAX)
+    } else {
+        0
+    };
+
+    Some(TerminalCommand::RewriteVisibleLines {
+        rows_up,
+        append_after_existing,
+        lines: to_write,
+    })
 }
 
 #[cfg(test)]
@@ -347,8 +321,15 @@ mod tests {
     fn empty_to_empty_is_noop() {
         let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
         renderer.on_resize((80, 24));
-        renderer.render_visible(&[], 80).unwrap();
-        assert!(renderer.terminal.writer.bytes.is_empty());
+        let empty_frame = Frame::new(vec![], Cursor::default());
+        renderer.render_frame_internal(&empty_frame).unwrap();
+        renderer.terminal.writer.bytes.clear();
+        renderer.render_frame_internal(&empty_frame).unwrap();
+        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
+        assert!(
+            !output.contains("\x1b[J"),
+            "should not clear from cursor down on identical empty frames"
+        );
     }
 
     #[test]
@@ -447,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn push_to_scrollback_clears_prev_frame() {
+    fn push_to_scrollback_clears_prev_visible_lines() {
         let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
         renderer.on_resize((80, 24));
 
@@ -486,6 +467,24 @@ mod tests {
     }
 
     #[test]
+    fn clear_screen_resets_resize_state() {
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
+        renderer.on_resize((80, 24));
+        renderer.clear_screen().unwrap();
+
+        renderer.terminal.writer.bytes.clear();
+        renderer.render_frame_internal(&frame(&["hello"])).unwrap();
+
+        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
+        assert!(output.contains("hello"));
+        assert!(
+            !output.contains("\x1b[2J"),
+            "render after clear_screen should not still clear viewport, got: {:?}",
+            output
+        );
+    }
+
+    #[test]
     fn resize_marks_terminal_for_full_clear_and_redraw() {
         let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
         renderer.on_resize((10, 4));
@@ -504,7 +503,7 @@ mod tests {
     }
 
     #[test]
-    fn prepared_frame_splits_overflow_from_visible_lines() {
+    fn visual_frame_splits_overflow_from_visible_lines() {
         let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
         renderer.on_resize((80, 2));
 
@@ -524,5 +523,28 @@ mod tests {
         renderer.render_frame_internal(&f).unwrap();
 
         assert_eq!(renderer.flushed_visual_count(), 2);
+    }
+
+    #[test]
+    fn cursor_remapped_after_wrap() {
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
+        renderer.on_resize((3, 24));
+
+        let f = Frame::new(
+            vec![Line::new("abcdef")],
+            Cursor {
+                row: 0,
+                col: 5,
+                is_visible: true,
+            },
+        );
+        renderer.render_frame_internal(&f).unwrap();
+
+        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
+        assert!(
+            output.contains("\x1b[2C"),
+            "cursor should be at col 2 (MoveRight(2)), got: {:?}",
+            output
+        );
     }
 }
