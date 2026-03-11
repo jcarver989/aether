@@ -491,12 +491,12 @@ mod tests {
         let text = lines[0].plain_text();
         assert!(text.contains("gpt-4o"), "should contain model name");
         assert!(
-            text.contains("▰▰▱"),
+            text.contains("▰ ▰ ▱"),
             "should contain reasoning bar for medium effort"
         );
         // Verify order: model should appear before bar
         let model_index = text.find("gpt-4o").expect("model position");
-        let bar_index = text.find("▰▰▱").expect("bar position");
+        let bar_index = text.find("▰ ▰ ▱").expect("bar position");
         assert!(
             model_index < bar_index,
             "model should come before reasoning bar"
@@ -535,7 +535,7 @@ mod tests {
         let ctx = ViewContext::new((80, 24));
         let lines = status.render(&ctx);
         let text = lines[0].plain_text();
-        assert!(text.contains("▱▱▱"), "should contain empty reasoning bar");
+        assert!(text.contains("▱ ▱ ▱"), "should contain empty reasoning bar");
     }
 
     #[test]
@@ -569,9 +569,9 @@ mod tests {
     fn reasoning_bar_mapping() {
         use super::reasoning_bar;
 
-        assert_eq!(reasoning_bar(None), "▱▱▱");
-        assert_eq!(reasoning_bar(Some(ReasoningEffort::Low)), "▰▱▱");
-        assert_eq!(reasoning_bar(Some(ReasoningEffort::Medium)), "▰▰▱");
-        assert_eq!(reasoning_bar(Some(ReasoningEffort::High)), "▰▰▰");
+        assert_eq!(reasoning_bar(None), "▱ ▱ ▱");
+        assert_eq!(reasoning_bar(Some(ReasoningEffort::Low)), "▰ ▱ ▱");
+        assert_eq!(reasoning_bar(Some(ReasoningEffort::Medium)), "▰ ▰ ▱");
+        assert_eq!(reasoning_bar(Some(ReasoningEffort::High)), "▰ ▰ ▰");
     }
 }

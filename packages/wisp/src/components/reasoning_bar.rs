@@ -1,12 +1,12 @@
 use utils::ReasoningEffort;
 
-/// Renders a 3-slot reasoning effort bar.
+/// Renders a 3-slot reasoning effort bar with space separators.
 ///
 /// Visual mapping:
-/// - `None` => `▱▱▱` (all empty)
-/// - `Low` => `▰▱▱` (1 filled)
-/// - `Medium` => `▰▰▱` (2 filled)
-/// - `High` => `▰▰▰` (3 filled)
+/// - `None` => `▱ ▱ ▱` (all empty)
+/// - `Low` => `▰ ▱ ▱` (1 filled)
+/// - `Medium` => `▰ ▰ ▱` (2 filled)
+/// - `High` => `▰ ▰ ▰` (3 filled)
 pub(crate) fn reasoning_bar(effort: Option<ReasoningEffort>) -> String {
     const TOTAL: usize = 3;
     let filled = match effort {
@@ -15,9 +15,10 @@ pub(crate) fn reasoning_bar(effort: Option<ReasoningEffort>) -> String {
         Some(ReasoningEffort::Medium) => 2,
         Some(ReasoningEffort::High) => 3,
     };
-    let filled_part: String = "▰".repeat(filled.min(TOTAL));
-    let empty_part: String = "▱".repeat(TOTAL.saturating_sub(filled));
-    format!("{filled_part}{empty_part}")
+    let slots: Vec<&str> = (0..TOTAL)
+        .map(|i| if i < filled { "▰" } else { "▱" })
+        .collect();
+    slots.join(" ")
 }
 
 #[cfg(test)]
@@ -26,21 +27,21 @@ mod tests {
 
     #[test]
     fn bar_none() {
-        assert_eq!(reasoning_bar(None), "▱▱▱");
+        assert_eq!(reasoning_bar(None), "▱ ▱ ▱");
     }
 
     #[test]
     fn bar_low() {
-        assert_eq!(reasoning_bar(Some(ReasoningEffort::Low)), "▰▱▱");
+        assert_eq!(reasoning_bar(Some(ReasoningEffort::Low)), "▰ ▱ ▱");
     }
 
     #[test]
     fn bar_medium() {
-        assert_eq!(reasoning_bar(Some(ReasoningEffort::Medium)), "▰▰▱");
+        assert_eq!(reasoning_bar(Some(ReasoningEffort::Medium)), "▰ ▰ ▱");
     }
 
     #[test]
     fn bar_high() {
-        assert_eq!(reasoning_bar(Some(ReasoningEffort::High)), "▰▰▰");
+        assert_eq!(reasoning_bar(Some(ReasoningEffort::High)), "▰ ▰ ▰");
     }
 }
