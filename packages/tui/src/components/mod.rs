@@ -1,18 +1,19 @@
 pub mod checkbox;
+pub mod component;
 pub mod form;
-pub mod interactive_component;
 pub mod layout;
 pub mod multi_select;
 pub mod number_field;
 pub mod panel;
 pub mod radio_select;
+pub mod select_list;
 pub mod select_option;
 pub mod spinner;
 pub mod text_field;
 
 pub use crate::rendering::frame::{Cursor, Frame};
 pub use crate::rendering::render_context::ViewContext;
-pub use interactive_component::{PickerMessage, Response, Widget, WidgetEvent};
+pub use component::{Component, Event, PickerMessage, merge};
 pub use layout::Layout;
 pub use panel::{BORDER_H_PAD, Panel};
 

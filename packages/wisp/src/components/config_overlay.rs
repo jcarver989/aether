@@ -10,7 +10,7 @@ use crate::components::server_status::{
 };
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::Panel;
-use crate::tui::{Line, Response, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Component, Event, FocusRing, Line, ViewContext};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
@@ -25,14 +25,11 @@ const BORDER_LEFT_WIDTH: usize = 2;
 /// Gap between children inside the container.
 const GAP: usize = 1;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ActiveConfigOverlayView {
-    Menu,
-    ServerOverlay,
-    ProviderLoginOverlay,
-    ModelSelector,
-    Picker,
-}
+const FOCUS_MENU: usize = 0;
+const FOCUS_PICKER: usize = 1;
+const FOCUS_MODEL_SELECTOR: usize = 2;
+const FOCUS_SERVER_OVERLAY: usize = 3;
+const FOCUS_PROVIDER_LOGIN: usize = 4;
 
 pub struct ConfigOverlay {
     menu: ConfigMenu,
@@ -43,6 +40,7 @@ pub struct ConfigOverlay {
     server_statuses: Vec<McpServerStatusEntry>,
     auth_methods: Vec<acp::AuthMethod>,
     current_reasoning_effort: Option<String>,
+    focus: FocusRing,
 }
 
 #[derive(Debug)]
@@ -68,12 +66,14 @@ impl ConfigOverlay {
             server_statuses,
             auth_methods,
             current_reasoning_effort: None,
+            focus: FocusRing::new(5),
         }
     }
 
     #[allow(dead_code)]
     pub fn with_server_overlay(mut self) -> Self {
         self.server_overlay = Some(ServerStatusOverlay::new(self.server_statuses.clone()));
+        self.focus.focus(FOCUS_SERVER_OVERLAY);
         self
     }
 
@@ -96,13 +96,13 @@ impl ConfigOverlay {
     }
 
     pub(crate) fn update_child_viewport(&mut self, max_height: usize) {
-        match self.active_view() {
-            ActiveConfigOverlayView::ModelSelector => {
+        match self.focus.focused() {
+            FOCUS_MODEL_SELECTOR => {
                 if let Some(ref mut ms) = self.model_selector {
                     ms.update_viewport(max_height);
                 }
             }
-            ActiveConfigOverlayView::Picker => {
+            FOCUS_PICKER => {
                 if let Some(ref mut p) = self.picker {
                     p.update_viewport(max_height);
                 }
@@ -147,7 +147,7 @@ impl ConfigOverlay {
         self.auth_methods.retain(|m| m.id.0.as_ref() != method_id);
         if let Some(ref mut overlay) = self.provider_login_overlay {
             overlay.remove_entry(method_id);
-            if overlay.entries.is_empty() {
+            if overlay.is_empty() {
                 self.provider_login_overlay = None;
             }
         }
@@ -165,12 +165,8 @@ impl ConfigOverlay {
     }
 
     pub fn on_authenticate_failed(&mut self, method_id: &str) {
-        if let Some(entry) = self
-            .provider_login_overlay
-            .as_mut()
-            .and_then(|o| o.entries.iter_mut().find(|e| e.method_id == method_id))
-        {
-            entry.status = ProviderLoginStatus::NeedsLogin;
+        if let Some(ref mut overlay) = self.provider_login_overlay {
+            overlay.reset_to_needs_login(method_id);
         }
     }
 
@@ -193,8 +189,8 @@ impl ConfigOverlay {
     /// Returns the row offset of the cursor within the overlay (0-indexed from top of overlay).
     /// Only meaningful when a search-based submenu is open (picker or model selector).
     pub fn cursor_row_offset(&self) -> usize {
-        match self.active_view() {
-            ActiveConfigOverlayView::Picker | ActiveConfigOverlayView::ModelSelector => TOP_CHROME,
+        match self.focus.focused() {
+            FOCUS_PICKER | FOCUS_MODEL_SELECTOR => TOP_CHROME,
             _ => 0,
         }
     }
@@ -203,143 +199,144 @@ impl ConfigOverlay {
         self.picker.is_some()
     }
 
-    fn active_view(&self) -> ActiveConfigOverlayView {
-        if self.server_overlay.is_some() {
-            ActiveConfigOverlayView::ServerOverlay
-        } else if self.provider_login_overlay.is_some() {
-            ActiveConfigOverlayView::ProviderLoginOverlay
-        } else if self.model_selector.is_some() {
-            ActiveConfigOverlayView::ModelSelector
-        } else if self.picker.is_some() {
-            ActiveConfigOverlayView::Picker
-        } else {
-            ActiveConfigOverlayView::Menu
-        }
-    }
-
     fn footer_text(&self) -> &'static str {
-        match self.active_view() {
-            ActiveConfigOverlayView::ModelSelector => {
+        match self.focus.focused() {
+            FOCUS_MODEL_SELECTOR => {
                 "[Space/Enter] Toggle  [\u{2190}/\u{2192}] Reasoning  [Esc] Done"
             }
-            ActiveConfigOverlayView::Picker => "[Enter] Confirm  [Esc] Back",
-            ActiveConfigOverlayView::ServerOverlay
-            | ActiveConfigOverlayView::ProviderLoginOverlay => "[Enter] Authenticate  [Esc] Back",
-            ActiveConfigOverlayView::Menu => "[Enter] Select  [Esc] Close",
+            FOCUS_PICKER => "[Enter] Confirm  [Esc] Back",
+            FOCUS_SERVER_OVERLAY | FOCUS_PROVIDER_LOGIN => "[Enter] Authenticate  [Esc] Back",
+            _ => "[Enter] Select  [Esc] Close",
         }
     }
 }
 
-impl Widget for ConfigOverlay {
+impl Component for ConfigOverlay {
     type Message = ConfigOverlayMessage;
 
     #[allow(clippy::too_many_lines)]
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(_key) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(_key) = event else {
+            return None;
         };
 
-        // Server overlay has highest priority
-        if let Some(ref mut overlay) = self.server_overlay {
-            let outcome = overlay.on_event(event);
-            return match outcome.into_messages().into_iter().next() {
-                Some(ServerStatusMessage::Close) => {
-                    self.server_overlay = None;
-                    Response::ok()
-                }
-                Some(ServerStatusMessage::Authenticate(name)) => {
-                    Response::one(ConfigOverlayMessage::AuthenticateServer(name))
-                }
-                None => Response::ok(),
-            };
-        }
-
-        // Provider login overlay has second priority
-        if let Some(ref mut overlay) = self.provider_login_overlay {
-            let outcome = overlay.on_event(event);
-            return match outcome.into_messages().into_iter().next() {
-                Some(ProviderLoginMessage::Close) => {
-                    self.provider_login_overlay = None;
-                    Response::ok()
-                }
-                Some(ProviderLoginMessage::Authenticate(method_id)) => {
-                    Response::one(ConfigOverlayMessage::AuthenticateProvider(method_id))
-                }
-                None => Response::ok(),
-            };
-        }
-
-        // Model selector has third priority
-        if let Some(ref mut selector) = self.model_selector {
-            let outcome = selector.on_event(event);
-            return match outcome.into_messages().into_iter().next() {
-                Some(ModelSelectorMessage::Done(changes)) => {
-                    self.model_selector = None;
-                    if changes.is_empty() {
-                        Response::ok()
-                    } else {
-                        Response::one(ConfigOverlayMessage::ApplyConfigChanges(changes))
+        match self.focus.focused() {
+            FOCUS_SERVER_OVERLAY => {
+                let overlay = self.server_overlay.as_mut().expect("server overlay");
+                let outcome = overlay.on_event(event);
+                match outcome.unwrap_or_default().into_iter().next() {
+                    Some(ServerStatusMessage::Close) => {
+                        self.server_overlay = None;
+                        self.focus.focus(FOCUS_MENU);
+                        Some(vec![])
                     }
+                    Some(ServerStatusMessage::Authenticate(name)) => {
+                        Some(vec![ConfigOverlayMessage::AuthenticateServer(name)])
+                    }
+                    None => Some(vec![]),
                 }
-                None => Response::ok(),
-            };
-        }
-
-        // Picker has fourth priority
-        if let Some(ref mut picker) = self.picker {
-            let outcome = picker.on_event(event);
-            return match outcome.into_messages().into_iter().next() {
-                Some(ConfigPickerMessage::Close) => {
-                    self.picker = None;
-                    Response::ok()
+            }
+            FOCUS_PROVIDER_LOGIN => {
+                let overlay = self
+                    .provider_login_overlay
+                    .as_mut()
+                    .expect("provider login overlay");
+                let outcome = overlay.on_event(event);
+                match outcome.unwrap_or_default().into_iter().next() {
+                    Some(ProviderLoginMessage::Close) => {
+                        self.provider_login_overlay = None;
+                        self.focus.focus(FOCUS_MENU);
+                        Some(vec![])
+                    }
+                    Some(ProviderLoginMessage::Authenticate(method_id)) => {
+                        Some(vec![ConfigOverlayMessage::AuthenticateProvider(method_id)])
+                    }
+                    None => Some(vec![]),
                 }
-                Some(ConfigPickerMessage::ApplySelection(change)) => {
-                    self.picker = None;
-                    match change {
-                        Some(change) => {
-                            self.menu.apply_change(&change);
-                            Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![change]))
+            }
+            FOCUS_MODEL_SELECTOR => {
+                let selector = self.model_selector.as_mut().expect("model selector");
+                let outcome = selector.on_event(event);
+                match outcome.unwrap_or_default().into_iter().next() {
+                    Some(ModelSelectorMessage::Done(changes)) => {
+                        self.model_selector = None;
+                        self.focus.focus(FOCUS_MENU);
+                        if changes.is_empty() {
+                            Some(vec![])
+                        } else {
+                            Some(vec![ConfigOverlayMessage::ApplyConfigChanges(changes)])
                         }
-                        None => Response::ok(),
                     }
+                    None => Some(vec![]),
                 }
-                None => Response::ok(),
-            };
-        }
-
-        // Menu handles remaining input
-        let outcome = self.menu.on_event(event);
-        let messages = outcome.into_messages();
-        match messages.as_slice() {
-            [ConfigMenuMessage::CloseAll] => Response::one(ConfigOverlayMessage::Close),
-            [ConfigMenuMessage::OpenSelectedPicker] => {
-                self.picker = self
-                    .menu
-                    .selected_entry()
-                    .and_then(ConfigPicker::from_entry);
-                Response::ok()
             }
-            [ConfigMenuMessage::OpenModelSelector] => {
-                if let Some(entry) = self.menu.selected_entry() {
-                    let current = Some(entry.current_raw_value.as_str()).filter(|v| !v.is_empty());
-                    self.model_selector = Some(ModelSelector::from_model_entry(
-                        entry,
-                        current,
-                        self.current_reasoning_effort.as_deref(),
-                    ));
+            FOCUS_PICKER => {
+                let picker = self.picker.as_mut().expect("picker");
+                let outcome = picker.on_event(event);
+                match outcome.unwrap_or_default().into_iter().next() {
+                    Some(ConfigPickerMessage::Close) => {
+                        self.picker = None;
+                        self.focus.focus(FOCUS_MENU);
+                        Some(vec![])
+                    }
+                    Some(ConfigPickerMessage::ApplySelection(change)) => {
+                        self.picker = None;
+                        self.focus.focus(FOCUS_MENU);
+                        match change {
+                            Some(change) => {
+                                self.menu.apply_change(&change);
+                                Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![change])])
+                            }
+                            None => Some(vec![]),
+                        }
+                    }
+                    None => Some(vec![]),
                 }
-                Response::ok()
             }
-            [ConfigMenuMessage::OpenMcpServers] => {
-                self.server_overlay = Some(ServerStatusOverlay::new(self.server_statuses.clone()));
-                Response::ok()
+            _ => {
+                // Menu handles input
+                let outcome = self.menu.on_event(event);
+                let messages = outcome.unwrap_or_default();
+                match messages.as_slice() {
+                    [ConfigMenuMessage::CloseAll] => Some(vec![ConfigOverlayMessage::Close]),
+                    [ConfigMenuMessage::OpenSelectedPicker] => {
+                        self.picker = self
+                            .menu
+                            .selected_entry()
+                            .and_then(ConfigPicker::from_entry);
+                        if self.picker.is_some() {
+                            self.focus.focus(FOCUS_PICKER);
+                        }
+                        Some(vec![])
+                    }
+                    [ConfigMenuMessage::OpenModelSelector] => {
+                        if let Some(entry) = self.menu.selected_entry() {
+                            let current =
+                                Some(entry.current_raw_value.as_str()).filter(|v| !v.is_empty());
+                            self.model_selector = Some(ModelSelector::from_model_entry(
+                                entry,
+                                current,
+                                self.current_reasoning_effort.as_deref(),
+                            ));
+                            self.focus.focus(FOCUS_MODEL_SELECTOR);
+                        }
+                        Some(vec![])
+                    }
+                    [ConfigMenuMessage::OpenMcpServers] => {
+                        self.server_overlay =
+                            Some(ServerStatusOverlay::new(self.server_statuses.clone()));
+                        self.focus.focus(FOCUS_SERVER_OVERLAY);
+                        Some(vec![])
+                    }
+                    [ConfigMenuMessage::OpenProviderLogins] => {
+                        let entries = self.build_login_entries();
+                        self.provider_login_overlay = Some(ProviderLoginOverlay::new(entries));
+                        self.focus.focus(FOCUS_PROVIDER_LOGIN);
+                        Some(vec![])
+                    }
+                    _ => Some(vec![]),
+                }
             }
-            [ConfigMenuMessage::OpenProviderLogins] => {
-                let entries = self.build_login_entries();
-                self.provider_login_overlay = Some(ProviderLoginOverlay::new(entries));
-                Response::ok()
-            }
-            _ => Response::ok(),
         }
     }
 
@@ -355,28 +352,24 @@ impl Widget for ConfigOverlay {
         let inner_w = Panel::inner_width(context.size.width);
         let child_context = context.with_size((inner_w, child_max_height));
 
-        let child_lines = match self.active_view() {
-            ActiveConfigOverlayView::ServerOverlay => self
+        let child_lines = match self.focus.focused() {
+            FOCUS_SERVER_OVERLAY => self
                 .server_overlay
                 .as_ref()
-                .expect("active server overlay")
+                .expect("server overlay")
                 .render(&child_context),
-            ActiveConfigOverlayView::ProviderLoginOverlay => self
+            FOCUS_PROVIDER_LOGIN => self
                 .provider_login_overlay
                 .as_ref()
-                .expect("active provider login overlay")
+                .expect("provider login overlay")
                 .render(&child_context),
-            ActiveConfigOverlayView::ModelSelector => self
+            FOCUS_MODEL_SELECTOR => self
                 .model_selector
                 .as_ref()
-                .expect("active model selector")
+                .expect("model selector")
                 .render(&child_context),
-            ActiveConfigOverlayView::Picker => self
-                .picker
-                .as_ref()
-                .expect("active picker")
-                .render(&child_context),
-            ActiveConfigOverlayView::Menu => self.menu.render(&child_context),
+            FOCUS_PICKER => self.picker.as_ref().expect("picker").render(&child_context),
+            _ => self.menu.render(&child_context),
         };
 
         let mut container = Panel::new(context.theme.muted())
@@ -524,7 +517,7 @@ mod tests {
     fn footer_shows_confirm_and_back_for_picker() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         // Open picker
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
         let context = ViewContext::new((80, 24));
         let lines = overlay.render(&context);
         let footer = lines[lines.len() - 2].plain_text();
@@ -576,7 +569,7 @@ mod tests {
     #[test]
     fn render_picker_hides_top_level_rows() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
 
         let lines = render_plain_text(&mut overlay);
         let text = lines.join("\n");
@@ -591,8 +584,8 @@ mod tests {
     #[test]
     fn render_model_selector_hides_top_level_rows() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
 
         let lines = render_plain_text(&mut overlay);
         let text = lines.join("\n");
@@ -630,10 +623,10 @@ mod tests {
         let mut menu = make_menu();
         menu.add_provider_logins_entry("2 needs login");
         let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
-        let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
-        assert!(outcome.is_handled());
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        assert!(outcome.is_some());
 
         let lines = render_plain_text(&mut overlay);
         let text = lines.join("\n");
@@ -655,7 +648,7 @@ mod tests {
     #[test]
     fn picker_cursor_row_offset_matches_submenu_only_layout() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
 
         assert_eq!(overlay.cursor_row_offset(), TOP_CHROME);
     }
@@ -663,8 +656,8 @@ mod tests {
     #[test]
     fn esc_closes_overlay() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
-        let messages = outcome.into_messages();
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+        let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ConfigOverlayMessage::Close]));
     }
 
@@ -674,44 +667,44 @@ mod tests {
         menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
         let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
 
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // open picker on Theme
-        let _ = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down))); // select nord.tmTheme
-        let _ = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // confirm
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker on Theme
+        let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))); // select nord.tmTheme
+        let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))); // confirm
 
-        assert_eq!(overlay.menu.options[0].config_id, THEME_CONFIG_ID);
-        assert_eq!(overlay.menu.options[0].current_raw_value, "nord.tmTheme");
-        assert_eq!(overlay.menu.options[0].current_value_index, 1);
+        assert_eq!(overlay.menu.options()[0].config_id, THEME_CONFIG_ID);
+        assert_eq!(overlay.menu.options()[0].current_raw_value, "nord.tmTheme");
+        assert_eq!(overlay.menu.options()[0].current_value_index, 1);
     }
 
     #[test]
     fn enter_opens_picker() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
-        assert!(outcome.is_handled());
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        assert!(outcome.is_some());
         assert!(overlay.has_picker());
     }
 
     #[test]
     fn picker_esc_closes_picker_not_overlay() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // open picker
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker
         assert!(overlay.has_picker());
 
-        let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
-        assert!(outcome.is_handled());
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+        assert!(outcome.is_some());
         assert!(!overlay.has_picker());
         // No messages — overlay remains open
-        assert!(outcome.into_messages().is_empty());
+        assert!(outcome.unwrap().is_empty());
     }
 
     #[test]
     fn picker_confirm_returns_config_change_action() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // open picker
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down))); // move to second option
-        let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // confirm
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker
+        overlay.on_event(&Event::Key(key(KeyCode::Down))); // move to second option
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter))); // confirm
 
-        let messages = outcome.into_messages();
+        let messages = outcome.unwrap();
         match messages.as_slice() {
             [ConfigOverlayMessage::ApplyConfigChanges(changes)] => {
                 assert_eq!(changes.len(), 1);
@@ -729,10 +722,10 @@ mod tests {
         let mut overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
         assert!(render_footer(&mut overlay).contains("Authenticate"));
 
-        let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
-        assert!(outcome.is_handled());
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+        assert!(outcome.is_some());
         assert!(render_footer(&mut overlay).contains("[Enter] Select"));
-        assert!(outcome.into_messages().is_empty());
+        assert!(outcome.unwrap().is_empty());
     }
 
     #[test]
@@ -744,7 +737,7 @@ mod tests {
     #[test]
     fn cursor_col_with_picker_includes_border_and_prefix() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // open picker for Provider
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker for Provider
         let col = overlay.cursor_col();
         // "│ " (2) + "  Provider search: " (19) + query (0) = should be > 0
         assert!(col > 0);
@@ -787,7 +780,7 @@ mod tests {
             assert!(
                 overlay
                     .menu
-                    .options
+                    .options()
                     .iter()
                     .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
                 "MCP servers entry should exist before update"
@@ -817,7 +810,7 @@ mod tests {
             assert!(
                 overlay
                     .menu
-                    .options
+                    .options()
                     .iter()
                     .any(|e| e.config_id == THEME_CONFIG_ID),
                 "Theme entry should survive update_config_options"
@@ -825,7 +818,7 @@ mod tests {
             assert!(
                 overlay
                     .menu
-                    .options
+                    .options()
                     .iter()
                     .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
                 "MCP servers entry should survive update_config_options"
@@ -838,8 +831,8 @@ mod tests {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         // Navigate to the model entry (index 1: provider=0, model=1)
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
 
         let footer = render_footer(&mut overlay);
         assert!(
@@ -853,16 +846,16 @@ mod tests {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         // Navigate to model and open model selector
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
         assert!(render_footer(&mut overlay).contains("Toggle"));
 
         // Selector pre-selects current model (gpt-4o); Esc without toggling returns no change
-        let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
-        assert!(outcome.is_handled());
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+        assert!(outcome.is_some());
         assert!(render_footer(&mut overlay).contains("[Enter] Select"));
         assert!(
-            outcome.into_messages().is_empty(),
+            outcome.unwrap().is_empty(),
             "escape without toggling should produce no change"
         );
     }
@@ -871,26 +864,26 @@ mod tests {
     fn model_selector_esc_after_deselecting_all_returns_no_change() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // open model selector
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open model selector
         // Deselect the pre-selected model
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+        overlay.on_event(&Event::Key(key(KeyCode::Char(' '))));
 
-        let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
         assert!(render_footer(&mut overlay).contains("[Enter] Select"));
-        assert!(outcome.into_messages().is_empty()); // No selections => no change
+        assert!(outcome.unwrap().is_empty()); // No selections => no change
     }
 
     #[test]
     fn model_selector_enter_toggles_not_confirms() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // open model selector
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open model selector
         assert!(render_footer(&mut overlay).contains("Toggle"));
 
         // Enter should toggle, not close the selector
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
         let footer = render_footer(&mut overlay);
         assert!(
             footer.contains("Toggle"),
@@ -912,7 +905,7 @@ mod tests {
         )];
         let menu = ConfigMenu::from_config_options(&options);
         let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter))); // open picker
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker
 
         // Render at a tall terminal (60 rows)
         let context_tall = ViewContext::new((80, 60));
@@ -1003,8 +996,8 @@ mod tests {
     fn footer_shows_toggle_when_model_selector_open() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
 
         let context = ViewContext::new((80, 24));
         let lines = overlay.render(&context);
@@ -1020,36 +1013,33 @@ mod tests {
         };
         use acp_utils::config_meta::SelectOptionMeta;
 
-        let menu = ConfigMenu {
-            options: vec![ConfigMenuEntry {
-                config_id: "model".to_string(),
-                title: "Model".to_string(),
-                values: vec![
-                    ConfigMenuValue {
-                        value: "claude-opus".to_string(),
-                        name: "Claude Opus".to_string(),
-                        description: None,
-                        is_disabled: false,
-                        meta: SelectOptionMeta {
-                            supports_reasoning: true,
-                        },
+        let menu = ConfigMenu::from_entries(vec![ConfigMenuEntry {
+            config_id: "model".to_string(),
+            title: "Model".to_string(),
+            values: vec![
+                ConfigMenuValue {
+                    value: "claude-opus".to_string(),
+                    name: "Claude Opus".to_string(),
+                    description: None,
+                    is_disabled: false,
+                    meta: SelectOptionMeta {
+                        supports_reasoning: true,
                     },
-                    ConfigMenuValue {
-                        value: "gpt-4o".to_string(),
-                        name: "GPT-4o".to_string(),
-                        description: None,
-                        is_disabled: false,
-                        meta: SelectOptionMeta::default(),
-                    },
-                ],
-                current_value_index: 0,
-                current_raw_value: "claude-opus".to_string(),
-                entry_kind: ConfigMenuEntryKind::Select,
-                multi_select: true,
-                display_name: None,
-            }],
-            selected_index: 0,
-        };
+                },
+                ConfigMenuValue {
+                    value: "gpt-4o".to_string(),
+                    name: "GPT-4o".to_string(),
+                    description: None,
+                    is_disabled: false,
+                    meta: SelectOptionMeta::default(),
+                },
+            ],
+            current_value_index: 0,
+            current_raw_value: "claude-opus".to_string(),
+            entry_kind: ConfigMenuEntryKind::Select,
+            multi_select: true,
+            display_name: None,
+        }]);
 
         let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
         let options_with_reasoning = vec![
@@ -1076,17 +1066,17 @@ mod tests {
         ];
         overlay = overlay.with_reasoning_effort_from_options(&options_with_reasoning);
 
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
         assert!(
             render_footer(&mut overlay).contains("Toggle"),
             "model selector should be open"
         );
 
-        overlay.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
+        overlay.on_event(&Event::Key(key(KeyCode::Right)));
 
-        let outcome = overlay.on_event(&WidgetEvent::Key(key(KeyCode::Esc)));
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
 
-        let messages = outcome.into_messages();
+        let messages = outcome.unwrap();
         match messages.as_slice() {
             [ConfigOverlayMessage::ApplyConfigChanges(changes)] => {
                 let reasoning_change = changes.iter().find(|c| c.config_id == "reasoning_effort");

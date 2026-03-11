@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 
 use super::select_option::SelectOption;
-use crate::components::{Response, ViewContext, Widget, WidgetEvent};
+use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -68,31 +68,31 @@ impl MultiSelect {
     }
 }
 
-impl Widget for MultiSelect {
+impl Component for MultiSelect {
     type Message = ();
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(key) = event else {
+            return None;
         };
         if self.options.is_empty() {
-            return Response::ignored();
+            return None;
         }
 
         match key.code {
             KeyCode::Char(' ') => {
                 self.selected[self.cursor] = !self.selected[self.cursor];
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Up | KeyCode::Left => {
                 self.cursor = (self.cursor + self.options.len() - 1) % self.options.len();
-                Response::ok()
+                Some(vec![])
             }
             KeyCode::Down | KeyCode::Right => {
                 self.cursor = (self.cursor + 1) % self.options.len();
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ignored(),
+            _ => None,
         }
     }
 
@@ -143,18 +143,18 @@ mod tests {
     #[test]
     fn space_toggles_at_cursor() {
         let mut ms = sample();
-        ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+        ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
         assert!(ms.selected[0]);
-        ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+        ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
         assert!(!ms.selected[0]);
     }
 
     #[test]
     fn cursor_moves_with_arrows() {
         let mut ms = sample();
-        ms.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+        ms.on_event(&Event::Key(key(KeyCode::Down)));
         assert_eq!(ms.cursor, 1);
-        ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+        ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
         assert!(ms.selected[1]);
     }
 
@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn cursor_wraps() {
         let mut ms = sample();
-        ms.on_event(&WidgetEvent::Key(key(KeyCode::Up)));
+        ms.on_event(&Event::Key(key(KeyCode::Up)));
         assert_eq!(ms.cursor, 2); // wraps to end
     }
 }

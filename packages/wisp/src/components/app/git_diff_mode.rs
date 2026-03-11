@@ -1,9 +1,9 @@
 use super::AppAction;
 use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
-use crate::tui::{
-    KeyEvent, Line, MouseEvent, MouseEventKind, Response, ViewContext, Widget, WidgetEvent,
-};
+#[cfg(test)]
+use crate::tui::MouseEvent;
+use crate::tui::{Component, Event, Line, MouseEventKind, ViewContext};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -353,23 +353,62 @@ impl GitDiffMode {
         self.state = GitDiffViewState::new(GitDiffLoadState::Empty);
     }
 
-    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Response<AppAction> {
-        let mut view = GitDiffView {
-            state: &mut self.state,
-        };
-        let outcome = view.on_event(&WidgetEvent::Key(key_event));
-        self.handle_messages(outcome)
+    fn handle_messages(
+        &mut self,
+        outcome: Option<Vec<GitDiffViewMessage>>,
+    ) -> Option<Vec<AppAction>> {
+        Some(
+            outcome
+                .unwrap_or_default()
+                .into_iter()
+                .map(|message| match message {
+                    GitDiffViewMessage::Close => AppAction::CloseGitDiffViewer,
+                    GitDiffViewMessage::Refresh => {
+                        self.begin_refresh();
+                        AppAction::RefreshGitDiffViewer
+                    }
+                    GitDiffViewMessage::SubmitReview { comments } => {
+                        AppAction::SubmitDiffReview { comments }
+                    }
+                })
+                .collect(),
+        )
+    }
+}
+
+impl Component for GitDiffMode {
+    type Message = AppAction;
+
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        match event {
+            Event::Key(key_event) => {
+                let mut view = GitDiffView {
+                    state: &mut self.state,
+                };
+                let outcome = view.on_event(&Event::Key(*key_event));
+                self.handle_messages(outcome)
+            }
+            Event::Mouse(mouse) => match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    self.state.scroll_patch(-3);
+                    Some(vec![])
+                }
+                MouseEventKind::ScrollDown => {
+                    self.state.scroll_patch(3);
+                    Some(vec![])
+                }
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
-    pub(crate) fn on_mouse_event(&mut self, mouse: MouseEvent) -> bool {
-        let changed = match mouse.kind {
-            MouseEventKind::ScrollUp => self.state.scroll_patch(-3),
-            MouseEventKind::ScrollDown => self.state.scroll_patch(3),
-            _ => false,
-        };
-        changed
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
+        GitDiffView::render_from_state(&self.state, context)
     }
+}
 
+impl GitDiffMode {
     pub(crate) fn refresh_caches(&mut self, context: &ViewContext) {
         self.state.ensure_patch_cache(context);
         // 2 rows: file header + spacer above patch content
@@ -383,27 +422,6 @@ impl GitDiffMode {
 
     pub(crate) fn comment_cursor_col(&self) -> usize {
         self.state.comment_cursor
-    }
-
-    pub(crate) fn render(&self, context: &ViewContext) -> Vec<Line> {
-        GitDiffView::render_from_state(&self.state, context)
-    }
-
-    fn handle_messages(&mut self, outcome: Response<GitDiffViewMessage>) -> Response<AppAction> {
-        outcome
-            .into_messages()
-            .into_iter()
-            .map(|message| match message {
-                GitDiffViewMessage::Close => AppAction::CloseGitDiffViewer,
-                GitDiffViewMessage::Refresh => {
-                    self.begin_refresh();
-                    AppAction::RefreshGitDiffViewer
-                }
-                GitDiffViewMessage::SubmitReview { comments } => {
-                    AppAction::SubmitDiffReview { comments }
-                }
-            })
-            .collect()
     }
 }
 
@@ -538,7 +556,7 @@ mod tests {
         mode.state.load_state = GitDiffLoadState::Ready(make_doc(&["a.rs"]));
         mode.state.focus = PatchFocus::Patch;
         mode.state.cached_patch_lines = vec![Line::new("a"), Line::new("b"), Line::new("c")];
-        assert!(mode.on_mouse_event(MouseEvent {
+        mode.on_event(&Event::Mouse(MouseEvent {
             kind: MouseEventKind::ScrollDown,
             column: 0,
             row: 0,

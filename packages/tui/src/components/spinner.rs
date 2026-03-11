@@ -1,4 +1,4 @@
-use crate::components::{Response, ViewContext, Widget, WidgetEvent};
+use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
 
 pub const BRAILLE_FRAMES: &[char] = &['⠒', '⠮', '⠷', '⢷', '⡾', '⣯', '⣽', '⣿', '⣭', '⢯'];
@@ -48,16 +48,16 @@ impl Spinner {
     }
 }
 
-impl Widget for Spinner {
+impl Component for Spinner {
     type Message = ();
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         match event {
-            WidgetEvent::Tick => {
+            Event::Tick => {
                 self.on_tick();
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ignored(),
+            _ => None,
         }
     }
 

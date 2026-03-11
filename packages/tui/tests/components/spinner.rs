@@ -1,5 +1,5 @@
 use super::*;
-use tui::advanced::TerminalScreen;
+use tui::advanced::Renderer;
 use tui::{BRAILLE_FRAMES, Spinner};
 
 #[test]
@@ -53,21 +53,22 @@ fn rerender_updates_frame_in_place() {
     spinner.set_tick(0);
 
     let terminal = TestTerminal::new(80, 24);
-    let mut terminal_state = TerminalScreen::new(terminal);
+    let mut renderer = Renderer::new(terminal, tui::Theme::default());
+    renderer.on_resize((80, 24));
 
     // Initial render
-    render_component_with_terminal_state(|ctx| spinner.render(ctx), &mut terminal_state, 80, 24);
+    render_component_with_renderer(|ctx| spinner.render(ctx), &mut renderer, 80, 24);
     let first_frame = BRAILLE_FRAMES[0].to_string();
-    assert!(terminal_state.writer().get_lines()[0].contains(&first_frame));
+    assert!(renderer.writer().get_lines()[0].contains(&first_frame));
 
-    // Advance tick and re-render through the same TerminalState
+    // Advance tick and re-render through the same Renderer
     spinner.set_tick(1);
-    render_component_with_terminal_state(|ctx| spinner.render(ctx), &mut terminal_state, 80, 24);
+    render_component_with_renderer(|ctx| spinner.render(ctx), &mut renderer, 80, 24);
     let second_frame = BRAILLE_FRAMES[1].to_string();
     assert!(
-        terminal_state.writer().get_lines()[0].contains(&second_frame),
+        renderer.writer().get_lines()[0].contains(&second_frame),
         "Expected '{}' after re-render, got: '{}'",
         second_frame,
-        terminal_state.writer().get_lines()[0]
+        renderer.writer().get_lines()[0]
     );
 }

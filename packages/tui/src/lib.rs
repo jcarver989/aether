@@ -5,7 +5,6 @@
 //!
 //! - **[`App`]** — Single trait combining event handling, effects, and rendering
 //! - **[`AppEvent`]** — Unified event type for terminal, external, and tick events
-//! - **[`Response`]** — Unified result type for event handling and effects
 //! - **[`Runner`]** — Builder-style runner that owns terminal lifecycle
 
 // Core modules - always available
@@ -46,13 +45,12 @@ pub use components::multi_select::MultiSelect;
 pub use components::number_field::NumberField;
 pub use components::panel::{BORDER_H_PAD, Panel};
 pub use components::radio_select::RadioSelect;
+pub use components::select_list::{SelectItem, SelectList, SelectListMessage};
 pub use components::select_option::SelectOption;
 pub use components::spinner::{BRAILLE_FRAMES, Spinner};
 pub use components::text_field::TextField;
 
-pub use components::{
-    Cursor, PickerMessage, Response, ViewContext, Widget, WidgetEvent, wrap_selection,
-};
+pub use components::{Component, Cursor, Event, PickerMessage, ViewContext, merge, wrap_selection};
 pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag};
 pub use focus::{FocusOutcome, FocusRing};
 pub use rendering::frame::Frame;
@@ -68,15 +66,6 @@ pub use theme::Theme;
 pub mod advanced {
     /// Low-level renderer for manual frame control.
     pub use crate::rendering::renderer::Renderer;
-
-    /// Narrowed handle for terminal operations during effect execution.
-    pub use crate::rendering::renderer::Terminal;
-
-    /// Prepared frame representation used by low-level rendering tests and internals.
-    pub use crate::rendering::prepared_frame::PreparedFrame;
-
-    /// Terminal frame-diffing screen implementation.
-    pub use crate::rendering::terminal_screen::TerminalScreen;
 
     /// Terminal session management for manual runtime control.
     pub use crate::runtime::{MouseCapture, TerminalSession, spawn_terminal_event_task};

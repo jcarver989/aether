@@ -9,10 +9,9 @@ pub(crate) use git_diff_mode::{
 };
 pub(crate) use state::UiState;
 
-use crate::tui::advanced::Terminal;
+use crate::tui::advanced::Renderer;
 use crate::tui::{
-    App as TuiApp, AppEvent, Cursor, Frame, Layout, Line, Response, ViewContext, Widget,
-    WidgetEvent,
+    App as TuiApp, AppEvent, Component, Cursor, Event, Frame, Layout, Line, ViewContext, merge,
 };
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use acp_utils::notifications::McpServerStatus;
@@ -157,28 +156,30 @@ impl TuiApp for App {
         &mut self,
         event: AppEvent<Self::Event>,
         context: &ViewContext,
-    ) -> Response<Self::Effect> {
+    ) -> Option<Vec<Self::Effect>> {
         let effects = match event {
             AppEvent::Key(key_event) => {
-                let event = WidgetEvent::Key(key_event);
-                let input = self.state.on_event(&event, None);
+                let event = Event::Key(key_event);
+                let input = self.state.on_event(&event);
                 if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
-                    let git_effects = self.git_diff_mode.on_key_event(key_event);
-                    input.merge(git_effects)
+                    let git_effects = self.git_diff_mode.on_event(&event);
+                    merge(input, git_effects)
                 } else {
                     input
                 }
             }
             AppEvent::Paste(text) => {
-                let event = WidgetEvent::Paste(text);
-                self.state.on_event(&event, None)
+                let event = Event::Paste(text);
+                self.state.on_event(&event)
             }
             AppEvent::Mouse(mouse) => {
-                let event = WidgetEvent::Mouse(mouse);
-                self.state.on_event(&event, Some(&mut self.git_diff_mode))
+                if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
+                    self.git_diff_mode.on_event(&Event::Mouse(mouse));
+                }
+                Some(vec![])
             }
-            AppEvent::Tick(_) => self.state.on_event(&WidgetEvent::Tick, None),
-            AppEvent::Resize(_) => Response::ok(),
+            AppEvent::Tick(_) => self.state.on_event(&Event::Tick),
+            AppEvent::Resize(_) => Some(vec![]),
             AppEvent::External(event) => match event {
                 AcpEvent::SessionUpdate(update) => self.state.on_session_update(*update),
                 AcpEvent::ExtNotification(notification) => {
@@ -200,7 +201,7 @@ impl TuiApp for App {
             },
         };
 
-        if !effects.is_exit() {
+        if !self.state.exit_requested {
             self.prepare_for_view(context);
         }
 
@@ -292,12 +293,16 @@ impl TuiApp for App {
 
     async fn run_effect(
         &mut self,
-        terminal: &mut Terminal<'_, impl std::io::Write>,
+        terminal: &mut Renderer<impl std::io::Write>,
         effect: Self::Effect,
-    ) -> Result<Response<Self::Effect>, Self::Error> {
+    ) -> Result<Vec<Self::Effect>, Self::Error> {
         let follow_up = self.apply_action(terminal, effect).await?;
         self.prepare_for_view(&terminal.context());
         Ok(follow_up)
+    }
+
+    fn should_exit(&self) -> bool {
+        self.state.exit_requested
     }
 
     fn wants_tick(&self) -> bool {
@@ -322,7 +327,7 @@ mod tests {
     use crate::components::config_overlay::ConfigOverlayMessage;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
-    use crate::tui::{Response, WidgetEvent};
+    use crate::tui::Event;
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use std::fs;
     use std::time::{Duration, Instant};
@@ -373,11 +378,11 @@ mod tests {
                 .state
                 .decorate_config_menu(ConfigMenu::from_config_options(&[]));
 
-            assert_eq!(menu.options[0].config_id, THEME_CONFIG_ID);
-            assert_eq!(menu.options[0].title, "Theme");
-            assert_eq!(menu.options[0].values[0].name, "Default");
+            assert_eq!(menu.options()[0].config_id, THEME_CONFIG_ID);
+            assert_eq!(menu.options()[0].title, "Theme");
+            assert_eq!(menu.options()[0].values[0].name, "Default");
             assert!(
-                menu.options[0]
+                menu.options()[0]
                     .values
                     .iter()
                     .any(|value| value.value == "catppuccin.tmTheme")
@@ -412,7 +417,7 @@ mod tests {
             let menu = app
                 .state
                 .decorate_config_menu(ConfigMenu::from_config_options(&[]));
-            let theme = &menu.options[0];
+            let theme = &menu.options()[0];
             assert_eq!(theme.config_id, THEME_CONFIG_ID);
             assert_eq!(theme.current_raw_value, "nord.tmTheme");
             assert_eq!(
@@ -432,16 +437,16 @@ mod tests {
             acp::SessionId::new("test"),
             PathBuf::from("."),
         );
-        let outcome = Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![
+        let outcome = Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
                 config_id: THEME_CONFIG_ID.to_string(),
                 new_value: "catppuccin.tmTheme".to_string(),
             },
-        ]));
+        ])]);
 
         let effects = app.state.handle_config_overlay_messages(outcome);
 
-        let actions = effects.into_messages();
+        let actions = effects.unwrap_or_default();
         assert!(matches!(
             actions.as_slice(),
             [AppAction::SetTheme {
@@ -460,16 +465,16 @@ mod tests {
             acp::SessionId::new("test"),
             PathBuf::from("."),
         );
-        let outcome = Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![
+        let outcome = Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
                 config_id: THEME_CONFIG_ID.to_string(),
                 new_value: "   ".to_string(),
             },
-        ]));
+        ])]);
 
         let effects = app.state.handle_config_overlay_messages(outcome);
 
-        let actions = effects.into_messages();
+        let actions = effects.unwrap_or_default();
         assert!(matches!(
             actions.as_slice(),
             [AppAction::SetTheme { file: None }]
@@ -486,16 +491,16 @@ mod tests {
             acp::SessionId::new("test"),
             PathBuf::from("."),
         );
-        let outcome = Response::one(ConfigOverlayMessage::ApplyConfigChanges(vec![
+        let outcome = Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
                 config_id: "model".to_string(),
                 new_value: "gpt-5".to_string(),
             },
-        ]));
+        ])]);
 
         let effects = app.state.handle_config_overlay_messages(outcome);
 
-        let actions = effects.into_messages();
+        let actions = effects.unwrap_or_default();
         assert!(matches!(
             actions.as_slice(),
             [AppAction::SetConfigOption {
@@ -738,7 +743,7 @@ mod tests {
         app.state.grid_loader.visible = false;
 
         let tick_before = app.state.tool_call_statuses.tick();
-        app.state.on_event(&WidgetEvent::Tick, None);
+        app.state.on_event(&Event::Tick);
         let tick_after = app.state.tool_call_statuses.tick();
 
         assert!(tick_after > tick_before);
@@ -761,7 +766,7 @@ mod tests {
         app.state.progress_indicator.update(0, 1);
         let ctx = ViewContext::new((80, 24));
         let output_before = app.state.progress_indicator.render(&ctx);
-        app.state.on_event(&WidgetEvent::Tick, None);
+        app.state.on_event(&Event::Tick);
         let output_after = app.state.progress_indicator.render(&ctx);
 
         assert_ne!(

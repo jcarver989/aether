@@ -1,6 +1,4 @@
 use super::line::Line;
-use super::prepared_frame::PreparedFrame;
-use super::size::Size;
 use super::soft_wrap::soft_wrap_lines_with_map;
 
 /// Logical cursor position within a component's rendered output.
@@ -63,10 +61,6 @@ impl Frame {
             self.cursor.row = self.lines.len().saturating_sub(1);
         }
         self
-    }
-
-    pub fn prepare(self, size: Size, flushed_visual_count: usize) -> PreparedFrame {
-        PreparedFrame::new(&self.lines, self.cursor, size, flushed_visual_count)
     }
 }
 

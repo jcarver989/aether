@@ -2,8 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::rendering::frame::Cursor;
 use crate::rendering::frame::Frame;
-use crate::rendering::size::Size;
-use crate::rendering::terminal_screen::TerminalScreen;
+use crate::rendering::renderer::Renderer;
 use crate::{SelectOption, ViewContext};
 
 use super::TestTerminal;
@@ -29,30 +28,32 @@ pub fn render_component(
     let ctx = ViewContext::new((width, rows));
     let lines = render(&ctx);
     let terminal = TestTerminal::new(width, rows);
-    let mut screen = TerminalScreen::new(terminal);
-    let frame = frame_from_lines(&lines, width, rows).prepare(Size::from((width, rows)), 0);
-    screen.render_frame(&frame, width).unwrap();
-    screen.writer().clone()
+    let mut renderer = Renderer::new(terminal, crate::theme::Theme::default());
+    renderer.on_resize((width, rows));
+    let frame = frame_from_lines(&lines, width, rows);
+    renderer.render_frame(|_| frame).unwrap();
+    renderer.writer().clone()
 }
 
-pub fn render_component_with_terminal_state(
+pub fn render_component_with_renderer(
     render: impl Fn(&ViewContext) -> Vec<crate::line::Line>,
-    terminal_state: &mut TerminalScreen<TestTerminal>,
+    renderer: &mut Renderer<TestTerminal>,
     width: u16,
     rows: u16,
 ) {
     let ctx = ViewContext::new((width, rows));
     let lines = render(&ctx);
-    let frame = frame_from_lines(&lines, width, rows).prepare(Size::from((width, rows)), 0);
-    terminal_state.render_frame(&frame, width).unwrap();
+    let frame = frame_from_lines(&lines, width, rows);
+    renderer.render_frame(|_| frame).unwrap();
 }
 
 pub fn render_lines(lines: &[crate::line::Line], width: u16, rows: u16) -> TestTerminal {
     let terminal = TestTerminal::new(width, rows);
-    let mut terminal_state = TerminalScreen::new(terminal);
-    let frame = frame_from_lines(lines, width, rows).prepare(Size::from((width, rows)), 0);
-    terminal_state.render_frame(&frame, width).unwrap();
-    terminal_state.writer().clone()
+    let mut renderer = Renderer::new(terminal, crate::theme::Theme::default());
+    renderer.on_resize((width, rows));
+    let frame = frame_from_lines(lines, width, rows);
+    renderer.render_frame(|_| frame).unwrap();
+    renderer.writer().clone()
 }
 
 pub fn key(code: KeyCode) -> KeyEvent {

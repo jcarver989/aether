@@ -1,12 +1,11 @@
-//! Tests for the new App API (simplified, one-trait approach)
+//! Tests for the App API (simplified, one-trait approach)
 //!
-//! This file tests the new simplified app API with framework-owned rerender policy.
+//! This file tests the simplified app API with framework-owned rerender policy.
 //! The framework decides when to render (after each update/effect cycle), not the app.
 
 use super::app::{App, AppEvent};
-use crate::components::Response;
 use crate::components::{Cursor, ViewContext};
-use crate::rendering::renderer::{Renderer, Terminal};
+use crate::rendering::renderer::Renderer;
 use crate::testing::TestTerminal;
 use crate::theme::Theme;
 use crate::{Frame, KeyCode, KeyModifiers, Line};
@@ -27,25 +26,6 @@ fn key_event(code: KeyCode) -> CrosstermEvent {
     })
 }
 
-#[test]
-fn command_from_vec_collapses_common_cases() {
-    let empty: Vec<i32> = vec![];
-    assert!(matches!(Response::from_vec(empty), Response::Ok));
-    assert!(matches!(Response::from_vec(vec![1]), Response::One(1)));
-    assert!(
-        matches!(Response::from_vec(vec![1, 2]), Response::Many(values) if values == vec![1, 2])
-    );
-}
-
-#[test]
-fn command_merge_preserves_order_and_quit() {
-    let merged = Response::one(1).merge(Response::many(vec![2, 3]));
-    assert!(matches!(merged, Response::Many(values) if values == vec![1, 2, 3]));
-
-    let quit_merged: Response<i32> = Response::one(1).merge(Response::exit());
-    assert!(quit_merged.is_exit());
-}
-
 #[tokio::test]
 async fn app_rerenders_after_state_changing_events() {
     // The framework should render after each update that changes state.
@@ -55,6 +35,7 @@ async fn app_rerenders_after_state_changing_events() {
 
     struct TestApp {
         count: i32,
+        exit_requested: bool,
         render_count: Rc<Cell<usize>>,
     }
 
@@ -63,14 +44,17 @@ async fn app_rerenders_after_state_changing_events() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Option<Vec<()>> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                     self.count += 1;
-                    Response::ok()
+                    Some(vec![])
                 }
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
-                _ => Response::ok(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                    self.exit_requested = true;
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
             }
         }
 
@@ -85,10 +69,15 @@ async fn app_rerenders_after_state_changing_events() {
                 },
             )
         }
+
+        fn should_exit(&self) -> bool {
+            self.exit_requested
+        }
     }
 
     let app = TestApp {
         count: 0,
+        exit_requested: false,
         render_count: render_count_clone,
     };
     let mut renderer = Renderer::new(TestTerminal::new(20, 4), Theme::default());
@@ -122,6 +111,7 @@ async fn app_rerenders_after_external_events() {
 
     struct TestApp {
         value: String,
+        exit_requested: bool,
         render_count: Rc<Cell<usize>>,
     }
 
@@ -130,14 +120,17 @@ async fn app_rerenders_after_external_events() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<String>, _ctx: &ViewContext) -> Response<()> {
+        fn update(&mut self, event: AppEvent<String>, _ctx: &ViewContext) -> Option<Vec<()>> {
             match event {
                 AppEvent::External(msg) => {
                     self.value = msg;
-                    Response::one(())
+                    Some(vec![()])
                 }
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
-                _ => Response::ok(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                    self.exit_requested = true;
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
             }
         }
 
@@ -155,15 +148,21 @@ async fn app_rerenders_after_external_events() {
 
         async fn run_effect(
             &mut self,
-            _terminal: &mut Terminal<'_, impl Write>,
+            _renderer: &mut Renderer<impl Write>,
             _effect: (),
-        ) -> Result<Response<()>, io::Error> {
-            Ok(Response::exit())
+        ) -> Result<Vec<()>, io::Error> {
+            self.exit_requested = true;
+            Ok(vec![])
+        }
+
+        fn should_exit(&self) -> bool {
+            self.exit_requested
         }
     }
 
     let app = TestApp {
         value: "initial".to_string(),
+        exit_requested: false,
         render_count: render_count_clone,
     };
     let mut renderer = Renderer::new(TestTerminal::new(20, 4), Theme::default());
@@ -198,6 +197,7 @@ async fn app_rerenders_after_effect_completion() {
 
     struct TestApp {
         count: i32,
+        exit_requested: bool,
         render_count: Rc<Cell<usize>>,
     }
 
@@ -206,13 +206,16 @@ async fn app_rerenders_after_effect_completion() {
         type Effect = TestEffect;
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<TestEffect> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Option<Vec<TestEffect>> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char(' ') => {
-                    Response::one(TestEffect::Increment)
+                    Some(vec![TestEffect::Increment])
                 }
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
-                _ => Response::ok(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                    self.exit_requested = true;
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
             }
         }
 
@@ -230,20 +233,25 @@ async fn app_rerenders_after_effect_completion() {
 
         async fn run_effect(
             &mut self,
-            _terminal: &mut Terminal<'_, impl Write>,
+            _renderer: &mut Renderer<impl Write>,
             effect: TestEffect,
-        ) -> Result<Response<TestEffect>, io::Error> {
+        ) -> Result<Vec<TestEffect>, io::Error> {
             match effect {
                 TestEffect::Increment => {
                     self.count += 1;
-                    Ok(Response::ok())
+                    Ok(vec![])
                 }
             }
+        }
+
+        fn should_exit(&self) -> bool {
+            self.exit_requested
         }
     }
 
     let app = TestApp {
         count: 0,
+        exit_requested: false,
         render_count: render_count_clone,
     };
     let mut renderer = Renderer::new(TestTerminal::new(20, 4), Theme::default());
@@ -273,25 +281,22 @@ async fn app_rerenders_after_effect_completion() {
 
 #[tokio::test]
 async fn frame_diffing_avoids_unnecessary_terminal_writes() {
-    // When the frame content doesn't change, the terminal should not receive
-    // new output. This verifies that frame diffing still works with the
-    // simplified rerender policy.
-    //
-    // Note: We can't directly measure terminal writes with TestTerminal,
-    // but we can verify that the frame diffing logic is in place by checking
-    // that identical frames result in the same terminal state.
-    struct StaticApp;
+    struct StaticApp {
+        exit_requested: bool,
+    }
 
     impl App for StaticApp {
         type Event = ();
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Option<Vec<()>> {
             match event {
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
-                // No state change - frame content stays the same
-                _ => Response::ok(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                    self.exit_requested = true;
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
             }
         }
 
@@ -305,6 +310,10 @@ async fn frame_diffing_avoids_unnecessary_terminal_writes() {
                     is_visible: false,
                 },
             )
+        }
+
+        fn should_exit(&self) -> bool {
+            self.exit_requested
         }
     }
 
@@ -320,9 +329,17 @@ async fn frame_diffing_avoids_unnecessary_terminal_writes() {
     terminal_tx.send(key_event(KeyCode::Char('q'))).unwrap();
     drop(terminal_tx);
 
-    run_app_internal(StaticApp, &mut renderer, terminal_rx, None, None)
-        .await
-        .unwrap();
+    run_app_internal(
+        StaticApp {
+            exit_requested: false,
+        },
+        &mut renderer,
+        terminal_rx,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     // Verify the static content was rendered
     let terminal = renderer.test_writer_mut();
@@ -347,6 +364,7 @@ async fn tick_events_trigger_rerender() {
 
     struct TestApp {
         ticks: usize,
+        exit_requested: bool,
         render_count: Rc<Cell<usize>>,
         tick_count: Rc<Cell<usize>>,
     }
@@ -356,18 +374,17 @@ async fn tick_events_trigger_rerender() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Option<Vec<()>> {
             match event {
                 AppEvent::Tick(_) => {
                     self.ticks += 1;
                     self.tick_count.set(self.tick_count.get() + 1);
                     if self.ticks >= 2 {
-                        Response::exit()
-                    } else {
-                        Response::ok()
+                        self.exit_requested = true;
                     }
+                    Some(vec![])
                 }
-                _ => Response::ok(),
+                _ => Some(vec![]),
             }
         }
 
@@ -386,10 +403,15 @@ async fn tick_events_trigger_rerender() {
         fn wants_tick(&self) -> bool {
             true
         }
+
+        fn should_exit(&self) -> bool {
+            self.exit_requested
+        }
     }
 
     let app = TestApp {
         ticks: 0,
+        exit_requested: false,
         render_count: render_count_clone,
         tick_count: tick_count_clone,
     };
@@ -422,6 +444,7 @@ async fn resize_triggers_rerender_with_updated_size() {
     let seen_sizes_clone = seen_sizes.clone();
 
     struct TestApp {
+        exit_requested: bool,
         seen_sizes: Rc<RefCell<Vec<(u16, u16)>>>,
     }
 
@@ -430,10 +453,13 @@ async fn resize_triggers_rerender_with_updated_size() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Option<Vec<()>> {
             match event {
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
-                _ => Response::ok(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                    self.exit_requested = true;
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
             }
         }
 
@@ -453,9 +479,14 @@ async fn resize_triggers_rerender_with_updated_size() {
                 },
             )
         }
+
+        fn should_exit(&self) -> bool {
+            self.exit_requested
+        }
     }
 
     let app = TestApp {
+        exit_requested: false,
         seen_sizes: seen_sizes_clone,
     };
     let mut renderer = Renderer::new(TestTerminal::new(20, 4), Theme::default());
@@ -484,15 +515,12 @@ async fn resize_triggers_rerender_with_updated_size() {
 
 #[tokio::test]
 async fn app_does_not_require_props_for_rendering() {
-    // This test verifies that apps don't need to implement any props mechanism.
-    // The CounterApp at the bottom of this file demonstrates this - it has no
-    // props type and just renders its current state.
-
     let render_count = Rc::new(Cell::new(0usize));
     let render_count_clone = render_count.clone();
 
     struct SimpleApp {
         state: i32,
+        exit_requested: bool,
         render_count: Rc<Cell<usize>>,
     }
 
@@ -501,14 +529,17 @@ async fn app_does_not_require_props_for_rendering() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Option<Vec<()>> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                     self.state += 1;
-                    Response::ok()
+                    Some(vec![])
                 }
-                AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
-                _ => Response::ok(),
+                AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                    self.exit_requested = true;
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
             }
         }
 
@@ -523,10 +554,15 @@ async fn app_does_not_require_props_for_rendering() {
                 },
             )
         }
+
+        fn should_exit(&self) -> bool {
+            self.exit_requested
+        }
     }
 
     let app = SimpleApp {
         state: 0,
+        exit_requested: false,
         render_count: render_count_clone,
     };
     let mut renderer = Renderer::new(TestTerminal::new(20, 4), Theme::default());
@@ -541,8 +577,6 @@ async fn app_does_not_require_props_for_rendering() {
         .await
         .unwrap();
 
-    // If we got here without compile errors about missing props, the test passes.
-    // Also verify we rendered the expected number of times.
     assert_eq!(render_count.get(), 2); // initial + state change
 }
 
@@ -577,6 +611,7 @@ async fn run_app_internal<A: App, W: Write>(
 #[allow(dead_code)]
 struct CounterApp {
     count: i32,
+    exit_requested: bool,
 }
 
 impl App for CounterApp {
@@ -584,18 +619,21 @@ impl App for CounterApp {
     type Effect = ();
     type Error = std::io::Error;
 
-    fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
+    fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Option<Vec<()>> {
         match event {
-            AppEvent::Key(key) if key.code == KeyCode::Char('q') => return Response::exit(),
+            AppEvent::Key(key) if key.code == KeyCode::Char('q') => {
+                self.exit_requested = true;
+                Some(vec![])
+            }
             AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                 self.count += 1;
-                Response::ok()
+                Some(vec![])
             }
             AppEvent::Key(key) if key.code == KeyCode::Char('k') => {
                 self.count -= 1;
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ok(),
+            _ => Some(vec![]),
         }
     }
 
@@ -612,9 +650,13 @@ impl App for CounterApp {
 
     async fn run_effect(
         &mut self,
-        _terminal: &mut Terminal<'_, impl Write>,
+        _renderer: &mut Renderer<impl Write>,
         _effect: (),
-    ) -> Result<Response<()>, std::io::Error> {
-        Ok(Response::ok())
+    ) -> Result<Vec<()>, std::io::Error> {
+        Ok(vec![])
+    }
+
+    fn should_exit(&self) -> bool {
+        self.exit_requested
     }
 }

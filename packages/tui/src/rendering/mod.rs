@@ -7,4 +7,3 @@ pub mod size;
 pub mod soft_wrap;
 pub mod span;
 pub mod style;
-pub mod terminal_screen;

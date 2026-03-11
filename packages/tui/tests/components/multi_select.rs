@@ -19,7 +19,7 @@ fn renders_some_checked() {
 #[test]
 fn space_toggles_at_cursor() {
     let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
-    ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+    ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
     let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[x] Alpha", "[ ] Beta", "[ ] Gamma"]);
 }
@@ -28,12 +28,12 @@ fn space_toggles_at_cursor() {
 fn navigate_and_toggle_multiple() {
     let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
     // Toggle Alpha (cursor=0)
-    ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+    ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
     // Move to Beta, then Gamma
-    ms.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
-    ms.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+    ms.on_event(&Event::Key(key(KeyCode::Down)));
+    ms.on_event(&Event::Key(key(KeyCode::Down)));
     // Toggle Gamma (cursor=2)
-    ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+    ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
     let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[x] Alpha", "[ ] Beta", "[x] Gamma"]);
 }
@@ -42,10 +42,10 @@ fn navigate_and_toggle_multiple() {
 fn cursor_wraps_up_from_first() {
     let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
     // Press Up from cursor=0, should wrap to cursor=2 (Gamma)
-    ms.on_event(&WidgetEvent::Key(key(KeyCode::Up)));
+    ms.on_event(&Event::Key(key(KeyCode::Up)));
     assert_eq!(ms.cursor, 2);
     // Toggle at the new cursor position to verify it's on Gamma
-    ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+    ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
     let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[ ] Alpha", "[ ] Beta", "[x] Gamma"]);
 }

@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::components::{Response, ViewContext, Widget, WidgetEvent};
+use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
 
 /// Boolean toggle rendered as `[x]` / `[ ]`.
@@ -18,19 +18,19 @@ impl Checkbox {
     }
 }
 
-impl Widget for Checkbox {
+impl Component for Checkbox {
     type Message = ();
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
-        let WidgetEvent::Key(key) = event else {
-            return Response::ignored();
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let Event::Key(key) = event else {
+            return None;
         };
         match key.code {
             KeyCode::Char(' ') => {
                 self.checked = !self.checked;
-                Response::ok()
+                Some(vec![])
             }
-            _ => Response::ignored(),
+            _ => None,
         }
     }
 
@@ -63,9 +63,9 @@ mod tests {
     #[test]
     fn space_toggles() {
         let mut cb = Checkbox::new(false);
-        cb.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+        cb.on_event(&Event::Key(key(KeyCode::Char(' '))));
         assert!(cb.checked);
-        cb.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+        cb.on_event(&Event::Key(key(KeyCode::Char(' '))));
         assert!(!cb.checked);
     }
 
@@ -78,8 +78,8 @@ mod tests {
     #[test]
     fn other_keys_are_ignored() {
         let mut cb = Checkbox::new(false);
-        let outcome = cb.on_event(&WidgetEvent::Key(key(KeyCode::Char('a'))));
-        assert!(!outcome.is_handled());
+        let outcome = cb.on_event(&Event::Key(key(KeyCode::Char('a'))));
+        assert!(outcome.is_none());
         assert!(!cb.checked);
     }
 }
