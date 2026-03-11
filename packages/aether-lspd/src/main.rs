@@ -16,7 +16,7 @@ struct Args {
     socket: PathBuf,
 
     /// Idle timeout in seconds (0 = no timeout)
-    #[arg(long, default_value = "1800")]
+    #[arg(long, default_value = "300")]
     idle_timeout: u64,
 
     /// Log level (trace, debug, info, warn, error)
