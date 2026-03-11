@@ -31,7 +31,7 @@ pub use tools_trait::CodingTools;
 
 use crate::lsp::registry::LspRegistry;
 use crate::lsp::tools::check_errors::{
-    LspDiagnosticsInput, LspDiagnosticsOutput, execute_lsp_diagnostics,
+    LspDiagnosticsInput, LspDiagnosticsOutput, LspDiagnosticsRequest, execute_lsp_diagnostics,
 };
 use crate::lsp::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
 use crate::lsp::tools::rename::{LspRenameInput, LspRenameOutput, execute_lsp_rename};
@@ -542,17 +542,19 @@ When using tools that take file paths, always use absolute paths from:
     #[tool]
     pub async fn lsp_check_errors(
         &self,
-        request: Parameters<LspDiagnosticsInput>,
+        request: Parameters<LspDiagnosticsRequest>,
         context: RequestContext<RoleServer>,
     ) -> Result<Json<LspDiagnosticsOutput>, String> {
-        let Parameters(input) = request;
-        let preview_value = input
-            .file_path
-            .as_deref()
-            .map_or_else(|| "workspace".to_string(), basename);
+        let Parameters(request) = request;
+        let preview_value = match &request.input {
+            LspDiagnosticsInput::Workspace {} => "workspace".to_string(),
+            LspDiagnosticsInput::File { file_path } => basename(&file_path),
+        };
         notify_preview(&context, ToolDisplayMeta::new("LSP errors", preview_value)).await;
         let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
-        execute_lsp_diagnostics(input, lsp.as_ref()).await.map(Json)
+        execute_lsp_diagnostics(request, lsp.as_ref())
+            .await
+            .map(Json)
     }
 
     #[doc = include_str!("../lsp/tools/rename/description.md")]
