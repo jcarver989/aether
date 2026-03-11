@@ -3,7 +3,7 @@ use std::mem::{Discriminant, discriminant, take};
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::tui::markdown::render_markdown;
-use crate::tui::{Component, Line, RenderContext, Spinner};
+use crate::tui::{Line, ViewContext, Spinner, Widget};
 
 #[derive(Debug, Clone)]
 pub(crate) enum SegmentContent {
@@ -138,7 +138,7 @@ impl ConversationBuffer {
     pub(crate) fn flush_completed(
         &mut self,
         tool_call_statuses: &ToolCallStatuses,
-        context: &RenderContext,
+        context: &ViewContext,
     ) -> (Vec<Line>, Vec<String>) {
         let drained = self.drain_segments_except(|seg| {
             matches!(seg, SegmentContent::ToolCall(id) if tool_call_statuses.is_tool_running(id))
@@ -173,11 +173,11 @@ impl ConversationBuffer {
     }
 
     /// Pre-renders all segments so that `get_cached` can serve them
-    /// from an immutable reference during `Component::render`.
+    /// from an immutable reference during `render()`.
     pub(crate) fn ensure_all_rendered(
         &mut self,
         tool_call_statuses: &ToolCallStatuses,
-        context: &RenderContext,
+        context: &ViewContext,
     ) {
         self.invalidate_active_tool_lines(tool_call_statuses);
         for i in 0..self.segments.len() {
@@ -216,7 +216,7 @@ impl ConversationBuffer {
         &mut self,
         i: usize,
         tool_call_statuses: &ToolCallStatuses,
-        context: &RenderContext,
+        context: &ViewContext,
     ) -> (Discriminant<SegmentContent>, &[Line]) {
         if self.segments[i].lines.is_none() {
             let rendered =
@@ -240,8 +240,8 @@ pub(crate) struct ConversationWindow<'a> {
     pub conversation: &'a ConversationBuffer,
 }
 
-impl Component for ConversationWindow<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl ConversationWindow<'_> {
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         let mut lines = self.loader.render(context);
         let mut last_segment_kind = None;
 
@@ -257,7 +257,7 @@ impl Component for ConversationWindow<'_> {
 fn render_stream_segment(
     segment: &SegmentContent,
     tool_call_statuses: &ToolCallStatuses,
-    context: &RenderContext,
+    context: &ViewContext,
 ) -> Vec<Line> {
     match segment {
         SegmentContent::Thought(text) => ThoughtMessage { text }.render(context),
@@ -296,7 +296,7 @@ mod tests {
         let loader = Spinner::default();
         let mut conversation = ConversationBuffer::new();
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         conversation.ensure_all_rendered(&statuses, &context);
         let view = ConversationWindow {
             loader: &loader,
@@ -317,7 +317,7 @@ mod tests {
             SegmentContent::Text("three".to_string()),
         ]);
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         conversation.ensure_all_rendered(&statuses, &context);
         let view = ConversationWindow {
             loader: &loader,
@@ -343,7 +343,7 @@ mod tests {
             SegmentContent::Text("second".to_string()),
         ]);
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         conversation.ensure_all_rendered(&statuses, &context);
         let view = ConversationWindow {
             loader: &loader,
@@ -363,7 +363,7 @@ mod tests {
         let mut conversation = ConversationBuffer::new();
         conversation.append_text_chunk("hello");
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         conversation.ensure_all_rendered(&statuses, &context);
         let view = ConversationWindow {
             loader: &loader,
@@ -417,7 +417,7 @@ mod tests {
         buffer.append_text_chunk("world");
 
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
 
         assert!(
             !buffer.get_or_render(0, &statuses, &context).1.is_empty(),
@@ -443,7 +443,7 @@ mod tests {
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("hello");
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         buffer.get_or_render(0, &statuses, &context);
         assert!(buffer.cached_lines(0).is_some());
 
@@ -457,7 +457,7 @@ mod tests {
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("hello");
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         buffer.get_or_render(0, &statuses, &context);
 
         let _ = buffer.flush_completed(&statuses, &context);
@@ -469,7 +469,7 @@ mod tests {
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("hello");
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         buffer.get_or_render(0, &statuses, &context);
 
         buffer.set_segments(vec![
@@ -487,7 +487,7 @@ mod tests {
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("cached text");
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         buffer.get_or_render(0, &statuses, &context);
         buffer.ensure_all_rendered(&statuses, &context);
         let view = ConversationWindow {
@@ -516,7 +516,7 @@ mod tests {
             agent_client_protocol::ToolCallUpdateFields::new()
                 .status(agent_client_protocol::ToolCallStatus::Completed),
         ));
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         buffer.get_or_render(0, &statuses, &context);
         buffer.get_or_render(1, &statuses, &context);
         buffer.get_or_render(2, &statuses, &context);
@@ -580,7 +580,7 @@ mod tests {
             .unwrap(),
         );
 
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         buffer.get_or_render(0, &statuses, &context);
         assert!(buffer.cached_lines(0).is_some());
 
@@ -598,7 +598,7 @@ mod tests {
         buffer.append_thought_chunk("first");
 
         let statuses = ToolCallStatuses::new();
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         buffer.get_or_render(0, &statuses, &context);
         assert!(buffer.cached_lines(0).is_some());
 
@@ -618,7 +618,7 @@ mod tests {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-1", "Read file"));
         statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-2", "Read file"));
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
 
         buffer.get_or_render(0, &statuses, &context);
         buffer.get_or_render(1, &statuses, &context);
@@ -662,7 +662,7 @@ mod tests {
         );
         statuses.on_tool_call_update(&update);
 
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         let (lines, tool_ids) = buffer.flush_completed(&statuses, &context);
 
         assert!(!lines.is_empty(), "should produce scrollback lines");
@@ -683,7 +683,7 @@ mod tests {
         statuses.on_tool_call(&tc);
         // tool-1 stays Running (no completion update)
 
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         let (lines, tool_ids) = buffer.flush_completed(&statuses, &context);
 
         assert!(!lines.is_empty(), "text segment should still produce lines");
@@ -713,7 +713,7 @@ mod tests {
         );
         statuses.on_tool_call_update(&update);
 
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
 
         // Pre-render to populate cache for the text segment.
         buffer.get_or_render(0, &statuses, &context);

@@ -1,5 +1,5 @@
 use crate::tui::BRAILLE_FRAMES as FRAMES;
-use crate::tui::{Component, Line, RenderContext};
+use crate::tui::{Line, ViewContext};
 
 /// Renders a single progress line when tools are actively running.
 /// Shows: `⠋ Working... (N/M tools complete)`
@@ -30,8 +30,8 @@ impl ProgressIndicator {
 
 }
 
-impl Component for ProgressIndicator {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl ProgressIndicator {
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         if self.total == 0 || self.completed == self.total {
             return vec![];
         }
@@ -54,8 +54,8 @@ impl Component for ProgressIndicator {
 mod tests {
     use super::*;
 
-    fn ctx() -> RenderContext {
-        RenderContext::new((80, 24))
+    fn ctx() -> ViewContext {
+        ViewContext::new((80, 24))
     }
 
     #[test]

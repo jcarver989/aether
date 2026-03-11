@@ -14,7 +14,7 @@ The primary app model has four pieces:
 A minimal app looks like this:
 
 ```rust
-use tui::{App, AppEvent, Cursor, Effects, Frame, KeyCode, Line, RenderContext, Runner};
+use tui::{App, AppEvent, Cursor, Effects, Frame, KeyCode, Line, ViewContext, Runner};
 
 struct Counter {
     count: i32,
@@ -25,7 +25,7 @@ impl App for Counter {
     type Effect = ();
     type Error = std::io::Error;
 
-    fn update(&mut self, event: AppEvent<Self::Event>, _ctx: &RenderContext) -> Effects<Self::Effect> {
+    fn update(&mut self, event: AppEvent<Self::Event>, _ctx: &ViewContext) -> Effects<Self::Effect> {
         match event {
             AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
             AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
@@ -40,7 +40,7 @@ impl App for Counter {
         }
     }
 
-    fn view(&self, _ctx: &RenderContext) -> Frame {
+    fn view(&self, _ctx: &ViewContext) -> Frame {
         Frame::new(
             vec![Line::new(format!("Count: {}", self.count))],
             Cursor {
@@ -70,12 +70,12 @@ Use builder methods when you need to customize the default runtime:
 
 ```rust,no_run
 # use std::time::Duration;
-# use tui::{App, AppEvent, Cursor, Effects, Frame, Line, RenderContext, Runner};
+# use tui::{App, AppEvent, Cursor, Effects, Frame, Line, ViewContext, Runner};
 # struct MyApp;
 # impl App for MyApp {
 #     type Event = (); type Effect = (); type Error = std::io::Error;
-#     fn update(&mut self, _event: AppEvent<Self::Event>, _ctx: &RenderContext) -> Effects<Self::Effect> { Effects::none() }
-#     fn view(&self, _ctx: &RenderContext) -> Frame {
+#     fn update(&mut self, _event: AppEvent<Self::Event>, _ctx: &ViewContext) -> Effects<Self::Effect> { Effects::none() }
+#     fn view(&self, _ctx: &ViewContext) -> Frame {
 #         Frame::new(vec![Line::new("")], Cursor { row: 0, col: 0, is_visible: false })
 #     }
 # }
@@ -93,14 +93,14 @@ Runner::new(app)
 Use `Component` for rendering reusable child widgets and `InteractiveComponent` when a child widget needs to emit messages back to its parent.
 
 ```rust
-use tui::{Component, InteractiveComponent, Line, MessageResult, RenderContext, UiEvent};
+use tui::{Component, InteractiveComponent, Line, MessageResult, ViewContext, UiEvent};
 
 struct Greeting {
     name: String,
 }
 
 impl Component for Greeting {
-    fn render(&self, _ctx: &RenderContext) -> Vec<Line> {
+    fn render(&self, _ctx: &ViewContext) -> Vec<Line> {
         vec![Line::new(format!("Hello, {}!", self.name))]
     }
 }
@@ -121,7 +121,7 @@ Focus helpers:
 
 Useful building blocks:
 
-- `Container`
+- `Panel`
 - `Form`
 - `TextField`
 - `Checkbox`

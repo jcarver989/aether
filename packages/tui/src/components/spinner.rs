@@ -1,5 +1,4 @@
-use crate::Component;
-use crate::components::RenderContext;
+use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 
 pub const BRAILLE_FRAMES: &[char] = &['⠒', '⠮', '⠷', '⢷', '⡾', '⣯', '⣽', '⣿', '⣭', '⢯'];
@@ -49,14 +48,20 @@ impl Spinner {
     }
 }
 
-impl Default for Spinner {
-    fn default() -> Self {
-        Self::braille()
-    }
-}
+impl Widget for Spinner {
+    type Message = ();
 
-impl Component for Spinner {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        match event {
+            WidgetEvent::Tick => {
+                self.on_tick();
+                Outcome::consumed()
+            }
+            _ => Outcome::ignored(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         if !self.visible {
             return vec![];
         }
@@ -68,6 +73,12 @@ impl Component for Spinner {
     }
 }
 
+impl Default for Spinner {
+    fn default() -> Self {
+        Self::braille()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,7 +86,7 @@ mod tests {
     #[test]
     fn invisible_renders_empty() {
         let spinner = Spinner::default();
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = spinner.render(&ctx);
         assert!(lines.is_empty());
     }
@@ -84,14 +95,14 @@ mod tests {
     fn visible_renders_one_line() {
         let mut spinner = Spinner::default();
         spinner.visible = true;
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = spinner.render(&ctx);
         assert_eq!(lines.len(), 1);
     }
 
     #[test]
     fn different_ticks_produce_different_output() {
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
 
         let mut spinner_a = Spinner::default();
         spinner_a.visible = true;
@@ -108,7 +119,7 @@ mod tests {
 
     #[test]
     fn cycles_after_full_rotation() {
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
 
         let mut spinner_a = Spinner::default();
         spinner_a.visible = true;

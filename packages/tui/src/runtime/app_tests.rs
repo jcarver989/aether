@@ -4,8 +4,8 @@
 //! The framework decides when to render (after each update/effect cycle), not the app.
 
 use super::app::{App, AppEvent, Effects};
-use crate::components::{Cursor, RenderContext};
-use crate::rendering::renderer::Renderer;
+use crate::components::{Cursor, ViewContext};
+use crate::rendering::renderer::{Renderer, Terminal};
 use crate::testing::TestTerminal;
 use crate::theme::Theme;
 use crate::{Frame, KeyCode, KeyModifiers, Line};
@@ -28,7 +28,7 @@ fn key_event(code: KeyCode) -> CrosstermEvent {
 
 
 #[test]
-fn effects_from_vec_collapses_common_cases() {
+fn command_from_vec_collapses_common_cases() {
     let empty: Vec<i32> = vec![];
     assert!(matches!(Effects::from_vec(empty), Effects::None));
     assert!(matches!(Effects::from_vec(vec![1]), Effects::One(1)));
@@ -36,12 +36,12 @@ fn effects_from_vec_collapses_common_cases() {
 }
 
 #[test]
-fn effects_merge_preserves_order_and_exit() {
+fn command_merge_preserves_order_and_quit() {
     let merged = Effects::one(1).merge(Effects::many(vec![2, 3]));
     assert!(matches!(merged, Effects::Many(values) if values == vec![1, 2, 3]));
 
-    let exit_merged: Effects<i32> = Effects::one(1).merge(Effects::exit());
-    assert!(exit_merged.is_exit());
+    let quit_merged: Effects<i32> = Effects::one(1).merge(Effects::exit());
+    assert!(quit_merged.is_exit());
 }
 
 #[tokio::test]
@@ -61,7 +61,7 @@ async fn app_rerenders_after_state_changing_events() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &RenderContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                     self.count += 1;
@@ -72,7 +72,7 @@ async fn app_rerenders_after_state_changing_events() {
             }
         }
 
-        fn view(&self, _ctx: &RenderContext) -> Frame {
+        fn view(&self, _ctx: &ViewContext) -> Frame {
             self.render_count.set(self.render_count.get() + 1);
             Frame::new(
                 vec![Line::new(format!("Count: {}", self.count))],
@@ -128,7 +128,7 @@ async fn app_rerenders_after_external_events() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<String>, _ctx: &RenderContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<String>, _ctx: &ViewContext) -> Effects<()> {
             match event {
                 AppEvent::External(msg) => {
                     self.value = msg;
@@ -139,7 +139,7 @@ async fn app_rerenders_after_external_events() {
             }
         }
 
-        fn view(&self, _ctx: &RenderContext) -> Frame {
+        fn view(&self, _ctx: &ViewContext) -> Frame {
             self.render_count.set(self.render_count.get() + 1);
             Frame::new(
                 vec![Line::new(self.value.clone())],
@@ -153,7 +153,7 @@ async fn app_rerenders_after_external_events() {
 
         async fn run_effect(
             &mut self,
-            _renderer: &mut Renderer<impl Write>,
+            _terminal: &mut Terminal<'_, impl Write>,
             _effect: (),
         ) -> Result<Effects<()>, io::Error> {
             Ok(Effects::exit())
@@ -204,7 +204,7 @@ async fn app_rerenders_after_effect_completion() {
         type Effect = TestEffect;
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &RenderContext) -> Effects<TestEffect> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<TestEffect> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char(' ') => {
                     Effects::one(TestEffect::Increment)
@@ -214,7 +214,7 @@ async fn app_rerenders_after_effect_completion() {
             }
         }
 
-        fn view(&self, _ctx: &RenderContext) -> Frame {
+        fn view(&self, _ctx: &ViewContext) -> Frame {
             self.render_count.set(self.render_count.get() + 1);
             Frame::new(
                 vec![Line::new(format!("Count: {}", self.count))],
@@ -228,7 +228,7 @@ async fn app_rerenders_after_effect_completion() {
 
         async fn run_effect(
             &mut self,
-            _renderer: &mut Renderer<impl Write>,
+            _terminal: &mut Terminal<'_, impl Write>,
             effect: TestEffect,
         ) -> Result<Effects<TestEffect>, io::Error> {
             match effect {
@@ -285,7 +285,7 @@ async fn frame_diffing_avoids_unnecessary_terminal_writes() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &RenderContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
                 // No state change - frame content stays the same
@@ -293,7 +293,7 @@ async fn frame_diffing_avoids_unnecessary_terminal_writes() {
             }
         }
 
-        fn view(&self, _ctx: &RenderContext) -> Frame {
+        fn view(&self, _ctx: &ViewContext) -> Frame {
             // Always returns the same content
             Frame::new(
                 vec![Line::new("static content")],
@@ -354,7 +354,7 @@ async fn tick_events_trigger_rerender() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &RenderContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
             match event {
                 AppEvent::Tick(_) => {
                     self.ticks += 1;
@@ -369,7 +369,7 @@ async fn tick_events_trigger_rerender() {
             }
         }
 
-        fn view(&self, _ctx: &RenderContext) -> Frame {
+        fn view(&self, _ctx: &ViewContext) -> Frame {
             self.render_count.set(self.render_count.get() + 1);
             Frame::new(
                 vec![Line::new(format!("Ticks: {}", self.ticks))],
@@ -428,14 +428,14 @@ async fn resize_triggers_rerender_with_updated_size() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &RenderContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
                 _ => Effects::none(),
             }
         }
 
-        fn view(&self, ctx: &RenderContext) -> Frame {
+        fn view(&self, ctx: &ViewContext) -> Frame {
             self.seen_sizes
                 .borrow_mut()
                 .push((ctx.size.width, ctx.size.height));
@@ -499,7 +499,7 @@ async fn app_does_not_require_props_for_rendering() {
         type Effect = ();
         type Error = io::Error;
 
-        fn update(&mut self, event: AppEvent<()>, _ctx: &RenderContext) -> Effects<()> {
+        fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
             match event {
                 AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                     self.state += 1;
@@ -510,7 +510,7 @@ async fn app_does_not_require_props_for_rendering() {
             }
         }
 
-        fn view(&self, _ctx: &RenderContext) -> Frame {
+        fn view(&self, _ctx: &ViewContext) -> Frame {
             self.render_count.set(self.render_count.get() + 1);
             Frame::new(
                 vec![Line::new(format!("State: {}", self.state))],
@@ -582,7 +582,7 @@ impl App for CounterApp {
     type Effect = ();
     type Error = std::io::Error;
 
-    fn update(&mut self, event: AppEvent<()>, _ctx: &RenderContext) -> Effects<()> {
+    fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
         match event {
             AppEvent::Key(key) if key.code == KeyCode::Char('q') => return Effects::exit(),
             AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
@@ -597,7 +597,7 @@ impl App for CounterApp {
         }
     }
 
-    fn view(&self, _ctx: &RenderContext) -> Frame {
+    fn view(&self, _ctx: &ViewContext) -> Frame {
         Frame::new(
             vec![Line::new(format!("Count: {}", self.count))],
             Cursor {
@@ -610,7 +610,7 @@ impl App for CounterApp {
 
     async fn run_effect(
         &mut self,
-        _renderer: &mut Renderer<impl Write>,
+        _terminal: &mut Terminal<'_, impl Write>,
         _effect: (),
     ) -> Result<Effects<()>, std::io::Error> {
         Ok(Effects::none())

@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use unicode_width::UnicodeWidthStr;
 
 use crate::line::Line;
-use crate::rendering::render_context::RenderContext;
+use crate::rendering::render_context::ViewContext;
 use crate::span::Span;
 use crate::style::Style;
 use crate::theme::Theme;
@@ -234,13 +234,13 @@ fn line_display_width(line: &Line) -> usize {
         .sum()
 }
 
-pub fn render_markdown(text: &str, context: &RenderContext) -> Vec<Line> {
+pub fn render_markdown(text: &str, context: &ViewContext) -> Vec<Line> {
     let renderer = MarkdownRenderer::new(context);
     renderer.render(text)
 }
 
 struct MarkdownRenderer<'a> {
-    context: &'a RenderContext,
+    context: &'a ViewContext,
     theme: &'a Theme,
     lines: Vec<Line>,
     current_line: Line,
@@ -262,7 +262,7 @@ struct MarkdownRenderer<'a> {
 }
 
 impl<'a> MarkdownRenderer<'a> {
-    fn new(context: &'a RenderContext) -> Self {
+    fn new(context: &'a ViewContext) -> Self {
         Self {
             context,
             theme: &context.theme,
@@ -600,12 +600,12 @@ mod tests {
         Theme::default()
     }
 
-    fn test_context() -> RenderContext {
-        RenderContext::new((80, 24))
+    fn test_context() -> ViewContext {
+        ViewContext::new((80, 24))
     }
 
-    fn test_context_with_theme(theme: Theme) -> RenderContext {
-        RenderContext::new_with_theme((80, 24), theme)
+    fn test_context_with_theme(theme: Theme) -> ViewContext {
+        ViewContext::new_with_theme((80, 24), theme)
     }
 
     fn render(md: &str) -> Vec<Line> {

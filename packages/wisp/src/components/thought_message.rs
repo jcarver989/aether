@@ -1,4 +1,4 @@
-use crate::tui::{Component, Line, RenderContext, Style, Theme};
+use crate::tui::{Line, ViewContext, Style, Theme};
 
 pub struct ThoughtMessage<'a> {
     pub text: &'a str,
@@ -19,8 +19,8 @@ impl ThoughtMessage<'_> {
     }
 }
 
-impl Component for ThoughtMessage<'_> {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl ThoughtMessage<'_> {
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         if self.text.is_empty() {
             return vec![];
         }
@@ -37,7 +37,7 @@ mod tests {
     #[test]
     fn renders_border_prefixed_thought_line() {
         let component = ThoughtMessage { text: "check plan" };
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().starts_with("│ "));
@@ -49,7 +49,7 @@ mod tests {
         let component = ThoughtMessage {
             text: "line one\nline two",
         };
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 2);
         assert!(lines[0].plain_text().starts_with("│ "));
@@ -63,7 +63,7 @@ mod tests {
         let component = ThoughtMessage {
             text: "abcdefghijklmnopqrstuvwxyz",
         };
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         let lines = component.render(&context);
         let wrapped = soft_wrap_line(&lines[0], 12);
         assert!(wrapped.len() > 1);

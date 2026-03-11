@@ -1,4 +1,4 @@
-use crate::components::RenderContext;
+use crate::components::ViewContext;
 use crate::line::Line;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nucleo::pattern::{CaseMatching, Normalization};
@@ -182,8 +182,8 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
 
     pub fn render_items(
         &self,
-        context: &RenderContext,
-        render_item: impl Fn(&T, bool, &RenderContext) -> Line,
+        context: &ViewContext,
+        render_item: impl Fn(&T, bool, &ViewContext) -> Line,
     ) -> Vec<Line> {
         self.visible_matches_with_selection()
             .into_iter()
@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn render_items_empty_returns_empty() {
         let combobox: Combobox<FakeItem> = Combobox::from_matches(vec![]);
-        let context = RenderContext::new((120, 40));
+        let context = ViewContext::new((120, 40));
         let lines = combobox.render_items(&context, |_, _, _| Line::new("x".to_string()));
         assert!(lines.is_empty());
     }
@@ -615,7 +615,7 @@ mod tests {
             FakeItem::new("b"),
             FakeItem::new("c"),
         ]);
-        let context = RenderContext::new((120, 40));
+        let context = ViewContext::new((120, 40));
         let lines = combobox.render_items(&context, |item, selected, _ctx| {
             let prefix = if selected { "> " } else { "  " };
             Line::new(format!("{prefix}{}", item.text))

@@ -11,9 +11,9 @@ use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::{
-    Effects, FormMessage, InteractiveComponent, KeyEvent, Line, MessageResult, RenderContext,
-    Spinner, UiEvent,
+    Effects, FormMessage, KeyEvent, Line, Outcome, ViewContext, Spinner, Widget, WidgetEvent,
 };
+use std::time::Instant;
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{
@@ -98,7 +98,38 @@ impl UiState {
             .any(|entry| matches!(entry.status, acp::PlanEntryStatus::Completed))
     }
 
-    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Effects<AppAction> {
+    pub(crate) fn on_event(
+        &mut self,
+        event: &WidgetEvent,
+        git_diff_mode: Option<&mut GitDiffMode>,
+    ) -> Effects<AppAction> {
+        match event {
+            WidgetEvent::Key(key_event) => self.handle_key(*key_event),
+            WidgetEvent::Paste(_) => {
+                self.config_overlay = None;
+                let outcome = self.prompt_composer.on_event(event);
+                self.handle_prompt_composer_messages(outcome)
+            }
+            WidgetEvent::Mouse(mouse) => {
+                if matches!(self.screen_mode, ScreenMode::GitDiff) {
+                    if let Some(mode) = git_diff_mode {
+                        mode.on_mouse_event(*mouse);
+                    }
+                }
+                Effects::none()
+            }
+            WidgetEvent::Tick => {
+                let now = Instant::now();
+                self.grid_loader.on_tick();
+                self.tool_call_statuses.on_tick(now);
+                self.plan_tracker.on_tick(now);
+                self.progress_indicator.on_tick();
+                Effects::none()
+            }
+        }
+    }
+
+    fn handle_key(&mut self, key_event: KeyEvent) -> Effects<AppAction> {
         if self.keybindings.exit.matches(key_event) {
             return Effects::exit();
         }
@@ -119,15 +150,17 @@ impl UiState {
             };
         }
 
+        let event = WidgetEvent::Key(key_event);
+
         let outcome = if let Some(overlay) = self.config_overlay.as_mut() {
-            overlay.on_event(UiEvent::Key(key_event))
+            overlay.on_event(&event)
         } else {
             if matches!(self.screen_mode, ScreenMode::GitDiff) {
                 return Effects::none();
             }
 
-            let composer_outcome = self.prompt_composer.on_event(UiEvent::Key(key_event));
-            if composer_outcome.handled {
+            let composer_outcome = self.prompt_composer.on_event(&event);
+            if composer_outcome.is_handled() {
                 return self.handle_prompt_composer_messages(composer_outcome);
             }
 
@@ -153,25 +186,6 @@ impl UiState {
         };
 
         self.handle_config_overlay_messages(outcome)
-    }
-
-    pub(crate) fn on_mouse_event(
-        &mut self,
-        mouse: crate::tui::MouseEvent,
-        git_diff_mode: Option<&mut GitDiffMode>,
-    ) -> Effects<AppAction> {
-        if matches!(self.screen_mode, ScreenMode::GitDiff)
-            && let Some(mode) = git_diff_mode
-        {
-            mode.on_mouse_event(mouse);
-        }
-        Effects::none()
-    }
-
-    pub(crate) fn on_paste(&mut self, text: String) -> Effects<AppAction> {
-        self.config_overlay = None;
-        let outcome = self.prompt_composer.on_event(UiEvent::Paste(text));
-        self.handle_prompt_composer_messages(outcome)
     }
 
     pub(crate) fn update_config_options(&mut self, config_options: &[SessionConfigOption]) {
@@ -230,9 +244,9 @@ impl UiState {
         key_event: KeyEvent,
     ) -> Option<Effects<AppAction>> {
         let elicitation_form = self.elicitation_form.as_mut()?;
-        let outcome = elicitation_form.form.on_event(UiEvent::Key(key_event));
+        let outcome = elicitation_form.form.on_event(&WidgetEvent::Key(key_event));
 
-        for message in outcome.messages {
+        for message in outcome.into_messages() {
             match message {
                 FormMessage::Close => {
                     if let Some(elicitation_form) = self.elicitation_form.take() {
@@ -255,10 +269,10 @@ impl UiState {
 
     pub(crate) fn handle_prompt_composer_messages(
         &mut self,
-        outcome: MessageResult<PromptComposerMessage>,
+        outcome: Outcome<PromptComposerMessage>,
     ) -> Effects<AppAction> {
         outcome
-            .messages
+            .into_messages()
             .into_iter()
             .flat_map(|msg| match msg {
                 PromptComposerMessage::ClearScreen => {
@@ -289,10 +303,10 @@ impl UiState {
 
     pub(crate) fn handle_config_overlay_messages(
         &mut self,
-        outcome: MessageResult<ConfigOverlayMessage>,
+        outcome: Outcome<ConfigOverlayMessage>,
     ) -> Effects<AppAction> {
         outcome
-            .messages
+            .into_messages()
             .into_iter()
             .flat_map(|message| match message {
                 ConfigOverlayMessage::Close => {
@@ -355,7 +369,7 @@ impl UiState {
 
     pub(crate) fn refresh_caches(
         &mut self,
-        context: &RenderContext,
+        context: &ViewContext,
         git_diff_mode: Option<&mut GitDiffMode>,
     ) {
         let progress = self.tool_call_statuses.progress();
@@ -479,7 +493,7 @@ mod tests {
     use super::*;
     use crate::components::config_menu::ConfigChange;
     use crate::keybindings::KeyBinding;
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+    use crate::tui::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, WidgetEvent};
     use agent_client_protocol::SessionConfigOptionCategory;
 
     #[test]
@@ -544,7 +558,7 @@ mod tests {
     #[test]
     fn prompt_composer_messages_process_all_messages_in_order() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let outcome = MessageResult::messages(vec![
+        let outcome = Outcome::messages(vec![
             PromptComposerMessage::OpenConfig,
             PromptComposerMessage::SubmitRequested {
                 user_input: "hello".to_string(),
@@ -572,7 +586,7 @@ mod tests {
     fn config_overlay_messages_process_all_messages_in_order() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         state.open_config_overlay();
-        let outcome = MessageResult::messages(vec![
+        let outcome = Outcome::messages(vec![
             ConfigOverlayMessage::ApplyConfigChanges(vec![ConfigChange {
                 config_id: "model".to_string(),
                 new_value: "gpt-5".to_string(),
@@ -597,7 +611,7 @@ mod tests {
     fn handled_prompt_composer_result_returns_no_effects() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
 
-        let effects = state.handle_prompt_composer_messages(MessageResult::consumed());
+        let effects = state.handle_prompt_composer_messages(Outcome::consumed());
 
         assert!(effects.into_effects().is_empty());
     }
@@ -608,14 +622,14 @@ mod tests {
         state.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
         let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        let effects = state.on_key_event(default_exit);
+        let effects = state.on_event(&WidgetEvent::Key(default_exit), None);
         assert!(
             !effects.is_exit(),
             "default Ctrl+C should no longer exit"
         );
 
         let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        let effects = state.on_key_event(custom_exit);
+        let effects = state.on_event(&WidgetEvent::Key(custom_exit), None);
         assert!(effects.is_exit(), "custom Ctrl+Q should exit");
     }
 
@@ -623,7 +637,7 @@ mod tests {
     fn ctrl_g_opens_git_diff_viewer() {
         let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let effects = state.on_key_event(key);
+        let effects = state.on_event(&WidgetEvent::Key(key), None);
         assert!(effects
             .into_effects()
             .iter()
@@ -636,7 +650,7 @@ mod tests {
         state.screen_mode = ScreenMode::GitDiff;
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let effects = state.on_key_event(key);
+        let effects = state.on_event(&WidgetEvent::Key(key), None);
 
         assert!(matches!(state.screen_mode, ScreenMode::Conversation));
         assert!(effects.into_effects().is_empty());
@@ -656,7 +670,7 @@ mod tests {
         );
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let effects = state.on_key_event(key);
+        let effects = state.on_event(&WidgetEvent::Key(key), None);
 
         assert!(!effects
             .into_effects()
@@ -671,7 +685,7 @@ mod tests {
         state.screen_mode = ScreenMode::GitDiff;
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        let effects = state.on_key_event(key);
+        let effects = state.on_event(&WidgetEvent::Key(key), None);
 
         assert!(!effects.is_exit());
         assert!(
@@ -693,6 +707,6 @@ mod tests {
             row: 0,
             modifiers: KeyModifiers::NONE,
         };
-        state.on_mouse_event(mouse, None);
+        state.on_event(&WidgetEvent::Mouse(mouse), None);
     }
 }

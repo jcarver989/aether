@@ -1,4 +1,4 @@
-use crate::components::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
+use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
 use crate::focus::FocusRing;
 use crate::line::Line;
 use crate::style::Style;
@@ -62,52 +62,8 @@ impl Form {
         }
         serde_json::Value::Object(map)
     }
-}
 
-impl FormFieldKind {
-    #[cfg(feature = "serde")]
-    fn to_json(&self) -> serde_json::Value {
-        match self {
-            FormFieldKind::Text(w) => w.to_json(),
-            FormFieldKind::Number(w) => w.to_json(),
-            FormFieldKind::Boolean(w) => w.to_json(),
-            FormFieldKind::SingleSelect(w) => w.to_json(),
-            FormFieldKind::MultiSelect(w) => w.to_json(),
-        }
-    }
-
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
-        match self {
-            FormFieldKind::Text(w) => w.render(context),
-            FormFieldKind::Number(w) => w.render(context),
-            FormFieldKind::Boolean(w) => w.render(context),
-            FormFieldKind::SingleSelect(w) => w.render(context),
-            FormFieldKind::MultiSelect(w) => w.render(context),
-        }
-    }
-
-    fn handle_event(&mut self, event: UiEvent) -> MessageResult<()> {
-        match self {
-            FormFieldKind::Text(w) => w.on_event(event),
-            FormFieldKind::Number(w) => w.on_event(event),
-            FormFieldKind::Boolean(w) => w.on_event(event),
-            FormFieldKind::SingleSelect(w) => w.on_event(event),
-            FormFieldKind::MultiSelect(w) => w.on_event(event),
-        }
-    }
-}
-
-impl Component for Form {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
-        let mut lines = vec![self.render_title(context)];
-        lines.extend(self.render_fields(context));
-        lines.extend(Self::render_footer(context));
-        lines
-    }
-}
-
-impl Form {
-    fn render_title(&self, context: &RenderContext) -> Line {
+    fn render_title(&self, context: &ViewContext) -> Line {
         let title = format!("  {} ", self.message);
         let width = context.size.width as usize;
         let border_len = width.saturating_sub(title.len() + 4);
@@ -117,7 +73,7 @@ impl Form {
         )
     }
 
-    fn render_fields(&self, context: &RenderContext) -> Vec<Line> {
+    fn render_fields(&self, context: &ViewContext) -> Vec<Line> {
         let mut lines = Vec::new();
         for (i, field) in self.fields.iter().enumerate() {
             let is_selected = self.focus.is_focused(i);
@@ -157,7 +113,7 @@ impl Form {
         lines
     }
 
-    fn render_footer(context: &RenderContext) -> Vec<Line> {
+    fn render_footer(context: &ViewContext) -> Vec<Line> {
         let border_width = context.size.width.saturating_sub(2) as usize;
         vec![
             Line::styled(
@@ -172,30 +128,70 @@ impl Form {
     }
 }
 
-impl InteractiveComponent for Form {
+impl FormFieldKind {
+    #[cfg(feature = "serde")]
+    fn to_json(&self) -> serde_json::Value {
+        match self {
+            FormFieldKind::Text(w) => w.to_json(),
+            FormFieldKind::Number(w) => w.to_json(),
+            FormFieldKind::Boolean(w) => w.to_json(),
+            FormFieldKind::SingleSelect(w) => w.to_json(),
+            FormFieldKind::MultiSelect(w) => w.to_json(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
+        match self {
+            FormFieldKind::Text(w) => w.render(context),
+            FormFieldKind::Number(w) => w.render(context),
+            FormFieldKind::Boolean(w) => w.render(context),
+            FormFieldKind::SingleSelect(w) => w.render(context),
+            FormFieldKind::MultiSelect(w) => w.render(context),
+        }
+    }
+
+    fn handle_event(&mut self, event: &WidgetEvent) -> Outcome<()> {
+        match self {
+            FormFieldKind::Text(w) => w.on_event(event),
+            FormFieldKind::Number(w) => w.on_event(event),
+            FormFieldKind::Boolean(w) => w.on_event(event),
+            FormFieldKind::SingleSelect(w) => w.on_event(event),
+            FormFieldKind::MultiSelect(w) => w.on_event(event),
+        }
+    }
+}
+
+impl Widget for Form {
     type Message = FormMessage;
 
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        match &event {
-            UiEvent::Key(key_event) => match key_event.code {
-                KeyCode::Esc => return MessageResult::message(FormMessage::Close),
-                KeyCode::Enter => return MessageResult::message(FormMessage::Submit),
-                KeyCode::Tab | KeyCode::BackTab => {
-                    self.focus.handle_key(*key_event);
-                    return MessageResult::consumed();
-                }
-                _ => {}
-            },
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
+        match key.code {
+            KeyCode::Esc => return Outcome::message(FormMessage::Close),
+            KeyCode::Enter => return Outcome::message(FormMessage::Submit),
+            KeyCode::Tab | KeyCode::BackTab => {
+                self.focus.handle_key(*key);
+                return Outcome::consumed();
+            }
             _ => {}
         }
 
         if let Some(field) = self.fields.get_mut(self.focus.focused()) {
             let result = field.kind.handle_event(event);
-            if result.handled {
+            if result.is_handled() {
                 return result.discard_messages();
             }
         }
-        MessageResult::consumed()
+        Outcome::consumed()
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
+        let mut lines = vec![self.render_title(context)];
+        lines.extend(self.render_fields(context));
+        lines.extend(Self::render_footer(context));
+        lines
     }
 }
 
@@ -215,7 +211,7 @@ mod tests {
                 kind: FormFieldKind::Text(TextField::new(String::new())),
             }],
         );
-        let context = RenderContext::new((10, 10));
+        let context = ViewContext::new((10, 10));
 
         // Should not panic with "attempt to subtract with overflow"
         let lines = form.render(&context);

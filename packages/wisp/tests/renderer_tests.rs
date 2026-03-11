@@ -145,7 +145,7 @@ impl Renderer {
         while let Some(effect) = queue.pop_front() {
             self.renderer
                 .render_frame(|ctx| self.screen.view(ctx))?;
-            let follow_up = self.screen.run_effect(&mut self.renderer, effect).await?;
+            let follow_up = self.screen.run_effect(&mut self.renderer.terminal(), effect).await?;
             if follow_up.is_exit() {
                 return Ok(LoopAction::Exit);
             }

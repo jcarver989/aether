@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::frame::Frame;
 use super::line::Line;
-use super::render_context::RenderContext;
+use super::render_context::ViewContext;
 use super::size::Size;
 use super::terminal_screen::TerminalScreen;
 use crate::theme::Theme;
@@ -16,8 +16,6 @@ pub struct Renderer<T: Write> {
     terminal: TerminalScreen<T>,
     size: Size,
     theme: Arc<Theme>,
-    focused: bool,
-    max_height: Option<usize>,
     #[cfg(feature = "syntax")]
     highlighter: Arc<SyntaxHighlighter>,
     render_epoch: u64,
@@ -29,8 +27,6 @@ impl<T: Write> Renderer<T> {
             terminal: TerminalScreen::new(writer),
             size: (0, 0).into(),
             theme: Arc::new(theme),
-            focused: true,
-            max_height: None,
             #[cfg(feature = "syntax")]
             highlighter: Arc::new(SyntaxHighlighter::new()),
             render_epoch: 0,
@@ -39,10 +35,10 @@ impl<T: Write> Renderer<T> {
 
     /// Render a frame using a closure.
     ///
-    /// The closure receives a RenderContext and returns a Frame.
+    /// The closure receives a ViewContext and returns a Frame.
     pub fn render_frame(
         &mut self,
-        f: impl FnOnce(&RenderContext) -> Frame,
+        f: impl FnOnce(&ViewContext) -> Frame,
     ) -> io::Result<()> {
         let context = self.context();
         let prepared = f(&context)
@@ -68,12 +64,11 @@ impl<T: Write> Renderer<T> {
         self.terminal.on_resize(self.size.width);
     }
 
-    pub fn context(&self) -> RenderContext {
-        RenderContext {
+    pub fn context(&self) -> ViewContext {
+        ViewContext {
             size: self.size,
             theme: self.theme.clone(),
-            focused: self.focused,
-            max_height: self.max_height,
+            focused: true,
             #[cfg(feature = "syntax")]
             highlighter: self.highlighter.clone(),
         }
@@ -100,6 +95,37 @@ impl<T: Write> Renderer<T> {
 
     fn bump_render_epoch(&mut self) {
         self.render_epoch = self.render_epoch.wrapping_add(1);
+    }
+
+    /// Create a narrowed [`Terminal`] handle for use in effect handlers.
+    pub fn terminal(&mut self) -> Terminal<'_, T> {
+        Terminal { renderer: self }
+    }
+}
+
+/// Narrowed handle for terminal operations during effect execution.
+///
+/// Provides only the operations needed by effect handlers: scrollback,
+/// screen clearing, theme changes, and context queries.
+pub struct Terminal<'a, W: Write> {
+    renderer: &'a mut Renderer<W>,
+}
+
+impl<W: Write> Terminal<'_, W> {
+    pub fn push_to_scrollback(&mut self, lines: &[Line]) -> io::Result<()> {
+        self.renderer.push_to_scrollback(lines)
+    }
+
+    pub fn clear_screen(&mut self) -> io::Result<()> {
+        self.renderer.clear_screen()
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.renderer.set_theme(theme);
+    }
+
+    pub fn context(&self) -> ViewContext {
+        self.renderer.context()
     }
 }
 

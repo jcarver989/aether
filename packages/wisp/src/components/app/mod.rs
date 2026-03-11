@@ -9,8 +9,11 @@ pub(crate) use git_diff_mode::{
 };
 pub(crate) use state::UiState;
 
-use crate::tui::advanced::Renderer;
-use crate::tui::{App as TuiApp, AppEvent, Component, Cursor, Effects, Frame, Line, RenderContext};
+use crate::tui::advanced::Terminal;
+use crate::tui::{
+    App as TuiApp, AppEvent, Cursor, Effects, Frame, Layout, Line, ViewContext, Widget,
+    WidgetEvent,
+};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use acp_utils::notifications::McpServerStatus;
 use agent_client_protocol::{self as acp, SessionConfigOption};
@@ -18,7 +21,6 @@ use std::path::PathBuf;
 use std::time::Instant;
 use utils::ReasoningEffort;
 
-use crate::components::container::Container;
 use crate::components::conversation_window::ConversationWindow;
 use crate::components::plan_view::PlanView;
 use crate::components::status_line::StatusLine;
@@ -103,7 +105,7 @@ impl App {
         }
     }
 
-    fn prepare_for_view(&mut self, context: &RenderContext) {
+    fn prepare_for_view(&mut self, context: &ViewContext) {
         self.state
             .refresh_caches(context, Some(&mut self.git_diff_mode));
 
@@ -154,11 +156,12 @@ impl TuiApp for App {
     fn update(
         &mut self,
         event: AppEvent<Self::Event>,
-        context: &RenderContext,
+        context: &ViewContext,
     ) -> Effects<Self::Effect> {
         let effects = match event {
             AppEvent::Key(key_event) => {
-                let input = self.state.on_key_event(key_event);
+                let event = WidgetEvent::Key(key_event);
+                let input = self.state.on_event(&event, None);
                 if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
                     let git_effects = self.git_diff_mode.on_key_event(key_event);
                     input.merge(git_effects)
@@ -166,11 +169,15 @@ impl TuiApp for App {
                     input
                 }
             }
-            AppEvent::Paste(text) => self.state.on_paste(text),
-            AppEvent::Mouse(mouse) => self
-                .state
-                .on_mouse_event(mouse, Some(&mut self.git_diff_mode)),
-            AppEvent::Tick(_) => self.state.on_tick(),
+            AppEvent::Paste(text) => {
+                let event = WidgetEvent::Paste(text);
+                self.state.on_event(&event, None)
+            }
+            AppEvent::Mouse(mouse) => {
+                let event = WidgetEvent::Mouse(mouse);
+                self.state.on_event(&event, Some(&mut self.git_diff_mode))
+            }
+            AppEvent::Tick(_) => self.state.on_event(&WidgetEvent::Tick, None),
             AppEvent::Resize(_) => Effects::none(),
             AppEvent::External(event) => match event {
                 AcpEvent::SessionUpdate(update) => self.state.on_session_update(*update),
@@ -200,7 +207,7 @@ impl TuiApp for App {
         effects
     }
 
-    fn view(&self, context: &RenderContext) -> Frame {
+    fn view(&self, context: &ViewContext) -> Frame {
         let s = self.status_line_props();
         let status_line = StatusLine {
             agent_name: &s.agent_name,
@@ -219,12 +226,13 @@ impl TuiApp for App {
                 is_visible: overlay.has_picker(),
             };
 
-            let mut container = Container::new();
-            container.push(overlay.render(context));
-            container.push(status_line.render(context));
-            let (lines, _) = container.render_with_offsets();
-
-            return Frame::new(lines, cursor);
+            let mut layout = Layout::new();
+            layout.section(overlay.render(context));
+            layout.section(status_line.render(context));
+            let mut frame = layout.into_frame();
+            // Override cursor from overlay (not section-relative)
+            frame = Frame::new(frame.lines().to_vec(), cursor);
+            return frame;
         }
 
         if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
@@ -236,8 +244,6 @@ impl TuiApp for App {
                 .saturating_sub(status_lines.len() as u16);
             let diff_context = context.with_size((context.size.width, diff_height));
             let line_count = diff_height as usize;
-            let mut lines = self.git_diff_mode.render(&diff_context);
-            lines.extend(status_lines);
 
             let cursor = if self.git_diff_mode.is_comment_input() {
                 let comment_cursor = self.git_diff_mode.comment_cursor_col();
@@ -254,7 +260,11 @@ impl TuiApp for App {
                 }
             };
 
-            return Frame::new(lines, cursor);
+            let mut layout = Layout::new();
+            layout.section(self.git_diff_mode.render(&diff_context));
+            layout.section(status_lines);
+            let frame = layout.into_frame();
+            return Frame::new(frame.lines().to_vec(), cursor);
         }
 
         let conversation_window = ConversationWindow {
@@ -265,36 +275,28 @@ impl TuiApp for App {
             entries: &self.cached_visible_plan_entries,
         };
 
-        let mut container = Container::new();
-        container.push(conversation_window.render(context));
-        container.push(plan_view.render(context));
-        container.push(self.state.progress_indicator.render(context));
-        let prompt_component_index = container.len();
-        container.push(self.state.prompt_composer.render(context));
-
+        let mut layout = Layout::new();
+        layout.section(conversation_window.render(context));
+        layout.section(plan_view.render(context));
+        layout.section(self.state.progress_indicator.render(context));
+        layout.section_with_cursor(
+            self.state.prompt_composer.render(context),
+            self.state.prompt_composer.cursor(context),
+        );
         if let Some(ref elicitation_form) = self.state.elicitation_form {
-            container.push(elicitation_form.form.render(context));
+            layout.section(elicitation_form.form.render(context));
         }
-
-        container.push(status_line.render(context));
-        let (lines, offsets) = container.render_with_offsets();
-        let prompt_cursor = self.state.prompt_composer.cursor(context);
-        let cursor = Cursor {
-            row: offsets[prompt_component_index] + prompt_cursor.row,
-            col: prompt_cursor.col,
-            is_visible: true,
-        };
-
-        Frame::new(lines, cursor)
+        layout.section(status_line.render(context));
+        layout.into_frame()
     }
 
     async fn run_effect(
         &mut self,
-        renderer: &mut Renderer<impl std::io::Write>,
+        terminal: &mut Terminal<'_, impl std::io::Write>,
         effect: Self::Effect,
     ) -> Result<Effects<Self::Effect>, Self::Error> {
-        let follow_up = self.apply_action(renderer, effect).await?;
-        self.prepare_for_view(&renderer.context());
+        let follow_up = self.apply_action(terminal, effect).await?;
+        self.prepare_for_view(&terminal.context());
         Ok(follow_up)
     }
 
@@ -320,13 +322,13 @@ mod tests {
     use crate::components::config_overlay::ConfigOverlayMessage;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
-    use crate::tui::MessageResult;
+    use crate::tui::{Outcome, WidgetEvent};
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use std::fs;
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
-    fn render_app(app: &mut App, context: &RenderContext) -> Frame {
+    fn render_app(app: &mut App, context: &ViewContext) -> Frame {
         app.prepare_for_view(context);
         app.view(context)
     }
@@ -430,7 +432,7 @@ mod tests {
             acp::SessionId::new("test"),
             PathBuf::from("."),
         );
-        let outcome = MessageResult::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
+        let outcome = Outcome::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
                 config_id: THEME_CONFIG_ID.to_string(),
                 new_value: "catppuccin.tmTheme".to_string(),
@@ -458,7 +460,7 @@ mod tests {
             acp::SessionId::new("test"),
             PathBuf::from("."),
         );
-        let outcome = MessageResult::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
+        let outcome = Outcome::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
                 config_id: THEME_CONFIG_ID.to_string(),
                 new_value: "   ".to_string(),
@@ -484,7 +486,7 @@ mod tests {
             acp::SessionId::new("test"),
             PathBuf::from("."),
         );
-        let outcome = MessageResult::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
+        let outcome = Outcome::message(ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
                 config_id: "model".to_string(),
                 new_value: "gpt-5".to_string(),
@@ -524,7 +526,7 @@ mod tests {
                 builtin: true,
             }]);
 
-        let context = RenderContext::new((120, 40));
+        let context = ViewContext::new((120, 40));
         let output = render_app(&mut screen, &context);
         let input_row = output
             .lines()
@@ -552,7 +554,7 @@ mod tests {
         );
         screen.state.open_config_overlay();
 
-        let context = RenderContext::new((120, 40));
+        let context = ViewContext::new((120, 40));
         let output = render_app(&mut screen, &context);
         assert!(
             output
@@ -629,7 +631,7 @@ mod tests {
                 .unwrap(),
         );
 
-        let output = render_app(&mut app, &RenderContext::new((120, 40)));
+        let output = render_app(&mut app, &ViewContext::new((120, 40)));
         assert!(
             !output
                 .lines()
@@ -714,7 +716,7 @@ mod tests {
             Instant::now(),
         );
 
-        let context = RenderContext::new((120, 40));
+        let context = ViewContext::new((120, 40));
         app.prepare_for_view(&context);
 
         assert_eq!(
@@ -739,7 +741,7 @@ mod tests {
         app.state.grid_loader.visible = false;
 
         let tick_before = app.state.tool_call_statuses.tick();
-        app.state.on_tick();
+        app.state.on_event(&WidgetEvent::Tick, None);
         let tick_after = app.state.tool_call_statuses.tick();
 
         assert!(tick_after > tick_before);
@@ -760,9 +762,9 @@ mod tests {
         app.state.tool_call_statuses.on_tool_call(&tool_call);
 
         app.state.progress_indicator.update(0, 1);
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let output_before = app.state.progress_indicator.render(&ctx);
-        app.state.on_tick();
+        app.state.on_event(&WidgetEvent::Tick, None);
         let output_after = app.state.progress_indicator.render(&ctx);
 
         assert_ne!(

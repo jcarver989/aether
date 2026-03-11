@@ -5,7 +5,7 @@ use agent_client_protocol as acp;
 
 use crate::tui::BRAILLE_FRAMES as FRAMES;
 use crate::tui::diff::highlight_diff;
-use crate::tui::{Component, DiffLine, DiffPreview, DiffTag, Line, RenderContext};
+use crate::tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext};
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -29,8 +29,8 @@ pub enum ToolCallStatus {
     Error(String),
 }
 
-impl Component for ToolCallStatusView {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl ToolCallStatusView {
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         let (indicator, indicator_color) = match &self.status {
             ToolCallStatus::Running => {
                 let frame = FRAMES[self.tick as usize % FRAMES.len()];
@@ -333,7 +333,7 @@ impl ToolCallStatuses {
         self.sub_agents.remove(id);
     }
 
-    pub fn render_tool(&self, id: &str, context: &RenderContext) -> Vec<Line> {
+    pub fn render_tool(&self, id: &str, context: &ViewContext) -> Vec<Line> {
         let has_sub_agents = self.has_sub_agents(id);
 
         let mut lines = if has_sub_agents {
@@ -407,7 +407,7 @@ impl ToolCallStatuses {
     /// Render and remove only completed (Success/Error) tool calls,
     /// leaving Running ones in place for continued display.
     #[allow(dead_code)]
-    pub fn drain_completed(&mut self, context: &RenderContext) -> Vec<Line> {
+    pub fn drain_completed(&mut self, context: &ViewContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let mut completed_ids = Vec::new();
 
@@ -434,7 +434,7 @@ impl ToolCallStatuses {
         self.tool_calls.is_empty()
     }
 
-    fn render_agent_header(&self, agent: &SubAgentState, context: &RenderContext) -> Line {
+    fn render_agent_header(&self, agent: &SubAgentState, context: &ViewContext) -> Line {
         let mut line = Line::default();
         line.push_text("  ");
         if agent.done {
@@ -485,8 +485,8 @@ impl SubAgentState {
     }
 }
 
-impl Component for ToolCallStatuses {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl ToolCallStatuses {
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         let mut lines = Vec::new();
         for id in &self.tool_order {
             if let Some(view) = self.view_for(id, self.tick) {
@@ -524,8 +524,8 @@ mod tests {
         DiffLine as AcpDiffLine, DiffTag as AcpDiffTag, ToolDisplayMeta,
     };
 
-    fn ctx() -> RenderContext {
-        RenderContext::new((80, 24))
+    fn ctx() -> ViewContext {
+        ViewContext::new((80, 24))
     }
 
     fn make_tool_call(id: &str, title: &str, raw_input: Option<&str>) -> acp::ToolCall {

@@ -5,22 +5,22 @@ use tui::MultiSelect;
 #[test]
 fn renders_all_unchecked() {
     let ms = MultiSelect::new(sample_options(), vec![false, false, false]);
-    let term = render_component(&ms, 80, 24);
+    let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[ ] Alpha", "[ ] Beta", "[ ] Gamma"]);
 }
 
 #[test]
 fn renders_some_checked() {
     let ms = MultiSelect::new(sample_options(), vec![true, false, true]);
-    let term = render_component(&ms, 80, 24);
+    let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[x] Alpha", "[ ] Beta", "[x] Gamma"]);
 }
 
 #[test]
 fn space_toggles_at_cursor() {
     let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
-    ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
-    let term = render_component(&ms, 80, 24);
+    ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+    let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[x] Alpha", "[ ] Beta", "[ ] Gamma"]);
 }
 
@@ -28,13 +28,13 @@ fn space_toggles_at_cursor() {
 fn navigate_and_toggle_multiple() {
     let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
     // Toggle Alpha (cursor=0)
-    ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
+    ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
     // Move to Beta, then Gamma
-    ms.on_event(UiEvent::Key(key(KeyCode::Down)));
-    ms.on_event(UiEvent::Key(key(KeyCode::Down)));
+    ms.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
+    ms.on_event(&WidgetEvent::Key(key(KeyCode::Down)));
     // Toggle Gamma (cursor=2)
-    ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
-    let term = render_component(&ms, 80, 24);
+    ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+    let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[x] Alpha", "[ ] Beta", "[x] Gamma"]);
 }
 
@@ -42,18 +42,18 @@ fn navigate_and_toggle_multiple() {
 fn cursor_wraps_up_from_first() {
     let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
     // Press Up from cursor=0, should wrap to cursor=2 (Gamma)
-    ms.on_event(UiEvent::Key(key(KeyCode::Up)));
+    ms.on_event(&WidgetEvent::Key(key(KeyCode::Up)));
     assert_eq!(ms.cursor, 2);
     // Toggle at the new cursor position to verify it's on Gamma
-    ms.on_event(UiEvent::Key(key(KeyCode::Char(' '))));
-    let term = render_component(&ms, 80, 24);
+    ms.on_event(&WidgetEvent::Key(key(KeyCode::Char(' '))));
+    let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[ ] Alpha", "[ ] Beta", "[x] Gamma"]);
 }
 
 #[test]
 fn unfocused_none_selected_shows_none() {
     let ms = MultiSelect::new(sample_options(), vec![false, false, false]);
-    let ctx = RenderContext::new((80, 24)).with_focused(false);
+    let ctx = ViewContext::new((80, 24)).with_focused(false);
     let rendered = ms.render(&ctx);
     assert_eq!(
         rendered.len(),
@@ -72,7 +72,7 @@ fn unfocused_none_selected_shows_none() {
 #[test]
 fn unfocused_with_selections_shows_summary() {
     let ms = MultiSelect::new(sample_options(), vec![true, false, true]);
-    let ctx = RenderContext::new((80, 24)).with_focused(false);
+    let ctx = ViewContext::new((80, 24)).with_focused(false);
     let rendered = ms.render(&ctx);
     assert_eq!(
         rendered.len(),

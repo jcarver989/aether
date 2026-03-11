@@ -1,6 +1,6 @@
 use crate::components::wrap_selection;
 use crate::tui::KeyCode;
-use crate::tui::{Component, InteractiveComponent, Line, MessageResult, RenderContext, UiEvent};
+use crate::tui::{Line, Outcome, ViewContext, Widget, WidgetEvent};
 
 pub struct ProviderLoginOverlay {
     pub entries: Vec<ProviderLoginEntry>,
@@ -24,8 +24,40 @@ pub enum ProviderLoginMessage {
     Authenticate(String),
 }
 
-impl Component for ProviderLoginOverlay {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl Widget for ProviderLoginOverlay {
+    type Message = ProviderLoginMessage;
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
+        match key.code {
+            KeyCode::Esc => Outcome::message(ProviderLoginMessage::Close),
+            KeyCode::Up => {
+                self.move_selection_up();
+                Outcome::consumed()
+            }
+            KeyCode::Down => {
+                self.move_selection_down();
+                Outcome::consumed()
+            }
+            KeyCode::Enter => {
+                if let Some(entry) = self
+                    .entries
+                    .get(self.selected_index)
+                    .filter(|e| e.status == ProviderLoginStatus::NeedsLogin)
+                {
+                    return Outcome::message(ProviderLoginMessage::Authenticate(
+                        entry.method_id.clone(),
+                    ));
+                }
+                Outcome::consumed()
+            }
+            _ => Outcome::consumed(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         if self.entries.is_empty() {
             return vec![Line::new("  (no providers need login)".to_string())];
         }
@@ -53,40 +85,6 @@ impl Component for ProviderLoginOverlay {
                 }
             })
             .collect()
-    }
-}
-
-impl InteractiveComponent for ProviderLoginOverlay {
-    type Message = ProviderLoginMessage;
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        match event {
-            UiEvent::Key(key_event) => match key_event.code {
-                KeyCode::Esc => MessageResult::message(ProviderLoginMessage::Close),
-                KeyCode::Up => {
-                    self.move_selection_up();
-                    MessageResult::consumed()
-                }
-                KeyCode::Down => {
-                    self.move_selection_down();
-                    MessageResult::consumed()
-                }
-                KeyCode::Enter => {
-                    if let Some(entry) = self
-                        .entries
-                        .get(self.selected_index)
-                        .filter(|e| e.status == ProviderLoginStatus::NeedsLogin)
-                    {
-                        return MessageResult::message(ProviderLoginMessage::Authenticate(
-                            entry.method_id.clone(),
-                        ));
-                    }
-                    MessageResult::consumed()
-                }
-                _ => MessageResult::consumed(),
-            },
-            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
-        }
     }
 }
 
@@ -159,7 +157,7 @@ mod tests {
     #[test]
     fn renders_entries_with_status_indicators() {
         let overlay = ProviderLoginOverlay::new(sample_entries());
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = overlay.render(&ctx);
 
         assert_eq!(lines.len(), 1);
@@ -171,11 +169,12 @@ mod tests {
     #[test]
     fn enter_on_needs_login_emits_authenticate() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
-        let outcome = overlay.on_event(UiEvent::Key(KeyEvent::new(
+        let outcome = overlay.on_event(&WidgetEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )));
-        match outcome.messages.as_slice() {
+        let messages = outcome.into_messages();
+        match messages.as_slice() {
             [ProviderLoginMessage::Authenticate(id)] => assert_eq!(id, "codex"),
             _ => panic!("Expected Authenticate message"),
         }
@@ -186,22 +185,23 @@ mod tests {
         let mut entries = sample_entries();
         entries[0].status = ProviderLoginStatus::Authenticating;
         let mut overlay = ProviderLoginOverlay::new(entries);
-        let outcome = overlay.on_event(UiEvent::Key(KeyEvent::new(
+        let outcome = overlay.on_event(&WidgetEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )));
-        assert!(outcome.messages.is_empty());
+        assert!(outcome.into_messages().is_empty());
     }
 
     #[test]
     fn esc_closes_overlay() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
-        let outcome = overlay.on_event(UiEvent::Key(KeyEvent::new(
+        let outcome = overlay.on_event(&WidgetEvent::Key(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )));
+        let messages = outcome.into_messages();
         assert!(matches!(
-            outcome.messages.as_slice(),
+            messages.as_slice(),
             [ProviderLoginMessage::Close]
         ));
     }
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn empty_entries_shows_placeholder() {
         let overlay = ProviderLoginOverlay::new(vec![]);
-        let ctx = RenderContext::new((80, 24));
+        let ctx = ViewContext::new((80, 24));
         let lines = overlay.render(&ctx);
         assert!(lines[0].plain_text().contains("no providers need login"));
     }

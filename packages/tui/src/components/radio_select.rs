@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 
 use super::select_option::SelectOption;
-use crate::components::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
+use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -24,20 +24,8 @@ impl RadioSelect {
                 serde_json::Value::String(o.value.clone())
             })
     }
-}
 
-impl Component for RadioSelect {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
-        if context.focused {
-            self.render_options(context)
-        } else {
-            vec![self.render_inline(context)]
-        }
-    }
-}
-
-impl RadioSelect {
-    fn render_inline(&self, context: &RenderContext) -> Line {
+    fn render_inline(&self, context: &ViewContext) -> Line {
         if let Some(opt) = self.options.get(self.selected) {
             Line::styled(&opt.title, context.theme.info())
         } else {
@@ -45,7 +33,7 @@ impl RadioSelect {
         }
     }
 
-    fn render_options(&self, context: &RenderContext) -> Vec<Line> {
+    fn render_options(&self, context: &ViewContext) -> Vec<Line> {
         self.options
             .iter()
             .enumerate()
@@ -62,27 +50,35 @@ impl RadioSelect {
     }
 }
 
-impl InteractiveComponent for RadioSelect {
+impl Widget for RadioSelect {
     type Message = ();
 
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
         if self.options.is_empty() {
-            return MessageResult::ignored();
+            return Outcome::ignored();
         }
 
-        match event {
-            UiEvent::Key(key_event) => match key_event.code {
-                KeyCode::Left | KeyCode::Up => {
-                    self.selected = (self.selected + self.options.len() - 1) % self.options.len();
-                    MessageResult::consumed()
-                }
-                KeyCode::Right | KeyCode::Down => {
-                    self.selected = (self.selected + 1) % self.options.len();
-                    MessageResult::consumed()
-                }
-                _ => MessageResult::ignored(),
-            },
-            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
+        match key.code {
+            KeyCode::Left | KeyCode::Up => {
+                self.selected = (self.selected + self.options.len() - 1) % self.options.len();
+                Outcome::consumed()
+            }
+            KeyCode::Right | KeyCode::Down => {
+                self.selected = (self.selected + 1) % self.options.len();
+                Outcome::consumed()
+            }
+            _ => Outcome::ignored(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
+        if context.focused {
+            self.render_options(context)
+        } else {
+            vec![self.render_inline(context)]
         }
     }
 }
@@ -116,18 +112,18 @@ mod tests {
     #[test]
     fn right_cycles_forward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_event(UiEvent::Key(key(KeyCode::Right)));
+        rs.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
         assert_eq!(rs.selected, 1);
-        rs.on_event(UiEvent::Key(key(KeyCode::Right)));
+        rs.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
         assert_eq!(rs.selected, 2);
-        rs.on_event(UiEvent::Key(key(KeyCode::Right)));
+        rs.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
         assert_eq!(rs.selected, 0); // wraps
     }
 
     #[test]
     fn left_cycles_backward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_event(UiEvent::Key(key(KeyCode::Left)));
+        rs.on_event(&WidgetEvent::Key(key(KeyCode::Left)));
         assert_eq!(rs.selected, 2); // wraps to end
     }
 
@@ -148,7 +144,7 @@ mod tests {
     #[test]
     fn empty_options_ignores_keys() {
         let mut rs = RadioSelect::new(vec![], 0);
-        let outcome = rs.on_event(UiEvent::Key(key(KeyCode::Right)));
-        assert!(!outcome.handled);
+        let outcome = rs.on_event(&WidgetEvent::Key(key(KeyCode::Right)));
+        assert!(!outcome.is_handled());
     }
 }

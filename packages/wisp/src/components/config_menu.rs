@@ -1,6 +1,6 @@
 use crate::components::wrap_selection;
 use crate::tui::KeyCode;
-use crate::tui::{Component, InteractiveComponent, Line, MessageResult, RenderContext, UiEvent};
+use crate::tui::{Line, Outcome, ViewContext, Widget, WidgetEvent};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
@@ -51,8 +51,41 @@ pub enum ConfigMenuMessage {
     OpenModelSelector,
 }
 
-impl Component for ConfigMenu {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl Widget for ConfigMenu {
+    type Message = ConfigMenuMessage;
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
+        match key.code {
+            KeyCode::Esc => Outcome::message(ConfigMenuMessage::CloseAll),
+            KeyCode::Up => {
+                self.move_selection_up();
+                Outcome::consumed()
+            }
+            KeyCode::Down => {
+                self.move_selection_down();
+                Outcome::consumed()
+            }
+            KeyCode::Enter => {
+                let msg = match self.selected_entry() {
+                    Some(e) if e.entry_kind == ConfigMenuEntryKind::McpServers => {
+                        ConfigMenuMessage::OpenMcpServers
+                    }
+                    Some(e) if e.entry_kind == ConfigMenuEntryKind::ProviderLogins => {
+                        ConfigMenuMessage::OpenProviderLogins
+                    }
+                    Some(e) if e.multi_select => ConfigMenuMessage::OpenModelSelector,
+                    _ => ConfigMenuMessage::OpenSelectedPicker,
+                };
+                Outcome::message(msg)
+            }
+            _ => Outcome::consumed(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         if self.options.is_empty() {
             return vec![Line::new("  (no config options)".to_string())];
         }
@@ -88,42 +121,6 @@ impl Component for ConfigMenu {
                 }
             })
             .collect()
-    }
-}
-
-impl InteractiveComponent for ConfigMenu {
-    type Message = ConfigMenuMessage;
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        let UiEvent::Key(key_event) = event else {
-            return MessageResult::ignored();
-        };
-
-        match key_event.code {
-            KeyCode::Esc => MessageResult::message(ConfigMenuMessage::CloseAll),
-            KeyCode::Up => {
-                self.move_selection_up();
-                MessageResult::consumed()
-            }
-            KeyCode::Down => {
-                self.move_selection_down();
-                MessageResult::consumed()
-            }
-            KeyCode::Enter => {
-                let msg = match self.selected_entry() {
-                    Some(e) if e.entry_kind == ConfigMenuEntryKind::McpServers => {
-                        ConfigMenuMessage::OpenMcpServers
-                    }
-                    Some(e) if e.entry_kind == ConfigMenuEntryKind::ProviderLogins => {
-                        ConfigMenuMessage::OpenProviderLogins
-                    }
-                    Some(e) if e.multi_select => ConfigMenuMessage::OpenModelSelector,
-                    _ => ConfigMenuMessage::OpenSelectedPicker,
-                };
-                MessageResult::message(msg)
-            }
-            _ => MessageResult::consumed(),
-        }
     }
 }
 
@@ -464,7 +461,7 @@ mod tests {
         ];
         let menu = ConfigMenu::from_config_options(&opts);
 
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         let lines = menu.render(&context);
 
         assert_eq!(lines.len(), 2);
@@ -482,7 +479,7 @@ mod tests {
     fn empty_options_renders_placeholder() {
         let menu = ConfigMenu::from_config_options(&[]);
 
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         let lines = menu.render(&context);
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().contains("no config options"));
@@ -515,15 +512,13 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Enter,
-            KeyModifiers::NONE,
-        )));
+        let outcome = menu.on_event(&WidgetEvent::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
 
+        let messages = outcome.into_messages();
         assert!(matches!(
-            outcome.messages.as_slice(),
+            messages.as_slice(),
             [ConfigMenuMessage::OpenSelectedPicker]
         ));
     }
@@ -533,15 +528,13 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Esc,
-            KeyModifiers::NONE,
-        )));
+        let outcome = menu.on_event(&WidgetEvent::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
 
+        let messages = outcome.into_messages();
         assert!(matches!(
-            outcome.messages.as_slice(),
+            messages.as_slice(),
             [ConfigMenuMessage::CloseAll]
         ));
     }
@@ -569,12 +562,10 @@ mod tests {
             .meta(meta.into_meta());
         let mut menu = ConfigMenu::from_config_options(&[opt]);
 
-        let outcome = menu.on_event(UiEvent::Key(KeyEvent::new(
-            KeyCode::Enter,
-            KeyModifiers::NONE,
-        )));
+        let outcome = menu.on_event(&WidgetEvent::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        let messages = outcome.into_messages();
         assert!(matches!(
-            outcome.messages.as_slice(),
+            messages.as_slice(),
             [ConfigMenuMessage::OpenModelSelector]
         ));
     }
@@ -621,7 +612,7 @@ mod tests {
             selected_index: 0,
         };
 
-        let context = RenderContext::new((80, 24));
+        let context = ViewContext::new((80, 24));
         let lines = menu.render(&context);
         // Should have highlight_bg, not muted
         let has_highlight = lines[0]

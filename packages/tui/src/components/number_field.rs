@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::components::{Component, InteractiveComponent, MessageResult, RenderContext, UiEvent};
+use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 
 /// Numeric input field supporting integers or floats.
@@ -33,39 +33,37 @@ impl NumberField {
     }
 }
 
-impl Component for NumberField {
-    fn render(&self, context: &RenderContext) -> Vec<Line> {
+impl Widget for NumberField {
+    type Message = ();
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        let WidgetEvent::Key(key) = event else {
+            return Outcome::ignored();
+        };
+        match key.code {
+            KeyCode::Char(c) => {
+                let accept = c.is_ascii_digit()
+                    || (c == '-' && self.value.is_empty())
+                    || (c == '.' && !self.integer_only && !self.value.contains('.'));
+                if accept {
+                    self.value.push(c);
+                }
+                Outcome::consumed()
+            }
+            KeyCode::Backspace => {
+                self.value.pop();
+                Outcome::consumed()
+            }
+            _ => Outcome::ignored(),
+        }
+    }
+
+    fn render(&self, context: &ViewContext) -> Vec<Line> {
         let mut line = Line::new(&self.value);
         if context.focused {
             line.push_styled("▏", context.theme.primary());
         }
         vec![line]
-    }
-}
-
-impl InteractiveComponent for NumberField {
-    type Message = ();
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        match event {
-            UiEvent::Key(key_event) => match key_event.code {
-                KeyCode::Char(c) => {
-                    let accept = c.is_ascii_digit()
-                        || (c == '-' && self.value.is_empty())
-                        || (c == '.' && !self.integer_only && !self.value.contains('.'));
-                    if accept {
-                        self.value.push(c);
-                    }
-                    MessageResult::consumed()
-                }
-                KeyCode::Backspace => {
-                    self.value.pop();
-                    MessageResult::consumed()
-                }
-                _ => MessageResult::ignored(),
-            },
-            UiEvent::Paste(_) | UiEvent::Tick(_) => MessageResult::ignored(),
-        }
     }
 }
 
@@ -81,39 +79,39 @@ mod tests {
     #[test]
     fn integer_accepts_digits_and_leading_minus() {
         let mut field = NumberField::new(String::new(), true);
-        field.on_event(UiEvent::Key(key(KeyCode::Char('-'))));
-        field.on_event(UiEvent::Key(key(KeyCode::Char('4'))));
-        field.on_event(UiEvent::Key(key(KeyCode::Char('2'))));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Char('-'))));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Char('4'))));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Char('2'))));
         assert_eq!(field.value, "-42");
     }
 
     #[test]
     fn integer_rejects_dot() {
         let mut field = NumberField::new("1".to_string(), true);
-        field.on_event(UiEvent::Key(key(KeyCode::Char('.'))));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Char('.'))));
         assert_eq!(field.value, "1");
     }
 
     #[test]
     fn float_accepts_single_dot() {
         let mut field = NumberField::new(String::new(), false);
-        field.on_event(UiEvent::Key(key(KeyCode::Char('3'))));
-        field.on_event(UiEvent::Key(key(KeyCode::Char('.'))));
-        field.on_event(UiEvent::Key(key(KeyCode::Char('5'))));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Char('3'))));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Char('.'))));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Char('5'))));
         assert_eq!(field.value, "3.5");
     }
 
     #[test]
     fn float_rejects_second_dot() {
         let mut field = NumberField::new("1.2".to_string(), false);
-        field.on_event(UiEvent::Key(key(KeyCode::Char('.'))));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Char('.'))));
         assert_eq!(field.value, "1.2");
     }
 
     #[test]
     fn minus_rejected_when_not_first() {
         let mut field = NumberField::new("5".to_string(), true);
-        field.on_event(UiEvent::Key(key(KeyCode::Char('-'))));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Char('-'))));
         assert_eq!(field.value, "5");
     }
 
@@ -143,7 +141,7 @@ mod tests {
     #[test]
     fn backspace_removes_last() {
         let mut field = NumberField::new("12".to_string(), true);
-        field.on_event(UiEvent::Key(key(KeyCode::Backspace)));
+        field.on_event(&WidgetEvent::Key(key(KeyCode::Backspace)));
         assert_eq!(field.value, "1");
     }
 }

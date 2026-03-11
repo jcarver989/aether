@@ -2,7 +2,7 @@ use super::AppAction;
 use crate::components::command_picker::CommandEntry;
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::progress_indicator::ProgressIndicator;
-use crate::tui::{Effects, RenderContext};
+use crate::tui::{Effects, ViewContext};
 use acp_utils::notifications::{
     CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, ElicitationParams,
     ElicitationResponse, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
@@ -86,7 +86,7 @@ impl UiState {
         Effects::none()
     }
 
-    pub(crate) fn on_prompt_done(&mut self, context: &RenderContext) -> Effects<AppAction> {
+    pub(crate) fn on_prompt_done(&mut self, context: &ViewContext) -> Effects<AppAction> {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
         self.conversation.close_thought_block();
@@ -104,17 +104,6 @@ impl UiState {
         } else {
             Effects::one(AppAction::PushScrollback(scrollback_lines))
         }
-    }
-
-    pub(crate) fn on_tick(&mut self) -> Effects<AppAction> {
-        let now = Instant::now();
-
-        self.grid_loader.on_tick();
-        self.tool_call_statuses.on_tick(now);
-        self.plan_tracker.on_tick(now);
-        self.progress_indicator.on_tick();
-
-        Effects::none()
     }
 
     pub(crate) fn on_elicitation_request(

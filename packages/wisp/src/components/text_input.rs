@@ -1,6 +1,6 @@
 use crate::keybindings::Keybindings;
 use crate::tui::KeyCode;
-use crate::tui::{Component, InteractiveComponent, Line, MessageResult, RenderContext, UiEvent};
+use crate::tui::{KeyEvent, Line, Outcome, ViewContext, Widget, WidgetEvent};
 use std::path::PathBuf;
 
 pub struct TextInput {
@@ -131,62 +131,70 @@ impl TextInput {
     }
 }
 
-impl Component for TextInput {
-    fn render(&self, _context: &RenderContext) -> Vec<Line> {
+impl Widget for TextInput {
+    type Message = TextInputMessage;
+
+    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+        match event {
+            WidgetEvent::Paste(text) => {
+                self.insert_paste(text);
+                return Outcome::consumed();
+            }
+            WidgetEvent::Key(key_event) => self.handle_key(key_event),
+            _ => Outcome::ignored(),
+        }
+    }
+
+    fn render(&self, _context: &ViewContext) -> Vec<Line> {
         vec![Line::new(self.buffer.clone())]
     }
 }
 
-impl InteractiveComponent for TextInput {
-    type Message = TextInputMessage;
-
-    fn on_event(&mut self, event: UiEvent) -> MessageResult<Self::Message> {
-        let UiEvent::Key(key_event) = event else {
-            return MessageResult::ignored();
-        };
+impl TextInput {
+    fn handle_key(&mut self, key_event: &KeyEvent) -> Outcome<TextInputMessage> {
         match key_event.code {
             KeyCode::Left => {
                 self.move_cursor_left();
-                MessageResult::consumed()
+                Outcome::consumed()
             }
             KeyCode::Right => {
                 self.move_cursor_right();
-                MessageResult::consumed()
+                Outcome::consumed()
             }
             KeyCode::Home => {
                 self.move_cursor_home();
-                MessageResult::consumed()
+                Outcome::consumed()
             }
             KeyCode::End => {
                 self.move_cursor_end();
-                MessageResult::consumed()
+                Outcome::consumed()
             }
-            _ if self.keybindings.submit.matches(key_event) => {
-                MessageResult::message(TextInputMessage::Submit)
+            _ if self.keybindings.submit.matches(*key_event) => {
+                Outcome::message(TextInputMessage::Submit)
             }
-            _ if self.keybindings.open_command_picker.matches(key_event)
+            _ if self.keybindings.open_command_picker.matches(*key_event)
                 && self.buffer.is_empty() =>
             {
                 if let Some(c) = self.keybindings.open_command_picker.char() {
                     self.insert_char_at_cursor(c);
                 }
-                MessageResult::message(TextInputMessage::OpenCommandPicker)
+                Outcome::message(TextInputMessage::OpenCommandPicker)
             }
-            _ if self.keybindings.open_file_picker.matches(key_event) => {
+            _ if self.keybindings.open_file_picker.matches(*key_event) => {
                 if let Some(c) = self.keybindings.open_file_picker.char() {
                     self.insert_char_at_cursor(c);
                 }
-                MessageResult::message(TextInputMessage::OpenFilePicker)
+                Outcome::message(TextInputMessage::OpenFilePicker)
             }
             KeyCode::Char(c) => {
                 self.insert_char_at_cursor(c);
-                MessageResult::consumed()
+                Outcome::consumed()
             }
             KeyCode::Backspace => {
                 self.delete_char_before_cursor();
-                MessageResult::consumed()
+                Outcome::consumed()
             }
-            _ => MessageResult::ignored(),
+            _ => Outcome::ignored(),
         }
     }
 }
@@ -204,10 +212,10 @@ fn mention_start(input: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::{KeyEvent, KeyModifiers};
+    use crate::tui::KeyModifiers;
 
-    fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent::new(code, KeyModifiers::NONE)
+    fn key(code: KeyCode) -> WidgetEvent {
+        WidgetEvent::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
     #[test]
@@ -215,7 +223,7 @@ mod tests {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
 
-        input.on_event(UiEvent::Key(key(KeyCode::Left)));
+        input.on_event(&key(KeyCode::Left));
 
         assert_eq!(input.cursor_index(None), 4);
     }
@@ -226,7 +234,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 2;
 
-        input.on_event(UiEvent::Key(key(KeyCode::Right)));
+        input.on_event(&key(KeyCode::Right));
 
         assert_eq!(input.cursor_index(None), 3);
     }
@@ -237,7 +245,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 0;
 
-        input.on_event(UiEvent::Key(key(KeyCode::Left)));
+        input.on_event(&key(KeyCode::Left));
 
         assert_eq!(input.cursor_index(None), 0);
     }
@@ -247,7 +255,7 @@ mod tests {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
 
-        input.on_event(UiEvent::Key(key(KeyCode::Right)));
+        input.on_event(&key(KeyCode::Right));
 
         assert_eq!(input.cursor_index(None), 5);
     }
@@ -258,7 +266,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 3;
 
-        input.on_event(UiEvent::Key(key(KeyCode::Home)));
+        input.on_event(&key(KeyCode::Home));
 
         assert_eq!(input.cursor_index(None), 0);
     }
@@ -269,7 +277,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 1;
 
-        input.on_event(UiEvent::Key(key(KeyCode::End)));
+        input.on_event(&key(KeyCode::End));
 
         assert_eq!(input.cursor_index(None), 5);
     }
@@ -280,7 +288,7 @@ mod tests {
         input.buffer = "hllo".to_string();
         input.cursor_pos = 1;
 
-        input.on_event(UiEvent::Key(key(KeyCode::Char('e'))));
+        input.on_event(&key(KeyCode::Char('e')));
 
         assert_eq!(input.buffer, "hello");
         assert_eq!(input.cursor_index(None), 2);
@@ -292,7 +300,7 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 3;
 
-        input.on_event(UiEvent::Key(key(KeyCode::Backspace)));
+        input.on_event(&key(KeyCode::Backspace));
 
         assert_eq!(input.buffer, "helo");
         assert_eq!(input.cursor_index(None), 2);
@@ -304,9 +312,9 @@ mod tests {
         input.buffer = "hello".to_string();
         input.cursor_pos = 0;
 
-        let outcome = input.on_event(UiEvent::Key(key(KeyCode::Backspace)));
+        let outcome = input.on_event(&key(KeyCode::Backspace));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
         assert_eq!(input.buffer, "hello");
         assert_eq!(input.cursor_index(None), 0);
     }
@@ -317,19 +325,19 @@ mod tests {
         // "a中b" — 'a' is 1 byte, '中' is 3 bytes, 'b' is 1 byte = 5 bytes total
         input.set_input("a中b".to_string());
 
-        input.on_event(UiEvent::Key(key(KeyCode::Left)));
+        input.on_event(&key(KeyCode::Left));
         assert_eq!(input.cursor_index(None), 4); // before 'b'
 
-        input.on_event(UiEvent::Key(key(KeyCode::Left)));
+        input.on_event(&key(KeyCode::Left));
         assert_eq!(input.cursor_index(None), 1); // before '中'
 
-        input.on_event(UiEvent::Key(key(KeyCode::Left)));
+        input.on_event(&key(KeyCode::Left));
         assert_eq!(input.cursor_index(None), 0); // before 'a'
 
-        input.on_event(UiEvent::Key(key(KeyCode::Right)));
+        input.on_event(&key(KeyCode::Right));
         assert_eq!(input.cursor_index(None), 1); // after 'a'
 
-        input.on_event(UiEvent::Key(key(KeyCode::Right)));
+        input.on_event(&key(KeyCode::Right));
         assert_eq!(input.cursor_index(None), 4); // after '中'
     }
 
@@ -349,12 +357,12 @@ mod tests {
     fn slash_on_empty_returns_open_command_picker() {
         let mut input = TextInput::default();
 
-        let outcome = input.on_event(UiEvent::Key(key(KeyCode::Char('/'))));
+        let outcome = input.on_event(&key(KeyCode::Char('/')));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
         assert!(matches!(
-            outcome.messages.as_slice(),
-            [TextInputMessage::OpenCommandPicker]
+            outcome,
+            Outcome::Message(TextInputMessage::OpenCommandPicker)
         ));
         assert_eq!(input.buffer, "/");
     }
@@ -363,12 +371,12 @@ mod tests {
     fn at_sign_returns_open_file_picker() {
         let mut input = TextInput::default();
 
-        let outcome = input.on_event(UiEvent::Key(key(KeyCode::Char('@'))));
+        let outcome = input.on_event(&key(KeyCode::Char('@')));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
         assert!(matches!(
-            outcome.messages.as_slice(),
-            [TextInputMessage::OpenFilePicker]
+            outcome,
+            Outcome::Message(TextInputMessage::OpenFilePicker)
         ));
         assert_eq!(input.buffer, "@");
     }
@@ -378,12 +386,12 @@ mod tests {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
 
-        let outcome = input.on_event(UiEvent::Key(key(KeyCode::Enter)));
+        let outcome = input.on_event(&key(KeyCode::Enter));
 
-        assert!(outcome.handled);
+        assert!(outcome.is_handled());
         assert!(matches!(
-            outcome.messages.as_slice(),
-            [TextInputMessage::Submit]
+            outcome,
+            Outcome::Message(TextInputMessage::Submit)
         ));
     }
 
