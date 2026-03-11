@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
+use crate::components::{Response, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 
 /// Boolean toggle rendered as `[x]` / `[ ]`.
@@ -13,7 +13,6 @@ impl Checkbox {
         Self { checked }
     }
 
-    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::Value::Bool(self.checked)
     }
@@ -22,22 +21,28 @@ impl Checkbox {
 impl Widget for Checkbox {
     type Message = ();
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match key.code {
             KeyCode::Char(' ') => {
                 self.checked = !self.checked;
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::ignored(),
+            _ => Response::ignored(),
         }
     }
 
     fn render(&self, context: &ViewContext) -> Vec<Line> {
+        self.render_field(context, true)
+    }
+}
+
+impl Checkbox {
+    pub fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
         let display = if self.checked { "[x]" } else { "[ ]" };
-        let style = if context.focused {
+        let style = if focused {
             context.theme.primary()
         } else {
             context.theme.text_primary()
@@ -64,7 +69,6 @@ mod tests {
         assert!(!cb.checked);
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn to_json_returns_bool() {
         assert_eq!(Checkbox::new(true).to_json(), serde_json::json!(true));

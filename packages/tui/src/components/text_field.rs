@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
+use crate::components::{Response, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 
 /// Single-line text input with cursor indicator.
@@ -13,7 +13,6 @@ impl TextField {
         Self { value }
     }
 
-    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::Value::String(self.value.clone())
     }
@@ -22,30 +21,36 @@ impl TextField {
 impl Widget for TextField {
     type Message = ();
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         match event {
             WidgetEvent::Key(key) => match key.code {
                 KeyCode::Char(c) => {
                     self.value.push(c);
-                    Outcome::consumed()
+                    Response::ok()
                 }
                 KeyCode::Backspace => {
                     self.value.pop();
-                    Outcome::consumed()
+                    Response::ok()
                 }
-                _ => Outcome::ignored(),
+                _ => Response::ignored(),
             },
             WidgetEvent::Paste(text) => {
                 self.value.push_str(text);
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::ignored(),
+            _ => Response::ignored(),
         }
     }
 
     fn render(&self, context: &ViewContext) -> Vec<Line> {
+        self.render_field(context, true)
+    }
+}
+
+impl TextField {
+    pub fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
         let mut line = Line::new(&self.value);
-        if context.focused {
+        if focused {
             line.push_styled("▏", context.theme.primary());
         }
         vec![line]
@@ -83,7 +88,6 @@ mod tests {
         assert_eq!(field.value, "");
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn to_json_returns_string_value() {
         let field = TextField::new("hello".to_string());

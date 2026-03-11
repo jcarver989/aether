@@ -1,6 +1,6 @@
 use tui::testing::TestTerminal;
-use wisp::tui::advanced::Renderer;
-use wisp::tui::{Cursor, Frame, Line, Theme};
+use tui::advanced::Renderer;
+use tui::{Cursor, Frame, Line, Theme};
 
 fn render_frame(renderer: &mut Renderer<TestTerminal>, lines: Vec<Line>, cursor: Cursor) {
     renderer

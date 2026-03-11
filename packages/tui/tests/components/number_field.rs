@@ -75,8 +75,8 @@ fn backspace_renders() {
 #[test]
 fn unfocused_renders_without_cursor() {
     let nf = NumberField::new("42".to_string(), true);
-    let ctx = ViewContext::new((80, 24)).with_focused(false);
-    let lines = nf.render(&ctx);
+    let ctx = ViewContext::new((80, 24));
+    let lines = nf.render_field(&ctx, false);
     let term = render_lines(&lines, 80, 24);
     assert_buffer_eq(&term, &["42"]);
 }

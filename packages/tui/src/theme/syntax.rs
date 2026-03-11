@@ -1,4 +1,4 @@
-use super::{Color, ColorPalette, Theme, darken_color};
+use super::{Color, Theme, darken_color};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -142,28 +142,26 @@ impl From<&syntect::highlighting::Theme> for Theme {
         let removed_bg = darken_color(diff_removed_fg);
 
         Self {
-            palette: ColorPalette::builder()
-                .fg(fg)
-                .bg(bg)
-                .accent(accent)
-                .highlight_bg(highlight_bg)
-                .text_secondary(text_secondary)
-                .code_fg(inline_code_fg)
-                .code_bg(inline_code_bg)
-                .heading(heading)
-                .link(link)
-                .blockquote(blockquote)
-                .muted(muted)
-                .success(success)
-                .warning(warning)
-                .error(error)
-                .info(info)
-                .secondary(secondary)
-                .diff_added_fg(diff_added_fg)
-                .diff_removed_fg(diff_removed_fg)
-                .diff_added_bg(added_bg)
-                .diff_removed_bg(removed_bg)
-                .build(),
+            fg,
+            bg,
+            accent,
+            highlight_bg,
+            text_secondary,
+            code_fg: inline_code_fg,
+            code_bg: inline_code_bg,
+            heading,
+            link,
+            blockquote,
+            muted,
+            success,
+            warning,
+            error,
+            info,
+            secondary,
+            diff_added_fg,
+            diff_removed_fg,
+            diff_added_bg: added_bg,
+            diff_removed_bg: removed_bg,
             syntect_theme: Arc::new(syntect.clone()),
         }
     }

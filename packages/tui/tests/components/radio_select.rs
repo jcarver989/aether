@@ -43,8 +43,8 @@ fn right_from_last_wraps_to_first() {
 #[test]
 fn unfocused_renders_selected_title_inline() {
     let rs = RadioSelect::new(sample_options(), 1);
-    let ctx = ViewContext::new((80, 24)).with_focused(false);
-    let lines = rs.render(&ctx);
+    let ctx = ViewContext::new((80, 24));
+    let lines = rs.render_field(&ctx, false);
     assert_eq!(
         lines.len(),
         1,

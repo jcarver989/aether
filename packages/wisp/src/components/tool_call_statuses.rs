@@ -4,7 +4,7 @@ use acp_utils::notifications::{
 use agent_client_protocol as acp;
 
 use crate::tui::BRAILLE_FRAMES as FRAMES;
-use crate::tui::diff::highlight_diff;
+use crate::tui::highlight_diff;
 use crate::tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext};
 use std::collections::HashMap;
 use std::time::Instant;

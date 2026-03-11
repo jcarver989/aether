@@ -32,7 +32,6 @@ impl ThoughtMessage<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::rendering::soft_wrap::soft_wrap_line;
 
     #[test]
     fn renders_border_prefixed_thought_line() {
@@ -65,7 +64,7 @@ mod tests {
         };
         let context = ViewContext::new((80, 24));
         let lines = component.render(&context);
-        let wrapped = soft_wrap_line(&lines[0], 12);
+        let wrapped = lines[0].soft_wrap(12);
         assert!(wrapped.len() > 1);
 
         for row in wrapped.iter().skip(1) {

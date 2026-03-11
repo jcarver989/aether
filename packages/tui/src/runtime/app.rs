@@ -4,13 +4,13 @@
 //!
 //! - [`App`] — single trait combining event handling, effects, and rendering
 //! - [`AppEvent`] — unified event type for terminal, external, and tick events
-//! - [`Effects`] — effect result type for commands and exit
+//! - [`Response`] — unified result type for event handling and effects
 //! - [`Runner`] — builder-style runner that owns terminal lifecycle
 //!
 //! # Example
 //!
 //! ```rust
-//! use tui::{App, AppEvent, Effects, Frame, Line, ViewContext, Runner};
+//! use tui::{App, AppEvent, Response, Frame, Line, ViewContext, Runner};
 //! use tui::{KeyEvent, KeyCode, KeyModifiers};
 //!
 //! struct Counter {
@@ -22,18 +22,18 @@
 //!     type Effect = ();
 //!     type Error = std::io::Error;
 //!
-//!     fn update(&mut self, event: AppEvent<()>, ctx: &ViewContext) -> Effects<()> {
+//!     fn update(&mut self, event: AppEvent<()>, ctx: &ViewContext) -> Response<()> {
 //!         match event {
-//!             AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
+//!             AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
 //!             AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
 //!                 self.count += 1;
-//!                 Effects::none()
+//!                 Response::ok()
 //!             }
 //!             AppEvent::Key(key) if key.code == KeyCode::Char('k') => {
 //!                 self.count -= 1;
-//!                 Effects::none()
+//!                 Response::ok()
 //!             }
-//!             _ => Effects::none(),
+//!             _ => Response::ok(),
 //!         }
 //!     }
 //!
@@ -48,8 +48,8 @@
 //!         &mut self,
 //!         _terminal: &mut tui::advanced::Terminal<'_, impl std::io::Write>,
 //!         _effect: (),
-//!     ) -> Result<Effects<()>, std::io::Error> {
-//!         Ok(Effects::none())
+//!     ) -> Result<Response<()>, std::io::Error> {
+//!         Ok(Response::ok())
 //!     }
 //! }
 //! ```
@@ -57,6 +57,7 @@
 use super::spawn_terminal_event_task;
 use super::terminal::{MouseCapture, TerminalSession, terminal_size};
 use crate::Frame;
+use crate::components::Response;
 use crate::rendering::render_context::ViewContext;
 use crate::rendering::renderer::{Renderer, Terminal};
 use crate::rendering::size::Size;
@@ -88,107 +89,6 @@ pub enum AppEvent<E> {
     External(E),
 }
 
-/// Effect result type returned from [`App::update`] and [`App::run_effect`].
-///
-/// This type makes the common cases of "no effect", "one effect", "many effects",
-/// and "exit" explicit and readable.
-#[derive(Debug)]
-pub enum Effects<E> {
-    /// No effects to process.
-    None,
-    /// Request application exit.
-    Exit,
-    /// One effect to process.
-    One(E),
-    /// Multiple effects to process in order.
-    Many(Vec<E>),
-}
-
-impl<E> Effects<E> {
-    /// Create an empty effects result (no-op).
-    pub fn none() -> Self {
-        Effects::None
-    }
-
-    /// Create an exit effect.
-    pub fn exit() -> Self {
-        Effects::Exit
-    }
-
-    /// Create a single effect.
-    pub fn one(effect: E) -> Self {
-        Effects::One(effect)
-    }
-
-    /// Create multiple effects.
-    pub fn many(effects: Vec<E>) -> Self {
-        Effects::Many(effects)
-    }
-
-    /// Collapse a vector of effects into the smallest matching representation.
-    pub fn from_vec(mut effects: Vec<E>) -> Self {
-        match effects.len() {
-            0 => Effects::None,
-            1 => Effects::One(effects.pop().expect("one effect")),
-            _ => Effects::Many(effects),
-        }
-    }
-
-    /// Check if this is an exit effect.
-    pub fn is_exit(&self) -> bool {
-        matches!(self, Effects::Exit)
-    }
-
-    /// Convert effects into an iterator over individual effects.
-    /// Returns `None` for `Effects::None` and `Some(empty_iter)` for `Effects::Exit`.
-    pub fn into_effects(self) -> Vec<E> {
-        match self {
-            Effects::None => Vec::new(),
-            Effects::Exit => Vec::new(),
-            Effects::One(e) => vec![e],
-            Effects::Many(effects) => effects,
-        }
-    }
-
-    /// Add a single effect to the end of this sequence.
-    pub fn append(self, effect: E) -> Self {
-        self.merge(Effects::One(effect))
-    }
-
-    /// Merge two effect results, preserving order and exit semantics.
-    pub fn merge(self, other: Effects<E>) -> Self {
-        if self.is_exit() || other.is_exit() {
-            return Effects::Exit;
-        }
-
-        let mut effects = self.into_effects();
-        effects.extend(other.into_effects());
-        Effects::from_vec(effects)
-    }
-
-    /// Map the effect type to a new type.
-    pub fn map<U>(self, f: impl Fn(E) -> U) -> Effects<U> {
-        match self {
-            Effects::None => Effects::None,
-            Effects::Exit => Effects::Exit,
-            Effects::One(e) => Effects::One(f(e)),
-            Effects::Many(effects) => Effects::Many(effects.into_iter().map(f).collect()),
-        }
-    }
-}
-
-impl<E> Default for Effects<E> {
-    fn default() -> Self {
-        Effects::None
-    }
-}
-
-impl<E> FromIterator<E> for Effects<E> {
-    fn from_iter<I: IntoIterator<Item = E>>(iter: I) -> Self {
-        Effects::from_vec(iter.into_iter().collect())
-    }
-}
-
 /// The primary application trait for building full-screen terminal apps.
 ///
 /// This trait unifies event handling, effects, and rendering into a single coherent model.
@@ -206,7 +106,7 @@ impl<E> FromIterator<E> for Effects<E> {
 /// 2. Events arrive via `update`
 /// 3. Effects from `update` are processed via `run_effect`
 /// 4. After each update/effect cycle, `view` is called again
-/// 5. When `update` returns `Effects::exit()`, the app terminates
+/// 5. When `update` returns `Response::exit()`, the app terminates
 #[allow(async_fn_in_trait)]
 pub trait App {
     /// Application-specific external event type.
@@ -224,7 +124,7 @@ pub trait App {
         &mut self,
         event: AppEvent<Self::Event>,
         ctx: &ViewContext,
-    ) -> Effects<Self::Effect>;
+    ) -> Response<Self::Effect>;
 
     /// Render the current application state.
     ///
@@ -243,10 +143,10 @@ pub trait App {
         &mut self,
         _terminal: &mut Terminal<'_, impl Write>,
         effect: Self::Effect,
-    ) -> Result<Effects<Self::Effect>, Self::Error> {
+    ) -> Result<Response<Self::Effect>, Self::Error> {
         // Default: consume the effect without action
         let _ = effect;
-        Ok(Effects::None)
+        Ok(Response::ok())
     }
 
     /// Whether the app wants tick events.
@@ -484,11 +384,11 @@ async fn handle_event<A: App, W: Write>(
     event: AppEvent<A::Event>,
 ) -> Result<bool, A::Error> {
     let ctx = renderer.context();
-    let effects = app.update(event, &ctx);
-    if effects.is_exit() {
+    let response = app.update(event, &ctx);
+    if response.is_exit() {
         return Ok(true);
     }
-    if process_effects(app, renderer, effects).await? {
+    if process_effects(app, renderer, response).await? {
         return Ok(true);
     }
     renderer.render_frame(|ctx| app.view(ctx))?;
@@ -499,9 +399,9 @@ async fn handle_event<A: App, W: Write>(
 async fn process_effects<A: App, W: Write>(
     app: &mut A,
     renderer: &mut Renderer<W>,
-    effects: Effects<A::Effect>,
+    response: Response<A::Effect>,
 ) -> Result<bool, A::Error> {
-    let mut queue: VecDeque<A::Effect> = effects.into_effects().into();
+    let mut queue: VecDeque<A::Effect> = response.into_messages().into();
 
     while let Some(effect) = queue.pop_front() {
         // Render before running effect
@@ -511,7 +411,7 @@ async fn process_effects<A: App, W: Write>(
         if follow_up.is_exit() {
             return Ok(true);
         }
-        queue.extend(follow_up.into_effects());
+        queue.extend(follow_up.into_messages());
     }
 
     Ok(false)

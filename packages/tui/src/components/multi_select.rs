@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 
 use super::select_option::SelectOption;
-use crate::components::{Outcome, ViewContext, Widget, WidgetEvent};
+use crate::components::{Response, ViewContext, Widget, WidgetEvent};
 use crate::line::Line;
 use crate::style::Style;
 
@@ -21,7 +21,6 @@ impl MultiSelect {
         }
     }
 
-    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> serde_json::Value {
         let values: Vec<serde_json::Value> = self
             .options
@@ -72,33 +71,39 @@ impl MultiSelect {
 impl Widget for MultiSelect {
     type Message = ();
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         if self.options.is_empty() {
-            return Outcome::ignored();
+            return Response::ignored();
         }
 
         match key.code {
             KeyCode::Char(' ') => {
                 self.selected[self.cursor] = !self.selected[self.cursor];
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Up | KeyCode::Left => {
                 self.cursor = (self.cursor + self.options.len() - 1) % self.options.len();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Down | KeyCode::Right => {
                 self.cursor = (self.cursor + 1) % self.options.len();
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::ignored(),
+            _ => Response::ignored(),
         }
     }
 
     fn render(&self, context: &ViewContext) -> Vec<Line> {
-        if context.focused {
+        self.render_field(context, true)
+    }
+}
+
+impl MultiSelect {
+    pub fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
+        if focused {
             self.render_options(context)
         } else {
             vec![self.render_inline(context)]
@@ -153,7 +158,6 @@ mod tests {
         assert!(ms.selected[1]);
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn to_json_returns_selected_values() {
         let mut ms = sample();
@@ -162,7 +166,6 @@ mod tests {
         assert_eq!(ms.to_json(), serde_json::json!(["a", "c"]));
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn to_json_empty_selection() {
         let ms = sample();

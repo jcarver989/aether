@@ -10,7 +10,7 @@ pub mod select_option;
 pub mod spinner;
 pub mod text_field;
 
-pub use interactive_component::{Outcome, PickerMessage, Widget, WidgetEvent};
+pub use interactive_component::{PickerMessage, Response, Widget, WidgetEvent};
 pub use layout::Layout;
 pub use panel::{BORDER_H_PAD, Panel};
 pub use crate::rendering::frame::{Cursor, Frame};

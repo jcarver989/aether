@@ -8,9 +8,12 @@ mod defaults;
 #[cfg(feature = "syntax")]
 mod syntax;
 
-/// Semantic color palette for TUI rendering.
+/// Full resolved theme for TUI rendering.
+///
+/// Owns the semantic color palette used throughout the UI and, when enabled,
+/// the cached syntax-highlighting theme.
 #[derive(Clone, Debug)]
-pub struct ColorPalette {
+pub struct Theme {
     // Base colors
     fg: Color,
     bg: Color,
@@ -40,10 +43,15 @@ pub struct ColorPalette {
     diff_removed_fg: Color,
     diff_added_bg: Color,
     diff_removed_bg: Color,
+
+    // Cached syntect theme for syntax highlighting (parsed once at construction)
+    #[cfg(feature = "syntax")]
+    #[allow(clippy::struct_field_names)]
+    syntect_theme: Arc<syntect::highlighting::Theme>,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct ColorPaletteBuilder {
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ThemeBuilder {
     fg: Option<Color>,
     bg: Option<Color>,
     accent: Option<Color>,
@@ -66,21 +74,7 @@ pub struct ColorPaletteBuilder {
     diff_removed_bg: Option<Color>,
 }
 
-/// Full resolved theme for TUI rendering.
-///
-/// Owns the semantic color palette used throughout the UI and, when enabled,
-/// the cached syntax-highlighting theme.
-#[derive(Clone, Debug)]
-pub struct Theme {
-    palette: ColorPalette,
-
-    // Cached syntect theme for syntax highlighting (parsed once at construction)
-    #[cfg(feature = "syntax")]
-    #[allow(clippy::struct_field_names)]
-    syntect_theme: Arc<syntect::highlighting::Theme>,
-}
-
-impl ColorPaletteBuilder {
+impl ThemeBuilder {
     pub fn fg(mut self, color: Color) -> Self {
         self.fg = Some(color);
         self
@@ -181,52 +175,52 @@ impl ColorPaletteBuilder {
         self
     }
 
-    pub fn build(self) -> ColorPalette {
-        ColorPalette {
-            fg: self.fg.expect("ColorPaletteBuilder requires fg"),
-            bg: self.bg.expect("ColorPaletteBuilder requires bg"),
-            accent: self.accent.expect("ColorPaletteBuilder requires accent"),
-            highlight_bg: self
-                .highlight_bg
-                .expect("ColorPaletteBuilder requires highlight_bg"),
-            text_secondary: self
-                .text_secondary
-                .expect("ColorPaletteBuilder requires text_secondary"),
-            code_fg: self.code_fg.expect("ColorPaletteBuilder requires code_fg"),
-            code_bg: self.code_bg.expect("ColorPaletteBuilder requires code_bg"),
-            heading: self.heading.expect("ColorPaletteBuilder requires heading"),
-            link: self.link.expect("ColorPaletteBuilder requires link"),
-            blockquote: self
-                .blockquote
-                .expect("ColorPaletteBuilder requires blockquote"),
-            muted: self.muted.expect("ColorPaletteBuilder requires muted"),
-            success: self.success.expect("ColorPaletteBuilder requires success"),
-            warning: self.warning.expect("ColorPaletteBuilder requires warning"),
-            error: self.error.expect("ColorPaletteBuilder requires error"),
-            info: self.info.expect("ColorPaletteBuilder requires info"),
-            secondary: self
-                .secondary
-                .expect("ColorPaletteBuilder requires secondary"),
-            diff_added_fg: self
-                .diff_added_fg
-                .expect("ColorPaletteBuilder requires diff_added_fg"),
-            diff_removed_fg: self
-                .diff_removed_fg
-                .expect("ColorPaletteBuilder requires diff_removed_fg"),
-            diff_added_bg: self
-                .diff_added_bg
-                .expect("ColorPaletteBuilder requires diff_added_bg"),
-            diff_removed_bg: self
-                .diff_removed_bg
-                .expect("ColorPaletteBuilder requires diff_removed_bg"),
-        }
+    pub fn build(self) -> Theme {
+        Theme::from_builder(self)
     }
 }
 
 #[allow(dead_code, clippy::unused_self)]
-impl ColorPalette {
-    pub fn builder() -> ColorPaletteBuilder {
-        ColorPaletteBuilder::default()
+impl Theme {
+    pub fn builder() -> ThemeBuilder {
+        ThemeBuilder::default()
+    }
+
+    fn from_builder(b: ThemeBuilder) -> Self {
+        Self {
+            fg: b.fg.expect("ThemeBuilder requires fg"),
+            bg: b.bg.expect("ThemeBuilder requires bg"),
+            accent: b.accent.expect("ThemeBuilder requires accent"),
+            highlight_bg: b.highlight_bg.expect("ThemeBuilder requires highlight_bg"),
+            text_secondary: b
+                .text_secondary
+                .expect("ThemeBuilder requires text_secondary"),
+            code_fg: b.code_fg.expect("ThemeBuilder requires code_fg"),
+            code_bg: b.code_bg.expect("ThemeBuilder requires code_bg"),
+            heading: b.heading.expect("ThemeBuilder requires heading"),
+            link: b.link.expect("ThemeBuilder requires link"),
+            blockquote: b.blockquote.expect("ThemeBuilder requires blockquote"),
+            muted: b.muted.expect("ThemeBuilder requires muted"),
+            success: b.success.expect("ThemeBuilder requires success"),
+            warning: b.warning.expect("ThemeBuilder requires warning"),
+            error: b.error.expect("ThemeBuilder requires error"),
+            info: b.info.expect("ThemeBuilder requires info"),
+            secondary: b.secondary.expect("ThemeBuilder requires secondary"),
+            diff_added_fg: b
+                .diff_added_fg
+                .expect("ThemeBuilder requires diff_added_fg"),
+            diff_removed_fg: b
+                .diff_removed_fg
+                .expect("ThemeBuilder requires diff_removed_fg"),
+            diff_added_bg: b
+                .diff_added_bg
+                .expect("ThemeBuilder requires diff_added_bg"),
+            diff_removed_bg: b
+                .diff_removed_bg
+                .expect("ThemeBuilder requires diff_removed_bg"),
+            #[cfg(feature = "syntax")]
+            syntect_theme: Arc::new(syntax::parse_default_syntect_theme()),
+        }
     }
 
     pub fn primary(&self) -> Color {
@@ -322,117 +316,6 @@ impl ColorPalette {
     }
 }
 
-#[allow(dead_code, clippy::unused_self)]
-impl Theme {
-    pub(crate) fn from_palette(palette: ColorPalette) -> Self {
-        Self {
-            palette,
-            #[cfg(feature = "syntax")]
-            syntect_theme: Arc::new(syntax::parse_default_syntect_theme()),
-        }
-    }
-
-    pub fn new(palette: ColorPalette) -> Self {
-        Self::from_palette(palette)
-    }
-
-    pub fn palette(&self) -> &ColorPalette {
-        &self.palette
-    }
-
-    pub fn primary(&self) -> Color {
-        self.palette.primary()
-    }
-
-    pub fn text_primary(&self) -> Color {
-        self.palette.text_primary()
-    }
-
-    pub fn background(&self) -> Color {
-        self.palette.background()
-    }
-
-    pub fn code_fg(&self) -> Color {
-        self.palette.code_fg()
-    }
-
-    pub fn code_bg(&self) -> Color {
-        self.palette.code_bg()
-    }
-
-    pub fn accent(&self) -> Color {
-        self.palette.accent()
-    }
-
-    pub fn highlight_bg(&self) -> Color {
-        self.palette.highlight_bg()
-    }
-
-    pub fn selected_row_style(&self) -> Style {
-        self.palette.selected_row_style()
-    }
-
-    pub fn selected_row_style_with_fg(&self, fg: Color) -> Style {
-        self.palette.selected_row_style_with_fg(fg)
-    }
-
-    pub fn secondary(&self) -> Color {
-        self.palette.secondary()
-    }
-
-    pub fn text_secondary(&self) -> Color {
-        self.palette.text_secondary()
-    }
-
-    pub fn success(&self) -> Color {
-        self.palette.success()
-    }
-
-    pub fn warning(&self) -> Color {
-        self.palette.warning()
-    }
-
-    pub fn error(&self) -> Color {
-        self.palette.error()
-    }
-
-    pub fn info(&self) -> Color {
-        self.palette.info()
-    }
-
-    pub fn muted(&self) -> Color {
-        self.palette.muted()
-    }
-
-    pub fn heading(&self) -> Color {
-        self.palette.heading()
-    }
-
-    pub fn link(&self) -> Color {
-        self.palette.link()
-    }
-
-    pub fn blockquote(&self) -> Color {
-        self.palette.blockquote()
-    }
-
-    pub fn diff_added_bg(&self) -> Color {
-        self.palette.diff_added_bg()
-    }
-
-    pub fn diff_removed_bg(&self) -> Color {
-        self.palette.diff_removed_bg()
-    }
-
-    pub fn diff_added_fg(&self) -> Color {
-        self.palette.diff_added_fg()
-    }
-
-    pub fn diff_removed_fg(&self) -> Color {
-        self.palette.diff_removed_fg()
-    }
-}
-
 /// Darken a color to ~20% brightness for use as a subtle background.
 #[allow(clippy::cast_possible_truncation)]
 fn darken_color(color: Color) -> Color {
@@ -481,14 +364,6 @@ mod tests {
     }
 
     #[test]
-    fn palette_exposes_theme_semantic_colors() {
-        let theme = Theme::default();
-        assert_eq!(theme.palette().text_primary(), theme.text_primary());
-        assert_eq!(theme.palette().background(), theme.background());
-        assert_eq!(theme.palette().muted(), theme.muted());
-    }
-
-    #[test]
     fn code_fg_differs_from_text_primary() {
         let theme = Theme::default();
         assert_ne!(
@@ -518,34 +393,32 @@ mod tests {
 
     #[test]
     fn custom_theme_builder() {
-        let theme = Theme::new(
-            ColorPalette::builder()
-                .fg(Color::Black)
-                .bg(Color::White)
-                .accent(Color::Red)
-                .highlight_bg(Color::Green)
-                .text_secondary(Color::Yellow)
-                .code_fg(Color::Blue)
-                .code_bg(Color::Magenta)
-                .heading(Color::Cyan)
-                .link(Color::DarkGrey)
-                .blockquote(Color::DarkRed)
-                .muted(Color::DarkGreen)
-                .success(Color::DarkBlue)
-                .warning(Color::DarkCyan)
-                .error(Color::DarkMagenta)
-                .info(Color::Grey)
-                .secondary(Color::Rgb {
-                    r: 128,
-                    g: 0,
-                    b: 128,
-                })
-                .diff_added_fg(Color::Rgb { r: 0, g: 255, b: 0 })
-                .diff_removed_fg(Color::Rgb { r: 255, g: 0, b: 0 })
-                .diff_added_bg(Color::Rgb { r: 0, g: 20, b: 0 })
-                .diff_removed_bg(Color::Rgb { r: 20, g: 0, b: 0 })
-                .build(),
-        );
+        let theme = Theme::builder()
+            .fg(Color::Black)
+            .bg(Color::White)
+            .accent(Color::Red)
+            .highlight_bg(Color::Green)
+            .text_secondary(Color::Yellow)
+            .code_fg(Color::Blue)
+            .code_bg(Color::Magenta)
+            .heading(Color::Cyan)
+            .link(Color::DarkGrey)
+            .blockquote(Color::DarkRed)
+            .muted(Color::DarkGreen)
+            .success(Color::DarkBlue)
+            .warning(Color::DarkCyan)
+            .error(Color::DarkMagenta)
+            .info(Color::Grey)
+            .secondary(Color::Rgb {
+                r: 128,
+                g: 0,
+                b: 128,
+            })
+            .diff_added_fg(Color::Rgb { r: 0, g: 255, b: 0 })
+            .diff_removed_fg(Color::Rgb { r: 255, g: 0, b: 0 })
+            .diff_added_bg(Color::Rgb { r: 0, g: 20, b: 0 })
+            .diff_removed_bg(Color::Rgb { r: 20, g: 0, b: 0 })
+            .build();
         assert_eq!(theme.primary(), Color::Black);
         assert_eq!(theme.background(), Color::White);
         assert_eq!(theme.accent(), Color::Red);

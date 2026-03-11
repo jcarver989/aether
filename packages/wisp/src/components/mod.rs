@@ -3,7 +3,7 @@ pub mod command_picker;
 pub mod config_menu;
 pub mod config_overlay;
 pub mod config_picker;
-pub mod container;
+
 pub mod conversation_window;
 pub mod elicitation_form;
 pub mod file_picker;

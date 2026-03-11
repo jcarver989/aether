@@ -1,7 +1,7 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{
-    Combobox, Line, Outcome, PickerKey, ViewContext, Searchable, Widget, WidgetEvent,
+    Combobox, Line, Response, PickerKey, ViewContext, Searchable, Widget, WidgetEvent,
     classify_key,
 };
 use acp_utils::config_option_id::ConfigOptionId;
@@ -181,22 +181,22 @@ impl ModelSelector {
 impl Widget for ModelSelector {
     type Message = ModelSelectorMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match classify_key(*key, self.combobox.query().is_empty()) {
             PickerKey::Escape => {
                 let changes = self.confirm();
-                Outcome::message(ModelSelectorMessage::Done(changes))
+                Response::one(ModelSelectorMessage::Done(changes))
             }
             PickerKey::MoveUp => {
                 self.combobox.move_up_where(|e| !e.is_disabled);
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down_where(|e| !e.is_disabled);
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::MoveLeft => {
                 if self
@@ -206,7 +206,7 @@ impl Widget for ModelSelector {
                 {
                     self.reasoning_effort = cycle_reasoning_left(self.reasoning_effort);
                 }
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::MoveRight => {
                 if self
@@ -216,22 +216,22 @@ impl Widget for ModelSelector {
                 {
                     self.reasoning_effort = cycle_reasoning_right(self.reasoning_effort);
                 }
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::Confirm | PickerKey::Char(' ') => {
                 self.toggle_focused();
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::Char(c) => {
                 self.combobox.push_query_char(c);
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::BackspaceOnEmpty | PickerKey::ControlChar | PickerKey::Other => {
-                Outcome::consumed()
+                Response::ok()
             }
         }
     }

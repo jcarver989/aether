@@ -1,4 +1,4 @@
-use tui::{App, AppEvent, Cursor, Effects, Frame, KeyCode, Line, ViewContext, Runner};
+use tui::{App, AppEvent, Cursor, Response, Frame, KeyCode, Line, ViewContext, Runner};
 
 struct CounterApp {
     count: i32,
@@ -13,18 +13,18 @@ impl App for CounterApp {
         &mut self,
         event: AppEvent<Self::Event>,
         _ctx: &ViewContext,
-    ) -> Effects<Self::Effect> {
+    ) -> Response<Self::Effect> {
         match event {
-            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
+            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
             AppEvent::Key(key) if key.code == KeyCode::Char('j') => {
                 self.count += 1;
-                Effects::none()
+                Response::ok()
             }
             AppEvent::Key(key) if key.code == KeyCode::Char('k') => {
                 self.count -= 1;
-                Effects::none()
+                Response::ok()
             }
-            _ => Effects::none(),
+            _ => Response::ok(),
         }
     }
 

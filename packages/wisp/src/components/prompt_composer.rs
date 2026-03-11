@@ -4,7 +4,7 @@ use crate::components::input_prompt::InputPrompt;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputMessage};
 use crate::keybindings::Keybindings;
 use crate::tui::KeyCode;
-use crate::tui::{Cursor, Line, Outcome, PickerMessage, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Cursor, Line, Response, PickerMessage, ViewContext, Widget, WidgetEvent};
 use std::collections::HashSet;
 
 use super::app::PromptAttachment;
@@ -110,7 +110,7 @@ impl PromptComposer {
 
     fn handle_picker_outcome<T>(
         &mut self,
-        outcome: Outcome<PickerMessage<T>>,
+        outcome: Response<PickerMessage<T>>,
     ) -> (bool, Option<T>) {
         let Some(msg) = outcome.into_messages().into_iter().next() else {
             return (false, None);
@@ -139,8 +139,8 @@ impl PromptComposer {
 
     fn handle_file_picker_outcome(
         &mut self,
-        outcome: Outcome<FilePickerMessage>,
-    ) -> Outcome<PromptComposerMessage> {
+        outcome: Response<FilePickerMessage>,
+    ) -> Response<PromptComposerMessage> {
         let (close, confirmed) = self.handle_picker_outcome(outcome);
         if let Some(file_match) = confirmed {
             self.file_picker = None;
@@ -149,13 +149,13 @@ impl PromptComposer {
         } else if close {
             self.file_picker = None;
         }
-        Outcome::consumed()
+        Response::ok()
     }
 
     fn handle_command_picker_outcome(
         &mut self,
-        outcome: Outcome<CommandPickerMessage>,
-    ) -> Outcome<PromptComposerMessage> {
+        outcome: Response<CommandPickerMessage>,
+    ) -> Response<PromptComposerMessage> {
         let (close, confirmed) = self.handle_picker_outcome(outcome);
         if let Some(cmd) = confirmed {
             self.command_picker = None;
@@ -163,54 +163,54 @@ impl PromptComposer {
         } else if close {
             self.command_picker = None;
         }
-        Outcome::consumed()
+        Response::ok()
     }
 
     fn handle_text_input_outcome(
         &mut self,
-        outcome: Outcome<TextInputMessage>,
-    ) -> Outcome<PromptComposerMessage> {
+        outcome: Response<TextInputMessage>,
+    ) -> Response<PromptComposerMessage> {
         match outcome {
-            Outcome::Ignored => Outcome::ignored(),
-            Outcome::Consumed => Outcome::consumed(),
+            Response::Ignored => Response::ignored(),
+            Response::Ok => Response::ok(),
             outcome => match outcome.into_messages().into_iter().next() {
                 Some(TextInputMessage::Submit) => self.prepare_submit(),
                 Some(TextInputMessage::OpenCommandPicker) => {
                     let mut commands = builtin_commands();
                     commands.extend(self.available_commands.clone());
                     self.command_picker = Some(CommandPicker::new(commands));
-                    Outcome::consumed()
+                    Response::ok()
                 }
                 Some(TextInputMessage::OpenFilePicker) => {
                     self.file_picker = Some(FilePicker::new());
-                    Outcome::consumed()
+                    Response::ok()
                 }
-                None => Outcome::consumed(),
+                None => Response::ok(),
             },
         }
     }
 
-    fn apply_command(&mut self, cmd: &CommandEntry) -> Outcome<PromptComposerMessage> {
+    fn apply_command(&mut self, cmd: &CommandEntry) -> Response<PromptComposerMessage> {
         if cmd.builtin && cmd.name == "clear" {
             self.text_input.clear();
             self.close_all();
-            Outcome::message(PromptComposerMessage::ClearScreen)
+            Response::one(PromptComposerMessage::ClearScreen)
         } else if cmd.builtin && cmd.name == "config" {
             self.text_input.clear();
             self.close_all();
-            Outcome::message(PromptComposerMessage::OpenConfig)
+            Response::one(PromptComposerMessage::OpenConfig)
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
-            Outcome::consumed()
+            Response::ok()
         } else {
             self.text_input.set_input(format!("/{}", cmd.name));
             self.prepare_submit()
         }
     }
 
-    fn prepare_submit(&mut self) -> Outcome<PromptComposerMessage> {
+    fn prepare_submit(&mut self) -> Response<PromptComposerMessage> {
         if self.text_input.buffer().trim().is_empty() {
-            return Outcome::consumed();
+            return Response::ok();
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
@@ -218,7 +218,7 @@ impl PromptComposer {
         self.text_input.clear();
         self.close_all();
 
-        Outcome::message(PromptComposerMessage::SubmitRequested {
+        Response::one(PromptComposerMessage::SubmitRequested {
             user_input,
             attachments,
         })
@@ -228,12 +228,12 @@ impl PromptComposer {
 impl Widget for PromptComposer {
     type Message = PromptComposerMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         match event {
             WidgetEvent::Paste(text) => {
                 self.close_all();
                 self.text_input.insert_paste(text);
-                Outcome::consumed()
+                Response::ok()
             }
             WidgetEvent::Key(key_event) => {
                 if let Some(ref mut picker) = self.file_picker {
@@ -246,7 +246,7 @@ impl Widget for PromptComposer {
                         key_event.code,
                         KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
                     ) {
-                        return Outcome::consumed();
+                        return Response::ok();
                     }
                 }
 
@@ -258,7 +258,7 @@ impl Widget for PromptComposer {
                 let outcome = self.text_input.on_event(event);
                 self.handle_text_input_outcome(outcome)
             }
-            _ => Outcome::ignored(),
+            _ => Response::ignored(),
         }
     }
 

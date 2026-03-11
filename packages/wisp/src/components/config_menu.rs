@@ -1,6 +1,6 @@
 use crate::components::wrap_selection;
 use crate::tui::KeyCode;
-use crate::tui::{Line, Outcome, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Line, Response, ViewContext, Widget, WidgetEvent};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
@@ -54,19 +54,19 @@ pub enum ConfigMenuMessage {
 impl Widget for ConfigMenu {
     type Message = ConfigMenuMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match key.code {
-            KeyCode::Esc => Outcome::message(ConfigMenuMessage::CloseAll),
+            KeyCode::Esc => Response::one(ConfigMenuMessage::CloseAll),
             KeyCode::Up => {
                 self.move_selection_up();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Enter => {
                 let msg = match self.selected_entry() {
@@ -79,9 +79,9 @@ impl Widget for ConfigMenu {
                     Some(e) if e.multi_select => ConfigMenuMessage::OpenModelSelector,
                     _ => ConfigMenuMessage::OpenSelectedPicker,
                 };
-                Outcome::message(msg)
+                Response::one(msg)
             }
-            _ => Outcome::consumed(),
+            _ => Response::ok(),
         }
     }
 

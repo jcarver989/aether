@@ -13,10 +13,9 @@ pub const BORDER_H_PAD: u16 = 4;
 /// ```
 /// use tui::{Panel, Line, ViewContext};
 ///
-/// let mut panel = Panel::new()
+/// let mut panel = Panel::new(tui::Color::Grey)
 ///     .title(" Settings ")
 ///     .footer("[Enter] Save [Esc] Cancel")
-///     .border_color(tui::Color::Grey)
 ///     .gap(1);
 ///
 /// panel.push(vec![Line::new("Name: Example")]);
@@ -29,18 +28,18 @@ pub struct Panel {
     blocks: Vec<Vec<Line>>,
     title: Option<String>,
     footer: Option<String>,
-    border_color: Option<Color>,
+    border_color: Color,
     fill_height: Option<usize>,
     gap: usize,
 }
 
 impl Panel {
-    pub fn new() -> Self {
+    pub fn new(border_color: Color) -> Self {
         Self {
             blocks: Vec::new(),
             title: None,
             footer: None,
-            border_color: None,
+            border_color,
             fill_height: None,
             gap: 0,
         }
@@ -53,11 +52,6 @@ impl Panel {
 
     pub fn footer(mut self, footer: impl Into<String>) -> Self {
         self.footer = Some(footer.into());
-        self
-    }
-
-    pub fn border_color(mut self, color: Color) -> Self {
-        self.border_color = Some(color);
         self
     }
 
@@ -82,25 +76,9 @@ impl Panel {
 
     /// Render blocks with borders/chrome.
     pub fn render(&self, context: &ViewContext) -> Vec<Line> {
-        let has_border =
-            self.border_color.is_some() || self.title.is_some() || self.footer.is_some();
-
-        if !has_border {
-            let mut lines = Vec::new();
-            for (i, block) in self.blocks.iter().enumerate() {
-                if i > 0 {
-                    for _ in 0..self.gap {
-                        lines.push(Line::default());
-                    }
-                }
-                lines.extend(block.iter().cloned());
-            }
-            return lines;
-        }
-
         let width = context.size.width as usize;
         let inner_width = width.saturating_sub(BORDER_H_PAD as usize);
-        let border_style = self.border_color.map(Style::fg).unwrap_or_default();
+        let border_style = Style::fg(self.border_color);
 
         let mut lines = Vec::new();
 
@@ -168,12 +146,6 @@ impl Panel {
     }
 }
 
-impl Default for Panel {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Wrap a content line with `│ ... │` borders, extending any bg color through
 /// the padding so the highlight fills the full row width.
 fn wrap_in_border(content: &Line, inner_width: usize) -> Line {
@@ -199,50 +171,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn renders_empty_container() {
-        let container = Panel::new();
-        let context = ViewContext::new((80, 24));
-        let lines = container.render(&context);
-        assert!(lines.is_empty());
-    }
-
-    #[test]
-    fn preserves_child_order() {
-        let mut container = Panel::new();
-        container.push(vec![Line::new("a")]);
-        container.push(vec![Line::new("b")]);
-        let context = ViewContext::new((80, 24));
-        let lines = container.render(&context);
-        assert_eq!(lines, vec![Line::new("a"), Line::new("b")]);
-    }
-
-    #[test]
-    fn gap_inserts_blank_lines_between_children() {
-        let mut container = Panel::new().gap(1);
-        container.push(vec![Line::new("a")]);
-        container.push(vec![Line::new("b")]);
-        let context = ViewContext::new((80, 24));
-        let lines = container.render(&context);
-        assert_eq!(lines.len(), 3);
-        assert_eq!(lines[0], Line::new("a"));
-        assert!(lines[1].plain_text().is_empty());
-        assert_eq!(lines[2], Line::new("b"));
-    }
-
-    #[test]
-    fn gap_no_blank_line_before_first_child() {
-        let mut container = Panel::new().gap(2);
-        container.push(vec![Line::new("a")]);
-        let context = ViewContext::new((80, 24));
-        let lines = container.render(&context);
-        // Single child: no gap lines
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0], Line::new("a"));
-    }
-
-    #[test]
     fn title_renders_top_border_with_title_text() {
-        let mut container = Panel::new().title(" Config ").border_color(Color::Grey);
+        let mut container = Panel::new(Color::Grey).title(" Config ");
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((30, 10));
         let lines = container.render(&context);
@@ -253,9 +183,7 @@ mod tests {
 
     #[test]
     fn footer_renders_footer_and_bottom_border() {
-        let mut container = Panel::new()
-            .footer("[Esc] Close")
-            .border_color(Color::Grey);
+        let mut container = Panel::new(Color::Grey).footer("[Esc] Close");
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((30, 10));
         let lines = container.render(&context);
@@ -268,10 +196,9 @@ mod tests {
 
     #[test]
     fn fill_height_pads_with_empty_bordered_rows() {
-        let mut container = Panel::new()
+        let mut container = Panel::new(Color::Grey)
             .title(" T ")
             .footer("F")
-            .border_color(Color::Grey)
             .fill_height(10);
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((30, 10));
@@ -281,7 +208,7 @@ mod tests {
 
     #[test]
     fn border_color_styles_border_lines() {
-        let mut container = Panel::new().title(" T ").border_color(Color::Cyan);
+        let mut container = Panel::new(Color::Cyan).title(" T ");
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((30, 10));
         let lines = container.render(&context);
@@ -296,15 +223,12 @@ mod tests {
     #[test]
     fn bg_color_extends_through_padding() {
         let bg = Color::DarkBlue;
-        let mut container = Panel::new().border_color(Color::Grey);
+        let mut container = Panel::new(Color::Grey);
         container.push(vec![Line::with_style("hi", Style::default().bg_color(bg))]);
         let context = ViewContext::new((20, 10));
         let lines = container.render(&context);
         // Content row (top border + blank + first content = index 2)
         let content_row = &lines[2];
-        // The bg-colored span should cover "hi" + padding, stretching across
-        // inner_width. Find any span with the bg color and check its text
-        // extends beyond just "hi".
         let bg_span = content_row
             .spans()
             .iter()
@@ -319,14 +243,13 @@ mod tests {
 
     #[test]
     fn bordered_gap_inserts_empty_bordered_lines_between_children() {
-        let mut container = Panel::new().border_color(Color::Grey).gap(1);
+        let mut container = Panel::new(Color::Grey).gap(1);
         container.push(vec![Line::new("a")]);
         container.push(vec![Line::new("b")]);
         let context = ViewContext::new((20, 10));
         let lines = container.render(&context);
         // top border + blank + "a" + gap_blank + "b" + bottom border = 6
         assert_eq!(lines.len(), 6);
-        // The gap line should be a bordered empty line
         let gap_line = lines[3].plain_text();
         assert!(gap_line.starts_with('│'), "gap: {gap_line}");
         assert!(gap_line.ends_with('│'), "gap: {gap_line}");
@@ -334,7 +257,7 @@ mod tests {
 
     #[test]
     fn top_and_bottom_border_have_equal_visual_width() {
-        let mut container = Panel::new().title(" Config ").border_color(Color::Grey);
+        let mut container = Panel::new(Color::Grey).title(" Config ");
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((40, 10));
         let lines = container.render(&context);
@@ -345,15 +268,5 @@ mod tests {
             UnicodeWidthStr::width(bottom.as_str()),
             "top ({top}) and bottom ({bottom}) border should have equal visual width"
         );
-    }
-
-    #[test]
-    fn no_border_options_renders_like_before() {
-        let mut container = Panel::new();
-        container.push(vec![Line::new("a")]);
-        container.push(vec![Line::new("b")]);
-        let context = ViewContext::new((80, 24));
-        let lines = container.render(&context);
-        assert_eq!(lines, vec![Line::new("a"), Line::new("b")]);
     }
 }

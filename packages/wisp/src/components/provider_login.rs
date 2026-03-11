@@ -1,6 +1,6 @@
 use crate::components::wrap_selection;
 use crate::tui::KeyCode;
-use crate::tui::{Line, Outcome, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Line, Response, ViewContext, Widget, WidgetEvent};
 
 pub struct ProviderLoginOverlay {
     pub entries: Vec<ProviderLoginEntry>,
@@ -27,19 +27,19 @@ pub enum ProviderLoginMessage {
 impl Widget for ProviderLoginOverlay {
     type Message = ProviderLoginMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match key.code {
-            KeyCode::Esc => Outcome::message(ProviderLoginMessage::Close),
+            KeyCode::Esc => Response::one(ProviderLoginMessage::Close),
             KeyCode::Up => {
                 self.move_selection_up();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Enter => {
                 if let Some(entry) = self
@@ -47,13 +47,13 @@ impl Widget for ProviderLoginOverlay {
                     .get(self.selected_index)
                     .filter(|e| e.status == ProviderLoginStatus::NeedsLogin)
                 {
-                    return Outcome::message(ProviderLoginMessage::Authenticate(
+                    return Response::one(ProviderLoginMessage::Authenticate(
                         entry.method_id.clone(),
                     ));
                 }
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::consumed(),
+            _ => Response::ok(),
         }
     }
 

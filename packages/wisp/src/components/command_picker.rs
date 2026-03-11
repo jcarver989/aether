@@ -1,7 +1,6 @@
-use crate::tui::rendering::soft_wrap::{display_width_text, pad_text_to_width, truncate_text};
 use crate::tui::{
-    Combobox, Line, Outcome, PickerKey, PickerMessage, ViewContext, Searchable, Style, Widget,
-    WidgetEvent, classify_key,
+    Combobox, Line, Response, PickerKey, PickerMessage, ViewContext, Searchable, Style, Widget,
+    WidgetEvent, classify_key, display_width_text, pad_text_to_width, truncate_text,
 };
 
 #[derive(Debug, Clone)]
@@ -41,43 +40,43 @@ impl CommandPicker {
 impl Widget for CommandPicker {
     type Message = CommandPickerMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key_event) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match classify_key(*key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => Outcome::message(PickerMessage::Close),
-            PickerKey::BackspaceOnEmpty => Outcome::message(PickerMessage::CloseAndPopChar),
+            PickerKey::Escape => Response::one(PickerMessage::Close),
+            PickerKey::BackspaceOnEmpty => Response::one(PickerMessage::CloseAndPopChar),
             PickerKey::MoveUp => {
                 self.combobox.move_up();
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
-                Outcome::consumed()
+                Response::ok()
             }
             PickerKey::Confirm => {
                 if let Some(command) = self.combobox.selected().cloned() {
-                    Outcome::message(PickerMessage::Confirm(command))
+                    Response::one(PickerMessage::Confirm(command))
                 } else {
-                    Outcome::message(PickerMessage::Close)
+                    Response::one(PickerMessage::Close)
                 }
             }
             PickerKey::Char(c) => {
                 if c.is_whitespace() {
-                    return Outcome::message(PickerMessage::CloseWithChar(c));
+                    return Response::one(PickerMessage::CloseWithChar(c));
                 }
                 self.combobox.push_query_char(c);
-                Outcome::message(PickerMessage::CharTyped(c))
+                Response::one(PickerMessage::CharTyped(c))
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
-                Outcome::message(PickerMessage::PopChar)
+                Response::one(PickerMessage::PopChar)
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
             | PickerKey::ControlChar
-            | PickerKey::Other => Outcome::consumed(),
+            | PickerKey::Other => Response::ok(),
         }
     }
 
@@ -145,9 +144,7 @@ fn build_styled_command_line(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::ViewContext;
-    use crate::tui::rendering::soft_wrap::{display_width_line, display_width_text};
-    use crate::tui::rendering::span::Span;
+    use crate::tui::{Span, ViewContext, display_width_text};
     use crate::tui::test_picker::{
         rendered_lines_from, rendered_lines_with_context, rendered_raw_lines_with_context,
         type_query,
@@ -334,7 +331,7 @@ mod tests {
             .expect("should render a selected line");
 
         assert_eq!(
-            display_width_line(selected_line),
+            selected_line.display_width(),
             context.size.width as usize,
             "selected row should fill the full visible width",
         );

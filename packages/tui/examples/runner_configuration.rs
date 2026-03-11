@@ -1,5 +1,5 @@
 use tui::advanced::MouseCapture;
-use tui::{App, AppEvent, Cursor, Effects, Frame, KeyCode, Line, ViewContext};
+use tui::{App, AppEvent, Cursor, Response, Frame, KeyCode, Line, ViewContext};
 
 struct ConfiguredApp;
 
@@ -8,10 +8,10 @@ impl App for ConfiguredApp {
     type Effect = ();
     type Error = std::io::Error;
 
-    fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Effects<()> {
+    fn update(&mut self, event: AppEvent<()>, _ctx: &ViewContext) -> Response<()> {
         match event {
-            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Effects::exit(),
-            _ => Effects::none(),
+            AppEvent::Key(key) if key.code == KeyCode::Char('q') => Response::exit(),
+            _ => Response::ok(),
         }
     }
 

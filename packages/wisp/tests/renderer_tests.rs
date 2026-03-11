@@ -1,12 +1,12 @@
 use agent_client_protocol as acp;
 use tui::testing::{TestTerminal, assert_buffer_eq};
 use wisp::components::app::{App, AppAction};
-use wisp::tui::Theme;
-use wisp::tui::advanced::Renderer as FrameRenderer;
+use tui::Theme;
+use tui::advanced::Renderer as FrameRenderer;
 
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use tui::{
-    App as TuiApp, AppEvent, Effects, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
+    App as TuiApp, AppEvent, Response, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
 };
 
 const TEST_AGENT: &str = "test-agent";
@@ -137,10 +137,10 @@ impl Renderer {
 
     async fn apply_effects(
         &mut self,
-        effects: Effects<AppAction>,
+        effects: Response<AppAction>,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let should_exit = effects.is_exit();
-        let mut queue: std::collections::VecDeque<_> = effects.into_effects().into();
+        let mut queue: std::collections::VecDeque<_> = effects.into_messages().into();
 
         while let Some(effect) = queue.pop_front() {
             self.renderer
@@ -149,7 +149,7 @@ impl Renderer {
             if follow_up.is_exit() {
                 return Ok(LoopAction::Exit);
             }
-            queue.extend(follow_up.into_effects());
+            queue.extend(follow_up.into_messages());
         }
 
         self.renderer

@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 /// components own it and use it to:
 /// - Track which child is focused
 /// - Handle Tab/BackTab navigation
-/// - Query focus state for rendering (e.g. `context.with_focused(ring.is_focused(i))`)
+/// - Query focus state for rendering (e.g. `ring.is_focused(i)`)
 ///
 /// # Example
 ///

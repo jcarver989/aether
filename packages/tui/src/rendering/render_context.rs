@@ -6,12 +6,11 @@ use crate::theme::Theme;
 #[cfg(feature = "syntax")]
 use crate::syntax_highlighting::SyntaxHighlighter;
 
-/// Environment passed to render methods: terminal size, theme, focus state.
+/// Environment passed to render methods: terminal size, theme.
 #[derive(Clone)]
 pub struct ViewContext {
     pub size: Size,
     pub theme: Arc<Theme>,
-    pub focused: bool,
     #[cfg(feature = "syntax")]
     pub(crate) highlighter: Arc<SyntaxHighlighter>,
 }
@@ -25,7 +24,6 @@ impl ViewContext {
         Self {
             size: size.into(),
             theme: Arc::new(theme),
-            focused: true,
             #[cfg(feature = "syntax")]
             highlighter: Arc::new(SyntaxHighlighter::new()),
         }
@@ -40,17 +38,6 @@ impl ViewContext {
         Self {
             size: size.into(),
             theme: self.theme.clone(),
-            focused: self.focused,
-            #[cfg(feature = "syntax")]
-            highlighter: self.highlighter.clone(),
-        }
-    }
-
-    pub fn with_focused(&self, focused: bool) -> Self {
-        Self {
-            size: self.size,
-            theme: self.theme.clone(),
-            focused,
             #[cfg(feature = "syntax")]
             highlighter: self.highlighter.clone(),
         }

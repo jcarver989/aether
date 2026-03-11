@@ -1,4 +1,3 @@
-use crate::tui::rendering::soft_wrap::{display_width_line, soft_wrap_line};
 use crate::tui::{Line, ViewContext};
 use unicode_width::UnicodeWidthChar;
 
@@ -44,8 +43,7 @@ impl InputPrompt<'_> {
         let inner_width = width - 2; // space between │ and │
         // " " + marker area ("> " or "  ")
         let content_width = inner_width.saturating_sub(3).max(1);
-        let wrapped_chunks = soft_wrap_line(
-            &styled_input,
+        let wrapped_chunks = styled_input.soft_wrap(
             u16::try_from(content_width).unwrap_or(u16::MAX),
         );
 
@@ -63,7 +61,7 @@ impl InputPrompt<'_> {
 
         for row in 0..content_rows {
             let chunk = wrapped_chunks.get(row).cloned().unwrap_or_default();
-            let pad_len = content_width.saturating_sub(display_width_line(&chunk));
+            let pad_len = content_width.saturating_sub(chunk.display_width());
             let mut middle = Line::default();
             middle.push_styled("│", context.theme.muted());
             middle.push_text(" ");

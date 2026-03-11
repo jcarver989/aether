@@ -1,6 +1,6 @@
 use crate::keybindings::Keybindings;
 use crate::tui::KeyCode;
-use crate::tui::{KeyEvent, Line, Outcome, ViewContext, Widget, WidgetEvent};
+use crate::tui::{KeyEvent, Line, Response, ViewContext, Widget, WidgetEvent};
 use std::path::PathBuf;
 
 pub struct TextInput {
@@ -134,14 +134,14 @@ impl TextInput {
 impl Widget for TextInput {
     type Message = TextInputMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         match event {
             WidgetEvent::Paste(text) => {
                 self.insert_paste(text);
-                return Outcome::consumed();
+                return Response::ok();
             }
             WidgetEvent::Key(key_event) => self.handle_key(key_event),
-            _ => Outcome::ignored(),
+            _ => Response::ignored(),
         }
     }
 
@@ -151,26 +151,26 @@ impl Widget for TextInput {
 }
 
 impl TextInput {
-    fn handle_key(&mut self, key_event: &KeyEvent) -> Outcome<TextInputMessage> {
+    fn handle_key(&mut self, key_event: &KeyEvent) -> Response<TextInputMessage> {
         match key_event.code {
             KeyCode::Left => {
                 self.move_cursor_left();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Right => {
                 self.move_cursor_right();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Home => {
                 self.move_cursor_home();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::End => {
                 self.move_cursor_end();
-                Outcome::consumed()
+                Response::ok()
             }
             _ if self.keybindings.submit.matches(*key_event) => {
-                Outcome::message(TextInputMessage::Submit)
+                Response::one(TextInputMessage::Submit)
             }
             _ if self.keybindings.open_command_picker.matches(*key_event)
                 && self.buffer.is_empty() =>
@@ -178,23 +178,23 @@ impl TextInput {
                 if let Some(c) = self.keybindings.open_command_picker.char() {
                     self.insert_char_at_cursor(c);
                 }
-                Outcome::message(TextInputMessage::OpenCommandPicker)
+                Response::one(TextInputMessage::OpenCommandPicker)
             }
             _ if self.keybindings.open_file_picker.matches(*key_event) => {
                 if let Some(c) = self.keybindings.open_file_picker.char() {
                     self.insert_char_at_cursor(c);
                 }
-                Outcome::message(TextInputMessage::OpenFilePicker)
+                Response::one(TextInputMessage::OpenFilePicker)
             }
             KeyCode::Char(c) => {
                 self.insert_char_at_cursor(c);
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Backspace => {
                 self.delete_char_before_cursor();
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::ignored(),
+            _ => Response::ignored(),
         }
     }
 }
@@ -362,7 +362,7 @@ mod tests {
         assert!(outcome.is_handled());
         assert!(matches!(
             outcome,
-            Outcome::Message(TextInputMessage::OpenCommandPicker)
+            Response::One(TextInputMessage::OpenCommandPicker)
         ));
         assert_eq!(input.buffer, "/");
     }
@@ -376,7 +376,7 @@ mod tests {
         assert!(outcome.is_handled());
         assert!(matches!(
             outcome,
-            Outcome::Message(TextInputMessage::OpenFilePicker)
+            Response::One(TextInputMessage::OpenFilePicker)
         ));
         assert_eq!(input.buffer, "@");
     }
@@ -391,7 +391,7 @@ mod tests {
         assert!(outcome.is_handled());
         assert!(matches!(
             outcome,
-            Outcome::Message(TextInputMessage::Submit)
+            Response::One(TextInputMessage::Submit)
         ));
     }
 

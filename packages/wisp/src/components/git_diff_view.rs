@@ -1,9 +1,7 @@
 use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
-use crate::tui::rendering::soft_wrap::truncate_text;
-use crate::tui::rendering::span::Span;
-use crate::tui::{KeyCode, Line, Outcome, ViewContext, Style, Widget, WidgetEvent};
+use crate::tui::{KeyCode, Line, Response, Span, Style, ViewContext, Widget, WidgetEvent, truncate_text};
 
 pub enum GitDiffViewMessage {
     Close,
@@ -74,9 +72,9 @@ fn render_git_diff_state(state: &GitDiffViewState, context: &ViewContext) -> Vec
 impl Widget for GitDiffView<'_> {
     type Message = GitDiffViewMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
 
         if self.state.focus == PatchFocus::CommentInput {
@@ -84,58 +82,58 @@ impl Widget for GitDiffView<'_> {
         }
 
         match key.code {
-            KeyCode::Esc => Outcome::message(GitDiffViewMessage::Close),
-            KeyCode::Char('r') => Outcome::message(GitDiffViewMessage::Refresh),
+            KeyCode::Esc => Response::one(GitDiffViewMessage::Close),
+            KeyCode::Char('r') => Response::one(GitDiffViewMessage::Refresh),
             KeyCode::Char('h') | KeyCode::Left => {
                 self.state.set_focus(PatchFocus::FileList);
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 self.state.set_focus(PatchFocus::Patch);
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 self.navigate_down();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.navigate_up();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Char('g') => {
                 self.state.move_cursor_to_start();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Char('G') => {
                 self.state.move_cursor_to_end();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::PageDown => {
                 self.state.move_cursor(20);
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::PageUp => {
                 self.state.move_cursor(-20);
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Char('n') => {
                 self.state.jump_next_hunk();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Char('p') => {
                 self.state.jump_prev_hunk();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Char('c') => {
                 self.enter_comment_mode();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Char('s') => self.submit_review(),
             KeyCode::Char('u') => {
                 self.state.queued_comments.pop();
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::consumed(),
+            _ => Response::ok(),
         }
     }
 
@@ -185,21 +183,21 @@ impl GitDiffView<'_> {
         self.state.comment_cursor = 0;
     }
 
-    fn submit_review(&mut self) -> Outcome<GitDiffViewMessage> {
+    fn submit_review(&mut self) -> Response<GitDiffViewMessage> {
         if self.state.queued_comments.is_empty() {
-            return Outcome::consumed();
+            return Response::ok();
         }
         let comments = std::mem::take(&mut self.state.queued_comments);
-        Outcome::message(GitDiffViewMessage::SubmitReview { comments })
+        Response::one(GitDiffViewMessage::SubmitReview { comments })
     }
 
-    fn on_comment_input(&mut self, code: KeyCode) -> Outcome<GitDiffViewMessage> {
+    fn on_comment_input(&mut self, code: KeyCode) -> Response<GitDiffViewMessage> {
         match code {
             KeyCode::Esc => {
                 self.state.focus = PatchFocus::Patch;
                 self.state.comment_buffer.clear();
                 self.state.comment_cursor = 0;
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Enter => {
                 if let Some(comment) = build_queued_comment(self.state) {
@@ -208,14 +206,14 @@ impl GitDiffView<'_> {
                 self.state.focus = PatchFocus::Patch;
                 self.state.comment_buffer.clear();
                 self.state.comment_cursor = 0;
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Char(c) => {
                 let byte_pos =
                     char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                 self.state.comment_buffer.insert(byte_pos, c);
                 self.state.comment_cursor += 1;
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Backspace => {
                 if self.state.comment_cursor > 0 {
@@ -224,18 +222,18 @@ impl GitDiffView<'_> {
                         char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                     self.state.comment_buffer.remove(byte_pos);
                 }
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Left => {
                 self.state.comment_cursor = self.state.comment_cursor.saturating_sub(1);
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Right => {
                 let max = self.state.comment_buffer.chars().count();
                 self.state.comment_cursor = (self.state.comment_cursor + 1).min(max);
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::consumed(),
+            _ => Response::ok(),
         }
     }
 }

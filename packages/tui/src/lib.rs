@@ -5,36 +5,32 @@
 //!
 //! - **[`App`]** — Single trait combining event handling, effects, and rendering
 //! - **[`AppEvent`]** — Unified event type for terminal, external, and tick events
-//! - **[`Effects`]** — Effect result type for commands and exit
+//! - **[`Response`]** — Unified result type for event handling and effects
 //! - **[`Runner`]** — Builder-style runner that owns terminal lifecycle
 
 // Core modules - always available
-pub mod components;
-pub mod diffs;
-pub use diffs::diff_types;
-pub mod focus;
-pub mod rendering;
+pub(crate) mod components;
+pub(crate) mod diffs;
+pub(crate) mod focus;
+pub(crate) mod rendering;
 pub(crate) use rendering::line;
 pub(crate) use rendering::size;
 pub(crate) use rendering::span;
 pub(crate) use rendering::style;
-pub mod theme;
+pub(crate) mod theme;
 
 // Feature-gated modules
 #[cfg(feature = "syntax")]
 mod syntax_highlighting;
 
-#[cfg(feature = "markdown")]
-pub mod markdown;
-
-#[cfg(feature = "diff")]
-pub use diffs::diff;
+#[cfg(feature = "syntax")]
+pub(crate) mod markdown;
 
 #[cfg(feature = "picker")]
 pub mod test_picker;
 
 #[cfg(feature = "picker")]
-pub mod combobox;
+pub(crate) mod combobox;
 
 #[cfg(feature = "runtime")]
 pub mod runtime;
@@ -55,7 +51,7 @@ pub use components::spinner::{BRAILLE_FRAMES, Spinner};
 pub use components::text_field::TextField;
 
 pub use components::{
-    Cursor, Outcome, PickerMessage, ViewContext, Widget, WidgetEvent, wrap_selection,
+    Cursor, PickerMessage, Response, ViewContext, Widget, WidgetEvent, wrap_selection,
 };
 pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag};
 pub use focus::{FocusOutcome, FocusRing};
@@ -63,7 +59,7 @@ pub use rendering::frame::Frame;
 pub use rendering::line::Line;
 pub use rendering::size::Size;
 pub use rendering::style::Style;
-pub use theme::{ColorPalette, Theme};
+pub use theme::Theme;
 
 /// Advanced APIs for users who need low-level control.
 ///
@@ -89,8 +85,18 @@ pub mod advanced {
     pub use crate::runtime::terminal::terminal_size;
 }
 
+// &str text utilities
+pub use rendering::soft_wrap::{display_width_text, pad_text_to_width, truncate_text};
+
+// Span type
+pub use rendering::span::Span;
+
+// Markdown
+#[cfg(feature = "syntax")]
+pub use markdown::render_markdown;
+
 // Feature-gated re-exports
-#[cfg(feature = "diff")]
+#[cfg(feature = "syntax")]
 pub use diffs::diff::highlight_diff;
 
 #[cfg(feature = "syntax")]
@@ -106,4 +112,4 @@ pub use crossterm::event::{
 pub use crossterm::style::Color;
 
 #[cfg(feature = "runtime")]
-pub use runtime::{App, AppEvent, Effects, Runner, run};
+pub use runtime::{App, AppEvent, Runner, run};

@@ -1,6 +1,6 @@
 use crate::components::wrap_selection;
 use crate::tui::KeyCode;
-use crate::tui::{Line, Outcome, ViewContext, Widget, WidgetEvent};
+use crate::tui::{Line, Response, ViewContext, Widget, WidgetEvent};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 
 pub struct ServerStatusOverlay {
@@ -16,19 +16,19 @@ pub enum ServerStatusMessage {
 impl Widget for ServerStatusOverlay {
     type Message = ServerStatusMessage;
 
-    fn on_event(&mut self, event: &WidgetEvent) -> Outcome<Self::Message> {
+    fn on_event(&mut self, event: &WidgetEvent) -> Response<Self::Message> {
         let WidgetEvent::Key(key) = event else {
-            return Outcome::ignored();
+            return Response::ignored();
         };
         match key.code {
-            KeyCode::Esc => Outcome::message(ServerStatusMessage::Close),
+            KeyCode::Esc => Response::one(ServerStatusMessage::Close),
             KeyCode::Up => {
                 self.move_selection_up();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Down => {
                 self.move_selection_down();
-                Outcome::consumed()
+                Response::ok()
             }
             KeyCode::Enter => {
                 if let Some(entry) = self
@@ -36,13 +36,13 @@ impl Widget for ServerStatusOverlay {
                     .get(self.selected_index)
                     .filter(|e| matches!(e.status, McpServerStatus::NeedsOAuth))
                 {
-                    return Outcome::message(ServerStatusMessage::Authenticate(
+                    return Response::one(ServerStatusMessage::Authenticate(
                         entry.name.clone(),
                     ));
                 }
-                Outcome::consumed()
+                Response::ok()
             }
-            _ => Outcome::consumed(),
+            _ => Response::ok(),
         }
     }
 

@@ -1,7 +1,7 @@
 use super::{App, AppAction, PromptAttachment, build_attachment_blocks};
 use crate::components::app::git_diff_mode::format_review_prompt;
 use crate::settings::{load_or_create_settings, save_settings};
-use crate::tui::{Effects, Line};
+use crate::tui::{Response, Line};
 use crate::tui::advanced::Terminal;
 use std::io::Write;
 
@@ -10,11 +10,11 @@ impl App {
         &mut self,
         terminal: &mut Terminal<'_, impl Write>,
         action: AppAction,
-    ) -> Result<Effects<AppAction>, Box<dyn std::error::Error>> {
+    ) -> Result<Response<AppAction>, Box<dyn std::error::Error>> {
         match action {
             AppAction::PushScrollback(lines) => {
                 terminal.push_to_scrollback(&lines)?;
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::PromptSubmit {
                 user_input,
@@ -28,7 +28,7 @@ impl App {
                     attachments,
                 )
                 .await?;
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::SetConfigOption {
                 config_id,
@@ -37,50 +37,50 @@ impl App {
                 let _ =
                     self.prompt_handle
                         .set_config_option(&self.session_id, &config_id, &new_value);
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::SetTheme { file } => {
                 apply_theme_selection(terminal, file);
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::Cancel => {
                 self.prompt_handle.cancel(&self.session_id)?;
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::AuthenticateMcpServer { server_name } => {
                 let _ = self
                     .prompt_handle
                     .authenticate_mcp_server(&self.session_id, &server_name);
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::AuthenticateProvider { method_id } => {
                 let _ = self
                     .prompt_handle
                     .authenticate(&self.session_id, &method_id);
                 self.state.on_authenticate_started(&method_id);
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::ClearScreen => {
                 self.state.reset_after_context_cleared();
                 terminal.clear_screen()?;
                 self.prompt_handle
                     .prompt(&self.session_id, "/clear", None)?;
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::OpenGitDiffViewer => {
                 self.state.enter_git_diff();
                 self.git_diff_mode.begin_open();
                 self.git_diff_mode.complete_load().await;
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::RefreshGitDiffViewer => {
                 self.git_diff_mode.complete_load().await;
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::CloseGitDiffViewer => {
                 self.git_diff_mode.close();
                 self.state.exit_git_diff();
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
             AppAction::SubmitDiffReview { comments } => {
                 let prompt = format_review_prompt(&comments);
@@ -94,7 +94,7 @@ impl App {
                     vec![],
                 )
                 .await?;
-                Ok(Effects::none())
+                Ok(Response::ok())
             }
         }
     }

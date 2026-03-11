@@ -2,7 +2,7 @@ use super::AppAction;
 use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
 use crate::tui::{
-    Effects, KeyEvent, Line, MouseEvent, MouseEventKind, Outcome, ViewContext, Widget,
+    KeyEvent, Line, MouseEvent, MouseEventKind, Response, ViewContext, Widget,
     WidgetEvent,
 };
 use std::path::PathBuf;
@@ -359,7 +359,7 @@ impl GitDiffMode {
 
     }
 
-    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Effects<AppAction> {
+    pub(crate) fn on_key_event(&mut self, key_event: KeyEvent) -> Response<AppAction> {
         let mut view = GitDiffView {
             state: &mut self.state,
         };
@@ -397,8 +397,8 @@ impl GitDiffMode {
 
     fn handle_messages(
         &mut self,
-        outcome: Outcome<GitDiffViewMessage>,
-    ) -> Effects<AppAction> {
+        outcome: Response<GitDiffViewMessage>,
+    ) -> Response<AppAction> {
         outcome
             .into_messages()
             .into_iter()
