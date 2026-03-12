@@ -167,13 +167,22 @@ impl ProviderFactory for CodexProvider {
 }
 
 impl StreamingModelProvider for CodexProvider {
+    fn model(&self) -> Option<crate::LlmModel> {
+        format!("{}:{}", super::PROVIDER_ID, self.model)
+            .parse()
+            .ok()
+    }
+
     fn context_window(&self) -> Option<u32> {
         get_context_window(super::PROVIDER_ID, &self.model)
     }
 
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
         let provider = self.clone();
-        let context = context.clone();
+        let context = match self.model() {
+            Some(model) => context.filter_encrypted_reasoning(&model),
+            None => context.clone(),
+        };
 
         Box::pin(async_stream::stream! {
             let headers = match provider.build_headers().await {

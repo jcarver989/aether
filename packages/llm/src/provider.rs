@@ -28,6 +28,13 @@ pub trait StreamingModelProvider: Send + Sync {
     /// Context window size in tokens for the current model.
     /// Returns `None` for unknown models (e.g. Ollama, `LlamaCpp`).
     fn context_window(&self) -> Option<u32>;
+
+    /// The `LlmModel` this provider is currently configured to use.
+    /// Returns `None` for providers where the model is unknown at compile time
+    /// (e.g. test fakes).
+    fn model(&self) -> Option<LlmModel> {
+        None
+    }
 }
 
 /// Look up context window for a known provider + model ID combo via the catalog.
@@ -52,6 +59,10 @@ impl StreamingModelProvider for Box<dyn StreamingModelProvider> {
     fn context_window(&self) -> Option<u32> {
         (**self).context_window()
     }
+
+    fn model(&self) -> Option<LlmModel> {
+        (**self).model()
+    }
 }
 
 impl<T: StreamingModelProvider> StreamingModelProvider for std::sync::Arc<T> {
@@ -65,6 +76,10 @@ impl<T: StreamingModelProvider> StreamingModelProvider for std::sync::Arc<T> {
 
     fn context_window(&self) -> Option<u32> {
         (**self).context_window()
+    }
+
+    fn model(&self) -> Option<LlmModel> {
+        (**self).model()
     }
 }
 

@@ -41,6 +41,10 @@ impl ProviderFactory for DeepSeekProvider {
 }
 
 impl StreamingModelProvider for DeepSeekProvider {
+    fn model(&self) -> Option<crate::LlmModel> {
+        format!("deepseek:{}", self.model).parse().ok()
+    }
+
     fn context_window(&self) -> Option<u32> {
         get_context_window("deepseek", &self.model)
     }

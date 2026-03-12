@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::catalog::LlmModel;
+use crate::chat_message::AssistantReasoning;
 use crate::reasoning::ReasoningEffort;
 use crate::types::IsoString;
 
@@ -68,7 +70,7 @@ impl Context {
     pub fn push_assistant_turn(
         &mut self,
         content: &str,
-        reasoning_content: &str,
+        reasoning: AssistantReasoning,
         completed_tools: Vec<Result<super::ToolCallResult, super::ToolCallError>>,
     ) {
         let tool_requests: Vec<_> = completed_tools
@@ -89,14 +91,48 @@ impl Context {
 
         self.messages.push(ChatMessage::Assistant {
             content: content.to_string(),
-            reasoning_content: (!reasoning_content.is_empty())
-                .then_some(reasoning_content.to_string()),
+            reasoning,
             timestamp: IsoString::now(),
             tool_calls: tool_requests,
         });
 
         for result in completed_tools {
             self.messages.push(ChatMessage::ToolCallResult(result));
+        }
+    }
+
+    /// Return a copy with encrypted reasoning filtered for the given model.
+    /// Encrypted content is kept only when its source model matches.
+    pub fn filter_encrypted_reasoning(&self, model: &LlmModel) -> Self {
+        let messages = self
+            .messages
+            .iter()
+            .map(|msg| match msg {
+                ChatMessage::Assistant {
+                    content,
+                    reasoning,
+                    timestamp,
+                    tool_calls,
+                } => ChatMessage::Assistant {
+                    content: content.clone(),
+                    reasoning: AssistantReasoning {
+                        summary_text: reasoning.summary_text.clone(),
+                        encrypted_content: reasoning
+                            .encrypted_content
+                            .as_ref()
+                            .filter(|ec| &ec.model == model)
+                            .cloned(),
+                    },
+                    timestamp: timestamp.clone(),
+                    tool_calls: tool_calls.clone(),
+                },
+                other => other.clone(),
+            })
+            .collect();
+        Context {
+            messages,
+            tools: self.tools.clone(),
+            reasoning_effort: self.reasoning_effort,
         }
     }
 
@@ -146,6 +182,7 @@ impl Context {
 mod tests {
     use super::*;
     use crate::ToolCallResult;
+    use crate::catalog::LlmModel;
 
     fn create_test_context() -> Context {
         let messages = vec![
@@ -159,7 +196,7 @@ mod tests {
             },
             ChatMessage::Assistant {
                 content: "Hi there!".to_string(),
-                reasoning_content: None,
+                reasoning: AssistantReasoning::default(),
                 timestamp: IsoString::now(),
                 tool_calls: vec![],
             },
@@ -277,5 +314,99 @@ mod tests {
         let with_tools_estimate = ctx_with_tools.estimated_token_count();
         assert_eq!(with_tools_estimate, (87 + 9 + 12 + 2) / 4);
         assert!(with_tools_estimate > base_estimate);
+    }
+
+    #[test]
+    fn compaction_drops_encrypted_reasoning() {
+        let model: LlmModel = "anthropic:claude-opus-4-6".parse().unwrap();
+        let ctx = Context::new(
+            vec![
+                ChatMessage::User {
+                    content: "Hello".to_string(),
+                    timestamp: IsoString::now(),
+                },
+                ChatMessage::Assistant {
+                    content: "I see.".to_string(),
+                    reasoning: AssistantReasoning {
+                        summary_text: Some("thinking".to_string()),
+                        encrypted_content: Some(crate::EncryptedReasoningContent {
+                            id: "r_test".to_string(),
+                            model,
+                            content: "blob".to_string(),
+                        }),
+                    },
+                    timestamp: IsoString::now(),
+                    tool_calls: vec![],
+                },
+            ],
+            vec![],
+        );
+        let compacted = ctx.with_compacted_summary("Summary of conversation");
+
+        for msg in compacted.messages() {
+            if let ChatMessage::Assistant { reasoning, .. } = msg {
+                assert!(
+                    reasoning.encrypted_content.is_none(),
+                    "compaction should drop encrypted reasoning"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn projected_for_keeps_matching_model() {
+        let model: LlmModel = "anthropic:claude-opus-4-6".parse().unwrap();
+        let ctx = Context::new(
+            vec![ChatMessage::Assistant {
+                content: "reply".to_string(),
+                reasoning: AssistantReasoning {
+                    summary_text: Some("think".to_string()),
+                    encrypted_content: Some(crate::EncryptedReasoningContent {
+                        id: "r_test".to_string(),
+                        model: model.clone(),
+                        content: "blob".to_string(),
+                    }),
+                },
+                timestamp: IsoString::now(),
+                tool_calls: vec![],
+            }],
+            vec![],
+        );
+        let projected = ctx.filter_encrypted_reasoning(&model);
+        if let ChatMessage::Assistant { reasoning, .. } = &projected.messages()[0] {
+            assert!(reasoning.encrypted_content.is_some());
+            assert_eq!(reasoning.summary_text.as_deref(), Some("think"));
+        } else {
+            panic!("expected assistant message");
+        }
+    }
+
+    #[test]
+    fn projected_for_strips_non_matching_model() {
+        let model_a: LlmModel = "anthropic:claude-opus-4-6".parse().unwrap();
+        let model_b: LlmModel = "anthropic:claude-sonnet-4-5-20250929".parse().unwrap();
+        let ctx = Context::new(
+            vec![ChatMessage::Assistant {
+                content: "reply".to_string(),
+                reasoning: AssistantReasoning {
+                    summary_text: Some("think".to_string()),
+                    encrypted_content: Some(crate::EncryptedReasoningContent {
+                        id: "r_test".to_string(),
+                        model: model_a,
+                        content: "blob".to_string(),
+                    }),
+                },
+                timestamp: IsoString::now(),
+                tool_calls: vec![],
+            }],
+            vec![],
+        );
+        let projected = ctx.filter_encrypted_reasoning(&model_b);
+        if let ChatMessage::Assistant { reasoning, .. } = &projected.messages()[0] {
+            assert!(reasoning.encrypted_content.is_none());
+            assert_eq!(reasoning.summary_text.as_deref(), Some("think"));
+        } else {
+            panic!("expected assistant message");
+        }
     }
 }

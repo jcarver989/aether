@@ -134,7 +134,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 io::stdout().flush().unwrap();
                 response_text.push_str(&chunk);
             }
-            LlmResponse::Reasoning { .. } => {}
+            LlmResponse::Reasoning { .. } | LlmResponse::EncryptedReasoning { .. } => {}
 
             LlmResponse::ToolRequestStart { id, name } => {
                 println!("\n🔧 Tool call started: {name} ({id})");

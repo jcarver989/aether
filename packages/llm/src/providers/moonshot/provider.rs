@@ -41,6 +41,10 @@ impl ProviderFactory for MoonshotProvider {
 }
 
 impl StreamingModelProvider for MoonshotProvider {
+    fn model(&self) -> Option<crate::LlmModel> {
+        format!("moonshot:{}", self.model).parse().ok()
+    }
+
     fn context_window(&self) -> Option<u32> {
         get_context_window("moonshot", &self.model)
     }

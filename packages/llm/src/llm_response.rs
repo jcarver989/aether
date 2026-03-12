@@ -26,6 +26,10 @@ pub enum LlmResponse {
     Reasoning {
         chunk: String,
     },
+    EncryptedReasoning {
+        id: String,
+        content: String,
+    },
     ToolRequestStart {
         id: String,
         name: String,
@@ -65,6 +69,13 @@ impl LlmResponse {
     pub fn reasoning(chunk: &str) -> Self {
         Self::Reasoning {
             chunk: chunk.to_string(),
+        }
+    }
+
+    pub fn encrypted_reasoning(id: &str, encrypted: &str) -> Self {
+        Self::EncryptedReasoning {
+            id: id.to_string(),
+            content: encrypted.to_string(),
         }
     }
 

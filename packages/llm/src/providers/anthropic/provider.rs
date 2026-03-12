@@ -200,6 +200,10 @@ impl ProviderFactory for AnthropicProvider {
 }
 
 impl StreamingModelProvider for AnthropicProvider {
+    fn model(&self) -> Option<crate::LlmModel> {
+        format!("anthropic:{}", self.model).parse().ok()
+    }
+
     fn context_window(&self) -> Option<u32> {
         get_context_window("anthropic", &self.model)
     }

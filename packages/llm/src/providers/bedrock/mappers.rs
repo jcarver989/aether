@@ -215,7 +215,7 @@ mod tests {
     fn test_map_assistant_with_tool_calls() {
         let messages = vec![ChatMessage::Assistant {
             content: "I'll help".to_string(),
-            reasoning_content: None,
+            reasoning: Default::default(),
             timestamp: IsoString::now(),
             tool_calls: vec![ToolCallRequest {
                 id: "call_1".to_string(),
@@ -238,7 +238,7 @@ mod tests {
     fn test_map_assistant_tool_calls_without_text() {
         let messages = vec![ChatMessage::Assistant {
             content: String::new(),
-            reasoning_content: None,
+            reasoning: Default::default(),
             timestamp: IsoString::now(),
             tool_calls: vec![ToolCallRequest {
                 id: "call_1".to_string(),
