@@ -333,6 +333,15 @@ impl ToolCallStatuses {
         self.sub_agents.remove(id);
     }
 
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
+        self.tool_order
+            .iter()
+            .flat_map(|id| self.render_tool(id, context))
+            .collect()
+    }
+
     pub fn render_tool(&self, id: &str, context: &ViewContext) -> Vec<Line> {
         let has_sub_agents = self.has_sub_agents(id);
 
