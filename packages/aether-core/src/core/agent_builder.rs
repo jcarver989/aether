@@ -1,9 +1,11 @@
 use super::agent::{AgentConfig, AutoContinue};
+use crate::agent_spec::AgentSpec;
 use crate::context::CompactionConfig;
 use crate::core::{Agent, Prompt, Result};
 use crate::events::{AgentMessage, UserMessage};
 use crate::mcp::run_mcp_task::McpCommand;
 use llm::types::IsoString;
+use llm::parser::ModelProviderParser;
 use llm::{ChatMessage, Context, StreamingModelProvider, ToolDefinition};
 use std::sync::Arc;
 use std::time::Duration;
@@ -57,6 +59,22 @@ impl AgentBuilder {
             compaction_config: Some(CompactionConfig::default()),
             max_auto_continues: 3,
         }
+    }
+
+    /// Create a builder from a resolved `AgentSpec`.
+    ///
+    /// The LLM provider is derived from `spec.model` via `ModelProviderParser`.
+    /// `base_prompts` are prepended before the spec's own prompts.
+    pub fn from_spec(spec: &AgentSpec, base_prompts: Vec<Prompt>) -> Result<Self> {
+        let provider = ModelProviderParser::default().create_provider(&spec.model)?;
+        let mut builder = Self::new(Arc::from(provider));
+        for prompt in base_prompts {
+            builder = builder.system_prompt(prompt);
+        }
+        for prompt in &spec.prompts {
+            builder = builder.system_prompt(prompt.clone());
+        }
+        Ok(builder)
     }
 
     /// Add a prompt to the system prompt.
@@ -218,5 +236,17 @@ mod tests {
         // Give the runtime a moment to process the abort
         tokio::time::sleep(Duration::from_millis(10)).await;
         assert!(handle.is_finished());
+    }
+
+    #[tokio::test]
+    async fn system_prompt_preserves_add_order() {
+        let builder = AgentBuilder::new(Arc::new(llm::testing::FakeLlmProvider::new(vec![])))
+            .system_prompt(Prompt::text("first"))
+            .system_prompt(Prompt::text("second"))
+            .system_prompt(Prompt::text("third"));
+
+        let rendered = Prompt::build_all(&builder.prompts).await.unwrap();
+
+        assert_eq!(rendered, "first\n\nsecond\n\nthird");
     }
 }
