@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 aether-core = { path = "../aether-core" }
+aether-project = { path = "../aether-project" }
 llm = { path = "../llm", features = ["bedrock", "codex"] }
 mcp_utils = { path = "../mcp-utils" }
 mcp-servers = { path = "../mcp-servers", features = ["all"] }

@@ -101,8 +101,6 @@ fn resolve_settings(
         )?);
     }
 
-    specs.sort_by(|a, b| a.name.cmp(&b.name));
-
     Ok(super::catalog::AgentCatalog {
         project_root: project_root.to_path_buf(),
         inherited_prompts,
@@ -182,14 +180,31 @@ fn resolve_agent_entry(
     })
 }
 
-fn parse_model(agent: &str, model: &str) -> Result<LlmModel, SettingsError> {
-    model
-        .parse()
-        .map_err(|error: String| SettingsError::InvalidModel {
-            agent: agent.to_string(),
-            model: model.to_string(),
-            error,
-        })
+fn parse_model(agent: &str, model: &str) -> Result<String, SettingsError> {
+    canonicalize_model_spec(model).map_err(|error| SettingsError::InvalidModel {
+        agent: agent.to_string(),
+        model: model.to_string(),
+        error,
+    })
+}
+
+fn canonicalize_model_spec(model: &str) -> Result<String, String> {
+    let trimmed = model.trim();
+    if trimmed.is_empty() {
+        return Err("Model spec cannot be empty".to_string());
+    }
+
+    let mut canonical_parts = Vec::new();
+    for part in trimmed.split(',').map(str::trim) {
+        if part.is_empty() {
+            return Err("Model spec contains an empty entry".to_string());
+        }
+
+        part.parse::<LlmModel>().map_err(|error: String| error)?;
+        canonical_parts.push(part.to_string());
+    }
+
+    Ok(canonical_parts.join(","))
 }
 
 fn parse_reasoning_effort(
@@ -411,6 +426,52 @@ mod tests {
                     "name": "planner",
                     "description": "Planner agent",
                     "model": "invalid:model",
+                    "userInvocable": true,
+                    "prompts": ["AGENTS.md"]
+                }]
+            }"#,
+        );
+
+        let result = load_agent_catalog(dir.path());
+        assert!(matches!(result, Err(SettingsError::InvalidModel { .. })));
+    }
+
+    #[test]
+    fn alloy_model_string_is_accepted() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_settings(
+            dir.path(),
+            r#"{
+                "agents": [{
+                    "name": "alloy",
+                    "description": "Alloy agent",
+                    "model": "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat",
+                    "userInvocable": true,
+                    "prompts": ["AGENTS.md"]
+                }]
+            }"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let spec = catalog.get("alloy").unwrap();
+        assert_eq!(
+            spec.model.to_string(),
+            "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"
+        );
+    }
+
+    #[test]
+    fn alloy_model_string_with_unknown_member_is_rejected() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_settings(
+            dir.path(),
+            r#"{
+                "agents": [{
+                    "name": "alloy",
+                    "description": "Alloy agent",
+                    "model": "anthropic:claude-sonnet-4-5,mystery:nope",
                     "userInvocable": true,
                     "prompts": ["AGENTS.md"]
                 }]
@@ -867,7 +928,7 @@ mod tests {
     }
 
     #[test]
-    fn specs_sorted_by_name() {
+    fn preserves_authored_agent_order() {
         let dir = create_temp_project();
         write_file(dir.path(), "AGENTS.md", "Be helpful");
         write_settings(
@@ -894,7 +955,69 @@ mod tests {
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
         let names: Vec<_> = catalog.all().iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names, vec!["alpha", "zebra"]);
+        assert_eq!(names, vec!["zebra", "alpha"]);
+    }
+
+    #[test]
+    fn get_uses_exact_name_lookup_independent_of_authored_order() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_settings(
+            dir.path(),
+            r#"{
+                "agents": [
+                    {
+                        "name": "zebra",
+                        "description": "Z agent",
+                        "model": "anthropic:claude-sonnet-4-5",
+                        "userInvocable": true,
+                        "prompts": ["AGENTS.md"]
+                    },
+                    {
+                        "name": "alpha",
+                        "description": "A agent",
+                        "model": "anthropic:claude-sonnet-4-5",
+                        "userInvocable": true,
+                        "prompts": ["AGENTS.md"]
+                    }
+                ]
+            }"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        assert_eq!(catalog.get("alpha").unwrap().name, "alpha");
+        assert_eq!(catalog.get("zebra").unwrap().name, "zebra");
+    }
+
+    #[test]
+    fn authored_order_is_not_alphabetized() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_settings(
+            dir.path(),
+            r#"{
+                "agents": [
+                    {
+                        "name": "zebra",
+                        "description": "Z agent",
+                        "model": "anthropic:claude-sonnet-4-5",
+                        "userInvocable": true,
+                        "prompts": ["AGENTS.md"]
+                    },
+                    {
+                        "name": "alpha",
+                        "description": "A agent",
+                        "model": "anthropic:claude-sonnet-4-5",
+                        "userInvocable": true,
+                        "prompts": ["AGENTS.md"]
+                    }
+                ]
+            }"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let names: Vec<_> = catalog.all().iter().map(|s| s.name.as_str()).collect();
+        assert_ne!(names, vec!["alpha", "zebra"]);
     }
 
     #[test]

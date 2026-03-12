@@ -5,7 +5,6 @@ pub(crate) mod relay;
 pub(crate) mod session;
 pub(crate) mod session_manager;
 pub(crate) mod session_store;
-pub(crate) mod settings;
 
 pub use mappers::map_mcp_prompt_to_available_command;
 pub use session_manager::SessionManager;

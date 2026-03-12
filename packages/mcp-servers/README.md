@@ -28,7 +28,7 @@ These servers use Aether's `in-memory` transport type -- they run inside your ag
     },
     "subagents": {
       "type": "in-memory",
-      "args": ["--dir", "$HOME/.aether"]
+      "args": ["--project-root", "."]
     }
   }
 }
@@ -41,7 +41,7 @@ Each server key must match a factory registered with `McpBuilder::register_in_me
 | `coding` | `--root-dir <path>` | cwd | Workspace root for LSP and file operations |
 | `skills` | `--dir <path>` | none | Base directory containing `commands/` and `skills/` subdirectories |
 | `tasks` | `--dir <path>` | `.` | Base directory for task storage (creates `.aether-tasks/` inside) |
-| `subagents` | `--dir <path>` | none | Base directory containing `sub-agents/` subdirectory |
+| `subagents` | `--project-root <path>` (alias: `--dir`) | `.` | Project root containing optional `.aether/settings.json` authored agents |
 
 To register factories and load the config:
 

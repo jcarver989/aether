@@ -28,7 +28,7 @@ Create a custom agent in ~10 minutes, no Rust code required.
    - **Coding** — file ops, bash, grep, LSP, web fetch/search
    - **Skills** — load reusable skill files from `skills/`
    - **Tasks** — structured task management for multi-step work
-   - **Sub-agents** — spawn child agents from `sub-agents/`
+   - **Sub-agents** — spawn child agents defined in `.aether/settings.json`
    - **Survey** — human-in-the-loop elicitation (ask the user questions)
 
    ```json

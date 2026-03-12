@@ -1,7 +1,8 @@
-use aether_core::core::{Prompt, agent};
+use aether_core::core::{AgentBuilder, Prompt};
 use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::McpSpawnResult;
 use aether_core::mcp::mcp;
+use aether_project::load_agent_catalog;
 use mcp_servers::McpBuilderExt;
 use std::io;
 use std::process::ExitCode;
@@ -9,8 +10,6 @@ use tracing::debug;
 
 use super::error::CliError;
 use super::{OutputFormat, RunConfig};
-use crate::acp::settings::load_or_create_settings;
-use crate::prompt::build_system_prompt;
 
 pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
     setup_tracing(config.verbose, &config.output);
@@ -18,10 +17,18 @@ pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
     let cwd = config.cwd.canonicalize().map_err(CliError::IoError)?;
     debug!("Working directory: {}", cwd.display());
 
+    let catalog = load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
+
+    let parsed_model = config
+        .model
+        .parse()
+        .map_err(|e: String| CliError::ModelError(e))?;
+    let runtime = catalog.runtime_inputs_for_default(parsed_model, None, &cwd);
+
     let mut builder = mcp().with_builtin_servers(cwd.clone(), &cwd);
     let mcp_config_path = config
         .mcp_config
-        .or_else(|| cwd.join("mcp.json").exists().then(|| cwd.join("mcp.json")));
+        .or(runtime.effective_mcp_config_path.clone());
 
     if let Some(ref config_path) = mcp_config_path {
         debug!("Loading MCP config from: {}", config_path.display());
@@ -47,14 +54,13 @@ pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
         .await
         .map_err(|e| CliError::McpError(e.to_string()))?;
 
-    let settings = load_or_create_settings(Some(&cwd));
+    let mut spec = runtime.spec;
+    spec.prompts
+        .push(Prompt::system_env().with_cwd(cwd.clone()));
+    spec.prompts.push(Prompt::mcp_instructions(instructions));
 
-    let system_prompt = build_system_prompt(&cwd, instructions, settings.prompts)
-        .await
-        .map_err(CliError::AgentError)?;
-
-    let mut agent_builder = agent(config.model)
-        .system_prompt(Prompt::text(&system_prompt))
+    let mut agent_builder = AgentBuilder::from_spec(&spec, vec![])
+        .map_err(|e| CliError::AgentError(e.to_string()))?
         .tools(mcp_tx, tool_definitions);
 
     if let Some(custom) = config.system_prompt.as_deref() {

@@ -5,8 +5,6 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
-/// Creates test files and directories from a slice of (path, content) pairs
-/// Returns the temp directory path for cleanup
 fn create_test_files(files: &[(&str, &str)]) -> TempDir {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
 
@@ -22,14 +20,14 @@ fn create_test_files(files: &[(&str, &str)]) -> TempDir {
     temp_dir
 }
 
-/// Helper to create MCP client connected to a test server
 async fn create_test_client(
     test_dir: &Path,
 ) -> (
     rmcp::service::RunningService<rmcp::RoleServer, SubAgentsMcp>,
     rmcp::service::RunningService<rmcp::RoleClient, rmcp::model::ClientInfo>,
 ) {
-    let server_service = SubAgentsMcp::new(test_dir.to_path_buf());
+    let server_service = SubAgentsMcp::from_project_root(test_dir.to_path_buf())
+        .expect("Failed to create SubAgentsMcp from project root");
     let client_info = ClientInfo {
         client_info: Implementation {
             name: "test-client".to_string(),
@@ -50,42 +48,39 @@ async fn create_test_client(
 }
 
 #[tokio::test]
-async fn test_spawn_agent_with_coding_mcp() {
+async fn test_spawn_agent_with_coding_mcp_from_settings_catalog() {
     let test_files = vec![
         (
-            "sub-agents/coder/AGENTS.md",
-            "---\ndescription: A coding agent with file access\nmodel: anthropic:claude-3.5-sonnet\n---\nYou are a coding assistant with access to file operations.",
+            ".aether/settings.json",
+            r#"{
+  "agents": [
+    {
+      "name": "coder",
+      "description": "A coding agent with file access",
+      "model": "anthropic:claude-sonnet-4-5",
+      "agentInvocable": true,
+      "prompts": [".aether/prompts/coder.md"],
+      "mcpServers": ".aether/mcp/coder.json"
+    }
+  ]
+}"#,
         ),
+        (".aether/prompts/coder.md", "You are a coding assistant."),
         (
-            "sub-agents/coder/mcp.json",
+            ".aether/mcp/coder.json",
             r#"{"servers": {"coding": {"type": "in-memory"}}}"#,
         ),
     ];
 
     let temp_dir = create_test_files(&test_files);
-
-    // Create MCP server
     let (_server_handle, _client) = create_test_client(temp_dir.path()).await;
-
-    // If we get here without panicking, the coding server was registered successfully
-    // We can't test actual tool execution without a real LLM, but we verified:
-    // 1. The mcp.json loads without errors
-    // 2. The "coding" in-memory server factory is available
-    // 3. The server configuration is valid
 }
 
 #[tokio::test]
 async fn test_spawn_subagents_empty_tasks() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
-
-    // Create empty sub-agents directory
-    fs::create_dir_all(temp_dir.path().join("sub-agents"))
-        .expect("Failed to create sub-agents directory");
-
-    // Create MCP server and client
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;
 
-    // Call spawn_subagent with empty tasks array
     let mut args = serde_json::Map::new();
     args.insert("tasks".to_string(), serde_json::json!([]));
     let result = client
@@ -98,7 +93,6 @@ async fn test_spawn_subagents_empty_tasks() {
         .await
         .expect("Failed to call spawn_subagent tool");
 
-    // Verify we get empty results with zero counts
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
             let parsed: serde_json::Value =
@@ -121,15 +115,8 @@ async fn test_spawn_subagents_empty_tasks() {
 #[tokio::test]
 async fn test_spawn_subagent_agent_not_found() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
-
-    // Create empty sub-agents directory
-    fs::create_dir_all(temp_dir.path().join("sub-agents"))
-        .expect("Failed to create sub-agents directory");
-
-    // Create MCP server and client
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;
 
-    // Call spawn_subagent with non-existent agent
     let mut args = serde_json::Map::new();
     args.insert(
         "tasks".to_string(),
@@ -148,7 +135,6 @@ async fn test_spawn_subagent_agent_not_found() {
         .await
         .expect("Failed to call spawn_subagent tool");
 
-    // Verify we get an error result for the agent
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
             let parsed: serde_json::Value =
@@ -182,31 +168,18 @@ async fn test_spawn_subagent_agent_not_found() {
 #[tokio::test]
 async fn test_spawn_subagents_task_id_assignment() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
-
-    // Create sub-agents directory with one agent (that will fail due to missing model,
-    // but that's fine - we're testing task_id assignment)
-    fs::create_dir_all(temp_dir.path().join("sub-agents/test-agent"))
-        .expect("Failed to create sub-agents directory");
-    fs::write(
-        temp_dir.path().join("sub-agents/test-agent/AGENTS.md"),
-        "You are a test agent.",
-    )
-    .expect("Failed to write agent file");
-
-    // Create MCP server and client
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;
 
-    // Call spawn_subagent - task IDs are auto-generated
     let mut args = serde_json::Map::new();
     args.insert(
         "tasks".to_string(),
         serde_json::json!([
             {
-                "agentName": "test-agent",
+                "agentName": "missing-agent-a",
                 "prompt": "First task"
             },
             {
-                "agentName": "test-agent",
+                "agentName": "missing-agent-b",
                 "prompt": "Second task"
             }
         ]),
@@ -231,7 +204,6 @@ async fn test_spawn_subagents_task_id_assignment() {
                 .expect("Expected results array");
             assert_eq!(results.len(), 2);
 
-            // Task IDs are auto-generated based on index
             let first_result = &results[0];
             assert_eq!(first_result["taskId"], "task_0");
 

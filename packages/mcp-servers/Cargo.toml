@@ -39,15 +39,16 @@ subagents = [
     "coding",
     "skills",
     "tasks",
+    "survey",
     "dep:aether-core",
+    "dep:aether-project",
     "dep:llm",
     "dep:futures",
     "dep:tracing",
-    "dep:serde_yml",
 ]
 survey = []
 all = ["coding", "skills", "tasks", "subagents", "survey"]
-stdio = ["coding", "skills", "tasks", "survey"]
+stdio = ["coding", "skills", "tasks", "survey", "subagents"]
 
 [dependencies]
 # Always required
@@ -80,6 +81,7 @@ serde_yml = { workspace = true, optional = true }
 
 # subagents feature
 aether-core = { path = "../aether-core", optional = true }
+aether-project = { path = "../aether-project", optional = true }
 llm = { path = "../llm", optional = true }
 
 [dev-dependencies]

@@ -1,6 +1,6 @@
-#[cfg(feature = "all")]
+#[cfg(any(feature = "all", feature = "subagents"))]
 pub mod setup;
-#[cfg(feature = "all")]
+#[cfg(any(feature = "all", feature = "subagents"))]
 pub use setup::McpBuilderExt;
 
 #[cfg(feature = "coding")]

@@ -118,25 +118,45 @@ $ARGUMENTS
 
 ## Settings
 
-Aether stores its settings in `~/.aether/settings.json` (override with `AETHER_HOME` env var). The file is created with defaults on first run.
+Project-level agent configuration is centralized in `.aether/settings.json` in your project root. This file defines agents (modes and sub-agents), prompts, and MCP server configuration.
 
-### Modes
+### Agents (Modes and Sub-agents)
 
-Define named modes to quickly switch between model + reasoning configurations:
+Define agents with specific model, prompts, and tool configurations:
 
 ```json
 {
-  "modes": {
-    "Planner": { "model": "anthropic:claude-opus-4-6", "reasoningEffort": "high" },
-    "Coder": { "model": "deepseek:deepseek-chat" }
-  }
+  "prompts": ["SYSTEM.md", "AGENTS.md"],
+  "mcpServers": ".aether/mcp/default.json",
+  "agents": [
+    {
+      "name": "planner",
+      "description": "Planner optimized for decomposition and sequencing",
+      "model": "anthropic:claude-sonnet-4-5",
+      "reasoningEffort": "high",
+      "userInvocable": true,
+      "agentInvocable": true,
+      "prompts": [".aether/prompts/planner.md"],
+      "mcpServers": ".aether/mcp/planner.json"
+    },
+    {
+      "name": "coder",
+      "description": "Fast coding agent",
+      "model": "deepseek:deepseek-chat",
+      "userInvocable": true,
+      "agentInvocable": false,
+      "prompts": [".aether/prompts/coder.md"]
+    }
+  ]
 }
 ```
 
-- Mode names appear as an ACP `mode` config option alongside the existing `Model` and `Reasoning Effort` options.
-- Selecting a mode updates the model and reasoning effort for the next prompt.
-- ACP clients can cycle modes with Shift+Tab only when the option is emitted as `SessionConfigOptionCategory::Mode` (e.g. Wisp uses this category to detect cycleable mode options).
-- Invalid modes (unknown model or invalid reasoning effort) are silently skipped.
+- **`userInvocable: true`** — Agent appears as a mode option in ACP clients (e.g., Wisp's Shift+Tab)
+- **`agentInvocable: true`** — Agent can be spawned as a sub-agent
+- **`prompts`** — Explicit prompt file references (supports glob patterns)
+- **`mcpServers`** — Path to MCP configuration file (optional, overrides top-level `mcpServers`)
+- Top-level `prompts` are inherited by all agents
+- Top-level `mcpServers` is the default MCP config for all agents
 
 ## Logs
 

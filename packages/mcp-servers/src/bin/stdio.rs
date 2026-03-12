@@ -6,7 +6,7 @@ use rmcp::transport::io::stdio;
 #[derive(Parser)]
 #[command(name = "mcp-servers-stdio", about = "Run an MCP server over stdio")]
 struct Cli {
-    /// Which server to run: coding, lsp, skills, tasks, survey
+    /// Which server to run: coding, lsp, skills, tasks, subagents, survey
     #[arg(long)]
     server: String,
 
@@ -29,7 +29,7 @@ impl std::fmt::Display for StdioError {
             StdioError::UnknownServer(name) => {
                 write!(
                     f,
-                    "Unknown server: '{name}'. Available: coding, lsp, skills, tasks, survey"
+                    "Unknown server: '{name}'. Available: coding, lsp, skills, tasks, subagents, survey"
                 )
             }
             StdioError::ServerArgs(msg) => write!(f, "{msg}"),
@@ -77,6 +77,11 @@ async fn main() -> Result<(), StdioError> {
         "tasks" => {
             let server =
                 mcp_servers::TasksMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
+            serve_stdio(server).await
+        }
+        "subagents" => {
+            let server =
+                mcp_servers::SubAgentsMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
             serve_stdio(server).await
         }
         "survey" => {

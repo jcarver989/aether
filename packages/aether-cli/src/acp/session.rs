@@ -1,12 +1,11 @@
 use super::mappers::map_mcp_prompt_to_available_command;
-use crate::prompt::build_system_prompt;
-use aether_core::core::{AgentHandle, Prompt, agent};
+use aether_core::core::{AgentBuilder, AgentHandle, Prompt};
 use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::McpSpawnResult;
 use aether_core::mcp::mcp;
 use aether_core::mcp::run_mcp_task::McpCommand;
+use aether_project::ResolvedRuntimeSpec;
 use llm::ChatMessage;
-use llm::provider::StreamingModelProvider;
 use mcp_servers::McpBuilderExt;
 use mcp_utils::client::oauth::BrowserOAuthHandler;
 use mcp_utils::client::{ElicitationRequest, McpServerConfig};
@@ -35,14 +34,12 @@ impl Session {
     ///
     /// Pass `restored_messages` to pre-populate conversation history (e.g. session resume).
     pub async fn new(
-        llm: impl StreamingModelProvider + 'static,
-        mcp_config_path: Option<PathBuf>,
+        runtime: ResolvedRuntimeSpec,
         cwd: PathBuf,
         extra_mcp_servers: Vec<McpServerConfig>,
-        prompt_patterns: Vec<String>,
         restored_messages: Option<Vec<ChatMessage>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        debug!("MCP config: {:?}", mcp_config_path);
+        debug!("MCP config: {:?}", runtime.effective_mcp_config_path);
         debug!("Using project root: {:?}", cwd);
 
         let roots_path = cwd.clone();
@@ -59,7 +56,7 @@ impl Session {
             }
         }
 
-        if let Some(ref config_path) = mcp_config_path {
+        if let Some(ref config_path) = runtime.effective_mcp_config_path {
             let config_str = config_path.to_str().ok_or("Invalid MCP config path")?;
             builder = builder.from_json_file(config_str).await?;
         }
@@ -73,11 +70,13 @@ impl Session {
             handle: mcp_handle,
         } = builder.spawn().await?;
 
-        let system_prompt = build_system_prompt(&roots_path, instructions, prompt_patterns).await?;
+        let mut spec = runtime.spec;
+        spec.prompts
+            .push(Prompt::system_env().with_cwd(roots_path.to_path_buf()));
+        spec.prompts.push(Prompt::mcp_instructions(instructions));
 
-        let mut agent_builder = agent(llm)
-            .system_prompt(Prompt::text(&system_prompt))
-            .tools(mcp_tx.clone(), tool_definitions);
+        let mut agent_builder =
+            AgentBuilder::from_spec(&spec, vec![])?.tools(mcp_tx.clone(), tool_definitions);
 
         if let Some(messages) = restored_messages {
             agent_builder = agent_builder.messages(messages);
