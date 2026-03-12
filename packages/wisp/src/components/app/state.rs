@@ -7,10 +7,13 @@ use crate::components::plan_tracker::PlanTracker;
 use crate::components::progress_indicator::ProgressIndicator;
 use crate::components::prompt_composer::{PromptComposer, PromptComposerMessage};
 use crate::components::server_status::server_status_summary;
+use crate::components::session_picker::{SessionEntry, SessionPicker};
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
-use crate::tui::{Component, Event, FocusRing, FormMessage, KeyEvent, Line, Spinner, ViewContext};
+use crate::tui::{
+    Component, Event, FocusRing, FormMessage, KeyEvent, Line, PickerMessage, Spinner, ViewContext,
+};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{
@@ -39,6 +42,7 @@ pub struct UiState {
     pub(crate) progress_indicator: ProgressIndicator,
     pub(crate) config_overlay: Option<ConfigOverlay>,
     pub(crate) elicitation_form: Option<ElicitationForm>,
+    pub(crate) session_picker: Option<SessionPicker>,
     pub(crate) server_statuses: Vec<McpServerStatusEntry>,
     pub(crate) auth_methods: Vec<acp::AuthMethod>,
     pub(crate) plan_tracker: PlanTracker,
@@ -70,6 +74,7 @@ impl UiState {
             progress_indicator: ProgressIndicator::default(),
             config_overlay: None,
             elicitation_form: None,
+            session_picker: None,
             server_statuses: Vec::new(),
             auth_methods,
             plan_tracker: PlanTracker::default(),
@@ -135,6 +140,11 @@ impl UiState {
             return self
                 .handle_elicitation_key(key_event)
                 .unwrap_or(Some(vec![]));
+        }
+
+        // Session picker captures all input when present
+        if self.session_picker.is_some() {
+            return self.handle_session_picker_key(key_event);
         }
 
         if self.keybindings.toggle_git_diff.matches(key_event) {
@@ -290,6 +300,9 @@ impl UiState {
                         self.open_config_overlay();
                         vec![]
                     }
+                    PromptComposerMessage::OpenSessionPicker => {
+                        vec![AppAction::ListSessions]
+                    }
                     PromptComposerMessage::SubmitRequested {
                         user_input,
                         attachments,
@@ -362,6 +375,33 @@ impl UiState {
             .with_reasoning_effort_from_options(&self.config_options),
         );
         self.focus.focus(FOCUS_CONFIG_OVERLAY);
+    }
+
+    pub(crate) fn open_session_picker(&mut self, sessions: Vec<acp::SessionInfo>) {
+        let entries = sessions.into_iter().map(SessionEntry).collect();
+        self.session_picker = Some(SessionPicker::new(entries));
+    }
+
+    fn handle_session_picker_key(&mut self, key_event: KeyEvent) -> Option<Vec<AppAction>> {
+        let picker = self.session_picker.as_mut()?;
+        let msgs = picker.on_event(&Event::Key(key_event)).unwrap_or_default();
+        for msg in msgs {
+            match msg {
+                PickerMessage::Close => {
+                    self.session_picker = None;
+                }
+                PickerMessage::Confirm(entry) => {
+                    self.session_picker = None;
+                    let info = entry.0;
+                    return Some(vec![AppAction::LoadSession {
+                        session_id: info.session_id.0.to_string(),
+                        cwd: info.cwd,
+                    }]);
+                }
+                _ => {}
+            }
+        }
+        Some(vec![])
     }
 
     pub(crate) fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {
@@ -544,7 +584,10 @@ mod tests {
         let state = UiState::new(
             "test-agent".to_string(),
             &config_options,
-            vec![acp::AuthMethod::new("anthropic", "Anthropic")],
+            vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
+                "anthropic",
+                "Anthropic",
+            ))],
         );
 
         assert_eq!(state.agent_name, "test-agent");

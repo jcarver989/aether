@@ -182,7 +182,7 @@ impl UiState {
 
     pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) -> Option<Vec<AppAction>> {
         self.auth_methods
-            .retain(|method| method.id.0.as_ref() != method_id);
+            .retain(|method| method.id().0.as_ref() != method_id);
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.remove_auth_method(method_id);
         }
@@ -232,7 +232,10 @@ mod tests {
         let mut state = UiState::new(
             "test-agent".to_string(),
             &[],
-            vec![acp::AuthMethod::new("anthropic", "Anthropic")],
+            vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
+                "anthropic",
+                "Anthropic",
+            ))],
         );
 
         let _effects = state.on_authenticate_complete("anthropic");

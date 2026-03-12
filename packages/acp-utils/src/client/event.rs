@@ -21,5 +21,12 @@ pub enum AcpEvent {
         method_id: String,
         error: String,
     },
+    SessionsListed {
+        sessions: Vec<acp::SessionInfo>,
+    },
+    SessionLoaded {
+        session_id: acp::SessionId,
+        config_options: Vec<acp::SessionConfigOption>,
+    },
     ConnectionClosed,
 }

@@ -3,9 +3,9 @@ use acp_utils::notifications::McpRequest;
 use agent_client_protocol::{
     self as acp, Agent, AgentCapabilities, AuthMethod, AuthenticateRequest, AuthenticateResponse,
     AvailableCommandsUpdate, ConfigOptionUpdate, Implementation, InitializeRequest,
-    InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
-    NewSessionResponse, PromptCapabilities, PromptResponse, ProtocolVersion, SessionId,
-    SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
+    InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
+    LoadSessionResponse, NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptResponse,
+    ProtocolVersion, SessionId, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
     SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
 };
 use llm::ReasoningEffort;
@@ -234,7 +234,7 @@ fn build_auth_methods() -> Vec<AuthMethod> {
                 .iter()
                 .find(|m| m.oauth_provider_id() == Some(id))
                 .map_or(id, |m| m.provider_display_name());
-            AuthMethod::new(id, display)
+            AuthMethod::Agent(acp::AuthMethodAgent::new(id, display))
         })
         .collect()
 }
@@ -383,6 +383,9 @@ impl Agent for SessionManager {
             .agent_capabilities(
                 AgentCapabilities::new()
                     .load_session(true)
+                    .session_capabilities(
+                        acp::SessionCapabilities::new().list(acp::SessionListCapabilities::new()),
+                    )
                     .prompt_capabilities(
                         PromptCapabilities::new()
                             .embedded_context(true)
@@ -519,6 +522,26 @@ impl Agent for SessionManager {
         self.spawn_available_commands_notification(available_commands, acp_session_id, &session_id);
 
         Ok(response)
+    }
+
+    async fn list_sessions(
+        &self,
+        args: ListSessionsRequest,
+    ) -> Result<ListSessionsResponse, acp::Error> {
+        info!("Listing sessions, cwd filter: {:?}", args.cwd);
+        let mut metas = self.session_store.list();
+
+        if let Some(ref cwd) = args.cwd {
+            metas.retain(|m| m.cwd == *cwd);
+        }
+
+        let sessions: Vec<acp::SessionInfo> = metas
+            .into_iter()
+            .map(|m| acp::SessionInfo::new(m.session_id, m.cwd).updated_at(m.created_at))
+            .collect();
+
+        info!("Found {} sessions", sessions.len());
+        Ok(ListSessionsResponse::new(sessions))
     }
 
     async fn load_session(

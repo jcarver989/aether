@@ -26,10 +26,7 @@ pub struct AssistantReasoning {
 }
 
 impl AssistantReasoning {
-    pub fn from_parts(
-        summary_text: String,
-        encrypted: Option<EncryptedReasoningContent>,
-    ) -> Self {
+    pub fn from_parts(summary_text: String, encrypted: Option<EncryptedReasoningContent>) -> Self {
         Self {
             summary_text: (!summary_text.is_empty()).then_some(summary_text),
             encrypted_content: encrypted,

@@ -121,7 +121,10 @@ fn easy_message(role: Role, content: String) -> InputItem {
 mod tests {
     use super::*;
     use crate::types::IsoString;
-    use crate::{AssistantReasoning, EncryptedReasoningContent, ToolCallError, ToolCallRequest, ToolCallResult};
+    use crate::{
+        AssistantReasoning, EncryptedReasoningContent, ToolCallError, ToolCallRequest,
+        ToolCallResult,
+    };
 
     #[test]
     fn map_messages_extracts_system_prompt() {

@@ -3,6 +3,7 @@ use crate::components::app::git_diff_mode::format_review_prompt;
 use crate::settings::{load_or_create_settings, save_settings};
 use crate::tui::Line;
 use crate::tui::advanced::Renderer;
+use agent_client_protocol as acp;
 use std::io::Write;
 
 impl App {
@@ -65,6 +66,17 @@ impl App {
                 terminal.clear_screen()?;
                 self.prompt_handle
                     .prompt(&self.session_id, "/clear", None)?;
+                Ok(vec![])
+            }
+            AppAction::ListSessions => {
+                self.prompt_handle.list_sessions()?;
+                Ok(vec![])
+            }
+            AppAction::LoadSession { session_id, cwd } => {
+                self.state.reset_after_context_cleared();
+                terminal.clear_screen()?;
+                self.prompt_handle
+                    .load_session(&acp::SessionId::new(session_id), &cwd)?;
                 Ok(vec![])
             }
             AppAction::OpenGitDiffViewer => {
