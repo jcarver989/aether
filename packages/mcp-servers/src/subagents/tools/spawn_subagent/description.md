@@ -12,7 +12,7 @@ Spawns sub-agents in parallel to perform concurrent tasks.
 ```
 
 - `tasks` — **required**, array of task objects
-  - `agentName` — agent from sub-agents directory
+  - `agentName` — agent name from project `.aether/settings.json` (`agents[].name`) with `agentInvocable: true`
   - `prompt` — task for the agent to perform
 
 All agents execute in parallel. Results returned when ALL complete.

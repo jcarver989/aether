@@ -17,7 +17,7 @@ pub struct AgentCatalog {
     pub(crate) inherited_prompts: Vec<Prompt>,
     /// Path to inherited MCP config from settings, if any.
     pub(crate) inherited_mcp_config_path: Option<PathBuf>,
-    /// All resolved agent specs, sorted by name.
+    /// All resolved agent specs in authored order.
     pub(crate) specs: Vec<AgentSpec>,
 }
 
@@ -55,9 +55,9 @@ impl AgentCatalog {
     /// Get a specific agent by name.
     pub fn get(&self, name: &str) -> Result<&AgentSpec, SettingsError> {
         self.specs
-            .binary_search_by_key(&name, |s| s.name.as_str())
-            .map(|idx| &self.specs[idx])
-            .map_err(|_| SettingsError::AgentNotFound {
+            .iter()
+            .find(|spec| spec.name == name)
+            .ok_or_else(|| SettingsError::AgentNotFound {
                 name: name.to_string(),
             })
     }
@@ -110,7 +110,7 @@ impl AgentCatalog {
         let spec = AgentSpec {
             name: "__default__".to_string(),
             description: "Default agent".to_string(),
-            model,
+            model: model.to_string(),
             reasoning_effort,
             prompts: self.inherited_prompts.clone(),
             agent_mcp_config_path: None,
@@ -181,7 +181,7 @@ mod tests {
             specs: vec![AgentSpec {
                 name: "planner".to_string(),
                 description: "Planner agent".to_string(),
-                model: "anthropic:claude-sonnet-4-5".parse().unwrap(),
+                model: "anthropic:claude-sonnet-4-5".to_string(),
                 reasoning_effort: None,
                 prompts: vec![
                     Prompt::from_globs(vec!["BASE.md".to_string()], project_root.clone()),
@@ -200,7 +200,7 @@ mod tests {
         catalog.specs.push(AgentSpec {
             name: "internal".to_string(),
             description: "Internal agent".to_string(),
-            model: "anthropic:claude-sonnet-4-5".parse().unwrap(),
+            model: "anthropic:claude-sonnet-4-5".to_string(),
             reasoning_effort: None,
             prompts: vec![],
             agent_mcp_config_path: None,
@@ -219,7 +219,7 @@ mod tests {
         catalog.specs.push(AgentSpec {
             name: "user-only".to_string(),
             description: "User only agent".to_string(),
-            model: "anthropic:claude-sonnet-4-5".parse().unwrap(),
+            model: "anthropic:claude-sonnet-4-5".to_string(),
             reasoning_effort: None,
             prompts: vec![],
             agent_mcp_config_path: None,
@@ -310,7 +310,7 @@ mod tests {
         let inputs = catalog.runtime_inputs_for_default(model.clone(), None, dir.path());
 
         assert_eq!(inputs.spec.name, "__default__");
-        assert_eq!(inputs.spec.model, model);
+        assert_eq!(inputs.spec.model, model.to_string());
         assert_eq!(inputs.spec.prompts.len(), 1);
         assert!(inputs.spec.agent_mcp_config_path.is_none());
     }

@@ -7,7 +7,7 @@ Wisp is a Terminal User Interface (TUI) application designed to provide an ether
 - **Colorful TUI**: Beautiful terminal interface with custom color schemes
 - **AI Assistant**: Powered by Aether's agent system and local LLM capabilities
 - **Tool Integration**: Supports tool calling for extended functionality
-- **Agent Management**: Loads agents from AGENTS.md file for custom behavior
+- **Agent Management**: Custom agents defined via `.aether/settings.json`
 - **Real-time Response**: Streaming responses with progress indicators
 
 ## Installation
@@ -32,9 +32,9 @@ Or for a more complex interaction:
 wisp "Explain how async/await works in Rust and show an example"
 ```
 
-## AGENTS.md Integration
+## Agent Configuration
 
-Wisp can load agents from an `AGENTS.md` file in the current directory. This file defines custom agent behavior and capabilities, which will be used as a system prompt for the AI assistant.
+Wisp uses the centralized `.aether/settings.json` configuration. See the main [Aether README](../../README.md) for agent configuration details.
 
 ## Settings
 

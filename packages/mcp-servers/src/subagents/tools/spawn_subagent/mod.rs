@@ -1,17 +1,12 @@
-use crate::coding::CodingMcp;
-use crate::skills::SkillsMcp;
-use crate::subagents::subagent_file::AgentFile;
-use crate::tasks::TasksMcp;
+use crate::setup::McpBuilderExt;
 use aether_core::{
-    core::{AgentHandle, Prompt, agent},
+    core::{AgentBuilder, AgentHandle, Prompt},
     events::{AgentMessage, UserMessage},
     mcp::{McpSpawnResult, mcp, run_mcp_task::McpCommand},
 };
-use futures::FutureExt;
-use llm::{StreamingModelProvider, ToolDefinition, parser::ModelProviderParser};
-use mcp_utils::client::ServerInstructions;
+use aether_project::AgentCatalog;
+use llm::ToolDefinition;
 use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
-use rmcp::ServiceExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -75,7 +70,7 @@ impl StructuredAgentOutput {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubAgentTask {
-    /// Name of the agent to spawn (must exist in sub-agents directory)
+    /// Name of the agent to spawn (must exist in project settings and be agent-invocable)
     #[serde(alias = "agent_name")]
     pub agent_name: String,
     /// Task for the agent to perform
@@ -157,16 +152,16 @@ pub type ProgressCallback = Box<dyn Fn(&str, &str, &AgentMessage) + Send + Sync>
 
 /// Executor for spawning and running sub-agents
 pub struct AgentExecutor {
-    agents_dir: Arc<PathBuf>,
+    catalog: Arc<AgentCatalog>,
     progress_callback: Option<Arc<ProgressCallback>>,
     roots: Vec<PathBuf>,
 }
 
 impl AgentExecutor {
-    /// Create a new `AgentExecutor` with the given agents directory and workspace roots
-    pub fn new(agents_dir: PathBuf, roots: Vec<PathBuf>) -> Self {
+    /// Create a new `AgentExecutor` with the given agent catalog and workspace roots
+    pub fn new(catalog: AgentCatalog, roots: Vec<PathBuf>) -> Self {
         Self {
-            agents_dir: Arc::new(agents_dir),
+            catalog: Arc::new(catalog),
             progress_callback: None,
             roots,
         }
@@ -196,7 +191,7 @@ impl AgentExecutor {
         let first_task = tasks.first().unwrap();
         let first_agent_name = first_task.agent_name.clone();
 
-        let agents_dir = Arc::clone(&self.agents_dir);
+        let catalog = Arc::clone(&self.catalog);
         let progress_callback = self.progress_callback.clone();
         let roots = self.roots.clone();
         let handles: Vec<_> = tasks
@@ -204,11 +199,11 @@ impl AgentExecutor {
             .enumerate()
             .map(|(i, task)| {
                 let task_id = format!("task_{i}");
-                let agents_dir = Arc::clone(&agents_dir);
+                let catalog = Arc::clone(&catalog);
                 let progress_callback = progress_callback.clone();
                 let roots = roots.clone();
                 spawn(async move {
-                    execute_single_agent(task_id, task, agents_dir, progress_callback, roots).await
+                    execute_single_agent(task_id, task, catalog, progress_callback, roots).await
                 })
             })
             .collect();
@@ -256,24 +251,24 @@ impl AgentExecutor {
 async fn execute_single_agent(
     task_id: String,
     task: SubAgentTask,
-    agents_dir: Arc<PathBuf>,
+    catalog: Arc<AgentCatalog>,
     progress_callback: Option<Arc<ProgressCallback>>,
     roots: Vec<PathBuf>,
 ) -> SubAgentResult {
     let agent_name = task.agent_name.clone();
 
     let result: Result<String, String> = async {
-        let spec_dir = agents_dir.join(&task.agent_name);
-        if !spec_dir.exists() {
-            return Err(format!("Agent '{}' not found", task.agent_name));
+        let runtime = catalog
+            .runtime_inputs_for(&task.agent_name, catalog.project_root())
+            .map_err(|e| e.to_string())?;
+
+        if !runtime.spec.exposure.agent_invocable {
+            return Err(format!(
+                "Agent '{}' is not agent-invocable",
+                task.agent_name
+            ));
         }
 
-        let spec_path = spec_dir.join("AGENTS.md");
-        let spec = AgentFile::from_file(&spec_path)
-            .map_err(|e| format!("Failed to load agent file: {e}"))?;
-
-        let llm = create_llm(&task.agent_name, &spec)?;
-        let system_prompt = spec.content.clone();
         let McpSpawnResult {
             tool_definitions,
             instructions,
@@ -281,15 +276,20 @@ async fn execute_single_agent(
             command_tx,
             elicitation_rx: _,
             handle: _,
-        } = spawn_mcps(&spec_dir, roots).await?;
-        let (user_tx, mut agent_rx, _agent_handle) = spawn_agent(
-            llm,
-            &system_prompt,
-            instructions,
-            command_tx,
-            tool_definitions,
+        } = spawn_mcps(
+            runtime.effective_mcp_config_path.as_deref(),
+            roots,
+            catalog.project_root(),
         )
         .await?;
+
+        let mut spec = runtime.spec;
+        spec.prompts
+            .push(Prompt::system_env().with_cwd(catalog.project_root().to_path_buf()));
+        spec.prompts.push(Prompt::mcp_instructions(instructions));
+
+        let (user_tx, mut agent_rx, _agent_handle) =
+            spawn_agent(spec, command_tx, tool_definitions).await?;
 
         let prompt_with_instructions =
             format!("{}\n\n{}", task.prompt, STRUCTURED_OUTPUT_INSTRUCTIONS);
@@ -298,8 +298,6 @@ async fn execute_single_agent(
             .await
             .map_err(|e| format!("Failed to send message to agent: {e}"))?;
 
-        // Notify that this agent has started so the UI can show it immediately,
-        // before any tool calls arrive.
         if let Some(ref callback) = progress_callback {
             callback(
                 &task_id,
@@ -376,78 +374,29 @@ async fn execute_single_agent(
     }
 }
 
-fn create_llm(
-    agent_name: &str,
-    agent_file: &AgentFile,
-) -> Result<Box<dyn StreamingModelProvider>, String> {
-    let model_spec = agent_file
-        .frontmatter
-        .as_ref()
-        .map(|f| f.model.clone())
-        .ok_or_else(|| {
-            format!("No model specified. Set 'model' in {agent_name}/AGENTS.md frontmatter")
-        })?;
+async fn spawn_mcps(
+    effective_mcp_config_path: Option<&Path>,
+    roots: Vec<PathBuf>,
+    project_root: &Path,
+) -> Result<McpSpawnResult, String> {
+    let mut builder = mcp().with_builtin_servers(project_root.to_path_buf(), project_root);
+    builder = builder.with_roots(roots);
 
-    let (llm, _) = ModelProviderParser::default()
-        .parse(&model_spec)
-        .map_err(|e| format!("Failed to create provider for '{model_spec}': {e}"))?;
-    Ok(llm)
-}
+    if let Some(mcp_path) = effective_mcp_config_path {
+        builder = builder
+            .from_json_file(mcp_path.to_str().ok_or("Invalid MCP config path")?)
+            .await
+            .map_err(|e| format!("Failed to load mcp.json: {e}"))?;
+    }
 
-async fn spawn_mcps(agent_dir: &Path, roots: Vec<PathBuf>) -> Result<McpSpawnResult, String> {
-    let mcp_json_path = agent_dir.join("mcp.json");
-    let tasks_base_dir = roots
-        .first()
-        .cloned()
-        .ok_or("No roots provided for sub-agent")?;
-
-    mcp()
-        .register_in_memory_server(
-            "coding",
-            Box::new(move |_args, _input| async move { CodingMcp::new().into_dyn() }.boxed()),
-        )
-        .register_in_memory_server(
-            "skills",
-            Box::new(|args, _input| {
-                async move {
-                    SkillsMcp::from_args(args)
-                        .expect("Failed to parse SkillsMcp args")
-                        .into_dyn()
-                }
-                .boxed()
-            }),
-        )
-        .register_in_memory_server(
-            "subagents",
-            Box::new(|args, _input| {
-                async move {
-                    crate::SubAgentsMcp::from_args(args)
-                        .expect("Failed to parse SubAgentsMcp args")
-                        .into_dyn()
-                }
-                .boxed()
-            }),
-        )
-        .register_in_memory_server(
-            "tasks",
-            Box::new(move |_args, _input| {
-                let base_dir = tasks_base_dir.clone();
-                async move { TasksMcp::new(base_dir).into_dyn() }.boxed()
-            }),
-        )
-        .with_roots(roots)
-        .from_json_file(mcp_json_path.to_str().unwrap_or(""))
-        .await
-        .map_err(|e| format!("Failed to load mcp.json: {e}"))?
+    builder
         .spawn()
         .await
         .map_err(|e| format!("Failed to spawn MCP manager: {e}"))
 }
 
 async fn spawn_agent(
-    llm: Box<dyn StreamingModelProvider>,
-    system_prompt: &str,
-    instructions: Vec<ServerInstructions>,
+    spec: aether_core::agent_spec::AgentSpec,
     mcp_tx: mpsc::Sender<McpCommand>,
     tools: Vec<ToolDefinition>,
 ) -> Result<
@@ -458,15 +407,12 @@ async fn spawn_agent(
     ),
     String,
 > {
-    let (user_tx, agent_rx, agent_handle) = agent(llm)
-        .system_prompt(Prompt::text(system_prompt))
-        .system_prompt(Prompt::mcp_instructions(instructions))
+    AgentBuilder::from_spec(&spec, vec![])
+        .map_err(|e| format!("Failed to build agent from spec: {e}"))?
         .tools(mcp_tx, tools)
         .spawn()
         .await
-        .map_err(|e| format!("Failed to spawn agent: {e}"))?;
-
-    Ok((user_tx, agent_rx, agent_handle))
+        .map_err(|e| format!("Failed to spawn agent: {e}"))
 }
 
 #[cfg(test)]

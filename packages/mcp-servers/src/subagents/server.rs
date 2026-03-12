@@ -1,5 +1,6 @@
 use aether_core::events::AgentMessage;
 use aether_core::events::SubAgentProgressPayload;
+use aether_project::{AgentCatalog, load_agent_catalog};
 use clap::Parser;
 use rmcp::{
     RoleServer, ServerHandler,
@@ -16,17 +17,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::tools::{AgentExecutor, SpawnSubAgentsInput, SpawnSubAgentsOutput};
-use crate::subagents::subagent_file::{SubAgentInfo, load_agent_metadata};
 
-/// Callback type for reporting agent progress during subagent execution.
 type ProgressCallback = Box<dyn Fn(&str, &str, &AgentMessage) + Send + Sync>;
 
-/// CLI arguments for `SubAgentsMcp` server
 #[derive(Debug, Clone, Parser)]
 pub struct SubAgentsMcpArgs {
-    /// Base directory for sub-agents (contains 'sub-agents' subdirectory)
-    #[arg(long = "dir")]
-    pub base_dir: Option<PathBuf>,
+    /// Project root containing optional .aether/settings.json
+    #[arg(long = "project-root", alias = "dir")]
+    pub project_root: Option<PathBuf>,
 }
 
 impl SubAgentsMcpArgs {
@@ -39,32 +37,34 @@ impl SubAgentsMcpArgs {
     }
 }
 
-/// MCP server for sub-agent management and execution
 #[derive(Clone)]
 pub struct SubAgentsMcp {
-    agents_dir: PathBuf,
-    agents_info: Vec<SubAgentInfo>,
+    catalog: AgentCatalog,
     tool_router: ToolRouter<Self>,
     roots: Arc<RwLock<Vec<PathBuf>>>,
 }
 
 impl SubAgentsMcp {
-    pub fn new(base_dir: PathBuf) -> Self {
-        let agents_dir = base_dir.join("sub-agents");
-        let agents_info = load_agent_metadata(&agents_dir);
+    pub fn from_project_root(project_root: PathBuf) -> Result<Self, String> {
+        let catalog =
+            load_agent_catalog(&project_root).map_err(|e| format!("Failed to load agents: {e}"))?;
+        Ok(Self::new(catalog, project_root))
+    }
 
+    pub fn new(catalog: AgentCatalog, project_root: PathBuf) -> Self {
         Self {
-            agents_dir,
-            agents_info,
+            catalog,
             tool_router: Self::tool_router(),
-            roots: Arc::new(RwLock::new(vec![base_dir])),
+            roots: Arc::new(RwLock::new(vec![project_root])),
         }
     }
 
     pub fn from_args(args: Vec<String>) -> Result<Self, String> {
         let parsed_args = SubAgentsMcpArgs::from_args(args)?;
-        let base_dir = parsed_args.base_dir.unwrap_or_else(|| PathBuf::from("."));
-        Ok(Self::new(base_dir))
+        let project_root = parsed_args
+            .project_root
+            .unwrap_or_else(|| PathBuf::from("."));
+        Self::from_project_root(project_root)
     }
 
     pub fn with_roots(mut self, roots: Vec<PathBuf>) -> Self {
@@ -74,12 +74,13 @@ impl SubAgentsMcp {
 
     fn build_instructions(&self) -> String {
         let mut instructions = include_str!("./instructions.md").to_string();
+        let invocable: Vec<_> = self.catalog.agent_invocable().collect();
 
-        if !self.agents_info.is_empty() {
+        if !invocable.is_empty() {
             instructions.push_str("\n\n## Available Sub-Agents\n");
             instructions.push_str("The following sub-agents are available:\n\n");
 
-            for agent in &self.agents_info {
+            for agent in invocable {
                 use std::fmt::Write as _;
                 let _ = writeln!(instructions, "- **{}**: {}", agent.name, agent.description);
             }
@@ -119,7 +120,6 @@ impl SubAgentsMcp {
     ) -> Result<Json<SpawnSubAgentsOutput>, String> {
         let Parameters(args) = request;
 
-        // Set up MCP progress notifications
         let progress_token = context.meta.get_progress_token();
         let peer = Arc::new(context.peer.clone());
         let message_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -149,7 +149,6 @@ impl SubAgentsMcp {
                             let _ = peer
                                 .notify_progress(ProgressNotificationParam {
                                     progress_token: token,
-                                    // Precision loss acceptable for progress display
                                     #[allow(clippy::cast_precision_loss)]
                                     progress: counter as f64,
                                     total: None,
@@ -162,9 +161,8 @@ impl SubAgentsMcp {
             )
         };
 
-        // Pass inherited roots to sub-agents
         let roots = self.roots.read().await.clone();
-        let executor = AgentExecutor::new(self.agents_dir.clone(), roots)
+        let executor = AgentExecutor::new(self.catalog.clone(), roots)
             .with_progress_callback(progress_callback);
 
         let output = executor.execute_tasks(args.tasks).await;

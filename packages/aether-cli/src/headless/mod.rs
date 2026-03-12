@@ -16,9 +16,9 @@ pub enum OutputFormat {
 
 pub struct RunConfig {
     pub prompt: String,
-    pub model: Box<dyn llm::StreamingModelProvider>,
     pub cwd: PathBuf,
     pub mcp_config: Option<PathBuf>,
+    pub model: String,
     pub system_prompt: Option<String>,
     pub output: OutputFormat,
     pub verbose: bool,
@@ -26,7 +26,7 @@ pub struct RunConfig {
 
 pub async fn run_headless(args: HeadlessArgs) -> Result<ExitCode, CliError> {
     let prompt = resolve_prompt(&args)?;
-    let model = resolve_model(&args.model)?;
+    resolve_model(&args.model)?;
 
     let output = match args.output {
         CliOutputFormat::Text => OutputFormat::Text,
@@ -36,9 +36,9 @@ pub async fn run_headless(args: HeadlessArgs) -> Result<ExitCode, CliError> {
 
     let config = RunConfig {
         prompt,
-        model,
         cwd: args.cwd,
         mcp_config: args.mcp_config,
+        model: args.model,
         system_prompt: args.system_prompt,
         output,
         verbose: args.verbose,
@@ -103,10 +103,9 @@ fn resolve_prompt(args: &HeadlessArgs) -> Result<String, CliError> {
     }
 }
 
-fn resolve_model(model: &str) -> Result<Box<dyn llm::StreamingModelProvider>, CliError> {
-    let (llm, _) = ModelProviderParser::default()
+fn resolve_model(model: &str) -> Result<(), CliError> {
+    ModelProviderParser::default()
         .parse(model)
-        .map_err(|e| CliError::ModelError(e.to_string()))?;
-
-    Ok(llm)
+        .map(|_| ())
+        .map_err(|e| CliError::ModelError(e.to_string()))
 }

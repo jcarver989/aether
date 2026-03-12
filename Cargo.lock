@@ -32,6 +32,7 @@ version = "0.1.0"
 dependencies = [
  "acp_utils",
  "aether-core",
+ "aether-project",
  "agent-client-protocol",
  "async-trait",
  "clap",
@@ -2471,6 +2472,7 @@ version = "0.1.0"
 dependencies = [
  "aether-core",
  "aether-lspd",
+ "aether-project",
  "chrono",
  "clap",
  "futures",

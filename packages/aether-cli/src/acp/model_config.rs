@@ -1,6 +1,6 @@
-use super::settings::{AetherCliSettings, Mode};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::ConfigOptionId;
+use aether_core::agent_spec::AgentSpec;
 use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
 use llm::ReasoningEffort;
 use llm::catalog::{self, LlmModel};
@@ -151,38 +151,39 @@ fn build_reasoning_effort_config_option(
     )
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ValidatedMode {
     pub(crate) name: String,
     pub(crate) model: String,
     pub(crate) reasoning_effort: Option<ReasoningEffort>,
 }
 
-pub(crate) fn validated_modes(
-    settings: &AetherCliSettings,
+pub(crate) fn validated_modes_from_specs(
+    specs: &[AgentSpec],
     available: &[LlmModel],
 ) -> Vec<ValidatedMode> {
-    settings
-        .modes
+    specs
         .iter()
-        .filter_map(|mode| {
-            mode_to_effective_config(available, mode).map(|(model, reasoning_effort)| {
-                ValidatedMode {
-                    name: mode.name.clone(),
-                    model,
-                    reasoning_effort,
-                }
+        .filter(|spec| spec.exposure.user_invocable)
+        .filter_map(|spec| {
+            let model = spec.model.clone();
+            if !model_exists(available, &model) {
+                return None;
+            }
+
+            Some(ValidatedMode {
+                name: spec.name.clone(),
+                model,
+                reasoning_effort: spec.reasoning_effort,
             })
         })
         .collect()
 }
 
-pub(crate) fn build_mode_config_option(
-    settings: &AetherCliSettings,
-    available: &[LlmModel],
+pub(crate) fn build_mode_config_option_from_modes(
+    validated_modes: &[ValidatedMode],
     selected_mode: Option<&str>,
 ) -> Option<SessionConfigOption> {
-    let validated_modes = validated_modes(settings, available);
     if validated_modes.is_empty() {
         return None;
     }
@@ -203,47 +204,29 @@ pub(crate) fn build_mode_config_option(
     )
 }
 
-pub(crate) fn resolve_mode(
-    settings: &AetherCliSettings,
-    available: &[LlmModel],
+pub(crate) fn resolve_mode_from_modes(
+    validated_modes: &[ValidatedMode],
     mode_name: &str,
 ) -> Option<(String, Option<ReasoningEffort>)> {
-    validated_modes(settings, available)
-        .into_iter()
+    validated_modes
+        .iter()
         .find(|mode| mode.name == mode_name)
-        .map(|mode| (mode.model, mode.reasoning_effort))
+        .map(|mode| (mode.model.clone(), mode.reasoning_effort))
 }
 
-pub(crate) fn mode_name_for_state(
-    settings: &AetherCliSettings,
-    available: &[LlmModel],
+pub(crate) fn mode_name_for_state_from_modes(
+    validated_modes: &[ValidatedMode],
     model: &str,
     reasoning_effort: Option<ReasoningEffort>,
 ) -> Option<String> {
-    validated_modes(settings, available)
-        .into_iter()
+    validated_modes
+        .iter()
         .find(|mode| mode.model == model && mode.reasoning_effort == reasoning_effort)
-        .map(|mode| mode.name)
+        .map(|mode| mode.name.clone())
 }
 
-fn mode_to_effective_config(
-    available: &[LlmModel],
-    mode: &Mode,
-) -> Option<(String, Option<ReasoningEffort>)> {
-    if !model_exists(available, &mode.model) {
-        return None;
-    }
-
-    let reasoning_effort = match mode.reasoning_effort.as_deref() {
-        None => None,
-        Some(value) => ReasoningEffort::parse(value).ok()?,
-    };
-    Some((mode.model.clone(), reasoning_effort))
-}
-
-/// Build config options for the given state
-pub(crate) fn build_config_options(
-    settings: &AetherCliSettings,
+pub(crate) fn build_config_options_from_modes(
+    validated_modes: &[ValidatedMode],
     available: &[LlmModel],
     selected_mode: Option<&str>,
     current_model: &str,
@@ -251,7 +234,7 @@ pub(crate) fn build_config_options(
 ) -> Vec<SessionConfigOption> {
     let mut options = Vec::new();
 
-    if let Some(mode_option) = build_mode_config_option(settings, available, selected_mode) {
+    if let Some(mode_option) = build_mode_config_option_from_modes(validated_modes, selected_mode) {
         options.push(mode_option);
     }
 
@@ -283,6 +266,7 @@ pub(crate) fn pick_default_model(available: &[LlmModel]) -> Option<&LlmModel> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_core::agent_spec::AgentSpecExposure;
     use agent_client_protocol::{SessionConfigKind, SessionConfigSelectOptions};
     use llm::catalog::{AnthropicModel, DeepSeekModel, GeminiModel};
 
@@ -295,118 +279,36 @@ mod tests {
         ]
     }
 
-    fn test_settings_with_mode(
-        name: &str,
-        model: &str,
-        reasoning_effort: Option<&str>,
-    ) -> AetherCliSettings {
-        let mut settings = AetherCliSettings::default();
-        settings.modes.push(Mode {
-            name: name.to_string(),
-            model: model.to_string(),
-            reasoning_effort: reasoning_effort.map(ToOwned::to_owned),
-        });
-        settings
-    }
-
-    fn invalid_mode_model() -> String {
-        "invalid-provider:invalid-model".to_string()
-    }
-
-    #[test]
-    fn build_model_config_option_includes_all_providers() {
-        let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
-
-        assert_eq!(opt.id.0.as_ref(), "model");
-
-        let SessionConfigKind::Select(ref select) = opt.kind else {
-            panic!("Expected Select kind");
-        };
-
-        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
-            panic!("Expected Ungrouped options");
-        };
-
-        // Available providers list models individually
-        assert!(options.iter().any(|o| o.value.0.starts_with("anthropic:")));
-        assert!(options.iter().any(|o| o.value.0.starts_with("deepseek:")));
-        assert!(options.iter().any(|o| o.value.0.starts_with("gemini:")));
-
-        // Fully-unavailable providers are collapsed into sentinel entries
-        assert!(
-            options
-                .iter()
-                .any(|o| o.value.0.as_ref() == "__unavailable:moonshot")
-        );
-        assert!(
-            options
-                .iter()
-                .any(|o| o.value.0.as_ref() == "__unavailable:openrouter")
-        );
-        assert!(
-            options
-                .iter()
-                .any(|o| o.value.0.as_ref() == "__unavailable:zai")
-        );
+    fn test_specs_with_modes() -> Vec<AgentSpec> {
+        vec![
+            AgentSpec {
+                name: "Planner".to_string(),
+                description: "planner".to_string(),
+                model: "anthropic:claude-sonnet-4-5".to_string(),
+                reasoning_effort: Some(ReasoningEffort::High),
+                prompts: vec![],
+                agent_mcp_config_path: None,
+                exposure: AgentSpecExposure::both(),
+            },
+            AgentSpec {
+                name: "Coder".to_string(),
+                description: "coder".to_string(),
+                model: "deepseek:deepseek-chat".to_string(),
+                reasoning_effort: None,
+                prompts: vec![],
+                agent_mcp_config_path: None,
+                exposure: AgentSpecExposure::both(),
+            },
+        ]
     }
 
     #[test]
-    fn build_model_config_option_uses_provider_slash_model_display_names() {
+    fn build_mode_config_option_from_modes_has_mode_category() {
+        let specs = test_specs_with_modes();
         let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
+        let modes = validated_modes_from_specs(&specs, &models);
 
-        let SessionConfigKind::Select(ref select) = opt.kind else {
-            panic!("Expected Select kind");
-        };
-        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
-            panic!("Expected Ungrouped options");
-        };
-
-        // Available models should have "Provider: Model" format
-        let sonnet = options
-            .iter()
-            .find(|o| o.value.0.as_ref() == "anthropic:claude-sonnet-4-5")
-            .expect("expected anthropic sonnet option");
-        assert!(
-            sonnet.name.starts_with("Anthropic: "),
-            "Expected 'Anthropic: ...' display name, got: {}",
-            sonnet.name
-        );
-    }
-
-    #[test]
-    fn build_model_config_option_marks_unavailable_models_with_reason() {
-        let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
-
-        let SessionConfigKind::Select(ref select) = opt.kind else {
-            panic!("Expected Select kind");
-        };
-        let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
-            panic!("Expected Ungrouped options");
-        };
-
-        let unavailable = options
-            .iter()
-            .find(|o| o.name.contains("unavailable"))
-            .expect("expected at least one unavailable model option");
-        assert!(unavailable.name.contains(": "));
-        assert!(
-            unavailable
-                .description
-                .as_deref()
-                .is_some_and(|d| d.starts_with("Unavailable:"))
-        );
-    }
-
-    #[test]
-    fn build_mode_config_option_has_mode_category() {
-        let settings =
-            test_settings_with_mode("Planner", "anthropic:claude-sonnet-4-5", Some("high"));
-        let models = test_models();
-
-        let option = build_mode_config_option(&settings, &models, Some("Planner"))
+        let option = build_mode_config_option_from_modes(&modes, Some("Planner"))
             .expect("mode option should exist");
 
         assert_eq!(option.id.0.as_ref(), "mode");
@@ -414,46 +316,22 @@ mod tests {
     }
 
     #[test]
-    fn build_mode_config_option_skips_invalid_modes() {
-        let mut settings = AetherCliSettings::default();
-        settings.modes.push(Mode {
-            name: "Bad".to_string(),
-            model: invalid_mode_model(),
-            reasoning_effort: Some("max".to_string()),
-        });
+    fn resolve_mode_from_modes_rejects_unknown_mode() {
+        let specs = test_specs_with_modes();
+        let modes = validated_modes_from_specs(&specs, &test_models());
 
-        let option = build_mode_config_option(&settings, &test_models(), None);
-        assert!(option.is_none(), "invalid modes should be skipped");
-    }
-
-    #[test]
-    fn resolve_mode_rejects_unknown_mode() {
-        let settings =
-            test_settings_with_mode("Planner", "anthropic:claude-sonnet-4-5", Some("high"));
-        let models = test_models();
-
-        let resolved = resolve_mode(&settings, &models, "Unknown");
+        let resolved = resolve_mode_from_modes(&modes, "Unknown");
         assert!(resolved.is_none());
     }
 
     #[test]
-    fn mode_name_for_state_matches_valid_tuple() {
-        let mut settings = AetherCliSettings::default();
-        settings.modes.push(Mode {
-            name: "Planner".to_string(),
-            model: "anthropic:claude-sonnet-4-5".to_string(),
-            reasoning_effort: Some("high".to_string()),
-        });
-        settings.modes.push(Mode {
-            name: "Bad".to_string(),
-            model: invalid_mode_model(),
-            reasoning_effort: Some("high".to_string()),
-        });
-
+    fn mode_name_for_state_from_modes_matches_valid_tuple() {
+        let specs = test_specs_with_modes();
         let models = test_models();
-        let selected = mode_name_for_state(
-            &settings,
-            &models,
+        let modes = validated_modes_from_specs(&specs, &models);
+
+        let selected = mode_name_for_state_from_modes(
+            &modes,
             "anthropic:claude-sonnet-4-5",
             Some(ReasoningEffort::High),
         );
@@ -462,37 +340,13 @@ mod tests {
     }
 
     #[test]
-    fn mode_name_for_state_ignores_invalid_modes() {
-        let mut settings = AetherCliSettings::default();
-        settings.modes.push(Mode {
-            name: "BadModel".to_string(),
-            model: invalid_mode_model(),
-            reasoning_effort: Some("high".to_string()),
-        });
-        settings.modes.push(Mode {
-            name: "BadReasoning".to_string(),
-            model: "anthropic:claude-sonnet-4-5".to_string(),
-            reasoning_effort: Some("max".to_string()),
-        });
-
-        let selected = mode_name_for_state(
-            &settings,
-            &test_models(),
-            "anthropic:claude-sonnet-4-5",
-            Some(ReasoningEffort::High),
-        );
-
-        assert!(selected.is_none());
-    }
-
-    #[test]
-    fn build_config_options_includes_mode_option_when_configured() {
-        let settings =
-            test_settings_with_mode("Planner", "anthropic:claude-sonnet-4-5", Some("high"));
+    fn build_config_options_from_modes_includes_mode_option_when_configured() {
+        let specs = test_specs_with_modes();
         let models = test_models();
+        let modes = validated_modes_from_specs(&specs, &models);
 
-        let options = build_config_options(
-            &settings,
+        let options = build_config_options_from_modes(
+            &modes,
             &models,
             Some("Planner"),
             "anthropic:claude-sonnet-4-5",
@@ -507,10 +361,10 @@ mod tests {
     }
 
     #[test]
-    fn build_config_options_returns_single_model_option() {
+    fn build_config_options_from_modes_returns_single_model_option() {
         let models = test_models();
-        let settings = AetherCliSettings::default();
-        let opts = build_config_options(&settings, &models, None, "deepseek:deepseek-chat", None);
+        let opts =
+            build_config_options_from_modes(&[], &models, None, "deepseek:deepseek-chat", None);
 
         assert_eq!(opts.len(), 1);
 
@@ -527,7 +381,6 @@ mod tests {
             "deepseek:deepseek-chat"
         );
 
-        // Should include models from all providers
         let SessionConfigSelectOptions::Ungrouped(ref model_options) = model_select.options else {
             panic!("Expected Ungrouped options");
         };
@@ -638,12 +491,12 @@ mod tests {
     }
 
     #[test]
-    fn build_config_options_includes_reasoning_for_reasoning_model() {
+    fn build_config_options_from_modes_includes_reasoning_for_reasoning_model() {
         let models = test_models();
-        let settings = AetherCliSettings::default();
-        // ClaudeOpus46 supports reasoning
-        let opts = build_config_options(
-            &settings,
+        let specs = test_specs_with_modes();
+        let modes = validated_modes_from_specs(&specs, &models);
+        let opts = build_config_options_from_modes(
+            &modes,
             &models,
             None,
             "anthropic:claude-opus-4-6",
@@ -664,10 +517,12 @@ mod tests {
     }
 
     #[test]
-    fn build_config_options_hides_reasoning_for_non_reasoning_model() {
+    fn build_config_options_from_modes_hides_reasoning_for_non_reasoning_model() {
         let models = test_models();
-        let settings = AetherCliSettings::default();
-        let opts = build_config_options(&settings, &models, None, "deepseek:deepseek-chat", None);
+        let specs = test_specs_with_modes();
+        let modes = validated_modes_from_specs(&specs, &models);
+        let opts =
+            build_config_options_from_modes(&modes, &models, None, "deepseek:deepseek-chat", None);
         assert!(
             !opts.iter().any(|o| o.id.0.as_ref() == "reasoning_effort"),
             "Non-reasoning model should not have reasoning_effort option"
@@ -677,11 +532,11 @@ mod tests {
     #[test]
     fn reasoning_option_removed_when_switching_to_non_reasoning_model() {
         let models = test_models();
-        let settings = AetherCliSettings::default();
+        let specs = test_specs_with_modes();
+        let modes = validated_modes_from_specs(&specs, &models);
 
-        // Start with a reasoning model — should include reasoning option
-        let opts_with = build_config_options(
-            &settings,
+        let opts_with = build_config_options_from_modes(
+            &modes,
             &models,
             None,
             "anthropic:claude-opus-4-6",
@@ -694,9 +549,8 @@ mod tests {
             "reasoning_effort should be present for claude-opus-4-6"
         );
 
-        // Switch to a non-reasoning model — reasoning option should be gone
         let opts_without =
-            build_config_options(&settings, &models, None, "deepseek:deepseek-chat", None);
+            build_config_options_from_modes(&modes, &models, None, "deepseek:deepseek-chat", None);
         assert!(
             !opts_without
                 .iter()

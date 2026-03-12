@@ -12,6 +12,8 @@ pub struct SessionMeta {
     pub session_id: String,
     pub cwd: PathBuf,
     pub model: String,
+    #[serde(default)]
+    pub selected_mode: Option<String>,
     pub created_at: String,
 }
 
@@ -117,8 +119,24 @@ mod tests {
             session_id: "s1".to_string(),
             cwd: PathBuf::from("/tmp"),
             model: "test-model".to_string(),
+            selected_mode: Some("planner".to_string()),
             created_at: "2026-01-01T00:00:00Z".to_string(),
         }
+    }
+
+    #[test]
+    fn append_meta_persists_selected_mode_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+
+        let meta = test_meta();
+        store.append_meta("s1", &meta).unwrap();
+
+        let raw = std::fs::read_to_string(dir.path().join("s1.jsonl")).unwrap();
+        assert!(
+            raw.contains("\"selectedMode\""),
+            "expected selectedMode field in serialized session meta: {raw}"
+        );
     }
 
     #[test]

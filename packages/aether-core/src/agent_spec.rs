@@ -4,7 +4,7 @@
 //! It represents a resolved runtime type, not a raw settings DTO.
 
 use crate::core::Prompt;
-use llm::{LlmModel, ReasoningEffort};
+use llm::ReasoningEffort;
 use std::path::PathBuf;
 
 /// A resolved agent specification ready for runtime use.
@@ -17,8 +17,12 @@ pub struct AgentSpec {
     pub name: String,
     /// Human-readable description of this agent's purpose.
     pub description: String,
-    /// The strongly-typed model to use for this agent.
-    pub model: LlmModel,
+    /// The validated model spec to use for this agent.
+    ///
+    /// This is stored as a canonical string so authored settings can represent
+    /// both single models (`provider:model`) and alloy specs
+    /// (`provider1:model1,provider2:model2`).
+    pub model: String,
     /// Optional reasoning effort level for models that support it.
     pub reasoning_effort: Option<ReasoningEffort>,
     /// The prompt stack for this agent.

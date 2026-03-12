@@ -4,8 +4,8 @@ use crate::context::CompactionConfig;
 use crate::core::{Agent, Prompt, Result};
 use crate::events::{AgentMessage, UserMessage};
 use crate::mcp::run_mcp_task::McpCommand;
-use llm::types::IsoString;
 use llm::parser::ModelProviderParser;
+use llm::types::IsoString;
 use llm::{ChatMessage, Context, StreamingModelProvider, ToolDefinition};
 use std::sync::Arc;
 use std::time::Duration;
@@ -66,7 +66,7 @@ impl AgentBuilder {
     /// The LLM provider is derived from `spec.model` via `ModelProviderParser`.
     /// `base_prompts` are prepended before the spec's own prompts.
     pub fn from_spec(spec: &AgentSpec, base_prompts: Vec<Prompt>) -> Result<Self> {
-        let provider = ModelProviderParser::default().create_provider(&spec.model)?;
+        let (provider, _) = ModelProviderParser::default().parse(&spec.model)?;
         let mut builder = Self::new(Arc::from(provider));
         for prompt in base_prompts {
             builder = builder.system_prompt(prompt);
@@ -215,6 +215,7 @@ impl AgentBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_spec::AgentSpecExposure;
 
     #[tokio::test]
     async fn test_agent_handle_is_finished() {
@@ -248,5 +249,21 @@ mod tests {
         let rendered = Prompt::build_all(&builder.prompts).await.unwrap();
 
         assert_eq!(rendered, "first\n\nsecond\n\nthird");
+    }
+
+    #[test]
+    fn from_spec_accepts_alloy_model_specs() {
+        let spec = AgentSpec {
+            name: "alloy".to_string(),
+            description: "alloy".to_string(),
+            model: "ollama:llama3.2,llamacpp:local".to_string(),
+            reasoning_effort: None,
+            prompts: vec![],
+            agent_mcp_config_path: None,
+            exposure: AgentSpecExposure::both(),
+        };
+
+        let builder = AgentBuilder::from_spec(&spec, vec![]);
+        assert!(builder.is_ok());
     }
 }
